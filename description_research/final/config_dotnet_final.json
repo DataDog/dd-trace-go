@@ -1,0 +1,4815 @@
+{
+  "lang": "dotnet",
+  "missingCount": 0,
+  "documentedCount": 303,
+  "documentedConfigurations": [
+    {
+      "key": "DD_AAS_DOTNET_EXTENSION_VERSION",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key which has the running version of the Azure App Services Site Extension.    This env var is set in the <c>applicationHost.xdt",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_AAS_ENABLE_CUSTOM_METRICS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Used to force the loader to start dogstatsd (in case automatic instrumentation is disabled)",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_AAS_ENABLE_CUSTOM_TRACING",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Used to force the loader to start the trace agent (in case automatic instrumentation is disabled)",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_ACTION_EXECUTION_ID",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "AWS CodePipeline action execution ID for CI correlation.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_AGENT_FEATURE_POLLING_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to disable polling the /info endpoint in the trace agent for feature discovery.\ncf. https://github.com/DataDog/dd-trace-dotnet/pull/7616",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_AGENT_HOST",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "The host name to use to connect the Datadog agent for traces. The host name can be IPv4, IPv6, or a domain name. If DD_TRACE_AGENT_URL is specified, the value of DD_AGENT_HOST is ignored.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_KEY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the API key, used by the Agent.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "When ASM is enabled, collects in spans endpoints apis schemas analyzed by the waf, default value is true.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "with a default value of true, it allows a customer to disable the collection of endpoints for API Security.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "with a default value of 300, it defines the maximum number of endpoints to be collected (serialized) for API Security.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_PARSE_RESPONSE_BODY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables the parsing of the response body in the API Security module. Defaults to true",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_API_SECURITY_SAMPLE_DELAY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Api security sample delay in seconds , should be a float. Set to 0 for testing purposes. default value of 30.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APM_ENABLE_RARE_SAMPLER",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables rare trace sampling in the Datadog Agent. When enabled, the Agent can keep a small number of \"rare\" traces (up to 5 traces per second per Agent) that were not kept by head-based sampling.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_APM_RECEIVER_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Used to force a specific port binding for the Trace Agent.\nDefault value is 8126.\n<seealso cref=\"Datadog.Trace.Configuration.ExporterSettings.AgentUri\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APM_RECEIVER_SOCKET",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the unix domain socket where the Tracer can send traces.\nDefault value is <c>null</c>.\n<seealso cref=\"Datadog.Trace.Configuration.ExporterSettings.TracesUnixDomainSocketPath\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APM_TRACING_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Allows standalone products to run individually, rather than all being coupled together.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPLICATION_MONITORING_CONFIG_FILE_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for deactivating reading the application monitoring config file through libdatadog (hands off config).\nTrue by default",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_AUTOMATED_USER_EVENTS_TRACKING",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "Deprecate. Automatic tracking of user events mode. Values can be disabled, safe or extended.\nThis config is in the process of being deprecated. Please use DD_APPSEC_AUTO_USER_INSTRUMENTATION_MODE\ninstead.\nValues will be automatically translated:\ndisabled = disabled\nsafe = anon\nextended = ident",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_AUTO_USER_INSTRUMENTATION_MODE",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Automatic instrumentation of user event mode. Values can be ident, disabled, anon.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the AppSec.\nDefault value is false (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_EXTRA_HEADERS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Comma separated keys indicating the optional custom headers the user wants to send.\nDefault value is null.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Blocking response template for HTML content. This template is used in combination with the status code to craft and send a response upon blocking the request.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Blocking response template for Json content. This template is used in combination with the status code to craft and send a response upon blocking the request.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_IPHEADER",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key indicating the optional name of the custom header to take into account for the ip address.\nDefault value is null (do not override).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_KEEP_TRACES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies if the AppSec traces should be explicitly kept or dropped.\nDefault is true, to keep all traces, false means drop all traces (by setting AutoReject as sampling priority).\nFor internal testing only.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_MAX_STACK_TRACES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies the maximum number of stack traces to be reported.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_MAX_STACK_TRACE_DEPTH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies the maximum depth of a stack trace to be reported.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_MAX_STACK_TRACE_DEPTH_TOP_PERCENT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "with a default value of 75, defines the percentage of frames taken from the top of the stack when trimming. Min 0, Max 100",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP",
+      "implementation": "E",
+      "results": [
+        {
+          "description": "A regex string to redact sensitive data by its key in attack reports.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP",
+      "implementation": "E",
+      "results": [
+        {
+          "description": "A regex string to redact sensitive data by its value in attack reports.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_RASP_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "default value to true. Set to false to disable exploit prevention.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_RULES",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Override the default rules file provided. Must be a path to a valid JSON rules file.\nDefault value is null (do not override).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_SCA_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Activate SCA (Software Composition Analysis), used in the backend",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_STACK_TRACE_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "with a default value of true, it allows a customer to disable the generation of stack traces, for any ASM-specific purpose such as RASP.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_TRACE_RATE_LIMIT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls the maximum amount of traces sampled by AppSec attacks, per second.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_WAF_DEBUG",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Activate debug logs for the WAF",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_WAF_TIMEOUT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Limits the WAF synchronous execution time (in microseconds).",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_AZURE_APP_SERVICES",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key which is used as a flag to tell us whether we are instrumenting an Azure App Service using the AAS Site Extension.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_AGENTLESS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling Agentless in CI Visibility.\nDefault value is false (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_AGENTLESS_URL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the agentless url endpoint",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for identifying the auto instrumentation provider for CI Visibility.\nThis is used to track which instrumentation method was used (e.g., single-step, manual, etc.).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_CODE_COVERAGE_COLLECTORPATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the code coverage collector path",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_CODE_COVERAGE_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling Code Coverage in CI Visibility.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_CODE_COVERAGE_ENABLE_JIT_OPTIMIZATIONS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling jit optimizations in the Code Coverage",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_CODE_COVERAGE_MODE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for selecting the code coverage mode LineExecution or LineCallCount",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_CODE_COVERAGE_PATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the code coverage jsons destination path.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_CODE_COVERAGE_SNK_FILEPATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for re-signing assemblies after the Code Coverage modification.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_DI_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Dependency injection for divisibility",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the early flake detection feature in CI Visibility",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling CI Visibility.\nDefault value is false (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_EXTERNAL_CODE_COVERAGE_PATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the external code coverage file path",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_FLAKY_RETRY_COUNT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies how many times to retry flaky tests.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "A kill switch for the auto test retries feature.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_FORCE_AGENT_EVP_PROXY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for forcing Agent's EVP Proxy",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_GAC_INSTALL_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling Datadog.Trace GAC installation",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling Uploading Git Metadata in CI Visibility\nDefault Value is false (disabled)",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling Impacted Tests Detection.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_ITR_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling Intelligent Test Runner in CI Visibility\nDefault Value is false (disabled)",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_KNOWN_TESTS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the known tests feature in CI Visibility",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_LOGS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling Logs direct submission.\nDefault value is false (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_RUM_FLUSH_WAIT_MILLIS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for set the rum flushing wait in milliseconds",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_TESTSSKIPPING_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling Intelligent Test Runner test skipping feature in CI Visibility",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum number of retry attempts for the entire session.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CODE_ORIGIN_FOR_SPANS_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key to enable tag code origin for span.\nDefault value is false.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CODE_ORIGIN_FOR_SPANS_MAX_USER_FRAMES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the number of frames to be tagged in exit span code origin.\nDefault value is <c>8</c>.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_CUSTOM_TRACE_ID",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Jenkins CI environment variable for custom trace ID correlation.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DATA_STREAMS_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Enables data streams monitoring support\n<see cref=\"Datadog.Trace.Configuration.TracerSettings.IsDataStreamsMonitoringEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DATA_STREAMS_LEGACY_HEADERS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling legacy binary headers in Data Streams Monitoring.\nfalse by default if DSM is in default state, true otherwise\n<see cref=\"Datadog.Trace.Configuration.TracerSettings.IsDataStreamsLegacyHeadersEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DBM_PROPAGATION_MODE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "To enable DBM to APM link using tag injection, can be set to 'service' or 'full'. The 'service' option enables the connection between DBM and APM services. The 'full' option enables connection between database spans with database query events. Available for Postgres.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DIAGNOSTIC_SOURCE_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the use of System.Diagnostics.DiagnosticSource.\nDefault value is <c>true</c> (enabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DISABLED_INTEGRATIONS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a list of integrations to disable. All other integrations remain enabled.\nDefault is empty (all integrations are enabled).\nSupports multiple values separated with semi-colons.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.DisabledIntegrationNames\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_ARGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for arguments to pass to the DogStatsD process.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_PATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for when a standalone instance of DogStatsD needs to be started.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_PIPE_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the named pipe that DogStatsD binds to.\nDefault value is <c>null</c>.\n<seealso cref=\"Datadog.Trace.Configuration.ExporterSettings.MetricsPipeName\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_PORT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Specifies the port number for the DogStatsD server to which runtime metrics are sent.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_SOCKET",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the unix domain socket that DogStatsD binds to.\nDefault value is <c>null</c>.\n<seealso cref=\"Datadog.Trace.Configuration.ExporterSettings.MetricsUnixDomainSocketPath\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOGSTATSD_URL",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "The URL to use to connect the Datadog agent for Dogstatsd metrics.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DOTNET_TRACER_HOME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "It indicates the home directory of the dotnet Datadog tracer.\nOn Windows, it is often set to the installation path, such as C:\\Program Files\\Datadog\\.NET Tracer.\nOn Linux/Docker, it is typically set to /opt/datadog.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_DIAGNOSTICS_INTERVAL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the interval (in seconds) between sending probe statuses.\nDefault value is 3600.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling Dynamic Instrumentation.\nDefault value is false (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_MAX_DEPTH_TO_SERIALIZE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the max object depth to serialize for probe snapshots.\nDefault value is 1.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_MAX_TIME_TO_SERIALIZE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum duration (in milliseconds) to run serialization for probe snapshots.\nDefault value is 150 ms.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_REDACTED_EXCLUDED_IDENTIFIERS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for set of identifiers that are excluded from redaction decisions.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_REDACTED_IDENTIFIERS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "A comma-separated list of identifiers to add to the disallow-list, which is used to redact values in found.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_REDACTED_TYPES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for set of types that are used in redaction decisions.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_REDACTION_EXCLUDED_IDENTIFIERS",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for set of identifiers that are excluded from redaction decisions.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_UPLOAD_BATCH_SIZE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum upload batch size.\nDefault value is 100.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_DYNAMIC_INSTRUMENTATION_UPLOAD_FLUSH_INTERVAL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the interval (in milliseconds) between flushing statuses.\nDefault value is 0 (dynamic).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_ENV",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for the application's environment. Sets the \"env\" tag on every <see cref=\"Span\"/>.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.Environment\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXCEPTION_REPLAY_AGENTLESS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling agentless Exception Replay uploads.\nDefault value is false.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXCEPTION_REPLAY_AGENTLESS_URL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "When Agentless mode in Exception Replay is enabled we can use this configuration to force an URL for the intake",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXCEPTION_REPLAY_CAPTURE_FULL_CALLSTACK_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to enable capturing the variables of all the frames in exception call stack.\nDefault value is false.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXCEPTION_REPLAY_CAPTURE_MAX_FRAMES",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for the maximum number of frames in a call stack we would like to capture values for.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXCEPTION_REPLAY_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling Exception Replay.\nDefault value is false (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXCEPTION_REPLAY_MAX_EXCEPTION_ANALYSIS_LIMIT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the maximum number of exceptions to be analyzed by Exception Replay within a 1-second time interval.\nDefault value is <c>100</c>.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXCEPTION_REPLAY_RATE_LIMIT_SECONDS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the interval used to track exceptions\nDefault value is <c>1</c>h.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXPERIMENTAL_APPSEC_USE_UNSAFE_ENCODER",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Use new unsafe encoder for the waf",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables Feature Flags Provider (Experimental).\nDefault value is <c>false</c> (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "When enabled, adds process entrypoint metadata (such as base directory and working directory) as tags on emitted telemetry such as traces and runtime metrics. This can help correlate data with the process that produced it.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_BRANCH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for git branch name.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_DATE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for git commit author date.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_EMAIL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for git commit author email.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_AUTHOR_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for git commit author name.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_DATE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for git commit committer date.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_EMAIL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for git commit committer email.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_COMMITTER_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for git commit committer name.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_MESSAGE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for git commit message.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_COMMIT_SHA",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the application's git commit hash. Sets the \"_dd.git.commit.sha\" tag on every <see cref=\"Span\"/>.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.GitCommitSha\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_PULL_REQUEST_BASE_BRANCH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for pull request base branch.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for pull request base branch SHA.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_REPOSITORY_URL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the application's git repo URL. Sets the \"_dd.git.repository_url\" tag on every <see cref=\"Span\"/>.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.GitRepositoryUrl\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_GIT_TAG",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "CI Visibility environment variable for git tag.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_HTTP_CLIENT_ERROR_STATUSES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the application's client http statuses to set spans as errors by.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.HttpClientErrorStatusCodes\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_HTTP_SERVER_ERROR_STATUSES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the application's server http statuses to set spans as errors by.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.HttpServerErrorStatusCodes\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_HTTP_SERVER_TAG_QUERY_STRING",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling/disabling reporting query string\nDefault value is true\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.QueryStringReportingEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the max size of the querystring to report, before obfuscation\nDefault value is 5000, 0 means that we don't limit the size.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.QueryStringReportingSize\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_COOKIE_FILTER_PATTERN",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for number of rows to taint on each Db query in IAST.\nDefault value is 1",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_DB_ROWS_TO_TAINT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for number of rows to taint on each Db query in IAST.\nDefault value is 1",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_DEDUPLICATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the vulnerability duplication detection.\nWhen enabled, a vulnerability will only be reported once in the lifetime of an app,\ninstead of on every usage. Default value is true (enabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the IAST.\nDefault value is false (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_MAX_CONCURRENT_REQUESTS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum number of requests\nto be analyzed by IAST concurrently. Defaults to 2.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_MAX_RANGE_COUNT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum number of ranges\na tainted object can hold. Defaults to 10.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_REDACTION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for specifying a custom regex to obfuscate source keys.\nDefault value is in TracerSettings",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_REDACTION_NAME_PATTERN",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key for specifying a custom regex to obfuscate source keys.\nDefault value is in TracerSettings",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_REDACTION_VALUE_PATTERN",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key for specifying a custom regex to obfuscate source values.\nDefault value is in TracerSettings",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_REGEXP_TIMEOUT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for specifying a timeout in milliseconds to the execution of regexes in IAST\nDefault value is 200ms",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_REQUEST_SAMPLING",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for controlling the percentage of requests\nto be analyzed by IAST, between 1 and 100. Defaults to 30.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_TELEMETRY_VERBOSITY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for IAST verbosity.\nDefault value is INFORMATION",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_TRUNCATION_MAX_VALUE_LENGTH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for IAST evidence max lenght in chars.\nDefault value is 250",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_VULNERABILITIES_PER_REQUEST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum number of IAST vulnerabilities to\ndetect in a request. Defaults to 2.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_WEAK_CIPHER_ALGORITHMS",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for controlling which weak cipher algorithms are reported.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_IAST_WEAK_HASH_ALGORITHMS",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key for controlling which weak hashing algorithms are reported.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INJECTION_ENABLED",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the injection of products via single step instrumentation.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INJECT_FORCE",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "SSI variable that allows unsupported runtimes to be instrumented.\nUsed for correlation purposes in telemetry.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_ID",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "SSI variable that provides a unique identifier for the instrumentation installation.\nUsed for tracking and correlation purposes in telemetry.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_TIME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "SSI variable that indicates when the instrumentation was installed.\nUsed for tracking installation timeline in telemetry.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_INSTALL_TYPE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "SSI variable that indicates the installation type (e.g., dd_dotnet_launcher, dd_trace_tool, dotnet_msi, windows_fleet_installer).\nUsed to determine the instrumentation source for telemetry.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_TELEMETRY_AGENTLESS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for sending telemetry direct to telemetry intake. If enabled, and\n<see cref=\"ConfigurationKeys.ApiKey\"/> is set, sends telemetry direct to intake if agent is not\navailable. Enabled by default if <see cref=\"ConfigurationKeys.ApiKey\"/> is available.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_TELEMETRY_AGENT_PROXY_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for sending telemetry via agent proxy. If enabled, sends telemetry\nvia agent proxy. Enabled by default. If disabled, or agent is not available, telemetry\nis sent to agentless endpoint, based on <see cref=\"Datadog.Trace.Configuration.ConfigurationKeys.CIVisibility.AgentlessEnabled\"/> setting.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_TELEMETRY_COMPRESSION_METHOD",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to allow telemetry compression\nSee https://github.com/DataDog/dd-trace-dotnet/pull/7645",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_TELEMETRY_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling internal telemetry.\nDefault value is <c>true</c> (enabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INSTRUMENTATION_TELEMETRY_URL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the telemetry URL where the Tracer sends telemetry. Only applies when agentless\ntelemetry is in use (otherwise telemetry is sent to the agent using\n<see cref=\"Datadog.Trace.Configuration.ExporterSettings.AgentUri\"/> instead)",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INTERNAL_PROFILING_NATIVE_ENGINE_PATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "This variable is set by the native loader after trying to load the profiler.\nIt means the profiler is _there_ though it may not be _loaded_. This only works\non Windows at the moment. We assume that the CLR profiler must be attached in this scenario.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_INTERNAL_RCM_POLL_INTERVAL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls how often remote configuration is polled, in seconds. Values must be greater than 0 and no more than 5.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_INTERNAL_TELEMETRY_DEBUG_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for whether to enable debug mode of telemetry.\n<see cref=\"Datadog.Trace.Telemetry.TelemetrySettings.DebugEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INTERNAL_TRACE_NATIVE_ENGINE_PATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "This variable is set by the native loader after trying to load the profiler.\nIt means the profiler is _there_ though it may not be _loaded_. This only works\non Windows at the moment. We assume that the CLR profiler must be attached in this scenario.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_INTERNAL_WAIT_FOR_DEBUGGER_ATTACH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the Tracer's debugger mode.\nDefault value is false (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_INTERNAL_WAIT_FOR_NATIVE_DEBUGGER_ATTACH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the Tracer's native debugger mode.\nDefault value is false (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_AZURE_FUNCTIONS_HOST_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to enable or disable direct log submission for Azure Functions host",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_BATCH_PERIOD_SECONDS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the time to wait between checking for batches\nDefault value is <c>2</c>s.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_HOST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Set the name of the originating host for direct logs submission.\nRequired for direct logs submission (default is machine name).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_INTEGRATIONS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a list of direct log submission integrations to enable.\nOnly selected integrations are enabled for direct log submission\nDefault is empty (direct log submission disabled).\nSupports multiple values separated with semi-colons.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_MAX_BATCH_SIZE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum number of logs to send at one time\nDefault value is <c>1,000</c>, the maximum accepted by the Datadog log API",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_MAX_QUEUE_SIZE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum number of logs to hold in internal queue at any one time\nDefault value is <c>100,000</c>.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_MINIMUM_LEVEL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the minimum level logs should have to be sent to the intake.\nDefault value is <c>Information</c>.\nShould be one of <c>Verbose</c>,<c>Debug</c>,<c>Information</c>,<c>Warning</c>,<c>Error</c>,<c>Fatal</c>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_SOURCE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Set the originating source for direct logs submission.\nDefault is 'csharp'",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_TAGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a list of tags to be applied globally to all logs directly submitted.\nSupports multiple key key-value pairs which are comma-separated, and for which the key and\nvalue are colon-separated. For example Key1:Value1, Key2:Value2. If not provided,\n<see cref=\"ConfigurationKeys.GlobalTags\"/> are used instead",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_DIRECT_SUBMISSION_URL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the url to send logs to.\nDefault value uses the domain set in <see cref=\"ConfigurationKeys.Site\"/>, so defaults to\n<c>https://http-intake.logs.datadoghq.com:443</c>.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_INJECTION",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the automatic injection\nof correlation identifiers into the logging context.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.LogsInjectionEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOGS_OTEL_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables support for collecting and exporting logs generated by the the OpenTelemetry Logs API.\nThis feature is available starting with .NET 3.1 when using Microsoft.Extensions.Logging",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_LOG_LEVEL",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Sets the Datadog Agent logging level. Valid values are trace, debug, info, warn, error, critical, or off.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_MAX_LOGFILE_SIZE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the approximate maximum size,\nin bytes, for Tracer log files.\nDefault value is 10 MB.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_MAX_TRACES_PER_SECOND",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the number of traces allowed\nto be submitted per second.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.MaxTracesSubmittedPerSecond\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_METRICS_OTEL_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables experimental support for exporting OTLP metrics generated by the OpenTelemetry Metrics API.\nThis feature is only available starting with .NET 6.0, as it relies on the BCL class MeterListener\nwhich is shipped in-box starting with .NET 6.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_METRICS_OTEL_METER_NAMES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "List of meters to add to the metrics exporter for the experimental OpenTelemetry Metrics API support.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PIPELINE_EXECUTION_ID",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "AWS CodePipeline pipeline execution ID for CI correlation.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_CODEHOTSPOTS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables or disables code hotspots collection for the continuous profiler. When disabled, profiling data is not linked to tracing context for hotspot attribution.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Enables or disables the continuous profiler. Set to true (or 1) to start profiling, false (or 0) to disable, or auto to enable profiling but only start it after the process is long-lived and has created at least one span.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_ENDPOINT_COLLECTION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls whether endpoint names are sent to the profiler for endpoint-level profiling. When disabled, endpoint information is not associated with profiling data.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_MANAGED_ACTIVATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Safety kill switch to be able to deactivate hotstandby mode for profiling in of a support case",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROXY_HTTPS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set a proxy server for https requests.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_PROXY_NO_PROXY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set a list of hosts that should bypass the proxy.\nThe list is space-separated.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_REMOTE_CONFIGURATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Is remote configuration management (RCM) enabled. Defaults to <c>true</c>. RCM requires\nthe use of the full agent, so will not always be available. This switch is primarily\nintended for testing and for explicitly disabling RCM even though it is available.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Remote configuration polling interval in seconds.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_RUNTIME_METRICS_DIAGNOSTICS_METRICS_API_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables the .NET runtime metrics collector which uses the System.Diagnostics.Metrics API instead of the EventListener based API",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_RUNTIME_METRICS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables or disables the collection of [runtime metrics][5] (such as garbage collection stats, memory usage, and thread counts) for the application.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "Configuration key for the application's default service name.\nUsed as the service name for top-level spans,\nand used to determine service name of some child spans.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.ServiceName\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SITE",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key for setting the default Datadog destination site.\nDefaults to \"datadoghq.com\".",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SPAN_SAMPLING_RULES",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for setting custom <em>span</em> sampling rules based on glob patterns.\nComma separated list of span sampling rules.\nThe rule is matched in order of specification. The first match in a list is used.\nThe supported glob pattern characters are '*' and '?'.\nA '*' matches any contiguous substring.\nA '?' matches exactly one character.\n\nPer entry:\n    The item \"service\" is a glob pattern string, to match on the service name.\n        Optional and defaults to '*'.\n    The item \"name\" is a glob pattern string, to match on the operation name.\n        Optional and defaults to '*'.\n    The item \"sample_rate\" is a float and is the probability of keeping a matched span.\n        Optional and defaults to 1.0 (keep all).\n    The item \"max_per_second\" is a float and is the maximum number of spans that can be kept per second for the rule.\n        Optional and defaults to unlimited.\n\nExamples:\nMatch all spans that have a service name of \"cart\" and an operation name of \"checkout\" with a kept limit of 1000 per second.\n    \"[{\"service\": \"cart\", \"name\": \"checkout\", \"max_per_second\": 1000}]\"\n\nMatch 50% of spans that have a service name of \"cart\" and an operation name of \"checkout\" with a kept limit of 1000 per second.\n    \"[{\"service\": \"cart\", \"name\": \"checkout\", \"sample_rate\": 0.5, \"max_per_second\": 1000}]\"\n\nMatch all spans that start with \"cart\" without any limits and any operation name.\n    \"[{\"service\": \"cart*\"}]\"\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.SpanSamplingRules\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SYMBOL_DATABASE_BATCH_SIZE_BYTES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum symbol size to upload (in bytes).\nDefault value is 1 mb.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SYMBOL_DATABASE_COMPRESSION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling compression for symbols payload.\nDefault value is true (enabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SYMBOL_DATABASE_THIRD_PARTY_DETECTION_EXCLUDES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a separated comma list of libraries to exclude in the 3rd party detection\nDefault value is empty.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SYMBOL_DATABASE_THIRD_PARTY_DETECTION_INCLUDES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a separated comma list of libraries to include in the 3rd party detection\nDefault value is empty.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_SYMBOL_DATABASE_UPLOAD_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for allowing upload of symbol data (such as method names, parameter names, etc) to Datadog.\nDefault value is true (enabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TAGS",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Tags to apply to produced data. Must be a list of <key>:<value> separated by commas and/or spaces.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for whether dependency data is sent via telemetry.\nRequired for some ASM features. Default value is <c>true</c> (enabled).\n<see cref=\"Datadog.Trace.Telemetry.TelemetrySettings.DependencyCollectionEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_HEARTBEAT_INTERVAL",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Sets the interval for the telemetry status heartbeat (in seconds)",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_LOG_COLLECTION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for whether to enable redacted error log collection.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TELEMETRY_METRICS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for whether telemetry metrics should be sent.\n<see cref=\"Datadog.Trace.Telemetry.TelemetrySettings.MetricsEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TESTSESSION_COMMAND",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the test session command that was executed.\nThis is used to track the command line that initiated the test session.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TESTSESSION_WORKINGDIRECTORY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the test session working directory.\nThis is used to track the working directory where the test session was executed.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the number of retries to fix a flaky test.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_MANAGEMENT_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the Test Management feature.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TEST_SESSION_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for set the test session name",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_THIRD_PARTY_DETECTION_EXCLUDES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a separated comma list of libraries to exclude for the 3rd party detection\nDefault value is empty.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_THIRD_PARTY_DETECTION_INCLUDES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a separated comma list of libraries to include in the 3rd party detection\nDefault value is empty.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls whether new traces use 128-bit W3C trace IDs (32-character hexadecimal strings) or 64-bit Datadog trace IDs (16-character hexadecimal strings). The default is true to support W3C trace context propagation.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls whether 128-bit trace IDs are logged in their full 32-character format or truncated to 16 characters. Set to false for compatibility with systems that expect the shorter format.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ACTIVITY_LISTENER_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Whether activity listener is enabled",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AGENT_ARGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for arguments to pass to the Trace Agent process.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AGENT_PATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for when a standalone instance of the Trace Agent needs to be started.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AGENT_PORT",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "The port of the Trace Agent that the tracer submits to. If the [Agent configuration][13] sets receiver_port or DD_APM_RECEIVER_PORT to something other than the default 8126, then DD_TRACE_AGENT_PORT or DD_TRACE_AGENT_URL must match it.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AGENT_URL",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "The URL for connecting the tracer to the Datadog agent. Valid URL schemas include http:// and unix:// (UNIX Domain Sockets). This value takes precedence over DD_AGENT_HOST and DD_TRACE_AGENT_PORT if set.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ANALYTICS_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling default Analytics.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.AnalyticsEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AWS_ADD_SPAN_POINTERS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for toggling span pointers on AWS requests.\nDefault value is true",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AZURE_EVENTHUBS_BATCH_LINKS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables span links for event hub messages sent in a batch",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_AZURE_SERVICEBUS_BATCH_LINKS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "AZURE_SERVICEBUS_BATCH_LINKS_ENABLED",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BAGGAGE_MAX_BYTES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set the maximum number of bytes that can be\ninjected into the baggage header when propagating to a downstream service.\nDefault value is 8192 bytes.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.BaggageMaximumBytes\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BAGGAGE_MAX_ITEMS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set the maximum number of items that can be\ninjected into the baggage header when propagating to a downstream service.\nDefault value is 64 items.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.BaggageMaximumItems\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BAGGAGE_TAG_KEYS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for controlling which baggage keys are converted into span tags.\nDefault value is \"user.id,session.id,account.id\".\n\nBehavior options:\n- Empty string: No baggage keys are converted into span tags (feature disabled)\n- Comma-separated list: Only baggage keys matching exact, case-sensitive names in the list are added as span tags\n- Wildcard (*): All baggage keys are converted into span tags\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.BaggageTagKeys\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BATCH_INTERVAL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the batch interval in milliseconds for the serialization queue.\nSet to 0 to disable.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BUFFER_SIZE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the size in bytes of the trace buffer",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_BYPASS_HTTP_REQUEST_URL_CACHING_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "When enabled, the request URL is built without using the cached HttpRequest.Url value to avoid triggering URL caching behavior. This can prevent issues in environments where caching the URL early can affect application behavior.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CLIENT_IP_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables or disables the automatic collection of client IP addresses from HTTP request headers. When enabled, the IP address is stored in the http.client_ip span tag.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CLIENT_IP_HEADER",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configures a custom header name from which to source the http.client_ip tag value. If this variable is set, all other IP-related headers are ignored (for example, setting DD_TRACE_CLIENT_IP_HEADER=custom-ip-header and including the header custom-ip-header: 5.6.7.9 in a request results in a span tagged with \"http.client_ip\": \"5.6.7.9\"). If an empty string or null value is passed, IP headers are queried in this order: - x-forwarded-for - x-real-ip - true-client-ip - x-client-ip - x-forwarded - forwarded-for - x-cluster-client-ip - fastly-client-ip - cf-connecting-ip - cf-connecting-ipv6",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_COMMANDS_COLLECTION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Controls whether command-line details are collected for process execution instrumentation. When enabled, the executable and arguments may be captured (truncated as needed); when disabled, command-line details are omitted.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_CONFIG_FILE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the path to the configuration file.\nCan only be set with an environment variable\nor in the <c>app.config</c>/<c>web.config</c> file.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DATA_PIPELINE_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Use libdatadog data pipeline to send traces.\nDefault value is <c>false</c> (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Enable debug logging in the tracer. Use OTEL_LOG_LEVEL as an alias",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG_LOOKUP_FALLBACK",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for forcing the automatic instrumentation to only use the fallback method lookup mechanism.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG_LOOKUP_MDTOKEN",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for forcing the automatic instrumentation to only use the mdToken method lookup mechanism.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DELAY_WCF_INSTRUMENTATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to enable or disable the updated WCF instrumentation that delays execution\nuntil later in the WCF pipeline when the WCF server exception handling is established.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.DelayWcfInstrumentationEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DISABLED_ACTIVITY_SOURCES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a list of ActivitySource names (supports globbing) that will be disabled.\nDefault is empty (all ActivitySources will be subscribed to by default).\n<para><b>Disabling ActivitySources may break distributed tracing if those Activities are used to propagate trace context.</b></para>\n<para>\nSupports multiple values separated with commas.\nFor example: \"SomeGlob.*.PatternSource,Some.Specific.Source\"\n</para>\n<remarks>\n<para>\nWhen the tracer doesn't subscribe to an ActivitySource, we will <em>NOT</em> propagate the trace context from those Activities (we don't see them anymore).\n<br/><b>This means that distributed tracing flows that rely on these Activities for context propagation\nwill break and cause disconnected traces.</b>\n</para>\n<para>\nPotential impact on distributed tracing:\n<list type=\"bullet\">\n<item>\n  <description>\n    Service A -> Ignored Activity -> Service B\n    <para>Creates a single trace with Service A as root and Service B as child</para>\n  </description>\n</item>\n<item>\n  <description>\n    Service A -> Disabled Activity -> Service B\n    <para>Creates TWO separate traces with Service A and Service B each as root spans</para>\n  </description>\n</item>\n</list>\n</para>\n</remarks>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DISABLED_ADONET_COMMAND_TYPES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the comma-separated list of user disabled\nADO.NET CommandType names that should not have Span created for them.\n<para>\"InterceptableDbCommand\" and \"ProfiledDbCommand\" are always disabled by default.</para>\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.DisabledAdoNetCommandTypes\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the Tracer.\nDefault value is true (enabled).\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.TraceEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_EXPAND_ROUTE_TEMPLATES_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for controlling whether route parameters in ASP.NET and ASP.NET Core resource names\nshould be expanded with their values. Only applies when\n<see cref=\"ConfigurationKeys.FeatureFlags.RouteTemplateResourceNamesEnabled\"/> is enabled.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.ExpandRouteTemplatesEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key to enable experimental features.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GIT_METADATA_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling the tagging of every telemetry event with git metadata.\nDefault value is true (enabled).\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.GitMetadataEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GRAPHQL_ERROR_EXTENSIONS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for specifying which GraphQL error extensions to capture.\nA comma-separated list of extension keys to capture. Empty or not present means no extensions are captured.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.GraphQLErrorExtensions\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_GRPC_TAGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a map of metadata keys to tag names.\nAutomatically apply GRPC metadata values as tags on traces.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.HeaderTags\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HEADER_TAGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Automatically apply specified HTTP headers as span tags. If a custom tag name is not specified, the tag key defaults to http.request.headers.<normalized-header-name> for request headers and http.response.headers.<normalized-header-name> for response headers.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HEADER_TAG_NORMALIZATION_FIX_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables a fix for header tags normalization.\nWe used to normalize tag names even if they were specified in user configuration, but we should not.\nDefault value is <c>true</c>.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_ERROR_STATUSES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the application's client http statuses to set spans as errors by.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.HttpClientErrorStatusCodes\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_EXCLUDED_URL_SUBSTRINGS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for overriding which URLs are skipped by the tracer.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.HttpClientExcludedUrlSubstrings\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_SERVER_ERROR_STATUSES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the application's server http statuses to set spans as errors by.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.HttpServerErrorStatusCodes\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "When enabled, inferred proxy spans are created for supported upstream proxies based on incoming request headers. This can surface proxy services (for example API gateways) as separate spans/services in traces.",
+          "shortDescription": "",
+          "source": "llm_generated"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        },
+        {
+          "source": "in_code_documentation",
+          "reason": "not_found"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_INJECT_CONTEXT_INTO_STORED_PROCEDURES_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to enable or disable the injection of the Datadog trace context into stored procedures.\nDefault value is <c>false</c> (disabled).\nWhen enabled, Datadog trace context will be injected into individual stored procedure calls when the following requirements are met:\n<ul>\n  <li>The database is Microsoft SQL Server and <see cref=\"TracerSettings.DbmPropagationMode\"/> is set to \n<c>service</c> or \n<c>full</c>.</li>\n  <li>The stored procedure call does not have <c>Output</c>, <c>InputOutput</c>, or <c>Return</c> ADO.NET command parameters.</li>\n</ul>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_KAFKA_CREATE_CONSUMER_SCOPE_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to enable or disable the creation of a span context on exiting a successful Kafka\nConsumer.Consume() call, and closing the scope on entering Consumer.Consume().\nDefault value is <c>true</c> (enabled).\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.KafkaCreateConsumerScopeEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOGFILE_RETENTION_DAYS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting in number of days when to delete log files based on their last writetime date.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOGGING_RATE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the number of seconds between,\nidentical log messages, for Tracer log files.\nDefault value is 0 and setting to 0 disables rate limiting.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOG_DIRECTORY",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for setting the directory of the .NET Tracer logs.\nOverrides the value in <see cref=\"Datadog.Trace.Configuration.ConfigurationKeys.TraceLogPath\"/> if present.\nDefault value is \"%ProgramData%\"\\Datadog .NET Tracer\\logs\\\" on Windows\nor \"/var/log/datadog/dotnet/\" on Linux.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOG_PATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Deprecated, use DD_TRACE_LOG_DIRECTORY instead, and make sure it is a directory and not a file path",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOG_SINKS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for locations to write internal diagnostic logs.\nCurrently only <c>file</c> is supported\nDefaults to <c>file</c>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_METHODS",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for enabling automatic instrumentation on specified methods.\nDefault value is \"\" (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_METRICS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling internal metrics sent to DogStatsD.\nDefault value is <c>false</c> (disabled).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "Applies a regex to redact sensitive data from query strings on incoming HTTP requests. The default regex matches various sensitive data patterns, including passwords, tokens, API keys, private keys, and authorization terms. Matches are replaced with <redacted>. If an empty string is passed, no obfuscation occurs. The resulting value is reported in the http.url tag.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP_TIMEOUT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for specifying a timeout in milliseconds to the execution of the query string obfuscation regex\nDefault value is 200ms\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.ObfuscationQueryStringRegexTimeout\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_OTEL_ENABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "When true, OpenTelemetry-based tracing for custom instrumentation is enabled.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PARTIAL_FLUSH_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables incrementally flushing large traces to the Datadog Agent, reducing the chance of rejection by the Agent. Use only when you have long-lived traces or traces with many spans.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Number of spans before partially exporting a trace. This prevents keeping all the spans in memory for very large traces.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for automatically populating the peer.service tag\nfrom predefined precursor attributes when the span attribute schema is v0.\nThis is ignored when the span attribute schema is v1 or later.\nDefault value is false",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PEER_SERVICE_MAPPING",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a map of services to rename.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.PeerServiceNameMappings\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PIPE_NAME",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the named pipe where the Tracer can send traces.\nDefault value is <c>null</c>.\n<seealso cref=\"Datadog.Trace.Configuration.ExporterSettings.TracesPipeName\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PIPE_TIMEOUT_MS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the timeout in milliseconds for named pipes communication.\nDefault value is <c>0</c>.\n<seealso cref=\"Datadog.Trace.Configuration.ExporterSettings.TracesPipeTimeoutMs\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for setting the header extraction propagation behavior. Accepted values are:\n<ul>\n  <li>continue: Extracted span context becomes the parent and baggage is propagated</li>\n  <li>restart: Extracted span context becomes a span link (a new trace is started) and baggage is propagated</li>\n  <li>ignore: We disregard the incoming trace context headers and we also disregard baggage</li>\n</ul>\nDefault value is continue.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_EXTRACT_FIRST",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to configure if propagation should only extract the first header once a configure\npropagator extracts a valid trace context.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.PropagationExtractFirstOnly\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_EXTRACT",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "A comma-separated list of header formats from which to attempt to extract distributed tracing propagation data. The first format found with complete and valid headers is used to define the trace to continue.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_INJECT",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "A comma-separated list of header formats to include to propagate distributed traces between services.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_RATE_LIMIT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Sets the maximum number of traces to sample per second; applies only when either DD_TRACE_SAMPLING_RULES or DD_TRACE_SAMPLE_RATE is set.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for unifying client service names when the span\nattribute schema is v0. This is ignored when the span attribute\nschema is v1 or later.\nDefault value is false",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ROUTE_TEMPLATE_RESOURCE_NAMES_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Feature Flag: enables updated resource names on `aspnet.request`, `aspnet-mvc.request`,\n`aspnet-webapi.request`, and `aspnet_core.request` spans. Enables `aspnet_core_mvc.request` spans and\nadditional features on `aspnet_core.request` spans.\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.RouteTemplateResourceNamesEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLE_RATE",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Controls the ingestion sample rate (between 0.0 and 1.0) between the Agent and the backend. Use OTEL_TRACES_SAMPLER as an alias",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLING_RULES",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for setting custom sampling rules based on regular expressions.\nSemi-colon separated list of sampling rules.\nThe rule is matched in order of specification. The first match in a list is used.\n\nPer entry:\n  The item \"sample_rate\" is required in decimal format.\n  The item \"service\" is optional in regular expression format, to match on service name.\n  The item \"name\" is optional in regular expression format, to match on operation name.\n\nTo give a rate of 50% to any traces in a service starting with the text \"cart\":\n  '[{\"sample_rate\":0.5, \"service\":\"cart.*\"}]'\n\nTo give a rate of 20% to any traces which have an operation name of \"http.request\":\n  '[{\"sample_rate\":0.2, \"name\":\"http.request\"}]'\n\nTo give a rate of 100% to any traces within a service named \"background\" and with an operation name of \"sql.query\":\n  '[{\"sample_rate\":1.0, \"service\":\"background\", \"name\":\"sql.query\"}]\n\nTo give a rate of 10% to all traces\n  '[{\"sample_rate\":0.1}]'\n\nTo configure multiple rules, separate by semi-colon and order from most specific to least specific:\n  '[{\"sample_rate\":0.5, \"service\":\"cart.*\"}, {\"sample_rate\":0.2, \"name\":\"http.request\"}, {\"sample_rate\":1.0, \"service\":\"background\", \"name\":\"sql.query\"}, {\"sample_rate\":0.1}]'\n\nIf no rules are specified, or none match, default internal sampling logic will be used.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.CustomSamplingRules\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLING_RULES_FORMAT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for setting the format of <see cref=\"Datadog.Trace.Configuration.MutableSettings.CustomSamplingRules\"/>.\nValid values are <c>regex</c> or <c>glob</c>.\nIf the value is not recognized, trace sampling rules are disabled.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SERVICE_MAPPING",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a map of services to rename.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.ServiceNameMappings\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SINGLE_SPAN_ASPNETCORE_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Enables generating only a single span in the ASP.NET Core integration,  by only creating `aspnet_core.request` spans, without creating handler spans or tracking specific route values. Not compatible with\n  DD_TRACE_ROUTE_TEMPLATE_RESOURCE_NAMES_ENABLED (that value is ignored), but may be used\n  with DD_TRACE_EXPAND_ROUTE_TEMPLATES_ENABLED. Only supported on .NET 6+",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for setting the schema version for service naming and span attributes\nAccepted values are: \"v1\", \"v0\"\nDefault value is \"v0\"",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_STARTUP_LOGS",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key for enabling or disabling the diagnostic log at startup\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.StartupDiagnosticLogEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_STATS_COMPUTATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for enabling computation of stats (aka trace metrics) on the tracer side",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_WCF_RESOURCE_OBFUSCATION_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Feature flag to enable obfuscating the <c>LocalPath</c> of a WCF request that goes\ninto the <c>resourceName</c> of a span.\n<para>Note: that this only applies when the WCF action is an empty string.</para>\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.WcfObfuscationEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_WCF_WEB_HTTP_RESOURCE_NAMES_ENABLED",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to enable or disable improved template-based resource names\nwhen using WCF Web HTTP. Requires <see cref=\"TracerSettings.DelayWcfInstrumentationEnabled\"/> be set\nto true. Enabled by default\n<seealso cref=\"Datadog.Trace.Configuration.TracerSettings.WcfWebHttpResourceNamesEnabled\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for the maximum length of an outgoing propagation header's value (\"x-datadog-tags\")\nwhen injecting it into downstream service calls.\n<remarks>\nThis value is not used when extracting an incoming propagation header from an upstream service.\n</remarks>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "DD_VERSION",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for the application's version. Sets the \"version\" tag on every <see cref=\"Span\"/>.\n<seealso cref=\"Datadog.Trace.Configuration.MutableSettings.ServiceVersion\"/>",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key to set the OTLP endpoint URL (fallback for metrics-specific endpoint).\nUsed when <see cref=\"ExporterOtlpMetricsEndpoint\"/> is not set.\nExpects values like `unix:///path/to/socket.sock` for UDS, `\\\\.\\pipename\\` for Windows Named Pipes.\nDefault values: gRPC: http://localhost:4317, HTTP: http://localhost:4318",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_HEADERS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set custom headers for OTLP export (fallback for metrics-specific headers).\nUsed when <see cref=\"ExporterOtlpMetricsHeaders\"/> is not set.\nFormat: api-key=key,other=value.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Endpoint URL for log data only, with an optionally-specified port number. Typically ends with v1/logs when using OTLP/HTTP.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "A map of headers to apply to all outgoing otlp logs.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Specifies the OTLP transport protocol to be used for log data.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_LOGS_TIMEOUT",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "The timeout value for all outgoing logs in milliseconds.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key to set the OTLP endpoint URL for metrics.\nTakes precedence over <see cref=\"ExporterOtlpEndpoint\"/>.\nThis value typically ends with v1/metrics when using OTLP/HTTP.\nExpects values like `unix:///path/to/socket.sock` for UDS, `\\\\.\\pipename\\` for Windows Named Pipes.\nDefault values: gRPC: http://localhost:4317, HTTP: http://localhost:4318/v1/metrics",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key to set custom headers for OTLP metrics export.\nTakes precedence over <see cref=\"ExporterOtlpHeaders\"/>.\nFormat: api-key=key,other=value.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key to set the OTLP protocol for metrics export.\nTakes precedence over <see cref=\"ExporterOtlpProtocol\"/>.\nValid values: grpc, http/protobuf, http/json, defaults to http/protobuf.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set the temporality preference for OTLP metrics export.\nSupported values: delta, cumulative, lowmemory.\nDefault value is delta for Datadog.\nThis deviates from OpenTelemetry specification default of cumulative.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key to set the request timeout for OTLP metrics export in milliseconds.\nTakes precedence over <see cref=\"ExporterOtlpTimeoutMs\"/>.\nDefault value is 10000ms.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_PROTOCOL",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Default OTLP Protocol used by most OpenTelemetry SDKs (rust, python, .NET)",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_TIMEOUT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set the request timeout for OTLP export (fallback for metrics-specific timeout).\nUsed when <see cref=\"ExporterOtlpMetricsTimeoutMs\"/> is not set.\nDefault value is 10000ms.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_LOGS_EXPORTER",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Datadog SDKs that support OTLP log export should default to otlp; all others should default to None/null.",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_LOG_LEVEL",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key to set the log level.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_METRICS_EXPORTER",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set the exporter for metrics.\nWe only recognize the values of 'otlp' and 'none', a value of\n'none' disables the emission of metrics which is the\nequivalent of setting <see cref=\"ConfigurationKeys.RuntimeMetricsEnabled\"/>\nto false.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_METRIC_EXPORT_INTERVAL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set the export interval for metrics in milliseconds.\nSpecifies the time interval between the start of two export attempts.\nDefault value is 10000ms (10s) for Datadog.\nThis deviates from OpenTelemetry specification default of 60000ms (60s).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_METRIC_EXPORT_TIMEOUT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key to set the export timeout for metrics in milliseconds.\nSpecifies the maximum time allowed for collecting and exporting metrics.\nDefault value is 7500ms (7.5s) for Datadog.\nThis deviates from OpenTelemetry specification default of 30000ms (30s).",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_PROPAGATORS",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a list of tracing propagators.\nDatadog only supports a subset of the OpenTelemetry propagators.\nAlso, the 'b3' OpenTelemetry propagator is mapped to the\n'b3 single header' Datadog propagator.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_RESOURCE_ATTRIBUTES",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for a list of key-value pairs to be set as\nresource attributes. We currently map these to span tags.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_SDK_DISABLED",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key for disabling the OpenTelemetry API's.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_SERVICE_NAME",
+      "implementation": "B",
+      "results": [
+        {
+          "description": "Configuration key to set the application's default service name.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_EXPORTER",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key to set the exporter for traces.\nWe only recognize the value 'none', which is the\nequivalent of setting <see cref=\"ConfigurationKeys.TraceEnabled\"/>\nto false.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_SAMPLER",
+      "implementation": "C",
+      "results": [
+        {
+          "description": "Configuration key to set the sampler for traces.\nto false.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_SAMPLER_ARG",
+      "implementation": "D",
+      "results": [
+        {
+          "description": "Configuration key to set an additional argument for the\ntraces sampler.\nto false.",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "_DD_EXTENSION_ENDPOINT",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "The _DD_EXTENSION_ENDPOINT isn't a standard, globally recognized AWS environment variable or service, but likely refers to a custom or specific endpoint for a DataDog (DD) integration/extension within AWS, often used in Lambda functions or containerized apps via ECS/Fargate to send metrics/logs to Datadog's services (Agent/API), especially when using Datadog's AWS integrations or extensions for seamless observability",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "_DD_EXTENSION_PATH",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "String constants for configuring the dotnet tracer with aws platform",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "_DD_INTERNAL_IS_RUNNING_IN_CIVISIBILITY",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "An internal key used to \"tell\" tracer settings that we're running in CI Visibility mode",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    },
+    {
+      "key": "_DD_INTERNAL_TOPT_RUNID",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "An internal key used to share a runtime ID across all the processes started in a test session",
+          "shortDescription": "",
+          "source": "registry_doc"
+        }
+      ]
+    },
+    {
+      "key": "_DD_TRACE_STATS_COMPUTATION_INTERVAL",
+      "implementation": "A",
+      "results": [
+        {
+          "description": "Configuration key for configuring the interval (in seconds) for sending stats (aka trace metrics)\n\n# Keys without documentation in ConfigurationKeys.cs\n# These keys exist in supported-configurations.json but need documentation",
+          "shortDescription": "",
+          "source": "in_code_documentation"
+        }
+      ],
+      "missingSources": [
+        {
+          "source": "registry_doc",
+          "reason": "quality"
+        }
+      ]
+    }
+  ],
+  "missingConfigurations": []
+}

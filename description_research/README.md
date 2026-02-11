@@ -190,7 +190,7 @@ For every key+implementation from `supported_configurations.json`:
 
 ### 2 - Documentation - same language
 
-Label: `documentation_same_language` or `documentation_other_language`
+Label: `documentation_same_language`
 
 This step attempts to find descriptions in **existing tracer documentation for the same language as `lang`**.
 
@@ -201,50 +201,14 @@ Note: `lang` here refers to the tracer language (e.g. Go/Java/Ruby), not to docu
 - The previous step output `configurations_descriptions_step_1.json`
 - A local checkout of the Datadog documentation repository (or the ability to clone it): `https://github.com/DataDog/documentation`.
 
-#### What the AI should do
+#### Implementation note (current)
 
-Generate a **step 2 script** which reads step 1 output and produces `configurations_descriptions_step_2.json` by extracting descriptions from the Datadog documentation repo.
+The Datadog documentation repo is not reliably parseable with deterministic scripts (shortcodes, partials, mixed formats, tables, etc.).
+So step 2 is implemented as an **LLM-assisted extraction step**:
 
-**Script contract (expected by the pipeline):**
-
-- Inputs (CLI args or constants):
-  - `--lang` (example: `golang`)
-  - `--input` (path to `configurations_descriptions_step_1.json`)
-  - `--docs-repo` (path to local `DataDog/documentation` checkout)
-  - `--output` (directory where the output `configurations_descriptions_step_2.json` will be produced. Default: ./result)
-- Output:
-  - JSON file matching the schema defined above.
-
-**Documentation selection (deterministic):**
-
-- Scan documentation source files (e.g. `**/*.md`, `**/*.mdx`, `**/*.yaml`, `**/*.yml`) under the docs repo.
-- Prefer scanning files that are likely to describe tracer configuration:
-  - paths containing `tracing`, `apm`, `agent`, `serverless`, or `profiling`
-  - and paths that mention the tracer language (e.g. `go`, `golang`, `java`, `ruby`, ...)
-  - but still allow fallback to “scan everything” if nothing matches.
-
-**Per key extraction behavior:**
-
-For every entry in `missingConfigurations` from step 1:
-
-- Search the documentation for the exact configuration `key` (case-sensitive).
-- If multiple matches exist, select the best match using a deterministic scoring rule:
-  - Prefer file paths containing tracer docs keywords: `tracing`, `apm`, `agent`, `serverless`, `profiling`.
-  - Prefer file paths containing the tracer language hint for `lang` (e.g. `go`, `golang` for `golang`).
-  - De-prioritize file paths that look like changelogs/release notes (e.g. `release`, `changelog`).
-  - Tie-break by lexicographic file path, then by earliest match position within the file.
-- Extract the smallest useful, self-contained description deterministically:
-  - Take the paragraph surrounding the chosen match (bounded by blank lines), then trim.
-  - If the “paragraph” is actually a code block (starts with ``` or is indented code), move to the nearest adjacent non-code paragraph and use that instead.
-  - Prefer the sentence/paragraph that explains **what the key controls** and (when present) **how to format its value**.
-  - Do **not** paraphrase in this step; keep the text close to the documentation wording, but you may remove formatting artifacts (e.g. bullet markers, surrounding quotes) as long as meaning is preserved.
-  - Do not include large tables or unrelated sections; keep it concise.
-  - Reject extracted text that fails the quality bar.
-
-**Promotion bookkeeping:**
-
-- When a key moves from `missingConfigurations` to `documentedConfigurations`, the script should preserve previous missing info:
-  - Convert any prior `missingReasons` from step 1 into `missingSources` on the documented entry.
+- a deterministic script produces an LLM-fillable overrides JSON listing the missing key+implementation pairs
+- an LLM fills that file by searching the docs repo and copying the best available description text (no invention)
+- a deterministic materializer merges those overrides into step 1 output to produce `configurations_descriptions_step_2.json`
 
 #### Output rules
 
@@ -346,23 +310,22 @@ Label: `llm_generated`
 This is the fallback step for configurations that still have no usable extracted description.
 The LLM generates text by understanding **how the configuration is used**.
 
-Because LLM calls are inherently non-deterministic, step 4 is split into:
+At the moment, step 4 is implemented as:
 
-- a deterministic **context extraction** script (build inputs for the LLM)
-- a reviewable **overrides** file produced by the LLM (data, not code)
-- a deterministic **materializer** script that merges overrides into the final step JSON
+- a deterministic **key extraction** script producing an LLM-fillable JSON file
+- an LLM editing that JSON file in-place (reviewable data)
+- a deterministic **merger** script that applies those LLM-generated descriptions back into a step output JSON
 
 #### Inputs
 
-- The previous step output `configurations_descriptions_step_3.json`
-- A checkout of this repository (for code context)
-- A file containing LLM-generated overrides (see below)
+- A step output JSON to merge into (typically `configurations_descriptions_step_2.json` today; step 3 is not implemented yet)
+- A checkout of this repository (so the LLM can read code to stay accurate)
 
-#### What the AI should do
+#### What to do
 
-##### 4a - Generate the context extraction script (deterministic)
+##### 4a — Extract LLM-needed keys (deterministic)
 
-Before running the LLM, we must identify which keys still need **LLM-generated** descriptions.
+Before running the LLM, we must identify which key+implementation pairs still need **LLM-generated** descriptions.
 
 LLM needing keys are:
 
@@ -375,35 +338,31 @@ To extract those keys deterministically, use:
 ```shell
 cd description_research
 python3 step_4a_extract_llm_needed_keys.py \
-  --input ./result/configurations_descriptions_step_3.json \
+  --input ./result/configurations_descriptions_step_2.json \
   --output ./result/configurations_llm_needed_keys.json
 ```
 
-If you haven't run step 3 yet, you can point `--input` at `./result/configurations_descriptions_step_2.json` instead.
+The output file groups the pairs into the three buckets above under `llmNeeded.*`.
+Each pair object contains a `"description": ""` field intended to be filled by an LLM.
 
-Generate a script that reads step 3 output and produces a JSON “context packet” for the keys still needing LLM-generated descriptions.
-This context packet is what the LLM will use to write accurate descriptions.
+##### 4b — Fill `configurations_llm_needed_keys.json` with an LLM (reviewable data)
 
-**Script contract (expected by the pipeline):**
+Run the LLM **in Cursor** with access to this repository. Edit in place:
 
-- Inputs (CLI args or constants):
-  - `--lang` (example: `golang`)
-  - `--input` (path to `configurations_descriptions_step_3.json`)
-  - `--repo-root` (path to this repo checkout)
-  - `--output` (path to `description_research/configurations_descriptions_step_4_context.json`)
-- Output:
-  - `description_research/configurations_descriptions_step_4_context.json` (deterministic JSON)
+- Input/output file: `@description_research/result/configurations_llm_needed_keys.json`
 
-**Context packet requirements (per key+implementation):**
+Rules:
 
-For each `(key, implementation)` still needing LLM-generated descriptions after steps 1–3, include enough context for an LLM to describe it accurately:
+- Use this repo’s code as the source of truth (do not guess).
+- If you can’t determine behavior confidently, leave `"description": ""`.
+- Keep descriptions user-facing: **1–3 sentences**, self-contained, specific, not trivially short.
+- Do not change `key` / `implementation` values.
 
 - where the key is read (package/file/function if available)
 - how it is parsed (type, allowed values, default behavior)
 - what behavior it controls
 - any constraints, deprecations, or compatibility notes
 
-The script must not call an LLM. It only gathers and formats context deterministically.
 
 ##### 4b - Produce overrides with an LLM (reviewable data)
 
@@ -465,7 +424,7 @@ Rules:
 - Do not include markdown, code fences, or commentary in your output.
 
 Output:
-Update the source file @description_research/result/configurations_llm_needed_keys_empty.json
+Update the source file @description_research/result/configurations_llm_needed_keys.json
 complete the "description"
 
 Constraints:
@@ -478,55 +437,7 @@ Selection:
 - If an entry already exists in the overrides file for the same (key, implementation), do not change it unless you are strictly increasing correctness (and explain via a code comment in the PR, not in the JSON).
 ```
 
-**Validation checklist (runner should enforce):**
-
-- Output parses as JSON and is an array.
-- Every entry has `key`, `implementation`, `description`, `shortDescription` (all non-empty strings).
-- `shortDescription` length is reasonable (roughly 6–14 words).
-- `description` is not trivially short and passes the “quality bar”.
-- No duplicate `(key, implementation)` pairs.
-
-**Overrides file format (recommended):**
-
-An array of entries (one per key+implementation) with:
-
-- `key`
-- `implementation`
-- `description` (1–3 sentences, user-facing)
-- `shortDescription` (one-liner, roughly 6–14 words)
-
-##### 4c - Generate the materializer script (deterministic)
-
-Generate a script that reads step 3 output plus the overrides file and produces the final `configurations_descriptions_step_4.json`.
-
-**Script contract (expected by the pipeline):**
-
-- Inputs (CLI args or constants):
-  - `--lang` (example: `golang`)
-  - `--input` (path to `configurations_descriptions_step_3.json`)
-  - `--overrides` (path to `description_research/configurations_descriptions_step_4_overrides.json`)
-  - `--output` (path to `configurations_descriptions_step_4.json`)
-- Output:
-  - JSON file matching the schema defined above.
-
-**Merge rules:**
-
-- For each missing `(key, implementation)`, if an overrides entry exists and passes the quality bar:
-  - move it to `documentedConfigurations`
-  - add a `results` entry with `source: "llm_generated"` and both `description` and `shortDescription` filled
-  - preserve previous missing info by converting prior `missingReasons` into `missingSources`
-- If no overrides entry exists:
-  - keep it missing and add `{ "source": "llm_generated", "reason": "not_found" }`
-- If an overrides entry exists but is unusable:
-  - keep it missing and add `{ "source": "llm_generated", "reason": "quality" }`
-
-#### Output rules
-
-- Create `configurations_descriptions_step_4.json` using the same schema.
-- For keys documented in this step:
-  - Move them from `missingConfigurations` to `documentedConfigurations`.
-  - Add a `results` entry with `source: "llm_generated"` and both `description` and `shortDescription` filled.
-- `shortDescription` may remain `""` for extracted results from earlier steps (unless the pipeline decides to run a dedicated summarization step later). For `llm_generated` results, it must be non-empty.
+This adds `results[]` entries with `source: "llm_generated"` and promotes any keys that were still missing.
 
 ## Run
 
