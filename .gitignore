@@ -30,3 +30,5 @@ coverage-*.txt
 # Editors and Agents
 /.cursor
 /.vscode
+/.claude/*
+!/.claude/commands/
