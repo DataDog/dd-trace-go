@@ -19,6 +19,82 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
+const (
+	v1ImportPrefix        = "gopkg.in/DataDog/dd-trace-go.v1"
+	v1ContribImportPrefix = v1ImportPrefix + "/contrib/"
+	v2ImportPrefix        = "github.com/DataDog/dd-trace-go/v2"
+	v2ContribImportPrefix = "github.com/DataDog/dd-trace-go/contrib/"
+)
+
+// v2ContribModulePaths contains contrib module roots where /v2 must be inserted.
+// It mirrors the contrib module layout in this repository (see contrib/**/go.mod).
+// We could use instrumentation.GetPackages() to get the list of packages, but it would be
+// more complex to derive the v2 import path from TracedPackage field.
+var v2ContribModulePaths = []string{
+	"99designs/gqlgen",
+	"IBM/sarama",
+	"Shopify/sarama",
+	"aws/aws-sdk-go",
+	"aws/aws-sdk-go-v2",
+	"aws/datadog-lambda-go",
+	"bradfitz/gomemcache",
+	"cloud.google.com/go/pubsub.v1",
+	"cloud.google.com/go/pubsub.v2",
+	"confluentinc/confluent-kafka-go/kafka",
+	"confluentinc/confluent-kafka-go/kafka.v2",
+	"database/sql",
+	"dimfeld/httptreemux.v5",
+	"elastic/go-elasticsearch.v6",
+	"emicklei/go-restful.v3",
+	"envoyproxy/go-control-plane",
+	"gin-gonic/gin",
+	"globalsign/mgo",
+	"go-chi/chi",
+	"go-chi/chi.v5",
+	"go-pg/pg.v10",
+	"go-redis/redis",
+	"go-redis/redis.v7",
+	"go-redis/redis.v8",
+	"go.mongodb.org/mongo-driver",
+	"go.mongodb.org/mongo-driver.v2",
+	"gocql/gocql",
+	"gofiber/fiber.v2",
+	"gomodule/redigo",
+	"google.golang.org/api",
+	"google.golang.org/api/internal/gen_endpoints",
+	"google.golang.org/grpc",
+	"gorilla/mux",
+	"gorm.io/gorm.v1",
+	"graph-gophers/graphql-go",
+	"graphql-go/graphql",
+	"haproxy/stream-processing-offload",
+	"hashicorp/consul",
+	"hashicorp/vault",
+	"jackc/pgx.v5",
+	"jmoiron/sqlx",
+	"julienschmidt/httprouter",
+	"k8s.io/client-go",
+	"k8s.io/gateway-api",
+	"labstack/echo.v4",
+	"log/slog",
+	"mark3labs/mcp-go",
+	"miekg/dns",
+	"modelcontextprotocol/go-sdk",
+	"net/http",
+	"olivere/elastic.v5",
+	"redis/go-redis.v9",
+	"redis/rueidis",
+	"segmentio/kafka-go",
+	"sirupsen/logrus",
+	"syndtr/goleveldb",
+	"tidwall/buntdb",
+	"twitchtv/twirp",
+	"uptrace/bun",
+	"urfave/negroni",
+	"valkey-io/valkey-go",
+	"valyala/fasthttp",
+}
+
 // KnownChange models code expressions that must be changed to migrate to v2.
 // It is defined by a set of probes that must be true to report the analyzed expression.
 // It also contains a message function that returns a string describing the change.
@@ -120,6 +196,38 @@ func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
 	return true
 }
 
+func rewriteV1ImportPath(path string) string {
+	if contribPath, ok := strings.CutPrefix(path, v1ContribImportPrefix); ok {
+		return rewriteV1ContribImportPath(contribPath)
+	}
+	return strings.Replace(path, v1ImportPrefix, v2ImportPrefix, 1)
+}
+
+func rewriteV1ContribImportPath(contribPath string) string {
+	modulePath := contribPath
+	subpkgPath := ""
+	longestMatch := ""
+	for _, candidate := range v2ContribModulePaths {
+		if contribPath != candidate && !strings.HasPrefix(contribPath, candidate+"/") {
+			continue
+		}
+		if len(candidate) > len(longestMatch) {
+			longestMatch = candidate
+		}
+	}
+	if longestMatch != "" {
+		modulePath = longestMatch
+		subpkgPath = strings.TrimPrefix(contribPath, longestMatch)
+		subpkgPath = strings.TrimPrefix(subpkgPath, "/")
+	}
+
+	path := v2ContribImportPrefix + modulePath + "/v2"
+	if subpkgPath != "" {
+		path += "/" + subpkgPath
+	}
+	return path
+}
+
 type V1ImportURL struct {
 	defaultKnownChange
 }
@@ -134,17 +242,7 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 		return nil
 	}
 
-	const v1Prefix = "gopkg.in/DataDog/dd-trace-go.v1"
-	const contribPrefix = v1Prefix + "/contrib/"
-
-	if strings.HasPrefix(path, contribPrefix) {
-		// Contrib imports: gopkg.in/DataDog/dd-trace-go.v1/contrib/X → github.com/DataDog/dd-trace-go/contrib/X/v2
-		contribPath := strings.TrimPrefix(path, contribPrefix)
-		path = "github.com/DataDog/dd-trace-go/contrib/" + contribPath + "/v2"
-	} else {
-		// Core imports: gopkg.in/DataDog/dd-trace-go.v1/X → github.com/DataDog/dd-trace-go/v2/X
-		path = strings.Replace(path, v1Prefix, "github.com/DataDog/dd-trace-go/v2", 1)
-	}
+	path = rewriteV1ImportPath(path)
 
 	return []analysis.SuggestedFix{
 		{
@@ -153,7 +251,7 @@ func (c V1ImportURL) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%q", path)),
+					NewText: fmt.Appendf(nil, "%q", path),
 				},
 			},
 		},
