@@ -3,49 +3,49 @@ module github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
 go 1.25.0
 
 require (
-	cloud.google.com/go/pubsub v1.49.0
-	cloud.google.com/go/pubsub/v2 v2.0.0
-	github.com/99designs/gqlgen v0.17.83
+	cloud.google.com/go/pubsub v1.50.1
+	cloud.google.com/go/pubsub/v2 v2.4.0
+	github.com/99designs/gqlgen v0.17.86
 	github.com/DataDog/datadog-agent/pkg/proto v0.75.2
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.7.0-dev.1
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.7.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
 	github.com/DataDog/go-libddwaf/v4 v4.8.0
-	github.com/DataDog/orchestrion v1.6.1
+	github.com/DataDog/orchestrion v1.7.0
 	github.com/IBM/sarama v1.44.0
-	github.com/Shopify/sarama v1.38.1
-	github.com/aws/aws-sdk-go v1.55.5
+	github.com/Shopify/sarama v1.46.3
+	github.com/aws/aws-sdk-go v1.55.8
 	github.com/aws/aws-sdk-go-v2 v1.26.1
 	github.com/aws/aws-sdk-go-v2/config v1.27.11
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.11
-	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.31.1
+	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.55.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confluentinc/confluent-kafka-go v1.9.2
-	github.com/confluentinc/confluent-kafka-go/v2 v2.4.0
-	github.com/elastic/go-elasticsearch/v6 v6.8.5
-	github.com/elastic/go-elasticsearch/v7 v7.17.1
+	github.com/confluentinc/confluent-kafka-go/v2 v2.13.0
+	github.com/elastic/go-elasticsearch/v6 v6.8.10
+	github.com/elastic/go-elasticsearch/v7 v7.17.10
 	github.com/elastic/go-elasticsearch/v8 v8.12.1
-	github.com/gin-gonic/gin v1.10.1
-	github.com/go-chi/chi/v5 v5.2.2
+	github.com/gin-gonic/gin v1.11.0
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gocql/gocql v1.7.0
-	github.com/gofiber/fiber/v2 v2.52.9
-	github.com/gomodule/redigo v1.9.2
+	github.com/gofiber/fiber/v2 v2.52.11
+	github.com/gomodule/redigo v1.9.3
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
-	github.com/graph-gophers/graphql-go v1.5.0
+	github.com/graph-gophers/graphql-go v1.8.0
 	github.com/graphql-go/graphql v0.8.1
-	github.com/graphql-go/handler v0.2.3
+	github.com/graphql-go/handler v0.2.4
 	github.com/hashicorp/vault/api v1.15.0
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/julienschmidt/httprouter v1.3.0
-	github.com/labstack/echo/v4 v4.13.3
-	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/labstack/echo/v4 v4.13.4
+	github.com/mattn/go-sqlite3 v1.14.34
 	github.com/redis/go-redis/v9 v9.7.3
-	github.com/redis/rueidis v1.0.56
-	github.com/segmentio/kafka-go v0.4.42
+	github.com/redis/rueidis v1.0.71
+	github.com/segmentio/kafka-go v0.4.50
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.37.0
@@ -56,30 +56,30 @@ require (
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.37.0
 	github.com/testcontainers/testcontainers-go/modules/vault v0.37.0
-	github.com/tinylib/msgp v1.6.1
+	github.com/tinylib/msgp v1.6.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/valkey-io/valkey-go v1.0.56
-	github.com/valyala/fasthttp v1.58.0
+	github.com/valkey-io/valkey-go v1.0.71
+	github.com/valyala/fasthttp v1.69.0
 	github.com/vektah/gqlparser/v2 v2.5.31
 	github.com/xlab/treeprint v1.2.0
-	go.mongodb.org/mongo-driver v1.17.1
-	go.mongodb.org/mongo-driver/v2 v2.2.2
-	google.golang.org/api v0.239.0
-	google.golang.org/grpc v1.77.0
+	go.mongodb.org/mongo-driver v1.17.8
+	go.mongodb.org/mongo-driver/v2 v2.5.0
+	google.golang.org/api v0.259.0
+	google.golang.org/grpc v1.78.0
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
-	gorm.io/driver/sqlite v1.5.7
-	gorm.io/gorm v1.25.12
+	gorm.io/driver/sqlite v1.6.0
+	gorm.io/gorm v1.31.1
 	gotest.tools/v3 v3.5.2
 	k8s.io/apimachinery v0.35.0-alpha.0
 	k8s.io/client-go v0.35.0-alpha.0
 )
 
 require (
-	cloud.google.com/go v0.121.4 // indirect
-	cloud.google.com/go/auth v0.16.3 // indirect
+	cloud.google.com/go v0.123.0 // indirect
+	cloud.google.com/go/auth v0.18.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	cloud.google.com/go/iam v1.5.2 // indirect
+	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.75.2 // indirect
@@ -174,7 +174,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/x/ansi v0.10.2 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
-	github.com/charmbracelet/x/term v0.2.1 // indirect
+	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
@@ -218,7 +218,7 @@ require (
 	github.com/go-playground/validator/v10 v10.23.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
-	github.com/goccy/go-yaml v1.18.0 // indirect
+	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
@@ -227,8 +227,8 @@ require (
 	github.com/google/go-tpm v0.9.6 // indirect
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
-	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.7 // indirect
+	github.com/googleapis/gax-go/v2 v2.16.0 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -360,18 +360,18 @@ require (
 	golang.org/x/exp v0.0.0-20251209150349-8475f28825e9 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/oauth2 v0.32.0 // indirect
+	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/term v0.38.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.40.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/genproto v0.0.0-20250728155136-f173205681a0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
+	google.golang.org/genproto v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20251222181119-0a764e51fe1b // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251222181119-0a764e51fe1b // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
