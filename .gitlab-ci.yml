@@ -40,8 +40,13 @@ generate_matrix:
     - when: always
       interruptible: true
   script: |
+    echo "=== Debug: Environment ==="
+    echo "Image: ${BASE_CI_IMAGE}"
+    go version
+    go env GOTOOLCHAIN GOWORK
+    echo "=== End Debug ==="
     cd .gitlab
-    go run generate_config.go
+    GOWORK=off go run generate_config.go
     mv generated_benchmark_matrix.yml ../generated_benchmark_matrix.yml
   artifacts:
     paths:
