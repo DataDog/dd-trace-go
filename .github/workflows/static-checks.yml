@@ -7,18 +7,18 @@ on:
       - release-*
       - mq-working-branch-**
     tags-ignore:
-      - 'contrib/**'
-      - 'instrumentation/**'
-      - 'internal/**'
-      - 'orchestrion/**'
-      - 'scripts/**'
+      - "contrib/**"
+      - "instrumentation/**"
+      - "internal/**"
+      - "orchestrion/**"
+      - "scripts/**"
   workflow_call:
     inputs:
       go-version:
         required: true
         type: string
       ref:
-        description: 'The branch to run the workflow on'
+        description: "The branch to run the workflow on"
         required: true
         type: string
 
