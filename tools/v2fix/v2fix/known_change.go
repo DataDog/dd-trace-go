@@ -130,7 +130,7 @@ type contextHandler struct {
 
 func (c contextHandler) Context() context.Context {
 	if c.ctx == nil {
-		c.ctx = context.Background()
+		return context.Background()
 	}
 	return c.ctx
 }
