@@ -64,11 +64,8 @@ func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
 			pass.Report(analysis.Diagnostic{
 				Pos:            n.Pos(),
 				End:            n.End(),
-				Category:       "",
 				Message:        k.String(),
-				URL:            "",
 				SuggestedFixes: k.Fixes(),
-				Related:        nil,
 			})
 		})
 		return nil, nil
