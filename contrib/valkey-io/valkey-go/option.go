@@ -6,9 +6,10 @@
 package valkey
 
 import (
+	"github.com/valkey-io/valkey-go"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
-	"github.com/valkey-io/valkey-go"
 )
 
 type config struct {

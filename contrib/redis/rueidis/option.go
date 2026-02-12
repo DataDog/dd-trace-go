@@ -6,9 +6,10 @@
 package rueidis
 
 import (
+	"github.com/redis/rueidis"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
-	"github.com/redis/rueidis"
 )
 
 type config struct {

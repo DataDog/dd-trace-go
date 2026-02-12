@@ -14,9 +14,10 @@ import (
 	"sync"
 	"time"
 
+	of "github.com/open-feature/go-sdk/openfeature"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	of "github.com/open-feature/go-sdk/openfeature"
 )
 
 // evaluationResult contains the result of a flag evaluation.

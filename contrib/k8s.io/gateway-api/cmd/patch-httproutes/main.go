@@ -17,7 +17,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -26,6 +25,8 @@ import (
 	"k8s.io/utils/ptr"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	"sigs.k8s.io/yaml"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 var (

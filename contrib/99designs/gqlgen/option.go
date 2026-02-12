@@ -10,6 +10,7 @@ import (
 	"math"
 
 	"github.com/99designs/gqlgen/graphql"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	instrgraphql "github.com/DataDog/dd-trace-go/v2/instrumentation/graphql"
 )
