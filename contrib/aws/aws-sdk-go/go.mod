@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
-	github.com/aws/aws-sdk-go v1.44.327
+	github.com/aws/aws-sdk-go v1.55.8
 	github.com/stretchr/testify v1.11.1
 )
 
