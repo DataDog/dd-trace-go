@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/test/integration_tests/error
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.7.0-dev.1
