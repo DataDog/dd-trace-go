@@ -18,6 +18,7 @@ aspects:
             telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
             ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
+            strconv: strconv
           template: |-
             func init() {
               telemetry.LoadIntegration("rs/zerolog")
@@ -28,16 +29,12 @@ aspects:
             type DDContextLogHook struct{}
 
             // Run implements zerolog.Hook interface, attaches trace and span details found in entry context
-            func (d DDContextLogHook) Run(e *zerolog.Event, _ zerolog.Level, _ string) {
+            func (d DDContextLogHook) Run(e *Event, _ Level, _ string) {
                 span, found := tracer.SpanFromContext(e.GetCtx())
                 if !found {
                     return
                 }
-                if cfg.log128bits && span.Context().TraceID() != tracer.TraceIDZero {
-                    e.Str(ext.LogKeyTraceID, span.Context().TraceID())
-                } else {
-                    e.Str(ext.LogKeyTraceID, strconv.FormatUint(span.Context().TraceIDLower(), 10))
-                }
+                e.Str(ext.LogKeyTraceID, span.Context().TraceID())
                 e.Str(ext.LogKeySpanID, strconv.FormatUint(span.Context().SpanID(), 10))
             }
   - id: New
