@@ -6,7 +6,6 @@
 package v2fix
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
@@ -175,10 +174,8 @@ func (d defaultKnownChange) Pos() token.Pos {
 }
 
 func (d defaultKnownChange) pkgPrefix() string {
-	if pkg, ok := d.ctx.Value(pkgPrefixKey).(string); ok && pkg != "" {
-		return pkg
-	}
-	return ""
+	pkg, _ := d.ctx.Value(pkgPrefixKey).(string)
+	return pkg
 }
 
 func eval(k KnownChange, n ast.Node, pass *analysis.Pass) bool {
@@ -301,7 +298,6 @@ func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
 	if pkg == "" {
 		return nil
 	}
-	newText := fmt.Sprintf("%s%s.%s", typePrefix, pkg, typeObj.Name())
 	return []analysis.SuggestedFix{
 		{
 			Message: "the declared type is in the ddtrace/tracer package now",
@@ -309,7 +305,7 @@ func (c DDTraceTypes) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(newText),
+					NewText: fmt.Appendf(nil, "%s%s.%s", typePrefix, pkg, typeObj.Name()),
 				},
 			},
 		},
@@ -347,8 +343,11 @@ func (c TracerStructs) Fixes() []analysis.SuggestedFix {
 	typeExprStr, ok := c.ctx.Value(typeExprStrKey).(string)
 	if !ok || typeExprStr == "" {
 		// Fallback to building from declared type (handles both *types.Named and *types.Alias)
-		typ := c.ctx.Value(declaredTypeKey)
-		typeObj := typeNameFromType(typ.(types.Type))
+		typ, ok := c.ctx.Value(declaredTypeKey).(types.Type)
+		if !ok {
+			return nil
+		}
+		typeObj := typeNameFromType(typ)
 		if typeObj == nil {
 			return nil
 		}
@@ -361,7 +360,7 @@ func (c TracerStructs) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("*%s", typeExprStr)),
+					NewText: fmt.Appendf(nil, "*%s", typeExprStr),
 				},
 			},
 		},
@@ -410,7 +409,7 @@ func (c WithServiceName) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.WithService(%s)", pkg, exprString(args[0]))),
+					NewText: fmt.Appendf(nil, "%s.WithService(%s)", pkg, exprToString(args[0])),
 				},
 			},
 		},
@@ -438,11 +437,6 @@ func (TraceIDString) Clone() KnownChange {
 }
 
 func (c TraceIDString) Fixes() []analysis.SuggestedFix {
-	fn, ok := c.ctx.Value(fnKey).(*types.Func)
-	if !ok || fn == nil {
-		return nil
-	}
-
 	callExpr, ok := c.ctx.Value(callExprKey).(*ast.CallExpr)
 	if !ok {
 		return nil
@@ -461,7 +455,7 @@ func (c TraceIDString) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.TraceIDLower()", exprString(sel.X))),
+					NewText: fmt.Appendf(nil, "%s.TraceIDLower()", exprToString(sel.X)),
 				},
 			},
 		},
@@ -505,7 +499,7 @@ func (c WithDogstatsdAddr) Fixes() []analysis.SuggestedFix {
 				{
 					Pos:     c.Pos(),
 					End:     c.End(),
-					NewText: []byte(fmt.Sprintf("%s.WithDogstatsdAddr(%s)", pkg, exprString(args[0]))),
+					NewText: fmt.Appendf(nil, "%s.WithDogstatsdAddr(%s)", pkg, exprToString(args[0])),
 				},
 			},
 		},
