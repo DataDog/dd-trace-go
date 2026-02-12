@@ -32,7 +32,7 @@ func main() {
 	defer child3.Finish()
 
 	// ChildOf with binary expression in option argument (now supported)
-	child5 := parent.StartChild("child5", tracer.ResourceName("a" + "b")) // want `use StartChild instead of StartSpan with ChildOf`
+	child5 := parent.StartChild("child5", tracer.ResourceName("a"+"b")) // want `use StartChild instead of StartSpan with ChildOf`
 	defer child5.Finish()
 
 	// ChildOf with a SpanContext (not a Span) - diagnostic but no fix
