@@ -50,8 +50,11 @@ func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
 		ins.Preorder(filter, func(n ast.Node) {
 			var k KnownChange
 			for _, c := range knownChanges {
-				if eval(c, n, pass) {
-					k = c
+				// Clone the KnownChange to avoid data races when multiple
+				// goroutines analyze different packages concurrently.
+				clone := c.Clone()
+				if eval(clone, n, pass) {
+					k = clone
 					break
 				}
 			}
@@ -61,11 +64,8 @@ func (c Checker) runner() func(*analysis.Pass) (interface{}, error) {
 			pass.Report(analysis.Diagnostic{
 				Pos:            n.Pos(),
 				End:            n.End(),
-				Category:       "",
 				Message:        k.String(),
-				URL:            "",
 				SuggestedFixes: k.Fixes(),
-				Related:        nil,
 			})
 		})
 		return nil, nil

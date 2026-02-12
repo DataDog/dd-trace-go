@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.8.2

@@ -21,7 +21,6 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
-  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
   TEST_RESULT_PATH: /tmp/test-results
 
 permissions:
@@ -43,6 +42,10 @@ jobs:
         with:
           ref: ${{ github.sha }}
           clean: false
+      - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version: stable
+          cache: false
 
       - name: Compute Matrix
         id: matrix
