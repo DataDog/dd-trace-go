@@ -134,20 +134,18 @@ func runWithSuggestedFixesUpdate(t *testing.T, dir string, a *analysis.Analyzer,
 
 			var golden bytes.Buffer
 
-			if len(messages) == 1 {
-				// Single message: use simple txtar format with one section
-				msg := messages[0]
+			multiMessage := len(messages) > 1
+			for _, msg := range messages {
 				edits := fixes[msg]
 
 				out, err := applyEdits(orig, edits)
 				if err != nil {
-					t.Errorf("error applying edits to %s: %v", fileName, err)
+					t.Errorf("error applying edits to %s for message %q: %v", fileName, msg, err)
 					continue
 				}
 
 				formatted, err := format.Source(out)
 				if err != nil {
-					// If formatting fails, use unformatted
 					formatted = out
 				}
 
@@ -155,26 +153,7 @@ func runWithSuggestedFixesUpdate(t *testing.T, dir string, a *analysis.Analyzer,
 				golden.WriteString(msg)
 				golden.WriteString(" --\n")
 				golden.Write(formatted)
-			} else {
-				// Multiple messages: create txtar archive with multiple sections
-				for _, msg := range messages {
-					edits := fixes[msg]
-
-					out, err := applyEdits(orig, edits)
-					if err != nil {
-						t.Errorf("error applying edits to %s for message %q: %v", fileName, msg, err)
-						continue
-					}
-
-					formatted, err := format.Source(out)
-					if err != nil {
-						formatted = out
-					}
-
-					golden.WriteString("-- ")
-					golden.WriteString(msg)
-					golden.WriteString(" --\n")
-					golden.Write(formatted)
+				if multiMessage {
 					golden.WriteString("\n")
 				}
 			}
