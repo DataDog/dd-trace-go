@@ -560,6 +560,18 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 	if pkg == "" {
 		return nil
 	}
+
+	// Pre-render all args to strings once; bail if any can't be rendered
+	// (e.g. binary expressions like 1.0/2 produce empty values).
+	argStrs := make([]string, len(args))
+	for i, arg := range args {
+		s := exprToString(arg)
+		if s == "" {
+			return nil
+		}
+		argStrs[i] = s
+	}
+
 	var parts []string
 
 	switch fn.Name() {
@@ -567,60 +579,43 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 		if len(args) < 2 {
 			return nil
 		}
-		service := args[0]
-		rate := args[1]
-		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
-		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", argStrs[0]))
+		parts = append(parts, fmt.Sprintf("Rate: %s", argStrs[1]))
 	case "NameRule":
 		if len(args) < 2 {
 			return nil
 		}
-		name := args[0]
-		rate := args[1]
-		parts = append(parts, fmt.Sprintf("NameGlob: %s", exprString(name)))
-		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+		parts = append(parts, fmt.Sprintf("NameGlob: %s", argStrs[0]))
+		parts = append(parts, fmt.Sprintf("Rate: %s", argStrs[1]))
 	case "RateRule":
 		if len(args) < 1 {
 			return nil
 		}
-		rate := args[0]
-		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+		parts = append(parts, fmt.Sprintf("Rate: %s", argStrs[0]))
 	case "NameServiceRule", "SpanNameServiceRule":
 		if len(args) < 3 {
 			return nil
 		}
-		name := args[0]
-		service := args[1]
-		rate := args[2]
-		parts = append(parts, fmt.Sprintf("NameGlob: %s", exprString(name)))
-		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
-		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+		parts = append(parts, fmt.Sprintf("NameGlob: %s", argStrs[0]))
+		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", argStrs[1]))
+		parts = append(parts, fmt.Sprintf("Rate: %s", argStrs[2]))
 	case "SpanNameServiceMPSRule":
 		if len(args) < 4 {
 			return nil
 		}
-		name := args[0]
-		service := args[1]
-		rate := args[2]
-		limit := args[3]
-		parts = append(parts, fmt.Sprintf("NameGlob: %s", exprString(name)))
-		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
-		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
-		parts = append(parts, fmt.Sprintf("MaxPerSecond: %s", exprString(limit)))
+		parts = append(parts, fmt.Sprintf("NameGlob: %s", argStrs[0]))
+		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", argStrs[1]))
+		parts = append(parts, fmt.Sprintf("Rate: %s", argStrs[2]))
+		parts = append(parts, fmt.Sprintf("MaxPerSecond: %s", argStrs[3]))
 	case "TagsResourceRule", "SpanTagsResourceRule":
 		if len(args) < 5 {
 			return nil
 		}
-		tags := args[0]
-		resource := args[1]
-		name := args[2]
-		service := args[3]
-		rate := args[4]
-		parts = append(parts, fmt.Sprintf("Tags: %s", exprString(tags)))
-		parts = append(parts, fmt.Sprintf("ResourceGlob: %s", exprString(resource)))
-		parts = append(parts, fmt.Sprintf("NameGlob: %s", exprString(name)))
-		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", exprString(service)))
-		parts = append(parts, fmt.Sprintf("Rate: %s", exprString(rate)))
+		parts = append(parts, fmt.Sprintf("Tags: %s", argStrs[0]))
+		parts = append(parts, fmt.Sprintf("ResourceGlob: %s", argStrs[1]))
+		parts = append(parts, fmt.Sprintf("NameGlob: %s", argStrs[2]))
+		parts = append(parts, fmt.Sprintf("ServiceGlob: %s", argStrs[3]))
+		parts = append(parts, fmt.Sprintf("Rate: %s", argStrs[4]))
 	}
 
 	var ruleType string
@@ -650,49 +645,6 @@ func (c DeprecatedSamplingRules) Fixes() []analysis.SuggestedFix {
 
 func (c DeprecatedSamplingRules) String() string {
 	return "a deprecated sampling rule constructor function should be replaced with a tracer.Rule{...} struct literal"
-}
-
-func exprListString(exprs []ast.Expr) string {
-	var buf bytes.Buffer
-	for i, expr := range exprs {
-		if i > 0 {
-			buf.WriteString(", ")
-		}
-		buf.WriteString(exprString(expr))
-	}
-	return buf.String()
-}
-
-func exprCompositeString(expr *ast.CompositeLit) string {
-	var buf bytes.Buffer
-	buf.WriteString(exprString(expr.Type))
-	buf.WriteString("{")
-	for _, expr := range expr.Elts {
-		buf.WriteString(exprString(expr))
-		buf.WriteString(",")
-	}
-	buf.WriteString("}")
-	return buf.String()
-}
-
-func exprString(expr ast.Expr) string {
-	switch expr := expr.(type) {
-	case *ast.SelectorExpr:
-		return exprString(expr.X) + "." + exprString(expr.Sel)
-	case *ast.CompositeLit:
-		return exprCompositeString(expr)
-	case *ast.KeyValueExpr:
-		return exprString(expr.Key) + ":" + exprString(expr.Value)
-	case *ast.MapType:
-		return "map[" + exprString(expr.Key) + "]" + exprString(expr.Value)
-	case *ast.BasicLit:
-		return expr.Value
-	case *ast.Ident:
-		return expr.Name
-	case *ast.CallExpr:
-		return exprString(expr.Fun) + "(" + exprListString(expr.Args) + ")"
-	}
-	return ""
 }
 
 // ChildOfStartChild handles the transformation of tracer.StartSpan("op", tracer.ChildOf(parent.Context()))
