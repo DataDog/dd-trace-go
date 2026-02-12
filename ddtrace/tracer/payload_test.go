@@ -666,3 +666,27 @@ func TestMsgsizeAnalysis(t *testing.T) {
 		t.Logf("%d spans with 1KB each: msgsize=%d bytes", numSpans, msgsize)
 	}
 }
+
+func BenchmarkPayloadVersions(b *testing.B) {
+	b.Run("v0.4", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			b.StopTimer()
+			spans := newSpanList(b.N)
+			b.StartTimer()
+			p := newPayloadV04()
+			_, _ = p.push(spans)
+		}
+	})
+
+	b.Run("v1.0", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			b.StopTimer()
+			spans := newSpanList(b.N)
+			b.StartTimer()
+			p := newPayloadV1()
+			_, _ = p.push(spans)
+		}
+	})
+}
