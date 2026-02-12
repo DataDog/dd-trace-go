@@ -15,8 +15,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Configuration key which has the running version of the Azure App Services Site Extension.    This
-        env var is set in the <c>applicationHost.xdt
+    - description: Configuration key which has the running version of the Azure App Services Site Extension.    This env var is set in the <c>applicationHost.xdt
       source: registry_doc
       lang: dotnet
 - key: DD_AAS_ENABLE_CUSTOM_METRICS
@@ -57,8 +56,7 @@ documentedConfigurations:
     - description: AWS CodePipeline action execution ID for CI correlation.
       source: in_code_documentation
       lang: dotnet
-    - description: Sets the action execution ID reported as CI metadata for AWS CodePipeline builds. This value
-        is used as the CI job identifier when running a CodeBuild job initiated by CodePipeline.
+    - description: Sets the action execution ID reported as CI metadata for AWS CodePipeline builds. This value is used as the CI job identifier when running a CodeBuild job initiated by CodePipeline.
       source: llm_generated
       lang: golang
 - key: DD_AGENT_FEATURE_POLLING_ENABLED
@@ -85,8 +83,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: The host name to use to connect the Datadog agent for traces. The host name can be IPv4, IPv6,
-        or a domain name. If DD_TRACE_AGENT_URL is specified, the value of DD_AGENT_HOST is ignored.
+    - description: The host name to use to connect the Datadog agent for traces. The host name can be IPv4, IPv6, or a domain name. If DD_TRACE_AGENT_URL is specified, the value of DD_AGENT_HOST is ignored.
       source: registry_doc
       lang: golang
   - implementation: D
@@ -94,8 +91,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: The host name to use to connect the Datadog agent for traces. The host name can be IPv4, IPv6,
-        or a domain name. If DD_TRACE_AGENT_URL is specified, the value of DD_AGENT_HOST is ignored.
+    - description: The host name to use to connect the Datadog agent for traces. The host name can be IPv4, IPv6, or a domain name. If DD_TRACE_AGENT_URL is specified, the value of DD_AGENT_HOST is ignored.
       source: registry_doc
       lang: dotnet
 - key: DD_API_KEY
@@ -137,9 +133,7 @@ documentedConfigurations:
          For example, for a service foo that runs in prod and has its main package in ./cmd/foo, you should add this step:
       source: documentation_same_language
       lang: golang
-    - description: Sets the API key used to authenticate outbound requests when running in agentless mode (sending
-        data directly instead of via a local agent). This key is required for agentless CI test reporting and LLM
-        Observability agentless mode.
+    - description: Sets the API key used to authenticate outbound requests when running in agentless mode (sending data directly instead of via a local agent). This key is required for agentless CI test reporting and LLM Observability agentless mode.
       source: llm_generated
       lang: golang
 - key: DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE
@@ -151,8 +145,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Defines the probability of a downstream request body being sampled, or said differently, defines
-        the overall number of requests for which the request and response body should be sampled / analysed.
+    - description: Defines the probability of a downstream request body being sampled, or said differently, defines the overall number of requests for which the request and response body should be sampled / analysed.
       source: registry_doc
       lang: golang
 - key: DD_API_SECURITY_ENABLED
@@ -166,8 +159,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: When ASM is enabled, collects in spans endpoints apis schemas analyzed by the waf, default value
-        is true.
+    - description: When ASM is enabled, collects in spans endpoints apis schemas analyzed by the waf, default value is true.
       source: in_code_documentation
       lang: dotnet
     - description: 'Set environment variables for your application. Add these to your Dockerfile:'
@@ -176,8 +168,7 @@ documentedConfigurations:
     - description: 'Set environment variables for your application. Add these to your deployment configuration file:'
       source: documentation_same_language
       lang: golang
-    - description: 'Set environment variables for your application. Add these to your deployment configuration or
-        shell environment:'
+    - description: 'Set environment variables for your application. Add these to your deployment configuration or shell environment:'
       source: documentation_same_language
       lang: golang
     - description: Controls whether API Security features are enabled. If unset, API Security is enabled by default.
@@ -194,12 +185,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: with a default value of true, it allows a customer to disable the collection of endpoints for
-        API Security.
+    - description: with a default value of true, it allows a customer to disable the collection of endpoints for API Security.
       source: in_code_documentation
       lang: dotnet
-    - description: Controls whether API endpoint definitions are collected for API catalog features. If unset, endpoint
-        collection is enabled by default.
+    - description: Controls whether API endpoint definitions are collected for API catalog features. If unset, endpoint collection is enabled by default.
       source: llm_generated
       lang: golang
 - key: DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT
@@ -213,12 +202,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: with a default value of 300, it defines the maximum number of endpoints to be collected (serialized)
-        for API Security.
+    - description: with a default value of 300, it defines the maximum number of endpoints to be collected (serialized) for API Security.
       source: in_code_documentation
       lang: dotnet
-    - description: Sets the maximum number of API endpoints included in a single endpoint-collection telemetry message.
-        If unset, a default limit is used.
+    - description: Sets the maximum number of API endpoints included in a single endpoint-collection telemetry message. If unset, a default limit is used.
       source: llm_generated
       lang: golang
 - key: DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS
@@ -230,8 +217,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: The maximum number of downstream requests per request for which the request and response body
-        should be analysed.
+    - description: The maximum number of downstream requests per request for which the request and response body should be analysed.
       source: registry_doc
       lang: golang
 - key: DD_API_SECURITY_PARSE_RESPONSE_BODY
@@ -255,8 +241,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: API Security schema extraction for proxies. The value represents the number of schemas extracted
-        per minute (samples per minute).
+    - description: API Security schema extraction for proxies. The value represents the number of schemas extracted per minute (samples per minute).
       source: registry_doc
       lang: golang
 - key: DD_API_SECURITY_REQUEST_SAMPLE_RATE
@@ -268,8 +253,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Sets the sampling rate for API Security schema extraction. Values are clamped to the range 0.0
-        to 1.0; if unset or invalid, a default rate is used.
+    - description: Sets the sampling rate for API Security schema extraction. Values are clamped to the range 0.0 to 1.0; if unset or invalid, a default rate is used.
       source: llm_generated
       lang: golang
 - key: DD_API_SECURITY_SAMPLE_DELAY
@@ -283,12 +267,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: Api security sample delay in seconds , should be a float. Set to 0 for testing purposes. default
-        value of 30.
+    - description: Api security sample delay in seconds , should be a float. Set to 0 for testing purposes. default value of 30.
       source: in_code_documentation
       lang: dotnet
-    - description: Sets the delay (in seconds) between API Security schema samples. This setting is intended for
-        system testing and is not meant for general use.
+    - description: Sets the delay (in seconds) between API Security schema samples. This setting is intended for system testing and is not meant for general use.
       source: llm_generated
       lang: golang
 - key: DD_APM_ENABLE_RARE_SAMPLER
@@ -300,8 +282,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Enables rare trace sampling in the Datadog Agent. When enabled, the Agent can keep a small number
-        of "rare" traces (up to 5 traces per second per Agent) that were not kept by head-based sampling.
+    - description: Enables rare trace sampling in the Datadog Agent. When enabled, the Agent can keep a small number of "rare" traces (up to 5 traces per second per Agent) that were not kept by head-based sampling.
       source: llm_generated
       lang: dotnet
 - key: DD_APM_RECEIVER_PORT
@@ -405,8 +386,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: 'Configure the connection from the external processor to the Datadog Agent using these environment
-        variables:'
+    - description: 'Configure the connection from the external processor to the Datadog Agent using these environment variables:'
       source: documentation_same_language
       lang: golang
     - description: |-
@@ -430,9 +410,7 @@ documentedConfigurations:
         | DD_SERVICE | spoa | Service name shown in the Datadog UI. |
       source: documentation_same_language
       lang: golang
-    - description: Sets the maximum number of bytes of HTTP request and response bodies to buffer and analyze for
-        security features when running behind a proxy/external processing integration. Values of 0 or less disable
-        body analysis, and bodies larger than the limit are truncated.
+    - description: Sets the maximum number of bytes of HTTP request and response bodies to buffer and analyze for security features when running behind a proxy/external processing integration. Values of 0 or less disable body analysis, and bodies larger than the limit are truncated.
       source: llm_generated
       lang: golang
 - key: DD_APPSEC_ENABLED
@@ -451,8 +429,7 @@ documentedConfigurations:
         Default value is false (disabled).
       source: in_code_documentation
       lang: dotnet
-    - description: '5. Redeploy your Go service and enable App and API Protection by setting the DD_APPSEC_ENABLED
-        environment variable to true:'
+    - description: '5. Redeploy your Go service and enable App and API Protection by setting the DD_APPSEC_ENABLED environment variable to true:'
       source: documentation_same_language
       lang: golang
     - description: |-
@@ -461,12 +438,10 @@ documentedConfigurations:
         2. The runtime stage copies the built application into a minimal Ubuntu image and sets the environment variable DD_APPSEC_ENABLED to true to enable App and API Protection.
       source: documentation_same_language
       lang: golang
-    - description: To disable APM tracing while keeping App and API Protection enabled, you must set the APM tracing
-        variable to false.
+    - description: To disable APM tracing while keeping App and API Protection enabled, you must set the APM tracing variable to false.
       source: documentation_same_language
       lang: golang
-    - description: Controls whether application security features are enabled at startup. If set, it forces the
-        features on (true) or off (false); when unset, it starts in standby and can be activated remotely.
+    - description: Controls whether application security features are enabled at startup. If set, it forces the features on (true) or off (false); when unset, it starts in standby and can be activated remotely.
       source: llm_generated
       lang: golang
 - key: DD_APPSEC_EXTRA_HEADERS
@@ -493,8 +468,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Blocking response template for HTML content. This template is used in combination with the status
-        code to craft and send a response upon blocking the request.
+    - description: Blocking response template for HTML content. This template is used in combination with the status code to craft and send a response upon blocking the request.
       source: in_code_documentation
       lang: dotnet
   - implementation: C
@@ -502,12 +476,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: The HTML and JSON content can both be changed using the DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML
-        and DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON environment variables within your application deployment file.
+    - description: The HTML and JSON content can both be changed using the DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML and DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON environment variables within your application deployment file.
       source: documentation_same_language
       lang: golang
-    - description: Path to a file containing a custom HTML response body used when an HTTP request is blocked. If
-        set, the file contents replace the built-in blocked-response template.
+    - description: Path to a file containing a custom HTML response body used when an HTTP request is blocked. If set, the file contents replace the built-in blocked-response template.
       source: llm_generated
       lang: golang
 - key: DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON
@@ -520,8 +492,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Blocking response template for Json content. This template is used in combination with the status
-        code to craft and send a response upon blocking the request.
+    - description: Blocking response template for Json content. This template is used in combination with the status code to craft and send a response upon blocking the request.
       source: in_code_documentation
       lang: dotnet
   - implementation: C
@@ -529,12 +500,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: The HTML and JSON content can both be changed using the DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML
-        and DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON environment variables within your application deployment file.
+    - description: The HTML and JSON content can both be changed using the DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML and DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON environment variables within your application deployment file.
       source: documentation_same_language
       lang: golang
-    - description: Path to a file containing a custom JSON response body used when an HTTP request is blocked. If
-        set, the file contents replace the built-in blocked-response template.
+    - description: Path to a file containing a custom JSON response body used when an HTTP request is blocked. If set, the file contents replace the built-in blocked-response template.
       source: llm_generated
       lang: golang
 - key: DD_APPSEC_IPHEADER
@@ -604,8 +573,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: with a default value of 75, defines the percentage of frames taken from the top of the stack
-        when trimming. Min 0, Max 100
+    - description: with a default value of 75, defines the percentage of frames taken from the top of the stack when trimming. Min 0, Max 100
       source: in_code_documentation
       lang: dotnet
 - key: DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP
@@ -631,8 +599,7 @@ documentedConfigurations:
         A regex string to redact sensitive data by its key in attack reports.
       source: documentation_same_language
       lang: golang
-    - description: Regular expression used to identify parameter keys whose values should be redacted in security
-        event payloads. If unset or invalid, a default pattern is used.
+    - description: Regular expression used to identify parameter keys whose values should be redacted in security event payloads. If unset or invalid, a default pattern is used.
       source: llm_generated
       lang: golang
   - implementation: E
@@ -674,8 +641,7 @@ documentedConfigurations:
     - description: default value to true. Set to false to disable exploit prevention.
       source: in_code_documentation
       lang: dotnet
-    - description: Controls whether runtime application self-protection (RASP) features are enabled. If unset, RASP
-        is enabled by default.
+    - description: Controls whether runtime application self-protection (RASP) features are enabled. If unset, RASP is enabled by default.
       source: llm_generated
       lang: golang
 - key: DD_APPSEC_RULES
@@ -706,9 +672,7 @@ documentedConfigurations:
         A path to a custom AppSec rules file.
       source: documentation_same_language
       lang: golang
-    - description: Next, configure detection rules to create security signals based on those security traces defined
-        by the In-App WAF rules you created. You can modify the provided out-of-the-box AAP detection rules or create
-        new ones.
+    - description: Next, configure detection rules to create security signals based on those security traces defined by the In-App WAF rules you created. You can modify the provided out-of-the-box AAP detection rules or create new ones.
       source: documentation_same_language
       lang: golang
     - description: Path to a file containing custom security rules. If not set, built-in recommended rules are used.
@@ -738,8 +702,7 @@ documentedConfigurations:
         - Manually, using the DD_APPSEC_SCA_ENABLED environment variable.
       source: documentation_same_language
       lang: golang
-    - description: 'SCA is configured by setting the -Ddd.appsec.sca.enabled flag or the DD_APPSEC_SCA_ENABLED environment
-        variable to true in supported languages:'
+    - description: 'SCA is configured by setting the -Ddd.appsec.sca.enabled flag or the DD_APPSEC_SCA_ENABLED environment variable to true in supported languages:'
       source: documentation_same_language
       lang: golang
     - description: |-
@@ -754,8 +717,7 @@ documentedConfigurations:
         | Software Composition Analysis | DD_APPSEC_SCA_ENABLED |
       source: documentation_same_language
       lang: golang
-    - description: Controls whether Software Composition Analysis is enabled. When set, the configured value is
-        recorded in instrumentation telemetry.
+    - description: Controls whether Software Composition Analysis is enabled. When set, the configured value is recorded in instrumentation telemetry.
       source: llm_generated
       lang: golang
 - key: DD_APPSEC_STACK_TRACE_ENABLED
@@ -768,8 +730,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: with a default value of true, it allows a customer to disable the generation of stack traces,
-        for any ASM-specific purpose such as RASP.
+    - description: with a default value of true, it allows a customer to disable the generation of stack traces, for any ASM-specific purpose such as RASP.
       source: in_code_documentation
       lang: dotnet
   - implementation: B
@@ -777,8 +738,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether security-related stack traces are generated. If set to false, stack trace collection
-        is disabled.
+    - description: Controls whether security-related stack traces are generated. If set to false, stack trace collection is disabled.
       source: llm_generated
       lang: golang
 - key: DD_APPSEC_TRACE_RATE_LIMIT
@@ -847,19 +807,13 @@ documentedConfigurations:
          For example, for a service foo that runs in prod and has its main package in ./cmd/foo, you should add this step:
       source: documentation_same_language
       lang: golang
-    - description: You **must** set your Datadog API and application keys as secrets in your GitHub repository whether
-        at the organization or repository level. Ensure that you add the code_analysis_read scope to your Datadog
-        application key. For more information, see API and Application Keys.
+    - description: You **must** set your Datadog API and application keys as secrets in your GitHub repository whether at the organization or repository level. Ensure that you add the code_analysis_read scope to your Datadog application key. For more information, see API and Application Keys.
       source: documentation_same_language
       lang: golang
-    - description: You **must** set your Datadog API and application keys as secrets in your GitHub repository,
-        at either the organization or repository level. Ensure that you add the code_analysis_read scope to your
-        Datadog application key. For more information, see API and Application Keys.
+    - description: You **must** set your Datadog API and application keys as secrets in your GitHub repository, at either the organization or repository level. Ensure that you add the code_analysis_read scope to your Datadog application key. For more information, see API and Application Keys.
       source: documentation_same_language
       lang: golang
-    - description: Sets the application key used to authenticate LLM Observability dataset and experiment requests
-        in agentless mode. If agentless mode is enabled and this is not set, dataset/experiment operations that
-        require an application key will fail.
+    - description: Sets the application key used to authenticate LLM Observability dataset and experiment requests in agentless mode. If agentless mode is enabled and this is not set, dataset/experiment operations that require an application key will fail.
       source: llm_generated
       lang: golang
 - key: DD_AZURE_APP_SERVICES
@@ -871,8 +825,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Configuration key which is used as a flag to tell us whether we are instrumenting an Azure App
-        Service using the AAS Site Extension.
+    - description: Configuration key which is used as a flag to tell us whether we are instrumenting an Azure App Service using the AAS Site Extension.
       source: registry_doc
       lang: dotnet
 - key: DD_CIVISIBILITY_AGENTLESS_ENABLED
@@ -891,8 +844,7 @@ documentedConfigurations:
         Default value is false (disabled).
       source: in_code_documentation
       lang: dotnet
-    - description: When CI test instrumentation and reporting is enabled, sends payloads directly to the intake
-        endpoint instead of through a local agent/proxy. Requires DD_API_KEY to be set.
+    - description: When CI test instrumentation and reporting is enabled, sends payloads directly to the intake endpoint instead of through a local agent/proxy. Requires DD_API_KEY to be set.
       source: llm_generated
       lang: golang
 - key: DD_CIVISIBILITY_AGENTLESS_URL
@@ -909,8 +861,7 @@ documentedConfigurations:
     - description: Configuration key for setting the agentless url endpoint
       source: in_code_documentation
       lang: dotnet
-    - description: Overrides the intake base URL used for agentless CI test reporting. When set, payloads are sent
-        to this URL instead of the default site-based intake URL.
+    - description: Overrides the intake base URL used for agentless CI test reporting. When set, payloads are sent to this URL instead of the default site-based intake URL.
       source: llm_generated
       lang: golang
 - key: DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER
@@ -923,8 +874,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Marks CI test sessions as running under an auto-instrumentation workflow. Any non-empty value
-        enables this marker for telemetry.
+    - description: Marks CI test sessions as running under an auto-instrumentation workflow. Any non-empty value enables this marker for telemetry.
       source: llm_generated
       lang: golang
   - implementation: B
@@ -1043,12 +993,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: Prior to setting up Test Impact Analysis, set up Test Optimization for Java. If you are reporting
-        data through the Agent, use v6.40 and later or v7.40 and later.
+    - description: Prior to setting up Test Impact Analysis, set up Test Optimization for Java. If you are reporting data through the Agent, use v6.40 and later or v7.40 and later.
       source: documentation_same_language
       lang: golang
-    - description: Enables CI test instrumentation and reporting. When false, CI test features remain disabled even
-        if the process is instrumented for them.
+    - description: Enables CI test instrumentation and reporting. When false, CI test features remain disabled even if the process is instrumented for them.
       source: llm_generated
       lang: golang
   - implementation: B
@@ -1159,8 +1107,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Kill-switch for impacted tests detection in CI test reporting. Set to false to disable the feature
-        even if it is enabled by remote settings.
+    - description: Kill-switch for impacted tests detection in CI test reporting. Set to false to disable the feature even if it is enabled by remote settings.
       source: llm_generated
       lang: golang
   - implementation: B
@@ -1180,8 +1127,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether early flake detection retries can run in parallel in CI test reporting. Defaults
-        to false.
+    - description: Controls whether early flake detection retries can run in parallel in CI test reporting. Defaults to false.
       source: llm_generated
       lang: golang
 - key: DD_CIVISIBILITY_ITR_ENABLED
@@ -1240,8 +1186,7 @@ documentedConfigurations:
     - description: Enables/disables CI Visibility log submission
       source: documentation_same_language
       lang: golang
-    - description: Enables collection and direct upload of log events correlated with CI test executions. When disabled,
-        CI test logs are not captured or sent.
+    - description: Enables collection and direct upload of log events correlated with CI test executions. When disabled, CI test logs are not captured or sent.
       source: llm_generated
       lang: golang
 - key: DD_CIVISIBILITY_RUM_FLUSH_WAIT_MILLIS
@@ -1265,8 +1210,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Kill-switch for subtest-specific CI test management and retry features. Set to false to disable
-        subtest features even if they are enabled by remote settings.
+    - description: Kill-switch for subtest-specific CI test management and retry features. Set to false to disable subtest features even if they are enabled by remote settings.
       source: llm_generated
       lang: golang
 - key: DD_CIVISIBILITY_TESTSSKIPPING_ENABLED
@@ -1278,8 +1222,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Configuration key for enabling or disabling Intelligent Test Runner test skipping feature in
-        CI Visibility
+    - description: Configuration key for enabling or disabling Intelligent Test Runner test skipping feature in CI Visibility
       source: in_code_documentation
       lang: dotnet
 - key: DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT
@@ -1302,8 +1245,7 @@ documentedConfigurations:
         * DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT - a non-negative number to set the maximum total number of failed tests to retry (default: 1000)
       source: documentation_same_language
       lang: golang
-    - description: Sets the maximum total number of automatic test retries allowed across the entire test session.
-        This limit is applied when automatic flaky-test retries are enabled and defaults to 1000.
+    - description: Sets the maximum total number of automatic test retries allowed across the entire test session. This limit is applied when automatic flaky-test retries are enabled and defaults to 1000.
       source: llm_generated
       lang: golang
 - key: DD_CIVISIBILITY_USE_NOOP_TRACER
@@ -1315,8 +1257,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: When enabled in CI test reporting mode, uses a no-op tracer implementation to reduce changes
-        to test behavior. Defaults to false.
+    - description: When enabled in CI test reporting mode, uses a no-op tracer implementation to reduce changes to test behavior. Defaults to false.
       source: llm_generated
       lang: golang
 - key: DD_CODE_ORIGIN_FOR_SPANS_ENABLED
@@ -1393,8 +1334,7 @@ documentedConfigurations:
         | DD_CUSTOM_TRACE_ID | $(DD_CUSTOM_TRACE_ID)|
       source: documentation_same_language
       lang: golang
-    - description: When running under Jenkins CI, this value is captured as CI environment metadata and sent with
-        test reporting.
+    - description: When running under Jenkins CI, this value is captured as CI environment metadata and sent with test reporting.
       source: llm_generated
       lang: golang
 - key: DD_DATA_STREAMS_ENABLED
@@ -1419,8 +1359,7 @@ documentedConfigurations:
         - sets Datadog environment variables to apply to each target group and configure the SDKs.
       source: documentation_same_language
       lang: golang
-    - description: Enables Data Streams Monitoring. When enabled, the tracer initializes the Data Streams processor
-        and reports pathway data for supported messaging operations.
+    - description: Enables Data Streams Monitoring. When enabled, the tracer initializes the Data Streams processor and reports pathway data for supported messaging operations.
       source: llm_generated
       lang: golang
   - implementation: B
@@ -1459,14 +1398,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: To enable DBM to APM link using tag injection, can be set to 'service' or 'full'. The 'service'
-        option enables the connection between DBM and APM services. The 'full' option enables connection between
-        database spans with database query events. Available for Postgres.
+    - description: To enable DBM to APM link using tag injection, can be set to 'service' or 'full'. The 'service' option enables the connection between DBM and APM services. The 'full' option enables connection between database spans with database query events. Available for Postgres.
       source: registry_doc
       lang: dotnet
-    - description: To enable DBM to APM link using tag injection, can be set to 'service' or 'full'. The 'service'
-        option enables the connection between DBM and APM services. The 'full' option enables connection between
-        database spans with database query events. Available for Postgres.
+    - description: To enable DBM to APM link using tag injection, can be set to 'service' or 'full'. The 'service' option enables the connection between DBM and APM services. The 'full' option enables connection between database spans with database query events. Available for Postgres.
       source: registry_doc
       lang: golang
 - key: DD_DIAGNOSTIC_SOURCE_ENABLED
@@ -1652,8 +1587,7 @@ documentedConfigurations:
     - description: Set to true to enable Dynamic Instrumentation.
       source: documentation_same_language
       lang: golang
-    - description: Controls whether dynamic instrumentation is enabled. If explicitly set to false, remote configuration
-        cannot enable dynamic instrumentation at runtime.
+    - description: Controls whether dynamic instrumentation is enabled. If explicitly set to false, remote configuration cannot enable dynamic instrumentation at runtime.
       source: llm_generated
       lang: golang
 - key: DD_DYNAMIC_INSTRUMENTATION_MAX_DEPTH_TO_SERIALIZE
@@ -1705,8 +1639,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: A comma-separated list of identifiers to add to the disallow-list, which is used to redact values
-        in found.
+    - description: A comma-separated list of identifiers to add to the disallow-list, which is used to redact values in found.
       source: registry_doc
       lang: dotnet
 - key: DD_DYNAMIC_INSTRUMENTATION_REDACTED_TYPES
@@ -1807,8 +1740,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: When Agentless mode in Exception Replay is enabled we can use this configuration to force an
-        URL for the intake
+    - description: When Agentless mode in Exception Replay is enabled we can use this configuration to force an URL for the intake
       source: registry_doc
       lang: dotnet
 - key: DD_EXCEPTION_REPLAY_CAPTURE_FULL_CALLSTACK_ENABLED
@@ -1834,8 +1766,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Configuration key for the maximum number of frames in a call stack we would like to capture values
-        for.
+    - description: Configuration key for the maximum number of frames in a call stack we would like to capture values for.
       source: in_code_documentation
       lang: dotnet
 - key: DD_EXCEPTION_REPLAY_ENABLED
@@ -1908,8 +1839,7 @@ documentedConfigurations:
         Default value is <c>false</c> (disabled).
       source: in_code_documentation
       lang: dotnet
-    - description: Enables the experimental feature-flag provider that evaluates flags from remote configuration.
-        If not enabled, the provider is a no-op and returns default values.
+    - description: Enables the experimental feature-flag provider that evaluates flags from remote configuration. If not enabled, the provider is a no-op and returns default values.
       source: llm_generated
       lang: golang
 - key: DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED
@@ -1922,9 +1852,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: When enabled, adds process entrypoint metadata (such as base directory and working directory)
-        as tags on emitted telemetry such as traces and runtime metrics. This can help correlate data with the process
-        that produced it.
+    - description: When enabled, adds process entrypoint metadata (such as base directory and working directory) as tags on emitted telemetry such as traces and runtime metrics. This can help correlate data with the process that produced it.
       source: llm_generated
       lang: dotnet
   - implementation: B
@@ -1932,8 +1860,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether process-level tags (such as entrypoint metadata) are collected and included
-        in tracing metadata. If unset, this is enabled by default.
+    - description: Controls whether process-level tags (such as entrypoint metadata) are collected and included in tracing metadata. If unset, this is enabled by default.
       source: llm_generated
       lang: golang
 - key: DD_EXTERNAL_ENV
@@ -1950,8 +1877,7 @@ documentedConfigurations:
         - Inject Datadog standard tags (env, service, version) from application labels into the container environment variables.
       source: documentation_same_language
       lang: golang
-    - description: Sets an external environment identifier sent on tracer HTTP requests as the Datadog-External-Env
-        header. This value can be used by downstream systems to help determine request or metric origin.
+    - description: Sets an external environment identifier sent on tracer HTTP requests as the Datadog-External-Env header. This value can be used by downstream systems to help determine request or metric origin.
       source: llm_generated
       lang: golang
 - key: DD_GIT_BRANCH
@@ -1984,8 +1910,7 @@ documentedConfigurations:
     - description: branch being committed to
       source: documentation_same_language
       lang: golang
-    - description: Overrides the git branch name reported as CI metadata. Common ref prefixes (for example, refs/heads/
-        or origin/) are normalized away.
+    - description: Overrides the git branch name reported as CI metadata. Common ref prefixes (for example, refs/heads/ or origin/) are normalized away.
       source: llm_generated
       lang: golang
 - key: DD_GIT_COMMIT_AUTHOR_DATE
@@ -2247,8 +2172,7 @@ documentedConfigurations:
     - description: CI Visibility environment variable for pull request base branch.
       source: in_code_documentation
       lang: dotnet
-    - description: Overrides the pull request base branch reported as git metadata for CI features. Common ref prefixes
-        are removed from the value.
+    - description: Overrides the pull request base branch reported as git metadata for CI features. Common ref prefixes are removed from the value.
       source: llm_generated
       lang: golang
 - key: DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA
@@ -2265,8 +2189,7 @@ documentedConfigurations:
     - description: CI Visibility environment variable for pull request base branch SHA.
       source: in_code_documentation
       lang: dotnet
-    - description: Overrides the pull request base commit SHA reported as git metadata for CI features. Use this
-        to set the base commit when it cannot be detected automatically.
+    - description: Overrides the pull request base commit SHA reported as git metadata for CI features. Use this to set the base commit when it cannot be detected automatically.
       source: llm_generated
       lang: golang
 - key: DD_GIT_REPOSITORY_URL
@@ -2301,8 +2224,7 @@ documentedConfigurations:
         **Example**: git@github.com:MyCompany/MyApp.git, https://github.com/MyCompany/MyApp.git
       source: documentation_same_language
       lang: golang
-    - description: Overrides the git repository URL reported as CI metadata and used for git metadata tagging when
-        enabled. Any embedded credentials in the URL are stripped before use.
+    - description: Overrides the git repository URL reported as CI metadata and used for git metadata tagging when enabled. Any embedded credentials in the URL are stripped before use.
       source: llm_generated
       lang: golang
 - key: DD_GIT_TAG
@@ -2332,8 +2254,7 @@ documentedConfigurations:
         **Example**: 1.0.1
       source: documentation_same_language
       lang: golang
-    - description: Overrides the git tag name reported as CI metadata. Common ref prefixes (for example, refs/tags/
-        or origin/) are normalized away.
+    - description: Overrides the git tag name reported as CI metadata. Common ref prefixes (for example, refs/tags/ or origin/) are normalized away.
       source: llm_generated
       lang: golang
 - key: DD_HAPROXY_SPOA_HEALTHCHECK_PORT
@@ -2381,12 +2302,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: You can now use this new image to install the DDOT Collector. This enables Datadog monitoring
-        capabilities along with the additional OpenTelemetry components you've added.
+    - description: You can now use this new image to install the DDOT Collector. This enables Datadog monitoring capabilities along with the additional OpenTelemetry components you've added.
       source: documentation_same_language
       lang: golang
-    - description: Overrides the hostname used for tagging and telemetry when hostname auto-detection is unreliable.
-        The value must be a valid hostname; invalid values are ignored and hostname auto-detection is used instead.
+    - description: Overrides the hostname used for tagging and telemetry when hostname auto-detection is unreliable. The value must be a valid hostname; invalid values are ignored and hostname auto-detection is used instead.
       source: llm_generated
       lang: golang
 - key: DD_HTTP_CLIENT_ERROR_STATUSES
@@ -2710,8 +2629,7 @@ documentedConfigurations:
         Used for tracking and correlation purposes in telemetry.
       source: in_code_documentation
       lang: dotnet
-    - description: Sets the install ID included in instrumentation telemetry payloads and headers. This can be used
-        to correlate telemetry to a specific installation.
+    - description: Sets the install ID included in instrumentation telemetry payloads and headers. This can be used to correlate telemetry to a specific installation.
       source: llm_generated
       lang: golang
 - key: DD_INSTRUMENTATION_INSTALL_TIME
@@ -2830,8 +2748,7 @@ documentedConfigurations:
         **Default**: true
       source: documentation_same_language
       lang: golang
-    - description: Controls whether instrumentation telemetry is collected and sent. Set to false to disable instrumentation
-        telemetry.
+    - description: Controls whether instrumentation telemetry is collected and sent. Set to false to disable instrumentation telemetry.
       source: llm_generated
       lang: golang
 - key: DD_INSTRUMENTATION_TELEMETRY_URL
@@ -2873,8 +2790,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Controls how often remote configuration is polled, in seconds. Values must be greater than 0
-        and no more than 5.
+    - description: Controls how often remote configuration is polled, in seconds. Values must be greater than 0 and no more than 5.
       source: llm_generated
       lang: dotnet
 - key: DD_INTERNAL_TELEMETRY_DEBUG_ENABLED
@@ -2943,8 +2859,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Internal placeholder configuration key used for configuration-source tests and examples. It is
-        not used by the tracer at runtime.
+    - description: Internal placeholder configuration key used for configuration-source tests and examples. It is not used by the tracer at runtime.
       source: llm_generated
       lang: golang
 - key: DD_LLMOBS_AGENTLESS_ENABLED
@@ -2956,9 +2871,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether LLM Observability sends data directly to the intake (agentless mode) or through
-        an agent/proxy. If unset, the mode is chosen automatically based on agent support; setting it to false requires
-        an agent that supports LLM Observability.
+    - description: Controls whether LLM Observability sends data directly to the intake (agentless mode) or through an agent/proxy. If unset, the mode is chosen automatically based on agent support; setting it to false requires an agent that supports LLM Observability.
       source: llm_generated
       lang: golang
 - key: DD_LLMOBS_ENABLED
@@ -2982,12 +2895,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: The following environment variables have been removed or replaced. Update your configuration
-        with the new variables where applicable.
+    - description: The following environment variables have been removed or replaced. Update your configuration with the new variables where applicable.
       source: documentation_same_language
       lang: golang
-    - description: Sets the default ML app name used for LLM Observability data. This value is required when LLM
-        Observability is enabled.
+    - description: Sets the default ML app name used for LLM Observability data. This value is required when LLM Observability is enabled.
       source: llm_generated
       lang: golang
 - key: DD_LLMOBS_PROJECT_NAME
@@ -2999,8 +2910,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: This config allows to configure the default LLM Observability project to use. It is required
-        when using the Experiments and Datasets feature.
+    - description: This config allows to configure the default LLM Observability project to use. It is required when using the Experiments and Datasets feature.
       source: registry_doc
       lang: golang
 - key: DD_LOGGING_RATE
@@ -3012,8 +2922,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Sets how often aggregated internal errors are flushed to logs, in seconds. Set to 0 to log errors
-        immediately.
+    - description: Sets how often aggregated internal errors are flushed to logs, in seconds. Set to 0 to log errors immediately.
       source: llm_generated
       lang: golang
 - key: DD_LOGS_DIRECT_SUBMISSION_AZURE_FUNCTIONS_HOST_ENABLED
@@ -3198,8 +3107,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Sets the Datadog Agent logging level. Valid values are trace, debug, info, warn, error, critical,
-        or off.
+    - description: Sets the Datadog Agent logging level. Valid values are trace, debug, info, warn, error, critical, or off.
       source: llm_generated
       lang: dotnet
 - key: DD_MAX_LOGFILE_SIZE
@@ -3260,8 +3168,7 @@ documentedConfigurations:
         {% /if %}
       source: documentation_same_language
       lang: golang
-    - description: Enables OpenTelemetry metrics export. Metrics are disabled by default and are only enabled when
-        this is set to a truthy value.
+    - description: Enables OpenTelemetry metrics export. Metrics are disabled by default and are only enabled when this is set to a truthy value.
       source: llm_generated
       lang: golang
 - key: DD_METRICS_OTEL_METER_NAMES
@@ -3273,8 +3180,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: List of meters to add to the metrics exporter for the experimental OpenTelemetry Metrics API
-        support.
+    - description: List of meters to add to the metrics exporter for the experimental OpenTelemetry Metrics API support.
       source: in_code_documentation
       lang: dotnet
 - key: DD_PIPELINE_EXECUTION_ID
@@ -3299,8 +3205,7 @@ documentedConfigurations:
         4. Click **Done** to save your changes.
       source: documentation_same_language
       lang: golang
-    - description: Sets the pipeline execution ID reported as CI metadata for AWS CodePipeline builds. This value
-        is used as the CI pipeline identifier when running a CodeBuild job initiated by CodePipeline.
+    - description: Sets the pipeline execution ID reported as CI metadata for AWS CodePipeline builds. This value is used as the CI pipeline identifier when running a CodeBuild job initiated by CodePipeline.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_AGENTLESS
@@ -3312,8 +3217,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables agentless profile upload, sending profiles directly to the profiling intake instead of
-        through a local agent. This requires a valid API key.
+    - description: Enables agentless profile upload, sending profiles directly to the profiling intake instead of through a local agent. This requires a valid API key.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_CODEHOTSPOTS_ENABLED
@@ -3325,8 +3229,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Enables or disables code hotspots collection for the continuous profiler. When disabled, profiling
-        data is not linked to tracing context for hotspot attribution.
+    - description: Enables or disables code hotspots collection for the continuous profiler. When disabled, profiling data is not linked to tracing context for hotspot attribution.
       source: llm_generated
       lang: dotnet
 - key: DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED
@@ -3338,8 +3241,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether spans add pprof labels used to link profiles to trace code hotspots (span id
-        and local root span id). Defaults to true.
+    - description: Controls whether spans add pprof labels used to link profiles to trace code hotspots (span id and local root span id). Defaults to true.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_DEBUG_COMPRESSION_SETTINGS
@@ -3351,8 +3253,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls the compression algorithm and level used when preparing profiles for upload (for example,
-        legacy, gzip, or zstd-<level>). Defaults to zstd.
+    - description: Controls the compression algorithm and level used when preparing profiles for upload (for example, legacy, gzip, or zstd-<level>). Defaults to zstd.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_DELTA
@@ -3364,8 +3265,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether delta profiles are enabled. When enabled, profile values are reported as changes
-        since the previous profile instead of absolute values.
+    - description: Controls whether delta profiles are enabled. When enabled, profile values are reported as changes since the previous profile instead of absolute values.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_ENABLED
@@ -3378,9 +3278,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Enables or disables the continuous profiler. Set to true (or 1) to start profiling, false (or
-        0) to disable, or auto to enable profiling but only start it after the process is long-lived and has created
-        at least one span.
+    - description: Enables or disables the continuous profiler. Set to true (or 1) to start profiling, false (or 0) to disable, or auto to enable profiling but only start it after the process is long-lived and has created at least one span.
       source: llm_generated
       lang: dotnet
   - implementation: C
@@ -3407,8 +3305,7 @@ documentedConfigurations:
     - description: If set to true, enables the profiler. Defaults to false.
       source: documentation_same_language
       lang: golang
-    - description: Controls whether profiling starts when the profiler is initialized. Set to false to prevent the
-        profiler from starting; set to auto to treat the profiler as enabled.
+    - description: Controls whether profiling starts when the profiler is initialized. Set to false to prevent the profiler from starting; set to auto to treat the profiler as enabled.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_ENDPOINT_COLLECTION_ENABLED
@@ -3422,8 +3319,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: Controls whether endpoint names are sent to the profiler for endpoint-level profiling. When disabled,
-        endpoint information is not associated with profiling data.
+    - description: Controls whether endpoint names are sent to the profiler for endpoint-level profiling. When disabled, endpoint information is not associated with profiling data.
       source: llm_generated
       lang: dotnet
     - description: |-
@@ -3437,8 +3333,7 @@ documentedConfigurations:
     - description: '- **Disable endpoint collection**'
       source: documentation_same_language
       lang: golang
-    - description: Controls whether spans add a pprof label with the top-level request endpoint so profiles can
-        be grouped by endpoint. Defaults to true.
+    - description: Controls whether spans add a pprof label with the top-level request endpoint so profiles can be grouped by endpoint. Defaults to true.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_ENDPOINT_COUNT_ENABLED
@@ -3450,8 +3345,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables counting endpoint hits while the profiler is running and includes those counts with uploaded
-        profiling data. Defaults to false.
+    - description: Enables counting endpoint hits while the profiler is running and includes those counts with uploaded profiling data. Defaults to false.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_EXECUTION_TRACE_ENABLED
@@ -3463,12 +3357,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: 'The Trace to Profiling integration is enabled when you turn on profiling for your Go service
-        and set the environment variables below:'
+    - description: 'The Trace to Profiling integration is enabled when you turn on profiling for your Go service and set the environment variables below:'
       source: documentation_same_language
       lang: golang
-    - description: Controls whether runtime execution traces are collected and uploaded. Defaults to enabled on
-        amd64 and arm64.
+    - description: Controls whether runtime execution traces are collected and uploaded. Defaults to enabled on amd64 and arm64.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES
@@ -3492,8 +3384,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: 'The Trace to Profiling integration is enabled when you turn on profiling for your Go service
-        and set the environment variables below:'
+    - description: 'The Trace to Profiling integration is enabled when you turn on profiling for your Go service and set the environment variables below:'
       source: documentation_same_language
       lang: golang
     - description: Sets the time between execution trace collections. Defaults to 15m.
@@ -3508,8 +3399,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether the profiler attempts to finish uploading buffered profiles when the process
-        is stopping. When disabled, pending uploads are cancelled on shutdown.
+    - description: Controls whether the profiler attempts to finish uploading buffered profiles when the process is stopping. When disabled, pending uploads are cancelled on shutdown.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_MANAGED_ACTIVATION_ENABLED
@@ -3533,8 +3423,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Writes a copy of collected profiles to the specified directory for debugging. No cleanup is performed,
-        so the directory can grow over time.
+    - description: Writes a copy of collected profiles to the specified directory for debugging. No cleanup is performed, so the directory can grow over time.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_UPLOAD_TIMEOUT
@@ -3558,8 +3447,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Overrides the profiling intake URL used for agentless uploads. This is primarily intended for
-        testing or debugging.
+    - description: Overrides the profiling intake URL used for agentless uploads. This is primarily intended for testing or debugging.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_WAIT_PROFILE
@@ -3571,8 +3459,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables an experimental goroutine wait profile when set. This collects stack traces and wait
-        durations for goroutines that remain blocked for more than a minute.
+    - description: Enables an experimental goroutine wait profile when set. This collects stack traces and wait durations for goroutines that remain blocked for more than a minute.
       source: llm_generated
       lang: golang
 - key: DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES
@@ -3584,8 +3471,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Sets the maximum number of goroutines allowed when collecting the goroutine wait profile. If
-        the process exceeds this limit, the wait profile is skipped.
+    - description: Sets the maximum number of goroutines allowed when collecting the goroutine wait profile. If the process exceeds this limit, the wait profile is skipped.
       source: llm_generated
       lang: golang
 - key: DD_PROXY_HTTPS
@@ -3623,8 +3509,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Internal remote-configuration setting for specifying a TUF root metadata value. This setting
-        is currently not used and has no effect.
+    - description: Internal remote-configuration setting for specifying a TUF root metadata value. This setting is currently not used and has no effect.
       source: llm_generated
       lang: golang
 - key: DD_REMOTE_CONFIGURATION_ENABLED
@@ -3662,12 +3547,10 @@ documentedConfigurations:
         For more information, see Remote Configuration.
       source: documentation_same_language
       lang: golang
-    - description: If you don't want your Agent to send configuration requests to Datadog, you can set remote_configuration.enabled
-        to false in the Agent.
+    - description: If you don't want your Agent to send configuration requests to Datadog, you can set remote_configuration.enabled to false in the Agent.
       source: documentation_same_language
       lang: golang
-    - description: Controls whether remote configuration polling is enabled. When set to false, remote configuration
-        updates are not fetched or applied.
+    - description: Controls whether remote configuration polling is enabled. When set to false, remote configuration updates are not fetched or applied.
       source: llm_generated
       lang: golang
 - key: DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS
@@ -3707,8 +3590,7 @@ documentedConfigurations:
         | DD_REQUEST_MIRROR_HEALTHCHECK_ADDR | :8081 | Address and port where the health check endpoint is served |
       source: documentation_same_language
       lang: golang
-    - description: Sets the address (host:port) for the request-mirror health check HTTP server to listen on. Defaults
-        to :8081.
+    - description: Sets the address (host:port) for the request-mirror health check HTTP server to listen on. Defaults to :8081.
       source: llm_generated
       lang: golang
 - key: DD_REQUEST_MIRROR_LISTEN_ADDR
@@ -3735,8 +3617,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Enables the .NET runtime metrics collector which uses the System.Diagnostics.Metrics API instead
-        of the EventListener based API
+    - description: Enables the .NET runtime metrics collector which uses the System.Diagnostics.Metrics API instead of the EventListener based API
       source: registry_doc
       lang: dotnet
 - key: DD_RUNTIME_METRICS_ENABLED
@@ -3750,12 +3631,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables or disables the collection of [runtime metrics][5] (such as garbage collection stats,
-        memory usage, and thread counts) for the application.
+    - description: Enables or disables the collection of [runtime metrics][5] (such as garbage collection stats, memory usage, and thread counts) for the application.
       source: registry_doc
       lang: dotnet
-    - description: Enables or disables the collection of [runtime metrics][5] (such as garbage collection stats,
-        memory usage, and thread counts) for the application.
+    - description: Enables or disables the collection of [runtime metrics][5] (such as garbage collection stats, memory usage, and thread counts) for the application.
       source: registry_doc
       lang: golang
 - key: DD_RUNTIME_METRICS_V2_ENABLED
@@ -3792,19 +3671,16 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: 'The lambda-datadog Terraform module wraps the aws_lambda_function resource and automatically
-        configures your Lambda function for Datadog Serverless Monitoring by:'
+    - description: 'The lambda-datadog Terraform module wraps the aws_lambda_function resource and automatically configures your Lambda function for Datadog Serverless Monitoring by:'
       source: documentation_same_language
       lang: golang
     - description: The service name to be used for this application.
       source: documentation_same_language
       lang: golang
-    - description: To disable APM tracing while keeping App and API Protection enabled, you must set the APM tracing
-        variable to false.
+    - description: To disable APM tracing while keeping App and API Protection enabled, you must set the APM tracing variable to false.
       source: documentation_same_language
       lang: golang
-    - description: Sets the service name used for telemetry and generated spans. If unset, the service name defaults
-        to the process name.
+    - description: Sets the service name used for telemetry and generated spans. If unset, the service name defaults to the process name.
       source: llm_generated
       lang: golang
 - key: DD_SERVICE_EXTENSION_HEALTHCHECK_PORT
@@ -3816,8 +3692,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: 'Configure the connection from the external processor to the Datadog Agent using these environment
-        variables:'
+    - description: 'Configure the connection from the external processor to the Datadog Agent using these environment variables:'
       source: documentation_same_language
       lang: golang
     - description: |-
@@ -3903,8 +3778,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: 'Configure the connection from the external processor to the Datadog Agent using these environment
-        variables:'
+    - description: 'Configure the connection from the external processor to the Datadog Agent using these environment variables:'
       source: documentation_same_language
       lang: golang
     - description: |-
@@ -3940,8 +3814,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: 'Configure the connection from the external processor to the Datadog Agent using these environment
-        variables:'
+    - description: 'Configure the connection from the external processor to the Datadog Agent using these environment variables:'
       source: documentation_same_language
       lang: golang
     - description: Controls whether TLS is enabled for the service extension gRPC server. Defaults to true.
@@ -3994,12 +3867,10 @@ documentedConfigurations:
         Change the default name of an APM integration. Rename one or more integrations at a time, for example: DD_SERVICE_MAPPING=pdo:payments-db,mysqli:orders-db (see Integration names).
       source: documentation_same_language
       lang: golang
-    - description: 'Define service name mappings to allow renaming services in traces, for example: postgres:postgresql,defaultdb:postgresql.
-        Available in version 0.47+.'
+    - description: 'Define service name mappings to allow renaming services in traces, for example: postgres:postgresql,defaultdb:postgresql. Available in version 0.47+.'
       source: documentation_same_language
       lang: golang
-    - description: Maps one service name to another when creating spans. Provide mappings as key:value pairs separated
-        by commas or spaces.
+    - description: Maps one service name to another when creating spans. Provide mappings as key:value pairs separated by commas or spaces.
       source: llm_generated
       lang: golang
 - key: DD_SITE
@@ -4047,12 +3918,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: 'Span sampling rules to keep individual spans when the rest of the trace would otherwise be dropped.
-        A JSON array of objects. Rules are applied in configured order to determine the span''s sample rate. The
-        sample_rate value must be between 0.0 and 1.0 (inclusive). For more information, see [Ingestion Mechanisms][3].
-        Example: - Set the span sample rate to 50% for the service my-service and operation name http.request, up
-        to 50 traces per second: ''[{"service": "my-service", "name": "http.request", "sample_rate":0.5, "max_per_second":
-        50}]'''
+    - description: 'Span sampling rules to keep individual spans when the rest of the trace would otherwise be dropped. A JSON array of objects. Rules are applied in configured order to determine the span''s sample rate. The sample_rate value must be between 0.0 and 1.0 (inclusive). For more information, see [Ingestion Mechanisms][3]. Example: - Set the span sample rate to 50% for the service my-service and operation name http.request, up to 50 traces per second: ''[{"service": "my-service", "name": "http.request", "sample_rate":0.5, "max_per_second": 50}]'''
       source: registry_doc
       lang: golang
   - implementation: B
@@ -4099,8 +3965,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Points to a JSON file that contains the span sampling rules. DD_SPAN_SAMPLING_RULES takes precedence
-        over this variable. See DD_SPAN_SAMPLING_RULES for the rule format.
+    - description: Points to a JSON file that contains the span sampling rules. DD_SPAN_SAMPLING_RULES takes precedence over this variable. See DD_SPAN_SAMPLING_RULES for the rule format.
       source: registry_doc
       lang: golang
 - key: DD_SYMBOL_DATABASE_BATCH_SIZE_BYTES
@@ -4203,8 +4068,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables debug mode for instrumentation telemetry. When set, it forces telemetry debug mode on
-        regardless of other configuration.
+    - description: Enables debug mode for instrumentation telemetry. When set, it forces telemetry debug mode on regardless of other configuration.
       source: llm_generated
       lang: golang
 - key: DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
@@ -4224,8 +4088,7 @@ documentedConfigurations:
         <see cref="Datadog.Trace.Telemetry.TelemetrySettings.DependencyCollectionEnabled"/>
       source: in_code_documentation
       lang: dotnet
-    - description: Controls whether instrumentation telemetry collects and reports dependency information. Defaults
-        to true.
+    - description: Controls whether instrumentation telemetry collects and reports dependency information. Defaults to true.
       source: llm_generated
       lang: golang
 - key: DD_TELEMETRY_HEARTBEAT_INTERVAL
@@ -4265,8 +4128,7 @@ documentedConfigurations:
         : Enable or disable log collection for telemetry.
       source: documentation_same_language
       lang: golang
-    - description: Controls whether the instrumentation telemetry client collects and sends logs. Set to false to
-        disable telemetry log collection.
+    - description: Controls whether the instrumentation telemetry client collects and sends logs. Set to false to disable telemetry log collection.
       source: llm_generated
       lang: golang
 - key: DD_TELEMETRY_METRICS_ENABLED
@@ -4325,8 +4187,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Sets the host used by internal instrumentation validation tests to reach a test agent. This setting
-        is not used for runtime tracing.
+    - description: Sets the host used by internal instrumentation validation tests to reach a test agent. This setting is not used for runtime tracing.
       source: llm_generated
       lang: golang
 - key: DD_TEST_AGENT_PORT
@@ -4338,8 +4199,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Sets the port used by internal instrumentation validation tests to reach a test agent. This setting
-        is not used for runtime tracing.
+    - description: Sets the port used by internal instrumentation validation tests to reach a test agent. This setting is not used for runtime tracing.
       source: llm_generated
       lang: golang
 - key: DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES
@@ -4360,8 +4220,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Overrides the maximum number of retries for the test management attempt-to-fix feature. When
-        set, it replaces the value provided by remote settings.
+    - description: Overrides the maximum number of retries for the test management attempt-to-fix feature. When set, it replaces the value provided by remote settings.
       source: llm_generated
       lang: golang
 - key: DD_TEST_MANAGEMENT_ENABLED
@@ -4374,8 +4233,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Kill-switch for test management features in CI test reporting. Set to false to disable test management
-        even if it is enabled by remote settings.
+    - description: Kill-switch for test management features in CI test reporting. Set to false to disable test management even if it is enabled by remote settings.
       source: llm_generated
       lang: golang
   - implementation: B
@@ -4395,8 +4253,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Sets the path to a JSON file containing CI/environment metadata used for test reporting. If not
-        set, a default file next to the test binary is used.
+    - description: Sets the path to a JSON file containing CI/environment metadata used for test reporting. If not set, a default file next to the test binary is used.
       source: llm_generated
       lang: golang
 - key: DD_TEST_SESSION_NAME
@@ -4439,8 +4296,7 @@ documentedConfigurations:
         **Example**: unit-tests, integration-tests, smoke-tests
       source: documentation_same_language
       lang: golang
-    - description: Sets the test session name reported for CI test reporting. If not set, a session name is derived
-        from the test command (and CI job name when available).
+    - description: Sets the test session name reported for CI test reporting. If not set, a session name is derived from the test command (and CI job name when available).
       source: llm_generated
       lang: golang
 - key: DD_THIRD_PARTY_DETECTION_EXCLUDES
@@ -4482,12 +4338,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether new traces use 128-bit W3C trace IDs (32-character hexadecimal strings) or 64-bit
-        Datadog trace IDs (16-character hexadecimal strings). The default is true to support W3C trace context propagation.
+    - description: Controls whether new traces use 128-bit W3C trace IDs (32-character hexadecimal strings) or 64-bit Datadog trace IDs (16-character hexadecimal strings). The default is true to support W3C trace context propagation.
       source: registry_doc
       lang: dotnet
-    - description: Controls whether new traces use 128-bit W3C trace IDs (32-character hexadecimal strings) or 64-bit
-        Datadog trace IDs (16-character hexadecimal strings). The default is true to support W3C trace context propagation.
+    - description: Controls whether new traces use 128-bit W3C trace IDs (32-character hexadecimal strings) or 64-bit Datadog trace IDs (16-character hexadecimal strings). The default is true to support W3C trace context propagation.
       source: registry_doc
       lang: golang
 - key: DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED
@@ -4501,12 +4355,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether 128-bit trace IDs are logged in their full 32-character format or truncated
-        to 16 characters. Set to false for compatibility with systems that expect the shorter format.
+    - description: Controls whether 128-bit trace IDs are logged in their full 32-character format or truncated to 16 characters. Set to false for compatibility with systems that expect the shorter format.
       source: registry_doc
       lang: dotnet
-    - description: Controls whether 128-bit trace IDs are logged in their full 32-character format or truncated
-        to 16 characters. Set to false for compatibility with systems that expect the shorter format.
+    - description: Controls whether 128-bit trace IDs are logged in their full 32-character format or truncated to 16 characters. Set to false for compatibility with systems that expect the shorter format.
       source: registry_doc
       lang: golang
 - key: DD_TRACE_ABANDONED_SPAN_TIMEOUT
@@ -4518,14 +4370,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: The Datadog Go Tracer also supports logging for potentially abandoned spans. To enable this debug
-        mode in Go, set the environment variable DD_TRACE_DEBUG_ABANDONED_SPANS=true. To change the duration after
-        which spans are considered abandoned (default=10m), set the environment variable DD_TRACE_ABANDONED_SPAN_TIMEOUT
-        to the desired time duration. Abandoned span logs appear at the Info level.
+    - description: The Datadog Go Tracer also supports logging for potentially abandoned spans. To enable this debug mode in Go, set the environment variable DD_TRACE_DEBUG_ABANDONED_SPANS=true. To change the duration after which spans are considered abandoned (default=10m), set the environment variable DD_TRACE_ABANDONED_SPAN_TIMEOUT to the desired time duration. Abandoned span logs appear at the Info level.
       source: documentation_same_language
       lang: golang
-    - description: Sets the duration after which an unfinished span is considered abandoned for debugging. Defaults
-        to 10m.
+    - description: Sets the duration after which an unfinished span is considered abandoned for debugging. Defaults to 10m.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_ACTIVITY_LISTENER_ENABLED
@@ -4574,9 +4422,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: The port of the Trace Agent that the tracer submits to. If the [Agent configuration][13] sets
-        receiver_port or DD_APM_RECEIVER_PORT to something other than the default 8126, then DD_TRACE_AGENT_PORT
-        or DD_TRACE_AGENT_URL must match it.
+    - description: The port of the Trace Agent that the tracer submits to. If the [Agent configuration][13] sets receiver_port or DD_APM_RECEIVER_PORT to something other than the default 8126, then DD_TRACE_AGENT_PORT or DD_TRACE_AGENT_URL must match it.
       source: registry_doc
       lang: golang
   - implementation: C
@@ -4584,9 +4430,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: The port of the Trace Agent that the tracer submits to. If the [Agent configuration][13] sets
-        receiver_port or DD_APM_RECEIVER_PORT to something other than the default 8126, then DD_TRACE_AGENT_PORT
-        or DD_TRACE_AGENT_URL must match it.
+    - description: The port of the Trace Agent that the tracer submits to. If the [Agent configuration][13] sets receiver_port or DD_APM_RECEIVER_PORT to something other than the default 8126, then DD_TRACE_AGENT_PORT or DD_TRACE_AGENT_URL must match it.
       source: registry_doc
       lang: dotnet
 - key: DD_TRACE_AGENT_URL
@@ -4600,14 +4444,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: The URL for connecting the tracer to the Datadog agent. Valid URL schemas include http:// and
-        unix:// (UNIX Domain Sockets). This value takes precedence over DD_AGENT_HOST and DD_TRACE_AGENT_PORT if
-        set.
+    - description: The URL for connecting the tracer to the Datadog agent. Valid URL schemas include http:// and unix:// (UNIX Domain Sockets). This value takes precedence over DD_AGENT_HOST and DD_TRACE_AGENT_PORT if set.
       source: registry_doc
       lang: dotnet
-    - description: The URL for connecting the tracer to the Datadog agent. Valid URL schemas include http:// and
-        unix:// (UNIX Domain Sockets). This value takes precedence over DD_AGENT_HOST and DD_TRACE_AGENT_PORT if
-        set.
+    - description: The URL for connecting the tracer to the Datadog agent. Valid URL schemas include http:// and unix:// (UNIX Domain Sockets). This value takes precedence over DD_AGENT_HOST and DD_TRACE_AGENT_PORT if set.
       source: registry_doc
       lang: golang
 - key: DD_TRACE_ANALYTICS_ENABLED
@@ -4631,8 +4471,7 @@ documentedConfigurations:
         * Environment Variable: DD_TRACE_ANALYTICS_ENABLED=true
       source: documentation_same_language
       lang: golang
-    - description: The following environment variables have been removed or replaced. Update your configuration
-        with the new variables where applicable.
+    - description: The following environment variables have been removed or replaced. Update your configuration with the new variables where applicable.
       source: documentation_same_language
       lang: golang
     - description: Enables trace analytics globally by setting the analytics rate to 1.0 (100%).
@@ -4661,8 +4500,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the AWS SDK integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the AWS SDK integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_AZURE_EVENTHUBS_BATCH_LINKS_ENABLED
@@ -4760,8 +4598,7 @@ documentedConfigurations:
         [1]: /developers/community/libraries/#apm-tracing-client-libraries
       source: documentation_same_language
       lang: golang
-    - description: Comma-separated list of baggage keys to copy into span tags. Set to * to tag all baggage items;
-        if unset, a default allowlist is used.
+    - description: Comma-separated list of baggage keys to copy into span tags. Set to * to tag all baggage items; if unset, a default allowlist is used.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_BATCH_INTERVAL
@@ -4799,8 +4636,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the BuntDB integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the BuntDB integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_BYPASS_HTTP_REQUEST_URL_CACHING_ENABLED
@@ -4812,9 +4648,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: When enabled, the request URL is built without using the cached HttpRequest.Url value to avoid
-        triggering URL caching behavior. This can prevent issues in environments where caching the URL early can
-        affect application behavior.
+    - description: When enabled, the request URL is built without using the cached HttpRequest.Url value to avoid triggering URL caching behavior. This can prevent issues in environments where caching the URL early can affect application behavior.
       source: llm_generated
       lang: dotnet
 - key: DD_TRACE_CHI_ANALYTICS_ENABLED
@@ -4826,8 +4660,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the chi integration by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by the chi integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_CLIENT_HOSTNAME_COMPAT
@@ -4839,8 +4672,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Internal compatibility toggle for legacy client-hostname behavior. This setting is currently
-        not used and has no effect.
+    - description: Internal compatibility toggle for legacy client-hostname behavior. This setting is currently not used and has no effect.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_CLIENT_IP_ENABLED
@@ -4854,12 +4686,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables or disables the automatic collection of client IP addresses from HTTP request headers.
-        When enabled, the IP address is stored in the http.client_ip span tag.
+    - description: Enables or disables the automatic collection of client IP addresses from HTTP request headers. When enabled, the IP address is stored in the http.client_ip span tag.
       source: registry_doc
       lang: dotnet
-    - description: Enables or disables the automatic collection of client IP addresses from HTTP request headers.
-        When enabled, the IP address is stored in the http.client_ip span tag.
+    - description: Enables or disables the automatic collection of client IP addresses from HTTP request headers. When enabled, the IP address is stored in the http.client_ip span tag.
       source: registry_doc
       lang: golang
 - key: DD_TRACE_CLIENT_IP_HEADER
@@ -4872,12 +4702,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: 'Configures a custom header name from which to source the http.client_ip tag value. If this variable
-        is set, all other IP-related headers are ignored (for example, setting DD_TRACE_CLIENT_IP_HEADER=custom-ip-header
-        and including the header custom-ip-header: 5.6.7.9 in a request results in a span tagged with "http.client_ip":
-        "5.6.7.9"). If an empty string or null value is passed, IP headers are queried in this order: - x-forwarded-for
-        - x-real-ip - true-client-ip - x-client-ip - x-forwarded - forwarded-for - x-cluster-client-ip - fastly-client-ip
-        - cf-connecting-ip - cf-connecting-ipv6'
+    - description: 'Configures a custom header name from which to source the http.client_ip tag value. If this variable is set, all other IP-related headers are ignored (for example, setting DD_TRACE_CLIENT_IP_HEADER=custom-ip-header and including the header custom-ip-header: 5.6.7.9 in a request results in a span tagged with "http.client_ip": "5.6.7.9"). If an empty string or null value is passed, IP headers are queried in this order: - x-forwarded-for - x-real-ip - true-client-ip - x-client-ip - x-forwarded - forwarded-for - x-cluster-client-ip - fastly-client-ip - cf-connecting-ip - cf-connecting-ipv6'
       source: registry_doc
       lang: golang
   - implementation: C
@@ -4885,12 +4710,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: 'Configures a custom header name from which to source the http.client_ip tag value. If this variable
-        is set, all other IP-related headers are ignored (for example, setting DD_TRACE_CLIENT_IP_HEADER=custom-ip-header
-        and including the header custom-ip-header: 5.6.7.9 in a request results in a span tagged with "http.client_ip":
-        "5.6.7.9"). If an empty string or null value is passed, IP headers are queried in this order: - x-forwarded-for
-        - x-real-ip - true-client-ip - x-client-ip - x-forwarded - forwarded-for - x-cluster-client-ip - fastly-client-ip
-        - cf-connecting-ip - cf-connecting-ipv6'
+    - description: 'Configures a custom header name from which to source the http.client_ip tag value. If this variable is set, all other IP-related headers are ignored (for example, setting DD_TRACE_CLIENT_IP_HEADER=custom-ip-header and including the header custom-ip-header: 5.6.7.9 in a request results in a span tagged with "http.client_ip": "5.6.7.9"). If an empty string or null value is passed, IP headers are queried in this order: - x-forwarded-for - x-real-ip - true-client-ip - x-client-ip - x-forwarded - forwarded-for - x-cluster-client-ip - fastly-client-ip - cf-connecting-ip - cf-connecting-ipv6'
       source: registry_doc
       lang: dotnet
 - key: DD_TRACE_COMMANDS_COLLECTION_ENABLED
@@ -4902,9 +4722,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether command-line details are collected for process execution instrumentation. When
-        enabled, the executable and arguments may be captured (truncated as needed); when disabled, command-line
-        details are omitted.
+    - description: Controls whether command-line details are collected for process execution instrumentation. When enabled, the executable and arguments may be captured (truncated as needed); when disabled, command-line details are omitted.
       source: llm_generated
       lang: dotnet
 - key: DD_TRACE_CONFIG_FILE
@@ -4931,8 +4749,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Consul integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Consul integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_DATA_PIPELINE_ENABLED
@@ -4975,14 +4792,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: The Datadog Go Tracer also supports logging for potentially abandoned spans. To enable this debug
-        mode in Go, set the environment variable DD_TRACE_DEBUG_ABANDONED_SPANS=true. To change the duration after
-        which spans are considered abandoned (default=10m), set the environment variable DD_TRACE_ABANDONED_SPAN_TIMEOUT
-        to the desired time duration. Abandoned span logs appear at the Info level.
+    - description: The Datadog Go Tracer also supports logging for potentially abandoned spans. To enable this debug mode in Go, set the environment variable DD_TRACE_DEBUG_ABANDONED_SPANS=true. To change the duration after which spans are considered abandoned (default=10m), set the environment variable DD_TRACE_ABANDONED_SPAN_TIMEOUT to the desired time duration. Abandoned span logs appear at the Info level.
       source: documentation_same_language
       lang: golang
-    - description: Enables debug logging for spans that are started but not finished. The timeout used to mark spans
-        as abandoned is controlled by DD_TRACE_ABANDONED_SPAN_TIMEOUT.
+    - description: Enables debug logging for spans that are started but not finished. The timeout used to mark spans as abandoned is controlled by DD_TRACE_ABANDONED_SPAN_TIMEOUT.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_DEBUG_LOOKUP_FALLBACK
@@ -4994,8 +4807,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Configuration key for forcing the automatic instrumentation to only use the fallback method lookup
-        mechanism.
+    - description: Configuration key for forcing the automatic instrumentation to only use the fallback method lookup mechanism.
       source: in_code_documentation
       lang: dotnet
 - key: DD_TRACE_DEBUG_LOOKUP_MDTOKEN
@@ -5007,8 +4819,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Configuration key for forcing the automatic instrumentation to only use the mdToken method lookup
-        mechanism.
+    - description: Configuration key for forcing the automatic instrumentation to only use the mdToken method lookup mechanism.
       source: in_code_documentation
       lang: dotnet
 - key: DD_TRACE_DEBUG_SEELOG_WORKAROUND
@@ -5020,8 +4831,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether a workaround for seelog-related goroutine leaks is applied. Set to false to
-        disable the workaround.
+    - description: Controls whether a workaround for seelog-related goroutine leaks is applied. Set to false to disable the workaround.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_DEBUG_STACK
@@ -5119,8 +4929,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Echo integration by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Echo integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_ELASTIC_ANALYTICS_ENABLED
@@ -5132,8 +4941,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Elasticsearch integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Elasticsearch integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_ENABLED
@@ -5174,8 +4982,7 @@ documentedConfigurations:
     - description: Set to true to enable tracing.
       source: documentation_same_language
       lang: golang
-    - description: Controls whether tracing is enabled. Set to false to disable tracer initialization and stop collecting
-        and sending traces.
+    - description: Controls whether tracing is enabled. Set to false to disable tracer initialization and stop collecting and sending traces.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_EXPAND_ROUTE_TEMPLATES_ENABLED
@@ -5215,8 +5022,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the fasthttp integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the fasthttp integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_FEATURES
@@ -5228,8 +5034,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Comma- or space-separated list of tracer feature flags. Use this to enable optional or experimental
-        behavior such as "discovery".
+    - description: Comma- or space-separated list of tracer feature flags. Use this to enable optional or experimental behavior such as "discovery".
       source: llm_generated
       lang: golang
 - key: DD_TRACE_FIBER_ANALYTICS_ENABLED
@@ -5241,8 +5046,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Fiber integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Fiber integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GCP_PUBSUB_ANALYTICS_ENABLED
@@ -5254,8 +5058,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the GCP Pub/Sub integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the GCP Pub/Sub integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GIN_ANALYTICS_ENABLED
@@ -5267,8 +5070,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Gin integration by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Gin integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GIT_METADATA_ENABLED
@@ -5288,8 +5090,7 @@ documentedConfigurations:
         <seealso cref="Datadog.Trace.Configuration.TracerSettings.GitMetadataEnabled"/>
       source: in_code_documentation
       lang: dotnet
-    - description: Controls whether git metadata tags are collected from environment variables, global tags, and
-        build metadata. Defaults to true.
+    - description: Controls whether git metadata tags are collected from environment variables, global tags, and build metadata. Defaults to true.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GOCQL_ANALYTICS_ENABLED
@@ -5301,8 +5102,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the gocql integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the gocql integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GOCQL_COMPAT
@@ -5314,8 +5114,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Sets a compatibility version for the gocql integration. When set to a valid semver value (for
-        example, v1.65.0), it adjusts how certain cluster tags are reported for older versions.
+    - description: Sets a compatibility version for the gocql integration. When set to a valid semver value (for example, v1.65.0), it adjusts how certain cluster tags are reported for older versions.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GOJI_ANALYTICS_ENABLED
@@ -5327,8 +5126,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Goji integration by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Goji integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED
@@ -5340,8 +5138,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Google API integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Google API integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GOPG_ANALYTICS_ENABLED
@@ -5353,8 +5150,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the go-pg integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the go-pg integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GQLGEN_ANALYTICS_ENABLED
@@ -5366,8 +5162,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the gqlgen integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the gqlgen integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GRAPHQL_ANALYTICS_ENABLED
@@ -5379,8 +5174,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by GraphQL integrations by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by GraphQL integrations by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GRAPHQL_ERROR_EXTENSIONS
@@ -5400,8 +5194,7 @@ documentedConfigurations:
         <seealso cref="Datadog.Trace.Configuration.TracerSettings.GraphQLErrorExtensions"/>
       source: in_code_documentation
       lang: dotnet
-    - description: Comma-separated list of GraphQL error extension keys to include as span event attributes. Only
-        the listed keys from the error "extensions" field are captured.
+    - description: Comma-separated list of GraphQL error extension keys to include as span event attributes. Only the listed keys from the error "extensions" field are captured.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GRPC_ANALYTICS_ENABLED
@@ -5413,8 +5206,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the gRPC integration by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by the gRPC integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_GRPC_TAGS
@@ -5443,14 +5235,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Automatically apply specified HTTP headers as span tags. If a custom tag name is not specified,
-        the tag key defaults to http.request.headers.<normalized-header-name> for request headers and http.response.headers.<normalized-header-name>
-        for response headers.
+    - description: Automatically apply specified HTTP headers as span tags. If a custom tag name is not specified, the tag key defaults to http.request.headers.<normalized-header-name> for request headers and http.response.headers.<normalized-header-name> for response headers.
       source: registry_doc
       lang: dotnet
-    - description: Automatically apply specified HTTP headers as span tags. If a custom tag name is not specified,
-        the tag key defaults to http.request.headers.<normalized-header-name> for request headers and http.response.headers.<normalized-header-name>
-        for response headers.
+    - description: Automatically apply specified HTTP headers as span tags. If a custom tag name is not specified, the tag key defaults to http.request.headers.<normalized-header-name> for request headers and http.response.headers.<normalized-header-name> for response headers.
       source: registry_doc
       lang: golang
 - key: DD_TRACE_HEADER_TAG_NORMALIZATION_FIX_ENABLED
@@ -5477,8 +5265,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the httprouter integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the httprouter integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED
@@ -5502,8 +5289,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the net/http integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the net/http integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_HTTP_CLIENT_ERROR_STATUSES
@@ -5541,8 +5327,7 @@ documentedConfigurations:
         A range of errors can be accepted. By default 4xx errors are reported as errors for http clients. This configuration overrides that. Ex. dd.trace.http.client.error.statuses=400-403,405,410-499
       source: documentation_same_language
       lang: golang
-    - description: Comma-separated list of HTTP status codes and ranges to treat as errors for HTTP client spans
-        (for example, 400-499,500). When set, matching responses mark the span as an error.
+    - description: Comma-separated list of HTTP status codes and ranges to treat as errors for HTTP client spans (for example, 400-499,500). When set, matching responses mark the span as an error.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_HTTP_CLIENT_EXCLUDED_URL_SUBSTRINGS
@@ -5568,8 +5353,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: When enabled, HTTP client span resource names use a quantized URL path where dynamic path segments
-        are replaced with '*'.
+    - description: When enabled, HTTP client span resource names use a quantized URL path where dynamic path segments are replaced with '*'.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING
@@ -5591,8 +5375,7 @@ documentedConfigurations:
         **Description**: Enables or disables the inclusion of the query string in the http.url span tag value for automatically collected HTTP spans.
       source: documentation_same_language
       lang: golang
-    - description: The following environment variables have been removed or replaced. Update your configuration
-        with the new variables where applicable.
+    - description: The following environment variables have been removed or replaced. Update your configuration with the new variables where applicable.
       source: documentation_same_language
       lang: golang
     - description: |-
@@ -5608,8 +5391,7 @@ documentedConfigurations:
         By default, query string parameters and fragments are added to the http.url tag on web client spans. Set to false to prevent the collection of this data.
       source: documentation_same_language
       lang: golang
-    - description: Controls whether HTTP client spans include the URL query string in the http.url tag. Defaults
-        to true.
+    - description: Controls whether HTTP client spans include the URL query string in the http.url tag. Defaults to true.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE
@@ -5621,8 +5403,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: When enabled, net/http handler span resource names use a quantized URL path where dynamic path
-        segments are replaced with '*'.
+    - description: When enabled, net/http handler span resource names use a quantized URL path where dynamic path segments are replaced with '*'.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_HTTP_SERVER_ERROR_STATUSES
@@ -5664,8 +5445,7 @@ documentedConfigurations:
         A range of errors can be accepted. By default 5xx status codes are reported as errors for http servers. This configuration overrides that. Ex. dd.trace.http.server.error.statuses=500,502-599
       source: documentation_same_language
       lang: golang
-    - description: Comma-separated list of HTTP status codes and ranges to treat as errors for HTTP server spans
-        (for example, 500-599,404). When unset, 5xx responses are treated as errors by default.
+    - description: Comma-separated list of HTTP status codes and ranges to treat as errors for HTTP server spans (for example, 500-599,404). When unset, 5xx responses are treated as errors by default.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED
@@ -5677,8 +5457,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Disables including URL query strings in the http.url tag for incoming HTTP requests. When disabled,
-        only the path is reported.
+    - description: Disables including URL query strings in the http.url tag for incoming HTTP requests. When disabled, only the path is reported.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED
@@ -5692,13 +5471,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: When enabled, inferred proxy spans are created for supported upstream proxies based on incoming
-        request headers. This can surface proxy services (for example API gateways) as separate spans/services in
-        traces.
+    - description: When enabled, inferred proxy spans are created for supported upstream proxies based on incoming request headers. This can surface proxy services (for example API gateways) as separate spans/services in traces.
       source: llm_generated
       lang: dotnet
-    - description: Enables inferred proxy-service spans for incoming HTTP requests when proxy context headers are
-        present. This can create an additional span representing the upstream proxy/service in front of the application.
+    - description: Enables inferred proxy-service spans for incoming HTTP requests when proxy context headers are present. This can create an additional span representing the upstream proxy/service in front of the application.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_INJECT_CONTEXT_INTO_STORED_PROCEDURES_ENABLED
@@ -5710,12 +5486,16 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: "Configuration key to enable or disable the injection of the Datadog trace context into stored\
-        \ procedures.\nDefault value is <c>false</c> (disabled).\nWhen enabled, Datadog trace context will be injected\
-        \ into individual stored procedure calls when the following requirements are met:\n<ul>\n  <li>The database\
-        \ is Microsoft SQL Server and <see cref=\"TracerSettings.DbmPropagationMode\"/> is set to \n<c>service</c>\
-        \ or \n<c>full</c>.</li>\n  <li>The stored procedure call does not have <c>Output</c>, <c>InputOutput</c>,\
-        \ or <c>Return</c> ADO.NET command parameters.</li>\n</ul>"
+    - description: |-
+        Configuration key to enable or disable the injection of the Datadog trace context into stored procedures.
+        Default value is <c>false</c> (disabled).
+        When enabled, Datadog trace context will be injected into individual stored procedure calls when the following requirements are met:
+        <ul>
+          <li>The database is Microsoft SQL Server and <see cref="TracerSettings.DbmPropagationMode"/> is set to
+        <c>service</c> or
+        <c>full</c>.</li>
+          <li>The stored procedure call does not have <c>Output</c>, <c>InputOutput</c>, or <c>Return</c> ADO.NET command parameters.</li>
+        </ul>
       source: in_code_documentation
       lang: dotnet
 - key: DD_TRACE_KAFKA_ANALYTICS_ENABLED
@@ -5727,8 +5507,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by Kafka integrations by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by Kafka integrations by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_KAFKA_CREATE_CONSUMER_SCOPE_ENABLED
@@ -5756,8 +5535,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the LevelDB integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the LevelDB integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_LOGFILE_RETENTION_DAYS
@@ -5769,8 +5547,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Configuration key for setting in number of days when to delete log files based on their last
-        writetime date.
+    - description: Configuration key for setting in number of days when to delete log files based on their last writetime date.
       source: in_code_documentation
       lang: dotnet
 - key: DD_TRACE_LOGGING_RATE
@@ -5832,8 +5609,7 @@ documentedConfigurations:
         **Default**: %ProgramData%\Datadog .NET Tracer\logs\ on Windows, /var/log/datadog/dotnet on Linux
       source: documentation_same_language
       lang: golang
-    - description: Sets a directory where tracer logs are written. The directory must exist; otherwise logs remain
-        on stderr.
+    - description: Sets a directory where tracer logs are written. The directory must exist; otherwise logs remain on stderr.
       source: llm_generated
       lang: golang
   - implementation: B
@@ -5857,8 +5633,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Deprecated, use DD_TRACE_LOG_DIRECTORY instead, and make sure it is a directory and not a file
-        path
+    - description: Deprecated, use DD_TRACE_LOG_DIRECTORY instead, and make sure it is a directory and not a file path
       source: registry_doc
       lang: dotnet
 - key: DD_TRACE_LOG_SINKS
@@ -5897,8 +5672,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Memcache integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Memcache integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_METHODS
@@ -5938,8 +5712,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the mgo integration by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by the mgo integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_MONGO_ANALYTICS_ENABLED
@@ -5951,8 +5724,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by MongoDB integrations by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by MongoDB integrations by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_MUX_ANALYTICS_ENABLED
@@ -5964,8 +5736,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the gorilla/mux integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the gorilla/mux integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_NEGRONI_ANALYTICS_ENABLED
@@ -5977,8 +5748,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Negroni integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Negroni integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP
@@ -5991,10 +5761,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Applies a regex to redact sensitive data from query strings on incoming HTTP requests. The default
-        regex matches various sensitive data patterns, including passwords, tokens, API keys, private keys, and
-        authorization terms. Matches are replaced with <redacted>. If an empty string is passed, no obfuscation
-        occurs. The resulting value is reported in the http.url tag.
+    - description: Applies a regex to redact sensitive data from query strings on incoming HTTP requests. The default regex matches various sensitive data patterns, including passwords, tokens, API keys, private keys, and authorization terms. Matches are replaced with <redacted>. If an empty string is passed, no obfuscation occurs. The resulting value is reported in the http.url tag.
       source: registry_doc
       lang: golang
   - implementation: D
@@ -6002,10 +5769,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Applies a regex to redact sensitive data from query strings on incoming HTTP requests. The default
-        regex matches various sensitive data patterns, including passwords, tokens, API keys, private keys, and
-        authorization terms. Matches are replaced with <redacted>. If an empty string is passed, no obfuscation
-        occurs. The resulting value is reported in the http.url tag.
+    - description: Applies a regex to redact sensitive data from query strings on incoming HTTP requests. The default regex matches various sensitive data patterns, including passwords, tokens, API keys, private keys, and authorization terms. Matches are replaced with <redacted>. If an empty string is passed, no obfuscation occurs. The resulting value is reported in the http.url tag.
       source: registry_doc
       lang: dotnet
 - key: DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP_TIMEOUT
@@ -6046,12 +5810,10 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables incrementally flushing large traces to the Datadog Agent, reducing the chance of rejection
-        by the Agent. Use only when you have long-lived traces or traces with many spans.
+    - description: Enables incrementally flushing large traces to the Datadog Agent, reducing the chance of rejection by the Agent. Use only when you have long-lived traces or traces with many spans.
       source: registry_doc
       lang: dotnet
-    - description: Enables incrementally flushing large traces to the Datadog Agent, reducing the chance of rejection
-        by the Agent. Use only when you have long-lived traces or traces with many spans.
+    - description: Enables incrementally flushing large traces to the Datadog Agent, reducing the chance of rejection by the Agent. Use only when you have long-lived traces or traces with many spans.
       source: registry_doc
       lang: golang
 - key: DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
@@ -6085,8 +5847,7 @@ documentedConfigurations:
         : Minimum number of spans in a trace before partial flush is triggered.
       source: documentation_same_language
       lang: golang
-    - description: Sets the minimum number of finished spans required to trigger a partial flush when partial flushing
-        is enabled. Defaults to 1000; invalid values are ignored.
+    - description: Sets the minimum number of finished spans required to trigger a partial flush when partial flushing is enabled. Defaults to 1000; invalid values are ignored.
       source: llm_generated
       lang: golang
   - implementation: C
@@ -6094,8 +5855,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Number of spans before partially exporting a trace. This prevents keeping all the spans in memory
-        for very large traces.
+    - description: Number of spans before partially exporting a trace. This prevents keeping all the spans in memory for very large traces.
       source: registry_doc
       lang: dotnet
 - key: DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
@@ -6116,8 +5876,7 @@ documentedConfigurations:
         Default value is false
       source: in_code_documentation
       lang: dotnet
-    - description: Controls whether default calculation of the peer.service span tag is enabled. Defaults depend
-        on the selected span attribute schema.
+    - description: Controls whether default calculation of the peer.service span tag is enabled. Defaults depend on the selected span attribute schema.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_PEER_SERVICE_MAPPING
@@ -6136,8 +5895,7 @@ documentedConfigurations:
         <seealso cref="Datadog.Trace.Configuration.TracerSettings.PeerServiceNameMappings"/>
       source: in_code_documentation
       lang: dotnet
-    - description: Maps one peer.service value to another. Provide mappings as key:value pairs separated by commas
-        or spaces.
+    - description: Maps one peer.service value to another. Provide mappings as key:value pairs separated by commas or spaces.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_PIPE_NAME
@@ -6229,8 +5987,7 @@ documentedConfigurations:
         When set to true, stop extracting trace context when a valid one is found.
       source: documentation_same_language
       lang: golang
-    - description: When enabled, only the first configured propagation style is used for context extraction. When
-        disabled, extraction tries each configured style and uses the first one that succeeds.
+    - description: When enabled, only the first configured propagation style is used for context extraction. When disabled, extraction tries each configured style and uses the first one that succeeds.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_PROPAGATION_STYLE
@@ -6242,10 +5999,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: A comma-separated list of header formats from which to attempt to inject and extract distributed
-        tracing propagation data. The first format found with complete and valid headers is used to define the trace
-        to continue. The more specific DD_TRACE_PROPAGATION_STYLE_INJECT and DD_TRACE_PROPAGATION_STYLE_EXTRACT
-        configurations take priority when present.
+    - description: A comma-separated list of header formats from which to attempt to inject and extract distributed tracing propagation data. The first format found with complete and valid headers is used to define the trace to continue. The more specific DD_TRACE_PROPAGATION_STYLE_INJECT and DD_TRACE_PROPAGATION_STYLE_EXTRACT configurations take priority when present.
       source: registry_doc
       lang: golang
 - key: DD_TRACE_PROPAGATION_STYLE_EXTRACT
@@ -6277,12 +6031,10 @@ documentedConfigurations:
         When multiple values are given, the order of matching is based on the order of values.
       source: documentation_same_language
       lang: golang
-    - description: Specifies trace context propagation formats for extraction only in a comma-separated list. Highest
-        precedence for configuring extraction propagators.
+    - description: Specifies trace context propagation formats for extraction only in a comma-separated list. Highest precedence for configuring extraction propagators.
       source: documentation_same_language
       lang: golang
-    - description: Comma-separated list of propagation styles to use when extracting context from incoming requests.
-        Set to none to disable extraction.
+    - description: Comma-separated list of propagation styles to use when extracting context from incoming requests. Set to none to disable extraction.
       source: llm_generated
       lang: golang
   - implementation: D
@@ -6290,9 +6042,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: A comma-separated list of header formats from which to attempt to extract distributed tracing
-        propagation data. The first format found with complete and valid headers is used to define the trace to
-        continue.
+    - description: A comma-separated list of header formats from which to attempt to extract distributed tracing propagation data. The first format found with complete and valid headers is used to define the trace to continue.
       source: registry_doc
       lang: dotnet
 - key: DD_TRACE_PROPAGATION_STYLE_INJECT
@@ -6321,12 +6071,10 @@ documentedConfigurations:
         Available since version 2.20.0
       source: documentation_same_language
       lang: golang
-    - description: Specifies trace context propagation formats for injection only in comma-separated list. Highest
-        precedence for configuring injection propagators.
+    - description: Specifies trace context propagation formats for injection only in comma-separated list. Highest precedence for configuring injection propagators.
       source: documentation_same_language
       lang: golang
-    - description: Comma-separated list of propagation styles to use when injecting context into outgoing requests.
-        Set to none to disable injection.
+    - description: Comma-separated list of propagation styles to use when injecting context into outgoing requests. Set to none to disable injection.
       source: llm_generated
       lang: golang
   - implementation: D
@@ -6347,8 +6095,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Sets the maximum number of traces to sample per second; applies only when either DD_TRACE_SAMPLING_RULES
-        or DD_TRACE_SAMPLE_RATE is set.
+    - description: Sets the maximum number of traces to sample per second; applies only when either DD_TRACE_SAMPLING_RULES or DD_TRACE_SAMPLE_RATE is set.
       source: registry_doc
       lang: golang
   - implementation: B
@@ -6356,8 +6103,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Sets the maximum number of traces to sample per second; applies only when either DD_TRACE_SAMPLING_RULES
-        or DD_TRACE_SAMPLE_RATE is set.
+    - description: Sets the maximum number of traces to sample per second; applies only when either DD_TRACE_SAMPLING_RULES or DD_TRACE_SAMPLE_RATE is set.
       source: registry_doc
       lang: dotnet
 - key: DD_TRACE_REDIGO_ANALYTICS_ENABLED
@@ -6369,8 +6115,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Redigo integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Redigo integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_REDIS_ANALYTICS_ENABLED
@@ -6382,8 +6127,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by Redis integrations by setting the analytics sample
-        rate to 1.0.
+    - description: Enables trace analytics for spans produced by Redis integrations by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_REDIS_RAW_COMMAND
@@ -6395,8 +6139,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether Redis client spans include a tag with the raw command. This can expose sensitive
-        data, so it is disabled by default.
+    - description: Controls whether Redis client spans include a tag with the raw command. This can expose sensitive data, so it is disabled by default.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED
@@ -6417,14 +6160,10 @@ documentedConfigurations:
         Default value is false
       source: in_code_documentation
       lang: dotnet
-    - description: Enable DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED to ensure no Datadog integration sets
-        service names that are different from the default global service name. This also improves how service-to-service
-        connections and inferred services are represented in Datadog visualizations, across all supported tracing
-        library languages and integrations.
+    - description: Enable DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED to ensure no Datadog integration sets service names that are different from the default global service name. This also improves how service-to-service connections and inferred services are represented in Datadog visualizations, across all supported tracing library languages and integrations.
       source: documentation_same_language
       lang: golang
-    - description: You can also remove integration overrides by setting an environment variable in your application
-        configuration. This approach is useful if you cannot access the Datadog UI.
+    - description: You can also remove integration overrides by setting an environment variable in your application configuration. This approach is useful if you cannot access the Datadog UI.
       source: documentation_same_language
       lang: golang
     - description: Forces integrations to use the global service name instead of integration-specific service names.
@@ -6439,8 +6178,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Whether to report the system's hostname for each trace. When disabled, the hostname of the Agent
-        is used instead.
+    - description: Whether to report the system's hostname for each trace. When disabled, the hostname of the Agent is used instead.
       source: registry_doc
       lang: golang
 - key: DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT
@@ -6452,8 +6190,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Always set the http.endpoint tag with the results of the simplification algorithm of Resource
-        Renaming
+    - description: Always set the http.endpoint tag with the results of the simplification algorithm of Resource Renaming
       source: registry_doc
       lang: golang
 - key: DD_TRACE_RESOURCE_RENAMING_ENABLED
@@ -6465,9 +6202,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether the http.endpoint tag is computed and added for incoming HTTP requests. This
-        is disabled by default unless application security is enabled at startup, and can be explicitly enabled
-        or disabled with this setting.
+    - description: Controls whether the http.endpoint tag is computed and added for incoming HTTP requests. This is disabled by default unless application security is enabled at startup, and can be explicitly enabled or disabled with this setting.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_RESTFUL_ANALYTICS_ENABLED
@@ -6479,8 +6214,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the go-restful integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the go-restful integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_RETRY_INTERVAL
@@ -6521,8 +6255,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Controls the ingestion sample rate (between 0.0 and 1.0) between the Agent and the backend. Use
-        OTEL_TRACES_SAMPLER as an alias
+    - description: Controls the ingestion sample rate (between 0.0 and 1.0) between the Agent and the backend. Use OTEL_TRACES_SAMPLER as an alias
       source: registry_doc
       lang: dotnet
   - implementation: C
@@ -6598,8 +6331,7 @@ documentedConfigurations:
     - description: You can configure sampling rules by setting the environment variable DD_TRACE_SAMPLING_RULES.
       source: documentation_same_language
       lang: golang
-    - description: JSON array of sampling rules that control the sampling rate for matching traces. Rules can match
-        on service, operation name, resource, and tags.
+    - description: JSON array of sampling rules that control the sampling rate for matching traces. Rules can match on service, operation name, resource, and tags.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_SAMPLING_RULES_FILE
@@ -6611,8 +6343,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Path to a file containing a JSON array of trace sampling rules. This is used when DD_TRACE_SAMPLING_RULES
-        is not set.
+    - description: Path to a file containing a JSON array of trace sampling rules. This is used when DD_TRACE_SAMPLING_RULES is not set.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_SAMPLING_RULES_FORMAT
@@ -6639,8 +6370,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Sarama integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Sarama integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_SERVICE_MAPPING
@@ -6681,8 +6411,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Sets the hostname reported with tracing data. When set, hostname reporting is enabled and uses
-        this value instead of auto-detection.
+    - description: Sets the hostname reported with tracing data. When set, hostname reporting is enabled and uses this value instead of auto-detection.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_SPAN_ATTRIBUTE_SCHEMA
@@ -6695,8 +6424,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Selects the span attribute and naming schema version used by integrations. Supported values are
-        v0 (default) and v1; invalid values fall back to v0.
+    - description: Selects the span attribute and naming schema version used by integrations. Supported values are v0 (default) and v1; invalid values fall back to v0.
       source: llm_generated
       lang: golang
   - implementation: B
@@ -6719,8 +6447,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the database/sql integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the database/sql integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_SQL_COMMENT_INJECTION_MODE
@@ -6732,8 +6459,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls SQL comment injection used for database monitoring correlation. Supported values are
-        disabled, service, and full.
+    - description: Controls SQL comment injection used for database monitoring correlation. Supported values are disabled, service, and full.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_STARTUP_LOGS
@@ -6813,8 +6539,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Twirp integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Twirp integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED
@@ -6826,8 +6551,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: When enabled and the agent supports it, sends traces using the v1 payload format. Defaults to
-        false.
+    - description: When enabled and the agent supports it, sends traces using the v1 payload format. Defaults to false.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_VALKEY_ANALYTICS_ENABLED
@@ -6851,8 +6575,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Controls whether Valkey client spans include a tag with the raw command. This can expose sensitive
-        data, so it is disabled by default.
+    - description: Controls whether Valkey client spans include a tag with the raw command. This can expose sensitive data, so it is disabled by default.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_VAULT_ANALYTICS_ENABLED
@@ -6864,8 +6587,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for spans produced by the Vault integration by setting the analytics
-        sample rate to 1.0.
+    - description: Enables trace analytics for spans produced by the Vault integration by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_TRACE_WCF_RESOURCE_OBFUSCATION_ENABLED
@@ -6925,8 +6647,7 @@ documentedConfigurations:
         : Maximum length of the x-datadog-tags header in bytes.
       source: documentation_same_language
       lang: golang
-    - description: Sets the maximum length of the x-datadog-tags header value used for trace tag propagation. Values
-        are clamped to 0–512; setting 0 disables propagation of this header.
+    - description: Sets the maximum length of the x-datadog-tags header value used for trace tag propagation. Values are clamped to 0–512; setting 0 disables propagation of this header.
       source: llm_generated
       lang: golang
 - key: DD_TRACE__ANALYTICS_ENABLED
@@ -6938,8 +6659,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: Enables trace analytics for integrations that use the default (unprefixed) analytics toggle by
-        setting the analytics sample rate to 1.0.
+    - description: Enables trace analytics for integrations that use the default (unprefixed) analytics toggle by setting the analytics sample rate to 1.0.
       source: llm_generated
       lang: golang
 - key: DD_VERSION
@@ -6983,16 +6703,13 @@ documentedConfigurations:
         **Default (HTTP)**: http://localhost:4318.
       source: documentation_same_language
       lang: golang
-    - description: '1. For the application container, set OTEL_EXPORTER_OTLP_ENDPOINT environment variable to point
-        to the Datadog Agent container. For example:'
+    - description: '1. For the application container, set OTEL_EXPORTER_OTLP_ENDPOINT environment variable to point to the Datadog Agent container. For example:'
       source: documentation_same_language
       lang: golang
-    - description: Your application must send data to the DDOT Collector on the same host. Ensure that the OTEL_EXPORTER_OTLP_ENDPOINT
-        environment variable is set on your application.
+    - description: Your application must send data to the DDOT Collector on the same host. Ensure that the OTEL_EXPORTER_OTLP_ENDPOINT environment variable is set on your application.
       source: documentation_same_language
       lang: golang
-    - description: Sets the OTLP exporter endpoint used by OpenTelemetry metrics export. When set, it overrides
-        the default endpoint derived from agent configuration.
+    - description: Sets the OTLP exporter endpoint used by OpenTelemetry metrics export. When set, it overrides the default endpoint derived from agent configuration.
       source: llm_generated
       lang: golang
   - implementation: C
@@ -7024,8 +6741,7 @@ documentedConfigurations:
         Format: api-key=key,other=value.
       source: in_code_documentation
       lang: dotnet
-    - description: '**Description**: Specifies a comma-separated list of key-value pairs to be used as headers on
-        all outgoing OTLP requests (for example, api-key=key,other-config=value).'
+    - description: '**Description**: Specifies a comma-separated list of key-value pairs to be used as headers on all outgoing OTLP requests (for example, api-key=key,other-config=value).'
       source: documentation_same_language
       lang: golang
     - description: Sets additional headers to include in OTLP exporter requests.
@@ -7040,8 +6756,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Endpoint URL for log data only, with an optionally-specified port number. Typically ends with
-        v1/logs when using OTLP/HTTP.
+    - description: Endpoint URL for log data only, with an optionally-specified port number. Typically ends with v1/logs when using OTLP/HTTP.
       source: registry_doc
       lang: dotnet
 - key: OTEL_EXPORTER_OTLP_LOGS_HEADERS
@@ -7103,8 +6818,7 @@ documentedConfigurations:
     - description: 'If you are using OpenTelemetry automatic instrumentation, set the following environment variables:'
       source: documentation_same_language
       lang: golang
-    - description: Sets the OTLP exporter endpoint used specifically for metrics export. When set, it takes precedence
-        over OTEL_EXPORTER_OTLP_ENDPOINT.
+    - description: Sets the OTLP exporter endpoint used specifically for metrics export. When set, it takes precedence over OTEL_EXPORTER_OTLP_ENDPOINT.
       source: llm_generated
       lang: golang
   - implementation: C
@@ -7130,16 +6844,13 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: true
     descriptions:
-    - description: '**Description**: Specifies a comma-separated list of key-value pairs to be used as headers on
-        outgoing OTLP metrics requests (for example, api-key=key,other-config=value). Takes precedence over the
-        general OTEL_EXPORTER_OTLP_HEADERS.'
+    - description: '**Description**: Specifies a comma-separated list of key-value pairs to be used as headers on outgoing OTLP metrics requests (for example, api-key=key,other-config=value). Takes precedence over the general OTEL_EXPORTER_OTLP_HEADERS.'
       source: documentation_same_language
       lang: golang
     - description: 'If you are using OpenTelemetry automatic instrumentation, set the following environment variables:'
       source: documentation_same_language
       lang: golang
-    - description: Sets additional headers to include in OTLP exporter requests for metrics. When set, it takes
-        precedence over OTEL_EXPORTER_OTLP_HEADERS for metrics export.
+    - description: Sets additional headers to include in OTLP exporter requests for metrics. When set, it takes precedence over OTEL_EXPORTER_OTLP_HEADERS for metrics export.
       source: llm_generated
       lang: golang
   - implementation: C
@@ -7210,15 +6921,10 @@ documentedConfigurations:
         - Otherwise, set the temporality preference in your code. For more information, read Configure delta temporality in OpenTelemetry.
       source: documentation_same_language
       lang: golang
-    - description: If you produce OTLP metrics from an OpenTelemetry SDK, you can configure your OTLP exporter to
-        produce these metric types with delta aggregation temporality. In some languages you can use the recommended
-        configuration by setting the OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE environment variable to Delta
-        (case-insensitive). For a list of languages with support for this environment variable, read the specification
-        compliance matrix.
+    - description: If you produce OTLP metrics from an OpenTelemetry SDK, you can configure your OTLP exporter to produce these metric types with delta aggregation temporality. In some languages you can use the recommended configuration by setting the OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE environment variable to Delta (case-insensitive). For a list of languages with support for this environment variable, read the specification compliance matrix.
       source: documentation_same_language
       lang: golang
-    - description: Controls the metrics temporality preference for OTLP export. Delta is used by default for monotonic
-        instruments, while up-down counters and gauges are always exported as cumulative.
+    - description: Controls the metrics temporality preference for OTLP export. Delta is used by default for monotonic instruments, while up-down counters and gauges are always exported as cumulative.
       source: llm_generated
       lang: golang
 - key: OTEL_EXPORTER_OTLP_METRICS_TIMEOUT
@@ -7237,8 +6943,7 @@ documentedConfigurations:
         **Default**: 10000 (10s).
       source: documentation_same_language
       lang: golang
-    - description: Sets the OTLP metrics exporter timeout in milliseconds. This setting is currently reported for
-        configuration telemetry and is not applied to metrics export timeouts.
+    - description: Sets the OTLP metrics exporter timeout in milliseconds. This setting is currently reported for configuration telemetry and is not applied to metrics export timeouts.
       source: llm_generated
       lang: golang
   - implementation: C
@@ -7270,17 +6975,13 @@ documentedConfigurations:
         **Default**: SDK-dependent. The Datadog SDK aims to match the default protocol of the corresponding official OpenTelemetry SDK for that language.
       source: documentation_same_language
       lang: golang
-    - description: Set the hostPort to expose the container port to the external network. This enables configuring
-        the OTLP exporter to point to the IP address of the node where the Datadog Agent is assigned.
+    - description: Set the hostPort to expose the container port to the external network. This enables configuring the OTLP exporter to point to the IP address of the node where the Datadog Agent is assigned.
       source: documentation_same_language
       lang: golang
-    - description: To configure your existing application to use Datadog Agent instead of standalone Collector,
-        ensure that the correct OTLP endpoint hostname is used. The Datadog Agent with DDOT Collector deployed as
-        a DaemonSet, so the current host needs to be targeted.
+    - description: To configure your existing application to use Datadog Agent instead of standalone Collector, ensure that the correct OTLP endpoint hostname is used. The Datadog Agent with DDOT Collector deployed as a DaemonSet, so the current host needs to be targeted.
       source: documentation_same_language
       lang: golang
-    - description: Selects the OTLP protocol used for metrics export when no metrics-specific protocol is configured.
-        Supported values include http/protobuf (http) and grpc.
+    - description: Selects the OTLP protocol used for metrics export when no metrics-specific protocol is configured. Supported values include http/protobuf (http) and grpc.
       source: llm_generated
       lang: golang
   - implementation: C
@@ -7314,8 +7015,7 @@ documentedConfigurations:
         **Default**: 10000 (10s).
       source: documentation_same_language
       lang: golang
-    - description: Sets the generic OTLP exporter timeout in milliseconds. This setting is currently reported for
-        configuration telemetry and is not applied to metrics export timeouts.
+    - description: Sets the generic OTLP exporter timeout in milliseconds. This setting is currently reported for configuration telemetry and is not applied to metrics export timeouts.
       source: llm_generated
       lang: golang
 - key: OTEL_LOGS_EXPORTER
@@ -7336,8 +7036,7 @@ documentedConfigurations:
         **Default**: otlp
       source: documentation_same_language
       lang: golang
-    - description: Your application must send data to the DDOT Collector on the same host. Ensure that the OTEL_EXPORTER_OTLP_ENDPOINT
-        environment variable is set on your application.
+    - description: Your application must send data to the DDOT Collector on the same host. Ensure that the OTEL_EXPORTER_OTLP_ENDPOINT environment variable is set on your application.
       source: documentation_same_language
       lang: golang
     - description: Controls the OpenTelemetry logs exporter selection. This setting is not supported and is ignored.
@@ -7348,8 +7047,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: Datadog SDKs that support OTLP log export should default to otlp; all others should default to
-        None/null.
+    - description: Datadog SDKs that support OTLP log export should default to otlp; all others should default to None/null.
       source: registry_doc
       lang: dotnet
 - key: OTEL_LOG_LEVEL
@@ -7370,8 +7068,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: OTEL_LOG_LEVEL maps to DD_TRACE_DEBUG and enables the debug mode of the tracer. It only accepts
-        "debug" as a valid value.
+    - description: OTEL_LOG_LEVEL maps to DD_TRACE_DEBUG and enables the debug mode of the tracer. It only accepts "debug" as a valid value.
       source: registry_doc
       lang: golang
 - key: OTEL_METRICS_EXPORTER
@@ -7397,9 +7094,7 @@ documentedConfigurations:
     - golang
     conflictingDescriptions: false
     descriptions:
-    - description: OTEL_METRICS_EXPORTER is not used to choose an exporter. It is effectively only honored for none,
-        which forces metrics off. When unset it does not enable metrics on its own it needs DD_METRICS_OTEL_ENABLED
-        set to true to effectively produce metrics
+    - description: OTEL_METRICS_EXPORTER is not used to choose an exporter. It is effectively only honored for none, which forces metrics off. When unset it does not enable metrics on its own it needs DD_METRICS_OTEL_ENABLED set to true to effectively produce metrics
       source: registry_doc
       lang: golang
 - key: OTEL_METRIC_EXPORT_INTERVAL
@@ -7428,13 +7123,10 @@ documentedConfigurations:
         **Notes**: This default value is Datadog's recommended configuration and differs from the OpenTelemetry specification's default of 60000ms.
       source: documentation_same_language
       lang: golang
-    - description: 'The default metric export interval for the .NET OTel SDK differs from the default for the Datadog
-        .NET SDK. Datadog recommends setting the OTEL_METRIC_EXPORT_INTERVAL environment variable on your .NET service
-        to match the default Datadog metric export interval:'
+    - description: 'The default metric export interval for the .NET OTel SDK differs from the default for the Datadog .NET SDK. Datadog recommends setting the OTEL_METRIC_EXPORT_INTERVAL environment variable on your .NET service to match the default Datadog metric export interval:'
       source: documentation_same_language
       lang: golang
-    - description: Sets the OpenTelemetry metrics export interval in milliseconds. This setting is currently reported
-        for configuration telemetry and is not used to control export scheduling.
+    - description: Sets the OpenTelemetry metrics export interval in milliseconds. This setting is currently reported for configuration telemetry and is not used to control export scheduling.
       source: llm_generated
       lang: golang
 - key: OTEL_METRIC_EXPORT_TIMEOUT
@@ -7463,8 +7155,7 @@ documentedConfigurations:
         **Notes**: This default value is Datadog's recommended configuration and differs from the OpenTelemetry specification's default of 30000ms.
       source: documentation_same_language
       lang: golang
-    - description: Sets the OpenTelemetry metrics export timeout in milliseconds. This setting is currently reported
-        for configuration telemetry and is not applied to metrics export timeouts.
+    - description: Sets the OpenTelemetry metrics export timeout in milliseconds. This setting is currently reported for configuration telemetry and is not applied to metrics export timeouts.
       source: llm_generated
       lang: golang
 - key: OTEL_PROPAGATORS
@@ -7505,8 +7196,7 @@ documentedConfigurations:
         **Note**: Only use this configuration when migrating an application from the OpenTelemetry SDK to the Datadog SDK. For more information on this configuration and other OpenTelemetry environment variables, see Using OpenTelemetry Environment Variables with Datadog SDKs.
       source: documentation_same_language
       lang: golang
-    - description: Sets the propagation styles to use via OpenTelemetry configuration. When the corresponding tracer
-        propagation setting is not set, supported values are mapped to the tracer's propagation styles.
+    - description: Sets the propagation styles to use via OpenTelemetry configuration. When the corresponding tracer propagation setting is not set, supported values are mapped to the tracer's propagation styles.
       source: llm_generated
       lang: golang
 - key: OTEL_RESOURCE_ATTRIBUTES
@@ -7555,9 +7245,7 @@ documentedConfigurations:
     - description: 'Set the OTEL_RESOURCE_ATTRIBUTES environment variable with your service''s information:'
       source: documentation_same_language
       lang: golang
-    - description: Sets OpenTelemetry resource attributes that are mapped to tracer tags when the corresponding
-        tracer tag setting is not set. Reserved attributes for service, environment, and version are mapped to standard
-        tags, and only the first 10 attributes are applied.
+    - description: Sets OpenTelemetry resource attributes that are mapped to tracer tags when the corresponding tracer tag setting is not set. Reserved attributes for service, environment, and version are mapped to standard tags, and only the first 10 attributes are applied.
       source: llm_generated
       lang: golang
 - key: OTEL_SDK_DISABLED
@@ -7597,12 +7285,10 @@ documentedConfigurations:
     - description: 'Add the following environment variables to your application''s deployment manifest:'
       source: documentation_same_language
       lang: golang
-    - description: 'Set the following environment variables in your application''s container specification to tag
-        outgoing telemetry:'
+    - description: 'Set the following environment variables in your application''s container specification to tag outgoing telemetry:'
       source: documentation_same_language
       lang: golang
-    - description: Sets the service name via OpenTelemetry configuration when the corresponding service setting
-        is not set.
+    - description: Sets the service name via OpenTelemetry configuration when the corresponding service setting is not set.
       source: llm_generated
       lang: golang
 - key: OTEL_TRACES_EXPORTER
@@ -7668,8 +7354,7 @@ documentedConfigurations:
          - traceidratio|${OTEL_TRACES_SAMPLER_ARG}
       source: documentation_same_language
       lang: golang
-    - description: Sets the trace sampler via OpenTelemetry configuration and maps it to the tracer's sample rate
-        when the corresponding setting is not set. Parent-based samplers are supported; unsupported values are ignored.
+    - description: Sets the trace sampler via OpenTelemetry configuration and maps it to the tracer's sample rate when the corresponding setting is not set. Parent-based samplers are supported; unsupported values are ignored.
       source: llm_generated
       lang: golang
 - key: OTEL_TRACES_SAMPLER_ARG
@@ -7700,8 +7385,7 @@ documentedConfigurations:
          - traceidratio|${OTEL_TRACES_SAMPLER_ARG}
       source: documentation_same_language
       lang: golang
-    - description: Sets the argument for OTEL_TRACES_SAMPLER when using the traceidratio sampler (for example, OTEL_TRACES_SAMPLER_ARG=0.25).
-        This is used to derive the tracer sample rate when mapping OpenTelemetry configuration.
+    - description: Sets the argument for OTEL_TRACES_SAMPLER when using the traceidratio sampler (for example, OTEL_TRACES_SAMPLER_ARG=0.25). This is used to derive the tracer sample rate when mapping OpenTelemetry configuration.
       source: llm_generated
       lang: golang
   - implementation: D
@@ -7724,10 +7408,7 @@ documentedConfigurations:
     - dotnet
     conflictingDescriptions: false
     descriptions:
-    - description: The _DD_EXTENSION_ENDPOINT isn't a standard, globally recognized AWS environment variable or
-        service, but likely refers to a custom or specific endpoint for a DataDog (DD) integration/extension within
-        AWS, often used in Lambda functions or containerized apps via ECS/Fargate to send metrics/logs to Datadog's
-        services (Agent/API), especially when using Datadog's AWS integrations or extensions for seamless observability
+    - description: The _DD_EXTENSION_ENDPOINT isn't a standard, globally recognized AWS environment variable or service, but likely refers to a custom or specific endpoint for a DataDog (DD) integration/extension within AWS, often used in Lambda functions or containerized apps via ECS/Fargate to send metrics/logs to Datadog's services (Agent/API), especially when using Datadog's AWS integrations or extensions for seamless observability
       source: registry_doc
       lang: dotnet
 - key: _DD_EXTENSION_PATH

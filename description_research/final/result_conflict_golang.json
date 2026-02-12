@@ -1,0 +1,1424 @@
+{
+  "langs": [
+    "golang"
+  ],
+  "totalCount": 44,
+  "implementationPairsCount": 44,
+  "conflictingDescriptionsCount": 44,
+  "nonConflictingDescriptionsCount": 0,
+  "documentedConfigurations": [
+    {
+      "key": "DD_API_KEY",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "- AWS Fargate environment\n- Go application containerized with Docker\n - Instrumented with the Datadog Go tracing library (see version requirements)\n- AWS CLI configured with appropriate permissions\n- Your Datadog API key",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "- Set DD_SITE to (ensure the correct SITE is selected on the right).\n - Set DD_API_KEY_SECRET_ARN to the ARN of the AWS secret where your Datadog API key is securely stored. The key needs to be stored as a plaintext string (not a JSON blob). The secretsmanager:GetSecretValue permission is required. For quick testing, you can use DD_API_KEY instead and set the Datadog API key in plaintext.\n - Optionally set DD_UNIVERSAL_INSTRUMENTATION: true to take advantage of advanced configurations such as capturing the Lambda request and response payloads and inferring APM spans from incoming Lambda events.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "1. Create a dedicated API key and an application key scoped to at least continuous_profiler_pgo_read as described in API and Application Keys.\n2. Set DD_API_KEY, DD_APP_KEY, and DD_SITE with the environment secret mechanism of your CI provider.\n3. Run datadog-pgo before your build step.\n For example, for a service foo that runs in prod and has its main package in ./cmd/foo, you should add this step:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the API key used to authenticate outbound requests when running in agentless mode (sending data directly instead of via a local agent). This key is required for agentless CI test reporting and LLM Observability agentless mode.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_BODY_PARSING_SIZE_LIMIT",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "Configure the connection from the external processor to the Datadog Agent using these environment variables:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "| Environment variable | Default value | Description |\n|-------------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------|\n| DD_SERVICE_EXTENSION_HOST | 0.0.0.0 | gRPC server listening address. |\n| DD_SERVICE_EXTENSION_PORT | 443 | gRPC server port. |\n| DD_SERVICE_EXTENSION_HEALTHCHECK_PORT | 80 | HTTP server port for health checks. |\n| DD_APPSEC_BODY_PARSING_SIZE_LIMIT | 0 | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed. The recommended value is 10000000 (10MB). (To fully enable body processing, the allow_mode_override option should also be set in the External Processing filter configuration) |\n| DD_SERVICE_EXTENSION_OBSERVABILITY_MODE | false | Enable asynchronous analysis of requests. This also disables blocking capabilities. (To fully enable observability mode, this option should also be set in the External Processing filter configuration) |\n| DD_SERVICE | serviceextensions | Service name shown in the Datadog UI. |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "| Environment variable | Default value | Description |\n|-------------------------------------|---------------|---------------------------------------------------------------------------------------------------------------|\n| DD_HAPROXY_SPOA_HOST | 0.0.0.0 | Host on which the SPOA and HTTP health server listen. |\n| DD_HAPROXY_SPOA_PORT | 3000 | Port used by the SPOA that accepts communication with HAProxy. |\n| DD_HAPROXY_SPOA_HEALTHCHECK_PORT | 3080 | Port used for the HTTP server for health checks. |\n| DD_APPSEC_BODY_PARSING_SIZE_LIMIT | 0 | Maximum size of bodies to process in bytes. If 0, bodies are not processed. Recommended: 10000000 (10MB). |\n| DD_SERVICE | spoa | Service name shown in the Datadog UI. |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the maximum number of bytes of HTTP request and response bodies to buffer and analyze for security features when running behind a proxy/external processing integration. Values of 0 or less disable body analysis, and bodies larger than the limit are truncated.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "C",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "The HTML and JSON content can both be changed using the DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML and DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON environment variables within your application deployment file.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Path to a file containing a custom HTML response body used when an HTTP request is blocked. If set, the file contents replace the built-in blocked-response template.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "C",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "The HTML and JSON content can both be changed using the DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML and DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON environment variables within your application deployment file.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Path to a file containing a custom JSON response body used when an HTTP request is blocked. If set, the file contents replace the built-in blocked-response template.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "* DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP - Pattern for scanning for keys whose values commonly contain sensitive data. If found, the values and any child nodes associated with the key are redacted.\n* DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP - Pattern for scanning for values that could indicate sensitive data. If found, the value and all its child nodes are redacted.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "**Configuration**: appsec.obfuscatorKeyRegex\n\n**Default**: N/A\n\nA regex string to redact sensitive data by its key in attack reports.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Regular expression used to identify parameter keys whose values should be redacted in security event payloads. If unset or invalid, a default pattern is used.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_RULES",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "C",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Configuration**: appsec.rules\n\n**Default**: N/A\n\nA path to a custom AppSec rules file.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Next, configure detection rules to create security signals based on those security traces defined by the In-App WAF rules you created. You can modify the provided out-of-the-box AAP detection rules or create new ones.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Path to a file containing custom security rules. If not set, built-in recommended rules are used.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_APPSEC_SCA_ENABLED",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "C",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "SCA can be enabled on your running services using one of the following two methods:\n- From the Datadog UI.\n- Manually, using the DD_APPSEC_SCA_ENABLED environment variable.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "SCA is configured by setting the -Ddd.appsec.sca.enabled flag or the DD_APPSEC_SCA_ENABLED environment variable to true in supported languages:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "| Product | Configuration key |\n|----------------------------------|-------------------------------|\n| APM Tracing | DD_APM_TRACING_ENABLED |\n| Continuous Profiler | DD_PROFILING_ENABLED |\n| Data Streams Monitoring | DD_DATA_STREAMS_ENABLED |\n| App and API Protection (AAP) | DD_APPSEC_ENABLED |\n| Code Security (IAST) | DD_IAST_ENABLED |\n| Data Observability: Jobs Monitoring | DD_DATA_JOBS_ENABLED |\n| Software Composition Analysis | DD_APPSEC_SCA_ENABLED |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Controls whether Software Composition Analysis is enabled. When set, the configured value is recorded in instrumentation telemetry.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_APP_KEY",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "1. Create a dedicated API key and an application key scoped to at least continuous_profiler_pgo_read as described in API and Application Keys.\n2. Set DD_API_KEY, DD_APP_KEY, and DD_SITE with the environment secret mechanism of your CI provider.\n3. Run datadog-pgo before your build step.\n For example, for a service foo that runs in prod and has its main package in ./cmd/foo, you should add this step:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "You **must** set your Datadog API and application keys as secrets in your GitHub repository whether at the organization or repository level. Ensure that you add the code_analysis_read scope to your Datadog application key. For more information, see API and Application Keys.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "You **must** set your Datadog API and application keys as secrets in your GitHub repository, at either the organization or repository level. Ensure that you add the code_analysis_read scope to your Datadog application key. For more information, see API and Application Keys.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the application key used to authenticate LLM Observability dataset and experiment requests in agentless mode. If agentless mode is enabled and this is not set, dataset/experiment operations that require an application key will fail.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_CIVISIBILITY_ENABLED",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "Prior to setting up Test Impact Analysis, set up Test Optimization for Java. If you are reporting data through the Agent, use v6.40 and later or v7.40 and later.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Enables CI test instrumentation and reporting. When false, CI test features remain disabled even if the process is instrumented for them.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_DATA_STREAMS_ENABLED",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "As an example, the following enables profiling and Data Streams Monitoring, and disables tracing:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "This configuration does the following:\n- enables APM for pods with the following labels:\n - app:db-user, which marks pods running the db-user application.\n - webserver:routing, which marks pods running the request-router application.\n- instructs Datadog to use the default versions of the Datadog Tracer SDKs.\n- sets Datadog environment variables to apply to each target group and configure the SDKs.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Enables Data Streams Monitoring. When enabled, the tracer initializes the Data Streams processor and reports pathway data for supported messaging operations.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_EXTERNAL_ENV",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "- Inject environment variables (DD_AGENT_HOST, DD_TRACE_AGENT_URL, DD_ENTITY_ID and DD_EXTERNAL_ENV) to configure DogStatsD and APM tracer libraries into the user's application containers.\n- Inject Datadog standard tags (env, service, version) from application labels into the container environment variables.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets an external environment identifier sent on tracer HTTP requests as the Datadog-External-Env header. This value can be used by downstream systems to help determine request or metric origin.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_HOSTNAME",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "You can now use this new image to install the DDOT Collector. This enables Datadog monitoring capabilities along with the additional OpenTelemetry components you've added.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Overrides the hostname used for tagging and telemetry when hostname auto-detection is unreliable. The value must be a valid hostname; invalid values are ignored and hostname auto-detection is used instead.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_LLMOBS_ML_APP",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "The following environment variables have been removed or replaced. Update your configuration with the new variables where applicable.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the default ML app name used for LLM Observability data. This value is required when LLM Observability is enabled.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_ENABLED",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "C",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Configuration**: profiling\n\n**Default**: false\n\nWhether to enable profiling.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "**INI**: datadog.profiling.enabled. INI available since 0.82.0.\n\n**Default**: 1\n\nEnable the Datadog profiler. Added in version 0.69.0. See Enabling the PHP Profiler. For version 0.81.0 and below it defaulted to 0.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "If set to true, enables the profiler. Defaults to false.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Controls whether profiling starts when the profiler is initialized. Set to false to prevent the profiler from starting; set to auto to treat the profiler as enabled.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_ENABLED",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "The Trace to Profiling integration is enabled when you turn on profiling for your Go service and set the environment variables below:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Controls whether runtime execution traces are collected and uploaded. Defaults to enabled on amd64 and arm64.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_PROFILING_EXECUTION_TRACE_PERIOD",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "The Trace to Profiling integration is enabled when you turn on profiling for your Go service and set the environment variables below:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the time between execution trace collections. Defaults to 15m.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_REQUEST_MIRROR_HEALTHCHECK_ADDR",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "| Environment Variable | Default Value | Description |\n|--------------------------------------|---------------|----------------------------------------------------------------------------------------------------------------------------|\n| DD_REQUEST_MIRROR_LISTEN_ADDR | :8080 | Address and port where the request mirror service listens for incoming mirrored requests |\n| DD_REQUEST_MIRROR_HEALTHCHECK_ADDR | :8081 | Address and port where the health check endpoint is served |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the address (host:port) for the request-mirror health check HTTP server to listen on. Defaults to :8081.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_REQUEST_MIRROR_LISTEN_ADDR",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "Address and port where the request mirror service listens for incoming mirrored requests",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the address (host:port) for the request-mirror HTTP server to listen on. Defaults to :8080.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "E",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "The lambda-datadog Terraform module wraps the aws_lambda_function resource and automatically configures your Lambda function for Datadog Serverless Monitoring by:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "The service name to be used for this application.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "To disable APM tracing while keeping App and API Protection enabled, you must set the APM tracing variable to false.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the service name used for telemetry and generated spans. If unset, the service name defaults to the process name.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_HEALTHCHECK_PORT",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "Configure the connection from the external processor to the Datadog Agent using these environment variables:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "| Environment variable | Default value | Description |\n|-------------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------|\n| DD_SERVICE_EXTENSION_HOST | 0.0.0.0 | gRPC server listening address. |\n| DD_SERVICE_EXTENSION_PORT | 443 | gRPC server port. |\n| DD_SERVICE_EXTENSION_HEALTHCHECK_PORT | 80 | HTTP server port for health checks. |\n| DD_APPSEC_BODY_PARSING_SIZE_LIMIT | 0 | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed. The recommended value is 10000000 (10MB). (To fully enable body processing, the allow_mode_override option should also be set in the External Processing filter configuration) |\n| DD_SERVICE_EXTENSION_OBSERVABILITY_MODE | false | Enable asynchronous analysis of requests. This also disables blocking capabilities. (To fully enable observability mode, this option should also be set in the External Processing filter configuration) |\n| DD_SERVICE | serviceextensions | Service name shown in the Datadog UI. |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "| Environment variable | Default value | Description |\n|-----------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------|\n| DD_SERVICE_EXTENSION_HOST | 0.0.0.0 | gRPC server listening address. |\n| DD_SERVICE_EXTENSION_PORT | 443 | gRPC server port. |\n| DD_SERVICE_EXTENSION_HEALTHCHECK_PORT | 80 | HTTP server port for health checks. |\n| DD_APPSEC_BODY_PARSING_SIZE_LIMIT | 0 | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed. (Recommended value: 10000000 (10MB)) |\n| DD_SERVICE | serviceextensions | Service name shown in the Datadog UI. |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the port for the service-extension health check HTTP server to listen on. Defaults to 80.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_HOST",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "gRPC server listening address.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the IP address the service extension servers listen on. Defaults to 0.0.0.0.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_OBSERVABILITY_MODE",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "The Datadog External Processor exposes some settings:\n | Environment variable | Default value | Description |\n |-------------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------|\n | DD_SERVICE_EXTENSION_HOST | 0.0.0.0 | gRPC server listening address. |\n | DD_SERVICE_EXTENSION_PORT | 443 | gRPC server port. |\n | DD_SERVICE_EXTENSION_HEALTHCHECK_PORT | 80 | HTTP server port for health checks. |\n | DD_APPSEC_BODY_PARSING_SIZE_LIMIT | 0 | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed. The recommended value is 10000000 (10MB). (To fully enable body processing, the allow_mode_override option should also be set in the External Processing filter configuration) |\n | DD_SERVICE_EXTENSION_OBSERVABILITY_MODE | false | Enable asynchronous analysis. This also disables blocking capabilities. (To fully enable observability mode, this option should also be set in the External Processing filter configuration) |\n | DD_SERVICE | serviceextensions | Service name shown in the Datadog UI. |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "| Environment variable | Default value | Description |\n|-------------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------|\n| DD_SERVICE_EXTENSION_HOST | 0.0.0.0 | gRPC server listening address. |\n| DD_SERVICE_EXTENSION_PORT | 443 | gRPC server port. |\n| DD_SERVICE_EXTENSION_HEALTHCHECK_PORT | 80 | HTTP server port for health checks. |\n| DD_APPSEC_BODY_PARSING_SIZE_LIMIT | 0 | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed. The recommended value is 10000000 (10MB). (To fully enable body processing, the allow_mode_override option should also be set in the External Processing filter configuration) |\n| DD_SERVICE_EXTENSION_OBSERVABILITY_MODE | false | Enable asynchronous analysis of requests. This also disables blocking capabilities. (To fully enable observability mode, this option should also be set in the External Processing filter configuration) |\n| DD_SERVICE | serviceextensions | Service name shown in the Datadog UI. |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Enables observability mode for the service extension. When enabled, blocking actions are disabled.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_PORT",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "Configure the connection from the external processor to the Datadog Agent using these environment variables:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "| Environment variable | Default value | Description |\n|-------------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------|\n| DD_SERVICE_EXTENSION_HOST | 0.0.0.0 | gRPC server listening address. |\n| DD_SERVICE_EXTENSION_PORT | 443 | gRPC server port. |\n| DD_SERVICE_EXTENSION_HEALTHCHECK_PORT | 80 | HTTP server port for health checks. |\n| DD_APPSEC_BODY_PARSING_SIZE_LIMIT | 0 | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed. The recommended value is 10000000 (10MB). (To fully enable body processing, the allow_mode_override option should also be set in the External Processing filter configuration) |\n| DD_SERVICE_EXTENSION_OBSERVABILITY_MODE | false | Enable asynchronous analysis of requests. This also disables blocking capabilities. (To fully enable observability mode, this option should also be set in the External Processing filter configuration) |\n| DD_SERVICE | serviceextensions | Service name shown in the Datadog UI. |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "| Environment variable | Default value | Description |\n|-----------------------------------------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------|\n| DD_SERVICE_EXTENSION_HOST | 0.0.0.0 | gRPC server listening address. |\n| DD_SERVICE_EXTENSION_PORT | 443 | gRPC server port. |\n| DD_SERVICE_EXTENSION_HEALTHCHECK_PORT | 80 | HTTP server port for health checks. |\n| DD_APPSEC_BODY_PARSING_SIZE_LIMIT | 0 | Maximum size of the bodies to be processed in bytes. If set to 0, the bodies are not processed. (Recommended value: 10000000 (10MB)) |\n| DD_SERVICE | serviceextensions | Service name shown in the Datadog UI. |",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the port for the service extension gRPC server to listen on. Defaults to 443.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_EXTENSION_TLS",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "Configure the connection from the external processor to the Datadog Agent using these environment variables:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Controls whether TLS is enabled for the service extension gRPC server. Defaults to true.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_SERVICE_MAPPING",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Default**: null\n\nDynamically rename services through configuration. Services can be separated by commas or spaces, for example: mysql:mysql-service-name,postgres:postgres-service-name, mysql:mysql-service-name postgres:postgres-service-name.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "**INI**: datadog.service_mapping\n\n**Default**: null\n\nChange the default name of an APM integration. Rename one or more integrations at a time, for example: DD_SERVICE_MAPPING=pdo:payments-db,mysqli:orders-db (see Integration names).",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Define service name mappings to allow renaming services in traces, for example: postgres:postgresql,defaultdb:postgresql. Available in version 0.47+.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Maps one service name to another when creating spans. Provide mappings as key:value pairs separated by commas or spaces.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_ABANDONED_SPAN_TIMEOUT",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "The Datadog Go Tracer also supports logging for potentially abandoned spans. To enable this debug mode in Go, set the environment variable DD_TRACE_DEBUG_ABANDONED_SPANS=true. To change the duration after which spans are considered abandoned (default=10m), set the environment variable DD_TRACE_ABANDONED_SPAN_TIMEOUT to the desired time duration. Abandoned span logs appear at the Info level.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the duration after which an unfinished span is considered abandoned for debugging. Defaults to 10m.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_DEBUG_ABANDONED_SPANS",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "The Datadog Go Tracer also supports logging for potentially abandoned spans. To enable this debug mode in Go, set the environment variable DD_TRACE_DEBUG_ABANDONED_SPANS=true. To change the duration after which spans are considered abandoned (default=10m), set the environment variable DD_TRACE_ABANDONED_SPAN_TIMEOUT to the desired time duration. Abandoned span logs appear at the Info level.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Enables debug logging for spans that are started but not finished. The timeout used to mark spans as abandoned is controlled by DD_TRACE_ABANDONED_SPAN_TIMEOUT.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Default**: true\n\n**Supported Input**: Boolean\n\n**Caveats**: Not supported in Node.js; Disabled by default in Go\n\n**Description**: Enables or disables the inclusion of the query string in the http.url span tag value for automatically collected HTTP spans.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "The following environment variables have been removed or replaced. Update your configuration with the new variables where applicable.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "dd.trace.http.client.tag.query-string\n: **System Property (Deprecated)**: dd.http.client.tag.query-string\n\n**Environment Variable**: DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING\n\n**Environment Variable (Deprecated)**: DD_HTTP_CLIENT_TAG_QUERY_STRING\n\n**Default**: true\n\nBy default, query string parameters and fragments are added to the http.url tag on web client spans. Set to false to prevent the collection of this data.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Controls whether HTTP client spans include the URL query string in the http.url tag. Defaults to true.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_HTTP_SERVER_ERROR_STATUSES",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Default**: 500-599\n\n**Supported Input**: A comma-separated string of the form from-to, where from and to are integers. Singular values are also accepted (for example, 400-403,405,410-499).\n\n**Caveats**: Not supported in Node.js\n\n**Description**: Defines the inclusive range of status codes to be considered errors on http.server span kinds. Only the values within the specified range are considered errors.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "dd.trace.http.server.error.statuses\n: **Environment Variable**: DD_TRACE_HTTP_SERVER_ERROR_STATUSES\n\n**Default**: 500-599\n\nA range of errors can be accepted. By default 5xx status codes are reported as errors for http servers. This configuration overrides that. Ex. dd.trace.http.server.error.statuses=500,502-599",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Comma-separated list of HTTP status codes and ranges to treat as errors for HTTP server spans (for example, 500-599,404). When unset, 5xx responses are treated as errors by default.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_LOG_DIRECTORY",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Default**: Varies by SDK, environment, and runtime. Please read more in the specific configuration page above for your chosen language\n\n**Supported Input**: A valid full or relative directory path that exists on the system\n\n**Caveats**: Not supported in Java, Node.js, Ruby, Python\n\n**Description**: Specifies the directory where tracer log files should be routed. If the directory does not exist, the SDK falls back to its default diagnostic logging method.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the directory for .NET Tracer logs.\n\n**Default**: %ProgramData%\\Datadog .NET Tracer\\logs\\",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the directory for .NET Tracer logs.\n\n**Default**: %ProgramData%\\Datadog .NET Tracer\\logs\\ on Windows, /var/log/datadog/dotnet on Linux",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets a directory where tracer logs are written. The directory must exist; otherwise logs remain on stderr.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Configuration**: flushMinSpans\n\n**Default**: 1000\n\nNumber of spans before partially exporting a trace. This prevents keeping all the spans in memory for very large traces.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "**Default**: 1000\n\nNumber of spans within a trace that can be partially flushed to the Datadog Agent. DD_TRACE_PARTIAL_FLUSH_ENABLED must be true for partial flushing to occur.\nAdded in version 1.54.0. Only compatible with the Datadog Agent 7.26.0+.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "**Default**: 300\n\n: Minimum number of spans in a trace before partial flush is triggered.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the minimum number of finished spans required to trigger a partial flush when partial flushing is enabled. Defaults to 1000; invalid values are ignored.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_EXTRACT",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Default**: datadog,tracecontext,baggage\n\nA comma-separated list of header formats from which to attempt to extract distributed tracing propagation data. The first format found with complete and valid headers is used to define the trace to continue.\n\nAvailable since version 2.20.0",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "**Since**: v0.1.6\n\n**Default**: datadog,tracecontext,baggage\n\n**Accepted values**: datadog, tracecontext, b3, baggage\n\nComma separated list of propagation styles to use when extracting tracing context.\nWhen multiple values are given, the order of matching is based on the order of values.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Specifies trace context propagation formats for extraction only in a comma-separated list. Highest precedence for configuring extraction propagators.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Comma-separated list of propagation styles to use when extracting context from incoming requests. Set to none to disable extraction.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_PROPAGATION_STYLE_INJECT",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Configuration**: tracePropagationStyle.inject\n\n**Default**: Datadog,tracecontext,baggage\n\nA comma-separated list of header formats to include to propagate distributed traces between services.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "**Default**: datadog,tracecontext,baggage\n\nA comma-separated list of header formats to include to propagate distributed traces between services.\n\nAvailable since version 2.20.0",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Specifies trace context propagation formats for injection only in comma-separated list. Highest precedence for configuring injection propagators.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Comma-separated list of propagation styles to use when injecting context into outgoing requests. Set to none to disable injection.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_SAMPLING_RULES",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "C",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Default**: (none)\n\n: A JSON array of objects to apply for trace sampling. Each rule must have a sample_rate between 0.0 and 1.0 (inclusive).",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "**Default**: null. If unset or no rules match, the tracer defers to the Datadog Agent to dynamically adjust sample rate across traces.\n\n**Supported Input**: A JSON array of user-defined rules.\n\n**Description**: Enables fine-grained control over trace ingestion, allowing you to target specific services, operations, resources, or tagged traces. Defined by a JSON array of objects, where each object must include a sample_rate between 0.0 and 1.0 (inclusive), and can optionally include fields such as service, name, resource, tags, and max_per_second. Objects are evaluated in the order listed; the first matching object determines the trace's sample rate. For more information, see Ingestion Mechanisms.\n\n**Examples**:\n\n - Sample 20% of all traces:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "You can configure sampling rules by setting the environment variable DD_TRACE_SAMPLING_RULES.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "JSON array of sampling rules that control the sampling rate for matching traces. Rules can match on service, operation name, resource, and tags.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "DD_TRACE_STATS_COMPUTATION_ENABLED",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Default**: true\n\n: Enable computation of trace statistics.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Controls whether client-side trace statistics computation is enabled. Defaults to true.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Description**: Specifies the base URL for sending OTLP data for all signals unless overridden.\n\n**Default (gRPC)**: http://localhost:4317.\n\n**Default (HTTP)**: http://localhost:4318.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "1. For the application container, set OTEL_EXPORTER_OTLP_ENDPOINT environment variable to point to the Datadog Agent container. For example:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Your application must send data to the DDOT Collector on the same host. Ensure that the OTEL_EXPORTER_OTLP_ENDPOINT environment variable is set on your application.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the OTLP exporter endpoint used by OpenTelemetry metrics export. When set, it overrides the default endpoint derived from agent configuration.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Description**: Specifies the URL for sending OTLP metrics data. Takes precedence over the general OTEL_EXPORTER_OTLP_ENDPOINT.\n\n**Default (gRPC)**: http://localhost:4317.\n\n**Default (HTTP)**: http://localhost:4318/v1/metrics.\n\n**Notes**: For HTTP protocols, the SDK will automatically append /v1/metrics if the general OTEL_EXPORTER_OTLP_ENDPOINT is used as a fallback.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "If you are using OpenTelemetry automatic instrumentation, set the following environment variables:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the OTLP exporter endpoint used specifically for metrics export. When set, it takes precedence over OTEL_EXPORTER_OTLP_ENDPOINT.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Description**: Specifies a comma-separated list of key-value pairs to be used as headers on outgoing OTLP metrics requests (for example, api-key=key,other-config=value). Takes precedence over the general OTEL_EXPORTER_OTLP_HEADERS.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "If you are using OpenTelemetry automatic instrumentation, set the following environment variables:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets additional headers to include in OTLP exporter requests for metrics. When set, it takes precedence over OTEL_EXPORTER_OTLP_HEADERS for metrics export.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Description**: Specifies the timeout (in milliseconds) for a single outgoing OTLP metrics request. Takes precedence over the general OTEL_EXPORTER_OTLP_TIMEOUT.\n\n**Default**: 10000 (10s).",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the OTLP metrics exporter timeout in milliseconds. This setting is currently reported for configuration telemetry and is not applied to metrics export timeouts.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "OTEL_EXPORTER_OTLP_PROTOCOL",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Description**: Specifies the transport protocol to use for all signals unless overridden.\n\n**Accepted values**: grpc, http/protobuf, http/json.\n\n**Default**: SDK-dependent. The Datadog SDK aims to match the default protocol of the corresponding official OpenTelemetry SDK for that language.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Set the hostPort to expose the container port to the external network. This enables configuring the OTLP exporter to point to the IP address of the node where the Datadog Agent is assigned.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "To configure your existing application to use Datadog Agent instead of standalone Collector, ensure that the correct OTLP endpoint hostname is used. The Datadog Agent with DDOT Collector deployed as a DaemonSet, so the current host needs to be targeted.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Selects the OTLP protocol used for metrics export when no metrics-specific protocol is configured. Supported values include http/protobuf (http) and grpc.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "OTEL_LOGS_EXPORTER",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Description**: Specifies the logs exporter to be used.\n\n**Accepted values**: otlp, none. A value of none disables the emission of OTel logs.\n\n**Default**: otlp",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Your application must send data to the DDOT Collector on the same host. Ensure that the OTEL_EXPORTER_OTLP_ENDPOINT environment variable is set on your application.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Controls the OpenTelemetry logs exporter selection. This setting is not supported and is ignored.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "OTEL_PROPAGATORS",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Datadog convention**: DD_TRACE_PROPAGATION_STYLE\n\nPropagators to be used as a comma-separated list\n\n**Notes**: The only supported values for most Datadog SDKs are tracecontext, b3, b3multi, none, datadog. xray is also supported for the Java SDK\n\nValues must be deduplicated to register a Propagator only once",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Specifies trace context propagation formats for both extraction and injection (comma-separated list). Lowest precedence; ignored if any other Datadog trace context propagation environment variable is set.\n\n**Note**: Only use this configuration when migrating an application from the OpenTelemetry SDK to the Datadog SDK. For more information on this configuration and other OpenTelemetry environment variables, see Using OpenTelemetry Environment Variables with Datadog SDKs.",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the propagation styles to use via OpenTelemetry configuration. When the corresponding tracer propagation setting is not set, supported values are mapped to the tracer's propagation styles.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "OTEL_RESOURCE_ATTRIBUTES",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "B",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "**Datadog convention**: DD_TAGS\n\n**Description**: Key-value pairs to be used as OpenTelemetry resource attributes.\n\n**Notes**: The SDK resolves overlapping settings using Datadog (DD_*) configuration first.\n - service.name (maps to DD_SERVICE): The SDK resolves the value with the following precedence:\n\n 1. Value of DD_SERVICE\n\n 2. Value of service key in DD_TAGS\n\n 3. Value of OTEL_SERVICE_NAME\n\n 4. Value of service.name key in OTEL_RESOURCE_ATTRIBUTES\n - deployment.environment.name (maps to DD_ENV): The SDK resolves the value with the following precedence:\n\n 1. Value of DD_ENV",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Add the following environment variables to your application's deployment manifest:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Set the OTEL_RESOURCE_ATTRIBUTES environment variable with your service's information:",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets OpenTelemetry resource attributes that are mapped to tracer tags when the corresponding tracer tag setting is not set. Reserved attributes for service, environment, and version are mapped to standard tags, and only the first 10 attributes are applied.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "OTEL_TRACES_SAMPLER_ARG",
+      "langs": [
+        "golang"
+      ],
+      "implementations": [
+        {
+          "implementation": "A",
+          "langs": [
+            "golang"
+          ],
+          "conflictingDescriptions": true,
+          "descriptions": [
+            {
+              "description": "OTEL_TRACES_SAMPLER & OTEL_TRACES_SAMPLER_ARG\n: **Datadog convention**: DD_TRACE_SAMPLE_RATE\n\nOTEL_TRACES_SAMPLER: Sampler to be used for traces & OTEL_TRACES_SAMPLER_ARG: String value to be used as the sampler argument\n\n**Notes**: The specified value is only used if OTEL_TRACES_SAMPLER is set. Each Sampler type defines its own expected input, if any. Invalid or unrecognized input MUST be logged and MUST be otherwise ignored. In such cases, the implementation MUST behave as if OTEL_TRACES_SAMPLER_ARG is not set\n\nMapped values between OTEL_TRACES_SAMPLER & DD_TRACE_SAMPLE_RATE:\n\n - parentbased_always_on|1.0\n - parentbased_always_off|0.0\n - parentbased_traceidratio|${OTEL_TRACES_SAMPLER_ARG}\n - always_on|1.0\n - always_off|0.0\n - traceidratio|${OTEL_TRACES_SAMPLER_ARG}",
+              "source": "documentation_same_language",
+              "lang": "golang"
+            },
+            {
+              "description": "Sets the argument for OTEL_TRACES_SAMPLER when using the traceidratio sampler (for example, OTEL_TRACES_SAMPLER_ARG=0.25). This is used to derive the tracer sample rate when mapping OpenTelemetry configuration.",
+              "source": "llm_generated",
+              "lang": "golang"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

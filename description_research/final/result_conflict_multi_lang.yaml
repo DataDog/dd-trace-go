@@ -1,0 +1,1679 @@
+langs:
+- dotnet
+- golang
+totalCount: 60
+implementationPairsCount: 60
+conflictingDescriptionsCount: 60
+nonConflictingDescriptionsCount: 0
+documentedConfigurations:
+- key: DD_ACTION_EXECUTION_ID
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: AWS CodePipeline action execution ID for CI correlation.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Sets the action execution ID reported as CI metadata for AWS CodePipeline builds. This value is used as the CI job identifier when running a CodeBuild job initiated by CodePipeline.
+      source: llm_generated
+      lang: golang
+- key: DD_API_SECURITY_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: When ASM is enabled, collects in spans endpoints apis schemas analyzed by the waf, default value is true.
+      source: in_code_documentation
+      lang: dotnet
+    - description: 'Set environment variables for your application. Add these to your Dockerfile:'
+      source: documentation_same_language
+      lang: golang
+    - description: 'Set environment variables for your application. Add these to your deployment configuration file:'
+      source: documentation_same_language
+      lang: golang
+    - description: 'Set environment variables for your application. Add these to your deployment configuration or shell environment:'
+      source: documentation_same_language
+      lang: golang
+    - description: Controls whether API Security features are enabled. If unset, API Security is enabled by default.
+      source: llm_generated
+      lang: golang
+- key: DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: with a default value of true, it allows a customer to disable the collection of endpoints for API Security.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Controls whether API endpoint definitions are collected for API catalog features. If unset, endpoint collection is enabled by default.
+      source: llm_generated
+      lang: golang
+- key: DD_API_SECURITY_ENDPOINT_COLLECTION_MESSAGE_LIMIT
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: with a default value of 300, it defines the maximum number of endpoints to be collected (serialized) for API Security.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Sets the maximum number of API endpoints included in a single endpoint-collection telemetry message. If unset, a default limit is used.
+      source: llm_generated
+      lang: golang
+- key: DD_API_SECURITY_SAMPLE_DELAY
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: Api security sample delay in seconds , should be a float. Set to 0 for testing purposes. default value of 30.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Sets the delay (in seconds) between API Security schema samples. This setting is intended for system testing and is not meant for general use.
+      source: llm_generated
+      lang: golang
+- key: DD_APPSEC_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling the AppSec.
+        Default value is false (disabled).
+      source: in_code_documentation
+      lang: dotnet
+    - description: '5. Redeploy your Go service and enable App and API Protection by setting the DD_APPSEC_ENABLED environment variable to true:'
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        This Dockerfile is split into two stages:
+        1. The build stage uses a Debian image to build the Go application, and uses the Orchestrion tool to instrument the application with App and API Protection features.
+        2. The runtime stage copies the built application into a minimal Ubuntu image and sets the environment variable DD_APPSEC_ENABLED to true to enable App and API Protection.
+      source: documentation_same_language
+      lang: golang
+    - description: To disable APM tracing while keeping App and API Protection enabled, you must set the APM tracing variable to false.
+      source: documentation_same_language
+      lang: golang
+    - description: Controls whether application security features are enabled at startup. If set, it forces the features on (true) or off (false); when unset, it starts in standby and can be activated remotely.
+      source: llm_generated
+      lang: golang
+- key: DD_APPSEC_RASP_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: default value to true. Set to false to disable exploit prevention.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Controls whether runtime application self-protection (RASP) features are enabled. If unset, RASP is enabled by default.
+      source: llm_generated
+      lang: golang
+- key: DD_CIVISIBILITY_AGENTLESS_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling Agentless in CI Visibility.
+        Default value is false (disabled).
+      source: in_code_documentation
+      lang: dotnet
+    - description: When CI test instrumentation and reporting is enabled, sends payloads directly to the intake endpoint instead of through a local agent/proxy. Requires DD_API_KEY to be set.
+      source: llm_generated
+      lang: golang
+- key: DD_CIVISIBILITY_AGENTLESS_URL
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: Configuration key for setting the agentless url endpoint
+      source: in_code_documentation
+      lang: dotnet
+    - description: Overrides the intake base URL used for agentless CI test reporting. When set, payloads are sent to this URL instead of the default site-based intake URL.
+      source: llm_generated
+      lang: golang
+- key: DD_CIVISIBILITY_LOGS_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling Logs direct submission.
+        Default value is false (disabled).
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        --logs
+        : Enable forwarding content from the XML reports as Logs. The content inside , , and is collected as logs. Logs from elements inside a are automatically connected to the test.
+
+        **Environment variable**: DD_CIVISIBILITY_LOGS_ENABLED
+
+        **Default**: false
+
+        **Note**: Logs are billed separately from Test Optimization.
+      source: documentation_same_language
+      lang: golang
+    - description: Enables/disables CI Visibility log submission
+      source: documentation_same_language
+      lang: golang
+    - description: Enables collection and direct upload of log events correlated with CI test executions. When disabled, CI test logs are not captured or sent.
+      source: llm_generated
+      lang: golang
+- key: DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: Configuration key for the maximum number of retry attempts for the entire session.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        * DD_CIVISIBILITY_FLAKY_RETRY_ENABLED - set to 0 or false to explicitly disable retries even if the remote setting is enabled (default: true)
+        * DD_CIVISIBILITY_FLAKY_RETRY_COUNT - a non-negative number to change the maximum number of retries per test case (default: 5).
+        * DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT - a non-negative number to set the maximum total number of failed tests to retry (default: 1000)
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the maximum total number of automatic test retries allowed across the entire test session. This limit is applied when automatic flaky-test retries are enabled and defaults to 1000.
+      source: llm_generated
+      lang: golang
+- key: DD_CUSTOM_TRACE_ID
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: Jenkins CI environment variable for custom trace ID correlation.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        | Environment Variable | Description |
+        |-----------------------|----------------------------------------------------------------------------------------------------------|
+        | JENKINS_URL | The URL of the Jenkins master that's running the build. |
+        | BUILD_TAG | A string of the form jenkins-${JOB_NAME}-${BUILD_NUMBER} for easier identification. |
+        | BUILD_NUMBER | The current build number, such as "153". |
+        | BUILD_URL | The URL where the results of this build can be found (such as http://buildserver/jenkins/job/MyJobName/666/).|
+        | WORKSPACE | The absolute path of the workspace. |
+        | JOB_NAME | The name of the project for this build. |
+        | JOB_URL | The URL for the job details. |
+        | GIT_URL | The Git URL used for the repository (such as git@github.com:user/repo.git or https://github.com/user/repo.git).|
+        | GIT_URL_1 | The URL of the first Git repository if multiple repositories are configured. |
+        | GIT_COMMIT | The Git hash of the commit checked out for the build. |
+        | GIT_BRANCH | The Git branch that was checked out for the build. |
+        | NODE_NAME | The name of the node the build is running on. Equals 'master' for the master node. |
+        | NODE_LABELS | A comma-separated list of labels assigned to the node. |
+        | DD_CUSTOM_TRACE_ID | Custom variable set by the Jenkins Datadog Plugin for trace IDs. |
+        | DD_CUSTOM_PARENT_ID | Custom variable set by the Jenkins Datadog Plugin for parent IDs. |
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        | Environment variable | Value |
+        | -------------------- | ---------------------- |
+        | JENKINS_URL | $(JENKINS_URL) |
+        | WORKSPACE | $(WORKSPACE) |
+        | BUILD_TAG | $(BUILD_TAG) |
+        | BUILD_NUMBER | $(BUILD_NUMBER) |
+        | BUILD_URL | $(BUILD_URL) |
+        | JOB_NAME | $(JOB_NAME) |
+        | DD_CUSTOM_TRACE_ID | $(DD_CUSTOM_TRACE_ID)|
+      source: documentation_same_language
+      lang: golang
+    - description: When running under Jenkins CI, this value is captured as CI environment metadata and sent with test reporting.
+      source: llm_generated
+      lang: golang
+- key: DD_DYNAMIC_INSTRUMENTATION_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling Dynamic Instrumentation.
+        Default value is false (disabled).
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        1. Follow the Go tracing library installation instructions to install or upgrade the Go tracing library to one of the following supported versions:
+         - v1.74.6 or later (major version 1)
+         - v2.2.3 or later (major version 2)
+        2. Run your service with Dynamic Instrumentation enabled by setting the following environment variable:
+      source: documentation_same_language
+      lang: golang
+    - description: Alternate for -Ddd.dynamic.instrumentation.enabled argument. Set to true to enable Dynamic Instrumentation.
+      source: documentation_same_language
+      lang: golang
+    - description: Set to true to enable Dynamic Instrumentation.
+      source: documentation_same_language
+      lang: golang
+    - description: Controls whether dynamic instrumentation is enabled. If explicitly set to false, remote configuration cannot enable dynamic instrumentation at runtime.
+      source: llm_generated
+      lang: golang
+- key: DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Enables Feature Flags Provider (Experimental).
+        Default value is <c>false</c> (disabled).
+      source: in_code_documentation
+      lang: dotnet
+    - description: Enables the experimental feature-flag provider that evaluates flags from remote configuration. If not enabled, the provider is a no-op and returns default values.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_BRANCH
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for git branch name.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        DD_GIT_BRANCH (Optional)
+        : The branch name.
+
+        **Example**: main
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        Git branch being tested. Leave empty if providing tag information instead.
+
+        **Example**: develop
+      source: documentation_same_language
+      lang: golang
+    - description: branch being committed to
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git branch name reported as CI metadata. Common ref prefixes (for example, refs/heads/ or origin/) are normalized away.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_COMMIT_AUTHOR_DATE
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for git commit author date.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        Commit author date in ISO 8601 format.
+
+        **Example**: 2021-03-12T16:00:28Z
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        DD_GIT_COMMIT_AUTHOR_DATE (Optional)
+        : The date when the author submitted the commit expressed in ISO 8601 format.
+
+        **Example**: 2021-08-16T15:41:45.000Z
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git commit author date reported as CI metadata.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_COMMIT_AUTHOR_EMAIL
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for git commit author email.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        Commit author email.
+
+        **Example**: john@example.com
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        DD_GIT_COMMIT_AUTHOR_EMAIL (Optional)
+        : The email of the author of the commit.
+
+        **Example**: john@example.com
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git commit author email reported as CI metadata.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_COMMIT_AUTHOR_NAME
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for git commit author name.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        Commit author name.
+
+        **Example**: John Smith
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        DD_GIT_COMMIT_AUTHOR_NAME (Optional)
+        : The name of the author of the commit.
+
+        **Example**: John Smith
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git commit author name reported as CI metadata.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_COMMIT_COMMITTER_DATE
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for git commit committer date.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        Commit committer date in ISO 8601 format.
+
+        **Example**: 2021-03-12T16:00:28Z
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        DD_GIT_COMMIT_COMMITTER_DATE (Optional)
+        : The date when the committer submitted the commit expressed in ISO 8601 format.
+
+        **Example**: 2021-08-16T15:41:45.000Z
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git commit committer date reported as CI metadata.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_COMMIT_COMMITTER_EMAIL
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for git commit committer email.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        Commit committer email.
+
+        **Example**: jane@example.com
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        DD_GIT_COMMIT_COMMITTER_EMAIL (Optional)
+        : The email of the committer of the commit.
+
+        **Example**: jane@example.com
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git commit committer email reported as CI metadata.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_COMMIT_COMMITTER_NAME
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for git commit committer name.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        Commit committer name.
+
+        **Example**: Jane Smith
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        DD_GIT_COMMIT_COMMITTER_NAME (Optional)
+        : The name of the committer of the commit.
+
+        **Example**: Jane Smith
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git commit committer name reported as CI metadata.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_COMMIT_MESSAGE
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for git commit message.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        Commit message.
+
+        **Example**: Set release number
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        DD_GIT_COMMIT_MESSAGE (Optional)
+        : The commit message.
+
+        **Example**: Initial commit message
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git commit message reported as CI metadata.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_COMMIT_SHA
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for the application's git commit hash. Sets the "_dd.git.commit.sha" tag on every <see cref="Span"/>.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.GitCommitSha"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: 'Configure your application with the DD_GIT_* environment variables:'
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        DD_GIT_COMMIT_SHA (Optional)
+        : The commit expressed in the hex 40 chars length form.
+
+        **Example**: faaca5c59512cdfba9402c6e67d81b4f5701d43c
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        Full commit hash.
+
+        **Example**: a18ebf361cc831f5535e58ec4fae04ffd98d8152
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git commit SHA reported as CI metadata and used for git metadata tagging when enabled.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_PULL_REQUEST_BASE_BRANCH
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for pull request base branch.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Overrides the pull request base branch reported as git metadata for CI features. Common ref prefixes are removed from the value.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for pull request base branch SHA.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Overrides the pull request base commit SHA reported as git metadata for CI features. Use this to set the base commit when it cannot be detected automatically.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_REPOSITORY_URL
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for the application's git repo URL. Sets the "_dd.git.repository_url" tag on every <see cref="Span"/>.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.GitRepositoryUrl"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        DD_GIT_REPOSITORY_URL (Optional)
+        : The repository URL of your service.
+
+        **Example**: https://github.com/my-org/my-repo.git
+      source: documentation_same_language
+      lang: golang
+    - description: URL of the repository
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        URL of the repository where the code is stored. Both HTTP and SSH URLs are supported.
+
+        **Example**: git@github.com:MyCompany/MyApp.git, https://github.com/MyCompany/MyApp.git
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git repository URL reported as CI metadata and used for git metadata tagging when enabled. Any embedded credentials in the URL are stripped before use.
+      source: llm_generated
+      lang: golang
+- key: DD_GIT_TAG
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: CI Visibility environment variable for git tag.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        DD_GIT_TAG (Optional)
+        : The tag of the commit (if any).
+
+        **Example**: 0.1.0
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        Git tag being tested (if applicable). Leave empty if providing branch information instead.
+
+        **Example**: 1.0.1
+      source: documentation_same_language
+      lang: golang
+    - description: Overrides the git tag name reported as CI metadata. Common ref prefixes (for example, refs/tags/ or origin/) are normalized away.
+      source: llm_generated
+      lang: golang
+- key: DD_INSTRUMENTATION_INSTALL_ID
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        SSI variable that provides a unique identifier for the instrumentation installation.
+        Used for tracking and correlation purposes in telemetry.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Sets the install ID included in instrumentation telemetry payloads and headers. This can be used to correlate telemetry to a specific installation.
+      source: llm_generated
+      lang: golang
+- key: DD_INSTRUMENTATION_INSTALL_TIME
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        SSI variable that indicates when the instrumentation was installed.
+        Used for tracking installation timeline in telemetry.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Sets the install time included in instrumentation telemetry payloads and headers.
+      source: llm_generated
+      lang: golang
+- key: DD_INSTRUMENTATION_INSTALL_TYPE
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        SSI variable that indicates the installation type (e.g., dd_dotnet_launcher, dd_trace_tool, dotnet_msi, windows_fleet_installer).
+        Used to determine the instrumentation source for telemetry.
+      source: in_code_documentation
+      lang: dotnet
+    - description: Sets the install type included in instrumentation telemetry payloads and headers.
+      source: llm_generated
+      lang: golang
+- key: DD_INSTRUMENTATION_TELEMETRY_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling internal telemetry.
+        Default value is <c>true</c> (enabled).
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Default**: true
+
+        : Enable or disable telemetry data collection and sending.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        **Default**: true
+
+        Datadog may collect environmental and diagnostic information about your system to improve the product. When false, this telemetry data will not be collected.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        Datadog may collect environmental and diagnostic information about your system to improve the product. When false, this telemetry data will not be collected.
+
+        **Default**: true
+      source: documentation_same_language
+      lang: golang
+    - description: Controls whether instrumentation telemetry is collected and sent. Set to false to disable instrumentation telemetry.
+      source: llm_generated
+      lang: golang
+- key: DD_METRICS_OTEL_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Enables experimental support for exporting OTLP metrics generated by the OpenTelemetry Metrics API.
+        This feature is only available starting with .NET 6.0, as it relies on the BCL class MeterListener
+        which is shipped in-box starting with .NET 6.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Description**: Enables the automatic instrumentation components of the Datadog SDK to collect and emit metrics generated by the OTel Metrics API.
+
+        **Default**: false
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        This approach works with the existing OpenTelemetry SDK. When you enable this feature, the Datadog SDK detects the OTel SDK and configures its OTLP exporter to send metrics to the Datadog Agent.
+        {% /if %}
+      source: documentation_same_language
+      lang: golang
+    - description: Enables OpenTelemetry metrics export. Metrics are disabled by default and are only enabled when this is set to a truthy value.
+      source: llm_generated
+      lang: golang
+- key: DD_PIPELINE_EXECUTION_ID
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: AWS CodePipeline pipeline execution ID for CI correlation.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        1. In the AWS Console, go to your pipeline configuration and click **Edit**
+        2. Go to the stage containing the AWS CodeBuild action, click **Edit Stage**, and then edit the relevant action.
+        3. Under **Environment variables**, add an environment variable.
+        Name the variable DD_PIPELINE_EXECUTION_ID, and the value #{codepipeline.PipelineExecutionId}. Leave the type as _Plaintext_.
+        4. Click **Done** to save your changes.
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the pipeline execution ID reported as CI metadata for AWS CodePipeline builds. This value is used as the CI pipeline identifier when running a CodeBuild job initiated by CodePipeline.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_ENDPOINT_COLLECTION_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: Controls whether endpoint names are sent to the profiler for endpoint-level profiling. When disabled, endpoint information is not associated with profiling data.
+      source: llm_generated
+      lang: dotnet
+    - description: |-
+        **INI**: datadog.profiling.endpoint_collection_enabled. INI available since 0.82.0.
+
+        **Default**: 1
+
+        Whether to enable the endpoint data collection in profiles. Added in version 0.79.0.
+      source: documentation_same_language
+      lang: golang
+    - description: '- **Disable endpoint collection**'
+      source: documentation_same_language
+      lang: golang
+    - description: Controls whether spans add a pprof label with the top-level request endpoint so profiles can be grouped by endpoint. Defaults to true.
+      source: llm_generated
+      lang: golang
+- key: DD_REMOTE_CONFIGURATION_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Is remote configuration management (RCM) enabled. Defaults to <c>true</c>. RCM requires
+        the use of the full agent, so will not always be available. This switch is primarily
+        intended for testing and for explicitly disabling RCM even though it is available.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Default**: true
+
+        : Enable or disable remote configuration. Also accepts the alias DD_REMOTE_CONFIG_ENABLED.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        **Since**: 0.2.0
+
+        **Default**: true
+
+        Enable the capability that allows to remotely configure and change the behavior of the tracer.
+
+        When false this feature is disabled.
+
+        For more information, see Remote Configuration.
+      source: documentation_same_language
+      lang: golang
+    - description: If you don't want your Agent to send configuration requests to Datadog, you can set remote_configuration.enabled to false in the Agent.
+      source: documentation_same_language
+      lang: golang
+    - description: Controls whether remote configuration polling is enabled. When set to false, remote configuration updates are not fetched or applied.
+      source: llm_generated
+      lang: golang
+- key: DD_SITE
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for setting the default Datadog destination site.
+        Defaults to "datadoghq.com".
+      source: in_code_documentation
+      lang: dotnet
+    - description: '**Note**: The environment variable ECS_FARGATE is already set to "true".'
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        - Set DD_SITE to (ensure the correct SITE is selected on the right).
+         - Set DD_API_KEY_SECRET_ARN to the ARN of the AWS secret where your Datadog API key is securely stored. The key needs to be stored as a plaintext string (not a JSON blob). The secretsmanager:GetSecretValue permission is required. For quick testing, you can use DD_API_KEY instead and set the Datadog API key in plaintext.
+         - Optionally set DD_UNIVERSAL_INSTRUMENTATION: true to take advantage of advanced configurations such as capturing the Lambda request and response payloads and inferring APM spans from incoming Lambda events.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        1. Create a dedicated API key and an application key scoped to at least continuous_profiler_pgo_read as described in API and Application Keys.
+        2. Set DD_API_KEY, DD_APP_KEY, and DD_SITE with the environment secret mechanism of your CI provider.
+        3. Run datadog-pgo before your build step.
+         For example, for a service foo that runs in prod and has its main package in ./cmd/foo, you should add this step:
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the site domain used to build agentless intake URLs. If unset, a default site is used.
+      source: llm_generated
+      lang: golang
+- key: DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for whether dependency data is sent via telemetry.
+        Required for some ASM features. Default value is <c>true</c> (enabled).
+        <see cref="Datadog.Trace.Telemetry.TelemetrySettings.DependencyCollectionEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: Controls whether instrumentation telemetry collects and reports dependency information. Defaults to true.
+      source: llm_generated
+      lang: golang
+- key: DD_TELEMETRY_LOG_COLLECTION_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: Configuration key for whether to enable redacted error log collection.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Default**: true
+
+        : Enable or disable log collection for telemetry.
+      source: documentation_same_language
+      lang: golang
+    - description: Controls whether the instrumentation telemetry client collects and sends logs. Set to false to disable telemetry log collection.
+      source: llm_generated
+      lang: golang
+- key: DD_TELEMETRY_METRICS_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for whether telemetry metrics should be sent.
+        <see cref="Datadog.Trace.Telemetry.TelemetrySettings.MetricsEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: Controls whether instrumentation telemetry sends internal metrics. Defaults to true.
+      source: llm_generated
+      lang: golang
+- key: DD_TEST_SESSION_NAME
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: Configuration key for set the test session name
+      source: in_code_documentation
+      lang: dotnet
+    - description: 'Identifies a group of tests (for example: unit-tests or integration-tests).'
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        Identifies a group of tests (for example: unit-tests or integration-tests).
+
+        Run your tests as you normally do (for example: mvn test or mvn verify).
+
+
+
+
+        Set the following environment variables to configure the tracer:
+
+        DD_CIVISIBILITY_ENABLED=true (Required)
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        Identifies a group of tests, such as integration-tests, unit-tests or smoke-tests.
+
+        **Environment variable**: DD_TEST_SESSION_NAME
+
+        **Default**: (CI job name + test command)
+
+        **Example**: unit-tests, integration-tests, smoke-tests
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the test session name reported for CI test reporting. If not set, a session name is derived from the test command (and CI job name when available).
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_ANALYTICS_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling default Analytics.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.AnalyticsEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        * System Property: -Ddd.trace.analytics.enabled=true
+        * Environment Variable: DD_TRACE_ANALYTICS_ENABLED=true
+      source: documentation_same_language
+      lang: golang
+    - description: The following environment variables have been removed or replaced. Update your configuration with the new variables where applicable.
+      source: documentation_same_language
+      lang: golang
+    - description: Enables trace analytics globally by setting the analytics rate to 1.0 (100%).
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_BAGGAGE_TAG_KEYS
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for controlling which baggage keys are converted into span tags.
+        Default value is "user.id,session.id,account.id".
+
+        Behavior options:
+        - Empty string: No baggage keys are converted into span tags (feature disabled)
+        - Comma-separated list: Only baggage keys matching exact, case-sensitive names in the list are added as span tags
+        - Wildcard (*): All baggage keys are converted into span tags
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.BaggageTagKeys"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Default**: user.id,session.id,account.id
+
+        **Supported Input**: A comma-separated string representing a list of case-sensitive baggage keys
+
+        **Caveats**: Not supported in C++
+
+        **Description**: A comma-separated list of baggage keys that are automatically applied as span tags to the local root span. For example, a baggage key user.id is tagged as baggage.user.id
+
+        This feature only applies to baggage extracted from incoming HTTP headers. Baggage set with the baggage API is not included.
+         - To tag all baggage items, set the value to *. Use this with caution to avoid exposing sensitive data in tags.
+         - To disable this feature, set the value to an empty string.
+
+
+        [1]: /developers/community/libraries/#apm-tracing-client-libraries
+      source: documentation_same_language
+      lang: golang
+    - description: Comma-separated list of baggage keys to copy into span tags. Set to * to tag all baggage items; if unset, a default allowlist is used.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling the Tracer.
+        Default value is true (enabled).
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.TraceEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Default**: true
+
+        **Supported Input**: Boolean
+
+        **Caveats**: Fully disables the library, including other library features, in Node.js, PHP, Ruby, .NET, and C++. Partially disables the library in Java and Python. Behaves identically to DD_APM_TRACING_ENABLED in Go.
+
+        **Description**: Enables or disables sending traces from the application.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        **Default**: true
+
+        Enable web framework and library instrumentation. When false, the application code doesn't generate any traces.
+
+        See also DD_APM_TRACING_ENABLED.
+      source: documentation_same_language
+      lang: golang
+    - description: Set to true to enable tracing.
+      source: documentation_same_language
+      lang: golang
+    - description: Controls whether tracing is enabled. Set to false to disable tracer initialization and stop collecting and sending traces.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GIT_METADATA_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for enabling the tagging of every telemetry event with git metadata.
+        Default value is true (enabled).
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.GitMetadataEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: Controls whether git metadata tags are collected from environment variables, global tags, and build metadata. Defaults to true.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GRAPHQL_ERROR_EXTENSIONS
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for specifying which GraphQL error extensions to capture.
+        A comma-separated list of extension keys to capture. Empty or not present means no extensions are captured.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.GraphQLErrorExtensions"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: Comma-separated list of GraphQL error extension keys to include as span event attributes. Only the listed keys from the error "extensions" field are captured.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_HTTP_CLIENT_ERROR_STATUSES
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for the application's client http statuses to set spans as errors by.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.HttpClientErrorStatusCodes"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Default**: 400-499
+
+        **Supported Input**: A comma-separated string of the form from-to, where from and to are integers. Singular values are also accepted (for example, 400-403,405,410-499).
+
+        **Caveats**: Not supported in Node.js
+
+        **Description**: Defines the inclusive range of status codes to be considered as errors on automatically collected HTTP client spans. Only the values within the specified range are considered errors.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        dd.trace.http.client.error.statuses
+        : **Environment Variable**: DD_TRACE_HTTP_CLIENT_ERROR_STATUSES
+
+        **Default**: 400-499
+
+        A range of errors can be accepted. By default 4xx errors are reported as errors for http clients. This configuration overrides that. Ex. dd.trace.http.client.error.statuses=400-403,405,410-499
+      source: documentation_same_language
+      lang: golang
+    - description: Comma-separated list of HTTP status codes and ranges to treat as errors for HTTP client spans (for example, 400-499,500). When set, matching responses mark the span as an error.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: When enabled, inferred proxy spans are created for supported upstream proxies based on incoming request headers. This can surface proxy services (for example API gateways) as separate spans/services in traces.
+      source: llm_generated
+      lang: dotnet
+    - description: Enables inferred proxy-service spans for incoming HTTP requests when proxy context headers are present. This can create an additional span representing the upstream proxy/service in front of the application.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for automatically populating the peer.service tag
+        from predefined precursor attributes when the span attribute schema is v0.
+        This is ignored when the span attribute schema is v1 or later.
+        Default value is false
+      source: in_code_documentation
+      lang: dotnet
+    - description: Controls whether default calculation of the peer.service span tag is enabled. Defaults depend on the selected span attribute schema.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_PEER_SERVICE_MAPPING
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for a map of services to rename.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.PeerServiceNameMappings"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: Maps one peer.service value to another. Provide mappings as key:value pairs separated by commas or spaces.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_PROPAGATION_EXTRACT_FIRST
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key to configure if propagation should only extract the first header once a configure
+        propagator extracts a valid trace context.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.PropagationExtractFirstOnly"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Default**: false
+
+        : When set to true, stops extracting after the first successful trace context extraction.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        **Default**: false
+
+        When set to true, stop extracting trace context when a valid one is found.
+
+        Available since version 2.42.0
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        trace.propagation.extract.first
+        : **Environment Variable**: DD_TRACE_PROPAGATION_EXTRACT_FIRST
+
+        **Default**: false
+
+        When set to true, stop extracting trace context when a valid one is found.
+      source: documentation_same_language
+      lang: golang
+    - description: When enabled, only the first configured propagation style is used for context extraction. When disabled, extraction tries each configured style and uses the first one that succeeds.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for unifying client service names when the span
+        attribute schema is v0. This is ignored when the span attribute
+        schema is v1 or later.
+        Default value is false
+      source: in_code_documentation
+      lang: dotnet
+    - description: Enable DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED to ensure no Datadog integration sets service names that are different from the default global service name. This also improves how service-to-service connections and inferred services are represented in Datadog visualizations, across all supported tracing library languages and integrations.
+      source: documentation_same_language
+      lang: golang
+    - description: You can also remove integration overrides by setting an environment variable in your application configuration. This approach is useful if you cannot access the Datadog UI.
+      source: documentation_same_language
+      lang: golang
+    - description: Forces integrations to use the global service name instead of integration-specific service names.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_STARTUP_LOGS
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling the diagnostic log at startup
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.StartupDiagnosticLogEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Configuration**: startupLogs
+
+        **Default**: false
+
+        Enable tracer startup configuration and diagnostic log.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        **Default**: true
+
+        Enable startup configuration and the diagnostic log.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        **Since**: 0.1.0
+
+        **Default**: true
+
+        Log the tracer configuration once the tracer is fully initialized.
+      source: documentation_same_language
+      lang: golang
+    - description: Controls whether startup configuration logs are emitted during initialization. Defaults to true.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key for the maximum length of an outgoing propagation header's value ("x-datadog-tags")
+        when injecting it into downstream service calls.
+        <remarks>
+        This value is not used when extracting an incoming propagation header from an upstream service.
+        </remarks>
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Default**: 512
+
+        : Maximum length of the x-datadog-tags header in bytes.
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the maximum length of the x-datadog-tags header value used for trace tag propagation. Values are clamped to 0–512; setting 0 disables propagation of this header.
+      source: llm_generated
+      lang: golang
+- key: OTEL_EXPORTER_OTLP_HEADERS
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key to set custom headers for OTLP export (fallback for metrics-specific headers).
+        Used when <see cref="ExporterOtlpMetricsHeaders"/> is not set.
+        Format: api-key=key,other=value.
+      source: in_code_documentation
+      lang: dotnet
+    - description: '**Description**: Specifies a comma-separated list of key-value pairs to be used as headers on all outgoing OTLP requests (for example, api-key=key,other-config=value).'
+      source: documentation_same_language
+      lang: golang
+    - description: Sets additional headers to include in OTLP exporter requests.
+      source: llm_generated
+      lang: golang
+- key: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key to set the temporality preference for OTLP metrics export.
+        Supported values: delta, cumulative, lowmemory.
+        Default value is delta for Datadog.
+        This deviates from OpenTelemetry specification default of cumulative.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Description**: Specifies the aggregation temporality to use for each instrument kind.
+
+        **Accepted values**: Cumulative, Delta, LowMemory. For more details, see the OpenTelemetry specification.
+
+        **Default**: delta
+
+        **Notes**: This default value delta is Datadog's recommended configuration and differs from the OpenTelemetry specification's default.
+      source: documentation_same_language
+      lang: golang
+    - description: |-
+        - For supported languages, set the OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE environment variable to delta.
+        - Otherwise, set the temporality preference in your code. For more information, read Configure delta temporality in OpenTelemetry.
+      source: documentation_same_language
+      lang: golang
+    - description: If you produce OTLP metrics from an OpenTelemetry SDK, you can configure your OTLP exporter to produce these metric types with delta aggregation temporality. In some languages you can use the recommended configuration by setting the OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE environment variable to Delta (case-insensitive). For a list of languages with support for this environment variable, read the specification compliance matrix.
+      source: documentation_same_language
+      lang: golang
+    - description: Controls the metrics temporality preference for OTLP export. Delta is used by default for monotonic instruments, while up-down counters and gauges are always exported as cumulative.
+      source: llm_generated
+      lang: golang
+- key: OTEL_EXPORTER_OTLP_TIMEOUT
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key to set the request timeout for OTLP export (fallback for metrics-specific timeout).
+        Used when <see cref="ExporterOtlpMetricsTimeoutMs"/> is not set.
+        Default value is 10000ms.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Description**: Specifies the timeout (in milliseconds) for all outgoing OTLP requests unless overridden.
+
+        **Default**: 10000 (10s).
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the generic OTLP exporter timeout in milliseconds. This setting is currently reported for configuration telemetry and is not applied to metrics export timeouts.
+      source: llm_generated
+      lang: golang
+- key: OTEL_METRIC_EXPORT_INTERVAL
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key to set the export interval for metrics in milliseconds.
+        Specifies the time interval between the start of two export attempts.
+        Default value is 10000ms (10s) for Datadog.
+        This deviates from OpenTelemetry specification default of 60000ms (60s).
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Description**: Specifies the time interval (in milliseconds) between metric export attempts.
+
+        **Default**: 10000 (10s)
+
+        **Notes**: This default value is Datadog's recommended configuration and differs from the OpenTelemetry specification's default of 60000ms.
+      source: documentation_same_language
+      lang: golang
+    - description: 'The default metric export interval for the .NET OTel SDK differs from the default for the Datadog .NET SDK. Datadog recommends setting the OTEL_METRIC_EXPORT_INTERVAL environment variable on your .NET service to match the default Datadog metric export interval:'
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the OpenTelemetry metrics export interval in milliseconds. This setting is currently reported for configuration telemetry and is not used to control export scheduling.
+      source: llm_generated
+      lang: golang
+- key: OTEL_METRIC_EXPORT_TIMEOUT
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key to set the export timeout for metrics in milliseconds.
+        Specifies the maximum time allowed for collecting and exporting metrics.
+        Default value is 7500ms (7.5s) for Datadog.
+        This deviates from OpenTelemetry specification default of 30000ms (30s).
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Description**: Specifies the maximum allowed time (in milliseconds) to collect and export metrics.
+
+        **Default**: 7500 (7.5s)
+
+        **Notes**: This default value is Datadog's recommended configuration and differs from the OpenTelemetry specification's default of 30000ms.
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the OpenTelemetry metrics export timeout in milliseconds. This setting is currently reported for configuration telemetry and is not applied to metrics export timeouts.
+      source: llm_generated
+      lang: golang
+- key: OTEL_SERVICE_NAME
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: Configuration key to set the application's default service name.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        **Datadog convention**: DD_SERVICE
+
+        Sets the service.name resource attribute
+
+        **Notes**: When determining the final service.name resource attribute, the SDK uses this variable as an input to determine the final service.name. See the service.name notes under OTEL_RESOURCE_ATTRIBUTES for the complete precedence order.
+      source: documentation_same_language
+      lang: golang
+    - description: 'Add the following environment variables to your application''s deployment manifest:'
+      source: documentation_same_language
+      lang: golang
+    - description: 'Set the following environment variables in your application''s container specification to tag outgoing telemetry:'
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the service name via OpenTelemetry configuration when the corresponding service setting is not set.
+      source: llm_generated
+      lang: golang
+- key: OTEL_TRACES_SAMPLER
+  langs:
+  - dotnet
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    - golang
+    conflictingDescriptions: true
+    descriptions:
+    - description: |-
+        Configuration key to set the sampler for traces.
+        to false.
+      source: in_code_documentation
+      lang: dotnet
+    - description: |-
+        OTEL_TRACES_SAMPLER & OTEL_TRACES_SAMPLER_ARG
+        : **Datadog convention**: DD_TRACE_SAMPLE_RATE
+
+        OTEL_TRACES_SAMPLER: Sampler to be used for traces & OTEL_TRACES_SAMPLER_ARG: String value to be used as the sampler argument
+
+        **Notes**: The specified value is only used if OTEL_TRACES_SAMPLER is set. Each Sampler type defines its own expected input, if any. Invalid or unrecognized input MUST be logged and MUST be otherwise ignored. In such cases, the implementation MUST behave as if OTEL_TRACES_SAMPLER_ARG is not set
+
+        Mapped values between OTEL_TRACES_SAMPLER & DD_TRACE_SAMPLE_RATE:
+
+         - parentbased_always_on|1.0
+         - parentbased_always_off|0.0
+         - parentbased_traceidratio|${OTEL_TRACES_SAMPLER_ARG}
+         - always_on|1.0
+         - always_off|0.0
+         - traceidratio|${OTEL_TRACES_SAMPLER_ARG}
+      source: documentation_same_language
+      lang: golang
+    - description: Sets the trace sampler via OpenTelemetry configuration and maps it to the tracer's sample rate when the corresponding setting is not set. Parent-based samplers are supported; unsupported values are ignored.
+      source: llm_generated
+      lang: golang

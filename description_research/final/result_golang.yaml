@@ -1,0 +1,1619 @@
+langs:
+- golang
+totalCount: 134
+implementationPairsCount: 134
+conflictingDescriptionsCount: 0
+nonConflictingDescriptionsCount: 134
+documentedConfigurations:
+- key: DD_AGENT_HOST
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: The host name to use to connect the Datadog agent for traces. The host name can be IPv4, IPv6, or a domain name. If DD_TRACE_AGENT_URL is specified, the value of DD_AGENT_HOST is ignored.
+      source: registry_doc
+      lang: golang
+- key: DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Defines the probability of a downstream request body being sampled, or said differently, defines the overall number of requests for which the request and response body should be sampled / analysed.
+      source: registry_doc
+      lang: golang
+- key: DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: The maximum number of downstream requests per request for which the request and response body should be analysed.
+      source: registry_doc
+      lang: golang
+- key: DD_API_SECURITY_PROXY_SAMPLE_RATE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: API Security schema extraction for proxies. The value represents the number of schemas extracted per minute (samples per minute).
+      source: registry_doc
+      lang: golang
+- key: DD_API_SECURITY_REQUEST_SAMPLE_RATE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the sampling rate for API Security schema extraction. Values are clamped to the range 0.0 to 1.0; if unset or invalid, a default rate is used.
+      source: llm_generated
+      lang: golang
+- key: DD_APM_TRACING_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Allows standalone products to run individually, rather than all being coupled together.
+      source: registry_doc
+      lang: golang
+- key: DD_APPSEC_MAX_STACK_TRACE_DEPTH
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Specifies the maximum depth of a stack trace to be reported.
+      source: registry_doc
+      lang: golang
+- key: DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP
+  langs:
+  - golang
+  implementations:
+  - implementation: E
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: A regex string to redact sensitive data by its value in attack reports.
+      source: registry_doc
+      lang: golang
+- key: DD_APPSEC_STACK_TRACE_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether security-related stack traces are generated. If set to false, stack trace collection is disabled.
+      source: llm_generated
+      lang: golang
+- key: DD_APPSEC_TRACE_RATE_LIMIT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls the maximum amount of traces sampled by AppSec attacks, per second.
+      source: registry_doc
+      lang: golang
+- key: DD_APPSEC_WAF_TIMEOUT
+  langs:
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Limits the WAF synchronous execution time (in microseconds).
+      source: registry_doc
+      lang: golang
+- key: DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Marks CI test sessions as running under an auto-instrumentation workflow. Any non-empty value enables this marker for telemetry.
+      source: llm_generated
+      lang: golang
+- key: DD_CIVISIBILITY_FLAKY_RETRY_COUNT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Specifies how many times to retry flaky tests.
+      source: registry_doc
+      lang: golang
+- key: DD_CIVISIBILITY_FLAKY_RETRY_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: A kill switch for the auto test retries feature.
+      source: registry_doc
+      lang: golang
+- key: DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Kill-switch for impacted tests detection in CI test reporting. Set to false to disable the feature even if it is enabled by remote settings.
+      source: llm_generated
+      lang: golang
+- key: DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether early flake detection retries can run in parallel in CI test reporting. Defaults to false.
+      source: llm_generated
+      lang: golang
+- key: DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Kill-switch for subtest-specific CI test management and retry features. Set to false to disable subtest features even if they are enabled by remote settings.
+      source: llm_generated
+      lang: golang
+- key: DD_CIVISIBILITY_USE_NOOP_TRACER
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: When enabled in CI test reporting mode, uses a no-op tracer implementation to reduce changes to test behavior. Defaults to false.
+      source: llm_generated
+      lang: golang
+- key: DD_DBM_PROPAGATION_MODE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: To enable DBM to APM link using tag injection, can be set to 'service' or 'full'. The 'service' option enables the connection between DBM and APM services. The 'full' option enables connection between database spans with database query events. Available for Postgres.
+      source: registry_doc
+      lang: golang
+- key: DD_DOGSTATSD_HOST
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Specifies the hostname or IP address of the DogStatsD server to which runtime metrics are sent.
+      source: registry_doc
+      lang: golang
+- key: DD_DOGSTATSD_PORT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Specifies the port number for the DogStatsD server to which runtime metrics are sent.
+      source: registry_doc
+      lang: golang
+- key: DD_ENV
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Adds an environment tag to all spans generated by the tracer instance.
+      source: registry_doc
+      lang: golang
+- key: DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether process-level tags (such as entrypoint metadata) are collected and included in tracing metadata. If unset, this is enabled by default.
+      source: llm_generated
+      lang: golang
+- key: DD_HAPROXY_SPOA_HEALTHCHECK_PORT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configure the port used for healthcheck server for the HAProxy SPOA integration
+      source: registry_doc
+      lang: golang
+- key: DD_HAPROXY_SPOA_HOST
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configure the host used for the HAProxy SPOA integration
+      source: registry_doc
+      lang: golang
+- key: DD_HAPROXY_SPOA_PORT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configure the port used for the HAProxy SPOA integration
+      source: registry_doc
+      lang: golang
+- key: DD_KEY
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Internal placeholder configuration key used for configuration-source tests and examples. It is not used by the tracer at runtime.
+      source: llm_generated
+      lang: golang
+- key: DD_LLMOBS_AGENTLESS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether LLM Observability sends data directly to the intake (agentless mode) or through an agent/proxy. If unset, the mode is chosen automatically based on agent support; setting it to false requires an agent that supports LLM Observability.
+      source: llm_generated
+      lang: golang
+- key: DD_LLMOBS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables LLM Observability. When disabled, LLM Observability data is not collected or sent.
+      source: llm_generated
+      lang: golang
+- key: DD_LLMOBS_PROJECT_NAME
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: This config allows to configure the default LLM Observability project to use. It is required when using the Experiments and Datasets feature.
+      source: registry_doc
+      lang: golang
+- key: DD_LOGGING_RATE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets how often aggregated internal errors are flushed to logs, in seconds. Set to 0 to log errors immediately.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_AGENTLESS
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables agentless profile upload, sending profiles directly to the profiling intake instead of through a local agent. This requires a valid API key.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether spans add pprof labels used to link profiles to trace code hotspots (span id and local root span id). Defaults to true.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_DEBUG_COMPRESSION_SETTINGS
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls the compression algorithm and level used when preparing profiles for upload (for example, legacy, gzip, or zstd-<level>). Defaults to zstd.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_DELTA
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether delta profiles are enabled. When enabled, profile values are reported as changes since the previous profile instead of absolute values.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_ENDPOINT_COUNT_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables counting endpoint hits while the profiler is running and includes those counts with uploaded profiling data. Defaults to false.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the approximate maximum size, in bytes, of a collected execution trace. Defaults to 5MB.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_FLUSH_ON_EXIT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether the profiler attempts to finish uploading buffered profiles when the process is stopping. When disabled, pending uploads are cancelled on shutdown.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_OUTPUT_DIR
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Writes a copy of collected profiles to the specified directory for debugging. No cleanup is performed, so the directory can grow over time.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_UPLOAD_TIMEOUT
+  langs:
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the timeout for profile upload HTTP requests. Defaults to 10s and must be greater than 0.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_URL
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Overrides the profiling intake URL used for agentless uploads. This is primarily intended for testing or debugging.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_WAIT_PROFILE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables an experimental goroutine wait profile when set. This collects stack traces and wait durations for goroutines that remain blocked for more than a minute.
+      source: llm_generated
+      lang: golang
+- key: DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the maximum number of goroutines allowed when collecting the goroutine wait profile. If the process exceeds this limit, the wait profile is skipped.
+      source: llm_generated
+      lang: golang
+- key: DD_RC_TUF_ROOT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Internal remote-configuration setting for specifying a TUF root metadata value. This setting is currently not used and has no effect.
+      source: llm_generated
+      lang: golang
+- key: DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Remote configuration polling interval in seconds.
+      source: registry_doc
+      lang: golang
+- key: DD_RUNTIME_METRICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables or disables the collection of [runtime metrics][5] (such as garbage collection stats, memory usage, and thread counts) for the application.
+      source: registry_doc
+      lang: golang
+- key: DD_RUNTIME_METRICS_V2_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether runtime metrics v2 are emitted. Defaults to true.
+      source: llm_generated
+      lang: golang
+- key: DD_SERVICE_EXTENSION_TLS_CERT_FILE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Change the default gRPC TLS layer cert.
+      source: registry_doc
+      lang: golang
+- key: DD_SERVICE_EXTENSION_TLS_KEY_FILE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Change the default gRPC TLS layer key.
+      source: registry_doc
+      lang: golang
+- key: DD_SPAN_SAMPLING_RULES
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: 'Span sampling rules to keep individual spans when the rest of the trace would otherwise be dropped. A JSON array of objects. Rules are applied in configured order to determine the span''s sample rate. The sample_rate value must be between 0.0 and 1.0 (inclusive). For more information, see [Ingestion Mechanisms][3]. Example: - Set the span sample rate to 50% for the service my-service and operation name http.request, up to 50 traces per second: ''[{"service": "my-service", "name": "http.request", "sample_rate":0.5, "max_per_second": 50}]'''
+      source: registry_doc
+      lang: golang
+- key: DD_SPAN_SAMPLING_RULES_FILE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Points to a JSON file that contains the span sampling rules. DD_SPAN_SAMPLING_RULES takes precedence over this variable. See DD_SPAN_SAMPLING_RULES for the rule format.
+      source: registry_doc
+      lang: golang
+- key: DD_TAGS
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Tags to apply to produced data. Must be a list of <key>:<value> separated by commas and/or spaces.
+      source: registry_doc
+      lang: golang
+- key: DD_TELEMETRY_DEBUG
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables debug mode for instrumentation telemetry. When set, it forces telemetry debug mode on regardless of other configuration.
+      source: llm_generated
+      lang: golang
+- key: DD_TELEMETRY_HEARTBEAT_INTERVAL
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the interval for the telemetry status heartbeat (in seconds)
+      source: registry_doc
+      lang: golang
+- key: DD_TEST_AGENT_HOST
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the host used by internal instrumentation validation tests to reach a test agent. This setting is not used for runtime tracing.
+      source: llm_generated
+      lang: golang
+- key: DD_TEST_AGENT_PORT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the port used by internal instrumentation validation tests to reach a test agent. This setting is not used for runtime tracing.
+      source: llm_generated
+      lang: golang
+- key: DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Overrides the maximum number of retries for the test management attempt-to-fix feature. When set, it replaces the value provided by remote settings.
+      source: llm_generated
+      lang: golang
+- key: DD_TEST_MANAGEMENT_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Kill-switch for test management features in CI test reporting. Set to false to disable test management even if it is enabled by remote settings.
+      source: llm_generated
+      lang: golang
+- key: DD_TEST_OPTIMIZATION_ENV_DATA_FILE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the path to a JSON file containing CI/environment metadata used for test reporting. If not set, a default file next to the test binary is used.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether new traces use 128-bit W3C trace IDs (32-character hexadecimal strings) or 64-bit Datadog trace IDs (16-character hexadecimal strings). The default is true to support W3C trace context propagation.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether 128-bit trace IDs are logged in their full 32-character format or truncated to 16 characters. Set to false for compatibility with systems that expect the shorter format.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_AGENT_PORT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: The port of the Trace Agent that the tracer submits to. If the [Agent configuration][13] sets receiver_port or DD_APM_RECEIVER_PORT to something other than the default 8126, then DD_TRACE_AGENT_PORT or DD_TRACE_AGENT_URL must match it.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_AGENT_URL
+  langs:
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: The URL for connecting the tracer to the Datadog agent. Valid URL schemas include http:// and unix:// (UNIX Domain Sockets). This value takes precedence over DD_AGENT_HOST and DD_TRACE_AGENT_PORT if set.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_AWS_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the AWS SDK integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_BUNTDB_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the BuntDB integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_CHI_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the chi integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_CLIENT_HOSTNAME_COMPAT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Internal compatibility toggle for legacy client-hostname behavior. This setting is currently not used and has no effect.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_CLIENT_IP_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables or disables the automatic collection of client IP addresses from HTTP request headers. When enabled, the IP address is stored in the http.client_ip span tag.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_CLIENT_IP_HEADER
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: 'Configures a custom header name from which to source the http.client_ip tag value. If this variable is set, all other IP-related headers are ignored (for example, setting DD_TRACE_CLIENT_IP_HEADER=custom-ip-header and including the header custom-ip-header: 5.6.7.9 in a request results in a span tagged with "http.client_ip": "5.6.7.9"). If an empty string or null value is passed, IP headers are queried in this order: - x-forwarded-for - x-real-ip - true-client-ip - x-client-ip - x-forwarded - forwarded-for - x-cluster-client-ip - fastly-client-ip - cf-connecting-ip - cf-connecting-ipv6'
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_CONSUL_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Consul integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_DEBUG
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enable debug logging in the tracer. Use OTEL_LOG_LEVEL as an alias
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_DEBUG_SEELOG_WORKAROUND
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether a workaround for seelog-related goroutine leaks is applied. Set to false to disable the workaround.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_DEBUG_STACK
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether stack traces are captured for spans that finish with an error. Defaults to true.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_ECHO_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Echo integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_ELASTIC_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Elasticsearch integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_FASTHTTP_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the fasthttp integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_FEATURES
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Comma- or space-separated list of tracer feature flags. Use this to enable optional or experimental behavior such as "discovery".
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_FIBER_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Fiber integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GCP_PUBSUB_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the GCP Pub/Sub integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GIN_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Gin integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GOCQL_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the gocql integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GOCQL_COMPAT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets a compatibility version for the gocql integration. When set to a valid semver value (for example, v1.65.0), it adjusts how certain cluster tags are reported for older versions.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GOJI_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Goji integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Google API integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GOPG_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the go-pg integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GQLGEN_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the gqlgen integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GRAPHQL_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by GraphQL integrations by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_GRPC_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the gRPC integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_HEADER_TAGS
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Automatically apply specified HTTP headers as span tags. If a custom tag name is not specified, the tag key defaults to http.request.headers.<normalized-header-name> for request headers and http.response.headers.<normalized-header-name> for response headers.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_HTTPROUTER_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the httprouter integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_HTTPTREEMUX_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: This setting is currently not used by the httptreemux integration and has no effect.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_HTTP_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the net/http integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_HTTP_CLIENT_RESOURCE_NAME_QUANTIZE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: When enabled, HTTP client span resource names use a quantized URL path where dynamic path segments are replaced with '*'.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: When enabled, net/http handler span resource names use a quantized URL path where dynamic path segments are replaced with '*'.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Disables including URL query strings in the http.url tag for incoming HTTP requests. When disabled, only the path is reported.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_KAFKA_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by Kafka integrations by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_LEVELDB_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the LevelDB integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_LOGRUS_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: This setting is currently not used by the logrus integration and has no effect.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_MCP_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: This setting is currently not used by the MCP integration and has no effect.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_MEMCACHE_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Memcache integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_MGO_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the mgo integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_MONGO_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by MongoDB integrations by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_MUX_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the gorilla/mux integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_NEGRONI_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Negroni integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP
+  langs:
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Applies a regex to redact sensitive data from query strings on incoming HTTP requests. The default regex matches various sensitive data patterns, including passwords, tokens, API keys, private keys, and authorization terms. Matches are replaced with <redacted>. If an empty string is passed, no obfuscation occurs. The resulting value is reported in the http.url tag.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_PARTIAL_FLUSH_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables incrementally flushing large traces to the Datadog Agent, reducing the chance of rejection by the Agent. Use only when you have long-lived traces or traces with many spans.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_PROPAGATION_STYLE
+  langs:
+  - golang
+  implementations:
+  - implementation: D
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: A comma-separated list of header formats from which to attempt to inject and extract distributed tracing propagation data. The first format found with complete and valid headers is used to define the trace to continue. The more specific DD_TRACE_PROPAGATION_STYLE_INJECT and DD_TRACE_PROPAGATION_STYLE_EXTRACT configurations take priority when present.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_RATE_LIMIT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the maximum number of traces to sample per second; applies only when either DD_TRACE_SAMPLING_RULES or DD_TRACE_SAMPLE_RATE is set.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_REDIGO_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Redigo integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_REDIS_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by Redis integrations by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_REDIS_RAW_COMMAND
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether Redis client spans include a tag with the raw command. This can expose sensitive data, so it is disabled by default.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_REPORT_HOSTNAME
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Whether to report the system's hostname for each trace. When disabled, the hostname of the Agent is used instead.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Always set the http.endpoint tag with the results of the simplification algorithm of Resource Renaming
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_RESOURCE_RENAMING_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether the http.endpoint tag is computed and added for incoming HTTP requests. This is disabled by default unless application security is enabled at startup, and can be explicitly enabled or disabled with this setting.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_RESTFUL_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the go-restful integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_RETRY_INTERVAL
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: sets the interval for retrying submitting payloads to the agent
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_SAMPLE_RATE
+  langs:
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls the ingestion sample rate (between 0.0 and 1.0) between the Agent and the backend.
+      source: registry_doc
+      lang: golang
+- key: DD_TRACE_SAMPLING_RULES_FILE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Path to a file containing a JSON array of trace sampling rules. This is used when DD_TRACE_SAMPLING_RULES is not set.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_SARAMA_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Sarama integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_SOURCE_HOSTNAME
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the hostname reported with tracing data. When set, hostname reporting is enabled and uses this value instead of auto-detection.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_SPAN_ATTRIBUTE_SCHEMA
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Selects the span attribute and naming schema version used by integrations. Supported values are v0 (default) and v1; invalid values fall back to v0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_SQL_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the database/sql integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_SQL_COMMENT_INJECTION_MODE
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls SQL comment injection used for database monitoring correlation. Supported values are disabled, service, and full.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_TWIRP_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Twirp integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: When enabled and the agent supports it, sends traces using the v1 payload format. Defaults to false.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_VALKEY_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: This setting is currently not used by the valkey-go integration and has no effect.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_VALKEY_RAW_COMMAND
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether Valkey client spans include a tag with the raw command. This can expose sensitive data, so it is disabled by default.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE_VAULT_ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for spans produced by the Vault integration by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_TRACE__ANALYTICS_ENABLED
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables trace analytics for integrations that use the default (unprefixed) analytics toggle by setting the analytics sample rate to 1.0.
+      source: llm_generated
+      lang: golang
+- key: DD_VERSION
+  langs:
+  - golang
+  implementations:
+  - implementation: A
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: Adds a version tag to all spans, except for [Inferred services][3]
+      source: registry_doc
+      lang: golang
+- key: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
+  langs:
+  - golang
+  implementations:
+  - implementation: B
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: 'Default value for SDKs that do not support grpc (ex: ruby)'
+      source: registry_doc
+      lang: golang
+- key: OTEL_LOG_LEVEL
+  langs:
+  - golang
+  implementations:
+  - implementation: D
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: OTEL_LOG_LEVEL maps to DD_TRACE_DEBUG and enables the debug mode of the tracer. It only accepts "debug" as a valid value.
+      source: registry_doc
+      lang: golang
+- key: OTEL_METRICS_EXPORTER
+  langs:
+  - golang
+  implementations:
+  - implementation: C
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: OTEL_METRICS_EXPORTER is not used to choose an exporter. It is effectively only honored for none, which forces metrics off. When unset it does not enable metrics on its own it needs DD_METRICS_OTEL_ENABLED set to true to effectively produce metrics
+      source: registry_doc
+      lang: golang
+- key: OTEL_TRACES_EXPORTER
+  langs:
+  - golang
+  implementations:
+  - implementation: D
+    langs:
+    - golang
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        OTEL_TRACES_EXPORTER is not used to select an exporter. It’s only recognized for none, which is treated as an instruction to disable tracing (it maps to DD_TRACE_ENABLED=false). Any other value is considered unsupported and effectively ignored.
+
+        - If DD_TRACE_ENABLED is set, it takes precedence over OTEL_TRACES_EXPORTER.
+        - To enable tracing, ensure DD_TRACE_ENABLED is not set to false and do not set OTEL_TRACES_EXPORTER=none (unset it if present, or explicitly set DD_TRACE_ENABLED=true).
+      source: registry_doc
+      lang: golang

@@ -1,0 +1,3356 @@
+langs:
+- dotnet
+totalCount: 243
+implementationPairsCount: 243
+conflictingDescriptionsCount: 0
+nonConflictingDescriptionsCount: 243
+documentedConfigurations:
+- key: DD_AAS_DOTNET_EXTENSION_VERSION
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key which has the running version of the Azure App Services Site Extension.    This env var is set in the <c>applicationHost.xdt
+      source: registry_doc
+      lang: dotnet
+- key: DD_AAS_ENABLE_CUSTOM_METRICS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Used to force the loader to start dogstatsd (in case automatic instrumentation is disabled)
+      source: registry_doc
+      lang: dotnet
+- key: DD_AAS_ENABLE_CUSTOM_TRACING
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Used to force the loader to start the trace agent (in case automatic instrumentation is disabled)
+      source: registry_doc
+      lang: dotnet
+- key: DD_AGENT_FEATURE_POLLING_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to disable polling the /info endpoint in the trace agent for feature discovery.
+        cf. https://github.com/DataDog/dd-trace-dotnet/pull/7616
+      source: registry_doc
+      lang: dotnet
+- key: DD_AGENT_HOST
+  langs:
+  - dotnet
+  implementations:
+  - implementation: D
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: The host name to use to connect the Datadog agent for traces. The host name can be IPv4, IPv6, or a domain name. If DD_TRACE_AGENT_URL is specified, the value of DD_AGENT_HOST is ignored.
+      source: registry_doc
+      lang: dotnet
+- key: DD_API_KEY
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for setting the API key, used by the Agent.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_API_SECURITY_PARSE_RESPONSE_BODY
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables the parsing of the response body in the API Security module. Defaults to true
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APM_ENABLE_RARE_SAMPLER
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables rare trace sampling in the Datadog Agent. When enabled, the Agent can keep a small number of "rare" traces (up to 5 traces per second per Agent) that were not kept by head-based sampling.
+      source: llm_generated
+      lang: dotnet
+- key: DD_APM_RECEIVER_PORT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Used to force a specific port binding for the Trace Agent.
+        Default value is 8126.
+        <seealso cref="Datadog.Trace.Configuration.ExporterSettings.AgentUri"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APM_RECEIVER_SOCKET
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the unix domain socket where the Tracer can send traces.
+        Default value is <c>null</c>.
+        <seealso cref="Datadog.Trace.Configuration.ExporterSettings.TracesUnixDomainSocketPath"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APM_TRACING_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Allows standalone products to run individually, rather than all being coupled together.
+      source: registry_doc
+      lang: dotnet
+- key: DD_APPLICATION_MONITORING_CONFIG_FILE_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for deactivating reading the application monitoring config file through libdatadog (hands off config).
+        True by default
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_AUTOMATED_USER_EVENTS_TRACKING
+  langs:
+  - dotnet
+  implementations:
+  - implementation: D
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Deprecate. Automatic tracking of user events mode. Values can be disabled, safe or extended.
+        This config is in the process of being deprecated. Please use DD_APPSEC_AUTO_USER_INSTRUMENTATION_MODE
+        instead.
+        Values will be automatically translated:
+        disabled = disabled
+        safe = anon
+        extended = ident
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_AUTO_USER_INSTRUMENTATION_MODE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Automatic instrumentation of user event mode. Values can be ident, disabled, anon.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_EXTRA_HEADERS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Comma separated keys indicating the optional custom headers the user wants to send.
+        Default value is null.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_HTTP_BLOCKED_TEMPLATE_HTML
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Blocking response template for HTML content. This template is used in combination with the status code to craft and send a response upon blocking the request.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_HTTP_BLOCKED_TEMPLATE_JSON
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Blocking response template for Json content. This template is used in combination with the status code to craft and send a response upon blocking the request.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_IPHEADER
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key indicating the optional name of the custom header to take into account for the ip address.
+        Default value is null (do not override).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_KEEP_TRACES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Specifies if the AppSec traces should be explicitly kept or dropped.
+        Default is true, to keep all traces, false means drop all traces (by setting AutoReject as sampling priority).
+        For internal testing only.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_MAX_STACK_TRACES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Specifies the maximum number of stack traces to be reported.
+      source: registry_doc
+      lang: dotnet
+- key: DD_APPSEC_MAX_STACK_TRACE_DEPTH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Specifies the maximum depth of a stack trace to be reported.
+      source: registry_doc
+      lang: dotnet
+- key: DD_APPSEC_MAX_STACK_TRACE_DEPTH_TOP_PERCENT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: with a default value of 75, defines the percentage of frames taken from the top of the stack when trimming. Min 0, Max 100
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_OBFUSCATION_PARAMETER_KEY_REGEXP
+  langs:
+  - dotnet
+  implementations:
+  - implementation: E
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: A regex string to redact sensitive data by its key in attack reports.
+      source: registry_doc
+      lang: dotnet
+- key: DD_APPSEC_OBFUSCATION_PARAMETER_VALUE_REGEXP
+  langs:
+  - dotnet
+  implementations:
+  - implementation: E
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: A regex string to redact sensitive data by its value in attack reports.
+      source: registry_doc
+      lang: dotnet
+- key: DD_APPSEC_RULES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Override the default rules file provided. Must be a path to a valid JSON rules file.
+        Default value is null (do not override).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_SCA_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Activate SCA (Software Composition Analysis), used in the backend
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_STACK_TRACE_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: with a default value of true, it allows a customer to disable the generation of stack traces, for any ASM-specific purpose such as RASP.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_TRACE_RATE_LIMIT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls the maximum amount of traces sampled by AppSec attacks, per second.
+      source: registry_doc
+      lang: dotnet
+- key: DD_APPSEC_WAF_DEBUG
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Activate debug logs for the WAF
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_APPSEC_WAF_TIMEOUT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Limits the WAF synchronous execution time (in microseconds).
+      source: registry_doc
+      lang: dotnet
+- key: DD_AZURE_APP_SERVICES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key which is used as a flag to tell us whether we are instrumenting an Azure App Service using the AAS Site Extension.
+      source: registry_doc
+      lang: dotnet
+- key: DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for identifying the auto instrumentation provider for CI Visibility.
+        This is used to track which instrumentation method was used (e.g., single-step, manual, etc.).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_CODE_COVERAGE_COLLECTORPATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for setting the code coverage collector path
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_CODE_COVERAGE_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling or disabling Code Coverage in CI Visibility.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_CODE_COVERAGE_ENABLE_JIT_OPTIMIZATIONS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling or disabling jit optimizations in the Code Coverage
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_CODE_COVERAGE_MODE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for selecting the code coverage mode LineExecution or LineCallCount
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_CODE_COVERAGE_PATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for setting the code coverage jsons destination path.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_CODE_COVERAGE_SNK_FILEPATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for re-signing assemblies after the Code Coverage modification.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_DI_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Dependency injection for divisibility
+      source: registry_doc
+      lang: dotnet
+- key: DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling or disabling the early flake detection feature in CI Visibility
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling CI Visibility.
+        Default value is false (disabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_EXTERNAL_CODE_COVERAGE_PATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for setting the external code coverage file path
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_FLAKY_RETRY_COUNT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Specifies how many times to retry flaky tests.
+      source: registry_doc
+      lang: dotnet
+- key: DD_CIVISIBILITY_FLAKY_RETRY_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: A kill switch for the auto test retries feature.
+      source: registry_doc
+      lang: dotnet
+- key: DD_CIVISIBILITY_FORCE_AGENT_EVP_PROXY
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for forcing Agent's EVP Proxy
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_GAC_INSTALL_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling or disabling Datadog.Trace GAC installation
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_GIT_UPLOAD_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling Uploading Git Metadata in CI Visibility
+        Default Value is false (disabled)
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling Impacted Tests Detection.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_ITR_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling Intelligent Test Runner in CI Visibility
+        Default Value is false (disabled)
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_KNOWN_TESTS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling or disabling the known tests feature in CI Visibility
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_RUM_FLUSH_WAIT_MILLIS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for set the rum flushing wait in milliseconds
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CIVISIBILITY_TESTSSKIPPING_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling or disabling Intelligent Test Runner test skipping feature in CI Visibility
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CODE_ORIGIN_FOR_SPANS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to enable tag code origin for span.
+        Default value is false.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_CODE_ORIGIN_FOR_SPANS_MAX_USER_FRAMES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the number of frames to be tagged in exit span code origin.
+        Default value is <c>8</c>.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DATA_STREAMS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Enables data streams monitoring support
+        <see cref="Datadog.Trace.Configuration.TracerSettings.IsDataStreamsMonitoringEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DATA_STREAMS_LEGACY_HEADERS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling legacy binary headers in Data Streams Monitoring.
+        false by default if DSM is in default state, true otherwise
+        <see cref="Datadog.Trace.Configuration.TracerSettings.IsDataStreamsLegacyHeadersEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DBM_PROPAGATION_MODE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: To enable DBM to APM link using tag injection, can be set to 'service' or 'full'. The 'service' option enables the connection between DBM and APM services. The 'full' option enables connection between database spans with database query events. Available for Postgres.
+      source: registry_doc
+      lang: dotnet
+- key: DD_DIAGNOSTIC_SOURCE_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling the use of System.Diagnostics.DiagnosticSource.
+        Default value is <c>true</c> (enabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DISABLED_INTEGRATIONS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a list of integrations to disable. All other integrations remain enabled.
+        Default is empty (all integrations are enabled).
+        Supports multiple values separated with semi-colons.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.DisabledIntegrationNames"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DOGSTATSD_ARGS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for arguments to pass to the DogStatsD process.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DOGSTATSD_PATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for when a standalone instance of DogStatsD needs to be started.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DOGSTATSD_PIPE_NAME
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the named pipe that DogStatsD binds to.
+        Default value is <c>null</c>.
+        <seealso cref="Datadog.Trace.Configuration.ExporterSettings.MetricsPipeName"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DOGSTATSD_PORT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Specifies the port number for the DogStatsD server to which runtime metrics are sent.
+      source: registry_doc
+      lang: dotnet
+- key: DD_DOGSTATSD_SOCKET
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the unix domain socket that DogStatsD binds to.
+        Default value is <c>null</c>.
+        <seealso cref="Datadog.Trace.Configuration.ExporterSettings.MetricsUnixDomainSocketPath"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DOGSTATSD_URL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: The URL to use to connect the Datadog agent for Dogstatsd metrics.
+      source: registry_doc
+      lang: dotnet
+- key: DD_DOTNET_TRACER_HOME
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        It indicates the home directory of the dotnet Datadog tracer.
+        On Windows, it is often set to the installation path, such as C:\Program Files\Datadog\.NET Tracer.
+        On Linux/Docker, it is typically set to /opt/datadog.
+      source: registry_doc
+      lang: dotnet
+- key: DD_DYNAMIC_INSTRUMENTATION_DIAGNOSTICS_INTERVAL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the interval (in seconds) between sending probe statuses.
+        Default value is 3600.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DYNAMIC_INSTRUMENTATION_MAX_DEPTH_TO_SERIALIZE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the max object depth to serialize for probe snapshots.
+        Default value is 1.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DYNAMIC_INSTRUMENTATION_MAX_TIME_TO_SERIALIZE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the maximum duration (in milliseconds) to run serialization for probe snapshots.
+        Default value is 150 ms.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DYNAMIC_INSTRUMENTATION_REDACTED_EXCLUDED_IDENTIFIERS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for set of identifiers that are excluded from redaction decisions.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DYNAMIC_INSTRUMENTATION_REDACTED_IDENTIFIERS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: A comma-separated list of identifiers to add to the disallow-list, which is used to redact values in found.
+      source: registry_doc
+      lang: dotnet
+- key: DD_DYNAMIC_INSTRUMENTATION_REDACTED_TYPES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for set of types that are used in redaction decisions.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DYNAMIC_INSTRUMENTATION_REDACTION_EXCLUDED_IDENTIFIERS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for set of identifiers that are excluded from redaction decisions.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DYNAMIC_INSTRUMENTATION_UPLOAD_BATCH_SIZE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the maximum upload batch size.
+        Default value is 100.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_DYNAMIC_INSTRUMENTATION_UPLOAD_FLUSH_INTERVAL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the interval (in milliseconds) between flushing statuses.
+        Default value is 0 (dynamic).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_ENV
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the application's environment. Sets the "env" tag on every <see cref="Span"/>.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.Environment"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_EXCEPTION_REPLAY_AGENTLESS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling agentless Exception Replay uploads.
+        Default value is false.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_EXCEPTION_REPLAY_AGENTLESS_URL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: When Agentless mode in Exception Replay is enabled we can use this configuration to force an URL for the intake
+      source: registry_doc
+      lang: dotnet
+- key: DD_EXCEPTION_REPLAY_CAPTURE_FULL_CALLSTACK_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to enable capturing the variables of all the frames in exception call stack.
+        Default value is false.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_EXCEPTION_REPLAY_CAPTURE_MAX_FRAMES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for the maximum number of frames in a call stack we would like to capture values for.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_EXCEPTION_REPLAY_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling Exception Replay.
+        Default value is false (disabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_EXCEPTION_REPLAY_MAX_EXCEPTION_ANALYSIS_LIMIT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the maximum number of exceptions to be analyzed by Exception Replay within a 1-second time interval.
+        Default value is <c>100</c>.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_EXCEPTION_REPLAY_RATE_LIMIT_SECONDS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the interval used to track exceptions
+        Default value is <c>1</c>h.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_EXPERIMENTAL_APPSEC_USE_UNSAFE_ENCODER
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Use new unsafe encoder for the waf
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: When enabled, adds process entrypoint metadata (such as base directory and working directory) as tags on emitted telemetry such as traces and runtime metrics. This can help correlate data with the process that produced it.
+      source: llm_generated
+      lang: dotnet
+- key: DD_HTTP_CLIENT_ERROR_STATUSES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the application's client http statuses to set spans as errors by.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.HttpClientErrorStatusCodes"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_HTTP_SERVER_ERROR_STATUSES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the application's server http statuses to set spans as errors by.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.HttpServerErrorStatusCodes"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_HTTP_SERVER_TAG_QUERY_STRING
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling/disabling reporting query string
+        Default value is true
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.QueryStringReportingEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the max size of the querystring to report, before obfuscation
+        Default value is 5000, 0 means that we don't limit the size.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.QueryStringReportingSize"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_COOKIE_FILTER_PATTERN
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for number of rows to taint on each Db query in IAST.
+        Default value is 1
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_DB_ROWS_TO_TAINT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for number of rows to taint on each Db query in IAST.
+        Default value is 1
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_DEDUPLICATION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling the vulnerability duplication detection.
+        When enabled, a vulnerability will only be reported once in the lifetime of an app,
+        instead of on every usage. Default value is true (enabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling the IAST.
+        Default value is false (disabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_MAX_CONCURRENT_REQUESTS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the maximum number of requests
+        to be analyzed by IAST concurrently. Defaults to 2.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_MAX_RANGE_COUNT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the maximum number of ranges
+        a tainted object can hold. Defaults to 10.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_REDACTION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for specifying a custom regex to obfuscate source keys.
+        Default value is in TracerSettings
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_REDACTION_NAME_PATTERN
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for specifying a custom regex to obfuscate source keys.
+        Default value is in TracerSettings
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_REDACTION_VALUE_PATTERN
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for specifying a custom regex to obfuscate source values.
+        Default value is in TracerSettings
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_REGEXP_TIMEOUT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for specifying a timeout in milliseconds to the execution of regexes in IAST
+        Default value is 200ms
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_REQUEST_SAMPLING
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for controlling the percentage of requests
+        to be analyzed by IAST, between 1 and 100. Defaults to 30.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_TELEMETRY_VERBOSITY
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for IAST verbosity.
+        Default value is INFORMATION
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_TRUNCATION_MAX_VALUE_LENGTH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for IAST evidence max lenght in chars.
+        Default value is 250
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_VULNERABILITIES_PER_REQUEST
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the maximum number of IAST vulnerabilities to
+        detect in a request. Defaults to 2.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_WEAK_CIPHER_ALGORITHMS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for controlling which weak cipher algorithms are reported.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_IAST_WEAK_HASH_ALGORITHMS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for controlling which weak hashing algorithms are reported.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_INJECTION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling or disabling the injection of products via single step instrumentation.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_INJECT_FORCE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        SSI variable that allows unsupported runtimes to be instrumented.
+        Used for correlation purposes in telemetry.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_INSTRUMENTATION_TELEMETRY_AGENTLESS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for sending telemetry direct to telemetry intake. If enabled, and
+        <see cref="ConfigurationKeys.ApiKey"/> is set, sends telemetry direct to intake if agent is not
+        available. Enabled by default if <see cref="ConfigurationKeys.ApiKey"/> is available.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_INSTRUMENTATION_TELEMETRY_AGENT_PROXY_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for sending telemetry via agent proxy. If enabled, sends telemetry
+        via agent proxy. Enabled by default. If disabled, or agent is not available, telemetry
+        is sent to agentless endpoint, based on <see cref="Datadog.Trace.Configuration.ConfigurationKeys.CIVisibility.AgentlessEnabled"/> setting.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_INSTRUMENTATION_TELEMETRY_COMPRESSION_METHOD
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to allow telemetry compression
+        See https://github.com/DataDog/dd-trace-dotnet/pull/7645
+      source: registry_doc
+      lang: dotnet
+- key: DD_INSTRUMENTATION_TELEMETRY_URL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the telemetry URL where the Tracer sends telemetry. Only applies when agentless
+        telemetry is in use (otherwise telemetry is sent to the agent using
+        <see cref="Datadog.Trace.Configuration.ExporterSettings.AgentUri"/> instead)
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_INTERNAL_PROFILING_NATIVE_ENGINE_PATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        This variable is set by the native loader after trying to load the profiler.
+        It means the profiler is _there_ though it may not be _loaded_. This only works
+        on Windows at the moment. We assume that the CLR profiler must be attached in this scenario.
+      source: registry_doc
+      lang: dotnet
+- key: DD_INTERNAL_RCM_POLL_INTERVAL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls how often remote configuration is polled, in seconds. Values must be greater than 0 and no more than 5.
+      source: llm_generated
+      lang: dotnet
+- key: DD_INTERNAL_TELEMETRY_DEBUG_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for whether to enable debug mode of telemetry.
+        <see cref="Datadog.Trace.Telemetry.TelemetrySettings.DebugEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_INTERNAL_TRACE_NATIVE_ENGINE_PATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        This variable is set by the native loader after trying to load the profiler.
+        It means the profiler is _there_ though it may not be _loaded_. This only works
+        on Windows at the moment. We assume that the CLR profiler must be attached in this scenario.
+      source: registry_doc
+      lang: dotnet
+- key: DD_INTERNAL_WAIT_FOR_DEBUGGER_ATTACH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling the Tracer's debugger mode.
+        Default value is false (disabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_INTERNAL_WAIT_FOR_NATIVE_DEBUGGER_ATTACH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling the Tracer's native debugger mode.
+        Default value is false (disabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_AZURE_FUNCTIONS_HOST_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key to enable or disable direct log submission for Azure Functions host
+      source: registry_doc
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_BATCH_PERIOD_SECONDS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the time to wait between checking for batches
+        Default value is <c>2</c>s.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_HOST
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Set the name of the originating host for direct logs submission.
+        Required for direct logs submission (default is machine name).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_INTEGRATIONS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a list of direct log submission integrations to enable.
+        Only selected integrations are enabled for direct log submission
+        Default is empty (direct log submission disabled).
+        Supports multiple values separated with semi-colons.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_MAX_BATCH_SIZE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the maximum number of logs to send at one time
+        Default value is <c>1,000</c>, the maximum accepted by the Datadog log API
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_MAX_QUEUE_SIZE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the maximum number of logs to hold in internal queue at any one time
+        Default value is <c>100,000</c>.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_MINIMUM_LEVEL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the minimum level logs should have to be sent to the intake.
+        Default value is <c>Information</c>.
+        Should be one of <c>Verbose</c>,<c>Debug</c>,<c>Information</c>,<c>Warning</c>,<c>Error</c>,<c>Fatal</c>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_SOURCE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Set the originating source for direct logs submission.
+        Default is 'csharp'
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_TAGS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a list of tags to be applied globally to all logs directly submitted.
+        Supports multiple key key-value pairs which are comma-separated, and for which the key and
+        value are colon-separated. For example Key1:Value1, Key2:Value2. If not provided,
+        <see cref="ConfigurationKeys.GlobalTags"/> are used instead
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_DIRECT_SUBMISSION_URL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the url to send logs to.
+        Default value uses the domain set in <see cref="ConfigurationKeys.Site"/>, so defaults to
+        <c>https://http-intake.logs.datadoghq.com:443</c>.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_INJECTION
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling the automatic injection
+        of correlation identifiers into the logging context.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.LogsInjectionEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOGS_OTEL_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Enables support for collecting and exporting logs generated by the the OpenTelemetry Logs API.
+        This feature is available starting with .NET 3.1 when using Microsoft.Extensions.Logging
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_LOG_LEVEL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the Datadog Agent logging level. Valid values are trace, debug, info, warn, error, critical, or off.
+      source: llm_generated
+      lang: dotnet
+- key: DD_MAX_LOGFILE_SIZE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the approximate maximum size,
+        in bytes, for Tracer log files.
+        Default value is 10 MB.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_MAX_TRACES_PER_SECOND
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the number of traces allowed
+        to be submitted per second.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.MaxTracesSubmittedPerSecond"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_METRICS_OTEL_METER_NAMES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: List of meters to add to the metrics exporter for the experimental OpenTelemetry Metrics API support.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_PROFILING_CODEHOTSPOTS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables or disables code hotspots collection for the continuous profiler. When disabled, profiling data is not linked to tracing context for hotspot attribution.
+      source: llm_generated
+      lang: dotnet
+- key: DD_PROFILING_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables or disables the continuous profiler. Set to true (or 1) to start profiling, false (or 0) to disable, or auto to enable profiling but only start it after the process is long-lived and has created at least one span.
+      source: llm_generated
+      lang: dotnet
+- key: DD_PROFILING_MANAGED_ACTIVATION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Safety kill switch to be able to deactivate hotstandby mode for profiling in of a support case
+      source: registry_doc
+      lang: dotnet
+- key: DD_PROXY_HTTPS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key to set a proxy server for https requests.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_PROXY_NO_PROXY
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set a list of hosts that should bypass the proxy.
+        The list is space-separated.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Remote configuration polling interval in seconds.
+      source: registry_doc
+      lang: dotnet
+- key: DD_RUNTIME_METRICS_DIAGNOSTICS_METRICS_API_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables the .NET runtime metrics collector which uses the System.Diagnostics.Metrics API instead of the EventListener based API
+      source: registry_doc
+      lang: dotnet
+- key: DD_RUNTIME_METRICS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables or disables the collection of [runtime metrics][5] (such as garbage collection stats, memory usage, and thread counts) for the application.
+      source: registry_doc
+      lang: dotnet
+- key: DD_SERVICE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: D
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the application's default service name.
+        Used as the service name for top-level spans,
+        and used to determine service name of some child spans.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.ServiceName"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_SPAN_SAMPLING_RULES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting custom <em>span</em> sampling rules based on glob patterns.
+        Comma separated list of span sampling rules.
+        The rule is matched in order of specification. The first match in a list is used.
+        The supported glob pattern characters are '*' and '?'.
+        A '*' matches any contiguous substring.
+        A '?' matches exactly one character.
+
+        Per entry:
+            The item "service" is a glob pattern string, to match on the service name.
+                Optional and defaults to '*'.
+            The item "name" is a glob pattern string, to match on the operation name.
+                Optional and defaults to '*'.
+            The item "sample_rate" is a float and is the probability of keeping a matched span.
+                Optional and defaults to 1.0 (keep all).
+            The item "max_per_second" is a float and is the maximum number of spans that can be kept per second for the rule.
+                Optional and defaults to unlimited.
+
+        Examples:
+        Match all spans that have a service name of "cart" and an operation name of "checkout" with a kept limit of 1000 per second.
+            "[{"service": "cart", "name": "checkout", "max_per_second": 1000}]"
+
+        Match 50% of spans that have a service name of "cart" and an operation name of "checkout" with a kept limit of 1000 per second.
+            "[{"service": "cart", "name": "checkout", "sample_rate": 0.5, "max_per_second": 1000}]"
+
+        Match all spans that start with "cart" without any limits and any operation name.
+            "[{"service": "cart*"}]"
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.SpanSamplingRules"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_SYMBOL_DATABASE_BATCH_SIZE_BYTES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the maximum symbol size to upload (in bytes).
+        Default value is 1 mb.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_SYMBOL_DATABASE_COMPRESSION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling compression for symbols payload.
+        Default value is true (enabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_SYMBOL_DATABASE_THIRD_PARTY_DETECTION_EXCLUDES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a separated comma list of libraries to exclude in the 3rd party detection
+        Default value is empty.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_SYMBOL_DATABASE_THIRD_PARTY_DETECTION_INCLUDES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a separated comma list of libraries to include in the 3rd party detection
+        Default value is empty.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_SYMBOL_DATABASE_UPLOAD_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for allowing upload of symbol data (such as method names, parameter names, etc) to Datadog.
+        Default value is true (enabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TAGS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Tags to apply to produced data. Must be a list of <key>:<value> separated by commas and/or spaces.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TELEMETRY_HEARTBEAT_INTERVAL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the interval for the telemetry status heartbeat (in seconds)
+      source: registry_doc
+      lang: dotnet
+- key: DD_TESTSESSION_COMMAND
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the test session command that was executed.
+        This is used to track the command line that initiated the test session.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TESTSESSION_WORKINGDIRECTORY
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the test session working directory.
+        This is used to track the working directory where the test session was executed.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for the number of retries to fix a flaky test.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TEST_MANAGEMENT_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling or disabling the Test Management feature.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_THIRD_PARTY_DETECTION_EXCLUDES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a separated comma list of libraries to exclude for the 3rd party detection
+        Default value is empty.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_THIRD_PARTY_DETECTION_INCLUDES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a separated comma list of libraries to include in the 3rd party detection
+        Default value is empty.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether new traces use 128-bit W3C trace IDs (32-character hexadecimal strings) or 64-bit Datadog trace IDs (16-character hexadecimal strings). The default is true to support W3C trace context propagation.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether 128-bit trace IDs are logged in their full 32-character format or truncated to 16 characters. Set to false for compatibility with systems that expect the shorter format.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_ACTIVITY_LISTENER_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Whether activity listener is enabled
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_AGENT_ARGS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for arguments to pass to the Trace Agent process.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_AGENT_PATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for when a standalone instance of the Trace Agent needs to be started.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_AGENT_PORT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: The port of the Trace Agent that the tracer submits to. If the [Agent configuration][13] sets receiver_port or DD_APM_RECEIVER_PORT to something other than the default 8126, then DD_TRACE_AGENT_PORT or DD_TRACE_AGENT_URL must match it.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_AGENT_URL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: The URL for connecting the tracer to the Datadog agent. Valid URL schemas include http:// and unix:// (UNIX Domain Sockets). This value takes precedence over DD_AGENT_HOST and DD_TRACE_AGENT_PORT if set.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_AWS_ADD_SPAN_POINTERS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for toggling span pointers on AWS requests.
+        Default value is true
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_AZURE_EVENTHUBS_BATCH_LINKS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables span links for event hub messages sent in a batch
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_AZURE_SERVICEBUS_BATCH_LINKS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: AZURE_SERVICEBUS_BATCH_LINKS_ENABLED
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_BAGGAGE_MAX_BYTES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set the maximum number of bytes that can be
+        injected into the baggage header when propagating to a downstream service.
+        Default value is 8192 bytes.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.BaggageMaximumBytes"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_BAGGAGE_MAX_ITEMS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set the maximum number of items that can be
+        injected into the baggage header when propagating to a downstream service.
+        Default value is 64 items.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.BaggageMaximumItems"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_BATCH_INTERVAL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the batch interval in milliseconds for the serialization queue.
+        Set to 0 to disable.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_BUFFER_SIZE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for setting the size in bytes of the trace buffer
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_BYPASS_HTTP_REQUEST_URL_CACHING_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: When enabled, the request URL is built without using the cached HttpRequest.Url value to avoid triggering URL caching behavior. This can prevent issues in environments where caching the URL early can affect application behavior.
+      source: llm_generated
+      lang: dotnet
+- key: DD_TRACE_CLIENT_IP_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables or disables the automatic collection of client IP addresses from HTTP request headers. When enabled, the IP address is stored in the http.client_ip span tag.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_CLIENT_IP_HEADER
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: 'Configures a custom header name from which to source the http.client_ip tag value. If this variable is set, all other IP-related headers are ignored (for example, setting DD_TRACE_CLIENT_IP_HEADER=custom-ip-header and including the header custom-ip-header: 5.6.7.9 in a request results in a span tagged with "http.client_ip": "5.6.7.9"). If an empty string or null value is passed, IP headers are queried in this order: - x-forwarded-for - x-real-ip - true-client-ip - x-client-ip - x-forwarded - forwarded-for - x-cluster-client-ip - fastly-client-ip - cf-connecting-ip - cf-connecting-ipv6'
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_COMMANDS_COLLECTION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls whether command-line details are collected for process execution instrumentation. When enabled, the executable and arguments may be captured (truncated as needed); when disabled, command-line details are omitted.
+      source: llm_generated
+      lang: dotnet
+- key: DD_TRACE_CONFIG_FILE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the path to the configuration file.
+        Can only be set with an environment variable
+        or in the <c>app.config</c>/<c>web.config</c> file.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_DATA_PIPELINE_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Use libdatadog data pipeline to send traces.
+        Default value is <c>false</c> (disabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_DEBUG
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enable debug logging in the tracer. Use OTEL_LOG_LEVEL as an alias
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_DEBUG_LOOKUP_FALLBACK
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for forcing the automatic instrumentation to only use the fallback method lookup mechanism.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_DEBUG_LOOKUP_MDTOKEN
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for forcing the automatic instrumentation to only use the mdToken method lookup mechanism.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_DELAY_WCF_INSTRUMENTATION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to enable or disable the updated WCF instrumentation that delays execution
+        until later in the WCF pipeline when the WCF server exception handling is established.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.DelayWcfInstrumentationEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_DISABLED_ACTIVITY_SOURCES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a list of ActivitySource names (supports globbing) that will be disabled.
+        Default is empty (all ActivitySources will be subscribed to by default).
+        <para><b>Disabling ActivitySources may break distributed tracing if those Activities are used to propagate trace context.</b></para>
+        <para>
+        Supports multiple values separated with commas.
+        For example: "SomeGlob.*.PatternSource,Some.Specific.Source"
+        </para>
+        <remarks>
+        <para>
+        When the tracer doesn't subscribe to an ActivitySource, we will <em>NOT</em> propagate the trace context from those Activities (we don't see them anymore).
+        <br/><b>This means that distributed tracing flows that rely on these Activities for context propagation
+        will break and cause disconnected traces.</b>
+        </para>
+        <para>
+        Potential impact on distributed tracing:
+        <list type="bullet">
+        <item>
+          <description>
+            Service A -> Ignored Activity -> Service B
+            <para>Creates a single trace with Service A as root and Service B as child</para>
+          </description>
+        </item>
+        <item>
+          <description>
+            Service A -> Disabled Activity -> Service B
+            <para>Creates TWO separate traces with Service A and Service B each as root spans</para>
+          </description>
+        </item>
+        </list>
+        </para>
+        </remarks>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_DISABLED_ADONET_COMMAND_TYPES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the comma-separated list of user disabled
+        ADO.NET CommandType names that should not have Span created for them.
+        <para>"InterceptableDbCommand" and "ProfiledDbCommand" are always disabled by default.</para>
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.DisabledAdoNetCommandTypes"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_EXPAND_ROUTE_TEMPLATES_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for controlling whether route parameters in ASP.NET and ASP.NET Core resource names
+        should be expanded with their values. Only applies when
+        <see cref="ConfigurationKeys.FeatureFlags.RouteTemplateResourceNamesEnabled"/> is enabled.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.ExpandRouteTemplatesEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key to enable experimental features.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_GRPC_TAGS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a map of metadata keys to tag names.
+        Automatically apply GRPC metadata values as tags on traces.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.HeaderTags"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_HEADER_TAGS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Automatically apply specified HTTP headers as span tags. If a custom tag name is not specified, the tag key defaults to http.request.headers.<normalized-header-name> for request headers and http.response.headers.<normalized-header-name> for response headers.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_HEADER_TAG_NORMALIZATION_FIX_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Enables a fix for header tags normalization.
+        We used to normalize tag names even if they were specified in user configuration, but we should not.
+        Default value is <c>true</c>.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_HTTP_CLIENT_EXCLUDED_URL_SUBSTRINGS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for overriding which URLs are skipped by the tracer.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.HttpClientExcludedUrlSubstrings"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_HTTP_SERVER_ERROR_STATUSES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the application's server http statuses to set spans as errors by.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.HttpServerErrorStatusCodes"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_INJECT_CONTEXT_INTO_STORED_PROCEDURES_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to enable or disable the injection of the Datadog trace context into stored procedures.
+        Default value is <c>false</c> (disabled).
+        When enabled, Datadog trace context will be injected into individual stored procedure calls when the following requirements are met:
+        <ul>
+          <li>The database is Microsoft SQL Server and <see cref="TracerSettings.DbmPropagationMode"/> is set to
+        <c>service</c> or
+        <c>full</c>.</li>
+          <li>The stored procedure call does not have <c>Output</c>, <c>InputOutput</c>, or <c>Return</c> ADO.NET command parameters.</li>
+        </ul>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_KAFKA_CREATE_CONSUMER_SCOPE_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to enable or disable the creation of a span context on exiting a successful Kafka
+        Consumer.Consume() call, and closing the scope on entering Consumer.Consume().
+        Default value is <c>true</c> (enabled).
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.KafkaCreateConsumerScopeEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_LOGFILE_RETENTION_DAYS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for setting in number of days when to delete log files based on their last writetime date.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_LOGGING_RATE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the number of seconds between,
+        identical log messages, for Tracer log files.
+        Default value is 0 and setting to 0 disables rate limiting.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_LOG_DIRECTORY
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the directory of the .NET Tracer logs.
+        Overrides the value in <see cref="Datadog.Trace.Configuration.ConfigurationKeys.TraceLogPath"/> if present.
+        Default value is "%ProgramData%"\Datadog .NET Tracer\logs\" on Windows
+        or "/var/log/datadog/dotnet/" on Linux.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_LOG_PATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Deprecated, use DD_TRACE_LOG_DIRECTORY instead, and make sure it is a directory and not a file path
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_LOG_SINKS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for locations to write internal diagnostic logs.
+        Currently only <c>file</c> is supported
+        Defaults to <c>file</c>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_METHODS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling automatic instrumentation on specified methods.
+        Default value is "" (disabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_METRICS_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for enabling or disabling internal metrics sent to DogStatsD.
+        Default value is <c>false</c> (disabled).
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP
+  langs:
+  - dotnet
+  implementations:
+  - implementation: D
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Applies a regex to redact sensitive data from query strings on incoming HTTP requests. The default regex matches various sensitive data patterns, including passwords, tokens, API keys, private keys, and authorization terms. Matches are replaced with <redacted>. If an empty string is passed, no obfuscation occurs. The resulting value is reported in the http.url tag.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP_TIMEOUT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for specifying a timeout in milliseconds to the execution of the query string obfuscation regex
+        Default value is 200ms
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.ObfuscationQueryStringRegexTimeout"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_OTEL_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: When true, OpenTelemetry-based tracing for custom instrumentation is enabled.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_PARTIAL_FLUSH_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Enables incrementally flushing large traces to the Datadog Agent, reducing the chance of rejection by the Agent. Use only when you have long-lived traces or traces with many spans.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_PARTIAL_FLUSH_MIN_SPANS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Number of spans before partially exporting a trace. This prevents keeping all the spans in memory for very large traces.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_PIPE_NAME
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the named pipe where the Tracer can send traces.
+        Default value is <c>null</c>.
+        <seealso cref="Datadog.Trace.Configuration.ExporterSettings.TracesPipeName"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_PIPE_TIMEOUT_MS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the timeout in milliseconds for named pipes communication.
+        Default value is <c>0</c>.
+        <seealso cref="Datadog.Trace.Configuration.ExporterSettings.TracesPipeTimeoutMs"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the header extraction propagation behavior. Accepted values are:
+        <ul>
+          <li>continue: Extracted span context becomes the parent and baggage is propagated</li>
+          <li>restart: Extracted span context becomes a span link (a new trace is started) and baggage is propagated</li>
+          <li>ignore: We disregard the incoming trace context headers and we also disregard baggage</li>
+        </ul>
+        Default value is continue.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_PROPAGATION_STYLE_EXTRACT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: D
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: A comma-separated list of header formats from which to attempt to extract distributed tracing propagation data. The first format found with complete and valid headers is used to define the trace to continue.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_PROPAGATION_STYLE_INJECT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: D
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: A comma-separated list of header formats to include to propagate distributed traces between services.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_RATE_LIMIT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Sets the maximum number of traces to sample per second; applies only when either DD_TRACE_SAMPLING_RULES or DD_TRACE_SAMPLE_RATE is set.
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_ROUTE_TEMPLATE_RESOURCE_NAMES_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Feature Flag: enables updated resource names on `aspnet.request`, `aspnet-mvc.request`,
+        `aspnet-webapi.request`, and `aspnet_core.request` spans. Enables `aspnet_core_mvc.request` spans and
+        additional features on `aspnet_core.request` spans.
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.RouteTemplateResourceNamesEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_SAMPLE_RATE
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Controls the ingestion sample rate (between 0.0 and 1.0) between the Agent and the backend. Use OTEL_TRACES_SAMPLER as an alias
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_SAMPLING_RULES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting custom sampling rules based on regular expressions.
+        Semi-colon separated list of sampling rules.
+        The rule is matched in order of specification. The first match in a list is used.
+
+        Per entry:
+          The item "sample_rate" is required in decimal format.
+          The item "service" is optional in regular expression format, to match on service name.
+          The item "name" is optional in regular expression format, to match on operation name.
+
+        To give a rate of 50% to any traces in a service starting with the text "cart":
+          '[{"sample_rate":0.5, "service":"cart.*"}]'
+
+        To give a rate of 20% to any traces which have an operation name of "http.request":
+          '[{"sample_rate":0.2, "name":"http.request"}]'
+
+        To give a rate of 100% to any traces within a service named "background" and with an operation name of "sql.query":
+          '[{"sample_rate":1.0, "service":"background", "name":"sql.query"}]
+
+        To give a rate of 10% to all traces
+          '[{"sample_rate":0.1}]'
+
+        To configure multiple rules, separate by semi-colon and order from most specific to least specific:
+          '[{"sample_rate":0.5, "service":"cart.*"}, {"sample_rate":0.2, "name":"http.request"}, {"sample_rate":1.0, "service":"background", "name":"sql.query"}, {"sample_rate":0.1}]'
+
+        If no rules are specified, or none match, default internal sampling logic will be used.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.CustomSamplingRules"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_SAMPLING_RULES_FORMAT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the format of <see cref="Datadog.Trace.Configuration.MutableSettings.CustomSamplingRules"/>.
+        Valid values are <c>regex</c> or <c>glob</c>.
+        If the value is not recognized, trace sampling rules are disabled.
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_SERVICE_MAPPING
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a map of services to rename.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.ServiceNameMappings"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_SINGLE_SPAN_ASPNETCORE_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Enables generating only a single span in the ASP.NET Core integration,  by only creating `aspnet_core.request` spans, without creating handler spans or tracking specific route values. Not compatible with
+          DD_TRACE_ROUTE_TEMPLATE_RESOURCE_NAMES_ENABLED (that value is ignored), but may be used
+          with DD_TRACE_EXPAND_ROUTE_TEMPLATES_ENABLED. Only supported on .NET 6+
+      source: registry_doc
+      lang: dotnet
+- key: DD_TRACE_SPAN_ATTRIBUTE_SCHEMA
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for setting the schema version for service naming and span attributes
+        Accepted values are: "v1", "v0"
+        Default value is "v0"
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_STATS_COMPUTATION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for enabling computation of stats (aka trace metrics) on the tracer side
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_WCF_RESOURCE_OBFUSCATION_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Feature flag to enable obfuscating the <c>LocalPath</c> of a WCF request that goes
+        into the <c>resourceName</c> of a span.
+        <para>Note: that this only applies when the WCF action is an empty string.</para>
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.WcfObfuscationEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_TRACE_WCF_WEB_HTTP_RESOURCE_NAMES_ENABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to enable or disable improved template-based resource names
+        when using WCF Web HTTP. Requires <see cref="TracerSettings.DelayWcfInstrumentationEnabled"/> be set
+        to true. Enabled by default
+        <seealso cref="Datadog.Trace.Configuration.TracerSettings.WcfWebHttpResourceNamesEnabled"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: DD_VERSION
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for the application's version. Sets the "version" tag on every <see cref="Span"/>.
+        <seealso cref="Datadog.Trace.Configuration.MutableSettings.ServiceVersion"/>
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_ENDPOINT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set the OTLP endpoint URL (fallback for metrics-specific endpoint).
+        Used when <see cref="ExporterOtlpMetricsEndpoint"/> is not set.
+        Expects values like `unix:///path/to/socket.sock` for UDS, `\\.\pipename\` for Windows Named Pipes.
+        Default values: gRPC: http://localhost:4317, HTTP: http://localhost:4318
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Endpoint URL for log data only, with an optionally-specified port number. Typically ends with v1/logs when using OTLP/HTTP.
+      source: registry_doc
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_LOGS_HEADERS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: A map of headers to apply to all outgoing otlp logs.
+      source: registry_doc
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Specifies the OTLP transport protocol to be used for log data.
+      source: registry_doc
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_LOGS_TIMEOUT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: The timeout value for all outgoing logs in milliseconds.
+      source: registry_doc
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set the OTLP endpoint URL for metrics.
+        Takes precedence over <see cref="ExporterOtlpEndpoint"/>.
+        This value typically ends with v1/metrics when using OTLP/HTTP.
+        Expects values like `unix:///path/to/socket.sock` for UDS, `\\.\pipename\` for Windows Named Pipes.
+        Default values: gRPC: http://localhost:4317, HTTP: http://localhost:4318/v1/metrics
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_METRICS_HEADERS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set custom headers for OTLP metrics export.
+        Takes precedence over <see cref="ExporterOtlpHeaders"/>.
+        Format: api-key=key,other=value.
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_METRICS_PROTOCOL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set the OTLP protocol for metrics export.
+        Takes precedence over <see cref="ExporterOtlpProtocol"/>.
+        Valid values: grpc, http/protobuf, http/json, defaults to http/protobuf.
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_METRICS_TIMEOUT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set the request timeout for OTLP metrics export in milliseconds.
+        Takes precedence over <see cref="ExporterOtlpTimeoutMs"/>.
+        Default value is 10000ms.
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_EXPORTER_OTLP_PROTOCOL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Default OTLP Protocol used by most OpenTelemetry SDKs (rust, python, .NET)
+      source: registry_doc
+      lang: dotnet
+- key: OTEL_LOGS_EXPORTER
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Datadog SDKs that support OTLP log export should default to otlp; all others should default to None/null.
+      source: registry_doc
+      lang: dotnet
+- key: OTEL_LOG_LEVEL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key to set the log level.
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_METRICS_EXPORTER
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set the exporter for metrics.
+        We only recognize the values of 'otlp' and 'none', a value of
+        'none' disables the emission of metrics which is the
+        equivalent of setting <see cref="ConfigurationKeys.RuntimeMetricsEnabled"/>
+        to false.
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_PROPAGATORS
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a list of tracing propagators.
+        Datadog only supports a subset of the OpenTelemetry propagators.
+        Also, the 'b3' OpenTelemetry propagator is mapped to the
+        'b3 single header' Datadog propagator.
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_RESOURCE_ATTRIBUTES
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for a list of key-value pairs to be set as
+        resource attributes. We currently map these to span tags.
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_SDK_DISABLED
+  langs:
+  - dotnet
+  implementations:
+  - implementation: B
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: Configuration key for disabling the OpenTelemetry API's.
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_TRACES_EXPORTER
+  langs:
+  - dotnet
+  implementations:
+  - implementation: C
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set the exporter for traces.
+        We only recognize the value 'none', which is the
+        equivalent of setting <see cref="ConfigurationKeys.TraceEnabled"/>
+        to false.
+      source: in_code_documentation
+      lang: dotnet
+- key: OTEL_TRACES_SAMPLER_ARG
+  langs:
+  - dotnet
+  implementations:
+  - implementation: D
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key to set an additional argument for the
+        traces sampler.
+        to false.
+      source: in_code_documentation
+      lang: dotnet
+- key: _DD_EXTENSION_ENDPOINT
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: The _DD_EXTENSION_ENDPOINT isn't a standard, globally recognized AWS environment variable or service, but likely refers to a custom or specific endpoint for a DataDog (DD) integration/extension within AWS, often used in Lambda functions or containerized apps via ECS/Fargate to send metrics/logs to Datadog's services (Agent/API), especially when using Datadog's AWS integrations or extensions for seamless observability
+      source: registry_doc
+      lang: dotnet
+- key: _DD_EXTENSION_PATH
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: String constants for configuring the dotnet tracer with aws platform
+      source: registry_doc
+      lang: dotnet
+- key: _DD_INTERNAL_IS_RUNNING_IN_CIVISIBILITY
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: An internal key used to "tell" tracer settings that we're running in CI Visibility mode
+      source: in_code_documentation
+      lang: dotnet
+- key: _DD_INTERNAL_TOPT_RUNID
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: An internal key used to share a runtime ID across all the processes started in a test session
+      source: registry_doc
+      lang: dotnet
+- key: _DD_TRACE_STATS_COMPUTATION_INTERVAL
+  langs:
+  - dotnet
+  implementations:
+  - implementation: A
+    langs:
+    - dotnet
+    conflictingDescriptions: false
+    descriptions:
+    - description: |-
+        Configuration key for configuring the interval (in seconds) for sending stats (aka trace metrics)
+
+        # Keys without documentation in ConfigurationKeys.cs
+        # These keys exist in supported-configurations.json but need documentation
+      source: in_code_documentation
+      lang: dotnet
