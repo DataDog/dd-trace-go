@@ -129,6 +129,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.7.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.7.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.7.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.7.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.7.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.7.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.7.0-dev.1 // indirect
