@@ -18,8 +18,6 @@ else
   INSTRUMENTATION_SUBMODULES=$(find ./instrumentation -mindepth 2 -type f -name go.mod -exec dirname {} \;)
 fi
 
-export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported version
-
 export DD_APPSEC_ENABLED=1
 export DD_APPSEC_WAF_TIMEOUT=1m
 export __DD_TRACE_SQL_TEST=true

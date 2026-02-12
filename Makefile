@@ -16,9 +16,7 @@ all: tools-install generate lint test ## Run complete build pipeline (tools, gen
 tools-install: tools-install/checkmake ## Install development tools
 	@./scripts/install_tools.sh --tools-dir $(TOOLS) --bin-dir $(BIN)
 
-# checkmake is installed as a pre-built binary rather than via go install
-# because it requires Go 1.25+, which would force an upgrade of our _tools module.
-# We keep the _tools module on Go 1.24.0 to match our main project requirements.
+# checkmake is installed as a pre-built binary for simplicity and speed.
 # For platforms without pre-built binaries, we fall back to building from source.
 .PHONY: tools-install/checkmake
 tools-install/checkmake: ## Install checkmake binary for Makefile linting
