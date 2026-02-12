@@ -49,7 +49,7 @@ aspects:
           template: |-
             {{- $logger := .Function.Result 0 -}}
             defer func() {
-              {{ $logger }}.Hook(&DDContextLogHook{})
+              {{ $logger }} = {{ $logger }}.Hook(&DDContextLogHook{})
             }()
 
   - id: '*zerolog.Logger'
@@ -63,7 +63,7 @@ aspects:
             zerolog: github.com/rs/zerolog
           template: |-
             func(logger *zerolog.Logger) *zerolog.Logger {
-              logger.Hook(&zerolog.DDContextLogHook{})
+              *logger = logger.Hook(&zerolog.DDContextLogHook{})
               return logger
             }({{ . }})
 
@@ -78,6 +78,5 @@ aspects:
             zerolog: github.com/rs/zerolog
           template: |-
             func(logger zerolog.Logger) zerolog.Logger {
-              logger.Hook(&zerolog.DDContextLogHook{})
-              return logger
+              return logger.Hook(&zerolog.DDContextLogHook{})
             }({{ . }})
