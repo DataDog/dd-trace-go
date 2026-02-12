@@ -7,7 +7,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2 v2.7.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
-	github.com/miekg/dns v1.1.55
+	github.com/miekg/dns v1.1.72
 	github.com/stretchr/testify v1.11.1
 )
 
