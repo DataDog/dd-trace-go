@@ -77,7 +77,7 @@ Sometimes a pull request's checks will show failures that aren't related to its 
 1. Look through the GitHub Action logs for an obvious cause
 2. Retry the test a few times to see if it flakes
 3. For internal contributors, ask the #dd-trace-go channel for help
-4. If you are not an internal contributor, [open an issue](https://github.com/DataDog/dd-trace-go/issues/new/choose) or ping @Datadog/apm-go
+4. If you are not an internal contributor, [open an issue](https://github.com/DataDog/dd-trace-go/issues/new/choose) or ping @DataDog/apm-go
 
 ### Running CI Checks Locally
 

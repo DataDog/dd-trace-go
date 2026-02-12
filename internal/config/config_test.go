@@ -74,6 +74,30 @@ func TestGet(t *testing.T) {
 		assert.Same(t, cfg4, cfg5, "With useFreshConfig=false, Get() should cache the same instance")
 	})
 
+	t.Run("GetNew forces new instance", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Get the first instance
+		cfg1 := Get()
+		require.NotNil(t, cfg1)
+
+		// Get should return the same instance
+		cfg2 := Get()
+		require.NotNil(t, cfg2)
+		assert.Same(t, cfg1, cfg2, "Get() should return the same instance")
+
+		// CreateNew should return a new instance
+		cfg3 := CreateNew()
+		require.NotNil(t, cfg3)
+		assert.NotSame(t, cfg2, cfg3, "CreateNew() should return a new instance")
+
+		// Now it should cache the same instance
+		cfg4 := Get()
+		assert.Same(t, cfg3, cfg4, "Get() should return the same instance")
+		assert.NotSame(t, cfg1, cfg4, "Get() should not return the same instance as the first one")
+	})
+
 	t.Run("concurrent access is safe", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
