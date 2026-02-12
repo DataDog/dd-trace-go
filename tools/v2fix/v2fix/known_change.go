@@ -799,43 +799,12 @@ func (c AppSecLoginEvents) Probes() []Probe {
 }
 
 func (c AppSecLoginEvents) Fixes() []analysis.SuggestedFix {
-	fn, ok := c.ctx.Value(fnKey).(*types.Func)
-	if !ok || fn == nil {
-		return nil
-	}
-
-	args, ok := c.ctx.Value(argsKey).([]ast.Expr)
-	if !ok {
-		return nil
-	}
-
-	pkg := c.pkgPrefix()
-	if pkg == "" {
-		return nil
-	}
-	var newFuncName string
-	switch fn.Name() {
-	case "TrackUserLoginSuccessEvent":
-		newFuncName = "TrackUserLoginSuccess"
-	case "TrackUserLoginFailureEvent":
-		newFuncName = "TrackUserLoginFailure"
-	default:
-		return nil
-	}
-
-	newText := fmt.Sprintf("%s.%s(%s)", pkg, newFuncName, exprListString(args))
-	return []analysis.SuggestedFix{
-		{
-			Message: "appsec login event functions have been renamed (remove 'Event' suffix)",
-			TextEdits: []analysis.TextEdit{
-				{
-					Pos:     c.Pos(),
-					End:     c.End(),
-					NewText: []byte(newText),
-				},
-			},
-		},
-	}
+	// Neither function can be safely auto-fixed:
+	// - TrackUserLoginSuccessEvent → TrackUserLoginSuccess has a new 'login' parameter
+	// - TrackUserLoginFailureEvent → TrackUserLoginFailure's second parameter changed
+	//   from user ID to login value
+	// Both are diagnostic-only until a safe argument mapping is available.
+	return nil
 }
 
 func (c AppSecLoginEvents) String() string {

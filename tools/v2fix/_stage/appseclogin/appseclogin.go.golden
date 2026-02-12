@@ -16,8 +16,8 @@ func main() {
 	ctx := context.Background()
 
 	// Login success event
-	appsec.TrackUserLoginSuccess(ctx, "user123", nil) // want `appsec login event functions have been renamed`
+	appsec.TrackUserLoginSuccessEvent(ctx, "user123", nil) // want `appsec login event functions have been renamed`
 
 	// Login failure event
-	appsec.TrackUserLoginFailure(ctx, "user123", false, nil) // want `appsec login event functions have been renamed`
+	appsec.TrackUserLoginFailureEvent(ctx, "user123", false, nil) // want `appsec login event functions have been renamed`
 }
