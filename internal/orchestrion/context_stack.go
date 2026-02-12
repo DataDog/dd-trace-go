@@ -5,8 +5,10 @@
 
 package orchestrion
 
-// contextStack is the object put in the GLS slot of runtime.g inserted by orchestrion. it is used to store context values
-// that are shared across the same goroutine.
+import "slices"
+
+// contextStack is stored in the GLS slot of runtime.g inserted by orchestrion.
+// It holds context values shared within a single goroutine.
 // TODO: handle cross-goroutine context values
 type contextStack map[any][]any
 
@@ -56,7 +58,17 @@ func (s *contextStack) Pop(key any) any {
 		return nil
 	}
 
-	val := (*s)[key][len(stack)-1]
-	(*s)[key] = (*s)[key][:len(stack)-1]
+	lastIdx := len(stack) - 1
+	val := stack[lastIdx]
+	// slices.Delete zeroes removed elements in the backing array,
+	// allowing GC to collect popped values.
+	stack = slices.Delete(stack, lastIdx, lastIdx+1)
+
+	if len(stack) == 0 {
+		delete(*s, key)
+	} else {
+		(*s)[key] = stack
+	}
+
 	return val
 }

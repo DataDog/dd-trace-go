@@ -8,6 +8,8 @@ package internal
 import (
 	"context"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
 func TestTraceTaskEndContext(t *testing.T) {
@@ -21,5 +23,23 @@ func TestTraceTaskEndContext(t *testing.T) {
 	ctx = WithExecutionNotTraced(ctx)
 	if IsExecutionTraced(ctx) {
 		t.Fatal("context incorrectly marked as execution traced")
+	}
+}
+
+func TestWithExecutionTracedGLSCleanup(t *testing.T) {
+	t.Cleanup(orchestrion.MockGLS())
+
+	ctx := WithExecutionTraced(context.Background())
+	if got := IsExecutionTraced(ctx); got != true {
+		t.Fatalf("IsExecutionTraced(WithExecutionTraced(ctx)) = %v, want true", got)
+	}
+
+	PopExecutionTraced()
+
+	// After pop, the GLS stack no longer has the value, but the context
+	// still holds it via context.WithValue. We check GLS via a fresh
+	// WrapContext on a bare context to verify GLS cleanup.
+	if got := IsExecutionTraced(orchestrion.WrapContext(nil)); got != false {
+		t.Fatalf("IsExecutionTraced(WrapContext(nil)) after PopExecutionTraced() = %v, want false", got)
 	}
 }

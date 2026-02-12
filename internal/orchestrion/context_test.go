@@ -7,35 +7,17 @@ package orchestrion
 
 import (
 	"context"
+	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type key string
 
-func mockGLSGetterAndSetter() func() {
-	prevGetDDGLS := getDDGLS
-	prevSetDDGLS := setDDGLS
-	prevEnabled := enabled
-
-	tmp := contextStack(make(map[any][]any))
-	var glsValue any = &tmp
-	getDDGLS = func() any { return glsValue }
-	setDDGLS = func(a any) {
-		glsValue = a
-	}
-
-	return func() {
-		getDDGLS = prevGetDDGLS
-		setDDGLS = prevSetDDGLS
-		enabled = prevEnabled
-	}
-}
-
 func TestFromGLS(t *testing.T) {
-	cleanup := mockGLSGetterAndSetter()
-	defer cleanup()
+	t.Cleanup(MockGLS())
 
 	t.Run("Enabled() is false, ctx is nil", func(t *testing.T) {
 		enabled = false
@@ -61,15 +43,14 @@ func TestFromGLS(t *testing.T) {
 }
 
 func TestCtxWithValue(t *testing.T) {
-	cleanup := mockGLSGetterAndSetter()
-	defer cleanup()
+	t.Cleanup(MockGLS())
 
-	t.Run("false", func(t *testing.T) {
+	t.Run("orchestrion disabled", func(t *testing.T) {
 		enabled = false
 		require.Equal(t, context.WithValue(context.Background(), key("key"), "value"), CtxWithValue(context.Background(), key("key"), "value"))
 	})
 
-	t.Run("true", func(t *testing.T) {
+	t.Run("orchestrion enabled", func(t *testing.T) {
 		enabled = true
 		ctx := CtxWithValue(context.Background(), key("key"), "value")
 		require.Equal(t, context.WithValue(&glsContext{context.Background()}, key("key"), "value"), ctx)
@@ -82,8 +63,14 @@ func TestCtxWithValue(t *testing.T) {
 	t.Run("cross-goroutine switch", func(t *testing.T) {
 		enabled = true
 		ctx := CtxWithValue(context.Background(), key("key"), "value")
+		var wg sync.WaitGroup
+		wg.Add(1)
 		go func() {
-			require.Equal(t, "value", ctx.Value(key("key")))
+			defer wg.Done()
+			// Use assert (not require) from a non-test goroutine to avoid
+			// calling t.FailNow which panics outside the test goroutine.
+			assert.Equal(t, "value", ctx.Value(key("key")))
 		}()
+		wg.Wait()
 	})
 }
