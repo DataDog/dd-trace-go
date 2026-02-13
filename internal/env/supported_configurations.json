@@ -1526,6 +1526,13 @@
         "default": "512"
       }
     ],
+    "DD_TRACE_ZEROLOG_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE__ANALYTICS_ENABLED": [
       {
         "implementation": "A",

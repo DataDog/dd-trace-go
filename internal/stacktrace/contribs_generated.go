@@ -604,6 +604,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/rogpeppe/clock",
 		"github.com/rogpeppe/fastuuid",
 		"github.com/rogpeppe/go-internal",
+		"github.com/rs/xid",
 		"github.com/rs/zerolog",
 		"github.com/russross/blackfriday/v2",
 		"github.com/ryanuber/columnize",
