@@ -10,8 +10,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 	"github.com/negasus/haproxy-spoe-go/request"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"

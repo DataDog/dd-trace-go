@@ -1,4 +1,4 @@
-FROM golang:1.24
+FROM golang:1.25
 COPY . /dd-trace-go
 WORKDIR /dd-trace-go/internal/apps
 # -t will download all dependencies, including test dependencies

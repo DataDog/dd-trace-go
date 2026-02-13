@@ -50,7 +50,7 @@ func InitGlobalLoggerProvider(ctx context.Context) error {
 		resource, resourceErr := buildResource(ctx)
 		if resourceErr != nil {
 			err = resourceErr
-			log.Error("Failed to build resource for LoggerProvider: %v", resourceErr)
+			log.Error("Failed to build resource for LoggerProvider: %v", resourceErr.Error())
 			return
 		}
 
@@ -58,7 +58,7 @@ func InitGlobalLoggerProvider(ctx context.Context) error {
 		exporter, exporterErr := newOTLPExporter(ctx, nil, nil)
 		if exporterErr != nil {
 			err = exporterErr
-			log.Error("Failed to create OTLP exporter for LoggerProvider: %v", exporterErr)
+			log.Error("Failed to create OTLP exporter for LoggerProvider: %v", exporterErr.Error())
 			return
 		}
 
@@ -109,7 +109,7 @@ func ShutdownGlobalLoggerProvider(ctx context.Context) error {
 	log.Debug("Shutting down OTel LoggerProvider")
 	err := globalLoggerProvider.Shutdown(ctx)
 	if err != nil {
-		log.Warn("Error shutting down LoggerProvider: %v", err)
+		log.Warn("Error shutting down LoggerProvider: %v", err.Error())
 	}
 
 	// Reset the singleton state so it can be reinitialized
