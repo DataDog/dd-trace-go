@@ -12,8 +12,9 @@ import (
 	"time"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
 func TestValidateConfiguration(t *testing.T) {

@@ -95,15 +95,15 @@ test: tools-install test/unit ## Run all tests (core, integration, contrib)
 test/unit: tools-install ## Run unit tests
 	go test -v -failfast ./...
 
-.PHONY: test-appsec
+.PHONY: test/appsec
 test/appsec: tools-install ## Run tests with AppSec enabled
 	$(BIN_PATH) ./scripts/test.sh --appsec
 
-.PHONY: test-contrib
+.PHONY: test/contrib
 test/contrib: tools-install ## Run contrib package tests
 	$(BIN_PATH) ./scripts/test.sh --contrib
 
-.PHONY: test-integration
+.PHONY: test/integration
 test/integration: tools-install ## Run integration tests
 	$(BIN_PATH) ./scripts/test.sh --integration
 

@@ -12,6 +12,8 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 )
 
+const N = 2
+
 func main() {
 	var (
 		_ tracer.FinishConfig // want `the declared type is in the ddtrace/tracer package now`
@@ -24,8 +26,27 @@ func main() {
 		_ tracer.StartSpanOption // want `the declared type is in the ddtrace/tracer package now`
 		_ tracer.Tracer          // want `the declared type is in the ddtrace/tracer package now`
 		_ time.Time
+
+		// Composite type tests: pointer, slice, array
+		_ *tracer.Span       // want `the declared type is in the ddtrace/tracer package now`
+		_ []tracer.Span      // want `the declared type is in the ddtrace/tracer package now`
+		_ [3]tracer.SpanLink // want `the declared type is in the ddtrace/tracer package now`
+
+		// Non-literal array length: diagnostic emitted but no fix (preserves original formatting)
+		_ [N + 1]ddtrace.Span // want `the declared type is in the ddtrace/tracer package now`
+
+		// Composite SpanContext types should NOT be migrated (exclusion applies to unwrapped base type)
+		_ *ddtrace.SpanContext
+		_ []ddtrace.SpanContext
+		_ [2]ddtrace.SpanContext
 	)
 }
 
 func spanConsumer(_ tracer.Span) { // want `the declared type is in the ddtrace/tracer package now`
+}
+
+func pointerConsumer(_ *tracer.Span) { // want `the declared type is in the ddtrace/tracer package now`
+}
+
+func sliceConsumer(_ []tracer.Span) { // want `the declared type is in the ddtrace/tracer package now`
 }
