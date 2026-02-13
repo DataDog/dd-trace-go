@@ -14,7 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )
@@ -31,6 +32,9 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	defer span.Finish()
+
 	tc.logger.Info().Ctx(ctx).Send()
 
 	var data map[string]interface{}
