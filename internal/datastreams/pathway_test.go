@@ -11,8 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 func TestPathway(t *testing.T) {

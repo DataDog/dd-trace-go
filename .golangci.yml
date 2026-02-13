@@ -117,9 +117,14 @@ linters:
 formatters:
   enable:
     - gofmt
+    - goimports
   exclusions:
     generated: lax
     paths:
       - third_party$
       - builtin$
       - examples$
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/DataDog/dd-trace-go/v2

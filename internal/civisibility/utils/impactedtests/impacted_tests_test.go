@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
-	"github.com/stretchr/testify/assert"
 )
 
 // dummyTestSpan is a dummy implementation of the TestSpan interface for testing purposes.

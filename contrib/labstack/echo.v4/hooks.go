@@ -6,8 +6,9 @@
 package echo
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/labstack/echo/v4"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 // OnAddRouteHandler is used as [echo.Echo.OnAddRouteHandler] value to

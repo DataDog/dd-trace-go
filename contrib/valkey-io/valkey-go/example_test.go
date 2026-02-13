@@ -10,8 +10,9 @@ import (
 	"log"
 
 	valkeytrace "github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/valkey-io/valkey-go"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 // To start tracing Valkey, simply create a new client using the library and continue

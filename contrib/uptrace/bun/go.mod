@@ -1,6 +1,6 @@
 module github.com/DataDog/dd-trace-go/contrib/uptrace/bun/v2
 
-go 1.24.0
+go 1.25.0
 
 godebug x509negativeserial=1
 
