@@ -33,7 +33,7 @@ const (
 	EnvAPISecProxySampleRate = "DD_API_SECURITY_PROXY_SAMPLE_RATE"
 	// EnvAPISecDownstreamRequestBodyAnalysisSampleRate Defines the probability of a downstream request body being sampled,
 	// or said differently, defines the overall number of requests for which the request and response body should be sampled / analysed (50%).
-	EnvAPISecDownstreamRequestBodyAnalysisSampleRate = "DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE"
+	EnvAPISecDownstreamRequestBodyAnalysisSampleRate = "DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE"
 	// EnvAPISecMaxDownstreamRequestBodyAnalysis The maximum number of downstream requests per request for which the request and response body should be analysed.
 	EnvAPISecMaxDownstreamRequestBodyAnalysis = "DD_API_SECURITY_MAX_DOWNSTREAM_REQUEST_BODY_ANALYSIS"
 	// EnvObfuscatorKey is the env var used to provide the WAF key obfuscation regexp
