@@ -47,11 +47,12 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get("http://" + tc.addr + "/ping")
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
-	httpUrl := "http://" + tc.addr + "/ping"
+	httpURL := "http://" + tc.addr + "/ping"
 	return trace.Traces{
 		{
 			// NB: 2 Top-level spans are from the HTTP Client/Server, which are library-side instrumented.
@@ -62,7 +63,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				"type":     "http",
 			},
 			Meta: map[string]string{
-				"http.url":  httpUrl,
+				"http.url":  httpURL,
 				"component": "net/http",
 				"span.kind": "client",
 			},
@@ -75,7 +76,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"type":     "web",
 					},
 					Meta: map[string]string{
-						"http.url":  httpUrl,
+						"http.url":  httpURL,
 						"component": "net/http",
 						"span.kind": "server",
 					},
@@ -88,7 +89,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 								"type":     "web",
 							},
 							Meta: map[string]string{
-								"http.url":  httpUrl,
+								"http.url":  httpURL,
 								"component": "labstack/echo.v4",
 								"span.kind": "server",
 							},
