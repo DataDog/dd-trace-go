@@ -62,6 +62,7 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	tc.T = t
 	resp, err := http.Get(fmt.Sprintf("http://%s/?path=/etc/passwd", tc.Server.Addr))
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 
