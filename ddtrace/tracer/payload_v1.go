@@ -536,10 +536,11 @@ func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink
 	for _, link := range spanLinks {
 		p.buf = msgp.AppendMapHeader(p.buf, 5) // number of fields in span link
 
-		traceID := [16]byte{}
-		binary.BigEndian.PutUint64(traceID[:8], link.TraceIDHigh)
-		binary.BigEndian.PutUint64(traceID[8:], link.TraceID)
-		p.buf = encodeField(p.buf, fullSetBitmap, 1, traceID[:], st)
+		// Encode traceID field directly to avoid heap allocation
+		p.buf = msgp.AppendUint32(p.buf, uint32(1))  // field ID
+		p.buf = msgp.AppendBytesHeader(p.buf, 16)    // 16-byte traceID
+		p.buf = binary.BigEndian.AppendUint64(p.buf, link.TraceIDHigh)
+		p.buf = binary.BigEndian.AppendUint64(p.buf, link.TraceID)
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, link.SpanID, st)
 
 		p.buf = msgp.AppendUint32(p.buf, uint32(3))                           // attributes fieldID
