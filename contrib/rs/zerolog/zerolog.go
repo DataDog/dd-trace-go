@@ -9,11 +9,12 @@ package zerolog
 import (
 	"strconv"
 
+	"github.com/rs/zerolog"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
-	"github.com/rs/zerolog"
 )
 
 var instr *instrumentation.Instrumentation
