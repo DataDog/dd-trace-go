@@ -11,8 +11,9 @@ import (
 	"io"
 	"sync/atomic"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/tinylib/msgp/msgp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // payloadV04 is a wrapper on top of the msgpack encoder which allows constructing an

@@ -12,6 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -20,9 +24,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	listener "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var (

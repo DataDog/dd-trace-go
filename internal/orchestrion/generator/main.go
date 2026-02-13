@@ -30,9 +30,10 @@ import (
 	"strings"
 	"text/template"
 
+	"golang.org/x/tools/go/packages"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-	"golang.org/x/tools/go/packages"
 
 	_ "embed" // For go:embed
 )

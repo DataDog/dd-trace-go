@@ -18,10 +18,11 @@ import (
 	"testing"
 	"time"
 
-	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
+
+	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )

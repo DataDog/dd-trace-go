@@ -6,10 +6,13 @@
 package v2fix
 
 import (
+	"bytes"
 	"context"
 	"go/ast"
+	"go/printer"
 	"go/types"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -18,59 +21,105 @@ import (
 
 type Probe func(context.Context, ast.Node, *analysis.Pass) (context.Context, bool)
 
+// typeNameFromType extracts the TypeName object from Named or Alias types.
+func typeNameFromType(t types.Type) *types.TypeName {
+	switch t := t.(type) {
+	case *types.Named:
+		return t.Obj()
+	case *types.Alias:
+		return t.Obj()
+	}
+	return nil
+}
+
+// isV1SpanType returns true if the given type is a v1 Span type that maps to
+// tracer.Span in v2 (which exposes StartChild). Only ddtrace.Span and
+// ddtrace/tracer.Span qualify; other v1 Span types (e.g. mocktracer.Span)
+// do not have StartChild in v2.
+func isV1SpanType(t types.Type) bool {
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	tn := typeNameFromType(t)
+	if tn == nil || tn.Pkg() == nil {
+		return false
+	}
+	if tn.Name() != "Span" {
+		return false
+	}
+	pkgPath := tn.Pkg().Path()
+	return pkgPath == "gopkg.in/DataDog/dd-trace-go.v1/ddtrace" ||
+		pkgPath == "gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+}
+
+// extractTypeInfo extracts the type declaration expression and resolved type from
+// a ValueSpec or Field node. It returns the type expression, the resolved type,
+// and whether extraction succeeded. This is shared by DeclaresType and ImportedFrom.
+func extractTypeInfo(ctx context.Context, n ast.Node, pass *analysis.Pass) (ast.Expr, types.Type, bool) {
+	var names []*ast.Ident
+	var typDecl ast.Expr
+	switch ctx.Value(typeKey) {
+	case "*ast.ValueSpec":
+		spec := n.(*ast.ValueSpec)
+		names = spec.Names
+		typDecl = spec.Type
+	case "*ast.Field":
+		field := n.(*ast.Field)
+		names = field.Names
+		typDecl = field.Type
+	default:
+		return nil, nil, false
+	}
+	if len(names) == 0 {
+		return nil, nil, false
+	}
+	if obj := pass.TypesInfo.ObjectOf(names[0]); obj != nil {
+		return typDecl, obj.Type(), true
+	}
+	if typDecl != nil {
+		return typDecl, typeFromTypeExpr(typDecl, pass), true
+	}
+	return nil, nil, false
+}
+
+// matchesGenericType returns true if typeObj matches the generic type T
+// by comparing package path and type name via reflection.
+func matchesGenericType[T any](typeObj *types.TypeName) bool {
+	if typeObj == nil || typeObj.Pkg() == nil {
+		return false
+	}
+	e := reflect.TypeFor[T]()
+	return typeObj.Pkg().Path() == e.PkgPath() && typeObj.Name() == e.Name()
+}
+
 // DeclaresType returns true if the node declares a type of the given generic type.
 // The type use in the generic signature is stored in the context as "type".
 // The reflected type is stored in the context as "declared_type".
+// The formatted type expression string is stored as "type_expr_str".
+// Handles both *types.Named and *types.Alias (Go 1.22+ type aliases).
 func DeclaresType[T any]() Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
-		var (
-			obj     types.Object
-			typ     = ctx.Value(typeKey)
-			typDecl ast.Expr
-		)
-		switch typ {
-		case "*ast.ValueSpec":
-			spec := n.(*ast.ValueSpec)
-			if len(spec.Names) == 0 {
-				return ctx, false
-			}
-			obj = pass.TypesInfo.ObjectOf(spec.Names[0])
-			typDecl = spec.Type
-		case "*ast.Field":
-			field := n.(*ast.Field)
-			if len(field.Names) == 0 {
-				return ctx, false
-			}
-			obj = pass.TypesInfo.ObjectOf(field.Names[0])
-			typDecl = field.Type
-		default:
+		typDecl, varType, ok := extractTypeInfo(ctx, n, pass)
+		if !ok || typDecl == nil || varType == nil {
 			return ctx, false
 		}
-		if typDecl == nil {
+
+		typeObj := typeNameFromType(varType)
+		if !matchesGenericType[T](typeObj) {
 			return ctx, false
 		}
-		t, ok := obj.Type().(*types.Named)
-		if !ok {
-			return ctx, false
-		}
-		// We need to store the reflected type unconditionally
-		// to be able to introspect it later, even if the probe
-		// fails or is combined with Not.
-		ctx = context.WithValue(ctx, declaredTypeKey, t)
+		ctx = context.WithValue(ctx, declaredTypeKey, varType)
+
 		ctx = context.WithValue(ctx, posKey, typDecl.Pos())
 		ctx = context.WithValue(ctx, endKey, typDecl.End())
-		v := new(T)
-		e := reflect.TypeOf(v).Elem()
-		if t.Obj().Pkg() == nil {
-			return ctx, false
+
+		// Store formatted type expression string to preserve original qualifier/alias
+		var buf bytes.Buffer
+		if err := printer.Fprint(&buf, pass.Fset, typDecl); err == nil {
+			ctx = context.WithValue(ctx, typeExprStrKey, buf.String())
 		}
-		ctx = context.WithValue(ctx, pkgNameKey, t.Obj().Pkg().Name())
-		if t.Obj().Pkg().Path() != e.PkgPath() {
-			return ctx, false
-		}
-		if t.Obj().Name() != e.Name() {
-			return ctx, false
-		}
+
+		ctx = context.WithValue(ctx, pkgNameKey, typeObj.Pkg().Name())
 		return ctx, true
 	}
 }
@@ -129,13 +178,21 @@ func IsFuncCall(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.C
 
 // IsImport returns true if the node is an import statement.
 // The import path is stored in the context as "pkg_path".
+// The pos/end keys are set to the import path literal position (not the alias).
 func IsImport(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
 	imp, ok := n.(*ast.ImportSpec)
 	if !ok {
 		return ctx, false
 	}
-	path := strings.Trim(imp.Path.Value, `"`)
+	// Use strconv.Unquote to properly handle both regular and raw string imports
+	path, err := strconv.Unquote(imp.Path.Value)
+	if err != nil {
+		return ctx, false
+	}
 	ctx = context.WithValue(ctx, pkgPathKey, path)
+	// Set pos/end to the import path literal position so V1ImportURL edits only the string literal
+	ctx = context.WithValue(ctx, posKey, imp.Path.Pos())
+	ctx = context.WithValue(ctx, endKey, imp.Path.End())
 	return ctx, true
 }
 
@@ -152,39 +209,196 @@ func HasPackagePrefix(prefix string) Probe {
 }
 
 // ImportedFrom returns true if the value is imported from the given package path prefix.
+// It checks both the resolved type's package path AND the AST import path (for type aliases).
+// It also sets declaredTypeKey in the context when a named type is found.
+// Handles composite types (pointers, slices, arrays) by unwrapping to the base type
+// and storing the type prefix (e.g., "*", "[]") in typePrefixKey.
 func ImportedFrom(pkgPath string) Probe {
 	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
-		var (
-			obj types.Object
-			typ = ctx.Value(typeKey)
-		)
-		switch typ {
-		case "*ast.ValueSpec":
-			spec := n.(*ast.ValueSpec)
-			if len(spec.Names) == 0 {
-				return ctx, false
-			}
-			obj = pass.TypesInfo.ObjectOf(spec.Names[0])
-		case "*ast.Field":
-			field := n.(*ast.Field)
-			if len(field.Names) == 0 {
-				return ctx, false
-			}
-			obj = pass.TypesInfo.ObjectOf(field.Names[0])
-		default:
-			return ctx, false
-		}
-		t, ok := obj.Type().(*types.Named)
+		typDecl, varType, ok := extractTypeInfo(ctx, n, pass)
 		if !ok {
 			return ctx, false
 		}
-		if t.Obj().Pkg() == nil {
+
+		// Set pos/end to the type expression position for accurate fix targeting
+		if typDecl != nil {
+			ctx = context.WithValue(ctx, posKey, typDecl.Pos())
+			ctx = context.WithValue(ctx, endKey, typDecl.End())
+		}
+
+		// Unwrap composite types (pointer, slice, array) to get the base type
+		// and store the prefix for use in fixes
+		var typePrefix string
+		var prefixValid bool
+		baseTypDecl := typDecl
+		if typDecl != nil {
+			baseTypDecl, typePrefix, prefixValid = unwrapTypeExpr(typDecl)
+			if typePrefix != "" {
+				if !prefixValid {
+					// Array length couldn't be rendered; skip this fix to avoid
+					// corrupting the type (e.g., turning [N+1]T into []T)
+					ctx = context.WithValue(ctx, skipFixKey, true)
+				}
+				ctx = context.WithValue(ctx, typePrefixKey, typePrefix)
+				// Also get the base type from the unwrapped expression
+				varType = typeFromTypeExpr(baseTypDecl, pass)
+			}
+		}
+
+		// Store the resolved type in context for use by later probes
+		// Support both *types.Named and *types.Alias (Go 1.22+)
+		if varType != nil && typeNameFromType(varType) != nil {
+			ctx = context.WithValue(ctx, declaredTypeKey, varType)
+		}
+
+		// For type aliases, the resolved type may be from a different package.
+		// Check the AST type expression's import path first (more reliable for aliases).
+		// Use the unwrapped base type expression for the lookup.
+		if baseTypDecl != nil {
+			if importPath := importPathFromTypeExpr(baseTypDecl, pass, n); importPath != "" {
+				if strings.HasPrefix(importPath, pkgPath) {
+					return ctx, true
+				}
+			}
+		}
+
+		// Then check the resolved type's package path
+		if t, ok := varType.(*types.Named); ok {
+			if pkg := t.Obj().Pkg(); pkg != nil && strings.HasPrefix(pkg.Path(), pkgPath) {
+				return ctx, true
+			}
+		}
+		return ctx, false
+	}
+}
+
+// unwrapTypeExpr unwraps pointer, slice, and array type expressions to get the base type.
+// It returns the base type expression, a prefix string (e.g., "*", "[]", "[N]") to prepend,
+// and a boolean indicating whether the prefix is valid (false if array length couldn't be safely rendered).
+// When prefixValid is false, the prefix contains "[?]" as a placeholder and the fix should be skipped,
+// but the diagnostic should still be emitted.
+func unwrapTypeExpr(typDecl ast.Expr) (ast.Expr, string, bool) {
+	var prefix strings.Builder
+	valid := true
+	for {
+		switch t := typDecl.(type) {
+		case *ast.StarExpr:
+			prefix.WriteByte('*')
+			typDecl = t.X
+		case *ast.ArrayType:
+			if t.Len == nil {
+				// Slice type - safe to render
+				prefix.WriteString("[]")
+			} else if lit, isLit := t.Len.(*ast.BasicLit); isLit {
+				// Literal array length (e.g., [5]) - safe to include in fix
+				prefix.WriteByte('[')
+				prefix.WriteString(lit.Value)
+				prefix.WriteByte(']')
+			} else {
+				// Non-literal array length (identifier, expression, etc.)
+				// Skip fix to preserve original formatting, but continue to detect type
+				prefix.WriteString("[?]")
+				valid = false
+			}
+			typDecl = t.Elt
+		default:
+			return typDecl, prefix.String(), valid
+		}
+	}
+}
+
+// typeFromTypeExpr extracts the type from a type expression.
+// This handles various cases including blank identifiers and type aliases.
+func typeFromTypeExpr(typDecl ast.Expr, pass *analysis.Pass) types.Type {
+	// Try TypeOf first (works for value expressions)
+	if t := pass.TypesInfo.TypeOf(typDecl); t != nil {
+		return t
+	}
+	// Try Types map (works for type expressions)
+	if tv, ok := pass.TypesInfo.Types[typDecl]; ok && tv.Type != nil {
+		return tv.Type
+	}
+	// For SelectorExpr like pkg.Type, look up the type directly
+	if sel, ok := typDecl.(*ast.SelectorExpr); ok {
+		// Look up the selector (the type name) in Uses
+		if obj := pass.TypesInfo.Uses[sel.Sel]; obj != nil {
+			if tn, ok := obj.(*types.TypeName); ok {
+				return tn.Type()
+			}
+		}
+		// Fallback: check ObjectOf
+		if obj := pass.TypesInfo.ObjectOf(sel.Sel); obj != nil {
+			if tn, ok := obj.(*types.TypeName); ok {
+				return tn.Type()
+			}
+		}
+	}
+	return nil
+}
+
+// importPathFromTypeExpr extracts the import path from a type expression like "pkg.Type".
+// It looks up the package identifier in pass.TypesInfo.Uses to find the imported package.
+func importPathFromTypeExpr(typDecl ast.Expr, pass *analysis.Pass, n ast.Node) string {
+	sel, ok := typDecl.(*ast.SelectorExpr)
+	if !ok {
+		return ""
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	// Look up the identifier to find the package it refers to.
+	// Uses maps identifiers to the objects they denote.
+	if obj, ok := pass.TypesInfo.Uses[ident]; ok {
+		if pkgName, ok := obj.(*types.PkgName); ok {
+			return pkgName.Imported().Path()
+		}
+	}
+	// Fallback: for package identifiers, ObjectOf might work
+	if obj := pass.TypesInfo.ObjectOf(ident); obj != nil {
+		if pkgName, ok := obj.(*types.PkgName); ok {
+			return pkgName.Imported().Path()
+		}
+	}
+	// Last resort: search the current file's imports for a matching name.
+	// Find the file that contains this node.
+	nodePos := n.Pos()
+	for _, file := range pass.Files {
+		if file.Pos() <= nodePos && nodePos < file.End() {
+			for _, imp := range file.Imports {
+				path, err := strconv.Unquote(imp.Path.Value)
+				if err != nil {
+					continue
+				}
+				name := ""
+				if imp.Name != nil {
+					name = imp.Name.Name
+				} else {
+					// Use the last part of the path as the default name
+					parts := strings.Split(path, "/")
+					name = parts[len(parts)-1]
+				}
+				if name == ident.Name {
+					return path
+				}
+			}
+			break // Found the file, no need to continue
+		}
+	}
+	return ""
+}
+
+// HasBaseType returns true if the declared base type (after unwrapping composite types)
+// matches the given generic type T. This is useful for checking types wrapped in
+// pointers, slices, or arrays (e.g., *T, []T, [N]T).
+// It expects declaredTypeKey to be set by ImportedFrom (which stores the unwrapped type).
+func HasBaseType[T any]() Probe {
+	return func(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
+		varType, ok := ctx.Value(declaredTypeKey).(types.Type)
+		if !ok {
 			return ctx, false
 		}
-		if !strings.HasPrefix(t.Obj().Pkg().Path(), pkgPath) {
-			return ctx, false
-		}
-		return ctx, true
+		return ctx, matchesGenericType[T](typeNameFromType(varType))
 	}
 }
 
@@ -217,4 +431,246 @@ func Or(ps ...Probe) Probe {
 		}
 		return ctx, false
 	}
+}
+
+// HasV1PackagePath returns true if the function's package path starts with the v1 prefix.
+// This is used to reduce false positives by ensuring we only match dd-trace-go v1 packages.
+// It expects the pkgPathKey to be set by IsFuncCall.
+func HasV1PackagePath(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
+	pkgPath, ok := ctx.Value(pkgPathKey).(string)
+	if !ok {
+		return ctx, false
+	}
+	return ctx, strings.HasPrefix(pkgPath, "gopkg.in/DataDog/dd-trace-go.v1")
+}
+
+// IsV1Import returns true if the import path is a v1 dd-trace-go import.
+// Matches both the root import "gopkg.in/DataDog/dd-trace-go.v1" and subpath imports.
+// It expects pkgPathKey to be set by IsImport.
+func IsV1Import(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
+	pkgPath, ok := ctx.Value(pkgPathKey).(string)
+	if !ok {
+		return ctx, false
+	}
+	const v1Root = "gopkg.in/DataDog/dd-trace-go.v1"
+	// Match exact root or subpath (with trailing slash)
+	return ctx, pkgPath == v1Root || strings.HasPrefix(pkgPath, v1Root+"/")
+}
+
+// HasChildOfOption returns true if the StartSpan call has a ChildOf option.
+// It extracts the parent expression and stores it in childOfParentKey.
+// Other options (excluding ChildOf) are stored in childOfOtherOptsKey.
+func HasChildOfOption(ctx context.Context, n ast.Node, pass *analysis.Pass) (context.Context, bool) {
+	args, ok := ctx.Value(argsKey).([]ast.Expr)
+	if !ok || len(args) < 2 {
+		return ctx, false
+	}
+	callExpr, _ := ctx.Value(callExprKey).(*ast.CallExpr)
+	hasEllipsis := callExpr != nil && callExpr.Ellipsis.IsValid()
+
+	var parentExpr string
+	var otherOpts []string
+	foundChildOf := false
+	skipFix := false
+
+	collectOpt := func(arg ast.Expr) {
+		if opt := exprToString(arg); opt != "" {
+			otherOpts = append(otherOpts, opt)
+		} else {
+			skipFix = true
+		}
+	}
+
+	isChildOfCall := func(arg ast.Expr) bool {
+		call, ok := arg.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		return sel.Sel.Name == "ChildOf"
+	}
+
+	// Check all args after the first one (operation name) for ChildOf calls
+	for _, arg := range args[1:] {
+		call, ok := arg.(*ast.CallExpr)
+		if !ok {
+			collectOpt(arg)
+			continue
+		}
+
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "ChildOf" {
+			collectOpt(arg)
+			continue
+		}
+
+		// Verify this is dd-trace-go v1 tracer.ChildOf, not a different package's ChildOf
+		if callee := typeutil.Callee(pass.TypesInfo, call); callee != nil {
+			if fn, ok := callee.(*types.Func); ok {
+				if pkg := fn.Pkg(); pkg == nil || !strings.HasPrefix(pkg.Path(), "gopkg.in/DataDog/dd-trace-go.v1") {
+					// Not a v1 tracer ChildOf; suppress autofix because a
+					// non-v1 ChildOf helper may wrap parent selection and
+					// StartChild would override it with its own parent.
+					skipFix = true
+					collectOpt(arg)
+					continue
+				}
+			}
+		}
+		foundChildOf = true
+		// Extract the parent expression from ChildOf(parent.Context()) or ChildOf(parentCtx)
+		if len(call.Args) > 0 {
+			parentArg := call.Args[0]
+			// Check if it's a parent.Context() call - we want to use just "parent"
+			if callExpr, ok := parentArg.(*ast.CallExpr); ok {
+				if selExpr, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
+					if selExpr.Sel.Name == "Context" {
+						if receiverType := pass.TypesInfo.TypeOf(selExpr.X); receiverType == nil || !isV1SpanType(receiverType) {
+							skipFix = true
+						}
+						parentExpr = exprToString(selExpr.X)
+						continue
+					}
+				}
+			}
+			// Otherwise use the full expression (ChildOf with SpanContext, not a Span)
+			skipFix = true
+			parentExpr = exprToString(parentArg)
+		}
+	}
+
+	if !foundChildOf || parentExpr == "" {
+		return ctx, false
+	}
+	// When variadic opts are present, the slice contents are unknown at
+	// static analysis time and may contain ChildOf(...) that would change
+	// parent selection. Suppress the autofix but keep the diagnostic.
+	if hasEllipsis {
+		lastArg := args[len(args)-1]
+		if isChildOfCall(lastArg) {
+			// Cannot preserve ellipsis if it applies to ChildOf itself.
+			return ctx, false
+		}
+		if len(otherOpts) == 0 {
+			return ctx, false
+		}
+		otherOpts[len(otherOpts)-1] = otherOpts[len(otherOpts)-1] + "..."
+		skipFix = true
+	}
+
+	if skipFix {
+		ctx = context.WithValue(ctx, skipFixKey, true)
+	}
+	ctx = context.WithValue(ctx, childOfParentKey, parentExpr)
+	ctx = context.WithValue(ctx, childOfOtherOptsKey, otherOpts)
+	return ctx, true
+}
+
+// exprToString converts an AST expression to a string representation.
+// This is a simplified version that handles common cases.
+func exprToString(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.SelectorExpr:
+		x := exprToString(e.X)
+		if x == "" {
+			return ""
+		}
+		return x + "." + e.Sel.Name
+	case *ast.CallExpr:
+		fun := exprToString(e.Fun)
+		if fun == "" {
+			return ""
+		}
+		args := exprListToString(e.Args)
+		if args == "" && len(e.Args) > 0 {
+			return ""
+		}
+		if e.Ellipsis.IsValid() {
+			return fun + "(" + args + "...)"
+		}
+		return fun + "(" + args + ")"
+	case *ast.BasicLit:
+		return e.Value
+	case *ast.IndexExpr:
+		x := exprToString(e.X)
+		idx := exprToString(e.Index)
+		if x == "" || idx == "" {
+			return ""
+		}
+		return x + "[" + idx + "]"
+	case *ast.StarExpr:
+		return "*" + exprToString(e.X)
+	case *ast.UnaryExpr:
+		return e.Op.String() + exprToString(e.X)
+	case *ast.ParenExpr:
+		return "(" + exprToString(e.X) + ")"
+	case *ast.BinaryExpr:
+		left := exprToString(e.X)
+		right := exprToString(e.Y)
+		if left == "" || right == "" {
+			return ""
+		}
+		return left + " " + e.Op.String() + " " + right
+	case *ast.SliceExpr:
+		x := exprToString(e.X)
+		if x == "" {
+			return ""
+		}
+		low, high := "", ""
+		if e.Low != nil {
+			low = exprToString(e.Low)
+		}
+		if e.High != nil {
+			high = exprToString(e.High)
+		}
+		if e.Slice3 && e.Max != nil {
+			return x + "[" + low + ":" + high + ":" + exprToString(e.Max) + "]"
+		}
+		return x + "[" + low + ":" + high + "]"
+	case *ast.CompositeLit:
+		typ := ""
+		if e.Type != nil {
+			typ = exprToString(e.Type)
+			if typ == "" {
+				return ""
+			}
+		}
+		elts := exprListToString(e.Elts)
+		if elts == "" && len(e.Elts) > 0 {
+			return ""
+		}
+		return typ + "{" + elts + "}"
+	case *ast.KeyValueExpr:
+		key := exprToString(e.Key)
+		val := exprToString(e.Value)
+		if key == "" || val == "" {
+			return ""
+		}
+		return key + ": " + val
+	case *ast.MapType:
+		key := exprToString(e.Key)
+		val := exprToString(e.Value)
+		if key == "" || val == "" {
+			return ""
+		}
+		return "map[" + key + "]" + val
+	}
+	return ""
+}
+
+func exprListToString(exprs []ast.Expr) string {
+	var parts []string
+	for _, e := range exprs {
+		s := exprToString(e)
+		if s == "" {
+			return ""
+		}
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, ", ")
 }

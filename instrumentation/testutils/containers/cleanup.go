@@ -12,9 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 // RegisterContainerCleanup registers a function to terminate the provided container to be executed after the test finishes.

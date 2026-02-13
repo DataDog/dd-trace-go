@@ -18,13 +18,14 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
 	testelasticsearch "github.com/testcontainers/testcontainers-go/modules/elasticsearch"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type esClient interface {
