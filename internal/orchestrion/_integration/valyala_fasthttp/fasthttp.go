@@ -52,11 +52,12 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get("http://" + tc.Addr + "/ping")
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
-	httpUrl := "http://" + tc.Addr + "/ping"
+	httpURL := "http://" + tc.Addr + "/ping"
 	return trace.Traces{
 		{
 			// NB: 1 Top-level spans are from the HTTP Client, which are library-side instrumented.
@@ -67,7 +68,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				"type":     "http",
 			},
 			Meta: map[string]string{
-				"http.url":  httpUrl,
+				"http.url":  httpURL,
 				"component": "net/http",
 				"span.kind": "client",
 			},
@@ -80,7 +81,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"type":     "web",
 					},
 					Meta: map[string]string{
-						"http.url":    httpUrl,
+						"http.url":    httpURL,
 						"http.method": "GET",
 						"component":   "valyala/fasthttp",
 						"span.kind":   "server",
