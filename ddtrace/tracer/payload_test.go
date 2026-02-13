@@ -668,25 +668,41 @@ func TestMsgsizeAnalysis(t *testing.T) {
 }
 
 func BenchmarkPayloadVersions(b *testing.B) {
-	b.Run("v0.4", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			b.StopTimer()
-			spans := newSpanList(b.N)
-			b.StartTimer()
-			p := newPayloadV04()
-			_, _ = p.push(spans)
-		}
-	})
+	sizes := []int{1, 10, 100, 1000}
+	for _, n := range sizes {
+		spans := newSpanList(n)
+		detailedSpans := newDetailedSpanList(n)
 
-	b.Run("v1.0", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			b.StopTimer()
-			spans := newSpanList(b.N)
-			b.StartTimer()
-			p := newPayloadV1()
-			_, _ = p.push(spans)
-		}
-	})
+		b.Run(fmt.Sprintf("simple_%dspans/v0.4", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV04()
+				_, _ = p.push(spans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("simple_%dspans/v1.0", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV1()
+				_, _ = p.push(spans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("detailed_%dspans/v0.4", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV04()
+				_, _ = p.push(detailedSpans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("detailed_%dspans/v1.0", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV1()
+				_, _ = p.push(detailedSpans)
+			}
+		})
+	}
 }
