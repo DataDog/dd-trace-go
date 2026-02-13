@@ -538,8 +538,8 @@ func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink
 		p.buf = msgp.AppendMapHeader(p.buf, 5) // number of fields in span link
 
 		// Encode traceID field directly to avoid heap allocation
-		p.buf = msgp.AppendUint32(p.buf, uint32(1))  // field ID
-		p.buf = msgp.AppendBytesHeader(p.buf, 16)    // 16-byte traceID
+		p.buf = msgp.AppendUint32(p.buf, uint32(1)) // field ID
+		p.buf = msgp.AppendBytesHeader(p.buf, 16)   // 16-byte traceID
 		p.buf = binary.BigEndian.AppendUint64(p.buf, link.TraceIDHigh)
 		p.buf = binary.BigEndian.AppendUint64(p.buf, link.TraceID)
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, link.SpanID, st)
@@ -899,37 +899,18 @@ func newStringTable() *stringTable {
 	}
 }
 
-// Adds a string to the string table if it does not already exist. Returns the index of the string.
-func (s *stringTable) add(str string) (idx index) {
-	sv := stringValue(str)
-	if _, ok := s.indices[sv]; ok {
-		return s.indices[sv]
-	}
-	s.indices[sv] = s.nextIndex
-	s.strings = append(s.strings, sv)
-	idx = s.nextIndex
-	s.nextIndex += 1
-	return
-}
-
-// Get returns the index of a string in the string table if it exists. Returns false if the string does not exist.
-func (s *stringTable) get(str string) (index, bool) {
-	sv := stringValue(str)
-	if idx, ok := s.indices[sv]; ok {
-		return idx, true
-	}
-	return -1, false
-}
-
+// Adds a string to the string table if it does not already exist.
 func (st *stringTable) serialize(value string, buf []byte) []byte {
-	if idx, ok := st.get(value); ok {
-		buf = idx.encode(buf)
-	} else {
-		s := stringValue(value)
-		buf = s.encode(buf)
-		st.add(value)
+	sv := stringValue(value)
+	if idx, ok := st.indices[sv]; ok {
+		return idx.encode(buf)
 	}
+	buf = sv.encode(buf)
+	st.indices[sv] = st.nextIndex
+	st.strings = append(st.strings, sv)
+	st.nextIndex++
 	return buf
+
 }
 
 // Reads a string from a byte slice and returns it from the string table if it exists.
@@ -947,7 +928,7 @@ func (s *stringTable) read(b []byte) (string, []byte, bool) {
 			return "", b, false
 		}
 		str := string(sv)
-		s.add(str)
+		s.serialize(str, b)
 		return str, o, true
 	}
 	// if b is an index
