@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	apitrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	cloudresourcemanager "google.golang.org/api/cloudresourcemanager/v1"

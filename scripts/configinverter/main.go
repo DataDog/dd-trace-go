@@ -15,8 +15,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/dave/jennifer/jen"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 func main() {

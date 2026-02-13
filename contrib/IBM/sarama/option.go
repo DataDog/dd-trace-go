@@ -8,8 +8,9 @@ package sarama
 import (
 	"math"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/IBM/sarama"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
