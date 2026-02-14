@@ -780,7 +780,7 @@ func buildAnyValue(v any) *anyValue {
 	case arrayValue:
 		return &anyValue{valueType: ArrayValueType, value: v}
 	default:
-		return nil
+		panic(fmt.Sprintf("buildAnyValue: unknown type %T with value %v", v, v))
 	}
 }
 
