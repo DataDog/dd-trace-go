@@ -20,9 +20,10 @@ func reportTelemetryOnAppStarted(c telemetry.Configuration) {
 	additionalConfigs = append(additionalConfigs, c)
 }
 
-// startTelemetry starts the global instrumentation telemetry client with tracer data
-// unless instrumentation telemetry is disabled via the DD_INSTRUMENTATION_TELEMETRY_ENABLED
-// env var.
+// startTelemetry starts the global instrumentation telemetry client with tracer data unless:
+//   - instrumentation telemetry is disabled via the DD_INSTRUMENTATION_TELEMETRY_ENABLED env var.
+//   - running as a Lambda function
+//
 // If the telemetry client has already been started by the profiler, then
 // an app-product-change event is sent with appsec information and an app-client-configuration-change
 // event is sent with tracer config data.
@@ -30,7 +31,7 @@ func reportTelemetryOnAppStarted(c telemetry.Configuration) {
 // an app-product-change event for the tracer.
 // TODO (APMAPI-1771): This function should be deleted once config migration is complete
 func startTelemetry(c *config) telemetry.Client {
-	if telemetry.Disabled() {
+	if c.internalConfig.IsLambdaFunction() || telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
 		return nil
 	}
