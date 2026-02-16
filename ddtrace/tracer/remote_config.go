@@ -337,7 +337,7 @@ type dynamicInstrumentationRCProbeConfig struct {
 }
 
 type dynamicInstrumentationRCState struct {
-	mu    locking.RWMutex
+	mu    locking.Mutex
 	state map[string]dynamicInstrumentationRCProbeConfig // +checklocks:mu
 
 	// symdbExport is a flag that indicates that this tracer is resposible
@@ -446,6 +446,7 @@ func initalizeDynamicInstrumentationRemoteConfigState() {
 	diRCState.mu.Lock()
 	defer diRCState.mu.Unlock()
 	diRCState.state = map[string]dynamicInstrumentationRCProbeConfig{}
+	diRCState.symdbExport = false
 
 	go func() {
 		for {

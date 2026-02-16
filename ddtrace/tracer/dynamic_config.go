@@ -48,11 +48,10 @@ func (dc *dynamicConfig[T]) get() T {
 	return dc.current
 }
 
-func (dc *dynamicConfig[T]) set(f func(current T)) {
+func (dc *dynamicConfig[T]) set(f func(current T) T) {
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
-
-	f(dc.current)
+	dc.current = f(dc.current)
 }
 
 // update applies a new configuration value
