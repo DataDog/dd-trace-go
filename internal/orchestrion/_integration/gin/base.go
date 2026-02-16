@@ -47,11 +47,12 @@ func (tc *TestCaseBase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCaseBase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get("http://" + tc.Server.Addr + "/ping")
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
-	httpUrl := "http://" + tc.Server.Addr + "/ping"
+	httpURL := "http://" + tc.Server.Addr + "/ping"
 	return trace.Traces{
 		{
 			// NB: 2 Top-level spans are from the HTTP Client/Server, which are library-side instrumented.
@@ -62,7 +63,7 @@ func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
 				"type":     "http",
 			},
 			Meta: map[string]string{
-				"http.url":  httpUrl,
+				"http.url":  httpURL,
 				"component": "net/http",
 				"span.kind": "client",
 			},
@@ -75,7 +76,7 @@ func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
 						"type":     "web",
 					},
 					Meta: map[string]string{
-						"http.url":  httpUrl,
+						"http.url":  httpURL,
 						"component": "net/http",
 						"span.kind": "server",
 					},
@@ -89,7 +90,7 @@ func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
 								"type":     "web",
 							},
 							Meta: map[string]string{
-								"http.url":  httpUrl,
+								"http.url":  httpURL,
 								"component": "gin-gonic/gin",
 								"span.kind": "server",
 							},

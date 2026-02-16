@@ -39,6 +39,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.7.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.7.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.7.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.7.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.7.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.7.0-dev.1
@@ -342,6 +343,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../contrib/redis/go-redis.v9
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../contrib/redis/rueidis
+	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../contrib/rs/zerolog
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../contrib/segmentio/kafka-go
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../contrib/sirupsen/logrus
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 => ../../contrib/twitchtv/twirp
