@@ -43,3 +43,29 @@ const (
 	// Dynamic Sampling.
 	RemoteDynamicRule SamplerName = 12
 )
+
+// Precomputed decision maker strings for each sampler name
+var samplerStrings = map[SamplerName]string{
+	Unknown:           "--1",
+	Default:           "-0",
+	AgentRate:         "-1",
+	RemoteRate:        "-2",
+	RuleRate:          "-3",
+	Manual:            "-4",
+	AppSec:            "-5",
+	RemoteUserRate:    "-6",
+	SingleSpan:        "-8",
+	RemoteUserRule:    "-11",
+	RemoteDynamicRule: "-12",
+}
+
+// DecisionMaker returns the decision maker representation of the sampler name.
+// It returns the numeric value prefixed with "-" (e.g., "-1", "-2").
+func (s SamplerName) DecisionMaker() string {
+	if str, ok := samplerStrings[s]; ok {
+		return str
+	}
+	// Fallback for unknown values (shouldn't happen in normal usage)
+	// Return Unknown
+	return "--1"
+}

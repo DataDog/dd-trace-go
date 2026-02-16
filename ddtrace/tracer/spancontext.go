@@ -504,10 +504,6 @@ func (t *trace) setTagLocked(key, value string) {
 	t.tags[key] = value
 }
 
-func samplerToDM(sampler samplernames.SamplerName) string {
-	return "-" + strconv.Itoa(int(sampler))
-}
-
 // setSamplingPriority sets the sampling priority and the decision maker
 // and returns true if it was modified.
 //
@@ -533,7 +529,7 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		// the decision maker will be different. So we compare the decision makers as well.
 		// Note that once global rate sampling is deprecated, we no longer need to compare
 		// the DMs. Sampling priority is sufficient to distinguish a change in DM.
-		dm := samplerToDM(sampler)
+		dm := sampler.DecisionMaker()
 		updatedDM := !existed || dm != curDM
 		if updatedDM {
 			t.setPropagatingTagLocked(keyDecisionMaker, dm)

@@ -78,14 +78,14 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s.Finish()
 		rate, _ = getMetric(s, keyRulesSamplerAppliedRate)
 		require.Equal(t, 1.0, rate)
-		require.Equal(t, samplerToDM(samplernames.RemoteUserRule), s.context.trace.propagatingTags[keyDecisionMaker])
+		require.Equal(t, samplernames.RemoteUserRule.DecisionMaker(), s.context.trace.propagatingTags[keyDecisionMaker])
 		// Spans not matching the rule still gets the global rate
 		s = tracer.StartSpan("not.web.request")
 		s.Finish()
 		rate, _ = getMetric(s, keyRulesSamplerAppliedRate)
 		require.Equal(t, 0.5, rate)
 		if p, ok := s.context.trace.samplingPriority(); ok && p > 0 {
-			require.Equal(t, samplerToDM(samplernames.RuleRate), s.context.trace.propagatingTags[keyDecisionMaker])
+			require.Equal(t, samplernames.RuleRate.DecisionMaker(), s.context.trace.propagatingTags[keyDecisionMaker])
 		}
 
 		// Unset RC. Assert _dd.rule_psr is not set
@@ -163,7 +163,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		rate, _ := getMetric(s, keyRulesSamplerAppliedRate)
 		require.Equal(t, 0.1, rate)
 		if p, ok := s.context.trace.samplingPriority(); ok && p > 0 {
-			require.Equal(t, samplerToDM(samplernames.RuleRate), s.context.trace.propagatingTags[keyDecisionMaker])
+			require.Equal(t, samplernames.RuleRate.DecisionMaker(), s.context.trace.propagatingTags[keyDecisionMaker])
 		}
 
 		input := remoteconfig.ProductUpdate{
@@ -184,7 +184,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s.Finish()
 		rate, _ = getMetric(s, keyRulesSamplerAppliedRate)
 		require.Equal(t, 1.0, rate)
-		require.Equal(t, samplerToDM(samplernames.RemoteUserRule), s.context.trace.propagatingTags[keyDecisionMaker])
+		require.Equal(t, samplernames.RemoteUserRule.DecisionMaker(), s.context.trace.propagatingTags[keyDecisionMaker])
 		// Spans not matching the rule gets the global rate, but not the local rule, which is no longer in effect
 		s = tracer.StartSpan("web.request")
 		s.resource = "not_abc"
@@ -192,7 +192,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		rate, _ = getMetric(s, keyRulesSamplerAppliedRate)
 		require.Equal(t, 0.5, rate)
 		if p, ok := s.context.trace.samplingPriority(); ok && p > 0 {
-			require.Equal(t, samplerToDM(samplernames.RuleRate), s.context.trace.propagatingTags[keyDecisionMaker])
+			require.Equal(t, samplernames.RuleRate.DecisionMaker(), s.context.trace.propagatingTags[keyDecisionMaker])
 		}
 
 		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: "trace_sample_rate", Value: 0.5, Origin: telemetry.OriginRemoteConfig})
@@ -252,7 +252,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s.Finish()
 		rate, _ = getMetric(s, keyRulesSamplerAppliedRate)
 		require.Equal(t, 1.0, rate)
-		require.Equal(t, samplerToDM(samplernames.RemoteUserRule), s.context.trace.propagatingTags[keyDecisionMaker])
+		require.Equal(t, samplernames.RemoteUserRule.DecisionMaker(), s.context.trace.propagatingTags[keyDecisionMaker])
 		// Spans not matching the rule gets the global rate, but not the local rule, which is no longer in effect
 		s = tracer.StartSpan("web.request")
 		s.resource = "not_abc"
@@ -264,7 +264,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, p, 2)
 		require.Equal(
 			t,
-			samplerToDM(samplernames.RemoteDynamicRule),
+			samplernames.RemoteDynamicRule.DecisionMaker(),
 			s.context.trace.propagatingTags[keyDecisionMaker],
 		)
 
@@ -325,7 +325,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		s.Finish()
 		rate, _ := getMetric(s, keyRulesSamplerAppliedRate)
 		require.Equal(t, 1.0, rate)
-		require.Equal(t, samplerToDM(samplernames.RemoteUserRule), s.context.trace.propagatingTags[keyDecisionMaker])
+		require.Equal(t, samplernames.RemoteUserRule.DecisionMaker(), s.context.trace.propagatingTags[keyDecisionMaker])
 
 		// A span with non-matching tags gets the global rate
 		s = tracer.StartSpan("web.request")
