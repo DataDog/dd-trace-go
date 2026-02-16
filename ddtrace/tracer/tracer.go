@@ -1085,8 +1085,7 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 		// integrations. So update this context to be "not" execution
 		// traced so that derived contexts used by child spans don't get
 		// skipped.
-		ctx = globalinternal.WithExecutionNotTraced(ctx)
-		end = globalinternal.PopExecutionTraced
+		ctx, end = globalinternal.ScopedExecutionNotTraced(ctx)
 	}
 	var b [8]byte
 	binary.LittleEndian.PutUint64(b[:], span.spanID)

@@ -26,6 +26,41 @@ func TestTraceTaskEndContext(t *testing.T) {
 	}
 }
 
+func TestScopedExecutionNotTraced(t *testing.T) {
+	t.Run("marks context as not traced and cleans up", func(t *testing.T) {
+		t.Cleanup(orchestrion.MockGLS())
+
+		ctx := WithExecutionTraced(context.Background())
+		if got := IsExecutionTraced(ctx); got != true {
+			t.Fatalf("IsExecutionTraced(WithExecutionTraced(ctx)) = %v, want true", got)
+		}
+
+		ctx, cleanup := ScopedExecutionNotTraced(ctx)
+		if got := IsExecutionTraced(ctx); got != false {
+			t.Fatalf("IsExecutionTraced(ctx) after ScopedExecutionNotTraced = %v, want false", got)
+		}
+
+		cleanup()
+
+		// After cleanup, the "not traced" override is popped, revealing the
+		// original "traced" value pushed by WithExecutionTraced.
+		if got := IsExecutionTraced(orchestrion.WrapContext(context.Background())); got != true {
+			t.Fatalf("IsExecutionTraced after cleanup = %v, want true (original traced value)", got)
+		}
+	})
+
+	t.Run("no-op when not previously traced", func(t *testing.T) {
+		t.Cleanup(orchestrion.MockGLS())
+
+		ctx := context.Background()
+		newCtx, cleanup := ScopedExecutionNotTraced(ctx)
+		if newCtx != ctx {
+			t.Fatalf("ScopedExecutionNotTraced(ctx) returned different context %v, want original %v", newCtx, ctx)
+		}
+		cleanup() // must not panic
+	})
+}
+
 func TestWithExecutionTracedGLSCleanup(t *testing.T) {
 	t.Cleanup(orchestrion.MockGLS())
 

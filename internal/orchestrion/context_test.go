@@ -42,6 +42,51 @@ func TestFromGLS(t *testing.T) {
 	})
 }
 
+func TestGLSPopFunc(t *testing.T) {
+	t.Run("same goroutine pops value", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		CtxWithValue(context.Background(), key("k"), "v")
+		popFn := GLSPopFunc(key("k"))
+
+		require.Equal(t, "v", getDDContextStack().Peek(key("k")))
+
+		popFn()
+
+		require.Nil(t, getDDContextStack().Peek(key("k")))
+	})
+
+	t.Run("different goroutine is no-op", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		CtxWithValue(context.Background(), key("k"), "v")
+		popFn := GLSPopFunc(key("k"))
+
+		// Simulate a different goroutine by swapping the GLS to a new stack.
+		// In production, each goroutine has its own contextStack pointer in
+		// runtime.g, so getDDContextStack() returns different pointers.
+		originalStack := getDDGLS()
+		differentStack := contextStack(make(map[any][]any))
+		setDDGLS(&differentStack)
+		t.Cleanup(func() { setDDGLS(originalStack) })
+
+		popFn()
+
+		// Restore the original stack and verify the value was NOT popped.
+		setDDGLS(originalStack)
+		require.Equal(t, "v", getDDContextStack().Peek(key("k")),
+			"value should not be popped when called from different goroutine")
+	})
+
+	t.Run("disabled orchestrion returns no-op", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+		enabled = false // Override MockGLS's enabled=true to test disabled path
+
+		popFn := GLSPopFunc(key("k"))
+		popFn() // must not panic
+	})
+}
+
 func TestCtxWithValue(t *testing.T) {
 	t.Cleanup(MockGLS())
 
