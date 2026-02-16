@@ -44,6 +44,8 @@ func TestParseServiceEnvKey(t *testing.T) {
 		{"web,env:prod", "", ""},
 		// Malformed: missing ,env: separator.
 		{"service:web", "", ""},
+		// Malformed: fields out of order.
+		{"env:prod,service:web", "", ""},
 	} {
 		t.Run(tt.in, func(t *testing.T) {
 			k := parseServiceEnvKey(tt.in)
