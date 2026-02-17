@@ -272,11 +272,11 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	}
 
 	if merged.Enabled != nil {
-		if t.config.enabled.current && !*merged.Enabled {
+		if t.config.enabled.get() && !*merged.Enabled {
 			log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
 			t.config.enabled.handleRC(merged.Enabled)
 			telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
-		} else if !t.config.enabled.current && *merged.Enabled {
+		} else if !t.config.enabled.get() && *merged.Enabled {
 			log.Debug("APM Tracing is disabled. Restart the service to enable it.")
 		}
 	}
@@ -300,8 +300,8 @@ func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) *telemetry.Con
 		telemetry.OriginLocalStableConfig,
 		telemetry.OriginManagedStableConfig,
 	}
-	if !t.config.dynamicInstrumentationEnabled.get() &&
-		slices.Contains(explicitOrigins, t.config.dynamicInstrumentationEnabled.cfgOrigin) {
+	enabled, origin := t.config.dynamicInstrumentationEnabled.getCurrentAndOrigin()
+	if !enabled && slices.Contains(explicitOrigins, origin) {
 		return nil
 	}
 
@@ -337,8 +337,8 @@ type dynamicInstrumentationRCProbeConfig struct {
 }
 
 type dynamicInstrumentationRCState struct {
-	locking.Mutex
-	state map[string]dynamicInstrumentationRCProbeConfig
+	mu    locking.Mutex
+	state map[string]dynamicInstrumentationRCProbeConfig // +checklocks:mu
 
 	// symdbExport is a flag that indicates that this tracer is resposible
 	// for uploading symbols to the symbol database. The tracer will learn
@@ -351,7 +351,7 @@ type dynamicInstrumentationRCState struct {
 	// simplify the internal state of the tracer an avoid risks of excess memory
 	// usage, we use a single boolean flag to track this state as opposed to
 	// tracking the actual RC key and value.
-	symdbExport bool
+	symdbExport bool // +checklocks:mu
 }
 
 var (
@@ -362,8 +362,8 @@ var (
 func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	applyStatus := make(map[string]state.ApplyStatus, len(u))
 
-	diRCState.Lock()
-	defer diRCState.Unlock()
+	diRCState.mu.Lock()
+	defer diRCState.mu.Unlock()
 	for k, v := range u {
 		deleted := len(v) == 0
 		deletedMsg := ""
@@ -389,8 +389,8 @@ func (t *tracer) dynamicInstrumentationSymDBRCUpdate(
 	u remoteconfig.ProductUpdate,
 ) map[string]state.ApplyStatus {
 	applyStatus := make(map[string]state.ApplyStatus, len(u))
-	diRCState.Lock()
-	defer diRCState.Unlock()
+	diRCState.mu.Lock()
+	defer diRCState.mu.Unlock()
 	symDBEnabled := false
 	for k, v := range u {
 		if len(v) == 0 {
@@ -433,8 +433,8 @@ func passSymDBState(runtimeID string, enabled bool) {}
 //go:noinline
 func passAllProbeConfigurations(runtimeID string) {
 	defer passAllProbeConfigurationsComplete(runtimeID)
-	diRCState.Lock()
-	defer diRCState.Unlock()
+	diRCState.mu.Lock()
+	defer diRCState.mu.Unlock()
 	for _, v := range diRCState.state {
 		accessStringsToMitigatePageFault(runtimeID, v.configPath, v.configContent)
 		passProbeConfiguration(runtimeID, v.configPath, v.configContent)
@@ -443,9 +443,10 @@ func passAllProbeConfigurations(runtimeID string) {
 }
 
 func initalizeDynamicInstrumentationRemoteConfigState() {
-	diRCState = dynamicInstrumentationRCState{
-		state: map[string]dynamicInstrumentationRCProbeConfig{},
-	}
+	diRCState.mu.Lock()
+	defer diRCState.mu.Unlock()
+	diRCState.state = map[string]dynamicInstrumentationRCProbeConfig{}
+	diRCState.symdbExport = false
 
 	go func() {
 		for {
@@ -514,10 +515,10 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 }
 
 func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
-	t.dynInstMu.Lock()
-	defer t.dynInstMu.Unlock()
+	t.dynInstSubscriptions.mu.Lock()
+	defer t.dynInstSubscriptions.mu.Unlock()
 
-	if t.dynInstMu.ldSubscriptionToken != 0 || t.dynInstMu.symDBSubscriptionToken != 0 {
+	if t.dynInstSubscriptions.ldSubscriptionToken != 0 || t.dynInstSubscriptions.symDBSubscriptionToken != 0 {
 		return errors.New("programming error: dynamic instrumentation RC subscriptions already started")
 	}
 
@@ -527,8 +528,8 @@ func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
 	symDBTok, liveDebuggingSymDBError := remoteconfig.Subscribe(
 		"LIVE_DEBUGGING_SYMBOL_DB", t.dynamicInstrumentationSymDBRCUpdate,
 	)
-	t.dynInstMu.ldSubscriptionToken = ldTok
-	t.dynInstMu.symDBSubscriptionToken = symDBTok
+	t.dynInstSubscriptions.ldSubscriptionToken = ldTok
+	t.dynInstSubscriptions.symDBSubscriptionToken = symDBTok
 	var err error
 	if liveDebuggingError != nil && liveDebuggingSymDBError != nil {
 		err = errors.Join(
@@ -544,21 +545,21 @@ func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
 }
 
 func (t *tracer) stopDynamicInstrumentationRCSubscriptions() error {
-	t.dynInstMu.Lock()
-	defer t.dynInstMu.Unlock()
-	if t.dynInstMu.ldSubscriptionToken != 0 {
-		err := remoteconfig.Unsubscribe(t.dynInstMu.ldSubscriptionToken)
+	t.dynInstSubscriptions.mu.Lock()
+	defer t.dynInstSubscriptions.mu.Unlock()
+	if t.dynInstSubscriptions.ldSubscriptionToken != 0 {
+		err := remoteconfig.Unsubscribe(t.dynInstSubscriptions.ldSubscriptionToken)
 		if err != nil {
 			return err
 		}
-		t.dynInstMu.ldSubscriptionToken = 0
+		t.dynInstSubscriptions.ldSubscriptionToken = 0
 	}
-	if t.dynInstMu.symDBSubscriptionToken != 0 {
-		err := remoteconfig.Unsubscribe(t.dynInstMu.symDBSubscriptionToken)
+	if t.dynInstSubscriptions.symDBSubscriptionToken != 0 {
+		err := remoteconfig.Unsubscribe(t.dynInstSubscriptions.symDBSubscriptionToken)
 		if err != nil {
 			return err
 		}
-		t.dynInstMu.symDBSubscriptionToken = 0
+		t.dynInstSubscriptions.symDBSubscriptionToken = 0
 	}
 	return nil
 }
