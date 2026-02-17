@@ -644,6 +644,7 @@ type agentFeatures struct {
 	evpProxyV2 bool
 
 	// v1ProtocolAvailable reports whether the trace-agent and tracer are configured to use the v1 protocol.
+	// Starting from tracer version v2.7.0, this value is true by default.
 	v1ProtocolAvailable bool
 }
 
@@ -705,7 +706,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 			features.evpProxyV2 = true
 		case "/v1.0/traces":
 			// Set the trace protocol to use.
-			if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false) {
+			if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", true) {
 				features.v1ProtocolAvailable = true
 			}
 		}
