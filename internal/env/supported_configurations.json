@@ -25,9 +25,9 @@
         ]
       }
     ],
-    "DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE": [
+    "DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE": [
       {
-        "implementation": "B",
+        "implementation": "A",
         "type": "decimal",
         "default": "0.5"
       }
@@ -1524,6 +1524,13 @@
         "implementation": "A",
         "type": "int",
         "default": "512"
+      }
+    ],
+    "DD_TRACE_ZEROLOG_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE__ANALYTICS_ENABLED": [

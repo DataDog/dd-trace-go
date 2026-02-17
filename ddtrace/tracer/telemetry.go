@@ -36,6 +36,8 @@ func startTelemetry(c *config) telemetry.Client {
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
+	// Read enabled value and origin atomically to prevent TOCTOU bugs
+	traceEnabled, traceEnabledOrigin := c.enabled.getCurrentAndOrigin()
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
@@ -58,7 +60,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
-		{Name: "trace_enabled", Value: c.enabled.current, Origin: c.enabled.cfgOrigin},
+		{Name: "trace_enabled", Value: traceEnabled, Origin: traceEnabledOrigin},
 		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
 		c.traceSampleRate.toTelemetry(),
 		c.headerAsTags.toTelemetry(),

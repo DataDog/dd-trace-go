@@ -89,7 +89,7 @@ func TestAppsec(t *testing.T) {
 
 func TestAppsecAPI10(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/api10.json")
-	t.Setenv("DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
+	t.Setenv("DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
 
 	var b strings.Builder
 	b.WriteString(`{"payload_in":"%s"`)
@@ -246,7 +246,7 @@ func TestAppsecAPI10(t *testing.T) {
 
 func TestAppsecHTTP30X(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/api10.json")
-	t.Setenv("DD_API_SECURITY_DOWNSTREAM_REQUEST_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
+	t.Setenv("DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE", "1.0")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

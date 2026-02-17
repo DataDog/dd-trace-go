@@ -171,11 +171,13 @@ type tracer struct {
 	telemetry telemetry.Client
 
 	// State related to the Dynamic Instrumentation product.
-	dynInstMu struct {
-		locking.Mutex
-		ldSubscriptionToken    remoteconfig.SubscriptionToken
-		symDBSubscriptionToken remoteconfig.SubscriptionToken
-	}
+	dynInstSubscriptions dynInstSubscriptions
+}
+
+type dynInstSubscriptions struct {
+	mu                     locking.Mutex
+	ldSubscriptionToken    remoteconfig.SubscriptionToken // +checklocks:mu
+	symDBSubscriptionToken remoteconfig.SubscriptionToken // +checklocks:mu
 }
 
 const (
@@ -221,7 +223,7 @@ func Start(opts ...StartOption) error {
 	if err != nil {
 		return err
 	}
-	if !t.config.enabled.current {
+	if !t.config.enabled.get() {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -436,7 +438,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	// to distinguish between the case where the environment variable was not set and the case where
 	// it default to NaN.
 	if !math.IsNaN(c.internalConfig.GlobalSampleRate()) {
-		c.traceSampleRate.cfgOrigin = telemetry.OriginEnvVar
+		c.traceSampleRate.setOrigin(telemetry.OriginEnvVar)
 	}
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
@@ -768,7 +770,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
-	if !t.config.enabled.current {
+	if !t.config.enabled.get() {
 		return nil
 	}
 	span := spanStart(operationName, options...)
@@ -907,7 +909,7 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
-	if !t.config.enabled.current {
+	if !t.config.enabled.get() {
 		return nil
 	}
 
@@ -954,7 +956,7 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
-	if !t.config.enabled.current {
+	if !t.config.enabled.get() {
 		return nil, nil
 	}
 	ctx, err := t.config.propagator.Extract(carrier)
@@ -980,7 +982,7 @@ func (t *tracer) TracerConf() TracerConf {
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
-		Disabled:             !t.config.enabled.current,
+		Disabled:             !t.config.enabled.get(),
 		PartialFlush:         pfEnabled,
 		PartialFlushMinSpans: pfMin,
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
@@ -994,7 +996,7 @@ func (t *tracer) TracerConf() TracerConf {
 }
 
 func (t *tracer) submit(s *Span) {
-	if !t.config.enabled.current {
+	if !t.config.enabled.get() {
 		return
 	}
 	// we have an active tracer
