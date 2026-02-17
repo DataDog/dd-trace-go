@@ -2,7 +2,7 @@
 # This URL is available in the dd-gitlab/publish-content-addresable-templates job whenever
 # a change is made on the one-pipeline template.
 variables:
-  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/b7281642c1eab321f28f6736be3634d82b7b369b10cecbf52ab4091a0011f32d/one-pipeline.yml
+  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/8066d45575fbac86e6f6c8f8cd9069e10216c16d39bc094d96aeda8d67579715/one-pipeline.yml
 
 .download-scripts-from-template: &download-scripts-from-template
   - mkdir -p scripts
