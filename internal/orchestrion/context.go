@@ -73,6 +73,16 @@ func GLSPopFunc(key any) func() {
 
 var glsNoop = func() {}
 
+// GLSStackDepth returns the total number of entries in the current goroutine's
+// GLS context stack. Returns 0 if orchestrion is not enabled. This is intended
+// for use in tests to detect GLS leaks.
+func GLSStackDepth() int {
+	if !Enabled() {
+		return 0
+	}
+	return getDDContextStack().Depth()
+}
+
 var _ context.Context = (*glsContext)(nil)
 
 type glsContext struct {

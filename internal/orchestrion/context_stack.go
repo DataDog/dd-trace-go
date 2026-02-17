@@ -72,3 +72,17 @@ func (s *contextStack) Pop(key any) any {
 
 	return val
 }
+
+// Depth returns the total number of entries across all keys in the stack.
+// This is useful for detecting GLS leaks where entries are pushed but never popped.
+func (s *contextStack) Depth() int {
+	if s == nil || *s == nil {
+		return 0
+	}
+
+	n := 0
+	for _, stack := range *s {
+		n += len(stack)
+	}
+	return n
+}
