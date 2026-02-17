@@ -275,12 +275,12 @@ func TestPayloadV1Decode(t *testing.T) {
 
 func createMetaStructMap(sl spanList) {
 	s := sl[0]
-	s.setMetaStruct("key1", 1)
-	s.setMetaStruct("key2", "value2")
-	s.setMetaStruct("key3", []int64{1, 2, 3})
-	s.setMetaStruct("key4", true)
-	s.setMetaStruct("key5", []byte("test"))
-	s.setMetaStruct("key6", map[string]any{"nested-key": "nested-value"})
+	s.setMetaStructLocked("key1", 1)
+	s.setMetaStructLocked("key2", "value2")
+	s.setMetaStructLocked("key3", []int64{1, 2, 3})
+	s.setMetaStructLocked("key4", true)
+	s.setMetaStructLocked("key5", []byte("test"))
+	s.setMetaStructLocked("key6", map[string]any{"nested-key": "nested-value"})
 }
 
 func TestPayloadV1SpanLinkTraceID(t *testing.T) {
