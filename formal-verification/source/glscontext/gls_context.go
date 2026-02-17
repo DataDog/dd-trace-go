@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
 // Package glscontext extracts the GLS push/pop protocol from dd-trace-go's
 // orchestrion integration. This file is the input to Specula's Go→TLA+ translation.
 //
@@ -91,8 +96,8 @@ func GLSPopValue(stack *contextStack, key any) any {
 // ---------------------------------------------------------------------------
 
 // StartSpan models the full push-side protocol:
-//   1. Create span
-//   2. Push onto GLS
+//  1. Create span
+//  2. Push onto GLS
 func StartSpan(stack *contextStack, id uint64) *Span {
 	s := &Span{ID: id}
 	CtxWithValue(stack, ActiveSpanKey, s)
@@ -100,8 +105,8 @@ func StartSpan(stack *contextStack, id uint64) *Span {
 }
 
 // FinishSpan models the full pop-side protocol:
-//   1. Mark span finished
-//   2. Pop from GLS
+//  1. Mark span finished
+//  2. Pop from GLS
 //
 // The invariant: after FinishSpan, the stack depth for ActiveSpanKey
 // must be exactly one less than before the call.

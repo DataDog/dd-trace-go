@@ -45,8 +45,8 @@ jobs:
         if: steps.cache-tla2tools.outputs.cache-hit != 'true'
         run: |
           curl -fsSL -o /tmp/tla2tools.jar "$TLA2TOOLS_URL"
-          # Verify the jar is valid
-          java -cp /tmp/tla2tools.jar tlc2.TLC -h > /dev/null 2>&1
+          # Verify the jar is a valid Java archive
+          jar tf /tmp/tla2tools.jar > /dev/null
 
       - name: Run TLC — Phase 1 (Span Lifecycle)
         working-directory: formal-verification/specs/span_lifecycle

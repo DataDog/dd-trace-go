@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
 // Package spanlifecycle extracts the concurrency protocol from dd-trace-go's
 // span and trace types. This file is the input to Specula's Go→TLA+ translation.
 //
@@ -141,9 +146,9 @@ func (t *trace) push(sp *Span) {
 // This function acquires t.mu.
 //
 // Key protocol points:
-//   1. Double-finish guard (s.finished check)
-//   2. Full flush when all spans are done
-//   3. Partial flush with lock inversion (#incident-46344)
+//  1. Double-finish guard (s.finished check)
+//  2. Full flush when all spans are done
+//  3. Partial flush with lock inversion (#incident-46344)
 func (t *trace) finishedOneLocked(s *Span) {
 	t.mu.Lock()
 
