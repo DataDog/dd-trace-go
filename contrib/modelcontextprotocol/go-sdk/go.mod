@@ -4,8 +4,8 @@ go 1.25.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
-	github.com/google/jsonschema-go v0.3.0
-	github.com/modelcontextprotocol/go-sdk v1.1.0
+	github.com/google/jsonschema-go v0.4.2
+	github.com/modelcontextprotocol/go-sdk v1.3.0
 	github.com/stretchr/testify v1.11.1
 )
 
