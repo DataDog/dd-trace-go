@@ -463,7 +463,7 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		for k, v := range span.metaStruct {
 			msg, err := msgp.AppendIntf(nil, v)
 			if err != nil {
-				log.Error("failed to serialize meta_struct value for key %s: %v", k, err)
+				log.Error("failed to serialize meta_struct value for key %s: %v", k, err.Error())
 				continue
 			}
 			p.buf = st.serialize(k, p.buf)
