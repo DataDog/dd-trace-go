@@ -46,6 +46,7 @@ func (b *TestCaseClientError) Setup(_ context.Context, t *testing.T) {
 func (b *TestCaseClientError) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/", b.srv.Addr))
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusTeapot, resp.StatusCode)
 }
 
