@@ -275,6 +275,8 @@ func TestPayloadV1Decode(t *testing.T) {
 
 func createMetaStructMap(sl spanList) {
 	s := sl[0]
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.setMetaStructLocked("key1", 1)
 	s.setMetaStructLocked("key2", "value2")
 	s.setMetaStructLocked("key3", []int64{1, 2, 3})

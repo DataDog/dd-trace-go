@@ -1129,7 +1129,9 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 					if err != nil {
 						break
 					}
+					span.mu.Lock()
 					span.setMetaStructLocked(k, decoded)
+					span.mu.Unlock()
 				} else {
 					span.SetTag(k, v.value)
 				}
