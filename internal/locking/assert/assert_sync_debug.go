@@ -23,12 +23,5 @@ func RWMutexLocked(m *locking.RWMutex) {
 }
 
 func RWMutexRLocked(m *locking.RWMutex) {
-	// A write lock also satisfies the read lock requirement.
-	// In debug builds, AssertRWMutexRLocked calls os.Exit(1) on failure,
-	// so we first check both boolean conditions before falling through
-	// to the assertion (which provides the failure message).
-	if mutexasserts.RWMutexRLocked(m) || mutexasserts.RWMutexLocked(m) {
-		return
-	}
 	mutexasserts.AssertRWMutexRLocked(m)
 }
