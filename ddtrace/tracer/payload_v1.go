@@ -143,7 +143,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		}
 
 		// TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
-		origin = span.Context().origin
+		origin = span.Context().origin // +checklocksignore - Read-only after init.
 
 		if dm := span.context.trace.propagatingTag(keyDecisionMaker); dm != "" {
 			if v, err := strconv.ParseInt(dm, 10, 32); err == nil {
