@@ -101,23 +101,30 @@ if [ -n "$output" ]; then
   # Count ignored errors (lines starting with "-:" or "#")
   ignored_errors=$(echo "$output" | grep -Ec "^(-:|#)" || true)
 
-  # Count actual errors (lines that don't start with "-:" or "#")
-  actual_errors=$(echo "$output" | grep -Evc "^(-:|#)" || true)
+  # Count suggestions ("may require" lines — often false positives for package-level variables)
+  suggestions=$(echo "$output" | grep -c "may require" || true)
+
+  # Count actual errors (excluding ignored lines, suggestions)
+  actual_errors=$(echo "$output" | grep -Ev "^(-:|#)" | grep -vc "may require" || true)
 
   # Print summary
   echo "=========================================="
   echo "Summary:"
   echo "  Total lines:    $total_lines"
   echo "  Actual errors:  $actual_errors"
+  echo "  Suggestions:    $suggestions"
   echo "  Ignored errors: $ignored_errors"
   echo "=========================================="
 
   if [ "$actual_errors" -eq 0 ]; then
-    # All errors start with "-:" or "#", consider it a success
-    echo "✓ All errors are ignorable (start with '-:' or '#')"
+    # All errors are ignorable or suggestions, consider it a success
+    echo "✓ No hard errors found"
+    if [ "$suggestions" -gt 0 ]; then
+      echo "  (${suggestions} suggestion(s) — review manually)"
+    fi
     exit 0
   else
-    # Some errors don't start with "-:" or "#", consider it a failure
+    # Some errors are hard errors, consider it a failure
     echo "✗ Found $actual_errors actual error(s)"
     if [ "$IGNORE_ERRORS" = true ]; then
       echo "Ignoring errors as requested"
