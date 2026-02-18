@@ -178,11 +178,6 @@ jobs:
           filter_mode: nofilter
 
   checklocks:
-    # We have the infrastructure in place for this check,
-    # but we still need to add the required annotations for
-    # checklocks to actually identify issues. Skipping the
-    # check until we do so.
-    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
