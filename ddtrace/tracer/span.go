@@ -179,6 +179,7 @@ func (s *Span) clear() {
 	s.error = 0
 	s.spanLinks = nil
 	s.spanEvents = nil
+	// We don't zero the context here because it can reused along this span.
 	// s.context = nil
 	s.goExecTraced = false
 	s.noDebugStack = false
