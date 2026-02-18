@@ -461,34 +461,35 @@ func TestTraceProtocol(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("v1.0, no endpoint", func(t *testing.T) {
-		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "true")
-		cfg, err := newTestConfig()
-		require.NoError(t, err)
-		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV04, h.payload.protocol())
-	})
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 
-	t.Run("v1.0, with endpoint", func(t *testing.T) {
-		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "true")
-
-		// Create a mock agent endpoint to mimic having a v1 trace endpoint
+		// Mock agent that does NOT include /v1.0/traces
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
+			w.Write([]byte(`{"endpoints": ["/v0.4/traces", "/v0.6/stats"], "config": {"statsd_port": 8125}}`))
 		}))
 		defer srv.Close()
 
 		cfg, err := newTestConfig(
 			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
 		)
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV04, h.payload.protocol())
+	})
+
+	t.Run("v1.0, with endpoint", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
+
+		cfg, err := newTestConfig()
 		assert.NoError(err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 
 	t.Run("v0.4", func(t *testing.T) {
-		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "false")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -499,15 +500,15 @@ func TestTraceProtocol(t *testing.T) {
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV04, h.payload.protocol())
+		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "invalid")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "random")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV04, h.payload.protocol())
+		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 }
 func BenchmarkJsonEncodeSpan(b *testing.B) {
