@@ -295,90 +295,100 @@ func BenchmarkSpanPoolRelease(b *testing.B) {
 }
 
 func BenchmarkSpanPoolEndToEnd(b *testing.B) {
-	b.Run("bare", func(b *testing.B) {
-		agent := startTestAgent(b)
-		tr := newTracerTest(b, agent)
+	poolModes := []struct {
+		name    string
+		enabled bool
+	}{
+		{"pool", true},
+		{"nopool", false},
+	}
 
-		b.ResetTimer()
-		for range b.N {
-			span := tr.StartSpan("bench.op")
-			span.Finish()
-		}
-		b.StopTimer()
+	for _, pm := range poolModes {
+		b.Run(pm.name+"/bare", func(b *testing.B) {
+			agent := startTestAgent(b)
+			tr := newTracerTest(b, agent, WithSpanPool(pm.enabled))
 
-		stopTracerTest(tr)
-		received := agent.SpanCount()
-		b.ReportMetric(float64(received)/float64(b.N)*100, "delivery%")
-	})
-
-	b.Run("tagged", func(b *testing.B) {
-		agent := startTestAgent(b)
-		tr := newTracerTest(b, agent)
-
-		b.ResetTimer()
-		for range b.N {
-			span := tr.StartSpan("bench.op",
-				ServiceName("bench.svc"),
-				ResourceName("/bench"),
-				SpanType("web"),
-			)
-			span.SetTag("http.method", "GET")
-			span.SetTag("http.url", "/bench/endpoint")
-			span.SetTag("component", "benchmark")
-			span.SetTag("response.size", 1024)
-			span.SetTag("request.duration_ms", 1.5)
-			span.Finish()
-		}
-		b.StopTimer()
-
-		stopTracerTest(tr)
-		received := agent.SpanCount()
-		b.ReportMetric(float64(received)/float64(b.N)*100, "delivery%")
-	})
-
-	b.Run("errored", func(b *testing.B) {
-		agent := startTestAgent(b)
-		tr := newTracerTest(b, agent)
-		benchErr := fmt.Errorf("benchmark error")
-
-		b.ResetTimer()
-		for range b.N {
-			span := tr.StartSpan("bench.op")
-			span.SetTag(ext.Error, benchErr)
-			span.Finish()
-		}
-		b.StopTimer()
-
-		stopTracerTest(tr)
-		received := agent.SpanCount()
-		b.ReportMetric(float64(received)/float64(b.N)*100, "delivery%")
-	})
-
-	// concurrent measures pool throughput under goroutine contention.
-	// delivery% is expected to be well below 100% because pushChunk
-	// (tracer.go) drops trace chunks when the tracer.out channel
-	// (capacity payloadQueueSize=1000) is full. Under RunParallel,
-	// goroutines produce spans far faster than the single worker can
-	// drain the channel, so most chunks are silently dropped. This is
-	// intentional production back-pressure behaviour; the metric
-	// captures the drop rate under saturation.
-	b.Run("concurrent", func(b *testing.B) {
-		agent := startTestAgent(b)
-		tr := newTracerTest(b, agent)
-
-		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
+			b.ResetTimer()
+			for range b.N {
 				span := tr.StartSpan("bench.op")
 				span.Finish()
 			}
-		})
-		b.StopTimer()
+			b.StopTimer()
 
-		stopTracerTest(tr)
-		received := agent.SpanCount()
-		b.ReportMetric(float64(received)/float64(b.N)*100, "delivery%")
-	})
+			stopTracerTest(tr)
+			received := agent.SpanCount()
+			b.ReportMetric(float64(received)/float64(b.N)*100, "delivery%")
+		})
+
+		b.Run(pm.name+"/tagged", func(b *testing.B) {
+			agent := startTestAgent(b)
+			tr := newTracerTest(b, agent, WithSpanPool(pm.enabled))
+
+			b.ResetTimer()
+			for range b.N {
+				span := tr.StartSpan("bench.op",
+					ServiceName("bench.svc"),
+					ResourceName("/bench"),
+					SpanType("web"),
+				)
+				span.SetTag("http.method", "GET")
+				span.SetTag("http.url", "/bench/endpoint")
+				span.SetTag("component", "benchmark")
+				span.SetTag("response.size", 1024)
+				span.SetTag("request.duration_ms", 1.5)
+				span.Finish()
+			}
+			b.StopTimer()
+
+			stopTracerTest(tr)
+			received := agent.SpanCount()
+			b.ReportMetric(float64(received)/float64(b.N)*100, "delivery%")
+		})
+
+		b.Run(pm.name+"/errored", func(b *testing.B) {
+			agent := startTestAgent(b)
+			tr := newTracerTest(b, agent, WithSpanPool(pm.enabled))
+			benchErr := fmt.Errorf("benchmark error")
+
+			b.ResetTimer()
+			for range b.N {
+				span := tr.StartSpan("bench.op")
+				span.SetTag(ext.Error, benchErr)
+				span.Finish()
+			}
+			b.StopTimer()
+
+			stopTracerTest(tr)
+			received := agent.SpanCount()
+			b.ReportMetric(float64(received)/float64(b.N)*100, "delivery%")
+		})
+
+		// concurrent measures pool throughput under goroutine contention.
+		// delivery% is expected to be well below 100% because pushChunk
+		// (tracer.go) drops trace chunks when the tracer.out channel
+		// (capacity payloadQueueSize=1000) is full. Under RunParallel,
+		// goroutines produce spans far faster than the single worker can
+		// drain the channel, so most chunks are silently dropped. This is
+		// intentional production back-pressure behaviour; the metric
+		// captures the drop rate under saturation.
+		b.Run(pm.name+"/concurrent", func(b *testing.B) {
+			agent := startTestAgent(b)
+			tr := newTracerTest(b, agent, WithSpanPool(pm.enabled))
+
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					span := tr.StartSpan("bench.op")
+					span.Finish()
+				}
+			})
+			b.StopTimer()
+
+			stopTracerTest(tr)
+			received := agent.SpanCount()
+			b.ReportMetric(float64(received)/float64(b.N)*100, "delivery%")
+		})
+	}
 }
 
 // TestSpanPoolEndToEndConcurrentCorrectness verifies that spans created from

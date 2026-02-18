@@ -261,6 +261,9 @@ type config struct {
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
+
+	// spanPoolEnabled controls whether finished spans are recycled via sync.Pool.
+	spanPoolEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -375,6 +378,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
 		ProjectName:      env.Get(envLLMObsProjectName),
 	}
+	c.spanPoolEnabled = internal.BoolEnv("DD_TRACE_SPAN_POOL_ENABLED", true)
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -1397,6 +1401,15 @@ func WithLLMObsProjectName(projectName string) StartOption {
 func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 	return func(c *config) {
 		c.llmobs.AgentlessEnabled = &agentlessEnabled
+	}
+}
+
+// WithSpanPool controls whether finished spans are recycled via sync.Pool.
+// When enabled (the default), spans are pooled for reduced allocation overhead.
+// This is equivalent to the DD_TRACE_SPAN_POOL_ENABLED environment variable.
+func WithSpanPool(enabled bool) StartOption {
+	return func(c *config) {
+		c.spanPoolEnabled = enabled
 	}
 }
 

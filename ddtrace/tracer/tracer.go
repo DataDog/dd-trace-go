@@ -491,6 +491,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		return nil, err
 	}
 	c := t.config
+	spanPoolActive.Store(c.spanPoolEnabled)
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.internalConfig.RuntimeMetricsEnabled() {
 		log.Debug("Runtime metrics enabled.")
@@ -904,6 +905,7 @@ func (t *tracer) Stop() {
 		t.telemetry.Close()
 	}
 	t.config.httpClient.CloseIdleConnections()
+	spanPoolActive.Store(true) // reset to default
 }
 
 // Inject uses the configured or default TextMap Propagator.

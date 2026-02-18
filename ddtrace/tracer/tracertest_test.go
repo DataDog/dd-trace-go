@@ -147,13 +147,14 @@ func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
 
 // newTracerTest creates a tracer with an httpTransport pointed at the mock agent.
 // It sets the global tracer (required for span.Finish to push chunks through the pipeline).
-func newTracerTest(tb testing.TB, agent *testAgent) *tracer {
+func newTracerTest(tb testing.TB, agent *testAgent, opts ...StartOption) *tracer {
 	tb.Helper()
 	transport := newHTTPTransport(agent.URL(), internal.DefaultHTTPClient(defaultHTTPTimeout, true))
-	tr, err := newTracer(
+	baseOpts := []StartOption{
 		withTransport(transport),
 		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
-	)
+	}
+	tr, err := newTracer(append(baseOpts, opts...)...)
 	require.NoError(tb, err)
 	setGlobalTracer(tr)
 	return tr

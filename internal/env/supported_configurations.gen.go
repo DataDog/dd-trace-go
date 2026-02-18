@@ -216,6 +216,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_SARAMA_ANALYTICS_ENABLED":                               {},
 	"DD_TRACE_SOURCE_HOSTNAME":                                        {},
 	"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":                                  {},
+	"DD_TRACE_SPAN_POOL_ENABLED":                                      {},
 	"DD_TRACE_SQL_ANALYTICS_ENABLED":                                  {},
 	"DD_TRACE_SQL_COMMENT_INJECTION_MODE":                             {},
 	"DD_TRACE_STARTUP_LOGS":                                           {},
