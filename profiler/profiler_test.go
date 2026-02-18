@@ -179,7 +179,8 @@ func TestStart(t *testing.T) {
 // profiler is already running will restart it with the given configuration.
 func TestStartWithoutStopReconfigures(t *testing.T) {
 	got := make(chan profileMeta)
-	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: got})
+	backend := &mockBackend{profiles: got}
+	server, client := httpmem.ServerAndClient(backend)
 	defer server.Close()
 
 	err := Start(
@@ -190,7 +191,7 @@ func TestStartWithoutStopReconfigures(t *testing.T) {
 	require.NoError(t, err)
 	defer Stop()
 
-	m := <-got
+	m := backend.ReceiveProfile(t)
 	if _, ok := m.attachments["delta-heap.pprof"]; !ok {
 		t.Errorf("did not see a heap profile")
 	}
@@ -203,7 +204,7 @@ func TestStartWithoutStopReconfigures(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	m = <-got
+	m = backend.ReceiveProfile(t)
 	if _, ok := m.attachments["delta-heap.pprof"]; ok {
 		t.Errorf("unexpectedly saw a heap profile")
 	}
@@ -252,7 +253,7 @@ func TestStopLatency(t *testing.T) {
 
 func TestFlushAndStop(t *testing.T) {
 	t.Setenv("DD_PROFILING_FLUSH_ON_EXIT", "1")
-	received := startTestProfiler(t, 1,
+	backend := startTestProfiler(t, 1,
 		WithProfileTypes(CPUProfile, HeapProfile),
 		WithPeriod(time.Hour),
 		WithUploadTimeout(time.Hour))
@@ -260,7 +261,10 @@ func TestFlushAndStop(t *testing.T) {
 	Stop()
 
 	select {
-	case prof := <-received:
+	case prof := <-backend.profiles:
+		if prof.err != nil {
+			t.Fatalf("profile upload failed: %s", prof.err)
+		}
 		if len(prof.attachments["cpu.pprof"]) == 0 {
 			t.Errorf("expected CPU profile, got none")
 		}
@@ -339,11 +343,21 @@ type profileMeta struct {
 	headers     http.Header
 	event       uploadEvent
 	attachments map[string][]byte
+	err         error
 }
 
 type mockBackend struct {
-	t        *testing.T
 	profiles chan profileMeta
+}
+
+// ReceiveProfile receives a profile from the backend and fails the test if
+// there was an error during the upload
+func (m *mockBackend) ReceiveProfile(t *testing.T) profileMeta {
+	profile := <-m.profiles
+	if profile.err != nil {
+		t.Fatalf("profile upload failed: %s", profile.err)
+	}
+	return profile
 }
 
 func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -362,18 +376,18 @@ func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	profile.headers = r.Header.Clone()
 	if err := r.ParseMultipartForm(50 << 20); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		m.t.Fatalf("bad multipart form: %s", err)
+		profile.err = fmt.Errorf("bad multipart form: %s", err)
 		return
 	}
 	file, _, err := r.FormFile("event")
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		m.t.Fatalf("getting event.json: %s", err)
+		profile.err = fmt.Errorf("getting event.json: %s", err)
 		return
 	}
 	if err := json.NewDecoder(file).Decode(&profile.event); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		m.t.Fatalf("decoding event payload: %s", err)
+		profile.err = fmt.Errorf("decoding event payload: %s", err)
 		return
 	}
 
@@ -382,14 +396,14 @@ func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f, _, err := r.FormFile(name)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			m.t.Fatalf("event attachment %s is missing from upload: %s", name, err)
+			profile.err = fmt.Errorf("event attachment %s is missing from upload: %s", name, err)
 			return
 		}
 		defer f.Close()
 		data, err := io.ReadAll(f)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			m.t.Fatalf("reading attachment %s: %s", name, err)
+			profile.err = fmt.Errorf("reading attachment %s: %s", name, err)
 			return
 		}
 		profile.attachments[name] = data
@@ -398,12 +412,12 @@ func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // startTestProfiler starts up a profiler wired up to an in-memory mock backend
-// using the given profiler options, and returns a channel with the provided
-// buffer size to which profiles will be sent. The profiler and mock backend
-// will be stopped when the calling test case completes
-func startTestProfiler(t *testing.T, size int, options ...Option) <-chan profileMeta {
+// using the given profiler options, and returns the mock backend. The profiler
+// and mock backend will be stopped when the calling test case completes
+func startTestProfiler(t *testing.T, size int, options ...Option) *mockBackend {
 	profiles := make(chan profileMeta, size)
-	server, client := httpmem.ServerAndClient(&mockBackend{t: t, profiles: profiles})
+	backend := &mockBackend{profiles: profiles}
+	server, client := httpmem.ServerAndClient(backend)
 	t.Cleanup(func() { server.Close() })
 
 	options = append(options, WithHTTPClient(client))
@@ -411,7 +425,7 @@ func startTestProfiler(t *testing.T, size int, options ...Option) <-chan profile
 		t.Fatalf("starting test profiler: %s", err)
 	}
 	t.Cleanup(Stop)
-	return profiles
+	return backend
 }
 
 // doOneShortProfileUpload is a test helper which starts a profiler with a short
@@ -421,7 +435,7 @@ func doOneShortProfileUpload(t *testing.T, opts ...Option) profileMeta {
 	opts = append(opts,
 		WithProfileTypes(), WithPeriod(10*time.Millisecond),
 	)
-	return <-startTestProfiler(t, 1, opts...)
+	return startTestProfiler(t, 1, opts...).ReceiveProfile(t)
 }
 
 func TestAllUploaded(t *testing.T) {
@@ -478,8 +492,8 @@ func TestAllUploaded(t *testing.T) {
 		assert.NotNil(t, profile.event.End)
 	}
 
-	validateProfile(<-profiles, 0)
-	validateProfile(<-profiles, 1)
+	validateProfile(profiles.ReceiveProfile(t), 0)
+	validateProfile(profiles.ReceiveProfile(t), 1)
 }
 
 func TestCorrectTags(t *testing.T) {
@@ -512,7 +526,7 @@ func TestCorrectTags(t *testing.T) {
 		// are clobbered due to a bug caused by the same
 		// profiler-internal tag slice being appended to from different
 		// goroutines concurrently.
-		p := <-profiles
+		p := profiles.ReceiveProfile(t)
 		for _, tag := range expected {
 			require.Contains(t, p.tags, tag)
 		}
@@ -520,7 +534,7 @@ func TestCorrectTags(t *testing.T) {
 }
 
 func TestImmediateProfile(t *testing.T) {
-	profiles := startTestProfiler(t, 1, WithProfileTypes(HeapProfile), WithPeriod(3*time.Second))
+	backend := startTestProfiler(t, 1, WithProfileTypes(HeapProfile), WithPeriod(3*time.Second))
 
 	// Wait a little less than 2 profile periods. We should start profiling
 	// immediately. If it takes significantly longer than 1 profile period to get
@@ -529,15 +543,18 @@ func TestImmediateProfile(t *testing.T) {
 	select {
 	case <-timeout:
 		t.Fatal("should have received a profile already")
-	case <-profiles:
+	case p := <-backend.profiles:
+		if p.err != nil {
+			t.Fatalf("profile upload failed: %s", p.err)
+		}
 	}
 }
 
 func TestEnabledFalse(t *testing.T) {
 	t.Setenv("DD_PROFILING_ENABLED", "false")
-	ch := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes())
+	backend := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes())
 	select {
-	case <-ch:
+	case <-backend.profiles:
 		t.Fatal("received profile when profiler should have been disabled")
 	case <-time.After(time.Second):
 		// This test might succeed incorrectly on an overloaded
@@ -559,11 +576,12 @@ func TestExecutionTraceCPUProfileRate(t *testing.T) {
 	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms")
-	profile := <-startTestProfiler(t, 1,
+	backend := startTestProfiler(t, 1,
 		WithPeriod(10*time.Millisecond),
 		WithProfileTypes(CPUProfile),
 		CPUProfileRate(int(cpuProfileRate)),
 	)
+	profile := backend.ReceiveProfile(t)
 	assertContainsCPUProfileRateLog(t, profile.attachments["go.trace"], cpuProfileRate)
 }
 
@@ -616,14 +634,14 @@ func TestExecutionTraceRandom(t *testing.T) {
 	collectTraces := func(t *testing.T, profilePeriod, tracePeriod time.Duration, count int) int {
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 		t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", tracePeriod.String())
-		profiles := startTestProfiler(t, 10,
+		backend := startTestProfiler(t, 10,
 			WithProfileTypes(),
 			WithPeriod(profilePeriod),
 		)
 
 		seenTraces := 0
 		for i := 0; i < count; i++ {
-			profile := <-profiles
+			profile := backend.ReceiveProfile(t)
 			if sliceContains(profile.event.Attachments, "go.trace") && sliceContains(profile.tags, "go_execution_traced:yes") {
 				seenTraces++
 			} else if i == 0 {
@@ -692,7 +710,7 @@ func TestEndpointCounts(t *testing.T) {
 			tracer.Start()
 			defer tracer.Stop()
 
-			profiles := startTestProfiler(t, 1,
+			backend := startTestProfiler(t, 1,
 				WithProfileTypes(CPUProfile),
 				WithPeriod(100*time.Millisecond),
 			)
@@ -700,7 +718,10 @@ func TestEndpointCounts(t *testing.T) {
 			var m profileMeta
 			for m.attachments == nil {
 				select {
-				case m = <-profiles:
+				case m = <-backend.profiles:
+					if m.err != nil {
+						t.Fatalf("profile upload failed: %s", m.err)
+					}
 				default:
 					span := tracer.StartSpan("http.request", tracer.ResourceName("/foo/bar"))
 					span.Finish()
@@ -741,14 +762,14 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", "true")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "3s")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_LIMIT_BYTES", "100000")
-	profiles := startTestProfiler(t, 1,
+	backend := startTestProfiler(t, 1,
 		WithProfileTypes(), // just want the execution trace
 		WithPeriod(2*time.Second),
 	)
 
 	const expectedSize = 300 * 1024
 	for i := 0; i < 5; i++ {
-		m := <-profiles
+		m := backend.ReceiveProfile(t)
 		if p, ok := m.attachments["go.trace"]; ok {
 			if len(p) > expectedSize {
 				t.Fatalf("profile was too large: want %d, got %d", expectedSize, len(p))
@@ -763,11 +784,11 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			t.Setenv("DD_PROFILING_EXECUTION_TRACE_ENABLED", status)
 			t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "1s")
-			profiles := startTestProfiler(t, 1,
+			backend := startTestProfiler(t, 1,
 				WithProfileTypes(),
 				WithPeriod(10*time.Millisecond),
 			)
-			m := <-profiles
+			m := backend.ReceiveProfile(t)
 			t.Log(m.event.Attachments, m.tags)
 			require.Contains(t, m.tags, fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%s", status))
 		})
@@ -775,11 +796,11 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 }
 
 func TestPgoTag(t *testing.T) {
-	profiles := startTestProfiler(t, 1,
+	backend := startTestProfiler(t, 1,
 		WithProfileTypes(),
 		WithPeriod(10*time.Millisecond),
 	)
-	m := <-profiles
+	m := backend.ReceiveProfile(t)
 	t.Log(m.event.Attachments, m.tags)
 	require.Contains(t, m.tags, "pgo:false")
 }
@@ -826,7 +847,7 @@ func TestUDSDefault(t *testing.T) {
 	internal.DefaultTraceAgentUDSPath = socket
 
 	profiles := make(chan profileMeta, 1)
-	backend := &mockBackend{t: t, profiles: profiles}
+	backend := &mockBackend{profiles: profiles}
 	mux := http.NewServeMux()
 	// Specifically set up a handler for /profiling/v1/input to test that we
 	// don't use the filesystem path to the Unix domain socket in the HTTP
@@ -846,7 +867,7 @@ func TestUDSDefault(t *testing.T) {
 	require.NoError(t, err)
 	defer Stop()
 
-	<-profiles
+	backend.ReceiveProfile(t)
 }
 
 func TestOrchestrionProfileInfo(t *testing.T) {
@@ -880,9 +901,9 @@ func TestOrchestrionProfileInfo(t *testing.T) {
 }
 
 func TestShortMetricsProfile(t *testing.T) {
-	profiles := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes(MetricsProfile))
+	backend := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond), WithProfileTypes(MetricsProfile))
 	for range 3 {
-		p := <-profiles
+		p := backend.ReceiveProfile(t)
 		if _, ok := p.attachments["metrics.json"]; !ok {
 			t.Errorf("didn't get metrics profile, got %v", p.event.Attachments)
 		}
@@ -919,10 +940,10 @@ func TestHeapProfileCompression(t *testing.T) {
 }
 
 func testHeapProfileCompression(t *testing.T, delta bool) {
-	profiles := startTestProfiler(t, 1,
+	backend := startTestProfiler(t, 1,
 		WithPeriod(10*time.Millisecond), WithProfileTypes(HeapProfile), WithDeltaProfiles(delta),
 	)
-	p := <-profiles
+	p := backend.ReceiveProfile(t)
 	attachment := "heap.pprof"
 	if delta {
 		attachment = "delta-heap.pprof"
