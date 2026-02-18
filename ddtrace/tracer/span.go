@@ -149,6 +149,48 @@ type Span struct {
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
+func (s *Span) clear() {
+	// Serialize after finish()'s deferred s.mu.Unlock(). The span may still
+	// be inside finish() when the worker receives the chunk, because the
+	// channel send happens before the deferred unlock. Acquiring the lock
+	// here guarantees finish() has fully completed before we zero the struct.
+	s.mu.Lock()
+	// Zero the SpanContext before recycling. The SpanContext is not pooled
+	// and lives/dies with the span. Zeroing it breaks references to the
+	// shared *trace (and its spans slice), allowing earlier GC.
+	if s.context != nil {
+		s.context.clear()
+	}
+	// Clear maps — retains allocated bucket storage for reuse.
+	// TODO: discard large maps and replace them with small maps to avoid holding on to memory.
+	clear(s.meta)
+	clear(s.metrics)
+	clear(s.metaStruct)
+	// Zero all fields (context ptr, slices, strings, etc.).
+	s.name = ""
+	s.service = ""
+	s.resource = ""
+	s.spanType = ""
+	s.start = 0
+	s.duration = 0
+	s.spanID = 0
+	s.traceID = 0
+	s.parentID = 0
+	s.error = 0
+	s.spanLinks = nil
+	s.spanEvents = nil
+	// s.context = nil
+	s.goExecTraced = false
+	s.noDebugStack = false
+	s.finished = false
+	s.integration = ""
+	s.supportsEvents = false
+	s.pprofCtxActive = nil
+	s.pprofCtxRestore = nil
+	s.taskEnd = nil
+	s.mu.Unlock()
+}
+
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
