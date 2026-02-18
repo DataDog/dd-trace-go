@@ -516,7 +516,7 @@ func TestTraceProtocol(t *testing.T) {
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV04, h.payload.protocol())
+		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 
 	t.Run("invalid, no endpoint", func(t *testing.T) {
@@ -524,7 +524,7 @@ func TestTraceProtocol(t *testing.T) {
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV1, h.payload.protocol())
+		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("invalid, with endpoint", func(t *testing.T) {
