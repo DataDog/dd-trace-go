@@ -33,18 +33,6 @@ jobs:
         run: |-
           ./scripts/install_tools.sh --bin-dir ${{ github.workspace }}/bin
           gotip download
-
-      - name: Pin datadog-agent to latest commit
-        env:
-          GOPRIVATE: github.com/DataDog/*
-        run: |-
-          sha=$(git ls-remote https://github.com/DataDog/datadog-agent.git refs/heads/main | cut -f1)
-          modules=( pkg/trace/log pkg/obfuscate pkg/proto pkg/remoteconfig/state pkg/trace )
-          for module in "${modules[@]}"; do
-            gotip get "github.com/DataDog/datadog-agent/${module}@${sha}"
-          done
-          gotip mod tidy
-          find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && gotip mod tidy && popd; done
       
       - name: Run tests
         env:
