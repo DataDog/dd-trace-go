@@ -179,7 +179,7 @@ func TestStart(t *testing.T) {
 // profiler is already running will restart it with the given configuration.
 func TestStartWithoutStopReconfigures(t *testing.T) {
 	got := make(chan profileMeta)
-	backend := &mockBackend{t: t, profiles: got}
+	backend := &mockBackend{profiles: got}
 	server, client := httpmem.ServerAndClient(backend)
 	defer server.Close()
 
@@ -347,7 +347,6 @@ type profileMeta struct {
 }
 
 type mockBackend struct {
-	t        *testing.T
 	profiles chan profileMeta
 }
 
@@ -417,7 +416,7 @@ func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // and mock backend will be stopped when the calling test case completes
 func startTestProfiler(t *testing.T, size int, options ...Option) *mockBackend {
 	profiles := make(chan profileMeta, size)
-	backend := &mockBackend{t: t, profiles: profiles}
+	backend := &mockBackend{profiles: profiles}
 	server, client := httpmem.ServerAndClient(backend)
 	t.Cleanup(func() { server.Close() })
 
@@ -848,7 +847,7 @@ func TestUDSDefault(t *testing.T) {
 	internal.DefaultTraceAgentUDSPath = socket
 
 	profiles := make(chan profileMeta, 1)
-	backend := &mockBackend{t: t, profiles: profiles}
+	backend := &mockBackend{profiles: profiles}
 	mux := http.NewServeMux()
 	// Specifically set up a handler for /profiling/v1/input to test that we
 	// don't use the filesystem path to the Unix domain socket in the HTTP
