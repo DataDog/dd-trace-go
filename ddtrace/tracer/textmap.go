@@ -287,8 +287,8 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 
 		// If this is the baggage propagator, just stash its items into pendingBaggage
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
-			if extractedCtx != nil && len(extractedCtx.baggage) > 0 {
-				for k, v := range extractedCtx.baggage {
+			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				for k, v := range extractedCtx.baggage { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 					pendingBaggage[k] = v
 				}
 			}
@@ -331,7 +331,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 			} else if extractedCtx2 != nil { // Trace IDs do not match - create span links
 				link := SpanLink{TraceID: extractedCtx2.TraceIDLower(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
 				if trace := extractedCtx2.trace; trace != nil {
-					if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
+					if flags := uint32(*trace.priority); flags > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 						link.Flags = 1
 					} else {
 						link.Flags = 0
@@ -346,10 +346,10 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 	if ctx == nil {
 		if len(pendingBaggage) > 0 {
 			ctx := &SpanContext{
-				baggage:     make(map[string]string, len(pendingBaggage)),
-				baggageOnly: true,
+				baggage:     make(map[string]string, len(pendingBaggage)), // +checklocksignore - Initialization time, not shared yet.
+				baggageOnly: true,                                         // +checklocksignore - Initialization time, not shared yet.
 			}
-			maps.Copy(ctx.baggage, pendingBaggage)
+			maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 			return ctx, nil
 		}
@@ -357,17 +357,17 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 		return nil, ErrSpanContextNotFound
 	}
 	if len(pendingBaggage) > 0 {
-		if ctx.baggage == nil {
-			ctx.baggage = make(map[string]string, len(pendingBaggage))
+		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+			ctx.baggage = make(map[string]string, len(pendingBaggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		}
 		for k, v := range pendingBaggage {
-			ctx.baggage[k] = v
+			ctx.baggage[k] = v // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		}
 		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 
 	if len(links) > 0 {
-		ctx.spanLinks = links
+		ctx.spanLinks = links // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 	}
 	log.Debug("Extracted span context: %s", ctx.safeDebugString())
 	return ctx, nil
@@ -453,8 +453,8 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	if sp, ok := ctx.SamplingPriority(); ok {
 		writer.Set(p.cfg.PriorityHeader, strconv.Itoa(sp))
 	}
-	if ctx.origin != "" {
-		writer.Set(originHeader, ctx.origin)
+	if ctx.origin != "" { // +checklocksignore - Read-only after init.
+		writer.Set(originHeader, ctx.origin) // +checklocksignore - Read-only after init.
 	}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
 		// Propagate OpenTracing baggage.
@@ -541,7 +541,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			}
 			ctx.setSamplingPriority(priority, samplernames.Unknown)
 		case originHeader:
-			ctx.origin = v
+			ctx.origin = v // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		case traceTagsHeader:
 			unmarshalPropagatingTags(&ctx, v)
 		default:
@@ -564,7 +564,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		}
 	}
-	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") {
+	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		return nil, ErrSpanContextNotFound
 	}
 	return &ctx, nil
@@ -1053,8 +1053,8 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	b.WriteString(strconv.Itoa(priority))
 	listLength := 1
 
-	if ctx.origin != "" {
-		oWithSub := sm.Mutate(originDisallowedFn, ctx.origin)
+	if ctx.origin != "" { // +checklocksignore - Read-only after init.
+		oWithSub := sm.Mutate(originDisallowedFn, ctx.origin) // +checklocksignore - Read-only after init.
 		b.WriteString(";o:")
 		b.WriteString(oWithSub)
 	}
@@ -1263,7 +1263,7 @@ func parseTracestate(ctx *SpanContext, header string) {
 			}
 			key, val := keyVal[0], keyVal[1]
 			if key == "o" {
-				ctx.origin = strings.ReplaceAll(val, "~", "=")
+				ctx.origin = strings.ReplaceAll(val, "~", "=") // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 			} else if key == "s" {
 				stateP, err := strconv.Atoi(val)
 				if err != nil {

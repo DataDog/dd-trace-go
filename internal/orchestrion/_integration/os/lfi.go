@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type TestCase struct {
@@ -61,6 +62,7 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	tc.T = t
 	resp, err := http.Get(fmt.Sprintf("http://%s/?path=/etc/passwd", tc.Server.Addr))
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 

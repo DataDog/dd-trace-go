@@ -13,10 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/valkey-io/valkey-go"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/valkey-io/valkey-go"
 )
 
 var instr *instrumentation.Instrumentation
@@ -171,6 +172,32 @@ type dedicatedClient struct {
 
 func (c *dedicatedClient) SetPubSubHooks(hooks valkey.PubSubHooks) <-chan error {
 	return c.dedicatedClient.SetPubSubHooks(hooks)
+}
+
+func (c *dedicatedClient) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResult {
+	span, ctx := c.startSpan(ctx, processCommand(&cmd))
+	resp := c.dedicatedClient.Do(ctx, cmd)
+	setClientCacheTags(span, resp)
+	c.finishSpan(span, resp.Error())
+	return resp
+}
+
+func (c *dedicatedClient) DoMulti(ctx context.Context, multi ...valkey.Completed) []valkey.ValkeyResult {
+	span, ctx := c.startSpan(ctx, processCommandMulti(multi))
+	resp := c.dedicatedClient.DoMulti(ctx, multi...)
+	c.finishSpan(span, c.firstError(resp))
+	return resp
+}
+
+func (c *dedicatedClient) Receive(ctx context.Context, subscribe valkey.Completed, fn func(msg valkey.PubSubMessage)) error {
+	span, ctx := c.startSpan(ctx, processCommand(&subscribe))
+	err := c.dedicatedClient.Receive(ctx, subscribe, fn)
+	c.finishSpan(span, err)
+	return err
+}
+
+func (c *dedicatedClient) Close() {
+	c.dedicatedClient.Close()
 }
 
 type command struct {

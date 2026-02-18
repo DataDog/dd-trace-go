@@ -8,9 +8,10 @@ package metric
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-	"github.com/stretchr/testify/assert"
 )
 
 // TestTelemetryDefaultConfigurations verifies that default configuration values

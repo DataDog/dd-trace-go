@@ -10,11 +10,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 )
 
 func TestIntentCapture(t *testing.T) {

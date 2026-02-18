@@ -10,10 +10,11 @@ import (
 	"maps"
 	"slices"
 
-	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
-	"github.com/DataDog/dd-trace-go/v2/llmobs"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
+	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
 func telemetrySchema() map[string]any {

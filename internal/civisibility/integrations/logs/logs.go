@@ -6,10 +6,11 @@
 package logs
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
 )

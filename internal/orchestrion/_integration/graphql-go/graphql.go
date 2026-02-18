@@ -14,10 +14,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/handler"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -52,7 +53,7 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer req.Body.Close()
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)

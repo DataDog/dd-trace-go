@@ -16,13 +16,14 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/tinylib/msgp/msgp"
 )
 
 var fixedTime = now()
@@ -44,7 +45,7 @@ func newDetailedSpanList(n int) spanList {
 	list := make([]*Span, n)
 	for i := 0; i < n; i++ {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
-		list[i].context.trace.setPropagatingTagLocked(keyDecisionMaker, "1")
+		list[i].context.trace.setPropagatingTag(keyDecisionMaker, "1")
 		list[i].start = fixedTime
 		list[i].service = "golden"
 		list[i].resource = "resource." + itoa[i%5+1]
@@ -186,7 +187,7 @@ func TestPayloadV1Decode(t *testing.T) {
 			)
 
 			s := newBasicSpan("span.list")
-			s.context.trace.propagatingTags = map[string]string{"keyDecisionMaker": ""}
+			s.context.trace.replacePropagatingTags(map[string]string{"keyDecisionMaker": ""})
 			p.push([]*Span{s})
 			encoded, err := io.ReadAll(p)
 			assert.NoError(err)
@@ -220,7 +221,7 @@ func TestPayloadV1Decode(t *testing.T) {
 
 			for i := 0; i < n; i++ {
 				sl := newSpanList(i%5 + 1)
-				sl[0].context.trace.setSamplingPriorityLocked(1, samplernames.Manual)
+				sl[0].context.trace.setSamplingPriority(1, samplernames.Manual)
 				_, _ = p.push(sl)
 			}
 
@@ -238,7 +239,50 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Equal(uint32(4), got.chunks[0].samplingMechanism)
 			assert.Equal(int32(1), got.chunks[0].priority)
 		})
+
+		t.Run("with meta_struct", func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				p      = newPayloadV1()
+			)
+			for i := 0; i < n; i++ {
+				sl := newSpanList(i%5 + 1)
+				createMetaStructMap(sl)
+				_, _ = p.push(sl)
+			}
+
+			encoded, err := io.ReadAll(p)
+			assert.NoError(err)
+
+			got := newPayloadV1()
+			buf := bytes.NewBuffer(encoded)
+			_, err = buf.WriteTo(got)
+			assert.NoError(err)
+
+			o, err := got.decodeBuffer()
+			assert.NoError(err)
+			assert.Empty(o)
+			meta := got.chunks[0].spans[0].metaStruct
+			assert.Equal(int64(1), meta["key1"])
+			assert.Equal("value2", meta["key2"])
+			assert.Equal([]any{int64(1), int64(2), int64(3)}, meta["key3"])
+			assert.Equal(true, meta["key4"])
+			assert.Equal([]byte("test"), meta["key5"])
+			assert.Equal(map[string]any{"nested-key": "nested-value"}, meta["key6"])
+		})
 	}
+}
+
+func createMetaStructMap(sl spanList) {
+	s := sl[0]
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setMetaStructLocked("key1", 1)
+	s.setMetaStructLocked("key2", "value2")
+	s.setMetaStructLocked("key3", []int64{1, 2, 3})
+	s.setMetaStructLocked("key4", true)
+	s.setMetaStructLocked("key5", []byte("test"))
+	s.setMetaStructLocked("key6", map[string]any{"nested-key": "nested-value"})
 }
 
 func TestPayloadV1SpanLinkTraceID(t *testing.T) {
@@ -623,5 +667,45 @@ func TestMsgsizeAnalysis(t *testing.T) {
 
 		msgsize := spans.Msgsize()
 		t.Logf("%d spans with 1KB each: msgsize=%d bytes", numSpans, msgsize)
+	}
+}
+
+func BenchmarkPayloadVersions(b *testing.B) {
+	sizes := []int{1, 10, 100, 1000}
+	for _, n := range sizes {
+		spans := newSpanList(n)
+		detailedSpans := newDetailedSpanList(n)
+
+		b.Run(fmt.Sprintf("simple_%dspans/v0.4", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV04()
+				_, _ = p.push(spans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("simple_%dspans/v1.0", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV1()
+				_, _ = p.push(spans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("detailed_%dspans/v0.4", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV04()
+				_, _ = p.push(detailedSpans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("detailed_%dspans/v1.0", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV1()
+				_, _ = p.push(detailedSpans)
+			}
+		})
 	}
 }
