@@ -133,8 +133,8 @@ type serviceEnvKey struct {
 // them to spans.
 type prioritySampler struct {
 	mu          locking.RWMutex
-	rates       map[serviceEnvKey]float64
-	defaultRate float64
+	rates       map[serviceEnvKey]float64 // +checklocks:mu
+	defaultRate float64                   // +checklocks:mu
 }
 
 func newPrioritySampler() *prioritySampler {
