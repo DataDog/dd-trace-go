@@ -75,10 +75,9 @@ func checkZstdLevel(t *testing.T, data []byte, level zstd.EncoderLevel) {
 }
 
 func TestDebugCompressionEnv(t *testing.T) {
-	t.Skip("Flaky. See #3681")
-	mustGzipDecompress := func(t *testing.T, b []byte) {
+	mustZstdDecompress := func(t *testing.T, b []byte) {
 		t.Helper()
-		r, err := gzip.NewReader(bytes.NewReader(b))
+		r, err := zstd.NewReader(bytes.NewReader(b))
 		require.NoError(t, err)
 		_, err = io.Copy(io.Discard, r)
 		require.NoError(t, err)
@@ -86,15 +85,18 @@ func TestDebugCompressionEnv(t *testing.T) {
 
 	t.Run("default", func(t *testing.T) {
 		p := startTestProfiler(t, 1, WithDeltaProfiles(false), WithProfileTypes(CPUProfile, HeapProfile, BlockProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
-		mustGzipDecompress(t, p.attachments["cpu.pprof"])
-		mustGzipDecompress(t, p.attachments["heap.pprof"])
-		mustGzipDecompress(t, p.attachments["block.pprof"])
+		mustZstdDecompress(t, p.attachments["cpu.pprof"])
+		mustZstdDecompress(t, p.attachments["heap.pprof"])
+		mustZstdDecompress(t, p.attachments["block.pprof"])
 	})
 
 	t.Run("explicit-gzip", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "gzip")
 		p := startTestProfiler(t, 1, WithProfileTypes(HeapProfile, BlockProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
-		mustGzipDecompress(t, p.attachments["delta-heap.pprof"])
+		r, err := gzip.NewReader(bytes.NewReader(p.attachments["delta-heap.pprof"]))
+		require.NoError(t, err)
+		_, err = io.Copy(io.Discard, r)
+		require.NoError(t, err)
 	})
 
 	t.Run("zstd-delta", func(t *testing.T) {
