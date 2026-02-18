@@ -224,7 +224,7 @@ func encodeFloat(p []byte, f float64) []byte {
 	return p
 }
 
-// +checklocksignore
+// +checklocksignore — Post-finish: serializes finished span for log transport.
 func (h *logTraceWriter) encodeSpan(s *Span) {
 	var scratch [maxFloatLength]byte
 	h.buf.WriteString(`{"trace_id":"`)
