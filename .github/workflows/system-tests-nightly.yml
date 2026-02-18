@@ -20,4 +20,5 @@ jobs:
       scenarios_groups: tracer-release
       skip_empty_scenarios: true
       _system_tests_dev_mode: true
+      desired_execution_time: 300
       push_to_test_optimization: true
