@@ -9,10 +9,13 @@
 // msgp-generated methods whose receiver matches the specified type.
 //
 // Generated msgp code (DecodeMsg, EncodeMsg, Msgsize) accesses struct fields
-// directly without acquiring locks. These accesses are safe because msgp
-// serialization only runs on finished spans that are no longer concurrently
-// modified. However, checklocks cannot infer this lifecycle invariant, so we
-// suppress its analysis for these methods.
+// directly without acquiring locks. These accesses are safe because:
+//   - EncodeMsg/Msgsize: serialization only runs on finished spans that are
+//     no longer concurrently modified.
+//   - DecodeMsg: deserialization populates fresh spans that are not yet shared.
+//
+// checklocks cannot infer these lifecycle invariants, so we suppress its
+// analysis for these methods with a justification comment.
 //
 // Usage (in go:generate directives, chained after msgp):
 //
@@ -59,11 +62,11 @@ func main() {
 	}
 
 	var out []string
-	annotation := "// +checklocksignore"
+	annotation := "// +checklocksignore — Generated code: post-finish serialization or pre-share deserialization."
 	for i, line := range lines {
 		// Skip if annotation already present on the previous line.
 		if receiverPattern.MatchString(line) {
-			if i == 0 || strings.TrimSpace(lines[i-1]) != annotation {
+			if i == 0 || !strings.HasPrefix(strings.TrimSpace(lines[i-1]), "// +checklocksignore") {
 				out = append(out, annotation)
 			}
 		}

@@ -7,7 +7,7 @@ import (
 )
 
 // DecodeMsg implements msgp.Decodable
-// +checklocksignore
+// +checklocksignore — Generated code: post-finish serialization or pre-share deserialization.
 func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field
@@ -197,7 +197,7 @@ func (z *Span) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-// +checklocksignore
+// +checklocksignore — Generated code: post-finish serialization or pre-share deserialization.
 func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 	// check for omitted fields
 	zb0001Len := uint32(15)
@@ -428,7 +428,7 @@ func (z *Span) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-// +checklocksignore
+// +checklocksignore — Generated code: post-finish serialization or pre-share deserialization.
 func (z *Span) Msgsize() (s int) {
 	s = 1 + 5 + msgp.StringPrefixSize + len(z.name) + 8 + msgp.StringPrefixSize + len(z.service) + 9 + msgp.StringPrefixSize + len(z.resource) + 5 + msgp.StringPrefixSize + len(z.spanType) + 6 + msgp.Int64Size + 9 + msgp.Int64Size + 5 + msgp.MapHeaderSize
 	if z.meta != nil {
