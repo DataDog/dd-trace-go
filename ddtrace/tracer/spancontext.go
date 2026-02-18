@@ -123,23 +123,6 @@ type SpanContext struct {
 	baggageOnly bool
 }
 
-func (c *SpanContext) clear() {
-	c.mu.Lock()
-	c.updated = false
-	c.trace = nil
-	c.span = nil
-	c.errors.Store(0)
-	c.reparentID = ""
-	c.isRemote = false
-	c.traceID = emptyTraceID
-	c.spanID = 0
-	c.baggage = nil
-	atomic.StoreUint32(&c.hasBaggage, 0)
-	c.origin = ""
-	c.spanLinks = nil
-	c.baggageOnly = false
-	c.mu.Unlock()
-}
 
 // Private interface for span contexts that can propagate sampling decisions.
 type spanContextWithSamplingDecision interface {

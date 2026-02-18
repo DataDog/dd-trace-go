@@ -155,12 +155,12 @@ func (s *Span) clear() {
 	// channel send happens before the deferred unlock. Acquiring the lock
 	// here guarantees finish() has fully completed before we zero the struct.
 	s.mu.Lock()
-	// Zero the SpanContext before recycling. The SpanContext is not pooled
-	// and lives/dies with the span. Zeroing it breaks references to the
-	// shared *trace (and its spans slice), allowing earlier GC.
-	if s.context != nil {
-		s.context.clear()
-	}
+	// Nil out the SpanContext pointer so the span doesn't hold it when
+	// returned to the pool. Don't implement something likecontext.clear()
+	// because external code may still hold a *SpanContext obtained via
+	// span.Context() and read from it concurrently. A fresh SpanContext
+	// is created on reuse (newSpanContext), so the old one just needs GC.
+	s.context = nil
 	// Clear maps — retains allocated bucket storage for reuse.
 	// TODO: discard large maps and replace them with small maps to avoid holding on to memory.
 	clear(s.meta)
@@ -179,8 +179,6 @@ func (s *Span) clear() {
 	s.error = 0
 	s.spanLinks = nil
 	s.spanEvents = nil
-	// We don't zero the context here because it can reused along this span.
-	// s.context = nil
 	s.goExecTraced = false
 	s.noDebugStack = false
 	s.finished = false
