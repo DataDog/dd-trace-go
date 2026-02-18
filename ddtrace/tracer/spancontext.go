@@ -281,6 +281,8 @@ func (c *SpanContext) SpanLinks() []SpanLink {
 
 // foreachBaggageItemLocked iterates over baggage items.
 // c.mu must be held for reading.
+//
+// +checklocksread:c.mu
 func (c *SpanContext) foreachBaggageItemLocked(handler func(k, v string) bool) {
 	assert.RWMutexRLocked(&c.mu)
 	for k, v := range c.baggage {
@@ -334,6 +336,8 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 
 // setBaggageItemLocked sets a baggage item.
 // c.mu must be held for writing.
+//
+// +checklocks:c.mu
 func (c *SpanContext) setBaggageItemLocked(key, val string) {
 	assert.RWMutexLocked(&c.mu)
 	if c.baggage == nil {
@@ -351,6 +355,8 @@ func (c *SpanContext) setBaggageItem(key, val string) {
 
 // baggageItemLocked retrieves a baggage item.
 // c.mu must be held for reading.
+//
+// +checklocksread:c.mu
 func (c *SpanContext) baggageItemLocked(key string) string {
 	assert.RWMutexRLocked(&c.mu)
 	return c.baggage[key]
@@ -358,6 +364,8 @@ func (c *SpanContext) baggageItemLocked(key string) string {
 
 // baggageCountLocked returns the number of baggage items.
 // c.mu must be held for reading.
+//
+// +checklocksread:c.mu
 func (c *SpanContext) baggageCountLocked() int {
 	assert.RWMutexRLocked(&c.mu)
 	return len(c.baggage)
@@ -417,14 +425,17 @@ type trace struct {
 	// guards below fields
 	mu locking.RWMutex
 	// all the spans that are part of this trace
+	// +checklocks:mu
 	spans []*Span
 	// trace level tags
 	tags map[string]string
 	// trace level tags that will be propagated across service boundaries
 	propagatingTags map[string]string
 	// the number of finished spans
+	// +checklocks:mu
 	finished int
 	// signifies that the span buffer is full
+	// +checklocks:mu
 	full bool
 	// sampling priority
 	priority *float64
