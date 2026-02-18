@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.8.0-dev
 	github.com/Shopify/sarama v1.38.1
 	github.com/stretchr/testify v1.11.1
 )
