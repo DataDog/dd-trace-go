@@ -1,0 +1,20 @@
+name: Nightly System Tests
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 4 * * *'
+
+jobs:
+  system-tests:
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: write
+    with:
+      library: golang
+      ref: main
+      scenarios_groups: tracer-release
+      skip_empty_scenarios: true
+      _system_tests_dev_mode: true
