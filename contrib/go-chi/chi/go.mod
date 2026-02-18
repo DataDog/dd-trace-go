@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.8.0-dev
 	github.com/go-chi/chi v1.5.4
 	github.com/stretchr/testify v1.11.1
 )
