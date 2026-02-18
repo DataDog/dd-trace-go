@@ -123,7 +123,6 @@ type SpanContext struct {
 	baggageOnly bool
 }
 
-
 // Private interface for span contexts that can propagate sampling decisions.
 type spanContextWithSamplingDecision interface {
 	SamplingDecision() uint32
