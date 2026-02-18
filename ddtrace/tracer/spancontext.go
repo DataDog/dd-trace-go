@@ -178,8 +178,8 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	if sc.trace == nil {
 		sc.trace = newTrace()
 	}
-	sc.trace.tags = ctx.Tags()
-	sc.trace.propagatingTags = ctx.PropagatingTags()
+	sc.trace.tags = ctx.Tags()                       // +checklocksignore - Initialization time, not shared yet.
+	sc.trace.propagatingTags = ctx.PropagatingTags() // +checklocksignore - Initialization time, not shared yet.
 	return &sc
 }
 
@@ -417,18 +417,25 @@ type trace struct {
 	// guards below fields
 	mu locking.RWMutex
 	// all the spans that are part of this trace
+	// +checklocks:mu
 	spans []*Span
 	// trace level tags
+	// +checklocks:mu
 	tags map[string]string
 	// trace level tags that will be propagated across service boundaries
+	// +checklocks:mu
 	propagatingTags map[string]string
 	// the number of finished spans
+	// +checklocks:mu
 	finished int
 	// signifies that the span buffer is full
+	// +checklocks:mu
 	full bool
 	// sampling priority
+	// +checklocks:mu
 	priority *float64
 	// specifies if the sampling priority can be altered
+	// +checklocks:mu
 	locked bool
 	// samplingDecision indicates whether to send the trace to the agent.
 	samplingDecision samplingDecision // +checkatomic
@@ -436,6 +443,7 @@ type trace struct {
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
 	// the trace yet.
+	// Write-once during initialization in newSpanContext, read-only afterward.
 	root *Span
 }
 
@@ -454,7 +462,9 @@ func newTrace() *trace {
 	return &trace{spans: make([]*Span, 0, traceStartSize)}
 }
 
+// +checklocksread:t.mu
 func (t *trace) samplingPriorityLocked() (p int, ok bool) {
+	assert.RWMutexRLocked(&t.mu)
 	if t.priority == nil {
 		return 0, false
 	}
@@ -497,7 +507,9 @@ func (t *trace) setTag(key, value string) {
 	t.setTagLocked(key, value)
 }
 
+// +checklocks:t.mu
 func (t *trace) setTagLocked(key, value string) {
+	assert.RWMutexLocked(&t.mu)
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
@@ -513,7 +525,9 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 //
 // The force parameter is used to bypass the locked sampling decision check
 // when setting the sampling priority. This is used to apply a manual keep or drop decision.
+// +checklocks:t.mu
 func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.SamplerName, force bool) bool {
+	assert.RWMutexLocked(&t.mu)
 	if t.locked && !force {
 		return false
 	}
@@ -547,7 +561,9 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 	return updatedPriority
 }
 
+// +checklocks:t.mu
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
+	assert.RWMutexLocked(&t.mu)
 	return t.setSamplingPriorityLockedWithForce(p, sampler, false)
 }
 
@@ -593,7 +609,9 @@ func (t *trace) push(sp *Span) {
 
 // setTraceTagsLocked sets all "trace level" tags on the provided span
 // t must already be locked.
+// +checklocksread:t.mu
 func (t *trace) setTraceTagsLocked(s *Span) {
+	assert.RWMutexRLocked(&t.mu)
 	assert.RWMutexLocked(&s.mu)
 	for k, v := range t.tags {
 		s.setMetaLocked(k, v)

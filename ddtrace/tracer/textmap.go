@@ -331,7 +331,7 @@ func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
 			} else if extractedCtx2 != nil { // Trace IDs do not match - create span links
 				link := SpanLink{TraceID: extractedCtx2.TraceIDLower(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
 				if trace := extractedCtx2.trace; trace != nil {
-					if flags := uint32(*trace.priority); flags > 0 { // Set the flags based on the sampling priority
+					if flags := uint32(*trace.priority); flags > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 						link.Flags = 1
 					} else {
 						link.Flags = 0
