@@ -85,7 +85,7 @@ func TestDebugCompressionEnv(t *testing.T) {
 	}
 
 	t.Run("default", func(t *testing.T) {
-		p := <-startTestProfiler(t, 1, WithDeltaProfiles(false), WithProfileTypes(CPUProfile, HeapProfile, BlockProfile), WithPeriod(time.Millisecond))
+		p := startTestProfiler(t, 1, WithDeltaProfiles(false), WithProfileTypes(CPUProfile, HeapProfile, BlockProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
 		mustGzipDecompress(t, p.attachments["cpu.pprof"])
 		mustGzipDecompress(t, p.attachments["heap.pprof"])
 		mustGzipDecompress(t, p.attachments["block.pprof"])
@@ -93,32 +93,32 @@ func TestDebugCompressionEnv(t *testing.T) {
 
 	t.Run("explicit-gzip", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "gzip")
-		p := <-startTestProfiler(t, 1, WithProfileTypes(HeapProfile, BlockProfile), WithPeriod(time.Millisecond))
+		p := startTestProfiler(t, 1, WithProfileTypes(HeapProfile, BlockProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
 		mustGzipDecompress(t, p.attachments["delta-heap.pprof"])
 	})
 
 	t.Run("zstd-delta", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "zstd-3")
-		p := <-startTestProfiler(t, 1, WithProfileTypes(CPUProfile, HeapProfile), WithPeriod(time.Millisecond))
+		p := startTestProfiler(t, 1, WithProfileTypes(CPUProfile, HeapProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
 		checkZstdLevel(t, p.attachments["cpu.pprof"], zstd.SpeedBetterCompression)
 		checkZstdLevel(t, p.attachments["delta-heap.pprof"], zstd.SpeedBetterCompression)
 	})
 
 	t.Run("zstd-no-delta", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "zstd-3")
-		p := <-startTestProfiler(t, 1, WithDeltaProfiles(false), WithProfileTypes(HeapProfile), WithPeriod(time.Millisecond))
+		p := startTestProfiler(t, 1, WithDeltaProfiles(false), WithProfileTypes(HeapProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
 		checkZstdLevel(t, p.attachments["heap.pprof"], zstd.SpeedBetterCompression)
 	})
 
 	t.Run("zstd-2", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "zstd-2")
-		p := <-startTestProfiler(t, 1, WithProfileTypes(HeapProfile), WithPeriod(time.Millisecond))
+		p := startTestProfiler(t, 1, WithProfileTypes(HeapProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
 		checkZstdLevel(t, p.attachments["delta-heap.pprof"], zstd.SpeedDefault)
 	})
 
 	t.Run("zstd-no-level", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "zstd")
-		p := <-startTestProfiler(t, 1, WithProfileTypes(CPUProfile, HeapProfile), WithPeriod(time.Millisecond))
+		p := startTestProfiler(t, 1, WithProfileTypes(CPUProfile, HeapProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
 		checkZstdLevel(t, p.attachments["cpu.pprof"], zstd.SpeedDefault)
 		checkZstdLevel(t, p.attachments["delta-heap.pprof"], zstd.SpeedDefault)
 	})
