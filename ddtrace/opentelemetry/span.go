@@ -206,6 +206,26 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 	s.events = append(s.events, e)
 }
 
+// AddLink adds OTel Span Links to the underlying Datadog span.
+func (s *span) AddLink(link oteltrace.Link) {
+	if !s.IsRecording() || !link.SpanContext.IsValid() {
+		return
+	}
+	ctx := otelCtxToDDCtx{link.SpanContext}
+	attrs := make(map[string]string, len(link.Attributes))
+	for _, a := range link.Attributes {
+		attrs[string(a.Key)] = a.Value.Emit()
+	}
+	s.DD.AddLink(tracer.SpanLink{
+		TraceID:     ctx.TraceIDLower(),
+		TraceIDHigh: ctx.TraceIDUpper(),
+		SpanID:      ctx.SpanID(),
+		Tracestate:  link.SpanContext.TraceState().String(),
+		Attributes:  attrs,
+		Flags:       uint32(link.SpanContext.TraceFlags()) | (1 << 31),
+	})
+}
+
 // SetAttributes sets the key-value pairs as tags on the span.
 // Every value is propagated as an interface.
 // Some attribute keys are reserved and will be remapped to Datadog reserved tags.
