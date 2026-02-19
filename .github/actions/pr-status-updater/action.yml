@@ -36,7 +36,7 @@ runs:
         echo "Fetching open PRs..."
 
         # Get all open PRs
-        PRS=$(gh pr list --repo "$REPO" --state open --json number,headRefOid,milestone --limit 1000)
+        PRS=$(gh pr list --repo "$REPO" --state open --json number,headRefOid,milestone,isCrossRepository --limit 1000)
 
         echo "Found $(echo "$PRS" | jq length) open PRs"
 
@@ -45,6 +45,14 @@ runs:
           PR_NUMBER=$(echo "$pr" | jq -r '.number')
           SHA=$(echo "$pr" | jq -r '.headRefOid')
           MILESTONE_TITLE=$(echo "$pr" | jq -r '.milestone.title // ""')
+          IS_FORK=$(echo "$pr" | jq -r '.isCrossRepository')
+
+          # Skip forked PRs - their GITHUB_TOKEN is read-only for status writes.
+          # code_freeze_check.yml handles them when their next PR event fires.
+          if [ "$IS_FORK" = "true" ]; then
+            echo "Skipping PR #$PR_NUMBER (fork)"
+            continue
+          fi
 
           # Determine the state for this PR
           PR_STATE="$STATE"

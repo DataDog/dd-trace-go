@@ -61,6 +61,9 @@ jobs:
           fi
 
       - name: Set commit status
+        # Forked PRs have a read-only GITHUB_TOKEN that cannot write commit statuses.
+        # Skip the API call for forks; the job will still fail via the next step if needed.
+        if: github.event.pull_request.head.repo.full_name == github.repository
         run: |
           SHA="${{ github.event.pull_request.head.sha }}"
           REPO="${{ github.repository }}"
@@ -89,8 +92,8 @@ jobs:
 
           echo "Set status '$STATE' on commit ${SHA:0:7}"
 
-          # Fail the job if PR is blocked
-          if [ "$STATE" = "failure" ]; then
-            echo "::error::Code freeze is active. Add this PR to a 'Code Freeze' or 'Incident' milestone to allow merging."
-            exit 1
-          fi
+      - name: Fail if PR is blocked by code freeze
+        if: steps.check.outputs.freeze_active == 'true' && steps.check.outputs.pr_exempt == 'false'
+        run: |
+          echo "::error::Code freeze is active. Add this PR to a 'Code Freeze' or 'Incident' milestone to allow merging."
+          exit 1
