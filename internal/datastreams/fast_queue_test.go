@@ -21,7 +21,7 @@ func TestFastQueue(t *testing.T) {
 	assert.False(t, q.push(&processorInput{point: statsPoint{hash: 4}}))
 	assert.Equal(t, uint64(3), q.pop().point.hash)
 	assert.Equal(t, uint64(4), q.pop().point.hash)
-	for i := 0; i < queueSize; i++ {
+	for i := range queueSize {
 		assert.False(t, q.push(&processorInput{point: statsPoint{hash: uint64(i)}}))
 		assert.Equal(t, uint64(i), q.pop().point.hash)
 	}

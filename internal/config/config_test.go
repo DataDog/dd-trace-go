@@ -14,11 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestGet(t *testing.T) {
@@ -71,6 +72,30 @@ func TestGet(t *testing.T) {
 		cfg4 := Get()
 		cfg5 := Get()
 		assert.Same(t, cfg4, cfg5, "With useFreshConfig=false, Get() should cache the same instance")
+	})
+
+	t.Run("GetNew forces new instance", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Get the first instance
+		cfg1 := Get()
+		require.NotNil(t, cfg1)
+
+		// Get should return the same instance
+		cfg2 := Get()
+		require.NotNil(t, cfg2)
+		assert.Same(t, cfg1, cfg2, "Get() should return the same instance")
+
+		// CreateNew should return a new instance
+		cfg3 := CreateNew()
+		require.NotNil(t, cfg3)
+		assert.NotSame(t, cfg2, cfg3, "CreateNew() should return a new instance")
+
+		// Now it should cache the same instance
+		cfg4 := Get()
+		assert.Same(t, cfg3, cfg4, "Get() should return the same instance")
+		assert.NotSame(t, cfg1, cfg4, "Get() should not return the same instance as the first one")
 	})
 
 	t.Run("concurrent access is safe", func(t *testing.T) {
@@ -236,7 +261,7 @@ var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
 // If this fails: call reportTelemetry() in your setter, OR add to settersWithoutTelemetry, OR add to specialCaseSetters.
 func TestAllSettersReportTelemetry(t *testing.T) {
 	// Get all methods on *Config
-	configType := reflect.TypeOf(&Config{})
+	configType := reflect.TypeFor[*Config]()
 
 	for i := 0; i < configType.NumMethod(); i++ {
 		// Capture method
@@ -308,7 +333,7 @@ func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemet
 	}
 
 	// Last parameter should be telemetry.Origin
-	originType := reflect.TypeOf((*telemetry.Origin)(nil)).Elem()
+	originType := reflect.TypeFor[telemetry.Origin]()
 	lastParamType := methodType.In(methodType.NumIn() - 1)
 	if lastParamType != originType {
 		t.Fatalf("%s: last param should be telemetry.Origin, got %v. Add to specialCaseSetters if non-standard.",
@@ -334,9 +359,9 @@ func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemet
 
 // getTestValueForType generates appropriate test values based on parameter type.
 // Add support for new types here as setters with new parameter types are added.
-func getTestValueForType(t reflect.Type) interface{} {
+func getTestValueForType(t reflect.Type) any {
 	// Check for specific named types first (before kind checks)
-	if t == reflect.TypeOf(time.Duration(0)) {
+	if t == reflect.TypeFor[time.Duration]() {
 		return 10 * time.Second
 	}
 
@@ -430,4 +455,86 @@ func TestSetServiceMappingReportsFullList(t *testing.T) {
 	parts := strings.Split(got.Value.(string), ",")
 	sort.Strings(parts)
 	assert.Equal(t, []string{"a:3", "b:2"}, parts)
+}
+
+func TestHostnameConfiguration(t *testing.T) {
+	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Empty(t, cfg.Hostname(), "Hostname should be empty by default")
+		assert.False(t, cfg.ReportHostname(), "ReportHostname should be false by default")
+	})
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME=true enables hostname lookup", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.NotEmpty(t, cfg.Hostname(), "Hostname should be set when DD_TRACE_REPORT_HOSTNAME=true")
+		assert.True(t, cfg.ReportHostname(), "ReportHostname should be true when DD_TRACE_REPORT_HOSTNAME=true")
+		assert.NoError(t, cfg.HostnameLookupError(), "HostnameLookupError should be nil on successful lookup")
+	})
+
+	t.Run("DD_TRACE_REPORT_HOSTNAME=false keeps hostname empty", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "false")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Empty(t, cfg.Hostname(), "Hostname should be empty when DD_TRACE_REPORT_HOSTNAME=false")
+		assert.False(t, cfg.ReportHostname(), "ReportHostname should be false when DD_TRACE_REPORT_HOSTNAME=false")
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME sets explicit hostname", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "custom-hostname")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "custom-hostname", cfg.Hostname(), "Hostname should match DD_TRACE_SOURCE_HOSTNAME")
+		assert.True(t, cfg.ReportHostname(), "ReportHostname should be true when DD_TRACE_SOURCE_HOSTNAME is set")
+	})
+
+	t.Run("DD_TRACE_SOURCE_HOSTNAME takes precedence over DD_TRACE_REPORT_HOSTNAME", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "override-hostname")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "override-hostname", cfg.Hostname(), "DD_TRACE_SOURCE_HOSTNAME should take precedence")
+		assert.True(t, cfg.ReportHostname(), "ReportHostname should be true")
+	})
+
+	t.Run("empty DD_TRACE_SOURCE_HOSTNAME is used when explicitly set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_REPORT_HOSTNAME", "true")
+		t.Setenv("DD_TRACE_SOURCE_HOSTNAME", "")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		// Empty string explicitly set should override the looked-up hostname
+		assert.Empty(t, cfg.Hostname(), "Empty DD_TRACE_SOURCE_HOSTNAME should override hostname lookup")
+		assert.True(t, cfg.ReportHostname(), "ReportHostname should be true when DD_TRACE_SOURCE_HOSTNAME is explicitly set")
+	})
 }

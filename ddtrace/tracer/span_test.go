@@ -634,7 +634,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(numGoroutines)
-		for j := 0; j < numGoroutines; j++ {
+		for range numGoroutines {
 			go func() {
 				defer wg.Done()
 				childSpan := tracer.newChildSpan("child", rootSpan)
@@ -655,7 +655,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(numGoroutines)
-		for j := 0; j < numGoroutines; j++ {
+		for range numGoroutines {
 			go func() {
 				defer wg.Done()
 				childSpan := tracer.StartSpan(
@@ -907,13 +907,12 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(int32(0), span.error)
 
 	// '+3' is `_dd.p.dm` + `_dd.base_service`, `_dd.p.tid`
-	span.mu.RLock()
-	defer span.mu.RUnlock()
-	t.Logf("%q\n", span.meta)
-	assert.Equal(nMeta+3, len(span.meta))
-	assert.Equal("", span.meta[ext.ErrorMsg])
-	assert.Equal("", span.meta[ext.ErrorType])
-	assert.Equal("", span.meta[ext.ErrorHandlingStack])
+	meta := span.getMetadata()
+	t.Logf("%q\n", meta)
+	assert.Equal(nMeta+3, len(meta))
+	assert.Equal("", meta[ext.ErrorMsg])
+	assert.Equal("", meta[ext.ErrorType])
+	assert.Equal("", meta[ext.ErrorHandlingStack])
 }
 
 func TestSpanError_Typed(t *testing.T) {
@@ -1620,7 +1619,7 @@ func testConcurrentSpanSetTag(t *testing.T) {
 	const n = 100
 	wg := sync.WaitGroup{}
 	wg.Add(n * 2)
-	for i := 0; i < n; i++ {
+	for range n {
 		go func() {
 			tracer.Inject(span.Context(), TextMapCarrier(map[string]string{}))
 			wg.Done()

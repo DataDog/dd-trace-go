@@ -14,11 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCaseSubrouter struct {
@@ -51,6 +52,7 @@ func (tc *TestCaseSubrouter) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCaseSubrouter) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/sub/ping", tc.Server.Addr))
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -102,7 +104,7 @@ func (tc *TestCaseRouterParallel) Run(_ context.Context, t *testing.T) {
 	errChan := make(chan error, numRequests)
 	statusChan := make(chan int, numRequests)
 
-	for i := 0; i < numRequests; i++ {
+	for range numRequests {
 		go func() {
 			defer wg.Done()
 			resp, err := http.Get(fmt.Sprintf("http://%s/ping", tc.Server.Addr))
@@ -137,7 +139,7 @@ func (tc *TestCaseRouterParallel) ExpectedTraces() trace.Traces {
 	// Each concurrent request should produce its own trace
 	const numRequests = 10
 	traces := make(trace.Traces, numRequests)
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		traces[i] = &trace.Trace{
 			Tags: map[string]any{
 				"name":     "http.request",
@@ -179,6 +181,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/ping", tc.Server.Addr))
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 

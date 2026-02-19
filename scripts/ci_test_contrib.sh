@@ -18,10 +18,9 @@ else
   INSTRUMENTATION_SUBMODULES=$(find ./instrumentation -mindepth 2 -type f -name go.mod -exec dirname {} \;)
 fi
 
-export GOEXPERIMENT=synctest # TODO: remove once go1.25 is the minimum supported version
-
 export DD_APPSEC_ENABLED=1
 export DD_APPSEC_WAF_TIMEOUT=1m
+export __DD_TRACE_SQL_TEST=true
 
 report_error=0
 
@@ -45,6 +44,8 @@ for contrib in $CONTRIBS; do
     # This is a temporary workaround due to this issue in apimachinery: https://github.com/kubernetes/apimachinery/issues/190
     # When the issue is resolved, this line can be removed.
     go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
+    # Another temporary workaround caused by the upgrade introduced by this commit: https://github.com/kubernetes/client-go/commit/f4d210639bbc61f2f2a8596662d7ad50abaa6544
+    go get k8s.io/client-go@v0.35.0
   fi
   if [[ "$1" = "smoke" && "$contrib" = "./contrib/gin-gonic/gin/" ]]; then
     # Temporary workaround, see: https://github.com/gin-gonic/gin/issues/4441

@@ -29,7 +29,7 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
-type traces [][]map[string]interface{}
+type traces [][]map[string]any
 
 func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerProvider, payloads chan traces, cleanup func()) {
 	payloads = make(chan traces)
@@ -50,7 +50,7 @@ func mockTracerProvider(t *testing.T, opts ...tracer.StartOption) (tp *TracerPro
 			if err != nil {
 				t.Fatalf("Failed to unmarshal payload bytes as JSON: %v", err)
 			}
-			var tr [][]map[string]interface{}
+			var tr [][]map[string]any
 			err = json.Unmarshal(payload.Bytes(), &tr)
 			if err != nil || len(tr) == 0 {
 				t.Fatalf("Failed to unmarshal payload bytes as trace: %v", err)
@@ -350,7 +350,7 @@ func TestSpanAddEvent(t *testing.T) {
 		assert.Len(cfg.Attributes, 3)
 		// Assert attribute key-value fields
 		// note that attribute.Int("pid", 4328) created an attribute with value int64(4328), hence why the `want` is in int64 format
-		wantAttrs := map[string]interface{}{
+		wantAttrs := map[string]any{
 			"pid":       int64(4328),
 			"signal":    "SIGHUP",
 			"condition": false,
@@ -393,7 +393,7 @@ func TestSpanAddEvent(t *testing.T) {
 }
 
 // attributesContains returns true if attrs contains an attribute.KeyValue with the provided key and val
-func attributesContains(attrs map[string]interface{}, key string, val interface{}) bool {
+func attributesContains(attrs map[string]any, key string, val any) bool {
 	for k, v := range attrs {
 		if k == key && v == val {
 			return true

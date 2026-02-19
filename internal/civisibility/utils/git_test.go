@@ -10,9 +10,68 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
+
+func TestGetSafeDirectoryConfig(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping safe directory config test")
+	}
+
+	// Reset the safeDirectoryOnce to ensure we're testing a fresh state
+	safeDirectoryOnce = sync.Once{}
+	safeDirectoryValue = ""
+
+	// Get the safe directory config
+	safeDir := getSafeDirectoryConfig()
+
+	// Should return a non-empty path in a git repository
+	assert.NotEmpty(t, safeDir, "Safe directory config should not be empty in a git repository")
+
+	// The path should not end with /.git (it should be the repo root)
+	assert.False(t, strings.HasSuffix(safeDir, "/.git"), "Safe directory should not end with /.git")
+	assert.False(t, strings.HasSuffix(safeDir, "\\.git"), "Safe directory should not end with \\.git")
+
+	// Calling it again should return the same cached value
+	safeDir2 := getSafeDirectoryConfig()
+	assert.Equal(t, safeDir, safeDir2, "Safe directory should be cached")
+}
+
+func TestSafeDirectoryConfigPassedToGitCommands(t *testing.T) {
+	if !isGitFound() {
+		t.Skip("Git not available, skipping safe directory test")
+	}
+
+	// Reset the safeDirectoryOnce to ensure we're testing a fresh state
+	safeDirectoryOnce = sync.Once{}
+	safeDirectoryValue = ""
+
+	// Get the safe directory config
+	safeDir := getSafeDirectoryConfig()
+	assert.NotEmpty(t, safeDir, "Safe directory config should not be empty")
+
+	// Use git config --list --show-origin to verify safe.directory is being passed
+	// When we pass -c safe.directory=<path>, git should accept it and show it in the config
+	// We run a command that will include the -c flag and verify it works
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "config", "--get", "safe.directory")
+	// The command might return empty or error if safe.directory is not set in actual config,
+	// but the important thing is that it doesn't fail due to the -c flag being malformed
+	// The -c flag is added by execGit, so if the command runs without "unknown option" error, it works
+	_ = out
+	_ = err
+
+	// Verify by running git version which should always succeed if safe.directory is properly passed
+	version, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	assert.NoError(t, err, "git --version should succeed with safe.directory config")
+	assert.Contains(t, version, "git version", "Output should contain git version")
+
+	// Run git rev-parse to verify safe.directory works with repo-specific commands
+	_, err = execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--show-toplevel")
+	assert.NoError(t, err, "git rev-parse should succeed with safe.directory config")
+}
 
 func TestFilterSensitiveInfo(t *testing.T) {
 	tests := []struct {

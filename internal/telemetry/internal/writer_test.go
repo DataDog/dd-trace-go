@@ -297,7 +297,7 @@ func TestWriterParallel(t *testing.T) {
 	const numRequests = 100
 	var wg sync.WaitGroup
 	wg.Add(numRequests)
-	for i := 0; i < numRequests; i++ {
+	for range numRequests {
 		go func() {
 			defer wg.Done()
 			_, err := writer.Flush(&payload)

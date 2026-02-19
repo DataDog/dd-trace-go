@@ -9,8 +9,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 )
 
 func TestInitializeEnvironment_All(t *testing.T) {

@@ -11,8 +11,9 @@ import (
 	"io"
 	"sync/atomic"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/tinylib/msgp/msgp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // payloadV04 is a wrapper on top of the msgpack encoder which allows constructing an
@@ -51,7 +52,7 @@ type payloadV04 struct {
 	off int
 
 	// count specifies the number of items in the stream.
-	count uint32
+	count uint32 // +checkatomic
 
 	// buf holds the sequence of msgpack-encoded items.
 	buf bytes.Buffer

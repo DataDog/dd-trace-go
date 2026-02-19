@@ -10,11 +10,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 )
 
 func TestIntentCapture(t *testing.T) {
@@ -52,13 +53,13 @@ func TestIntentCapture(t *testing.T) {
 	assert.Contains(t, props, "operation")
 	assert.Contains(t, props, "x")
 	assert.Contains(t, props, "y")
-	assert.Contains(t, props, "ddtrace")
+	assert.Contains(t, props, "telemetry")
 
-	// Ensure ddtrace is added to schema
-	ddtraceSchema := props["ddtrace"].(map[string]interface{})
-	assert.Equal(t, "object", ddtraceSchema["type"])
-	ddtraceProps := ddtraceSchema["properties"].(map[string]interface{})
-	intentSchema := ddtraceProps["intent"].(map[string]interface{})
+	// Ensure telemetry is added to schema
+	telemetrySchema := props["telemetry"].(map[string]interface{})
+	assert.Equal(t, "object", telemetrySchema["type"])
+	telemetryProps := telemetrySchema["properties"].(map[string]interface{})
+	intentSchema := telemetryProps["intent"].(map[string]interface{})
 	assert.Equal(t, "string", intentSchema["type"])
 	assert.Equal(t, instrmcp.IntentPrompt, intentSchema["description"])
 
@@ -71,14 +72,14 @@ func TestIntentCapture(t *testing.T) {
 	session.Initialize()
 	ctx = srv.WithContext(ctx, session)
 
-	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calculator","arguments":{"operation":"add","x":5,"y":3,"ddtrace":{"intent":"test intent description"}}}}`))
+	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calculator","arguments":{"operation":"add","x":5,"y":3,"telemetry":{"intent":"test intent description"}}}}`))
 
-	// Ensure ddtrace is removed in tool call
+	// Ensure telemetry is removed in tool call
 	require.NotNil(t, receivedArgs)
 	assert.Equal(t, "add", receivedArgs["operation"])
 	assert.Equal(t, float64(5), receivedArgs["x"])
 	assert.Equal(t, float64(3), receivedArgs["y"])
-	assert.NotContains(t, receivedArgs, "ddtrace")
+	assert.NotContains(t, receivedArgs, "telemetry")
 
 	// Verify intent was recorded on the LLMObs span
 	spans := tt.WaitForLLMObsSpans(t, 1)
@@ -89,6 +90,41 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, "calculator", toolSpan.Name)
 	assert.Contains(t, toolSpan.Meta, "intent")
 	assert.Equal(t, "test intent description", toolSpan.Meta["intent"])
+}
+
+func TestIntentCaptureConcurrentListTools(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
+
+	calcTool := mcp.NewTool("calculator",
+		mcp.WithDescription("A simple calculator"),
+		mcp.WithString("operation", mcp.Required(), mcp.Description("The operation to perform")),
+		mcp.WithNumber("x", mcp.Required(), mcp.Description("First number")),
+		mcp.WithNumber("y", mcp.Required(), mcp.Description("Second number")))
+
+	srv.AddTool(calcTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText(`{"result":8}`), nil
+	})
+
+	ctx := context.Background()
+
+	const numGoroutines = 10
+	done := make(chan struct{})
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			for j := 0; j < 100; j++ {
+				srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+			}
+		}()
+	}
+
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
 }
 
 func mustMarshal(v interface{}) []byte {

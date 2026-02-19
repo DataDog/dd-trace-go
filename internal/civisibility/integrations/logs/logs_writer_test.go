@@ -10,8 +10,9 @@ import (
 	"io"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
 func TestNewLogsWriter(t *testing.T) {
@@ -49,7 +50,7 @@ func TestLogsWriterConcurrentFlush(t *testing.T) {
 	writer := newLogsWriter()
 	entry := &logEntry{}
 
-	for i := 0; i < concurrentConnectionLimit+1; i++ {
+	for range concurrentConnectionLimit + 1 {
 		writer.add(entry)
 	}
 	writer.flush()

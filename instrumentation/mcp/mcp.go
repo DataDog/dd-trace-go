@@ -5,7 +5,7 @@
 
 package mcp
 
-const DDTraceKey = "ddtrace"
+const TelemetryKey = "telemetry"
 
 const IntentKey = "intent"
 

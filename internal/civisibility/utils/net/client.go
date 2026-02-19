@@ -296,7 +296,7 @@ func (c *client) getURLPath(urlPath string) string {
 }
 
 // getPostRequestConfig	returns a new RequestConfig for a POST request.
-func (c *client) getPostRequestConfig(url string, body interface{}) *RequestConfig {
+func (c *client) getPostRequestConfig(url string, body any) *RequestConfig {
 	return &RequestConfig{
 		Method:     "POST",
 		URL:        c.getURLPath(url),

@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
@@ -65,12 +65,12 @@ jobs:
       json: ${{ steps.matrix.outputs.json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
       - name: Setup Go
-        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
           go-version: stable
           cache: true
@@ -88,7 +88,7 @@ jobs:
       services_json: ${{ steps.set-services.outputs.services_json }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
@@ -101,7 +101,7 @@ jobs:
     services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.service-containers.outputs.services_json || '{}') }}
     env:
       # Path to where test results will be saved
-      REPORT: orchestrion-gotestsum-report.xml
+      REPORT: gotestsum-report-orchestrion.xml
       # Disable go workspace as they complicate everything when orchestrion
       # updates its `go` directive in `go.mod` before `dd-trace-go` does;
       # ESPECIALLY on Windows.
@@ -130,7 +130,7 @@ jobs:
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: ${{ github.workspace }}/dd-trace-go
           repository: ${{ inputs.orchestrion-version != '' && 'DataDog/dd-trace-go' || github.repository }}
@@ -139,7 +139,7 @@ jobs:
       - name: Check out orchestrion
         if: inputs.orchestrion-version != ''
         id: checkout-orchestrion
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: ${{ github.workspace }}/orchestrion
           repository: DataDog/orchestrion
@@ -147,7 +147,7 @@ jobs:
 
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
@@ -293,13 +293,13 @@ jobs:
           echo "version=$(echo '${{ steps.setup-go.outputs.go-version }}' | cut -d'.' -f1,2)" >> "${GITHUB_OUTPUT}"
       - name: Upload coverage report
         if: inputs.collect-coverage
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
           path: ${{ github.workspace }}/orchestrion/coverage/integration.out
 
       - name: Checkout
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         if: always()
         with:
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}

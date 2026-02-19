@@ -10,9 +10,10 @@ package tracer
 import (
 	"strconv"
 
+	"github.com/tinylib/msgp/msgp"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
-	"github.com/tinylib/msgp/msgp"
 )
 
 type (
@@ -159,7 +160,7 @@ type ciVisibilityEvent struct {
 //
 //	key - The tag key.
 //	value - The tag value.
-func (e *ciVisibilityEvent) SetTag(key string, value interface{}) {
+func (e *ciVisibilityEvent) SetTag(key string, value any) {
 	e.span.SetTag(key, value)
 	e.Content.Meta = e.span.meta
 	e.Content.Metrics = e.span.metrics
@@ -275,7 +276,7 @@ func createTestEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTag)
 	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTag)
 	tSpan.SuiteID = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTag)
-	tSpan.CorrelationID = getAndRemoveMeta(span, constants.ItrCorrelationIDTag)
+	tSpan.CorrelationID = span.getAndRemoveMeta(constants.ItrCorrelationIDTag)
 	tSpan.SpanID = span.spanID
 	tSpan.TraceID = span.traceID
 	return &ciVisibilityEvent{
@@ -397,32 +398,6 @@ func createTslvSpan(span *Span) tslvSpan {
 	}
 }
 
-// getAndRemoveMeta retrieves a metadata value from a span and removes it from the span's metadata and metrics.
-//
-// Parameters:
-//
-//	span - The span to modify.
-//	key - The metadata key to retrieve and remove.
-//
-// Returns:
-//
-//	The retrieved metadata value.
-func getAndRemoveMeta(span *Span, key string) string {
-	span.mu.Lock()
-	defer span.mu.Unlock()
-	if span.meta == nil {
-		span.meta = make(map[string]string, 1)
-	}
-
-	if v, ok := span.meta[key]; ok {
-		delete(span.meta, key)
-		delete(span.metrics, key)
-		return v
-	}
-
-	return ""
-}
-
 // getAndRemoveMetaToUInt64 retrieves a metadata value from a span, removes it, and converts it to a uint64.
 //
 // Parameters:
@@ -434,7 +409,7 @@ func getAndRemoveMeta(span *Span, key string) string {
 //
 //	The retrieved and converted metadata value as a uint64.
 func getAndRemoveMetaToUInt64(span *Span, key string) uint64 {
-	strValue := getAndRemoveMeta(span, key)
+	strValue := span.getAndRemoveMeta(key)
 	i, err := strconv.ParseUint(strValue, 10, 64)
 	if err != nil {
 		return 0

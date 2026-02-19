@@ -8,7 +8,6 @@ package version
 import (
 	"bytes"
 	"os/exec"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"testing"
@@ -53,67 +52,6 @@ func unixDate(u string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return time.Unix(sec, 0), nil
-}
-
-func TestFindV1Version(t *testing.T) {
-	tests := []struct {
-		deps     []*debug.Module
-		expected *v1version
-	}{
-		{
-			deps: []*debug.Module{
-				{Path: "gopkg.in/DataDog/dd-trace-go.v1", Version: "v1.2.3-rc.12"},
-			},
-			expected: &v1version{
-				Version: "v1.2.3-rc.12",
-			},
-		},
-		{
-			deps: []*debug.Module{
-				{Path: "gopkg.in/DataDog/dd-trace-go.v1", Version: "v1.74.0"},
-			},
-			expected: &v1version{
-				Version:      "v1.74.0",
-				Transitional: true,
-			},
-		},
-		{
-			deps: []*debug.Module{
-				{Path: "gopkg.in/DataDog/dd-trace-go.v1", Version: "v1.73.1"},
-			},
-			expected: &v1version{
-				Version: "v1.73.1",
-			},
-		},
-		{
-			deps:     []*debug.Module{},
-			expected: nil,
-		},
-		{
-			deps: []*debug.Module{
-				{Path: "github.com/DataDog/dd-trace-go/v2", Version: "v2.0.0"},
-			},
-			expected: nil,
-		},
-	}
-	for _, c := range tests {
-		vt := findV1Version(c.deps)
-		if c.expected == nil {
-			if vt != nil {
-				t.Fatalf("got %v, expected nil", vt)
-			}
-			continue
-		}
-		if vt == nil {
-			t.Fatalf("got nil, expected *v1version")
-		}
-		if vt.Version != c.expected.Version {
-			t.Fatalf("got %s, expected %s", vt.Version, c.expected.Version)
-		}
-		if vt.Transitional != c.expected.Transitional {
-			t.Fatalf("got %t, expected %t", vt.Transitional, c.expected.Transitional)
-		}
-	}
 }
 
 func TestParseVersion(t *testing.T) {

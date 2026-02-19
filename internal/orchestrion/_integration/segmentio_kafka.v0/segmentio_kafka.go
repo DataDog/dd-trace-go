@@ -15,13 +15,14 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kafkatest "github.com/testcontainers/testcontainers-go/modules/kafka"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 const (
@@ -104,22 +105,16 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 	// simulating "real-world" usage of the Kafka client.
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		readerA := tc.newReader(topicA)
 		defer func() { require.NoError(t, readerA.Close()) }()
 		m, err := readerA.ReadMessage(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, "Hello World!", string(m.Value))
 		assert.Equal(t, "Key-A", string(m.Key))
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		readerB := tc.newReader(topicB)
 		defer func() { require.NoError(t, readerB.Close()) }()
 		m, err := readerB.FetchMessage(ctx)
@@ -128,7 +123,7 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 		assert.Equal(t, "Key-A", string(m.Key))
 		err = readerB.CommitMessages(ctx, m)
 		require.NoError(t, err)
-	}()
+	})
 	wg.Wait()
 }
 

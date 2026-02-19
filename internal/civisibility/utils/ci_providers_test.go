@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 )
@@ -47,6 +48,14 @@ func sortJSONKeys(jsonStr string) string {
 
 // TestTags asserts that all tags are extracted from environment variables.
 func TestTags(t *testing.T) {
+	// Disable diagnostics scanning to prevent tests from reading real _diag directories
+	// when running on GitHub Actions runners
+	originalDiagEnabled := githubActionsDiagnosticsEnabled
+	githubActionsDiagnosticsEnabled = false
+	defer func() {
+		githubActionsDiagnosticsEnabled = originalDiagEnabled
+	}()
+
 	// Reset provider env key when running in CI
 	resetProviders := map[string]string{}
 	for key := range providers {
@@ -103,6 +112,10 @@ func TestTags(t *testing.T) {
 					// We initialize GITHUB_REF if it doesn't exist to avoid using the one set in the GitHub action.
 					if _, ok := env["GITHUB_REF"]; !ok {
 						env["GITHUB_REF"] = ""
+					}
+					// We initialize JOB_CHECK_RUN_ID if it doesn't exist to avoid using the one set in the GitHub action.
+					if _, ok := env["JOB_CHECK_RUN_ID"]; !ok {
+						env["JOB_CHECK_RUN_ID"] = ""
 					}
 				}
 
@@ -174,5 +187,140 @@ func TestGitHubEventFile(t *testing.T) {
 
 		tags := extractGithubActions()
 		checkValue(tags, constants.GitPrBaseBranch, "my-base-ref")
+	})
+}
+
+func TestIsNumericJobID(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"12345678901", true},
+		{"0", true},
+		{"1", true},
+		{"9999999999999999999", true},
+		{"", false},
+		{"abc", false},
+		{"123abc", false},
+		{"abc123", false},
+		{"-123", false},
+		{"12.34", false},
+		{" 123", false},
+		{"123 ", false},
+		{" ", false},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("input=%q", tt.input), func(t *testing.T) {
+			if got := isNumericJobID(tt.input); got != tt.expected {
+				t.Errorf("isNumericJobID(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGithubActionsJobIDFromDiagnostics(t *testing.T) {
+	t.Run("valid JSON", func(t *testing.T) {
+		diagDir := t.TempDir()
+		content := `{"job":{"d":[{"k":"check_run_id","v":12345678901}]}}`
+		workerLog := filepath.Join(diagDir, "Worker_20240101.log")
+		if err := os.WriteFile(workerLog, []byte(content), 0o644); err != nil {
+			t.Fatalf("write worker log: %v", err)
+		}
+
+		jobID, ok := tryExtractJobIDFromDiag([]string{diagDir})
+		if !ok || jobID != "12345678901" {
+			t.Fatalf("expected 12345678901, got %q (ok=%v)", jobID, ok)
+		}
+	})
+
+	t.Run("valid JSON with float value", func(t *testing.T) {
+		diagDir := t.TempDir()
+		content := `{"job":{"d":[{"k":"check_run_id","v":55411116365.0}]}}`
+		workerLog := filepath.Join(diagDir, "Worker_20240101.log")
+		if err := os.WriteFile(workerLog, []byte(content), 0o644); err != nil {
+			t.Fatalf("write worker log: %v", err)
+		}
+
+		jobID, ok := tryExtractJobIDFromDiag([]string{diagDir})
+		if !ok || jobID != "55411116365" {
+			t.Fatalf("expected 55411116365, got %q (ok=%v)", jobID, ok)
+		}
+	})
+
+	t.Run("regex fallback with timestamp prefix", func(t *testing.T) {
+		diagDir := t.TempDir()
+		content := `[2024-01-01 12:00:00] {"job":{"d":[{"k":"check_run_id","v":12345678901.0}]}}`
+		workerLog := filepath.Join(diagDir, "Worker_20240101.log")
+		if err := os.WriteFile(workerLog, []byte(content), 0o644); err != nil {
+			t.Fatalf("write worker log: %v", err)
+		}
+
+		jobID, ok := tryExtractJobIDFromDiag([]string{diagDir})
+		if !ok || jobID != "12345678901" {
+			t.Fatalf("expected 12345678901, got %q (ok=%v)", jobID, ok)
+		}
+	})
+
+	t.Run("empty directory", func(t *testing.T) {
+		diagDir := t.TempDir()
+
+		jobID, ok := tryExtractJobIDFromDiag([]string{diagDir})
+		if ok || jobID != "" {
+			t.Fatalf("expected empty result, got %q (ok=%v)", jobID, ok)
+		}
+	})
+
+	t.Run("non-existent directory", func(t *testing.T) {
+		jobID, ok := tryExtractJobIDFromDiag([]string{"/non/existent/path"})
+		if ok || jobID != "" {
+			t.Fatalf("expected empty result, got %q (ok=%v)", jobID, ok)
+		}
+	})
+
+	t.Run("newest file is used first", func(t *testing.T) {
+		diagDir := t.TempDir()
+
+		// Create older file with different job ID
+		oldContent := `{"job":{"d":[{"k":"check_run_id","v":11111111111}]}}`
+		oldLog := filepath.Join(diagDir, "Worker_20230101.log")
+		if err := os.WriteFile(oldLog, []byte(oldContent), 0o644); err != nil {
+			t.Fatalf("write old worker log: %v", err)
+		}
+
+		// Create newer file with expected job ID
+		newContent := `{"job":{"d":[{"k":"check_run_id","v":22222222222}]}}`
+		newLog := filepath.Join(diagDir, "Worker_20240101.log")
+		if err := os.WriteFile(newLog, []byte(newContent), 0o644); err != nil {
+			t.Fatalf("write new worker log: %v", err)
+		}
+
+		// Set explicit modification times to ensure deterministic ordering
+		oldTime := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+		newTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		if err := os.Chtimes(oldLog, oldTime, oldTime); err != nil {
+			t.Fatalf("set old log time: %v", err)
+		}
+		if err := os.Chtimes(newLog, newTime, newTime); err != nil {
+			t.Fatalf("set new log time: %v", err)
+		}
+
+		jobID, ok := tryExtractJobIDFromDiag([]string{diagDir})
+		if !ok || jobID != "22222222222" {
+			t.Fatalf("expected 22222222222 (from newest file), got %q (ok=%v)", jobID, ok)
+		}
+	})
+
+	t.Run("invalid JSON without check_run_id", func(t *testing.T) {
+		diagDir := t.TempDir()
+		content := `{"job":{"d":[{"k":"other_key","v":12345}]}}`
+		workerLog := filepath.Join(diagDir, "Worker_20240101.log")
+		if err := os.WriteFile(workerLog, []byte(content), 0o644); err != nil {
+			t.Fatalf("write worker log: %v", err)
+		}
+
+		jobID, ok := tryExtractJobIDFromDiag([]string{diagDir})
+		if ok || jobID != "" {
+			t.Fatalf("expected empty result, got %q (ok=%v)", jobID, ok)
+		}
 	})
 }

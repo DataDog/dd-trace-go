@@ -205,7 +205,7 @@ func (t *tslvTest) internalClose(options ...tracer.FinishOption) {
 }
 
 // SetTag sets a tag on the test event.
-func (t *tslvTest) SetTag(key string, value interface{}) {
+func (t *tslvTest) SetTag(key string, value any) {
 	t.ciVisibilityCommon.SetTag(key, value)
 	if key == constants.TestIsNew ||
 		key == constants.TestIsRetry ||

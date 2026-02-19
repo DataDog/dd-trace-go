@@ -12,11 +12,12 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func newTestconfigProvider(sources ...configSource) *configProvider {
@@ -63,7 +64,7 @@ func matchConfig(name, value string, origin telemetry.Origin, id string) func([]
 
 // matchDefaultConfig is a helper to create a matcher for default telemetry configurations.
 // Default configs should always have SeqID=defaultSeqID (1).
-func matchDefaultConfig(name string, value interface{}, origin telemetry.Origin) func([]telemetry.Configuration) bool {
+func matchDefaultConfig(name string, value any, origin telemetry.Origin) func([]telemetry.Configuration) bool {
 	return func(configs []telemetry.Configuration) bool {
 		if len(configs) != 1 {
 			return false

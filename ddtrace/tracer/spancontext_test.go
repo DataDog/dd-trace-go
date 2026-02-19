@@ -107,7 +107,7 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		// `s.Meta` without holding the lock. This crashes when the span flushing
 		// code tries to read `s.Meta` without holding the lock.
 		root.AddLink(SpanLink{TraceID: 1, SpanID: 2})
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			root.Finish()
 		}
 	})
@@ -118,7 +118,7 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		defer stop()
 
 		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			root.Finish(NoDebugStack())
 		}
 	})
@@ -130,7 +130,7 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 
 		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 		err = errors.New("test error")
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			root.Finish(WithError(err))
 		}
 	})
@@ -144,7 +144,7 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		defer stop()
 
 		root, _ := StartSpanFromContext(context.Background(), "root")
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			root.Finish(WithError(err))
 			rateRule, _ := getMetric(root, keyRulesSamplerLimiterRate)
 			priority, _ := getMetric(root, keySamplingPriority)
@@ -182,7 +182,7 @@ func testAsyncSpanRace(t *testing.T) {
 	assert.Nil(t, err)
 	defer stop()
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		// The test has 100 iterations because it is not easy to reproduce the race.
 		t.Run("", func(_ *testing.T) {
 			var (
@@ -191,10 +191,8 @@ func testAsyncSpanRace(t *testing.T) {
 			)
 			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 			finishes.Add(2)
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < 500; i++ {
+			wg.Go(func() {
+				for range 500 {
 					// Spamming Finish to emulate concurrent Finish calls.
 					root.Finish()
 				}
@@ -209,18 +207,16 @@ func testAsyncSpanRace(t *testing.T) {
 				// the span is pushed to the tracer's t.out channel.
 				close(done)
 
-				for i := 0; i < 500; i++ {
+				for range 500 {
 					for range root.metrics {
 						// this range simulates iterating over the metrics map
 						// as we do when encoding msgpack upon flushing.
 						continue
 					}
 				}
-			}()
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < 500; i++ {
+			})
+			wg.Go(func() {
+				for range 500 {
 					// Spamming Finish to emulate concurrent Finish calls.
 					root.Finish()
 				}
@@ -228,25 +224,23 @@ func testAsyncSpanRace(t *testing.T) {
 				finishes.Done()
 				finishes.Wait()
 
-				for i := 0; i < 500; i++ {
+				for range 500 {
 					for range root.meta {
 						// this range simulates iterating over the meta map
 						// as we do when encoding msgpack upon flushing.
 						continue
 					}
 				}
-			}()
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			})
+			wg.Go(func() {
 				<-done
-				for i := 0; i < 50; i++ {
+				for range 50 {
 					// to trigger the bug, the child should be created after the root was finished,
 					// as its being flushed
 					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.ManualKeep, true))
 					child.Finish()
 				}
-			}()
+			})
 			wg.Wait()
 		})
 	}
@@ -282,20 +276,15 @@ func TestSpanTracePushOne(t *testing.T) {
 
 // Tests to confirm that when the payload queue is full, chunks are dropped
 // and the associated trace is counted as dropped.
-func TestTraceFinishChunk(t *testing.T) {
+func TestSubmitChunkQueueFull(t *testing.T) {
 	assert := assert.New(t)
 	tracer, err := newUnstartedTracer()
 	assert.Nil(err)
 	defer tracer.Stop()
 
-	root := newSpan("name", "service", "resource", 0, 0, 0)
-	trace := root.context.trace
-
-	for i := 0; i < payloadQueueSize+1; i++ {
-		trace.mu.Lock()
+	for range payloadQueueSize + 1 {
 		c := chunk{spans: make([]*Span, 1)}
-		trace.finishChunk(tracer, &c)
-		trace.mu.Unlock()
+		tracer.submitChunk(&c)
 	}
 	assert.Equal(uint32(1), tracer.totalTracesDropped)
 }
@@ -314,7 +303,7 @@ func TestPartialFlush(t *testing.T) {
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
 		var children []*Span
-		for i := 0; i < 3; i++ { // create 3 child spans
+		for i := range 3 { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			children = append(children, child)
 			child.Finish()
@@ -356,7 +345,7 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
-		for i := 0; i < 10; i++ { // create 10 child spans to ensure some aren't sampled
+		for i := range 10 { // create 10 child spans to ensure some aren't sampled
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			child.Finish()
 		}
@@ -1133,35 +1122,45 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.RemoteRate)
+		tr.mu.Unlock()
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.Unknown)
+		tr.mu.Unlock()
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
+		tr.mu.Unlock()
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.AgentRate)
+		tr.mu.Unlock()
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
+		tr.mu.Unlock()
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 }

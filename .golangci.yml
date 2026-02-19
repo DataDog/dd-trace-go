@@ -13,6 +13,7 @@ linters:
     - gocritic
     - forbidigo
     - govet
+    - modernize
     - revive
     # - errorlint # TODO: Enable this once we've fixed all the errorlint issues.
     # - loggercheck # TODO: Enable this once we've migrated to structured logging.
@@ -30,12 +31,16 @@ linters:
       - builtin$
       - examples$
     rules:
-      - path: "internal/(env|log)/"
+      - path: "internal/(env|log|locking)/"
         linters:
           - forbidigo
       - path: "_test\\.go$"
         linters:
           - forbidigo
+      - path-except: "^ddtrace/tracer/"
+        linters:
+          - forbidigo
+        text: "use github.com/DataDog/dd-trace-go/v2/internal/locking\\.(RW)?Mutex instead of sync\\.(RW)?Mutex"
   settings:
     forbidigo:
       forbid:
@@ -43,8 +48,15 @@ linters:
           msg: "use internal/env.Get instead of os.Getenv"
         - pattern: "^os\\.LookupEnv$"
           msg: "use internal/env.Lookup instead of os.LookupEnv"
+        - pattern: "sync\\.Mutex"
+          msg: "use github.com/DataDog/dd-trace-go/v2/internal/locking.Mutex instead of sync.Mutex"
+        - pattern: "sync\\.RWMutex"
+          msg: "use github.com/DataDog/dd-trace-go/v2/internal/locking.RWMutex instead of sync.RWMutex"
       exclude_godoc_examples: true
       analyze_types: true
+    modernize:
+      disable:
+        - newexpr # Requires Go 1.26; our go.mod minimum is 1.25
     govet:
       enable-all: true
       disable:
@@ -109,9 +121,14 @@ linters:
 formatters:
   enable:
     - gofmt
+    - goimports
   exclusions:
     generated: lax
     paths:
       - third_party$
       - builtin$
       - examples$
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/DataDog/dd-trace-go/v2

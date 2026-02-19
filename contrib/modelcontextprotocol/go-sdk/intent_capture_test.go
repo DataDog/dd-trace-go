@@ -9,12 +9,13 @@ import (
 	"context"
 	"testing"
 
-	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
 
 func TestIntentCapture(t *testing.T) {
@@ -79,26 +80,26 @@ func TestIntentCapture(t *testing.T) {
 	schemaMap, ok := tool.InputSchema.(map[string]any)
 	require.True(t, ok, "expected input schema to be a map[string]any, got %T", tool.InputSchema)
 
-	// Verify the input schema has the ddtrace property added
+	// Verify the input schema has the telemetry property added
 	props := schemaMap["properties"].(map[string]any)
 	assert.Contains(t, props, "operation")
 	assert.Contains(t, props, "x")
 	assert.Contains(t, props, "y")
-	assert.Contains(t, props, "ddtrace")
+	assert.Contains(t, props, "telemetry")
 
-	ddtraceSchema := props["ddtrace"].(map[string]any)
-	assert.Equal(t, "object", ddtraceSchema["type"])
-	ddtraceProps := ddtraceSchema["properties"].(map[string]any)
-	intentSchema := ddtraceProps["intent"].(map[string]any)
+	telemetrySchema := props["telemetry"].(map[string]any)
+	assert.Equal(t, "object", telemetrySchema["type"])
+	telemetryProps := telemetrySchema["properties"].(map[string]any)
+	intentSchema := telemetryProps["intent"].(map[string]any)
 	assert.Equal(t, "string", intentSchema["type"])
 	assert.Equal(t, instrmcp.IntentPrompt, intentSchema["description"])
 
-	// Ensure ddtrace is required, and others are not affected
+	// Ensure telemetry is required, and others are not affected
 	required := schemaMap["required"].([]any)
 	assert.Contains(t, required, "operation")
 	assert.Contains(t, required, "x")
 	assert.Contains(t, required, "y")
-	assert.Contains(t, required, "ddtrace")
+	assert.Contains(t, required, "telemetry")
 
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{
 		Name: "calculator",
@@ -106,7 +107,7 @@ func TestIntentCapture(t *testing.T) {
 			"operation": "add",
 			"x":         float64(5),
 			"y":         float64(3),
-			"ddtrace": map[string]any{
+			"telemetry": map[string]any{
 				"intent": "test intent description",
 			},
 		},
@@ -118,10 +119,10 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, "add", receivedArgs["operation"])
 	assert.Equal(t, float64(5), receivedArgs["x"])
 	assert.Equal(t, float64(3), receivedArgs["y"])
-	assert.NotContains(t, receivedArgs, "ddtrace")
+	assert.NotContains(t, receivedArgs, "telemetry")
 
-	// Received request also does not contain ddtrace
-	assert.NotContains(t, receivedRequest.Params.Arguments, "ddtrace")
+	// Received request also does not contain telemetry
+	assert.NotContains(t, receivedRequest.Params.Arguments, "telemetry")
 
 	spans := tt.WaitForLLMObsSpans(t, 2)
 	require.Len(t, spans, 2)
@@ -138,8 +139,8 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 	assert.Equal(t, "calculator", toolSpan.Name)
 	assert.Contains(t, toolSpan.Meta, "intent")
-	// ddtrace should not be recorded in the input
-	assert.NotContains(t, toolSpan.Meta["input"], "ddtrace")
+	// telemetry should not be recorded in the input
+	assert.NotContains(t, toolSpan.Meta["input"], "telemetry")
 
 	// The intent *is* captured on the span
 	assert.Equal(t, "test intent description", toolSpan.Meta["intent"])

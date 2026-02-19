@@ -55,7 +55,7 @@ Our CI pipeline includes several automated checks:
 
 - **Copyright Check**: Verifies all files have proper copyright headers
 - **Generate Check**: Ensures generated code is up-to-date
-- **Module Check**: Validates Go module consistency using `./scripts/fix_modules.sh`
+- **Module Check**: Validates Go module consistency using `make fix-modules`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
 - **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
 
@@ -77,7 +77,7 @@ Sometimes a pull request's checks will show failures that aren't related to its 
 1. Look through the GitHub Action logs for an obvious cause
 2. Retry the test a few times to see if it flakes
 3. For internal contributors, ask the #dd-trace-go channel for help
-4. If you are not an internal contributor, [open an issue](https://github.com/DataDog/dd-trace-go/issues/new/choose) or ping @Datadog/apm-go
+4. If you are not an internal contributor, [open an issue](https://github.com/DataDog/dd-trace-go/issues/new/choose) or ping @DataDog/apm-go
 
 ### Running CI Checks Locally
 
@@ -86,6 +86,9 @@ Before submitting a PR, you can run the same checks locally using make targets:
 ```shell
 # Show all available targets
 make help
+
+# Install tools
+make tools-install
 
 # Run all linters (same as CI)
 make lint
@@ -107,15 +110,15 @@ You can also run scripts directly for more control:
 
 ```shell
 # Run specific linting options
-./scripts/lint.sh --all
+make lint
 
 # Format specific file types
-./scripts/format.sh --go
-./scripts/format.sh --shell
+make format/go
+make format/shell
 
 # Run specific test configurations
-./scripts/test.sh --contrib
-./scripts/test.sh --appsec
+make test/contrib
+make test/appsec
 ```
 
 ## Getting a PR Reviewed
@@ -130,19 +133,13 @@ We provide several utility scripts in the `scripts/` directory to help with comm
 
 ### Code Quality Scripts
 
-#### `./scripts/lint.sh`
+#### `make lint`
 
 Runs all linters on the codebase to ensure code quality and consistency.
 
 ```shell
-# Run all linters (default behavior)
-./scripts/lint.sh
-
-# Install linting tools only
-./scripts/lint.sh --tools
-
-# Run all linters and install tools
-./scripts/lint.sh --all
+# Run all linters (default behavior, install tools)
+make lint
 ```
 
 The script runs:
@@ -151,50 +148,44 @@ The script runs:
 - `golangci-lint` for comprehensive Go linting
 - `checklocks` for lock analysis (with error tolerance)
 
-#### `./scripts/format.sh`
+#### `make format`
 
 Formats Go and shell files in the repository.
 
 ```shell
-# Format Go files only (default behavior)
-./scripts/format.sh
+# Format both Go and shell files and install tools (default behavior)
+make format
 
 # Format Go files and install tools
-./scripts/format.sh --go
+make format/go
 
 # Format shell files and install tools
-./scripts/format.sh --shell
-
-# Format both Go and shell files and install tools
-./scripts/format.sh --all
-
-# Install formatting tools only
-./scripts/format.sh --tools
+make format/shell
 ```
 
-#### `./scripts/check_locks.sh`
+#### `./scripts/checklocks.sh`
 
 Analyzes lock usage patterns to detect potential deadlocks and race conditions.
 
 ```shell
 # Run checklocks on the default target (./ddtrace/tracer)
-./scripts/check_locks.sh
+./scripts/checklocks.sh
 
 # Run checklocks on a specific directory
-./scripts/check_locks.sh ./path/to/target
+./scripts/checklocks.sh ./path/to/target
 
 # Run checklocks and ignore errors
-./scripts/check_locks.sh --ignore-errors
+./scripts/checklocks.sh --ignore-errors
 ```
 
 ### Module Management Scripts
 
-#### `./scripts/fix_modules.sh`
+#### `make fix-modules`
 
 Maintains Go module consistency across the repository by running `go mod tidy` on all modules and adding missing replace directives for local imports.
 
 ```shell
-./scripts/fix_modules.sh
+make fix-modules
 ```
 
 This script:
@@ -205,34 +196,25 @@ This script:
 
 ### Testing Scripts
 
-#### `./scripts/test.sh`
+#### `make test`
 
 Enhanced testing script with improved output formatting and additional options.
 
 ```shell
 # Run core tests only
-./scripts/test.sh
+make test/unit
 
 # Run integration tests
-./scripts/test.sh --integration
+make test/integration
 
 # Run contrib tests
-./scripts/test.sh --contrib
+make test/contrib
 
 # Run all tests
-./scripts/test.sh --all
+make test
 
 # Run with AppSec enabled
-./scripts/test.sh --appsec
-
-# Install test tools
-./scripts/test.sh --tools
-
-# Run specific test with race detection
-./scripts/test.sh --race
-
-# Run with custom sleep time for service startup
-./scripts/test.sh --sleep 30
+make test/appsec
 ```
 
 The script provides:
@@ -269,13 +251,13 @@ For more specific control, you can use scripts directly:
 
 ```shell
 # Run specific linting configurations
-./scripts/lint.sh --tools
+make lint --tools
 
 # Format only specific file types
-./scripts/format.sh --go
+make format/go
 
 # Run specific test types
-./scripts/test.sh --contrib
+make test/contrib
 ```
 
 ### Docker Alternative

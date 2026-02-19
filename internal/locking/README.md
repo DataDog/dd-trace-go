@@ -16,7 +16,7 @@ The locking package addresses the challenge of comprehensive lock analysis in Go
 The package uses build tags to switch between two implementations:
 
 - **Default build** (`!deadlock`): Type aliases to `sync.Mutex/RWMutex` for zero overhead
-- **Debug build** (`deadlock`): Wraps [`github.com/sasha-s/go-deadlock`](https://github.com/sasha-s/go-deadlock) for runtime detection
+- **Debug build** (`deadlock`): Wraps [`github.com/linkdata/deadlock`](https://github.com/linkdata/deadlock) for runtime detection
 
 ## Usage Examples
 
@@ -181,25 +181,6 @@ go test -v -timeout=300s -tags=debug,deadlock ./internal/...
 
 ## Implementation Checklist
 
-### Migration Strategy
-
-- [ ] **Phase 1**: Introduce locking package (current phase)
-  - [x] Implement build-tag based mutex types
-  - [x] Add lock assertion utilities
-  - [x] Create comprehensive documentation
-  - [ ] Add golangci-lint rules to prevent new `sync.Mutex` usage
-
-- [ ] **Phase 2**: Gradual Migration
-  - [ ] Replace `sync.Mutex` with `locking.Mutex` in core packages
-  - [ ] Replace `sync.RWMutex` with `locking.RWMutex` in core packages
-  - [ ] Update tests to use lock assertions where appropriate
-  - [ ] Add deadlock detection to CI pipeline
-
-- [ ] **Phase 3**: Enforcement
-  - [ ] Configure golangci-lint to forbid direct `sync.Mutex` imports
-  - [ ] Add linting rules to ensure consistent usage
-  - [ ] Document exceptions for specific use cases
-
 ### Integration with Static Analysis
 
 The package is designed to work seamlessly with static lock checkers like [`checklocks`](https://github.com/google/gvisor/blob/master/tools/checklocks/README.md). The type aliases ensure full compatibility with static analysis tools:
@@ -318,7 +299,7 @@ go test -race -tags=debug,deadlock ./internal/locking/assert
 
 ## Dependencies
 
-- [`github.com/sasha-s/go-deadlock`](https://github.com/sasha-s/go-deadlock): Provides runtime deadlock detection
+- [`github.com/linkdata/deadlock`](https://github.com/linkdata/deadlock): Provides runtime deadlock detection
 
 ## Troubleshooting
 
@@ -335,7 +316,7 @@ go test -race -tags=debug,deadlock ./internal/locking/assert
 go build -tags=deadlock -v ./internal/locking
 
 # Check for import conflicts
-go mod why github.com/sasha-s/go-deadlock
+go mod why github.com/linkdata/deadlock
 
 # Validate lock assertions
 go test -v -run TestLockAssertions ./internal/locking/assert

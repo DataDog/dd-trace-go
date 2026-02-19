@@ -26,7 +26,22 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageLabstackEchoV4)
 }
 
+// Wrap configures the provided [echo.Echo] and returns it. This is a
+// convenience function that calls [echo.Echo.Use] with the [Middleware] and
+// overwrites [echo.Echo.OnAddRouteHandler] to [OnAddRouteHandler]. It is recommended
+// to use this if you want to benefit from future tracer features that require
+// additional properties to be configured without having to update your code.
+func Wrap(e *echo.Echo, opts ...Option) *echo.Echo {
+	e.Use(Middleware(opts...))
+	e.OnAddRouteHandler = OnAddRouteHandler
+	return e
+}
+
 // Middleware returns echo middleware which will trace incoming requests.
+//
+// Deprecated: Use of the [Wrap] function is recommended instead of directly calling
+// [echo.Echo.Use] with this middleware function, as [Wrap] activates all
+// available features automatically.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
 	cfg := new(config)
 	defaults(cfg)

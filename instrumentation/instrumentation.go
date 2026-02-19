@@ -113,6 +113,12 @@ func (i *Instrumentation) TelemetryRegisterAppConfig(key string, value any, orig
 	telemetry.RegisterAppConfig(key, value, origin)
 }
 
+type AppEndpointAttributes = telemetry.AppEndpointAttributes
+
+func (i *Instrumentation) TelemetryRegisterAppEndpoint(opName string, resName string, attrs AppEndpointAttributes) {
+	telemetry.RegisterAppEndpoint(opName, resName, attrs)
+}
+
 func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
 	if internal.BoolEnv("DD_TRACE_"+i.info.EnvVarPrefix+"_ANALYTICS_ENABLED", false) {
 		return 1.0
@@ -129,6 +135,10 @@ func (i *Instrumentation) GlobalAnalyticsRate() float64 {
 
 func (i *Instrumentation) AppSecEnabled() bool {
 	return appsec.Enabled()
+}
+
+func (i *Instrumentation) APISecurityEndpointCollectionEnabled() bool {
+	return internal.BoolEnv("DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED", true)
 }
 
 func (i *Instrumentation) AppSecRASPEnabled() bool {
@@ -158,6 +168,12 @@ func (i *Instrumentation) TracerInitialized() bool {
 // operation rather than after the fact, if possible.
 func (i *Instrumentation) WithExecutionTraced(ctx context.Context) context.Context {
 	return internal.WithExecutionTraced(ctx)
+}
+
+// PopExecutionTraced pops the top executionTracedKey from the GLS stack.
+// Must be paired with WithExecutionTraced when the traced scope ends.
+func (i *Instrumentation) PopExecutionTraced() {
+	internal.PopExecutionTraced()
 }
 
 type StatsdClient = internal.StatsdClient

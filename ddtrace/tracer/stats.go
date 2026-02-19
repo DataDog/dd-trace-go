@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-agent/pkg/trace/stats"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -40,7 +41,7 @@ type concentrator struct {
 	In chan *tracerStatSpan
 
 	// stopped reports whether the concentrator is stopped (when non-zero)
-	stopped uint32
+	stopped uint32 // +checkatomic
 
 	spanConcentrator *stats.SpanConcentrator
 
@@ -114,18 +115,14 @@ func (c *concentrator) Start() {
 		return
 	}
 	c.stop = make(chan struct{})
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.wg.Go(func() {
 		tick := time.NewTicker(time.Duration(c.bucketSize) * time.Nanosecond)
 		defer tick.Stop()
 		c.runFlusher(tick.C)
-	}()
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	})
+	c.wg.Go(func() {
 		c.runIngester()
-	}()
+	})
 }
 
 // runFlusher runs the flushing loop which sends stats to the underlying transport.

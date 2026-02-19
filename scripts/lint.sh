@@ -47,9 +47,9 @@ lint_go_files() {
   local gopath_bin
   gopath_bin="$(go env GOPATH)/bin"
   export PATH="$gopath_bin:$PATH"
-  run "goimports -e -l -local github.com/DataDog/dd-trace-go/v2 ."
   run "golangci-lint run ./..."
-  run "./scripts/check_locks.sh --ignore-errors ./ddtrace/tracer"
+  run "(cd internal/orchestrion/_integration && golangci-lint run --disable=gocritic ./...)"
+  run "./scripts/checklocks.sh --ignore-known-issues ./ddtrace/tracer"
 }
 
 lint_shell_files() {

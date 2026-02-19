@@ -10,8 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 )
 
 func BenchmarkAgentTraceWriterAdd(b *testing.B) {
@@ -84,12 +85,10 @@ func BenchmarkAgentTraceWriterConcurrent(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				var wg sync.WaitGroup
 
-				for j := 0; j < concurrency; j++ {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+				for range concurrency {
+					wg.Go(func() {
 						writer.add(trace)
-					}()
+					})
 				}
 
 				wg.Wait()
@@ -105,7 +104,7 @@ func BenchmarkAgentTraceWriterStats(b *testing.B) {
 
 	writer := newAgentTraceWriter(cfg, nil, &statsd)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		trace := []*Span{newBasicSpan("stats-test")}
 		writer.add(trace)
 	}

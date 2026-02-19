@@ -13,17 +13,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/tinylib/msgp/msgp"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-	"github.com/stretchr/testify/assert"
-	"github.com/tinylib/msgp/msgp"
 )
 
 func newCiVisibilityEventsList(n int) []*ciVisibilityEvent {
 	list := make([]*ciVisibilityEvent, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		s := newBasicSpan("span.list." + strconv.Itoa(i%5+1))
 		s.start = fixedTime
 		list[i] = getCiVisibilityEvent(s)
@@ -43,7 +44,7 @@ func TestCiVisibilityPayloadIntegrity(t *testing.T) {
 			p := newCiVisibilityPayload()
 			var allEvents ciVisibilityEvents
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				list := newCiVisibilityEventsList(i%5 + 1)
 				allEvents = append(allEvents, list...)
 				for _, event := range list {
@@ -72,7 +73,7 @@ func TestCiVisibilityPayloadDecode(t *testing.T) {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
 			p := newCiVisibilityPayload()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				list := newCiVisibilityEventsList(i%5 + 1)
 				for _, event := range list {
 					p.push(event)
@@ -145,7 +146,7 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 		s.meta["key"] = strings.Repeat("X", 10*1024)
 		e := getCiVisibilityEvent(s)
 		events := make(ciVisibilityEvents, count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			events[i] = e
 		}
 

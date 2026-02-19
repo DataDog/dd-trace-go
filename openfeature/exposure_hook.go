@@ -7,10 +7,12 @@ package openfeature
 
 import (
 	"context"
+	"maps"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	of "github.com/open-feature/go-sdk/openfeature"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -66,17 +68,11 @@ func (h *exposureHook) After(
 	// Get targeting key (subject ID) from evaluation context
 	evalContext := hookContext.EvaluationContext()
 	targetingKey := evalContext.TargetingKey()
-	if targetingKey == "" {
-		log.Debug("openfeature: skipping exposure event (no targeting key) for flag %q", hookContext.FlagKey())
-		return nil
-	}
 
 	// Build flat context from evaluation context
 	flatContext := make(map[string]any)
 	flatContext[of.TargetingKey] = targetingKey
-	for k, v := range evalContext.Attributes() {
-		flatContext[k] = v
-	}
+	maps.Copy(flatContext, evalContext.Attributes())
 
 	// Flatten attributes for exposure event
 	flattenedAttrs := flattenContext(flatContext)

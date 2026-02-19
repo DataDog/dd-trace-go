@@ -16,9 +16,7 @@ all: tools-install generate lint test ## Run complete build pipeline (tools, gen
 tools-install: tools-install/checkmake ## Install development tools
 	@./scripts/install_tools.sh --tools-dir $(TOOLS) --bin-dir $(BIN)
 
-# checkmake is installed as a pre-built binary rather than via go install
-# because it requires Go 1.25+, which would force an upgrade of our _tools module.
-# We keep the _tools module on Go 1.24.0 to match our main project requirements.
+# checkmake is installed as a pre-built binary for simplicity and speed.
 # For platforms without pre-built binaries, we fall back to building from source.
 .PHONY: tools-install/checkmake
 tools-install/checkmake: ## Install checkmake binary for Makefile linting
@@ -81,6 +79,10 @@ lint/action: tools-install ## Lint GitHub Actions workflows
 format: tools-install ## Format code
 	$(BIN_PATH) ./scripts/format.sh --all
 
+.PHONY: format/go
+format/go: tools-install ## Format Go code
+	$(BIN_PATH) ./scripts/format.sh --go
+
 .PHONY: format/shell
 format/shell: tools-install ## install shfmt
 	$(BIN_PATH) ./scripts/format.sh --shell
@@ -93,15 +95,15 @@ test: tools-install test/unit ## Run all tests (core, integration, contrib)
 test/unit: tools-install ## Run unit tests
 	go test -v -failfast ./...
 
-.PHONY: test-appsec
+.PHONY: test/appsec
 test/appsec: tools-install ## Run tests with AppSec enabled
 	$(BIN_PATH) ./scripts/test.sh --appsec
 
-.PHONY: test-contrib
+.PHONY: test/contrib
 test/contrib: tools-install ## Run contrib package tests
 	$(BIN_PATH) ./scripts/test.sh --contrib
 
-.PHONY: test-integration
+.PHONY: test/integration
 test/integration: tools-install ## Run integration tests
 	$(BIN_PATH) ./scripts/test.sh --integration
 
@@ -116,6 +118,14 @@ test-debug-deadlock: tools-install ## Run tests with debug and deadlock detectio
 .PHONY: fix-modules
 fix-modules: tools-install ## Fix module dependencies and consistency
 	$(BIN_PATH) ./scripts/fix_modules.sh
+
+.PHONY: fix/go
+fix/go: ## Apply go fix modernizations to Go code
+	go fix ./...
+
+.PHONY: fix/go/diff
+fix/go/diff: ## Preview go fix modernizations (dry-run)
+	go fix -diff ./...
 
 .PHONY: tmp/make-help.txt
 tmp/make-help.txt:

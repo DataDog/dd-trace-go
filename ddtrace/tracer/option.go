@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -22,7 +23,6 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/mod/semver"
@@ -38,6 +38,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -104,6 +105,7 @@ var contribIntegrations = map[string]struct {
 	"gopkg.in/olivere/elastic.v5":                   {"Elasticsearch v5", false},
 	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
 	"github.com/redis/rueidis":                      {"Rueidis", false},
+	"github.com/rs/zerolog":                         {"Zerolog", false},
 	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
 	"github.com/IBM/sarama":                         {"IBM sarama", false},
 	"github.com/Shopify/sarama":                     {"Shopify sarama", false},
@@ -173,7 +175,7 @@ type config struct {
 
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
-	globalTags dynamicConfig[map[string]interface{}]
+	globalTags dynamicConfig[map[string]any]
 
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
@@ -287,7 +289,7 @@ const maxPropagatedTagsLength = 512
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
-	c.internalConfig = internalconfig.Get()
+	c.internalConfig = internalconfig.CreateNew()
 
 	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
 	// the baked-in values. We do this early so that opts can be used to override the baked-in values,
@@ -319,7 +321,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v := env.Get("DD_TRACE_HEADER_TAGS"); v != "" {
 		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
 		// Required to ensure that the startup header tags are set on reset.
-		c.headerAsTags.startup = c.headerAsTags.current
+		c.headerAsTags.setStartup(c.headerAsTags.get())
 	}
 	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
 		tags := internal.ParseTagString(v)
@@ -328,11 +330,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 			WithGlobalTag(key, val)(c)
 		}
 		// TODO: should we track the origin of these tags individually?
-		c.globalTags.cfgOrigin = telemetry.OriginEnvVar
+		c.globalTags.setOrigin(telemetry.OriginEnvVar)
 	}
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
-		c.enabled.cfgOrigin = telemetry.OriginEnvVar
+		c.enabled.setOrigin(telemetry.OriginEnvVar)
 	}
 	if compatMode := env.Get("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
 		if semver.IsValid(compatMode) {
@@ -352,7 +354,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}, /* apply */
 		equal[bool],
 	)
-	c.dynamicInstrumentationEnabled.cfgOrigin = origin
+	c.dynamicInstrumentationEnabled.setOrigin(origin)
 
 	namingschema.LoadFromEnv()
 	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
@@ -404,14 +406,14 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.internalConfig.Env() == "" {
 		if v, ok := globalTags["env"]; ok {
 			if e, ok := v.(string); ok {
-				c.internalConfig.SetEnv(e, c.globalTags.cfgOrigin)
+				c.internalConfig.SetEnv(e, c.globalTags.Origin())
 			}
 		}
 	}
 	if c.internalConfig.Version() == "" {
 		if v, ok := globalTags["version"]; ok {
 			if ver, ok := v.(string); ok {
-				c.internalConfig.SetVersion(ver, c.globalTags.cfgOrigin)
+				c.internalConfig.SetVersion(ver, c.globalTags.Origin())
 			}
 		}
 	}
@@ -462,7 +464,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.current || c.ciVisibilityAgentless
+	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 	if c.agent.v1ProtocolAvailable {
 		c.traceProtocol = traceProtocolV1
@@ -487,7 +489,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
 	// This allows persisting the initial value of globalTags for future resets and updates.
-	globalTagsOrigin := c.globalTags.cfgOrigin
+	globalTagsOrigin := c.globalTags.Origin()
 	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
@@ -643,6 +645,7 @@ type agentFeatures struct {
 	evpProxyV2 bool
 
 	// v1ProtocolAvailable reports whether the trace-agent and tracer are configured to use the v1 protocol.
+	// Starting from tracer version v2.7.0, this value is true by default.
 	v1ProtocolAvailable bool
 }
 
@@ -704,7 +707,9 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 			features.evpProxyV2 = true
 		case "/v1.0/traces":
 			// Set the trace protocol to use.
-			if internal.BoolEnv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", false) {
+			// If DD_TRACE_AGENT_PROTOCOL_VERSION is not set (not customized) or is already
+			// set to v1.0, then enable v1 trace protocol.
+			if s, ok := env.Lookup("DD_TRACE_AGENT_PROTOCOL_VERSION"); !ok || s == "1.0" {
 				features.v1ProtocolAvailable = true
 			}
 		}
@@ -748,12 +753,19 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 	c.integrations = integrations
 }
 
+// canComputeStats determines whether Client-Side Stats can be computed, which requires:
+// - 'client_drop_p0' is enabled
+// - Trace Agent exposes 'stats' endpoint
+// - Stats Computation is enabled on the tracer (or has 'discovery' FF)
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
+	return c.agent.Stats && c.agent.DropP0s && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
 }
 
+// canDropP0s determines whether P0 spans can be dropped.
+// Currently equivalent to canComputeStats() as both capabilities are part
+// of the Client-Side Stats feature and cannot be enabled independently.
 func (c *config) canDropP0s() bool {
-	return c.canComputeStats() && c.agent.DropP0s
+	return c.canComputeStats()
 }
 
 func statsTags(c *config) []string {
@@ -977,26 +989,27 @@ func WithPeerServiceMapping(from, to string) StartOption {
 
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans
 // created by tracer. This option may be used multiple times.
-func WithGlobalTag(k string, v interface{}) StartOption {
+func WithGlobalTag(k string, v any) StartOption {
 	return func(c *config) {
 		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]interface{}{}, telemetry.OriginDefault)
+			c.initGlobalTags(map[string]any{}, telemetry.OriginDefault)
 		}
-		c.globalTags.Lock()
-		defer c.globalTags.Unlock()
-		c.globalTags.current[k] = v
+		c.globalTags.set(func(current map[string]any) map[string]any {
+			current[k] = v
+			return current
+		})
 	}
 }
 
 // initGlobalTags initializes the globalTags config with the provided init value
-func (c *config) initGlobalTags(init map[string]interface{}, origin telemetry.Origin) {
-	apply := func(map[string]interface{}) bool {
+func (c *config) initGlobalTags(init map[string]any, origin telemetry.Origin) {
+	apply := func(tags map[string]any) bool {
 		// always set the runtime ID on updates
-		c.globalTags.current[ext.RuntimeID] = globalconfig.RuntimeID()
+		tags[ext.RuntimeID] = globalconfig.RuntimeID()
 		return true
 	}
 	c.globalTags = newDynamicConfig("trace_tags", init, apply, equalMap[string])
-	c.globalTags.cfgOrigin = origin
+	c.globalTags.setOrigin(origin)
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default
@@ -1210,15 +1223,15 @@ func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 			return true
 		}
 		c.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, apply, equal[bool])
-		c.dynamicInstrumentationEnabled.cfgOrigin = telemetry.OriginCode
+		c.dynamicInstrumentationEnabled.setOrigin(telemetry.OriginCode)
 	}
 }
 
 // Tag sets the given key/value pair as a tag on the started Span.
-func Tag(k string, v interface{}) StartSpanOption {
+func Tag(k string, v any) StartSpanOption {
 	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = map[string]interface{}{}
+			cfg.Tags = map[string]any{}
 		}
 		cfg.Tags[k] = v
 	}
@@ -1325,9 +1338,7 @@ func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 			// if cfg.Tags is nil, this is a no-op
 			c.Tags = cfg.Tags
 		} else if cfg.Tags != nil {
-			for k, v := range cfg.Tags {
-				c.Tags[k] = v
-			}
+			maps.Copy(c.Tags, cfg.Tags)
 		}
 	}
 }
@@ -1394,10 +1405,10 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 
 // Mock Transport with a real Encoder
 type dummyTransport struct {
-	sync.RWMutex
-	traces     spanLists
-	stats      []*pb.ClientStatsPayload
-	obfVersion int
+	mu         locking.RWMutex
+	traces     spanLists                // +checklocks:mu
+	stats      []*pb.ClientStatsPayload // +checklocks:mu
+	obfVersion int                      // +checklocks:mu
 }
 
 func newDummyTransport() *dummyTransport {
@@ -1405,28 +1416,28 @@ func newDummyTransport() *dummyTransport {
 }
 
 func (t *dummyTransport) Len() int {
-	t.RLock()
-	defer t.RUnlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return len(t.traces)
 }
 
 func (t *dummyTransport) sendStats(p *pb.ClientStatsPayload, obfVersion int) error {
-	t.Lock()
+	t.mu.Lock()
 	t.stats = append(t.stats, p)
 	t.obfVersion = obfVersion
-	t.Unlock()
+	t.mu.Unlock()
 	return nil
 }
 
 func (t *dummyTransport) Stats() []*pb.ClientStatsPayload {
-	t.RLock()
-	defer t.RUnlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.stats
 }
 
 func (t *dummyTransport) ObfuscationVersion() int {
-	t.RLock()
-	defer t.RUnlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.obfVersion
 }
 
@@ -1435,9 +1446,9 @@ func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	t.Lock()
+	t.mu.Lock()
 	t.traces = append(t.traces, traces...)
-	t.Unlock()
+	t.mu.Unlock()
 	ok := io.NopCloser(strings.NewReader("OK"))
 	return ok, nil
 }
@@ -1453,14 +1464,14 @@ func decode(p payloadReader) (spanLists, error) {
 }
 
 func (t *dummyTransport) Reset() {
-	t.Lock()
+	t.mu.Lock()
 	t.traces = t.traces[:0]
-	t.Unlock()
+	t.mu.Unlock()
 }
 
 func (t *dummyTransport) Traces() spanLists {
-	t.Lock()
-	defer t.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	traces := t.traces
 	t.traces = spanLists{}

@@ -14,7 +14,7 @@ on:
   push:
     branches:
       - release-v*
-      - mq-working-branch-**
+      - main
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -24,11 +24,9 @@ on:
   schedule: # nightly
     - cron: "0 0 * * *"
   workflow_dispatch: { } # manually
-  pull_request:
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
-  GOEXPERIMENT: synctest # TODO: remove once go1.25 is the minimum supported version
 
 permissions:
   contents: read
@@ -42,7 +40,7 @@ jobs:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
       - name: Checkout
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
@@ -92,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
@@ -111,6 +109,18 @@ jobs:
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: ${{ env.TEST_RESULTS }}
+          tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
+      - name: Upload Coverage
+        if: always()
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
 
   smoke-test-tracer:
     name: Test dd-trace-go
@@ -118,17 +128,37 @@ jobs:
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           repository: DataDog/dd-trace-go
-      - run: |
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: "1.25"
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+      - name: Run tests
+        run: |
+          export PATH="${{ github.workspace }}/bin:${PATH}"
           # shellcheck disable=SC2086
-          go test $PACKAGES
+          gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-smoke-tracer.xml" -- -v $PACKAGES
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
         if: always()
         uses: ./.github/actions/supported_configurations_validation
+      - name: Upload the results to Datadog CI App
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/dd-ci-upload
+        with:
+          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          path: ${{ env.TEST_RESULTS }}
+          tags: go:1.25,arch:${{ runner.arch }},os:${{ runner.os }}
+      - name: Upload Coverage
+        if: always()
+        shell: bash
+        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
 
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.
@@ -142,13 +172,13 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
       - name: Run generate scripts and check diff
@@ -174,7 +204,7 @@ jobs:
       matrix:
         # TODO: cross-compilation from/to different hardware architectures once
         #       github provides native ARM runners.
-        go: [ "1.25", "1.24" ]
+        go: [ "1.26", "1.25" ]
         build-env: [ alpine, trixie, bookworm ]
         build-with-cgo: [ 0, 1 ]
         deployment-env: [ alpine, debian12, debian13, al2, al2023, busybox, scratchy ]
@@ -233,7 +263,7 @@ jobs:
             deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref || github.ref }}
           # Manually specify the repository, which is necessary in the workflow_call situation, as the default is
@@ -241,9 +271,9 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: ./internal/setup-smoke-test/Dockerfile

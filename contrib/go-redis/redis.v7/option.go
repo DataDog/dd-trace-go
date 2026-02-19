@@ -9,12 +9,14 @@ import (
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 type clientConfig struct {
 	serviceName   string
 	spanName      string
 	analyticsRate float64
+	skipRaw       bool
 	errCheck      func(error) bool
 }
 
@@ -34,7 +36,17 @@ func defaults(cfg *clientConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.skipRaw = !options.GetBoolEnv("DD_TRACE_REDIS_RAW_COMMAND", true)
 	cfg.errCheck = func(error) bool { return true }
+}
+
+// WithSkipRawCommand reports whether to skip setting the "redis.raw_command" tag
+// on instrumenation spans. This may be useful if the Datadog Agent is not
+// set up to obfuscate this value and it could contain sensitive information.
+func WithSkipRawCommand(skip bool) ClientOptionFn {
+	return func(cfg *clientConfig) {
+		cfg.skipRaw = skip
+	}
 }
 
 // WithService sets the given service name for the client.

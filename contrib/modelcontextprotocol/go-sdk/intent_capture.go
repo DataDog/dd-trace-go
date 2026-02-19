@@ -9,13 +9,16 @@ import (
 	"context"
 	"encoding/json"
 
-	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
-	"github.com/DataDog/dd-trace-go/v2/llmobs"
+	"maps"
+
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
+	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
-func ddTraceSchema() *jsonschema.Schema {
+func telemetrySchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Type: "object",
 		Properties: map[string]*jsonschema.Schema{
@@ -61,15 +64,26 @@ func injectToolsListResponse(res *mcp.ListToolsResult) {
 			continue
 		}
 
-		if inputSchema.Type == "" {
-			inputSchema.Type = "object"
-		}
-		if inputSchema.Properties == nil {
-			inputSchema.Properties = map[string]*jsonschema.Schema{}
+		// Create copies of the tool and schema to avoid mutating the registered
+		// schema used for server-side validation in go-sdk v1.3+.
+		schemaCopy := *inputSchema
+		if schemaCopy.Type == "" {
+			schemaCopy.Type = "object"
 		}
 
-		inputSchema.Properties[instrmcp.DDTraceKey] = ddTraceSchema()
-		inputSchema.Required = append(inputSchema.Required, instrmcp.DDTraceKey)
+		newProps := make(map[string]*jsonschema.Schema, len(inputSchema.Properties)+1)
+		maps.Copy(newProps, inputSchema.Properties)
+		newProps[instrmcp.TelemetryKey] = telemetrySchema()
+		schemaCopy.Properties = newProps
+
+		newRequired := make([]string, len(inputSchema.Required)+1)
+		copy(newRequired, inputSchema.Required)
+		newRequired[len(inputSchema.Required)] = instrmcp.TelemetryKey
+		schemaCopy.Required = newRequired
+
+		toolCopy := *res.Tools[i]
+		toolCopy.InputSchema = &schemaCopy
+		res.Tools[i] = &toolCopy
 	}
 }
 
@@ -83,14 +97,14 @@ func processToolCallIntent(next mcp.MethodHandler, ctx context.Context, method s
 			return next(ctx, method, req)
 		}
 
-		if ddtraceVal, has := argsMap[instrmcp.DDTraceKey]; has {
-			if ddtraceMap, ok := ddtraceVal.(map[string]any); ok {
-				annotateSpanWithIntent(ctx, ddtraceMap)
+		if telemetryVal, has := argsMap[instrmcp.TelemetryKey]; has {
+			if telemetryMap, ok := telemetryVal.(map[string]any); ok {
+				annotateSpanWithIntent(ctx, telemetryMap)
 			} else {
-				instr.Logger().Warn("go-sdk intent capture: ddtrace value is not a map")
+				instr.Logger().Warn("go-sdk intent capture: telemetry value is not a map")
 			}
 
-			delete(argsMap, instrmcp.DDTraceKey)
+			delete(argsMap, instrmcp.TelemetryKey)
 
 			modifiedArgs, err := json.Marshal(argsMap)
 			if err != nil {
@@ -103,12 +117,12 @@ func processToolCallIntent(next mcp.MethodHandler, ctx context.Context, method s
 	return next(ctx, method, req)
 }
 
-func annotateSpanWithIntent(ctx context.Context, ddTraceVal map[string]any) {
-	if ddTraceVal == nil {
+func annotateSpanWithIntent(ctx context.Context, telemetryVal map[string]any) {
+	if telemetryVal == nil {
 		return
 	}
 
-	intentVal, exists := ddTraceVal[instrmcp.IntentKey]
+	intentVal, exists := telemetryVal[instrmcp.IntentKey]
 	if !exists {
 		return
 	}

@@ -39,7 +39,7 @@ func TestImplementsTraceWriter(t *testing.T) {
 // makeSpan returns a span, adding n entries to meta and metrics each.
 func makeSpan(n int) *Span {
 	s := newSpan("encodeName", "encodeService", "encodeResource", randUint64(), randUint64(), randUint64())
-	for i := 0; i < n; i++ {
+	for i := range n {
 		istr := fmt.Sprintf("%0.10d", i)
 		s.meta[istr] = istr
 		s.metrics[istr] = float64(i)
@@ -116,11 +116,11 @@ func TestLogWriter(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(0)
-		for i := 0; i < 20; i++ {
+		for range 20 {
 			h.add([]*Span{s, s})
 		}
 		h.flush()
-		v := struct{ Traces [][]map[string]interface{} }{}
+		v := struct{ Traces [][]map[string]any }{}
 		d := json.NewDecoder(&buf)
 		err = d.Decode(&v)
 		assert.NoError(err, buf.String())
@@ -275,7 +275,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		s := makeSpan(10000)
 		h.add([]*Span{s})
 		h.flush()
-		v := struct{ Traces [][]map[string]interface{} }{}
+		v := struct{ Traces [][]map[string]any }{}
 		d := json.NewDecoder(&buf)
 		err = d.Decode(&v)
 		assert.Equal(io.EOF, err)
@@ -295,12 +295,12 @@ func TestLogWriterOverflow(t *testing.T) {
 		h.w = &buf
 		s := makeSpan(10)
 		var trace []*Span
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			trace = append(trace, s)
 		}
 		h.add(trace)
 		h.flush()
-		v := struct{ Traces [][]map[string]interface{} }{}
+		v := struct{ Traces [][]map[string]any }{}
 		d := json.NewDecoder(&buf)
 		err = d.Decode(&v)
 		assert.NoError(err)
@@ -329,7 +329,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h.add([]*Span{s})
 		h.add([]*Span{s})
 		h.flush()
-		v := struct{ Traces [][]map[string]interface{} }{}
+		v := struct{ Traces [][]map[string]any }{}
 		d := json.NewDecoder(&buf)
 		err = d.Decode(&v)
 		assert.NoError(err)
@@ -461,7 +461,7 @@ func TestTraceProtocol(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("v1.0, no endpoint", func(t *testing.T) {
-		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "true")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -469,7 +469,7 @@ func TestTraceProtocol(t *testing.T) {
 	})
 
 	t.Run("v1.0, with endpoint", func(t *testing.T) {
-		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "true")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 
 		// Create a mock agent endpoint to mimic having a v1 trace endpoint
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -488,26 +488,60 @@ func TestTraceProtocol(t *testing.T) {
 	})
 
 	t.Run("v0.4", func(t *testing.T) {
-		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "false")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
-	t.Run("default", func(t *testing.T) {
+	t.Run("default, no endpoint", func(t *testing.T) {
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
-	t.Run("invalid", func(t *testing.T) {
-		t.Setenv("DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED", "invalid")
+	t.Run("default, with endpoint", func(t *testing.T) {
+		// Create a mock agent endpoint to mimic having a v1 trace endpoint
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
+		}))
+		defer srv.Close()
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		)
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV1, h.payload.protocol())
+	})
+
+	t.Run("invalid, no endpoint", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "random")
 		cfg, err := newTestConfig()
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
+	})
+
+	t.Run("invalid, with endpoint", func(t *testing.T) {
+		// Create a mock agent endpoint to mimic having a v1 trace endpoint
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
+		}))
+		defer srv.Close()
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		)
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 }
 func BenchmarkJsonEncodeSpan(b *testing.B) {
@@ -558,30 +592,26 @@ func TestAgentWriterRaceCondition(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Spawn goroutines that continuously add traces
-	for i := 0; i < numGoroutines/2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numGoroutines / 2 {
+		wg.Go(func() {
 			<-start // Wait for coordination signal
 
-			for j := 0; j < numOperations; j++ {
+			for range numOperations {
 				spans := []*Span{makeSpan(1)}
 				writer.add(spans)
 			}
-		}()
+		})
 	}
 
 	// Spawn goroutines that continuously flush
-	for i := 0; i < numGoroutines/2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numGoroutines / 2 {
+		wg.Go(func() {
 			<-start // Wait for coordination signal
 
-			for j := 0; j < numOperations; j++ {
+			for range numOperations {
 				writer.flush()
 			}
-		}()
+		})
 	}
 
 	// Start all goroutines simultaneously to maximize race condition probability
@@ -628,33 +658,29 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 	var tracesAdded int32
 
 	// Spawn goroutines that add traces
-	for i := 0; i < numAddGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numAddGoroutines {
+		wg.Go(func() {
 			<-start
 
-			for j := 0; j < numTracesPerGoroutine; j++ {
+			for range numTracesPerGoroutine {
 				spans := []*Span{makeSpan(1)}
 				writer.add(spans)
 				atomic.AddInt32(&tracesAdded, 1)
 			}
-		}()
+		})
 	}
 
 	// Spawn goroutines that flush occasionally
-	for i := 0; i < numFlushGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numFlushGoroutines {
+		wg.Go(func() {
 			<-start
 
 			// Flush periodically while adds are happening
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				time.Sleep(time.Microsecond * 100)
 				writer.flush()
 			}
-		}()
+		})
 	}
 
 	// Start all goroutines

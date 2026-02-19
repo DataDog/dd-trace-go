@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCaseStructLiteralWithParam struct {

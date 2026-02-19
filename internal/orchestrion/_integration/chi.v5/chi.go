@@ -12,11 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -47,6 +48,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get(fmt.Sprintf("http://%s/", tc.Server.Addr))
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 

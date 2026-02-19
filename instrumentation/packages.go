@@ -7,6 +7,7 @@ package instrumentation
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -53,6 +54,7 @@ const (
 	PackageTidwallBuntDB             Package = "tidwall/buntdb"
 	PackageSyndtrGoLevelDB           Package = "syndtr/goleveldb"
 	PackageSirupsenLogrus            Package = "sirupsen/logrus"
+	PackageRsZerolog                 Package = "rs/zerolog"
 	PackageShopifySarama             Package = "Shopify/sarama"
 	PackageSegmentioKafkaGo          Package = "segmentio/kafka-go"
 	PackageRedisGoRedisV9            Package = "redis/go-redis.v9"
@@ -606,6 +608,10 @@ var packages = map[Package]PackageInfo{
 		TracedPackage: "github.com/sirupsen/logrus",
 		EnvVarPrefix:  "LOGRUS",
 	},
+	PackageRsZerolog: {
+		TracedPackage: "github.com/rs/zerolog",
+		EnvVarPrefix:  "ZEROLOG",
+	},
 	PackageShopifySarama: {
 		TracedPackage: "github.com/Shopify/sarama",
 		EnvVarPrefix:  "SARAMA",
@@ -958,8 +964,6 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 // GetPackages returns a map of Package to the corresponding instrumented module.
 func GetPackages() map[Package]PackageInfo {
 	cp := make(map[Package]PackageInfo)
-	for pkg, info := range packages {
-		cp[pkg] = info
-	}
+	maps.Copy(cp, packages)
 	return cp
 }

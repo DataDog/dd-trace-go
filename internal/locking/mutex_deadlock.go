@@ -4,11 +4,10 @@
 // Copyright 2016 Datadog, Inc.
 
 //go:build deadlock
-// +build deadlock
 
 package locking
 
-import deadlock "github.com/sasha-s/go-deadlock"
+import deadlock "github.com/linkdata/deadlock"
 
 // A Mutex is a mutual exclusion lock.
 type Mutex struct {

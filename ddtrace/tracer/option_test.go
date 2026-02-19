@@ -25,6 +25,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -33,8 +36,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func withTransport(t transport) StartOption {
@@ -295,7 +296,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 55, len(cfg.integrations))
+		assert.Equal(t, 56, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -1936,5 +1937,85 @@ func TestNoHTTPClientOverride(t *testing.T) {
 		)
 		assert.Nil(err)
 		assert.Equal(30*time.Second, c.httpClient.Timeout)
+	})
+}
+
+func TestCanComputeStats(t *testing.T) {
+	t.Run("no-stats-endpoint", func(t *testing.T) {
+		// When the agent does not support the /v0.6/stats endpoint,
+		// client-side stats should not be computed
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":[],"client_drop_p0s":true}`))
+		}))
+		defer srv.Close()
+		c, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithStatsComputation(true))
+		assert.NoError(t, err)
+		assert.False(t, c.canComputeStats())
+		assert.False(t, c.canDropP0s())
+	})
+
+	t.Run("no-client-drop-p0s", func(t *testing.T) {
+		// When the agent does not support client_drop_p0s,
+		// client-side stats should not be computed
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":false}`))
+		}))
+		defer srv.Close()
+		c, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithStatsComputation(true))
+		assert.NoError(t, err)
+		assert.False(t, c.canComputeStats())
+		assert.False(t, c.canDropP0s())
+	})
+
+	t.Run("stats-disabled", func(t *testing.T) {
+		// When stats computation is explicitly disabled,
+		// client-side stats should not be computed even if agent supports it
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true}`))
+		}))
+		defer srv.Close()
+		c, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithStatsComputation(false))
+		assert.NoError(t, err)
+		assert.False(t, c.canComputeStats())
+		assert.False(t, c.canDropP0s())
+	})
+
+	t.Run("both-conditions-met", func(t *testing.T) {
+		// When both conditions are met (stats endpoint + client_drop_p0s),
+		// client-side stats should be computed
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true}`))
+		}))
+		defer srv.Close()
+		c, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithStatsComputation(true))
+		assert.NoError(t, err)
+		assert.True(t, c.canComputeStats())
+		assert.True(t, c.canDropP0s())
+	})
+
+	t.Run("discovery-feature-flag", func(t *testing.T) {
+		// When discovery feature flag is enabled and agent supports both features,
+		// client-side stats should be computed
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true}`))
+		}))
+		defer srv.Close()
+		c, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithFeatureFlags("discovery"))
+		assert.NoError(t, err)
+		assert.True(t, c.canComputeStats())
+		assert.True(t, c.canDropP0s())
+	})
+
+	t.Run("discovery-flag-missing-client-drop-p0s", func(t *testing.T) {
+		// When discovery flag is enabled but client_drop_p0s is not supported,
+		// client-side stats should not be computed
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":false}`))
+		}))
+		defer srv.Close()
+		c, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithFeatureFlags("discovery"))
+		assert.NoError(t, err)
+		assert.False(t, c.canComputeStats())
+		assert.False(t, c.canDropP0s())
 	})
 }

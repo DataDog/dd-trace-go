@@ -10,9 +10,10 @@ import (
 	"io"
 	"math"
 	"strconv"
-	"sync"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
@@ -55,7 +56,7 @@ func (s *customSampler) Sample(span *Span) bool {
 
 // rateSampler samples from a sample rate.
 type rateSampler struct {
-	sync.RWMutex
+	locking.RWMutex
 	rate float64
 }
 
@@ -122,19 +123,40 @@ func formatKnuthSamplingRate(rate float64) string {
 	return strconv.FormatFloat(rate, 'g', 6, 64)
 }
 
+// serviceEnvKey is used as a map key for per-service sampling rates,
+// avoiding string concatenation on every lookup.
+type serviceEnvKey struct {
+	service, env string
+}
+
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.
 type prioritySampler struct {
-	mu          sync.RWMutex
-	rates       map[string]float64
-	defaultRate float64
+	mu          locking.RWMutex
+	rates       map[serviceEnvKey]float64 // +checklocks:mu
+	defaultRate float64                   // +checklocks:mu
 }
 
 func newPrioritySampler() *prioritySampler {
 	return &prioritySampler{
-		rates:       make(map[string]float64),
+		rates:       make(map[serviceEnvKey]float64),
 		defaultRate: 1.,
 	}
+}
+
+// parseServiceEnvKey parses a "service:XXX,env:YYY" string into a serviceEnvKey.
+// It splits at the first ",env:" after the prefix so that env values containing
+// that token are preserved (e.g. "service:foo,env:bar,env:baz" -> service="foo", env="bar,env:baz").
+// This preserves the original behavior when the key was a string concatenation of "service:" and the env value.
+func parseServiceEnvKey(s string) serviceEnvKey {
+	var k serviceEnvKey
+	if after, ok := strings.CutPrefix(s, "service:"); ok {
+		if before, after0, ok0 := strings.Cut(after, ",env:"); ok0 {
+			k.service = before
+			k.env = after0
+		}
+	}
+	return k
 }
 
 // readRatesJSON will try to read the rates as JSON from the given io.ReadCloser.
@@ -146,10 +168,14 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 		return err
 	}
 	rc.Close()
-	const defaultRateKey = "service:,env:"
+	var defaultRateKey serviceEnvKey
+	rates := make(map[serviceEnvKey]float64, len(payload.Rates))
+	for k, v := range payload.Rates {
+		rates[parseServiceEnvKey(k)] = v
+	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	ps.rates = payload.Rates
+	ps.rates = rates
 	if v, ok := ps.rates[defaultRateKey]; ok {
 		ps.defaultRate = v
 		delete(ps.rates, defaultRateKey)
@@ -160,7 +186,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 // getRate returns the sampling rate to be used for the given span. Callers must
 // guard the span.
 func (ps *prioritySampler) getRate(spn *Span) float64 {
-	key := "service:" + spn.service + ",env:" + spn.meta[ext.Environment]
+	key := serviceEnvKey{service: spn.service, env: spn.meta[ext.Environment]}
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	if rate, ok := ps.rates[key]; ok {

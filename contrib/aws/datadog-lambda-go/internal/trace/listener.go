@@ -15,12 +15,13 @@ import (
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
+	"github.com/aws/aws-lambda-go/lambdacontext"
+	"go.opentelemetry.io/otel"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	ddotel "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry"
 	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/aws/aws-lambda-go/lambdacontext"
-	"go.opentelemetry.io/otel"
 )
 
 type (
@@ -53,8 +54,7 @@ var tracerInitialized = false
 
 // MakeListener initializes a new trace lambda Listener
 func MakeListener(config Config, extensionManager *extension.ExtensionManager) Listener {
-
-	return Listener{
+	l := Listener{
 		ddTraceEnabled:           config.DDTraceEnabled,
 		mergeXrayTraces:          config.MergeXrayTraces,
 		universalInstrumentation: config.UniversalInstrumentation,
@@ -63,9 +63,40 @@ func MakeListener(config Config, extensionManager *extension.ExtensionManager) L
 		traceContextExtractor:    config.TraceContextExtractor,
 		tracerOptions:            config.TracerOptions,
 	}
+
+	if l.ddTraceEnabled && !tracerInitialized {
+		l.initTracer()
+	}
+
+	return l
 }
 
-// HandlerStarted sets up tracing and starts the function execution span if Datadog tracing is enabled
+func (l *Listener) initTracer() {
+	serviceName := os.Getenv("DD_SERVICE")
+	if serviceName == "" {
+		serviceName = internal.Instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{})
+	}
+	extensionNotRunning := !l.extensionManager.IsExtensionRunning()
+	opts := append([]ddtracer.StartOption{
+		ddtracer.WithService(serviceName),
+		ddtracer.WithLambdaMode(extensionNotRunning),
+		ddtracer.WithGlobalTag("_dd.origin", "lambda"),
+		ddtracer.WithSendRetries(2),
+	}, l.tracerOptions...)
+	if l.otelTracerEnabled {
+		provider := ddotel.NewTracerProvider(
+			opts...,
+		)
+		otel.SetTracerProvider(provider)
+	} else {
+		ddtracer.Start(
+			opts...,
+		)
+	}
+	tracerInitialized = true
+}
+
+// HandlerStarted starts the function execution span if Datadog tracing is enabled
 func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) context.Context {
 	if !l.ddTraceEnabled {
 		return ctx
@@ -76,31 +107,6 @@ func (l *Listener) HandlerStarted(ctx context.Context, msg json.RawMessage) cont
 	}
 
 	ctx, _ = contextWithRootTraceContext(ctx, msg, l.mergeXrayTraces, l.traceContextExtractor)
-
-	if !tracerInitialized {
-		serviceName := os.Getenv("DD_SERVICE")
-		if serviceName == "" {
-			serviceName = internal.Instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{})
-		}
-		extensionNotRunning := !l.extensionManager.IsExtensionRunning()
-		opts := append([]ddtracer.StartOption{
-			ddtracer.WithService(serviceName),
-			ddtracer.WithLambdaMode(extensionNotRunning),
-			ddtracer.WithGlobalTag("_dd.origin", "lambda"),
-			ddtracer.WithSendRetries(2),
-		}, l.tracerOptions...)
-		if l.otelTracerEnabled {
-			provider := ddotel.NewTracerProvider(
-				opts...,
-			)
-			otel.SetTracerProvider(provider)
-		} else {
-			ddtracer.Start(
-				opts...,
-			)
-		}
-		tracerInitialized = true
-	}
 
 	isDdServerlessSpan := l.universalInstrumentation && l.extensionManager.IsExtensionRunning()
 	functionExecutionSpan, ctx = startFunctionExecutionSpan(ctx, l.mergeXrayTraces, isDdServerlessSpan)

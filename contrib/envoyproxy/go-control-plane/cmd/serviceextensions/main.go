@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/credentials"
 
 	gocontrolplane "github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
@@ -161,11 +162,12 @@ func startService(config serviceExtensionConfig) error {
 }
 
 func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error {
+	imageVersion := stringEnv("DD_VERSION", instrumentation.Version())
 	muxServer := http.NewServeMux()
 	muxServer.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + instrumentation.Version() + `"}}`))
+		w.Write([]byte(`{"status": "ok", "library": {"language": "golang", "version": "` + imageVersion + `"}}`))
 	})
 
 	server := &http.Server{

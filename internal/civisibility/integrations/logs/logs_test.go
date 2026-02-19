@@ -79,7 +79,7 @@ func TestWriteLog_WritesEntry(t *testing.T) {
 
 func TestLogsPayloadResetAndRead(t *testing.T) {
 	p := newLogsPayload()
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		p.push(&logEntry{Message: "msg" + strconv.Itoa(i)})
 	}
 

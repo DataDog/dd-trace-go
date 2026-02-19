@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
@@ -49,9 +50,9 @@ func getTestSpan() *Span {
 func getTestTrace(traceN, size int) [][]*Span {
 	var traces [][]*Span
 
-	for i := 0; i < traceN; i++ {
+	for range traceN {
 		trace := []*Span{}
-		for j := 0; j < size; j++ {
+		for range size {
 			trace = append(trace, getTestSpan())
 		}
 		traces = append(traces, trace)
@@ -508,4 +509,90 @@ func TestDefaultHeaders(t *testing.T) {
 	// Now stats endpoint
 	err = trc.config.transport.sendStats(&pb.ClientStatsPayload{}, 1)
 	assert.NoError(err)
+}
+
+func TestClientComputedStatsHeader(t *testing.T) {
+	t.Run("header-not-set-when-client-drop-p0s-not-supported", func(t *testing.T) {
+		// When the agent does not support client_drop_p0s,
+		// the Datadog-Client-Computed-Stats header should NOT be set
+		assert := assert.New(t)
+		var headerValue string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/info" {
+				w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":false}`))
+				return
+			}
+			headerValue = r.Header.Get("Datadog-Client-Computed-Stats")
+		}))
+		defer srv.Close()
+
+		u, err := url.Parse(srv.URL)
+		assert.NoError(err)
+		trc, err := newTracer(WithAgentAddr(u.Host), WithStatsComputation(true))
+		assert.NoError(err)
+		setGlobalTracer(trc)
+		defer trc.Stop()
+
+		p, err := encode(getTestTrace(1, 1))
+		assert.NoError(err)
+		_, err = trc.config.transport.send(p)
+		assert.NoError(err)
+		assert.Empty(headerValue, "Datadog-Client-Computed-Stats header should not be set when client_drop_p0s is not supported")
+	})
+
+	t.Run("header-not-set-when-stats-endpoint-not-supported", func(t *testing.T) {
+		// When the agent does not support the /v0.6/stats endpoint,
+		// the Datadog-Client-Computed-Stats header should NOT be set
+		assert := assert.New(t)
+		var headerValue string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/info" {
+				w.Write([]byte(`{"endpoints":[],"client_drop_p0s":true}`))
+				return
+			}
+			headerValue = r.Header.Get("Datadog-Client-Computed-Stats")
+		}))
+		defer srv.Close()
+
+		u, err := url.Parse(srv.URL)
+		assert.NoError(err)
+		trc, err := newTracer(WithAgentAddr(u.Host), WithStatsComputation(true))
+		assert.NoError(err)
+		setGlobalTracer(trc)
+		defer trc.Stop()
+
+		p, err := encode(getTestTrace(1, 1))
+		assert.NoError(err)
+		_, err = trc.config.transport.send(p)
+		assert.NoError(err)
+		assert.Empty(headerValue, "Datadog-Client-Computed-Stats header should not be set when stats endpoint is not supported")
+	})
+
+	t.Run("header-set-when-both-conditions-met", func(t *testing.T) {
+		// When both conditions are met (stats endpoint + client_drop_p0s),
+		// the Datadog-Client-Computed-Stats header should be set to "t"
+		assert := assert.New(t)
+		var headerValue string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/info" {
+				w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true}`))
+				return
+			}
+			headerValue = r.Header.Get("Datadog-Client-Computed-Stats")
+		}))
+		defer srv.Close()
+
+		u, err := url.Parse(srv.URL)
+		assert.NoError(err)
+		trc, err := newTracer(WithAgentAddr(u.Host), WithStatsComputation(true))
+		assert.NoError(err)
+		setGlobalTracer(trc)
+		defer trc.Stop()
+
+		p, err := encode(getTestTrace(1, 1))
+		assert.NoError(err)
+		_, err = trc.config.transport.send(p)
+		assert.NoError(err)
+		assert.Equal("t", headerValue, "Datadog-Client-Computed-Stats header should be set to 't' when both conditions are met")
+	})
 }

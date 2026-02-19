@@ -690,19 +690,19 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		rcHeaderTag := "my-tag-from-rc"
 		rcSpanTag := "from-rc"
 		samplingRatePath := "pathSamplingRate"
-		samplingRateConfig := []byte(
-			fmt.Sprintf(
+		samplingRateConfig :=
+			fmt.Appendf(nil,
 				`{"lib_config": {"tracing_sampling_rate": %f}, 
 					"service_target": {"service": "my-service", "env": "my-env"}}`,
-				rcSamplingRate))
+				rcSamplingRate)
 		tagsPath := "pathTags"
-		tagsConfig := []byte(
-			fmt.Sprintf(
+		tagsConfig :=
+			fmt.Appendf(nil,
 				`{"lib_config": {"tracing_tags": ["ddtag:%s"], "tracing_header_tags": [{"header": "X-Test-Header", "tag_name": "%s"}]}, 
 					"service_target": {"service": "my-service", "env": "my-env"}}`,
 				rcSpanTag,
 				rcHeaderTag,
-			))
+			)
 
 		// Every test will remove some or all of the configs and assert that some
 		// configuration fields get reset to the original values.
@@ -927,18 +927,18 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 func TestDynamicInstrumentationRC(t *testing.T) {
 	getDiRCState := func() map[string]dynamicInstrumentationRCProbeConfig {
-		diRCState.Lock()
-		defer diRCState.Unlock()
+		diRCState.mu.Lock()
+		defer diRCState.mu.Unlock()
 		return maps.Clone(diRCState.state)
 	}
 	getDiSymDBEnabled := func() bool {
-		diRCState.Lock()
-		defer diRCState.Unlock()
+		diRCState.mu.Lock()
+		defer diRCState.mu.Unlock()
 		return diRCState.symdbExport
 	}
 	resetDiRCState := func() {
-		diRCState.Lock()
-		defer diRCState.Unlock()
+		diRCState.mu.Lock()
+		defer diRCState.mu.Unlock()
 		diRCState.state = map[string]dynamicInstrumentationRCProbeConfig{}
 		diRCState.symdbExport = false
 	}
@@ -1266,7 +1266,7 @@ func TestMergeHandlesAllLibConfigFields(t *testing.T) {
 		"LiveDebuggingEnabled": true,
 	}
 
-	typ := reflect.TypeOf(libConfig{})
+	typ := reflect.TypeFor[libConfig]()
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i).Name
 		if !handled[field] {
