@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/test/inte
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.8.0-dev
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.7.0-rc.1
 	github.com/aws/aws-lambda-go v1.46.0
 )
 
@@ -19,7 +19,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.75.2 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.75.2 // indirect
 	github.com/DataDog/datadog-go/v5 v5.8.2 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.8.0-dev // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.7.0-rc.1 // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.8.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.1.10 // indirect
