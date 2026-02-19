@@ -111,13 +111,11 @@ func TestCtxWithValue(t *testing.T) {
 		enabled = true
 		ctx := CtxWithValue(context.Background(), key("key"), "value")
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			// Use assert (not require) from a non-test goroutine to avoid
 			// calling t.FailNow which panics outside the test goroutine.
 			assert.Equal(t, "value", ctx.Value(key("key")))
-		}()
+		})
 		wg.Wait()
 	})
 }
@@ -136,14 +134,12 @@ func TestGLSPopFuncCrossGoroutine(t *testing.T) {
 	// Call popFn from a spawned goroutine — it should be a no-op because
 	// the spawned goroutine has a different contextStack pointer.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		popFn()
 		// The spawned goroutine should have an empty (nil) stack.
 		assert.Equal(t, 0, GLSStackDepth(),
 			"spawned goroutine should have empty GLS stack")
-	}()
+	})
 	wg.Wait()
 
 	// Back on the main goroutine, the value should NOT have been popped.
@@ -261,7 +257,7 @@ func BenchmarkContextStackDepthScaling(b *testing.B) {
 			b.Cleanup(MockGLS())
 			k := key("bench")
 			// Pre-fill the stack to simulate leaked entries.
-			for i := 0; i < depth; i++ {
+			for range depth {
 				getDDContextStack().Push(k, true)
 			}
 			b.ReportAllocs()

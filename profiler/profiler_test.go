@@ -21,6 +21,7 @@ import (
 	"path"
 	"runtime"
 	"runtime/trace"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -446,7 +447,7 @@ func TestAllUploaded(t *testing.T) {
 	// TODO: Further check that the uploaded profiles are all valid
 
 	var customLabelKeys []string
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
 	}
 
@@ -520,7 +521,7 @@ func TestCorrectTags(t *testing.T) {
 		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
 		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		// We check the tags we get several times to try to have a
 		// better chance of catching a bug where the some of the tags
 		// are clobbered due to a bug caused by the same
@@ -589,16 +590,7 @@ func TestExecutionTraceCPUProfileRate(t *testing.T) {
 // traceLogCPUProfileRate. It's a bit hacky, but probably good enough for now :).
 func assertContainsCPUProfileRateLog(t *testing.T, traceData []byte, cpuProfileRate int) {
 	assert.True(t, bytes.Contains(traceData, []byte("cpuProfileRate")))
-	assert.True(t, bytes.Contains(traceData, []byte(fmt.Sprintf("%d", cpuProfileRate))))
-}
-
-func sliceContains[T comparable](haystack []T, needle T) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
+	assert.True(t, bytes.Contains(traceData, fmt.Appendf(nil, "%d", cpuProfileRate)))
 }
 
 func TestExecutionTraceMisconfiguration(t *testing.T) {
@@ -640,9 +632,9 @@ func TestExecutionTraceRandom(t *testing.T) {
 		)
 
 		seenTraces := 0
-		for i := 0; i < count; i++ {
+		for i := range count {
 			profile := backend.ReceiveProfile(t)
-			if sliceContains(profile.event.Attachments, "go.trace") && sliceContains(profile.tags, "go_execution_traced:yes") {
+			if slices.Contains(profile.event.Attachments, "go.trace") && slices.Contains(profile.tags, "go_execution_traced:yes") {
 				seenTraces++
 			} else if i == 0 {
 				t.Error("did not see a trace in the first upload")
@@ -688,7 +680,7 @@ func TestExecutionTraceRandom(t *testing.T) {
 			// implementation. We keep a reasonably tight tolerance
 			// to ensure that an incorrect implementation is more likely
 			// to fail each time
-			for i := 0; i < 4; i++ {
+			for range 4 {
 				if doTrial(t, rate, 2.0) {
 					return
 				}
@@ -768,7 +760,7 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 	)
 
 	const expectedSize = 300 * 1024
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		m := backend.ReceiveProfile(t)
 		if p, ok := m.attachments["go.trace"]; ok {
 			if len(p) > expectedSize {

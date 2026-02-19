@@ -36,9 +36,9 @@ type Logger interface {
 // Types
 type NoopTracer struct {}
 
-func (NoopTracer) Extract(interface{}) (*SpanContext, error)
+func (NoopTracer) Extract(any) (*SpanContext, error)
 func (NoopTracer) Flush()
-func (NoopTracer) Inject(*SpanContext, interface{}) (error)
+func (NoopTracer) Inject(*SpanContext, any) (error)
 func (NoopTracer) SetServiceInfo(string)
 func (NoopTracer) StartSpan(string, ...StartSpanOption) (*Span)
 func (NoopTracer) Stop()
@@ -55,7 +55,7 @@ func ResourceName(string) (StartSpanOption)
 func ServiceName(string) (StartSpanOption)
 func SpanType(string) (StartSpanOption)
 func StartTime(time.Time) (StartSpanOption)
-func Tag(string, interface{}) (StartSpanOption)
+func Tag(string, any) (StartSpanOption)
 func WithAgentAddr(string) (StartOption)
 func WithAgentTimeout(int) (StartOption)
 func WithAgentURL(string) (StartOption)
@@ -70,7 +70,7 @@ func WithDynamicInstrumentationEnabled(bool) (StartOption)
 func WithEnv(string) (StartOption)
 func WithFeatureFlags(...string) (StartOption)
 func WithGlobalServiceName(bool) (StartOption)
-func WithGlobalTag(string, interface{}) (StartOption)
+func WithGlobalTag(string, any) (StartOption)
 func WithHTTPClient(*http.Client) (StartOption)
 func WithHeaderTags([]string) (StartOption)
 func WithHostname(string) (StartOption)
@@ -135,8 +135,8 @@ type UserMonitoringOption func(*UserMonitoringConfig)()
 
 // Types
 type Propagator interface {
-	func Extract(interface{}) (*SpanContext, error)
-	func Inject(*SpanContext, interface{}) (error)
+	func Extract(any) (*SpanContext, error)
+	func Inject(*SpanContext, any) (error)
 }
 
 type TextMapReader interface {
@@ -204,7 +204,7 @@ type Span struct {}
 
 func (*Span) AddEvent(string, ...SpanEventOption)
 func (*Span) AddLink(SpanLink)
-func (*Span) AsMap() (map[string]interface{})
+func (*Span) AsMap() (map[string]any)
 func (*Span) BaggageItem(string) (string)
 func (*Span) Context() (*SpanContext)
 func (*Span) Finish(...FinishOption)
@@ -212,7 +212,7 @@ func (*Span) Format(fmt.State, rune)
 func (*Span) Root() (*Span)
 func (*Span) SetBaggageItem(string)
 func (*Span) SetOperationName(string)
-func (*Span) SetTag(string, interface{})
+func (*Span) SetTag(string, any)
 func (*Span) SetUser(string, ...UserMonitoringOption)
 func (*Span) StartChild(string, ...StartSpanOption) (*Span)
 func (*Span) String() (string)
@@ -245,7 +245,7 @@ type StartSpanConfig struct {
 	SpanID uint64
 	SpanLinks []SpanLink
 	StartTime time.Time
-	Tags map[string]interface{}
+	Tags map[string]any
 }
 
 type StartSpanOption func(*StartSpanConfig)()
@@ -334,9 +334,9 @@ type TextMapCarrier map[string]string
 // File: tracer.go
 
 // Package Functions
-func Extract(interface{}) (*SpanContext, error)
+func Extract(any) (*SpanContext, error)
 func Flush()
-func Inject(*SpanContext, interface{}) (error)
+func Inject(*SpanContext, any) (error)
 func SetUser(*Span, string, ...UserMonitoringOption)
 func Start(...StartOption) (error)
 func StartSpan(string, ...StartSpanOption) (*Span)
@@ -344,9 +344,9 @@ func Stop()
 
 // Types
 type Tracer interface {
-	func Extract(interface{}) (*SpanContext, error)
+	func Extract(any) (*SpanContext, error)
 	func Flush()
-	func Inject(*SpanContext, interface{}) (error)
+	func Inject(*SpanContext, any) (error)
 	func StartSpan(string, ...StartSpanOption) (*Span)
 	func Stop()
 	func TracerConf() (TracerConf)

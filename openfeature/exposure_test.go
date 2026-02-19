@@ -48,7 +48,7 @@ func TestLRUCache_SameSubject(t *testing.T) {
 	key := exposureCacheKey{flagKey: "test-flag", targetingKey: "user-123"}
 	value := exposureCacheValue{allocationKey: "default-allocation", variant: "variant-a"}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		result := cache.add(key, value)
 		if i == 0 && !result {
 			t.Error("first add should return true")
@@ -64,7 +64,7 @@ func TestLRUCache_DifferentSubjects(t *testing.T) {
 	// 5 different subjects evaluate same flag
 	value := exposureCacheValue{allocationKey: "default-allocation", variant: "variant-a"}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		key := exposureCacheKey{flagKey: "test-flag", targetingKey: fmt.Sprintf("user-%d", i)}
 		result := cache.add(key, value)
 		if !result {
@@ -114,7 +114,7 @@ func TestLRUCache_Eviction(t *testing.T) {
 
 	// Fill cache to capacity: user-0, user-1, user-2
 	// Order after: user-2 (front), user-1, user-0 (back/oldest)
-	for i := 0; i < capacity; i++ {
+	for i := range capacity {
 		key := exposureCacheKey{flagKey: "flag", targetingKey: fmt.Sprintf("user-%d", i)}
 		cache.add(key, value)
 	}
@@ -216,7 +216,7 @@ func TestLRUCache_ZeroCapacity(t *testing.T) {
 	key := exposureCacheKey{flagKey: "flag", targetingKey: "user"}
 	value := exposureCacheValue{allocationKey: "alloc", variant: "variant"}
 	// With zero capacity, nothing is cached - every add is "new"
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		result := cache.add(key, value)
 		if !result {
 			t.Errorf("zero capacity cache: add #%d should return true (no caching)", i+1)
@@ -273,10 +273,10 @@ func TestExposureWriter_ConcurrentAppend(t *testing.T) {
 	wg.Add(numGoroutines)
 
 	// Concurrent appends simulating multiple goroutines evaluating flags
-	for g := 0; g < numGoroutines; g++ {
+	for g := range numGoroutines {
 		go func(goroutineID int) {
 			defer wg.Done()
-			for i := 0; i < opsPerGoroutine; i++ {
+			for i := range opsPerGoroutine {
 				event := exposureEvent{
 					Timestamp:  int64(i),
 					Allocation: exposureAllocation{Key: fmt.Sprintf("alloc-%d", goroutineID%3)},
@@ -317,7 +317,7 @@ func TestExposureWriter_ConcurrentAppend_Deduplication(t *testing.T) {
 	wg.Add(numGoroutines)
 
 	// All goroutines append the exact same event - only 1 should make it through
-	for g := 0; g < numGoroutines; g++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			event := exposureEvent{
@@ -343,7 +343,7 @@ func TestExposureHook_After(t *testing.T) {
 	tests := []struct {
 		name              string
 		targetingKey      string
-		attributes        map[string]interface{}
+		attributes        map[string]any
 		flagKey           string
 		variant           string
 		metadata          of.FlagMetadata
@@ -353,7 +353,7 @@ func TestExposureHook_After(t *testing.T) {
 		{
 			name:         "with targeting key",
 			targetingKey: "user-123",
-			attributes:   map[string]interface{}{"org_id": 456},
+			attributes:   map[string]any{"org_id": 456},
 			flagKey:      "test-flag",
 			variant:      "variant-a",
 			metadata: of.FlagMetadata{
@@ -366,7 +366,7 @@ func TestExposureHook_After(t *testing.T) {
 		{
 			name:         "with empty targeting key",
 			targetingKey: "",
-			attributes:   map[string]interface{}{"org_id": 789},
+			attributes:   map[string]any{"org_id": 789},
 			flagKey:      "server-side-flag",
 			variant:      "enabled",
 			metadata: of.FlagMetadata{
@@ -379,7 +379,7 @@ func TestExposureHook_After(t *testing.T) {
 		{
 			name:         "missing allocation key",
 			targetingKey: "user-123",
-			attributes:   map[string]interface{}{},
+			attributes:   map[string]any{},
 			flagKey:      "test-flag",
 			variant:      "variant-a",
 			metadata:     of.FlagMetadata{}, // no allocation key
@@ -388,7 +388,7 @@ func TestExposureHook_After(t *testing.T) {
 		{
 			name:         "doLog is false",
 			targetingKey: "user-123",
-			attributes:   map[string]interface{}{},
+			attributes:   map[string]any{},
 			flagKey:      "test-flag",
 			variant:      "variant-a",
 			metadata: of.FlagMetadata{
@@ -400,7 +400,7 @@ func TestExposureHook_After(t *testing.T) {
 		{
 			name:         "nil metadata",
 			targetingKey: "user-123",
-			attributes:   map[string]interface{}{},
+			attributes:   map[string]any{},
 			flagKey:      "test-flag",
 			variant:      "variant-a",
 			metadata:     nil,
@@ -484,7 +484,7 @@ func TestExposureHook_After_EmptyTargetingKeyWithAttributes(t *testing.T) {
 	hook := newExposureHook(writer)
 
 	// Server-side evaluation: no user, but has org context
-	evalCtx := of.NewEvaluationContext("", map[string]interface{}{
+	evalCtx := of.NewEvaluationContext("", map[string]any{
 		"org_id":  12345,
 		"service": "backend-service",
 	})

@@ -778,7 +778,7 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 // stringValue(2) - 0x102 (1 indicates this is a string, then a positive fixed int of 2 refers the 2nd index of the string table)
 type anyValue struct {
 	valueType int
-	value     interface{}
+	value     any
 }
 
 const (

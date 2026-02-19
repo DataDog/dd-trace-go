@@ -708,7 +708,7 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 }
 
 // debugMatrixf emits scenario-scoped diagnostics using the package logger.
-func debugMatrixf(format string, args ...interface{}) {
+func debugMatrixf(format string, args ...any) {
 	log.Debug(format, args...)
 }
 

@@ -145,7 +145,7 @@ func (t *civisibilitymocktracer) Reset() {
 // Extract retrieves a SpanContext from the carrier using the mock tracer's propagator.
 // If the tracer is in noop mode, it returns nil. This is used for distributed tracing
 // to continue traces across process boundaries.
-func (t *civisibilitymocktracer) Extract(carrier interface{}) (*tracer.SpanContext, error) {
+func (t *civisibilitymocktracer) Extract(carrier any) (*tracer.SpanContext, error) {
 	if t.isnoop.Load() {
 		return nil, nil
 	}
@@ -155,7 +155,7 @@ func (t *civisibilitymocktracer) Extract(carrier interface{}) (*tracer.SpanConte
 // Inject injects the SpanContext into the carrier using the mock tracer's propagator.
 // If the tracer is in noop mode, it returns nil. This is used for distributed tracing
 // to propagate trace information across process boundaries.
-func (t *civisibilitymocktracer) Inject(context *tracer.SpanContext, carrier interface{}) error {
+func (t *civisibilitymocktracer) Inject(context *tracer.SpanContext, carrier any) error {
 	if t.isnoop.Load() {
 		return nil
 	}

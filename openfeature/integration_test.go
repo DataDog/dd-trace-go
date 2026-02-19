@@ -39,7 +39,7 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("user in US gets enabled feature", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("user-123", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("user-123", map[string]any{
 			"country": "US",
 		})
 
@@ -79,7 +79,7 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 	})
 
 	t.Run("user in UK gets default value", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("user-456", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("user-456", map[string]any{
 			"country": "UK",
 		})
 
@@ -104,7 +104,7 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 	})
 
 	t.Run("evaluation details include variant and reason", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("user-789", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("user-789", map[string]any{
 			"country": "US",
 		})
 
@@ -160,7 +160,7 @@ func TestEndToEnd_StringFlag(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("premium user gets v2", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("premium-user-1", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("premium-user-1", map[string]any{
 			"tier": "premium",
 		})
 
@@ -199,7 +199,7 @@ func TestEndToEnd_StringFlag(t *testing.T) {
 	})
 
 	t.Run("basic user gets default", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("basic-user-1", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("basic-user-1", map[string]any{
 			"tier": "basic",
 		})
 
@@ -239,7 +239,7 @@ func TestEndToEnd_IntegerFlag(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("high traffic user gets higher limit", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("high-traffic-user", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("high-traffic-user", map[string]any{
 			"requests_per_day": 10000,
 		})
 
@@ -275,7 +275,7 @@ func TestEndToEnd_IntegerFlag(t *testing.T) {
 	})
 
 	t.Run("low traffic user gets default", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("low-traffic-user", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("low-traffic-user", map[string]any{
 			"requests_per_day": 50,
 		})
 
@@ -314,7 +314,7 @@ func TestEndToEnd_FloatFlag(t *testing.T) {
 
 	ctx := context.Background()
 
-	evalCtx := of.NewEvaluationContext("user-1", map[string]interface{}{
+	evalCtx := of.NewEvaluationContext("user-1", map[string]any{
 		"experiment_group": "test",
 	})
 
@@ -365,7 +365,7 @@ func TestEndToEnd_ObjectFlag(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("returns complex configuration object", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("user-1", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("user-1", map[string]any{
 			"feature_access": true,
 		})
 
@@ -378,7 +378,7 @@ func TestEndToEnd_ObjectFlag(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		configMap, ok := value.(map[string]interface{})
+		configMap, ok := value.(map[string]any)
 		if !ok {
 			t.Fatalf("expected map[string]interface{}, got %T", value)
 		}
@@ -446,7 +446,7 @@ func TestEndToEnd_DisabledFlag(t *testing.T) {
 	client := of.NewClient("test-app")
 
 	ctx := context.Background()
-	evalCtx := of.NewEvaluationContext("any-user", map[string]interface{}{})
+	evalCtx := of.NewEvaluationContext("any-user", map[string]any{})
 
 	details, err := client.BooleanValueDetails(ctx, "disabled-feature", false, evalCtx)
 	if err != nil {
@@ -481,7 +481,7 @@ func TestEndToEnd_MissingFlag(t *testing.T) {
 	client := of.NewClient("test-app")
 
 	ctx := context.Background()
-	evalCtx := of.NewEvaluationContext("any-user", map[string]interface{}{})
+	evalCtx := of.NewEvaluationContext("any-user", map[string]any{})
 
 	details, _ := client.BooleanValueDetails(ctx, "nonexistent-flag", false, evalCtx)
 
@@ -510,7 +510,7 @@ func TestEndToEnd_ConfigurationUpdate(t *testing.T) {
 	client := of.NewClient("test-app")
 
 	ctx := context.Background()
-	evalCtx := of.NewEvaluationContext("user-1", map[string]interface{}{
+	evalCtx := of.NewEvaluationContext("user-1", map[string]any{
 		"country": "US",
 	})
 
@@ -552,8 +552,8 @@ func TestEndToEnd_TrafficSharding(t *testing.T) {
 	usersInVariantB := 0
 	totalUsers := 100
 
-	for i := 0; i < totalUsers; i++ {
-		evalCtx := of.NewEvaluationContext(generateUserID(i), map[string]interface{}{
+	for i := range totalUsers {
+		evalCtx := of.NewEvaluationContext(generateUserID(i), map[string]any{
 			"eligible": true,
 		})
 
@@ -803,14 +803,14 @@ func createE2EObjectConfig() *universalFlagsConfiguration {
 				Variations: map[string]*variant{
 					"default": {
 						Key: "default",
-						Value: map[string]interface{}{
+						Value: map[string]any{
 							"enabled": false,
 							"timeout": 10,
 						},
 					},
 					"advanced": {
 						Key: "advanced",
-						Value: map[string]interface{}{
+						Value: map[string]any{
 							"enabled": true,
 							"timeout": 30,
 							"retries": 3,
@@ -1028,7 +1028,7 @@ func TestEndToEnd_JSONSerialization(t *testing.T) {
 	client := of.NewClient("test-app")
 
 	ctx := context.Background()
-	evalCtx := of.NewEvaluationContext("user-1", map[string]interface{}{
+	evalCtx := of.NewEvaluationContext("user-1", map[string]any{
 		"country": "US",
 	})
 
@@ -1085,7 +1085,7 @@ func TestEndToEnd_EmptyRulesAllocation(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("user with no attributes gets value from empty rules allocation", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("alice", map[string]interface{}{})
+		evalCtx := of.NewEvaluationContext("alice", map[string]any{})
 
 		value, err := client.FloatValue(ctx, "no-rules-flag", 0.0, evalCtx)
 		if err != nil {
@@ -1098,7 +1098,7 @@ func TestEndToEnd_EmptyRulesAllocation(t *testing.T) {
 	})
 
 	t.Run("user with attributes gets value from empty rules allocation", func(t *testing.T) {
-		evalCtx := of.NewEvaluationContext("bob", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("bob", map[string]any{
 			"country": "France",
 			"age":     30,
 		})
@@ -1210,7 +1210,7 @@ func TestEndToEnd_ShardCalculationWithDash(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.targetingKey, func(t *testing.T) {
-			evalCtx := of.NewEvaluationContext(tc.targetingKey, map[string]interface{}{})
+			evalCtx := of.NewEvaluationContext(tc.targetingKey, map[string]any{})
 
 			value, err := client.IntValue(ctx, "50-50-split", 0, evalCtx)
 			if err != nil {
@@ -1289,7 +1289,7 @@ func TestEndToEnd_IdAttributeFallback(t *testing.T) {
 
 	t.Run("targeting key used as id when no explicit id attribute", func(t *testing.T) {
 		// User "zach" with no explicit "id" attribute should match the id rule
-		evalCtx := of.NewEvaluationContext("zach", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("zach", map[string]any{
 			"email":   "test@test.com",
 			"country": "Mexico",
 			"age":     25,
@@ -1307,7 +1307,7 @@ func TestEndToEnd_IdAttributeFallback(t *testing.T) {
 
 	t.Run("explicit id attribute overrides targeting key", func(t *testing.T) {
 		// User "zach" WITH explicit "id" attribute that doesn't match
-		evalCtx := of.NewEvaluationContext("zach", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("zach", map[string]any{
 			"id":      "override-id",
 			"email":   "test@test.com",
 			"country": "Mexico",
@@ -1326,7 +1326,7 @@ func TestEndToEnd_IdAttributeFallback(t *testing.T) {
 
 	t.Run("targeting key not matching id rule gets fallback", func(t *testing.T) {
 		// User "alice" should not match the id rule (id != "zach")
-		evalCtx := of.NewEvaluationContext("alice", map[string]interface{}{
+		evalCtx := of.NewEvaluationContext("alice", map[string]any{
 			"email": "alice@example.com",
 		})
 
@@ -1433,7 +1433,7 @@ func TestEndToEnd_ExposurePayloadStructure(t *testing.T) {
 	writer.mu.Unlock()
 
 	// Evaluate multiple flags to generate exposure events
-	evalCtx1 := of.NewEvaluationContext("user-abc", map[string]interface{}{
+	evalCtx1 := of.NewEvaluationContext("user-abc", map[string]any{
 		"country": "US",
 		"tier":    "premium",
 	})
@@ -1443,7 +1443,7 @@ func TestEndToEnd_ExposurePayloadStructure(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	evalCtx2 := of.NewEvaluationContext("user-xyz", map[string]interface{}{
+	evalCtx2 := of.NewEvaluationContext("user-xyz", map[string]any{
 		"country": "US",
 		"tier":    "basic",
 	})
@@ -1568,8 +1568,8 @@ func TestEndToEnd_ExposureFlushInterval(t *testing.T) {
 	writer.mu.Unlock()
 
 	// Generate events continuously
-	for i := 0; i < 5; i++ {
-		evalCtx := of.NewEvaluationContext(fmt.Sprintf("user-%d", i), map[string]interface{}{
+	for i := range 5 {
+		evalCtx := of.NewEvaluationContext(fmt.Sprintf("user-%d", i), map[string]any{
 			"country": "US",
 		})
 		_, _ = client.BooleanValue(ctx, "feature-rollout", false, evalCtx)
@@ -1663,8 +1663,8 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 	writer.mu.Unlock()
 
 	// Evaluate flag multiple times
-	for i := 0; i < 5; i++ {
-		evalCtx := of.NewEvaluationContext(fmt.Sprintf("user-%d", i), map[string]interface{}{})
+	for i := range 5 {
+		evalCtx := of.NewEvaluationContext(fmt.Sprintf("user-%d", i), map[string]any{})
 		_, err := client.BooleanValue(ctx, "no-log-flag", false, evalCtx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -1733,11 +1733,11 @@ func TestEndToEnd_ExposureContextAttributes(t *testing.T) {
 	writer.mu.Unlock()
 
 	// Evaluate with complex attributes including nested structures
-	evalCtx := of.NewEvaluationContext("test-user", map[string]interface{}{
+	evalCtx := of.NewEvaluationContext("test-user", map[string]any{
 		"country":   "US",
 		"age":       30,
 		"isPremium": true,
-		"subscription": map[string]interface{}{
+		"subscription": map[string]any{
 			"plan":  "pro",
 			"level": 5,
 		},
@@ -1861,7 +1861,7 @@ func TestEndToEnd_ExposureAgentSide(t *testing.T) {
 	writer.mu.Unlock()
 
 	// Evaluate flag - should not fail even if agent is unavailable
-	evalCtx := of.NewEvaluationContext("user-1", map[string]interface{}{
+	evalCtx := of.NewEvaluationContext("user-1", map[string]any{
 		"country": "US",
 	})
 
@@ -1970,7 +1970,7 @@ func TestEndToEnd_AllThreeFixes(t *testing.T) {
 	t.Run("vip user matches id rule via targeting key fallback", func(t *testing.T) {
 		// Targeting key "vip-user-1" matches the regex "vip-.*"
 		// Uses Fix #3: targeting key used as "id" when no explicit id attribute
-		evalCtx := of.NewEvaluationContext("vip-user-1", map[string]interface{}{})
+		evalCtx := of.NewEvaluationContext("vip-user-1", map[string]any{})
 
 		value, err := client.StringValue(ctx, "complex-flag", "default", evalCtx)
 		if err != nil {
@@ -1986,7 +1986,7 @@ func TestEndToEnd_AllThreeFixes(t *testing.T) {
 		// User "regular-user-1" doesn't match vip rule, falls to second allocation
 		// Uses Fix #1: empty rules match everyone
 		// Uses Fix #2: shard calculation with dash separator
-		evalCtx := of.NewEvaluationContext("regular-user-1", map[string]interface{}{})
+		evalCtx := of.NewEvaluationContext("regular-user-1", map[string]any{})
 
 		value, err := client.StringValue(ctx, "complex-flag", "default", evalCtx)
 		if err != nil {

@@ -48,6 +48,7 @@ lint_go_files() {
   gopath_bin="$(go env GOPATH)/bin"
   export PATH="$gopath_bin:$PATH"
   run "golangci-lint run ./..."
+  run "(cd internal/orchestrion/_integration && golangci-lint run --disable=gocritic ./...)"
   run "./scripts/checklocks.sh --ignore-known-issues ./ddtrace/tracer"
 }
 

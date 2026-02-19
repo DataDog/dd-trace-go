@@ -62,10 +62,10 @@ type ddTslvEvent interface {
 	SetError(options ...ErrorOption)
 
 	// SetTag sets a tag on the event.
-	SetTag(key string, value interface{})
+	SetTag(key string, value any)
 
 	// GetTag retrieves a tag from the event.
-	GetTag(key string) (interface{}, bool)
+	GetTag(key string) (any, bool)
 }
 
 // TestSessionStartOption represents an option that can be passed to CreateTestSession.

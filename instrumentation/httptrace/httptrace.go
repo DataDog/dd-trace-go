@@ -100,7 +100,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 	nopts = append(nopts,
 		func(ssCfg *tracer.StartSpanConfig) {
 			if ssCfg.Tags == nil {
-				ssCfg.Tags = make(map[string]interface{})
+				ssCfg.Tags = make(map[string]any)
 			}
 			ssCfg.Tags[ext.SpanType] = ext.SpanTypeWeb
 			ssCfg.Tags[ext.HTTPMethod] = r.Method

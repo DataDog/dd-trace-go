@@ -387,10 +387,7 @@ type framesIterator struct {
 }
 
 func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
-	topFrameDepth := maxDepth / 4
-	if topFrameDepth < 1 {
-		topFrameDepth = 1
-	}
+	topFrameDepth := max(maxDepth/4, 1)
 	return &framesIterator{
 		frameOpts:     opts,
 		frames:        newQueue[runtime.Frame](maxDepth + 4),
@@ -406,10 +403,7 @@ func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
 // iteratorFromRaw creates an iterator from pre-captured PCs for deferred symbolication
 func iteratorFromRaw(pcs []uintptr, opts frameOptions) *framesIterator {
 	maxDepth := min(len(pcs), defaultMaxDepth)
-	topFrameDepth := maxDepth / 4
-	if topFrameDepth < 1 {
-		topFrameDepth = 1
-	}
+	topFrameDepth := max(maxDepth/4, 1)
 
 	return &framesIterator{
 		frameOpts:     opts,
@@ -624,12 +618,12 @@ func isStandardLibraryPackage(pkg string) bool {
 	//   "fmt" -> first element "fmt" (no dot) -> standard library
 	//   "net/http" -> first element "net" (no dot) -> standard library
 	//   "github.com/user/pkg" -> first element "github.com" (has dot) -> NOT standard library
-	slash := strings.IndexByte(pkg, '/')
-	if slash < 0 {
+	before, _, ok := strings.Cut(pkg, "/")
+	if !ok {
 		// single-element path like "fmt", "os", "runtime"
 		return !strings.Contains(pkg, ".")
 	}
 	// multi-element path like "net/http", "encoding/json", or "github.com/user/pkg"
-	first := pkg[:slash]
+	first := before
 	return !strings.Contains(first, ".")
 }

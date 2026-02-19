@@ -1038,7 +1038,7 @@ func TestClientFlush(t *testing.T) {
 			name: "distribution-overflow",
 			when: func(c *client) {
 				handler := c.Distribution(NamespaceGeneral, "init_time", nil)
-				for i := 0; i < 1<<16; i++ {
+				for i := range 1 << 16 {
 					handler.Submit(float64(i))
 				}
 			},
@@ -1314,7 +1314,7 @@ func TestHeartBeatInterval(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		c.Log(NewRecord(LogError, "test"))
 		time.Sleep(1 * time.Second)
 	}
@@ -1592,7 +1592,7 @@ func BenchmarkParallelMetrics(b *testing.B) {
 		b.SetParallelism(nbGoroutines)
 
 		handles := make([]MetricHandle, nbGoroutines)
-		for i := 0; i < nbGoroutines; i++ {
+		for i := range nbGoroutines {
 			handles[i] = metric(c, "init_time_"+strconv.Itoa(i))
 		}
 

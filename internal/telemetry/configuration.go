@@ -124,8 +124,8 @@ func SanitizeConfigValue(value any) any {
 	valueOf := reflect.ValueOf(value)
 
 	// Unwrap pointers and interfaces up to 10 levels deep.
-	for i := 0; i < 10; i++ {
-		if valueOf.Kind() == reflect.Ptr || valueOf.Kind() == reflect.Interface {
+	for range 10 {
+		if valueOf.Kind() == reflect.Pointer || valueOf.Kind() == reflect.Interface {
 			valueOf = valueOf.Elem()
 		} else {
 			break

@@ -147,10 +147,10 @@ func TestTracerCleanStop(t *testing.T) {
 	n := 5000
 
 	wg.Add(3)
-	for j := 0; j < 3; j++ {
+	for range 3 {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < n; i++ {
+			for range n {
 				span := StartSpan("test.span")
 				child := StartSpan("child.span", ChildOf(span.Context()))
 				time.Sleep(time.Millisecond)
@@ -162,22 +162,18 @@ func TestTracerCleanStop(t *testing.T) {
 	}
 
 	defer setLogWriter(io.Discard)()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < n; i++ {
+	wg.Go(func() {
+		for range n {
 			// Lambda mode is used to avoid the startup cost associated with agent discovery.
 			Start(withTransport(transport), WithLambdaMode(true), withNoopStats())
 			time.Sleep(time.Millisecond)
 			Start(withTransport(transport), WithLambdaMode(true), WithSamplerRate(0.99), withNoopStats())
 			Start(withTransport(transport), WithLambdaMode(true), WithSamplerRate(0.99), withNoopStats())
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < n; i++ {
+	wg.Go(func() {
+		for range n {
 			Stop()
 			Stop()
 			Stop()
@@ -186,7 +182,7 @@ func TestTracerCleanStop(t *testing.T) {
 			Stop()
 			Stop()
 		}
-	}()
+	})
 
 	wg.Wait()
 	Stop()
@@ -602,9 +598,9 @@ func TestSamplingDecision(t *testing.T) {
 		defer stop()
 		tracer.config.serviceName = "test_service"
 		var spans []*Span
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			s := tracer.StartSpan(fmt.Sprintf("name_%d", i))
-			for j := 0; j < 9; j++ {
+			for j := range 9 {
 				child := tracer.newChildSpan(fmt.Sprintf("name_%d_%d", i, j), s)
 				child.Finish()
 				spans = append(spans, child)
@@ -641,9 +637,9 @@ func TestSamplingDecision(t *testing.T) {
 		defer stop()
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			s := tracer.StartSpan("name_1")
-			for i := 0; i < 9; i++ {
+			for range 9 {
 				child := tracer.StartSpan("name_2", ChildOf(s.context))
 				child.Finish()
 				spans = append(spans, child)
@@ -676,9 +672,9 @@ func TestSamplingDecision(t *testing.T) {
 		defer stop()
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			s := tracer.StartSpan("name_1")
-			for i := 0; i < 9; i++ {
+			for range 9 {
 				child := tracer.StartSpan("name_2", ChildOf(s.context))
 				child.Finish()
 				spans = append(spans, child)
@@ -1106,7 +1102,7 @@ func TestTracerInjectConcurrency(t *testing.T) {
 	defer span.Finish()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		wg.Add(1)
 		i := i
 		go func(val int) {
@@ -1416,7 +1412,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 
 	count := payloadQueueSize / 3
 
-	for i := 0; i < count; i++ {
+	for range count {
 		span0 := tracer0.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
 		span0.Finish()
 		span1 := tracer1.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
@@ -1577,22 +1573,18 @@ func TestTracerTraceMaxSize(t *testing.T) {
 	spans[4] = StartSpan("span4", ChildOf(spans[0].Context()))
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 5000; i++ {
+	wg.Go(func() {
+		for i := range 5000 {
 			spans[1].SetTag(strconv.Itoa(i), 1)
 			spans[2].SetTag(strconv.Itoa(i), 1)
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		spans[0].Finish()
 		spans[3].Finish()
 		spans[4].Finish()
-	}()
+	})
 
 	wg.Wait()
 }
@@ -1610,7 +1602,7 @@ func TestTracerRace(t *testing.T) {
 
 	// Trying to be quite brutal here, firing lots of concurrent things, finishing in
 	// different orders, and modifying spans after creation.
-	for n := 0; n < total; n++ {
+	for n := range total {
 		i := n // keep local copy
 		odd := (i % 2) != 0
 		go func() {
@@ -1710,7 +1702,7 @@ func TestWorker(t *testing.T) {
 	defer stop()
 
 	n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
-	for i := 0; i < n; i++ {
+	for range n {
 		root := tracer.newRootSpan("pylons.request", "pylons", "/")
 		child := tracer.newChildSpan("redis.command", root)
 		child.Finish()
@@ -1782,7 +1774,7 @@ func TestPushTrace(t *testing.T) {
 	assert.Equal(&chunk{spans: trace}, t0)
 
 	many := payloadQueueSize * 2
-	for i := 0; i < many; i++ {
+	for i := range many {
 		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
 	}
 	assert.Len(tracer.out, payloadQueueSize)
@@ -2150,17 +2142,15 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		wg := sync.WaitGroup{}
-		for i := 0; i < 100; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range 100 {
+			wg.Go(func() {
 				parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 				defer parent.Finish()
 
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
 				}
-			}()
+			})
 		}
 		wg.Wait()
 	}
@@ -2215,9 +2205,9 @@ func genBigTraces(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
-			for i := 0; i < 10_000; i++ {
+			for range 10_000 {
 				sp := tracer.StartSpan("redis.command", ChildOf(parent.Context()))
 				sp.SetTag("someKey", "some much larger value to create some fun memory usage here")
 				sp.Finish()
@@ -2285,7 +2275,7 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 	var wg sync.WaitGroup
 	var wgready sync.WaitGroup
 	start := make(chan struct{})
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Add(1)
 		wgready.Add(1)
 		go func() {
@@ -2606,13 +2596,13 @@ func TestUserMonitoring(t *testing.T) {
 
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 10000; i++ {
+			for range 10000 {
 				SetUser(root, "test")
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 10000; i++ {
+			for range 10000 {
 				tr.StartSpan("test", ChildOf(root.Context())).Finish()
 			}
 		}()
@@ -2646,7 +2636,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			span := tracer.StartSpan("name_1")
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
 				child.Finish()
 			}
@@ -2666,11 +2656,11 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			span := tracer.StartSpan("name_1")
-			for i := 0; i < 50; i++ {
+			for range 50 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
 				child.Finish()
 			}
-			for i := 0; i < 50; i++ {
+			for range 50 {
 				child := tracer.StartSpan("name", ChildOf(span.context))
 				child.Finish()
 			}
@@ -2690,7 +2680,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			span := tracer.StartSpan("name_1")
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
 				child.Finish()
 			}
@@ -2838,20 +2828,16 @@ func TestPPROFLabelRootSpanRace(t *testing.T) {
 	defer stop()
 	parent := tracer.StartSpan("parent")
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 1000; i++ {
+	wg.Go(func() {
+		for range 1000 {
 			tracer.StartSpan("child", ChildOf(parent.Context()))
 		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 1000; i++ {
+	})
+	wg.Go(func() {
+		for range 1000 {
 			parent.SetTag(ext.ResourceName, "x")
 		}
-	}()
+	})
 	wg.Wait()
 }
 
@@ -2945,22 +2931,18 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "0.01") // Set aggresive poll interval
 
 	// Goroutine 1: Continuously start the tracer
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+	wg.Go(func() {
+		for range iterations {
 			Start()
 		}
-	}()
+	})
 
 	// Goroutine 2: Continuously stop the tracer
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+	wg.Go(func() {
+		for range iterations {
 			Stop()
 		}
-	}()
+	})
 
 	// Wait for both goroutines to complete
 	wg.Wait()
