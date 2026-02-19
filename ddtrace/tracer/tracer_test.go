@@ -119,6 +119,26 @@ loop:
 	}
 }
 
+// nopRoundTripper is an http.RoundTripper that immediately returns 404 for all
+// requests without performing any network I/O. Used inside synctest bubbles to
+// prevent DNS resolution and TCP connects from violating the bubble boundary.
+type nopRoundTripper struct{}
+
+func (nopRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusNotFound,
+		Body:       io.NopCloser(strings.NewReader("")),
+	}, nil
+}
+
+// withNopInfoHTTPClient returns a StartOption that provides an HTTP client with
+// a mock transport. This prevents the /info agent-discovery request from doing
+// any DNS resolution or network I/O inside a synctest bubble, while still
+// allowing the tracer to use agentTraceWriter (unlike WithLambdaMode).
+func withNopInfoHTTPClient() StartOption {
+	return WithHTTPClient(&http.Client{Transport: nopRoundTripper{}})
+}
+
 // setLogWriter sets the io.Writer that any new logTraceWriter will write to and returns a function
 // which will return the io.Writer to its original value.
 func setLogWriter(w io.Writer) func() {

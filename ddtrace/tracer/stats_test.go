@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
+
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-go/v5/statsd"
 
@@ -33,7 +35,7 @@ func TestAlignTs(t *testing.T) {
 
 func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env string) *config {
 	assert := assert.New(t)
-	cfg, err := newTestConfig(func(c *config) {
+	cfg, err := newTestConfig(withNopInfoHTTPClient(), func(c *config) {
 		c.transport = transport
 		c.internalConfig.SetEnv(env, internalconfig.OriginCode)
 	})
@@ -43,7 +45,7 @@ func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env str
 
 func newTestConfigWithTransport(t *testing.T, transport transport) *config {
 	assert := assert.New(t)
-	cfg, err := newTestConfig(func(c *config) {
+	cfg, err := newTestConfig(withNopInfoHTTPClient(), func(c *config) {
 		c.transport = transport
 	})
 	assert.NoError(err)
@@ -86,20 +88,23 @@ func TestConcentrator(t *testing.T) {
 	})
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
-			transport := newDummyTransport()
-			c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), 500_000, &statsd.NoOpClientDirect{})
-			assert.Len(t, transport.Stats(), 0)
-			ss1, ok := c.newTracerStatSpan(&s1, nil)
-			assert.True(t, ok)
-			c.Start()
-			c.In <- ss1
-			time.Sleep(2 * time.Millisecond * timeMultiplicator)
-			c.Stop()
-			actualStats := transport.Stats()
-			assert.Len(t, actualStats, 1)
-			assert.Len(t, actualStats[0].Stats, 1)
-			assert.Len(t, actualStats[0].Stats[0].Stats, 1)
-			assert.Equal(t, "http.request", actualStats[0].Stats[0].Stats[0].Name)
+			synctest.Test(t, func(t *testing.T) {
+				transport := newDummyTransport()
+				c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), 500_000, &statsd.NoOpClientDirect{})
+				assert.Len(t, transport.Stats(), 0)
+				ss1, ok := c.newTracerStatSpan(&s1, nil)
+				assert.True(t, ok)
+				c.Start()
+				c.In <- ss1
+				time.Sleep(2 * time.Millisecond) // instant: fake clock advances 2ms past flush interval
+				synctest.Wait()                  // wait for concentrator goroutine to flush
+				c.Stop()
+				actualStats := transport.Stats()
+				assert.Len(t, actualStats, 1)
+				assert.Len(t, actualStats[0].Stats, 1)
+				assert.Len(t, actualStats[0].Stats[0].Stats, 1)
+				assert.Equal(t, "http.request", actualStats[0].Stats[0].Stats[0].Name)
+			})
 		})
 
 		t.Run("recent+stats", func(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -53,64 +54,67 @@ func TestLogDirectory(t *testing.T) {
 		assert.Error(t, err)
 	})
 	t.Run("valid", func(t *testing.T) {
-		// ensure File is created successfully
-		dir, err := os.MkdirTemp("", "example")
-		if err != nil {
-			t.Fatalf("Failure creating directory %v", err)
-		}
-		f, err := OpenFileAtPath(dir)
-		assert.Nil(t, err)
-		fp := dir + "/" + LoggerFile
-		assert.NotNil(t, f.file)
-		assert.Equal(t, fp, f.file.Name())
-		assert.False(t, f.closed)
+		synctest.Test(t, func(t *testing.T) {
+			// ensure File is created successfully
+			dir, err := os.MkdirTemp("", "example")
+			if err != nil {
+				t.Fatalf("Failure creating directory %v", err)
+			}
+			f, err := OpenFileAtPath(dir)
+			assert.Nil(t, err)
+			fp := dir + "/" + LoggerFile
+			assert.NotNil(t, f.file)
+			assert.Equal(t, fp, f.file.Name())
+			assert.False(t, f.closed)
 
-		// ensure this setting plays nicely with other log features
-		oldLvl := levelThreshold
-		SetLevel(LevelDebug)
-		defer func() {
-			SetLevel(oldLvl)
-		}()
-		Info("info!")
-		Warn("warn!")
-		Debug("debug!")
-		// shorten errrate to test Error() behavior in a reasonable amount of time
-		oldRate := errrate
-		errrate = time.Microsecond
-		defer func() {
-			errrate = oldRate
-		}()
-		Error("error!")
-		time.Sleep(1 * time.Second)
+			// ensure this setting plays nicely with other log features
+			oldLvl := levelThreshold
+			SetLevel(LevelDebug)
+			defer func() {
+				SetLevel(oldLvl)
+			}()
+			Info("info!")
+			Warn("warn!")
+			Debug("debug!")
+			// shorten errrate to test Error() behavior in a reasonable amount of time
+			oldRate := errrate
+			errrate = time.Microsecond
+			defer func() {
+				errrate = oldRate
+			}()
+			Error("error!")
+			time.Sleep(1 * time.Second) // instant: fake clock advances 1s past the errrate timer
+			synctest.Wait()             // wait for time.AfterFunc(errrate, Flush) to fire
 
-		b, err := os.ReadFile(fp)
-		if err != nil {
-			t.Fatalf("Failure reading file: %v", err)
-		}
-		// convert file content to []string{}, split by \n, to easily check its contents
-		lines := bytes.Split(b, []byte{'\n'})
-		var logs []string
-		for _, line := range lines {
-			logs = append(logs, string(line))
-		}
+			b, err := os.ReadFile(fp)
+			if err != nil {
+				t.Fatalf("Failure reading file: %v", err)
+			}
+			// convert file content to []string{}, split by \n, to easily check its contents
+			lines := bytes.Split(b, []byte{'\n'})
+			var logs []string
+			for _, line := range lines {
+				logs = append(logs, string(line))
+			}
 
-		assert.True(t, containsMessage("INFO", "info!", logs))
-		assert.True(t, containsMessage("WARN", "warn!", logs))
-		assert.True(t, containsMessage("DEBUG", "debug!", logs))
-		assert.True(t, containsMessage("ERROR", "error!", logs))
+			assert.True(t, containsMessage("INFO", "info!", logs))
+			assert.True(t, containsMessage("WARN", "warn!", logs))
+			assert.True(t, containsMessage("DEBUG", "debug!", logs))
+			assert.True(t, containsMessage("ERROR", "error!", logs))
 
-		f.Close()
-		assert.True(t, f.closed)
+			f.Close()
+			assert.True(t, f.closed)
 
-		//ensure f.Close() is concurrent-safe and free of deadlocks
-		var wg sync.WaitGroup
-		for range 100 {
-			wg.Go(func() {
-				f.Close()
-			})
-		}
-		wg.Wait()
-		assert.True(t, f.closed)
+			//ensure f.Close() is concurrent-safe and free of deadlocks
+			var wg sync.WaitGroup
+			for range 100 {
+				wg.Go(func() {
+					f.Close()
+				})
+			}
+			wg.Wait()
+			assert.True(t, f.closed)
+		})
 	})
 }
 
