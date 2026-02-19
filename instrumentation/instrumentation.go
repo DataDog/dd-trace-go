@@ -170,6 +170,12 @@ func (i *Instrumentation) WithExecutionTraced(ctx context.Context) context.Conte
 	return internal.WithExecutionTraced(ctx)
 }
 
+// PopExecutionTraced pops the top executionTracedKey from the GLS stack.
+// Must be paired with WithExecutionTraced when the traced scope ends.
+func (i *Instrumentation) PopExecutionTraced() {
+	internal.PopExecutionTraced()
+}
+
 type StatsdClient = internal.StatsdClient
 
 func (i *Instrumentation) StatsdClient(extraTags []string) (StatsdClient, error) {

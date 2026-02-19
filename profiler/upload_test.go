@@ -42,7 +42,7 @@ func TestTryUploadUDS(t *testing.T) {
 		t.Skip("Unix domain sockets are non-functional on windows.")
 	}
 	profiles := make(chan profileMeta, 1)
-	server := httptest.NewUnstartedServer(&mockBackend{t: t, profiles: profiles})
+	server := httptest.NewUnstartedServer(&mockBackend{profiles: profiles})
 	udsPath := "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"
 	l, err := net.Listen("unix", udsPath)
 	if err != nil {
@@ -100,20 +100,27 @@ func TestOldAgent(t *testing.T) {
 	assert.Equal(t, errOldAgent, err)
 }
 
+func setContainerEntityIDs(t *testing.T, cid, eid string) {
+	t.Helper()
+	origCID := containerID.Load()
+	origEID := entityID.Load()
+	t.Cleanup(func() {
+		containerID.Store(origCID)
+		entityID.Store(origEID)
+	})
+	containerID.Store(&cid)
+	entityID.Store(&eid)
+}
+
 func TestEntityContainerIDHeaders(t *testing.T) {
 	t.Run("set", func(t *testing.T) {
-		defer func(cid, eid string) { containerID = cid; entityID = eid }(containerID, entityID)
-		entityID = "fakeEntityID"
-		containerID = "fakeContainerID"
+		setContainerEntityIDs(t, "fakeContainerID", "fakeEntityID")
 		profile := doOneShortProfileUpload(t)
-		assert.Equal(t, containerID, profile.headers.Get("Datadog-Container-Id"))
-		assert.Equal(t, entityID, profile.headers.Get("Datadog-Entity-Id"))
+		assert.Equal(t, "fakeContainerID", profile.headers.Get("Datadog-Container-Id"))
+		assert.Equal(t, "fakeEntityID", profile.headers.Get("Datadog-Entity-Id"))
 	})
 	t.Run("unset", func(t *testing.T) {
-		// Force an empty containerid and entityID on this test.
-		defer func(cid, eid string) { containerID = cid; entityID = eid }(containerID, entityID)
-		entityID = ""
-		containerID = ""
+		setContainerEntityIDs(t, "", "")
 		profile := doOneShortProfileUpload(t)
 		assert.Empty(t, profile.headers.Get("Datadog-Container-ID"))
 		assert.Empty(t, profile.headers.Get("Datadog-Entity-ID"))

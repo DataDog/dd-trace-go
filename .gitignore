@@ -32,3 +32,5 @@ coverage-*.txt
 /.vscode
 /.claude/*
 !/.claude/commands/
+!/.claude/settings.json
+

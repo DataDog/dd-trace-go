@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -37,13 +38,20 @@ const customProfileLabelLimit = 10
 var (
 	mu             sync.Mutex
 	activeProfiler *profiler
-	containerID    = internal.ContainerID() // replaced in tests
-	entityID       = internal.EntityID()    // replaced in tests
+	containerID    atomic.Pointer[string]
+	entityID       atomic.Pointer[string]
 
-	// errProfilerStopped is a sentinel for suppressng errors if we are
+	// errProfilerStopped is a sentinel for suppressing errors if we are
 	// about to stop the profiler
 	errProfilerStopped = errors.New("profiler stopped")
 )
+
+func init() {
+	cid := internal.ContainerID()
+	containerID.Store(&cid)
+	eid := internal.EntityID()
+	entityID.Store(&eid)
+}
 
 // Start starts the profiler. If the profiler is already running, it will be
 // stopped and restarted with the given options.

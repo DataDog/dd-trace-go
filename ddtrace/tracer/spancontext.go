@@ -110,16 +110,20 @@ type SpanContext struct {
 	spanID  uint64
 
 	// guards below fields
-	mu      locking.RWMutex
+	mu locking.RWMutex
+	// +checklocks:mu
 	baggage map[string]string
 	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	hasBaggage uint32 // +checkatomic
 	// e.g. "synthetics"
+	// +checklocks:mu
 	origin string
 
 	// links to related spans in separate|external|disconnected traces
+	// +checklocks:mu
 	spanLinks []SpanLink
 	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// +checklocks:mu
 	baggageOnly bool
 }
 
@@ -143,10 +147,10 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
 	sc.traceID = c.TraceIDBytes()
 	sc.spanID = c.SpanID()
-	sc.baggage = make(map[string]string)
+	sc.baggage = make(map[string]string) // +checklocksignore - Initialization time, not shared yet.
 	c.ForeachBaggageItem(func(k, v string) bool {
 		sc.hasBaggage = 1 // +checklocksignore - Initialization time, not shared yet.
-		sc.baggage[k] = v
+		sc.baggage[k] = v // +checklocksignore - Initialization time, not shared yet.
 		return true
 	})
 
@@ -174,7 +178,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		return &sc
 	}
 
-	sc.origin = ctx.Origin()
+	sc.origin = ctx.Origin() // +checklocksignore - Initialization time, not shared yet.
 	if sc.trace == nil {
 		sc.trace = newTrace()
 	}
@@ -196,10 +200,10 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		if !parent.baggageOnly {
+		if !parent.baggageOnly { // +checklocksignore - Read-only after init.
 			context.traceID.SetUpper(parent.traceID.Upper())
 			context.trace = parent.trace
-			context.origin = parent.origin
+			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
@@ -274,13 +278,14 @@ func (c *SpanContext) TraceIDUpper() uint64 {
 
 // SpanLinks implements ddtrace.SpanContext
 func (c *SpanContext) SpanLinks() []SpanLink {
-	cp := make([]SpanLink, len(c.spanLinks))
-	copy(cp, c.spanLinks)
+	cp := make([]SpanLink, len(c.spanLinks)) // +checklocksignore - Read-only after init.
+	copy(cp, c.spanLinks)                    // +checklocksignore - Read-only after init.
 	return cp
 }
 
 // foreachBaggageItemLocked iterates over baggage items.
 // c.mu must be held for reading.
+// +checklocksread:c.mu
 func (c *SpanContext) foreachBaggageItemLocked(handler func(k, v string) bool) {
 	assert.RWMutexRLocked(&c.mu)
 	for k, v := range c.baggage {
@@ -334,6 +339,7 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 
 // setBaggageItemLocked sets a baggage item.
 // c.mu must be held for writing.
+// +checklocks:c.mu
 func (c *SpanContext) setBaggageItemLocked(key, val string) {
 	assert.RWMutexLocked(&c.mu)
 	if c.baggage == nil {
@@ -351,6 +357,7 @@ func (c *SpanContext) setBaggageItem(key, val string) {
 
 // baggageItemLocked retrieves a baggage item.
 // c.mu must be held for reading.
+// +checklocksread:c.mu
 func (c *SpanContext) baggageItemLocked(key string) string {
 	assert.RWMutexRLocked(&c.mu)
 	return c.baggage[key]
@@ -358,6 +365,7 @@ func (c *SpanContext) baggageItemLocked(key string) string {
 
 // baggageCountLocked returns the number of baggage items.
 // c.mu must be held for reading.
+// +checklocksread:c.mu
 func (c *SpanContext) baggageCountLocked() int {
 	assert.RWMutexRLocked(&c.mu)
 	return len(c.baggage)
@@ -393,8 +401,10 @@ func (c *SpanContext) safeDebugString() string {
 		c.mu.RUnlock()
 	}
 
+	origin := c.origin           // +checklocksignore - Read-only after init.
+	baggageOnly := c.baggageOnly // +checklocksignore - Read-only after init.
 	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, baggageCount=%d, origin=%q, updated=%t, isRemote=%t, baggageOnly=%t}",
-		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, c.origin, c.updated, c.isRemote, c.baggageOnly)
+		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, origin, c.updated, c.isRemote, baggageOnly)
 }
 
 // samplingDecision is the decision to send a trace to the agent or not.
