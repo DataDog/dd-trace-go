@@ -14,8 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -251,4 +254,256 @@ func TestProduceConsumeFunctional(t *testing.T) {
 
 	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
 	assert.Equal(t, s0.TraceID(), s1.TraceID(), "spans should have the same trace id")
+}
+
+func TestProduceErrorFunctional(t *testing.T) {
+	topic := topicName(t)
+	createTopicWithCleanup(t, topic)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producerCl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+		kgo.RecordPartitioner(kgo.ManualPartitioner()),
+	))
+	require.NoError(t, err)
+	defer producerCl.Close()
+
+	err = producerCl.Ping(context.Background())
+	require.NoError(t, err)
+
+	// We force an error by producing to partition 99 which doesn't exist
+	record := &kgo.Record{
+		Topic:     topic,
+		Key:       []byte("key1"),
+		Value:     []byte("value1"),
+		Partition: 99,
+	}
+	err = producerCl.ProduceSync(context.Background(), record).FirstErr()
+	require.Error(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	s := spans[0]
+	assert.Equal(t, "kafka.produce", s.OperationName())
+	assert.Contains(t, s.Tag(ext.ErrorMsg), "invalid record partitioning")
+}
+
+func TestConsumeSpansFinishedOnNextPoll(t *testing.T) {
+	topic := topicName(t)
+	createTopicWithCleanup(t, topic)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	consumerCl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+		kgo.ConsumeTopics(topic),
+		kgo.ConsumerGroup(testGroupID),
+	))
+	require.NoError(t, err)
+	defer consumerCl.Close()
+
+	producerCl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+	))
+	require.NoError(t, err)
+	defer producerCl.Close()
+
+	// Produce first message
+	err = producerCl.ProduceSync(context.Background(), &kgo.Record{
+		Topic: topic,
+		Value: []byte("message1"),
+	}).FirstErr()
+	require.NoError(t, err)
+
+	// First poll - creates consume span but doesn't finish it yet
+	fetches := consumerCl.PollFetches(context.Background())
+	require.NoError(t, fetches.Err())
+	require.Len(t, fetches.Records(), 1)
+
+	// At this point, consume span is still active (not finished)
+	// Only the produce span should be finished
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "kafka.produce", spans[0].OperationName())
+
+	// Produce second message
+	err = producerCl.ProduceSync(context.Background(), &kgo.Record{
+		Topic: topic,
+		Value: []byte("message2"),
+	}).FirstErr()
+	require.NoError(t, err)
+
+	// Second poll - should finish previous consume span and create new one
+	fetches = consumerCl.PollFetches(context.Background())
+	require.NoError(t, fetches.Err())
+	require.Len(t, fetches.Records(), 1)
+
+	// Now we should have: produce1, produce2, consume1 (finished by second poll)
+	spans = mt.FinishedSpans()
+	require.Len(t, spans, 3)
+	assert.Equal(t, "kafka.produce", spans[0].OperationName())
+	assert.Equal(t, "kafka.produce", spans[1].OperationName())
+	assert.Equal(t, "kafka.consume", spans[2].OperationName())
+}
+
+func TestConsumeSpansFinishedOnClose(t *testing.T) {
+	topic := topicName(t)
+	createTopicWithCleanup(t, topic)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	consumerCl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+		kgo.ConsumeTopics(topic),
+		kgo.ConsumerGroup(testGroupID),
+	))
+	require.NoError(t, err)
+
+	producerCl, err := NewClient(ClientOptions(
+		kgo.SeedBrokers(seedBrokers...),
+	))
+	require.NoError(t, err)
+	defer producerCl.Close()
+
+	err = producerCl.ProduceSync(context.Background(), &kgo.Record{
+		Topic: topic,
+		Value: []byte("message1"),
+	}).FirstErr()
+	require.NoError(t, err)
+
+	fetches := consumerCl.PollFetches(context.Background())
+	require.NoError(t, fetches.Err())
+	require.Len(t, fetches.Records(), 1)
+
+	// Before close: only produce span is finished
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "kafka.produce", spans[0].OperationName())
+
+	// Close should finish the active consume span
+	consumerCl.Close()
+
+	// After close: both produce and consume spans are finished
+	spans = mt.FinishedSpans()
+	require.Len(t, spans, 2)
+	assert.Equal(t, "kafka.produce", spans[0].OperationName())
+	assert.Equal(t, "kafka.consume", spans[1].OperationName())
+}
+
+func TestProduceDSMPathway(t *testing.T) {
+	topic := topicName(t)
+	createTopicWithCleanup(t, topic)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producedRecords := &producedRecords{}
+
+	producerCl, err := NewClient(
+		ClientOptions(
+			kgo.SeedBrokers(seedBrokers...),
+			kgo.WithHooks(producedRecords),
+		),
+		tracing.WithDataStreams(),
+	)
+	require.NoError(t, err)
+	defer producerCl.Close()
+
+	err = producerCl.ProduceSync(context.Background(), &kgo.Record{
+		Topic: topic,
+		Value: []byte("message1"),
+	}).FirstErr()
+	require.NoError(t, err)
+
+	require.Len(t, producedRecords.records, 1)
+	record := producedRecords.records[0]
+
+	// Extract pathway from record headers
+	carrier := tracing.NewKafkaHeadersCarrier(wrapRecord(record))
+	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(),
+		carrier,
+	))
+	require.True(t, ok, "pathway not found in kafka message headers")
+
+	// Create expected pathway
+	ctx, _ := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		"direction:out", "topic:"+topic, "type:kafka",
+	)
+	want, _ := datastreams.PathwayFromContext(ctx)
+
+	assert.NotEqual(t, uint64(0), want.GetHash())
+	assert.Equal(t, want.GetHash(), got.GetHash())
+}
+
+func TestConsumeDSMPathway(t *testing.T) {
+	topic := topicName(t)
+	createTopicWithCleanup(t, topic)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producerCl, err := NewClient(
+		ClientOptions(kgo.SeedBrokers(seedBrokers...)),
+		tracing.WithDataStreams(),
+	)
+	require.NoError(t, err)
+	defer producerCl.Close()
+
+	consumerCl, err := NewClient(
+		ClientOptions(
+			kgo.SeedBrokers(seedBrokers...),
+			kgo.ConsumeTopics(topic),
+			kgo.ConsumerGroup(testGroupID),
+		),
+		tracing.WithDataStreams(),
+	)
+	require.NoError(t, err)
+	defer consumerCl.Close()
+
+	err = producerCl.ProduceSync(context.Background(), &kgo.Record{
+		Topic: topic,
+		Value: []byte("message1"),
+	}).FirstErr()
+	require.NoError(t, err)
+
+	fetches := consumerCl.PollFetches(context.Background())
+	require.NoError(t, fetches.Err())
+	records := fetches.Records()
+	require.Len(t, records, 1)
+
+	// Get the actual group ID that franz-go reports (used for DSM checkpoint)
+	actualGroupID, _ := consumerCl.Client.GroupMetadata()
+	require.NotEmpty(t, actualGroupID, "consumer should have joined a group")
+
+	record := records[0]
+
+	// Extract pathway from consumed record headers
+	carrier := tracing.NewKafkaHeadersCarrier(wrapRecord(record))
+	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(),
+		carrier,
+	))
+	require.True(t, ok, "pathway not found in kafka message headers")
+
+	// Create expected pathway: produce checkpoint -> consume checkpoint
+	// Use the actual group ID that franz-go reports (may differ from configured)
+	ctx, _ := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		"direction:out", "topic:"+topic, "type:kafka",
+	)
+	ctx, _ = tracer.SetDataStreamsCheckpoint(
+		ctx,
+		"direction:in", "topic:"+topic, "type:kafka", "group:"+actualGroupID,
+	)
+	want, _ := datastreams.PathwayFromContext(ctx)
+
+	assert.NotEqual(t, uint64(0), want.GetHash())
+	assert.Equal(t, want.GetHash(), got.GetHash())
 }
