@@ -527,7 +527,64 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		t.reportHealthMetricsAtInterval(statsInterval)
 	}()
 	t.stats.Start()
+
+	// Periodically refresh agent capabilities from /info so that config changes
+	// (e.g. peer tags, span events support) take effect without a tracer restart.
+	// Skip when the agent is disabled (lambda / agentless / tracing disabled).
+	if !c.internalConfig.LogToStdout() && c.enabled.get() && !c.ciVisibilityAgentless {
+		interval := c.agentInfoPollInterval
+		if interval <= 0 {
+			interval = defaultAgentInfoPollInterval
+		}
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			t.pollAgentInfo(interval)
+		}()
+	}
+
 	return t, nil
+}
+
+// defaultAgentInfoPollInterval is the default interval at which the tracer
+// polls the agent's /info endpoint for capability updates.
+const defaultAgentInfoPollInterval = 5 * time.Second
+
+// pollAgentInfo polls the agent /info endpoint at the given interval until the
+// tracer stops. It delegates each refresh to refreshAgentFeatures.
+func (t *tracer) pollAgentInfo(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			t.refreshAgentFeatures()
+		case <-t.stop:
+			return
+		}
+	}
+}
+
+// refreshAgentFeatures fetches a fresh snapshot from /info and atomically
+// updates the dynamic agent capabilities. Static fields that are baked into
+// components at startup (transport URL, statsd address, obfuscator config, etc.)
+// are preserved from the current snapshot so a poll can never change them.
+func (t *tracer) refreshAgentFeatures() {
+	newFeatures, err := fetchAgentFeatures(t.config.agentURL, t.config.httpClient)
+	if err != nil {
+		log.Debug("agent info poll failed: %s", err.Error())
+		return // keep last-known-good
+	}
+	// Preserve static fields: these are baked into components at startup and
+	// must not change while the tracer is running.
+	current := t.config.agent.load()
+	newFeatures.v1ProtocolAvailable = current.v1ProtocolAvailable
+	newFeatures.StatsdPort = current.StatsdPort
+	newFeatures.evpProxyV2 = current.evpProxyV2
+	newFeatures.metaStructAvailable = current.metaStructAvailable
+	newFeatures.featureFlags = current.featureFlags
+	newFeatures.defaultEnv = current.defaultEnv
+	t.config.agent.store(newFeatures)
 }
 
 // Flush flushes any buffered traces. Flush is in effect only if a tracer
