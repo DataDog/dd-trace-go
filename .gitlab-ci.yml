@@ -12,7 +12,7 @@ stages:
 # All jobs that need versioned Go values must include this job in their needs:.
 parse-go-versions:
   stage: .pre
-  image: alpine:latest
+  image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:latest
   tags: ["arch:amd64"]
   script:
     - |
