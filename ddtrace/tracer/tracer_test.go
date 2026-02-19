@@ -2333,8 +2333,10 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		return tracer, transport, nil, nil, err
 	}
 	// These settings are always enabled on the trace-agent.
-	tracer.config.agent.Stats = true
-	tracer.config.agent.DropP0s = true
+	af := tracer.config.agent.load()
+	af.Stats = true
+	af.DropP0s = true
+	tracer.config.agent.store(af)
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		tracer.reportHealthMetrics()

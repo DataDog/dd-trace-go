@@ -276,7 +276,7 @@ func Start(opts ...StartOption) error {
 	// client is appropriately configured.
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
 
 	appsec.Start(appsecopts...)
 
@@ -467,14 +467,17 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
 		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
 		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
-		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
-			SQL: obfuscate.SQLConfig{
-				TableNames:       c.agent.HasFlag("table_names"),
-				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
-				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
-				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
-			},
-		}),
+		obfuscator: obfuscate.NewObfuscator(func() obfuscate.Config {
+			af := c.agent.load()
+			return obfuscate.Config{
+				SQL: obfuscate.SQLConfig{
+					TableNames:       af.HasFlag("table_names"),
+					ReplaceDigits:    af.HasFlag("quantize_sql_tables") || af.HasFlag("replace_sql_digits"),
+					KeepSQLAlias:     af.HasFlag("keep_sql_alias"),
+					DollarQuotedFunc: af.HasFlag("dollar_quoted_func"),
+				},
+			}
+		}()),
 		statsd:      statsd,
 		dataStreams: dataStreamsProcessor,
 		logFile:     logFile,
@@ -783,7 +786,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if hostname := cfg.Hostname(); hostname != "" && cfg.ReportHostname() {
 		span.setMetaInit(keyHostname, hostname)
 	}
-	span.supportsEvents = t.config.agent.spanEventsAvailable
+	span.supportsEvents = t.config.agent.load().spanEventsAvailable
 
 	// add global tags
 	for k, v := range t.config.globalTags.get() {

@@ -149,7 +149,7 @@ func logStartup(t *tracer) {
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  fmt.Sprintf("%t", t.config.internalConfig.LogToStdout()),
-		AgentFeatures:               t.config.agent,
+		AgentFeatures:               t.config.agent.load(),
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         partialFlushEnabled,
