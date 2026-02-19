@@ -162,9 +162,7 @@ func TestTracerCleanStop(t *testing.T) {
 	}
 
 	defer setLogWriter(io.Discard)()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range n {
 			// Lambda mode is used to avoid the startup cost associated with agent discovery.
 			Start(withTransport(transport), WithLambdaMode(true), withNoopStats())
@@ -172,11 +170,9 @@ func TestTracerCleanStop(t *testing.T) {
 			Start(withTransport(transport), WithLambdaMode(true), WithSamplerRate(0.99), withNoopStats())
 			Start(withTransport(transport), WithLambdaMode(true), WithSamplerRate(0.99), withNoopStats())
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range n {
 			Stop()
 			Stop()
@@ -186,7 +182,7 @@ func TestTracerCleanStop(t *testing.T) {
 			Stop()
 			Stop()
 		}
-	}()
+	})
 
 	wg.Wait()
 	Stop()
@@ -1577,22 +1573,18 @@ func TestTracerTraceMaxSize(t *testing.T) {
 	spans[4] = StartSpan("span4", ChildOf(spans[0].Context()))
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := range 5000 {
 			spans[1].SetTag(strconv.Itoa(i), 1)
 			spans[2].SetTag(strconv.Itoa(i), 1)
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		spans[0].Finish()
 		spans[3].Finish()
 		spans[4].Finish()
-	}()
+	})
 
 	wg.Wait()
 }
@@ -2151,16 +2143,14 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		wg := sync.WaitGroup{}
 		for range 100 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 				defer parent.Finish()
 
 				for range 10 {
 					tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
 				}
-			}()
+			})
 		}
 		wg.Wait()
 	}
@@ -2838,20 +2828,16 @@ func TestPPROFLabelRootSpanRace(t *testing.T) {
 	defer stop()
 	parent := tracer.StartSpan("parent")
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range 1000 {
 			tracer.StartSpan("child", ChildOf(parent.Context()))
 		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		for range 1000 {
 			parent.SetTag(ext.ResourceName, "x")
 		}
-	}()
+	})
 	wg.Wait()
 }
 
@@ -2945,22 +2931,18 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "0.01") // Set aggresive poll interval
 
 	// Goroutine 1: Continuously start the tracer
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range iterations {
 			Start()
 		}
-	}()
+	})
 
 	// Goroutine 2: Continuously stop the tracer
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range iterations {
 			Stop()
 		}
-	}()
+	})
 
 	// Wait for both goroutines to complete
 	wg.Wait()

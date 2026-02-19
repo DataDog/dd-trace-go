@@ -138,9 +138,7 @@ func TestPrioritySampler(t *testing.T) {
 
 		var wg sync.WaitGroup
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 500 {
 				assert.NoError(ps.readRatesJSON(
 					io.NopCloser(strings.NewReader(
@@ -153,16 +151,14 @@ func TestPrioritySampler(t *testing.T) {
 					)),
 				))
 			}
-		}()
+		})
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 500 {
 				ps.getRate(mkSpan("obfuscate.http", "none"))
 				ps.getRate(mkSpan("other.service", "none"))
 			}
-		}()
+		})
 
 		wg.Wait()
 	})

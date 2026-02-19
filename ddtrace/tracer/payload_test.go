@@ -452,9 +452,7 @@ func TestPayloadConcurrentAccess(t *testing.T) {
 
 	// Start multiple goroutines that perform concurrent operations
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			// Push some spans
 			for range 5 {
@@ -467,17 +465,15 @@ func TestPayloadConcurrentAccess(t *testing.T) {
 				_ = stats.size
 				_ = stats.itemCount
 			}
-		}()
+		})
 	}
 
 	// Also perform operations from the main goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for range 20 {
 			_ = p.stats().size
 		}
-	}()
+	})
 
 	wg.Wait()
 
@@ -504,39 +500,33 @@ func TestPayloadConcurrentReadWrite(t *testing.T) {
 
 	// Concurrent writers
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 10 {
 				_, _ = p.push(spans)
 			}
-		}()
+		})
 	}
 
 	// Concurrent readers
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			buf := make([]byte, 1024)
 			for range 10 {
 				p.reset()
 				_, _ = p.Read(buf)
 			}
-		}()
+		})
 	}
 
 	// Concurrent size/count checkers
 	for range 3 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 20 {
 				stats := p.stats()
 				_ = stats.size
 				_ = stats.itemCount
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -633,19 +623,15 @@ func BenchmarkPayloadConcurrentAccess(b *testing.B) {
 				var wg sync.WaitGroup
 
 				for range concurrency {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+					wg.Go(func() {
 						_, _ = p.push(spans)
-					}()
+					})
 				}
 
 				for range concurrency {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+					wg.Go(func() {
 						_ = p.stats()
-					}()
+					})
 				}
 
 				wg.Wait()

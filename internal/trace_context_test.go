@@ -161,11 +161,9 @@ func TestGLSLeaksOnCrossGoroutineFinish(t *testing.T) {
 
 		// Simulate span.Finish on a different goroutine.
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			cleanup() // GLSPopFunc no-op: different goroutine's contextStack
-		}()
+		})
 		wg.Wait()
 
 		// PopExecutionTraced pops the top (false), leaving the bottom (true) leaked.
@@ -194,11 +192,9 @@ func TestNoGoroutineLeaksFromGLSOperations(t *testing.T) {
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			cleanup()
-		}()
+		})
 		wg.Wait()
 
 		PopExecutionTraced()
@@ -267,8 +263,7 @@ func TestGLSMemoryGrowthCrossGoroutine(t *testing.T) {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() { defer wg.Done(); cleanup() }()
+		wg.Go(func() { ; cleanup() })
 		wg.Wait()
 		PopExecutionTraced()
 	}
@@ -283,8 +278,7 @@ func TestGLSMemoryGrowthCrossGoroutine(t *testing.T) {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() { defer wg.Done(); cleanup() }()
+		wg.Go(func() { ; cleanup() })
 		wg.Wait()
 		PopExecutionTraced()
 	}

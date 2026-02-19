@@ -252,10 +252,8 @@ func (l *LLMObs) Run() {
 	l.running = true
 	l.mu.Unlock()
 
-	l.wg.Add(1)
-	go func() {
+	l.wg.Go(func() {
 		// this goroutine should be the only one writing to the internal buffers
-		defer l.wg.Done()
 
 		ticker := time.NewTicker(l.flushInterval)
 		defer ticker.Stop()
@@ -270,20 +268,16 @@ func (l *LLMObs) Run() {
 
 			case <-ticker.C:
 				params := l.clearBuffersNonLocked()
-				l.wg.Add(1)
-				go func() {
-					defer l.wg.Done()
+				l.wg.Go(func() {
 					l.batchSend(params)
-				}()
+				})
 
 			case <-l.flushNowCh:
 				log.Debug("llmobs: on-demand flush signal")
 				params := l.clearBuffersNonLocked()
-				l.wg.Add(1)
-				go func() {
-					defer l.wg.Done()
+				l.wg.Go(func() {
 					l.batchSend(params)
-				}()
+				})
 
 			case <-l.stopCh:
 				log.Debug("llmobs: stop signal")
@@ -293,7 +287,7 @@ func (l *LLMObs) Run() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 // clearBuffersNonLocked clears the internal buffers and returns the corresponding batchSendParams to send to the backend.

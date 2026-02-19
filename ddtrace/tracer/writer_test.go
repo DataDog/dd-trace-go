@@ -559,29 +559,25 @@ func TestAgentWriterRaceCondition(t *testing.T) {
 
 	// Spawn goroutines that continuously add traces
 	for range numGoroutines / 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start // Wait for coordination signal
 
 			for range numOperations {
 				spans := []*Span{makeSpan(1)}
 				writer.add(spans)
 			}
-		}()
+		})
 	}
 
 	// Spawn goroutines that continuously flush
 	for range numGoroutines / 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start // Wait for coordination signal
 
 			for range numOperations {
 				writer.flush()
 			}
-		}()
+		})
 	}
 
 	// Start all goroutines simultaneously to maximize race condition probability
@@ -629,9 +625,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 
 	// Spawn goroutines that add traces
 	for range numAddGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 
 			for range numTracesPerGoroutine {
@@ -639,14 +633,12 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 				writer.add(spans)
 				atomic.AddInt32(&tracesAdded, 1)
 			}
-		}()
+		})
 	}
 
 	// Spawn goroutines that flush occasionally
 	for range numFlushGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 
 			// Flush periodically while adds are happening
@@ -654,7 +646,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 				time.Sleep(time.Microsecond * 100)
 				writer.flush()
 			}
-		}()
+		})
 	}
 
 	// Start all goroutines

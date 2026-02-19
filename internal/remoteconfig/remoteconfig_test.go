@@ -464,14 +464,12 @@ func TestAsync(t *testing.T) {
 		product := fmt.Sprintf("%d", rand.Int()%10)
 		capability := Capability(rand.Uint32() % 10)
 		startSync.Add(1)
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			startSync.Done()
 			startSync.Wait()
 			callback := func(_ ProductUpdate) map[string]state.ApplyStatus { return nil }
 			Subscribe(product, callback, capability)
-			wg.Done()
-		}()
+		})
 
 		// Products
 		startSync.Add(1)
@@ -531,13 +529,11 @@ func TestAsync(t *testing.T) {
 			startSync.Wait()
 			UnregisterCallback(callback)
 		}()
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			// Make sure the callback is removed before we exit the test...
-			defer wg.Done()
 			cleanupSync.Wait()
 			UnregisterCallback(callback)
-		}()
+		})
 	}
 
 	// Unblock the goroutines start

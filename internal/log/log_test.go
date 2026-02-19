@@ -105,11 +105,9 @@ func TestLogDirectory(t *testing.T) {
 		//ensure f.Close() is concurrent-safe and free of deadlocks
 		var wg sync.WaitGroup
 		for range 100 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				f.Close()
-			}()
+			})
 		}
 		wg.Wait()
 		assert.True(t, f.closed)

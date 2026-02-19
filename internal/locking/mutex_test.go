@@ -135,14 +135,12 @@ func TestRWMutexAllowsConcurrentRead(t *testing.T) {
 
 	// Start multiple reader goroutines
 	for range 3 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			m.RLock()
 			atomic.AddInt32(&readCount, 1)
 			time.Sleep(10 * time.Millisecond)
 			m.RUnlock()
-		}()
+		})
 	}
 
 	time.Sleep(50 * time.Millisecond)

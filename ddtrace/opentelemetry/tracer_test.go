@@ -298,9 +298,7 @@ func BenchmarkOTelConcurrentTracing(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		wg := sync.WaitGroup{}
 		for range 100 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				ctx := context.Background()
 				newCtx, parent := tr.Start(ctx, "parent")
 				parent.SetAttributes(attribute.String("ServiceName", "pylons"),
@@ -311,7 +309,7 @@ func BenchmarkOTelConcurrentTracing(b *testing.B) {
 					_, child := tr.Start(newCtx, "child")
 					child.End()
 				}
-			}()
+			})
 		}
 	}
 }

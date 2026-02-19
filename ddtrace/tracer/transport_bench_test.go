@@ -81,9 +81,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 				var wg sync.WaitGroup
 
 				for range concurrency {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+					wg.Go(func() {
 
 						payload := newPayload(traceProtocolV04)
 						spans := []*Span{newBasicSpan("concurrent-transport-test")}
@@ -93,7 +91,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 						if err == nil {
 							rc.Close()
 						}
-					}()
+					})
 				}
 
 				wg.Wait()

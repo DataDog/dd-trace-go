@@ -31,11 +31,9 @@ func TestReportRuntimeMetrics(t *testing.T) {
 	assert.NoError(t, err)
 	defer trc.statsd.Close()
 
-	trc.wg.Add(1)
-	go func() {
-		defer trc.wg.Done()
+	trc.wg.Go(func() {
 		trc.reportRuntimeMetrics(time.Millisecond)
-	}()
+	})
 	assert := assert.New(t)
 	err = tg.Wait(assert, 35, 1*time.Second)
 	trc.Stop()
@@ -225,12 +223,10 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sp := tracer.StartSpan("operation")
 			sp.Finish()
-		}()
+		})
 	}
 	wg.Wait()
 	flush(5)

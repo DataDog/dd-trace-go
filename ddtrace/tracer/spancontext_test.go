@@ -191,9 +191,7 @@ func testAsyncSpanRace(t *testing.T) {
 			)
 			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 			finishes.Add(2)
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for range 500 {
 					// Spamming Finish to emulate concurrent Finish calls.
 					root.Finish()
@@ -216,10 +214,8 @@ func testAsyncSpanRace(t *testing.T) {
 						continue
 					}
 				}
-			}()
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			})
+			wg.Go(func() {
 				for range 500 {
 					// Spamming Finish to emulate concurrent Finish calls.
 					root.Finish()
@@ -235,10 +231,8 @@ func testAsyncSpanRace(t *testing.T) {
 						continue
 					}
 				}
-			}()
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			})
+			wg.Go(func() {
 				<-done
 				for range 50 {
 					// to trigger the bug, the child should be created after the root was finished,
@@ -246,7 +240,7 @@ func testAsyncSpanRace(t *testing.T) {
 					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.ManualKeep, true))
 					child.Finish()
 				}
-			}()
+			})
 			wg.Wait()
 		})
 	}

@@ -89,11 +89,9 @@ func TestXSyncMapCounterMap(t *testing.T) {
 
 		wg := sync.WaitGroup{}
 		for range 10 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				cm.Inc("key")
-			}()
+			})
 		}
 		wg.Wait()
 
@@ -151,11 +149,9 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 
 		wg := sync.WaitGroup{}
 		for range b.N {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				cm.Inc("key")
-			}()
+			})
 		}
 		wg.Wait()
 

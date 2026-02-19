@@ -496,20 +496,16 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.internalConfig.RuntimeMetricsEnabled() {
 		log.Debug("Runtime metrics enabled.")
-		t.wg.Add(1)
-		go func() {
-			defer t.wg.Done()
+		t.wg.Go(func() {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
-		}()
+		})
 	}
 	if c.internalConfig.DebugAbandonedSpans() {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.internalConfig.SpanTimeout())
 	}
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
+	t.wg.Go(func() {
 		tick := t.config.tickChan
 		if tick == nil {
 			ticker := time.NewTicker(flushInterval)
@@ -517,12 +513,10 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			tick = ticker.C
 		}
 		t.worker(tick)
-	}()
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
+	})
+	t.wg.Go(func() {
 		t.reportHealthMetricsAtInterval(statsInterval)
-	}()
+	})
 	t.stats.Start()
 	return t, nil
 }
