@@ -1494,7 +1494,7 @@
     "DD_TRACE_AGENT_PROTOCOL_VERSION": [
       {
         "implementation": "A",
-        "type": "decimal",
+        "type": "string",
         "default": "1.0"
       }
     ],

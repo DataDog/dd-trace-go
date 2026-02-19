@@ -708,7 +708,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 			// Set the trace protocol to use.
 			// If DD_TRACE_AGENT_PROTOCOL_VERSION is not set (not customized) or is already
 			// set to v1.0, then enable v1 trace protocol.
-			if internal.FloatEnv("DD_TRACE_AGENT_PROTOCOL_VERSION", traceProtocolV1) == traceProtocolV1 {
+			if s, ok := env.Lookup("DD_TRACE_AGENT_PROTOCOL_VERSION"); !ok || s == "1.0" {
 				features.v1ProtocolAvailable = true
 			}
 		}
