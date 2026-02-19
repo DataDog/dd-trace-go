@@ -458,6 +458,40 @@ func attributesContains(attrs map[string]interface{}, key string, val interface{
 	return false
 }
 
+func TestRecordError(t *testing.T) {
+	assert := assert.New(t)
+	_, _, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	errMsg := "something went wrong"
+	_, sp := tr.Start(context.Background(), "span_record_error")
+
+	// Record the error as an event
+	sp.RecordError(errors.New(errMsg), oteltrace.WithStackTrace(true))
+	sp.End()
+
+	dd := sp.(*span)
+	assert.Len(dd.events, 1)
+	e := dd.events[0]
+	assert.Equal("exception", e.name)
+
+	cfg := tracer.SpanEventConfig{}
+	for _, opt := range e.options {
+		opt(&cfg)
+	}
+
+	// Assert expected attributes exist on the event
+	assert.Len(cfg.Attributes, 3)
+
+	assert.True(attributesContains(cfg.Attributes, "exception.message", errMsg))
+	assert.True(attributesContains(cfg.Attributes, "exception.type", "*errors.errorString"))
+	assert.Contains(cfg.Attributes, "exception.stacktrace")
+
+	// verify status did not change to error since RecordError should not change span status
+	assert.Equal(codes.Unset, dd.statusInfo.code)
+}
+
 func TestSpanContextWithStartOptions(t *testing.T) {
 	assert := assert.New(t)
 	_, payloads, cleanup := mockTracerProvider(t)
