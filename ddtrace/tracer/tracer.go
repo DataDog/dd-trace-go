@@ -8,8 +8,10 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"os"
 	"runtime/pprof"
@@ -531,7 +533,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	// Periodically refresh agent capabilities from /info so that config changes
 	// (e.g. peer tags, span events support) take effect without a tracer restart.
 	// Skip when the agent is disabled (lambda / agentless / tracing disabled).
-	if !c.internalConfig.LogToStdout() && c.enabled.get() && !c.ciVisibilityAgentless {
+	if c.agentEnabled() {
 		interval := c.agentInfoPollInterval
 		if interval <= 0 {
 			interval = defaultAgentInfoPollInterval
@@ -572,19 +574,23 @@ func (t *tracer) pollAgentInfo(interval time.Duration) {
 func (t *tracer) refreshAgentFeatures() {
 	newFeatures, err := fetchAgentFeatures(t.config.agentURL, t.config.httpClient)
 	if err != nil {
-		log.Debug("agent info poll failed: %s", err.Error())
+		if !errors.Is(err, errAgentFeaturesNotSupported) {
+			log.Debug("agent info poll failed: %s", err.Error())
+		}
 		return // keep last-known-good
 	}
-	// Preserve static fields: these are baked into components at startup and
-	// must not change while the tracer is running.
-	current := t.config.agent.load()
-	newFeatures.v1ProtocolAvailable = current.v1ProtocolAvailable
-	newFeatures.StatsdPort = current.StatsdPort
-	newFeatures.evpProxyV2 = current.evpProxyV2
-	newFeatures.metaStructAvailable = current.metaStructAvailable
-	newFeatures.featureFlags = current.featureFlags
-	newFeatures.defaultEnv = current.defaultEnv
-	t.config.agent.store(newFeatures)
+	// Atomically graft the startup-frozen static fields from the current
+	// snapshot onto the fresh dynamic snapshot. update() handles the CAS
+	// loop in case a concurrent store races this write.
+	t.config.agent.update(func(current agentFeatures) agentFeatures {
+		newFeatures.v1ProtocolAvailable = current.v1ProtocolAvailable
+		newFeatures.StatsdPort = current.StatsdPort
+		newFeatures.evpProxyV2 = current.evpProxyV2
+		newFeatures.metaStructAvailable = current.metaStructAvailable
+		newFeatures.featureFlags = maps.Clone(current.featureFlags) // defensive copy
+		newFeatures.defaultEnv = current.defaultEnv
+		return newFeatures
+	})
 }
 
 // Flush flushes any buffered traces. Flush is in effect only if a tracer

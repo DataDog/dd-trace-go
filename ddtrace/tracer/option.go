@@ -151,7 +151,7 @@ type config struct {
 	agent atomicAgentFeatures
 
 	// agentInfoPollInterval overrides the default polling interval for /info.
-	// A zero value uses the default (agentInfoPollInterval constant in tracer.go).
+	// A zero value uses the default (defaultAgentInfoPollInterval constant in tracer.go).
 	agentInfoPollInterval time.Duration
 
 	// integrations reports if the user has instrumented a Datadog integration and
@@ -678,19 +678,44 @@ func (a *atomicAgentFeatures) store(f agentFeatures) {
 	a.val.Store(&f)
 }
 
+// update atomically reads the current snapshot, calls fn with it, and stores
+// the result. fn may be called more than once if a concurrent store races the
+// CAS; it must therefore be a pure transform with no observable side-effects.
+func (a *atomicAgentFeatures) update(fn func(agentFeatures) agentFeatures) {
+	for {
+		old := a.val.Load()
+		var cur agentFeatures
+		if old != nil {
+			cur = *old
+		}
+		next := fn(cur)
+		if a.val.CompareAndSwap(old, &next) {
+			return
+		}
+	}
+}
+
+// errAgentFeaturesNotSupported is returned by fetchAgentFeatures when the
+// agent does not expose the /info endpoint (pre-7.28.0 agents). Callers
+// should treat this as "no capabilities known" at startup, or "keep the
+// previous snapshot" during a poll.
+var errAgentFeaturesNotSupported = errors.New("agent does not support /info")
+
 // fetchAgentFeatures queries the trace-agent's /info endpoint and parses the
 // response into an agentFeatures value. It returns an error if the request
 // fails or the response cannot be decoded; the caller should retain the
-// previous snapshot in that case.
+// previous snapshot in that case. A 404 response returns
+// errAgentFeaturesNotSupported so callers can distinguish it from a real
+// network failure.
 func fetchAgentFeatures(agentURL *url.URL, httpClient *http.Client) (agentFeatures, error) {
-	resp, err := httpClient.Get(fmt.Sprintf("%s/info", agentURL))
+	resp, err := httpClient.Get(agentURL.JoinPath("info").String())
 	if err != nil {
 		return agentFeatures{}, fmt.Errorf("loading features: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		// agent is older than 7.28.0, features not discoverable
-		return agentFeatures{}, nil
+		// agent is older than 7.28.0; /info not available
+		return agentFeatures{}, errAgentFeaturesNotSupported
 	}
 	type infoResponse struct {
 		Endpoints          []string `json:"endpoints"`
@@ -706,7 +731,7 @@ func fetchAgentFeatures(agentURL *url.URL, httpClient *http.Client) (agentFeatur
 		} `json:"config"`
 	}
 	var info infoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
 		return agentFeatures{}, fmt.Errorf("decoding features: %w", err)
 	}
 	var features agentFeatures
@@ -745,10 +770,17 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		return agentFeatures{}
 	}
 	features, err := fetchAgentFeatures(agentURL, httpClient)
-	if err != nil {
+	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
 		log.Error("%s", err.Error())
 	}
 	return features
+}
+
+// agentEnabled reports whether the tracer should communicate with the agent.
+// The agent is considered disabled in serverless (LogToStdout), when the
+// tracer itself is disabled, or in CI visibility agentless mode.
+func (c *config) agentEnabled() bool {
+	return !c.internalConfig.LogToStdout() && c.enabled.get() && !c.ciVisibilityAgentless
 }
 
 // MarkIntegrationImported labels the given integration as imported
