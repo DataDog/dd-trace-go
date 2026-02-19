@@ -492,7 +492,7 @@ func TestConsumeDSMPathway(t *testing.T) {
 	))
 	require.True(t, ok, "pathway not found in kafka message headers")
 
-	// Create expected pathway: produce checkpoint -> consume checkpoint
+	// Create expected pathway so we are able to compare the hashes: produce checkpoint -> consume checkpoint
 	// Use the actual group ID that franz-go reports (may differ from configured)
 	ctx, _ := tracer.SetDataStreamsCheckpoint(
 		context.Background(),
