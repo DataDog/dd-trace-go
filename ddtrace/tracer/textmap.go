@@ -288,8 +288,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		// If this is the baggage propagator, just stash its items into pendingBaggage
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
 			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				// +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				maps.Copy(pendingBaggage, extractedCtx.baggage)
+				maps.Copy(pendingBaggage, extractedCtx.baggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 			}
 			continue
 		}
@@ -359,8 +358,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 			ctx.baggage = make(map[string]string, len(pendingBaggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		}
-		// +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-		maps.Copy(ctx.baggage, pendingBaggage)
+		maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 
