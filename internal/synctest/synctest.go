@@ -15,3 +15,9 @@ func Test(t *testing.T, f func(t *testing.T)) {
 		f(t)
 	})
 }
+
+// Wait waits until all goroutines in the current synctest bubble are blocked.
+// It is a re-export of the standard library's synctest.Wait.
+func Wait() {
+	synctest.Wait()
+}
