@@ -18,8 +18,8 @@ import (
 var hashableEdgeTags = map[string]struct{}{"event_type": {}, "exchange": {}, "group": {}, "topic": {}, "type": {}, "direction": {}, "segment_name": {}}
 
 func isWellFormedEdgeTag(t string) bool {
-	if i := strings.IndexByte(t, ':'); i != -1 {
-		if _, exists := hashableEdgeTags[t[:i]]; exists {
+	if before, _, ok := strings.Cut(t, ":"); ok {
+		if _, exists := hashableEdgeTags[before]; exists {
 			return true
 		}
 	}

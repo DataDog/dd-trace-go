@@ -132,7 +132,7 @@ func WithConfig(cg ConfigMap) OptionFn {
 			tr.groupID = groupID.(string)
 		}
 		if bs, err := cg.Get("bootstrap.servers", ""); err == nil && bs != "" {
-			for _, addr := range strings.Split(bs.(string), ",") {
+			for addr := range strings.SplitSeq(bs.(string), ",") {
 				host, _, err := net.SplitHostPort(addr)
 				if err == nil {
 					tr.bootstrapServers = host

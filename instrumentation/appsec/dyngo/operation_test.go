@@ -814,15 +814,15 @@ func BenchmarkGoAssumptions(b *testing.B) {
 			i = i % 5
 			switch i {
 			case 0:
-				return reflect.TypeOf(testS0{})
+				return reflect.TypeFor[testS0]()
 			case 1:
-				return reflect.TypeOf(testS1{})
+				return reflect.TypeFor[testS1]()
 			case 2:
-				return reflect.TypeOf(testS2{})
+				return reflect.TypeFor[testS2]()
 			case 3:
-				return reflect.TypeOf(testS3{})
+				return reflect.TypeFor[testS3]()
 			case 4:
-				return reflect.TypeOf(testS4{})
+				return reflect.TypeFor[testS4]()
 			}
 			panic("oops")
 		}
@@ -839,15 +839,15 @@ func BenchmarkGoAssumptions(b *testing.B) {
 				var k string
 				switch n % 5 {
 				case 0:
-					k = reflect.TypeOf(testS0{}).Name()
+					k = reflect.TypeFor[testS0]().Name()
 				case 1:
-					k = reflect.TypeOf(testS1{}).Name()
+					k = reflect.TypeFor[testS1]().Name()
 				case 2:
-					k = reflect.TypeOf(testS2{}).Name()
+					k = reflect.TypeFor[testS2]().Name()
 				case 3:
-					k = reflect.TypeOf(testS3{}).Name()
+					k = reflect.TypeFor[testS3]().Name()
 				case 4:
-					k = reflect.TypeOf(testS4{}).Name()
+					k = reflect.TypeFor[testS4]().Name()
 				}
 				_ = m[k]
 			}
@@ -865,15 +865,15 @@ func BenchmarkGoAssumptions(b *testing.B) {
 				var k reflect.Type
 				switch n % 5 {
 				case 0:
-					k = reflect.TypeOf(testS0{})
+					k = reflect.TypeFor[testS0]()
 				case 1:
-					k = reflect.TypeOf(testS1{})
+					k = reflect.TypeFor[testS1]()
 				case 2:
-					k = reflect.TypeOf(testS2{})
+					k = reflect.TypeFor[testS2]()
 				case 3:
-					k = reflect.TypeOf(testS3{})
+					k = reflect.TypeFor[testS3]()
 				case 4:
-					k = reflect.TypeOf(testS4{})
+					k = reflect.TypeFor[testS4]()
 				}
 				_ = m[k]
 			}
@@ -895,15 +895,15 @@ func BenchmarkGoAssumptions(b *testing.B) {
 				var k reflect.Type
 				switch n % 5 {
 				case 0:
-					k = reflect.TypeOf(testS0{})
+					k = reflect.TypeFor[testS0]()
 				case 1:
-					k = reflect.TypeOf(testS1{})
+					k = reflect.TypeFor[testS1]()
 				case 2:
-					k = reflect.TypeOf(testS2{})
+					k = reflect.TypeFor[testS2]()
 				case 3:
-					k = reflect.TypeOf(testS3{})
+					k = reflect.TypeFor[testS3]()
 				case 4:
-					k = reflect.TypeOf(testS4{})
+					k = reflect.TypeFor[testS4]()
 				}
 				_ = m[typeDesc{k.PkgPath(), k.Name()}]
 			}

@@ -398,8 +398,8 @@ func normalizeRef(name string) string {
 
 	// Iterate over prefixes and remove them if present
 	for _, prefix := range prefixes {
-		if strings.HasPrefix(name, prefix) {
-			name = strings.TrimPrefix(name, prefix)
+		if after, ok := strings.CutPrefix(name, prefix); ok {
+			name = after
 		}
 	}
 	return name

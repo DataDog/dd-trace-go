@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"math/big"
 	"slices"
@@ -583,9 +584,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		tags["integration"] = span.integration
 	}
 
-	for k, v := range span.llmCtx.tags {
-		tags[k] = v
-	}
+	maps.Copy(tags, span.llmCtx.tags)
 	tagsSlice := make([]string, 0, len(tags))
 	for k, v := range tags {
 		tagsSlice = append(tagsSlice, fmt.Sprintf("%s:%s", k, v))

@@ -51,7 +51,7 @@ func (c Text) Convert(text io.Reader) (*profile.Profile, error) {
 		// "samples/count duration/nanoseconds" to describe the sample types
 		if n == 0 && looksLikeHeader(line) {
 			p.SampleType = nil
-			for _, sampleType := range strings.Split(line, " ") {
+			for sampleType := range strings.SplitSeq(line, " ") {
 				parts := strings.Split(sampleType, "/")
 				if len(parts) != 2 {
 					return nil, fmt.Errorf("bad header: %d: %q", n, line)
@@ -109,7 +109,7 @@ func (c Text) Convert(text io.Reader) (*profile.Profile, error) {
 // "samples/count duration/nanoseconds". The heuristic used for detecting this
 // is to check if every space separated value contains a "/" character.
 func looksLikeHeader(line string) bool {
-	for _, sampleType := range strings.Split(line, " ") {
+	for sampleType := range strings.SplitSeq(line, " ") {
 		if !strings.Contains(sampleType, "/") {
 			return false
 		}

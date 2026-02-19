@@ -261,7 +261,7 @@ var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
 // If this fails: call reportTelemetry() in your setter, OR add to settersWithoutTelemetry, OR add to specialCaseSetters.
 func TestAllSettersReportTelemetry(t *testing.T) {
 	// Get all methods on *Config
-	configType := reflect.TypeOf(&Config{})
+	configType := reflect.TypeFor[*Config]()
 
 	for i := 0; i < configType.NumMethod(); i++ {
 		// Capture method
@@ -333,7 +333,7 @@ func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemet
 	}
 
 	// Last parameter should be telemetry.Origin
-	originType := reflect.TypeOf((*telemetry.Origin)(nil)).Elem()
+	originType := reflect.TypeFor[telemetry.Origin]()
 	lastParamType := methodType.In(methodType.NumIn() - 1)
 	if lastParamType != originType {
 		t.Fatalf("%s: last param should be telemetry.Origin, got %v. Add to specialCaseSetters if non-standard.",
@@ -361,7 +361,7 @@ func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemet
 // Add support for new types here as setters with new parameter types are added.
 func getTestValueForType(t reflect.Type) any {
 	// Check for specific named types first (before kind checks)
-	if t == reflect.TypeOf(time.Duration(0)) {
+	if t == reflect.TypeFor[time.Duration]() {
 		return 10 * time.Second
 	}
 

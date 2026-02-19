@@ -21,6 +21,7 @@ import (
 	"path"
 	"runtime"
 	"runtime/trace"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -589,16 +590,11 @@ func TestExecutionTraceCPUProfileRate(t *testing.T) {
 // traceLogCPUProfileRate. It's a bit hacky, but probably good enough for now :).
 func assertContainsCPUProfileRateLog(t *testing.T, traceData []byte, cpuProfileRate int) {
 	assert.True(t, bytes.Contains(traceData, []byte("cpuProfileRate")))
-	assert.True(t, bytes.Contains(traceData, []byte(fmt.Sprintf("%d", cpuProfileRate))))
+	assert.True(t, bytes.Contains(traceData, fmt.Appendf(nil, "%d", cpuProfileRate)))
 }
 
 func sliceContains[T comparable](haystack []T, needle T) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 func TestExecutionTraceMisconfiguration(t *testing.T) {

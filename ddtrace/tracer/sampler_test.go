@@ -1850,7 +1850,7 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 			// 1. to verify that the glob pattern is correctly converted to a regex
 			// 2. to verify that the rule is correctly marshalled
 
-			rules, _ := unmarshalSamplingRules([]byte(fmt.Sprintf(`[{"service": "%s", "sample_rate": 1.0}]`, tt.pattern)),
+			rules, _ := unmarshalSamplingRules(fmt.Appendf(nil, `[{"service": "%s", "sample_rate": 1.0}]`, tt.pattern),
 				SamplingRuleTrace)
 			rule := rules[0]
 

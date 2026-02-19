@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -1335,9 +1336,7 @@ func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 			// if cfg.Tags is nil, this is a no-op
 			c.Tags = cfg.Tags
 		} else if cfg.Tags != nil {
-			for k, v := range cfg.Tags {
-				c.Tags[k] = v
-			}
+			maps.Copy(c.Tags, cfg.Tags)
 		}
 	}
 }

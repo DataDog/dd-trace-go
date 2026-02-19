@@ -618,12 +618,12 @@ func isStandardLibraryPackage(pkg string) bool {
 	//   "fmt" -> first element "fmt" (no dot) -> standard library
 	//   "net/http" -> first element "net" (no dot) -> standard library
 	//   "github.com/user/pkg" -> first element "github.com" (has dot) -> NOT standard library
-	slash := strings.IndexByte(pkg, '/')
-	if slash < 0 {
+	before, _, ok := strings.Cut(pkg, "/")
+	if !ok {
 		// single-element path like "fmt", "os", "runtime"
 		return !strings.Contains(pkg, ".")
 	}
 	// multi-element path like "net/http", "encoding/json", or "github.com/user/pkg"
-	first := pkg[:slash]
+	first := before
 	return !strings.Contains(first, ".")
 }

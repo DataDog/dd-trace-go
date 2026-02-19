@@ -58,9 +58,7 @@ func GetCITags() map[string]string {
 
 	// Create a new map with the added tags
 	newTags := maps.Clone(originalCiTags)
-	for k, v := range addedTags {
-		newTags[k] = v
-	}
+	maps.Copy(newTags, addedTags)
 
 	// Update the current tags
 	currentCiTags = newTags
@@ -95,9 +93,7 @@ func AddCITagsMap(tags map[string]string) {
 	if addedTags == nil {
 		addedTags = make(map[string]string)
 	}
-	for k, v := range tags {
-		addedTags[k] = v
-	}
+	maps.Copy(addedTags, tags)
 
 	// Reset the current tags
 	currentCiTags = nil
@@ -136,9 +132,7 @@ func GetCIMetrics() map[string]float64 {
 
 	// Create a new map with the added metrics
 	newMetrics := maps.Clone(originalCiMetrics)
-	for k, v := range addedMetrics {
-		newMetrics[k] = v
-	}
+	maps.Copy(newMetrics, addedMetrics)
 
 	// Update the current metrics
 	currentCiMetrics = newMetrics
@@ -173,9 +167,7 @@ func AddCIMetricsMap(metrics map[string]float64) {
 	if addedMetrics == nil {
 		addedMetrics = make(map[string]float64)
 	}
-	for k, v := range metrics {
-		addedMetrics[k] = v
-	}
+	maps.Copy(addedMetrics, metrics)
 
 	// Reset the current metrics
 	currentCiMetrics = nil

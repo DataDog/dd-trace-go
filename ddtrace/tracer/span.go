@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
 	"runtime/pprof"
@@ -87,9 +88,7 @@ func (s *Span) AsMap() map[string]any {
 	for k, v := range s.metrics {
 		m[k] = v
 	}
-	for k, v := range s.metaStruct {
-		m[k] = v
-	}
+	maps.Copy(m, s.metaStruct)
 	m[ext.MapSpanID] = s.spanID
 	m[ext.MapSpanTraceID] = s.traceID
 	m[ext.MapSpanParentID] = s.parentID
@@ -262,9 +261,7 @@ func (s *Span) getMetadata() map[string]string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	meta := make(map[string]string, len(s.meta))
-	for k, v := range s.meta {
-		meta[k] = v
-	}
+	maps.Copy(meta, s.meta)
 	return meta
 }
 

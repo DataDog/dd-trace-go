@@ -219,7 +219,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 		list = append(list, &propagatorB3{})
 		listNames = append(listNames, "b3")
 	}
-	for _, v := range strings.Split(ps, ",") {
+	for v := range strings.SplitSeq(ps, ",") {
 		switch v := strings.ToLower(v); v {
 		case "datadog":
 			list = append(list, dd)
@@ -288,9 +288,8 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		// If this is the baggage propagator, just stash its items into pendingBaggage
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
 			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-				for k, v := range extractedCtx.baggage { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-					pendingBaggage[k] = v
-				}
+				// +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				maps.Copy(pendingBaggage, extractedCtx.baggage)
 			}
 			continue
 		}
@@ -360,9 +359,8 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 			ctx.baggage = make(map[string]string, len(pendingBaggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		}
-		for k, v := range pendingBaggage {
-			ctx.baggage[k] = v // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-		}
+		// +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		maps.Copy(ctx.baggage, pendingBaggage)
 		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 
@@ -545,8 +543,8 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 		case traceTagsHeader:
 			unmarshalPropagatingTags(&ctx, v)
 		default:
-			if strings.HasPrefix(key, p.cfg.BaggagePrefix) {
-				ctx.setBaggageItem(strings.TrimPrefix(key, p.cfg.BaggagePrefix), v)
+			if after, ok := strings.CutPrefix(key, p.cfg.BaggagePrefix); ok {
+				ctx.setBaggageItem(after, v)
 			}
 		}
 		return nil
@@ -1093,7 +1091,7 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	if len(oldState) == 0 {
 		return b.String()
 	}
-	for _, s := range strings.Split(strings.Trim(oldState, " \t"), ",") {
+	for s := range strings.SplitSeq(strings.Trim(oldState, " \t"), ",") {
 		if strings.HasPrefix(s, "dd=") {
 			continue
 		}
@@ -1135,8 +1133,8 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 		case tracestateHeader:
 			stateHeader = v
 		default:
-			if strings.HasPrefix(key, DefaultBaggageHeaderPrefix) {
-				ctx.setBaggageItem(strings.TrimPrefix(key, DefaultBaggageHeaderPrefix), v)
+			if after, ok := strings.CutPrefix(key, DefaultBaggageHeaderPrefix); ok {
+				ctx.setBaggageItem(after, v)
 			}
 		}
 		return nil
@@ -1248,8 +1246,8 @@ func parseTracestate(ctx *SpanContext, header string) {
 	}
 	// if multiple headers are present, they must be combined and stored
 	setPropagatingTag(ctx, tracestateHeader, header)
-	combined := strings.Split(strings.Trim(header, "\t "), ",")
-	for _, group := range combined {
+	combined := strings.SplitSeq(strings.Trim(header, "\t "), ",")
+	for group := range combined {
 		if !strings.HasPrefix(group, "dd=") {
 			continue
 		}

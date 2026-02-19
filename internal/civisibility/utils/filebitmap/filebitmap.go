@@ -8,6 +8,7 @@ package filebitmap
 import (
 	"fmt"
 	"math/bits"
+	"strings"
 )
 
 // FileBitmap represents a memory-efficient, modifiable bitmap.
@@ -215,9 +216,9 @@ func (fb *FileBitmap) GetBuffer() []byte {
 
 // String returns a string representation of the bitmap as a binary string.
 func (fb *FileBitmap) String() string {
-	s := ""
+	var s strings.Builder
 	for _, b := range fb.data {
-		s += fmt.Sprintf("%08b", b)
+		s.WriteString(fmt.Sprintf("%08b", b))
 	}
-	return s
+	return s.String()
 }
