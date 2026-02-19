@@ -431,7 +431,7 @@ func TestProduceDSMPathway(t *testing.T) {
 	))
 	require.True(t, ok, "pathway not found in kafka message headers")
 
-	// Create expected pathway
+	// Create expected pathway so we are able to compare the hashes
 	ctx, _ := tracer.SetDataStreamsCheckpoint(
 		context.Background(),
 		"direction:out", "topic:"+topic, "type:kafka",
