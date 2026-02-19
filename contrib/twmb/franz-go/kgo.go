@@ -113,8 +113,9 @@ func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 		r.Context = context.Background()
 	}
 
-	// Consumer group ID is assigned lazily after the first poll, so we
+	// Consumer group ID is assigned lazily after the join/sync, so we
 	// need to fetch it here if it hasn't been set yet.
+	// See: https://github.com/twmb/franz-go/blob/ffcae1246a950c9cef434532f0867b0d94e41440/pkg/kgo/consumer_group.go#L287-L295
 	c.tracerMu.Lock()
 	if c.tracer.ConsumerGroupID() == "" {
 		if groupID, _ := c.Client.GroupMetadata(); groupID != "" {
