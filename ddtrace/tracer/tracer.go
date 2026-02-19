@@ -13,10 +13,10 @@ import (
 	"log/slog"
 	"maps"
 	"math"
-	"slices"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -488,6 +488,10 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	return t, nil
 }
 
+// defaultAgentInfoPollInterval is the default interval at which the tracer
+// polls the agent's /info endpoint for capability updates.
+const defaultAgentInfoPollInterval = 5 * time.Second
+
 // newTracer creates a new tracer and starts it.
 // NOTE: This function does NOT set the global tracer, which is required for
 // most finish span/flushing operations to work as expected. If you are calling
@@ -534,30 +538,22 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			interval = defaultAgentInfoPollInterval
 		}
 		t.wg.Go(func() {
-			t.pollAgentInfo(interval)
+			// polls the agent /info endpoint at the given interval until the
+			// tracer stops. It delegates each refresh to refreshAgentFeatures.
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					t.refreshAgentFeatures()
+				case <-t.stop:
+					return
+				}
+			}
 		})
 	}
 
 	return t, nil
-}
-
-// defaultAgentInfoPollInterval is the default interval at which the tracer
-// polls the agent's /info endpoint for capability updates.
-const defaultAgentInfoPollInterval = 5 * time.Second
-
-// pollAgentInfo polls the agent /info endpoint at the given interval until the
-// tracer stops. It delegates each refresh to refreshAgentFeatures.
-func (t *tracer) pollAgentInfo(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			t.refreshAgentFeatures()
-		case <-t.stop:
-			return
-		}
-	}
 }
 
 // refreshAgentFeatures fetches a fresh snapshot from /info and atomically
@@ -582,8 +578,8 @@ func (t *tracer) refreshAgentFeatures() {
 		f.StatsdPort = current.StatsdPort
 		f.evpProxyV2 = current.evpProxyV2
 		f.metaStructAvailable = current.metaStructAvailable
-		f.featureFlags = maps.Clone(current.featureFlags)  // defensive copy of map
-		f.peerTags = slices.Clone(newFeatures.peerTags)    // defensive copy of slice
+		f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
+		f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
 		f.defaultEnv = current.defaultEnv
 		return f
 	})
