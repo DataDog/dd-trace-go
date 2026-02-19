@@ -1088,7 +1088,7 @@ func setUpHTTPServer(
 					ID         string                   `json:"id"`
 					Type       string                   `json:"type"`
 					Attributes net.SettingsResponseData `json:"attributes"`
-				} `json:"data,omitempty"`
+				} `json:"data"`
 			}{}
 
 			// let's enable flaky test retries
@@ -1119,7 +1119,7 @@ func setUpHTTPServer(
 					ID         string                     `json:"id"`
 					Type       string                     `json:"type"`
 					Attributes net.KnownTestsResponseData `json:"attributes"`
-				} `json:"data,omitempty"`
+				} `json:"data"`
 			}{}
 
 			if earlyFlakyDetectionData != nil {
@@ -1179,7 +1179,7 @@ func setUpHTTPServer(
 					ID         string                                     `json:"id"`
 					Type       string                                     `json:"type"`
 					Attributes net.TestManagementTestsResponseDataModules `json:"attributes"`
-				} `json:"data,omitempty"`
+				} `json:"data"`
 			}{}
 			response.Data.Type = "ci_app_libraries_tests"
 			response.Data.Attributes = *testManagementData

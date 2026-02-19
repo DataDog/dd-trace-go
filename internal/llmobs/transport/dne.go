@@ -171,7 +171,7 @@ type ResponseMeta struct {
 
 type ResponseList[T any] struct {
 	Data []ResponseData[T] `json:"data"`
-	Meta ResponseMeta      `json:"meta,omitempty"`
+	Meta ResponseMeta      `json:"meta"`
 }
 
 type ResponseData[T any] struct {
