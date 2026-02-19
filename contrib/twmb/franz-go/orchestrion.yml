@@ -1,0 +1,22 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2024-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2
+  description: twmb/franz-go is a high performance Go library for Apache Kafka
+
+aspects:
+  # TODO(human): Implement the aspect to intercept kgo.NewClient calls.
+  #
+  # The aspect should:
+  # 1. Have a join-point matching function calls to kgo.NewClient
+  # 2. Use advice to wrap the call with our instrumented version
+  #
+  # Hints:
+  # - Look at how segmentio/kafka-go handles NewReader in its orchestrion.yml
+  # - Your NewClient signature: NewClient(kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) (*Client, error)
+  # - ClientOptions(opts ...kgo.Opt) []kgo.Opt converts variadic to slice
+  # - The tracing package path is: github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing
