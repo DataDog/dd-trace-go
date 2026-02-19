@@ -9,3 +9,5 @@ self-hosted-runner:
 # Configuration variables used in workflows
 config-variables:
   - DD_K9_LIBRARY_GO_APP_ID
+  - BENCHMARKING_PLATFORM_GL_PROJECT_ID
+  - APM_SDKS_BENCHMARKS_GL_PROJECT_ID
