@@ -7,9 +7,20 @@ package tracer
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func init() {
+	// Override now and nowTime to use time.Now() in tests. Production code
+	// calls GetSystemTimePreciseAsFileTime() directly for higher precision, but
+	// that syscall bypasses testing/synctest's fake clock. time.Now() is
+	// intercepted by synctest, so this makes the fake clock work correctly on
+	// Windows without changing production behavior.
+	now = func() int64 { return time.Now().UnixNano() }
+	nowTime = func() time.Time { return time.Now() }
+}
 
 func BenchmarkNormalTimeNow(b *testing.B) {
 	for n := 0; n < b.N; n++ {
