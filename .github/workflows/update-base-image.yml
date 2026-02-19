@@ -49,6 +49,7 @@ jobs:
         if: steps.check.outputs.changed == 'true'
         run: |
           SUFFIX="${{ github.event.client_payload.suffix }}"
+          PIPELINE_URL="${{ github.event.client_payload.pipeline_url }}"
           BRANCH="auto/update-base-ci-image-${SUFFIX}"
 
           git config user.name "github-actions[bot]"
@@ -56,10 +57,11 @@ jobs:
 
           git checkout -b "${BRANCH}"
           git add .gitlab-ci.yml
-          git commit -m "chore: update BASE_CI_IMAGE to ${SUFFIX}
 
-Automated update triggered by benchmarking-platform container rebuild.
-Build: ${{ github.event.client_payload.pipeline_url }}"
+          COMMIT_MSG=$(printf 'chore: update BASE_CI_IMAGE to %s\n\nAutomated update triggered by benchmarking-platform container rebuild.\nBuild: %s' \
+            "${SUFFIX}" "${PIPELINE_URL}")
+          git commit -m "${COMMIT_MSG}"
+
           git push origin "${BRANCH}"
 
       - name: Create Pull Request
