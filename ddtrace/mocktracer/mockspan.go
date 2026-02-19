@@ -79,7 +79,7 @@ func (s *Span) Tags() map[string]any {
 		return make(map[string]any)
 	}
 	tm := s.sp.AsMap()
-	m := make(map[string]any, len(s.m)+len(tm))
+	m := make(map[string]any)
 	extractTags(s.m, m)
 	extractTags(tm, m)
 	return m
