@@ -113,6 +113,16 @@ func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 		r.Context = context.Background()
 	}
 
+	// Consumer group ID is assigned lazily after the first poll, so we
+	// need to fetch it here if it hasn't been set yet.
+	c.tracerMu.Lock()
+	if c.tracer.ConsumerGroupID() == "" {
+		if groupID, _ := c.Client.GroupMetadata(); groupID != "" {
+			c.tracer.SetConsumerGroupID(groupID)
+		}
+	}
+	c.tracerMu.Unlock()
+
 	wrapped := wrapRecord(r)
 	span := c.tracer.StartConsumeSpan(r.Context, wrapped)
 	c.tracer.SetConsumeDSMCheckpoint(wrapped)

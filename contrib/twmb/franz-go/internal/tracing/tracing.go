@@ -64,6 +64,14 @@ func (tr *Tracer) AddBootstrapServer(server string) {
 	}
 }
 
+func (tr *Tracer) SetConsumerGroupID(groupID string) {
+	tr.kafkaCfg.ConsumerGroupID = groupID
+}
+
+func (tr *Tracer) ConsumerGroupID() string {
+	return tr.kafkaCfg.ConsumerGroupID
+}
+
 func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.ServiceName(tr.consumerServiceName),
