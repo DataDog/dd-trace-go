@@ -19,14 +19,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  go-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      stable: ${{ steps.versions.outputs.stable }}
+      oldstable: ${{ steps.versions.outputs.oldstable }}
+      matrix: ${{ steps.versions.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Read Go versions
+        id: versions
+        uses: ./.github/actions/go-versions
+
   unit-integration-tests:
+    needs:
+      - go-versions
     uses: ./.github/workflows/unit-integration-tests.yml
     permissions:
       contents: read
       id-token: write
       pull-requests: write
     with:
-      go-version: "1.26" # Should be the highest supported version of Go
+      go-version: ${{ needs.go-versions.outputs.stable }} # highest supported version of Go
     secrets: inherit
 
   warm-repo-cache:
@@ -42,11 +57,12 @@ jobs:
 
   multios-unit-tests:
     needs:
+      - go-versions
       - warm-repo-cache
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
-        go-version: [ "1.25", "1.26" ]
+        go-version: ${{ fromJSON(needs.go-versions.outputs.matrix) }}
       fail-fast: false
     uses: ./.github/workflows/multios-unit-tests.yml
     with:

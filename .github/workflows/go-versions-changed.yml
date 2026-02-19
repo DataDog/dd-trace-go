@@ -1,0 +1,61 @@
+name: Go Versions Changed
+
+# Triggered when go-versions.yml is updated on main. Notifies downstream
+# repos (benchmarking-platform, apm-sdks-benchmarks) so they can rebuild
+# their container images with the updated Go version.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'go-versions.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  go-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      stable: ${{ steps.versions.outputs.stable }}
+      oldstable: ${{ steps.versions.outputs.oldstable }}
+      stable_patch: ${{ steps.versions.outputs.stable_patch }}
+      oldstable_patch: ${{ steps.versions.outputs.oldstable_patch }}
+      content_hash: ${{ steps.hash.outputs.content_hash }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Read Go versions
+        id: versions
+        uses: ./.github/actions/go-versions
+      - name: Compute content hash
+        id: hash
+        run: |
+          # Hash the versions file itself; downstream repos mix this with their
+          # own Dockerfile to produce a stable content-addressed image tag.
+          hash=$(sha256sum go-versions.yml | cut -c1-12)
+          echo "content_hash=${hash}" >> "$GITHUB_OUTPUT"
+          echo "Content hash of go-versions.yml: ${hash}"
+
+  trigger-benchmarking-platform:
+    needs: [go-versions]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger benchmarking-platform rebuild
+        run: |
+          curl --fail --request POST \
+            --form "token=${{ secrets.BENCHMARKING_PLATFORM_TRIGGER_TOKEN }}" \
+            --form "ref=dd-trace-go" \
+            --form "variables[GO_VERSION]=${{ needs.go-versions.outputs.stable_patch }}" \
+            "https://gitlab.ddbuild.io/api/v4/projects/${{ vars.BENCHMARKING_PLATFORM_GL_PROJECT_ID }}/trigger/pipeline"
+
+  trigger-apm-sdks-benchmarks:
+    needs: [go-versions]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger apm-sdks-benchmarks rebuild
+        run: |
+          curl --fail --request POST \
+            --form "token=${{ secrets.APM_SDKS_BENCHMARKS_TRIGGER_TOKEN }}" \
+            --form "ref=main" \
+            "https://gitlab.ddbuild.io/api/v4/projects/${{ vars.APM_SDKS_BENCHMARKS_GL_PROJECT_ID }}/trigger/pipeline"

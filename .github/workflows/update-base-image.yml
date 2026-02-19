@@ -1,0 +1,88 @@
+name: Update BASE_CI_IMAGE
+
+# Triggered by benchmarking-platform after it successfully builds a new
+# container image. Creates an automated PR to update BASE_CI_IMAGE in
+# .gitlab-ci.yml with the new image reference.
+on:
+  repository_dispatch:
+    types:
+      - base-image-updated
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-base-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Update BASE_CI_IMAGE in .gitlab-ci.yml
+        run: |
+          IMAGE="${{ github.event.client_payload.image }}"
+          SUFFIX="${{ github.event.client_payload.suffix }}"
+          PIPELINE_URL="${{ github.event.client_payload.pipeline_url }}"
+
+          # Update the image reference
+          sed -i "s|BASE_CI_IMAGE:.*|BASE_CI_IMAGE: ${IMAGE}|" .gitlab-ci.yml
+
+          # Update the comment that links to the originating build pipeline
+          if [ -n "${PIPELINE_URL}" ]; then
+            sed -i "s|# This base image is created here:.*|# This base image is created here: ${PIPELINE_URL}|" .gitlab-ci.yml
+          fi
+
+      - name: Check for changes
+        id: check
+        run: |
+          if git diff --quiet .gitlab-ci.yml; then
+            echo "BASE_CI_IMAGE is already up to date, nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          SUFFIX="${{ github.event.client_payload.suffix }}"
+          BRANCH="auto/update-base-ci-image-${SUFFIX}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "${BRANCH}"
+          git add .gitlab-ci.yml
+          git commit -m "chore: update BASE_CI_IMAGE to ${SUFFIX}
+
+Automated update triggered by benchmarking-platform container rebuild.
+Build: ${{ github.event.client_payload.pipeline_url }}"
+          git push origin "${BRANCH}"
+
+      - name: Create Pull Request
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SUFFIX="${{ github.event.client_payload.suffix }}"
+          IMAGE="${{ github.event.client_payload.image }}"
+          PIPELINE_URL="${{ github.event.client_payload.pipeline_url }}"
+          BRANCH="auto/update-base-ci-image-${SUFFIX}"
+
+          gh pr create \
+            --title "chore: update BASE_CI_IMAGE to ${SUFFIX}" \
+            --body "## Automated BASE_CI_IMAGE Update
+
+This PR updates \`BASE_CI_IMAGE\` in \`.gitlab-ci.yml\` to the latest
+container image built by benchmarking-platform after a Go version change.
+
+**New image:** \`${IMAGE}\`
+**Build pipeline:** ${PIPELINE_URL}
+
+This PR was created automatically by the \`update-base-image\` workflow
+in response to a \`base-image-updated\` repository_dispatch event." \
+            --base main \
+            --head "${BRANCH}"

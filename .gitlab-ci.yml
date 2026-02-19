@@ -7,6 +7,31 @@ stages:
   - config-validation
   - test-apps
 
+# parse-go-versions reads go-versions.yml and exports GO_STABLE, GO_OLDSTABLE,
+# GO_STABLE_PATCH, GO_OLDSTABLE_PATCH as pipeline variables via dotenv artifact.
+# All jobs that need versioned Go values must include this job in their needs:.
+parse-go-versions:
+  stage: .pre
+  image: alpine:latest
+  tags: ["arch:amd64"]
+  script:
+    - |
+      stable=$(grep '^stable:' go-versions.yml | sed 's/.*"\(.*\)".*/\1/')
+      oldstable=$(grep '^oldstable:' go-versions.yml | sed 's/.*"\(.*\)".*/\1/')
+      stable_patch=$(grep '^stable_patch:' go-versions.yml | sed 's/.*"\(.*\)".*/\1/')
+      oldstable_patch=$(grep '^oldstable_patch:' go-versions.yml | sed 's/.*"\(.*\)".*/\1/')
+
+      echo "GO_STABLE=${stable}"                   >> go-versions.env
+      echo "GO_OLDSTABLE=${oldstable}"             >> go-versions.env
+      echo "GO_STABLE_PATCH=${stable_patch}"       >> go-versions.env
+      echo "GO_OLDSTABLE_PATCH=${oldstable_patch}" >> go-versions.env
+
+      echo "Parsed Go versions from go-versions.yml:"
+      cat go-versions.env
+  artifacts:
+    reports:
+      dotenv: go-versions.env
+
 variables:
   # This base image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/jobs/1422209418
   BASE_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-96166511

@@ -1,0 +1,8 @@
+# Go version configuration for the dd-trace-go ecosystem.
+# Single source of truth consumed by GitHub Actions and GitLab CI pipelines.
+# Changes on main trigger downstream container rebuilds in benchmarking-platform
+# and apm-sdks-benchmarks via the go-versions-changed GitHub Actions workflow.
+stable: "1.26"
+oldstable: "1.25"
+stable_patch: "1.26.0"
+oldstable_patch: "1.25.7"
