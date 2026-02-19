@@ -1685,9 +1685,11 @@ func TestStatsAfterFinish(t *testing.T) {
 
 		transport := newDummyTransport()
 		tracer.config.transport = transport
-		tracer.config.agent.Stats = true
-		tracer.config.agent.DropP0s = true
-		tracer.config.agent.peerTags = []string{"peer.service"}
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		af.peerTags = []string{"peer.service"}
+		tracer.config.agent.store(af)
 
 		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 		assert.Len(t, transport.Stats(), 0)
@@ -1723,9 +1725,11 @@ func TestStatsAfterFinish(t *testing.T) {
 
 		transport := newDummyTransport()
 		tracer.config.transport = transport
-		tracer.config.agent.Stats = true
-		tracer.config.agent.DropP0s = true
-		tracer.config.agent.peerTags = []string{"peer.service"}
+		af2 := tracer.config.agent.load()
+		af2.Stats = true
+		af2.DropP0s = true
+		af2.peerTags = []string{"peer.service"}
+		tracer.config.agent.store(af2)
 
 		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
 		assert.Len(t, transport.Stats(), 0)

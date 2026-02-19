@@ -210,7 +210,7 @@ func TestShouldObfuscate(t *testing.T) {
 	} {
 		t.Run(params.name, func(t *testing.T) {
 			cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
-			cfg.agent = agentFeatures{obfuscationVersion: params.agentVersion}
+			cfg.agent.store(agentFeatures{obfuscationVersion: params.agentVersion})
 			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 			tracerObfuscationVersion = params.tracerVersion
@@ -231,7 +231,9 @@ func TestObfuscation(t *testing.T) {
 	}
 	tsp := newDummyTransport()
 	cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
-	cfg.agent.obfuscationVersion = 2
+	af := cfg.agent.load()
+	af.obfuscationVersion = 2
+	cfg.agent.store(af)
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 	defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 	tracerObfuscationVersion = 2
@@ -282,21 +284,25 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 			c.transport = newDummyTransport()
 		})
 		assert.NoError(err)
-		cfg.agent.defaultEnv = "agent-prod"
+		af := cfg.agent.load()
+		af.defaultEnv = "agent-prod"
+		cfg.agent.store(af)
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("agent-prod", c.aggregationKey.Env)
 	})
 
 	t.Run("prefers-tracer-env-over-agent-default", func(t *testing.T) {
 		cfg := newTestConfigWithTransportAndEnv(t, newDummyTransport(), "tracer-staging")
-		cfg.agent.defaultEnv = "agent-prod"
+		af := cfg.agent.load()
+		af.defaultEnv = "agent-prod"
+		cfg.agent.store(af)
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("tracer-staging", c.aggregationKey.Env)
 	})
 
 	t.Run("falls-back-to-unknown-env-when-both-empty", func(t *testing.T) {
 		cfg := newTestConfigWithTransport(t, newDummyTransport())
-		cfg.agent = agentFeatures{}
+		cfg.agent.store(agentFeatures{})
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("unknown-env", c.aggregationKey.Env)
 	})
