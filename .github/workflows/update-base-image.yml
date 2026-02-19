@@ -74,17 +74,11 @@ jobs:
           PIPELINE_URL="${{ github.event.client_payload.pipeline_url }}"
           BRANCH="auto/update-base-ci-image-${SUFFIX}"
 
+          PR_BODY=$(printf '## Automated BASE_CI_IMAGE Update\n\nThis PR updates `BASE_CI_IMAGE` in `.gitlab-ci.yml` to the latest\ncontainer image built by benchmarking-platform after a Go version change.\n\n**New image:** `%s`\n**Build pipeline:** %s\n\nThis PR was created automatically by the `update-base-image` workflow\nin response to a `base-image-updated` repository_dispatch event.' \
+            "${IMAGE}" "${PIPELINE_URL}")
+
           gh pr create \
             --title "chore: update BASE_CI_IMAGE to ${SUFFIX}" \
-            --body "## Automated BASE_CI_IMAGE Update
-
-This PR updates \`BASE_CI_IMAGE\` in \`.gitlab-ci.yml\` to the latest
-container image built by benchmarking-platform after a Go version change.
-
-**New image:** \`${IMAGE}\`
-**Build pipeline:** ${PIPELINE_URL}
-
-This PR was created automatically by the \`update-base-image\` workflow
-in response to a \`base-image-updated\` repository_dispatch event." \
+            --body "${PR_BODY}" \
             --base main \
             --head "${BRANCH}"
