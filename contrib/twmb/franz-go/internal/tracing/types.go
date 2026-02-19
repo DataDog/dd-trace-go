@@ -39,6 +39,5 @@ type Record interface {
 
 // KafkaConfig holds information from the kafka config for span tags.
 type KafkaConfig struct {
-	BootstrapServers string
-	ConsumerGroupID  string
+	ConsumerGroupID string
 }

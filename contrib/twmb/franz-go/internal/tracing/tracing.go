@@ -56,14 +56,6 @@ func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 	return tr
 }
 
-func (tr *Tracer) AddBootstrapServer(server string) {
-	if tr.kafkaCfg.BootstrapServers == "" {
-		tr.kafkaCfg.BootstrapServers = server
-	} else {
-		tr.kafkaCfg.BootstrapServers += "," + server
-	}
-}
-
 func (tr *Tracer) SetConsumerGroupID(groupID string) {
 	tr.kafkaCfg.ConsumerGroupID = groupID
 }
@@ -84,9 +76,6 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, r Record) *tracer.Span {
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.MessagingDestinationName, r.GetTopic()),
 		tracer.Measured(),
-	}
-	if tr.kafkaCfg.BootstrapServers != "" {
-		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
 	}
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
@@ -120,9 +109,6 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, r Record, spanOpts ...tr
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.MessagingDestinationName, topic),
-	}
-	if tr.kafkaCfg.BootstrapServers != "" {
-		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
 	}
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))

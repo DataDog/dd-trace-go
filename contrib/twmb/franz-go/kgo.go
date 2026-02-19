@@ -10,9 +10,7 @@ package kgo
 import (
 	"context"
 	"fmt"
-	"net"
 	"sync"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -54,8 +52,7 @@ func NewClient(kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) (*Client, error
 	// OnBrokerConnect hook.
 	groupID, _ := wrapped.Client.GroupMetadata()
 	wrapped.tracer = tracing.NewTracer(tracing.KafkaConfig{
-		ConsumerGroupID:  groupID,
-		BootstrapServers: "",
+		ConsumerGroupID: groupID,
 	}, tracingOpts...)
 
 	return wrapped, nil
@@ -132,21 +129,4 @@ func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 	c.activeSpansMu.Lock()
 	c.activeSpans = append(c.activeSpans, span)
 	c.activeSpansMu.Unlock()
-}
-
-// OnBrokerConnect is used to obtain the Client's seed brokers.
-// Since franz-go doesn't expose the seed brokers after client creation,
-// we intercept broker connections to identify and collect them.
-// Seed brokers are distinguished by having negative NodeIDs (e.g., -1, -2)
-// and nil Rack values: https://pkg.go.dev/github.com/twmb/franz-go/pkg/kgo#BrokerMetadata
-//
-// NOTE: Unlike IBM/sarama, we use this hook to collect bootstrap servers.
-// Sarama doesn't set this tag on spans.
-func (c *Client) OnBrokerConnect(meta kgo.BrokerMetadata, initDur time.Duration, conn net.Conn, err error) {
-	if meta.NodeID < 0 && meta.Rack == nil {
-		addr := fmt.Sprintf("%s:%d", meta.Host, meta.Port)
-		c.tracerMu.Lock()
-		c.tracer.AddBootstrapServer(addr)
-		c.tracerMu.Unlock()
-	}
 }
