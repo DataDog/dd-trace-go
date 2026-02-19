@@ -7,6 +7,7 @@ package statsdtest // import "github.com/DataDog/dd-trace-go/v2/internal/statsdt
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -290,9 +291,7 @@ func (tg *TestStatsdClient) Counts() map[string]int64 {
 	tg.mu.RLock()
 	defer tg.mu.RUnlock()
 	c := make(map[string]int64)
-	for key, value := range tg.counts {
-		c[key] = value
-	}
+	maps.Copy(c, tg.counts)
 	return c
 }
 

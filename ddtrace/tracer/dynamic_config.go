@@ -147,7 +147,7 @@ func equalSlice[T comparable](x, y []T) bool {
 }
 
 // equalMap compares two maps of comparable keys and values
-func equalMap[T comparable](x, y map[T]interface{}) bool {
+func equalMap[T comparable](x, y map[T]any) bool {
 	if len(x) != len(y) {
 		return false
 	}

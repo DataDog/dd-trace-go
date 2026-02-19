@@ -32,4 +32,4 @@ func SetProfilerRootTags(localRootSpan TagSetter) {
 	localRootSpan.SetTag("_dd.profiling.enabled", profilerEnabled())
 }
 
-type TagSetter interface{ SetTag(string, interface{}) }
+type TagSetter interface{ SetTag(string, any) }

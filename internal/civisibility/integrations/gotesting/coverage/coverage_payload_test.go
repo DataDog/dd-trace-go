@@ -18,7 +18,7 @@ import (
 
 func newCoverageData(n int) []*ciTestCoverageData {
 	list := make([]*ciTestCoverageData, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		cov := newCiTestCoverageData(NewTestCoverage(uint64(i), uint64(i), uint64(i), uint64(i), "").(*testCoverage))
 		list[i] = cov
 	}
@@ -37,7 +37,7 @@ func TestCoveragePayloadIntegrity(t *testing.T) {
 			p := newCoveragePayload()
 			var allEvents ciTestCoverages
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				list := newCoverageData(i%5 + 1)
 				allEvents = append(allEvents, list...)
 				for _, event := range list {
@@ -65,7 +65,7 @@ func TestCoveragePayloadDecode(t *testing.T) {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
 			p := newCoveragePayload()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				list := newCoverageData(i%5 + 1)
 				for _, event := range list {
 					p.push(event)

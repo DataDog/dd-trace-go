@@ -110,7 +110,7 @@ func ForEachStringTag(str string, delimiter string, fn func(key string, val stri
 		// falling back to comma as separator
 		sep = ","
 	}
-	for _, tag := range strings.Split(str, sep) {
+	for tag := range strings.SplitSeq(str, sep) {
 		tag = strings.TrimSpace(tag)
 		if tag == "" {
 			continue

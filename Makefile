@@ -119,6 +119,14 @@ test-debug-deadlock: tools-install ## Run tests with debug and deadlock detectio
 fix-modules: tools-install ## Fix module dependencies and consistency
 	$(BIN_PATH) ./scripts/fix_modules.sh
 
+.PHONY: fix/go
+fix/go: ## Apply go fix modernizations to Go code
+	go fix ./...
+
+.PHONY: fix/go/diff
+fix/go/diff: ## Preview go fix modernizations (dry-run)
+	go fix -diff ./...
+
 .PHONY: tmp/make-help.txt
 tmp/make-help.txt:
 	@mkdir -p tmp

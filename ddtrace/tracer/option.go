@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -174,7 +175,7 @@ type config struct {
 
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
-	globalTags dynamicConfig[map[string]interface{}]
+	globalTags dynamicConfig[map[string]any]
 
 	// transport specifies the Transport interface which will be used to send data to the agent.
 	transport transport
@@ -986,12 +987,12 @@ func WithPeerServiceMapping(from, to string) StartOption {
 
 // WithGlobalTag sets a key/value pair which will be set as a tag on all spans
 // created by tracer. This option may be used multiple times.
-func WithGlobalTag(k string, v interface{}) StartOption {
+func WithGlobalTag(k string, v any) StartOption {
 	return func(c *config) {
 		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]interface{}{}, telemetry.OriginDefault)
+			c.initGlobalTags(map[string]any{}, telemetry.OriginDefault)
 		}
-		c.globalTags.set(func(current map[string]interface{}) map[string]interface{} {
+		c.globalTags.set(func(current map[string]any) map[string]any {
 			current[k] = v
 			return current
 		})
@@ -999,8 +1000,8 @@ func WithGlobalTag(k string, v interface{}) StartOption {
 }
 
 // initGlobalTags initializes the globalTags config with the provided init value
-func (c *config) initGlobalTags(init map[string]interface{}, origin telemetry.Origin) {
-	apply := func(tags map[string]interface{}) bool {
+func (c *config) initGlobalTags(init map[string]any, origin telemetry.Origin) {
+	apply := func(tags map[string]any) bool {
 		// always set the runtime ID on updates
 		tags[ext.RuntimeID] = globalconfig.RuntimeID()
 		return true
@@ -1225,10 +1226,10 @@ func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 }
 
 // Tag sets the given key/value pair as a tag on the started Span.
-func Tag(k string, v interface{}) StartSpanOption {
+func Tag(k string, v any) StartSpanOption {
 	return func(cfg *StartSpanConfig) {
 		if cfg.Tags == nil {
-			cfg.Tags = map[string]interface{}{}
+			cfg.Tags = map[string]any{}
 		}
 		cfg.Tags[k] = v
 	}
@@ -1335,9 +1336,7 @@ func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 			// if cfg.Tags is nil, this is a no-op
 			c.Tags = cfg.Tags
 		} else if cfg.Tags != nil {
-			for k, v := range cfg.Tags {
-				c.Tags[k] = v
-			}
+			maps.Copy(c.Tags, cfg.Tags)
 		}
 	}
 }

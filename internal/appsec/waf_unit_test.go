@@ -7,6 +7,7 @@ package appsec
 
 import (
 	"encoding/json"
+	"maps"
 	"runtime"
 	"testing"
 	"time"
@@ -200,9 +201,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 					"waf.context.processor": map[string]any{"extract-schema": true},
 				},
 			}
-			for k, v := range tc.addresses {
-				runData.Ephemeral[k] = v
-			}
+			maps.Copy(runData.Ephemeral, tc.addresses)
 
 			wafRes, err := wafCtx.Run(runData)
 			require.NoError(t, err)

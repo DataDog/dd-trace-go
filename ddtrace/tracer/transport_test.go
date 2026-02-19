@@ -50,9 +50,9 @@ func getTestSpan() *Span {
 func getTestTrace(traceN, size int) [][]*Span {
 	var traces [][]*Span
 
-	for i := 0; i < traceN; i++ {
+	for range traceN {
 		trace := []*Span{}
-		for j := 0; j < size; j++ {
+		for range size {
 			trace = append(trace, getTestSpan())
 		}
 		traces = append(traces, trace)

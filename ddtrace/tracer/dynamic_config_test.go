@@ -40,10 +40,10 @@ func TestDynamicConfigSet(t *testing.T) {
 	})
 
 	t.Run("map reference type update", func(t *testing.T) {
-		init := map[string]interface{}{"a": 1}
-		dc := newDynamicConfig("test", init, func(T map[string]interface{}) bool { return true }, equalMap[string])
+		init := map[string]any{"a": 1}
+		dc := newDynamicConfig("test", init, func(T map[string]any) bool { return true }, equalMap[string])
 
-		dc.set(func(current map[string]interface{}) map[string]interface{} {
+		dc.set(func(current map[string]any) map[string]any {
 			current["b"] = 2
 			return current
 		})
@@ -69,7 +69,7 @@ func TestDynamicConfigSet(t *testing.T) {
 		var wg sync.WaitGroup
 		const n = 100
 		wg.Add(n)
-		for i := 0; i < n; i++ {
+		for range n {
 			go func() {
 				defer wg.Done()
 				dc.set(func(current int) int {

@@ -186,14 +186,14 @@ func createTestConfig() *universalFlagsConfiguration {
 				Variations: map[string]*variant{
 					"config1": {
 						Key: "config1",
-						Value: map[string]interface{}{
+						Value: map[string]any{
 							"timeout": 30,
 							"retries": 3,
 						},
 					},
 					"config2": {
 						Key: "config2",
-						Value: map[string]interface{}{
+						Value: map[string]any{
 							"timeout": 60,
 							"retries": 5,
 						},
@@ -466,7 +466,7 @@ func TestObjectEvaluation(t *testing.T) {
 			t.Fatal("expected non-nil value")
 		}
 
-		objValue, ok := result.Value.(map[string]interface{})
+		objValue, ok := result.Value.(map[string]any)
 		if !ok {
 			t.Fatalf("expected map[string]interface{}, got %T", result.Value)
 		}
@@ -489,7 +489,7 @@ func TestObjectEvaluation(t *testing.T) {
 			"requests":     500,
 		}
 
-		defaultObj := map[string]interface{}{"default": true}
+		defaultObj := map[string]any{"default": true}
 		result := provider.ObjectEvaluation(ctx, "json-flag", defaultObj, flatCtx)
 
 		if result.Reason != openfeature.DefaultReason {
@@ -556,7 +556,7 @@ func TestConcurrentEvaluations(t *testing.T) {
 
 	// Run multiple concurrent evaluations
 	done := make(chan bool)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			result := provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
 			if result.Value != true {
@@ -567,7 +567,7 @@ func TestConcurrentEvaluations(t *testing.T) {
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 }
@@ -616,7 +616,7 @@ func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 
 	// Verify the provider was set by doing a flag evaluation
 	client := openfeature.NewClient("test-client")
-	evalCtx := openfeature.NewEvaluationContext("user-123", map[string]interface{}{
+	evalCtx := openfeature.NewEvaluationContext("user-123", map[string]any{
 		"country": "US",
 	})
 	result, err := client.BooleanValue(context.Background(), "bool-flag", false, evalCtx)

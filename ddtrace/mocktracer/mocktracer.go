@@ -192,13 +192,13 @@ const (
 	baggagePrefix  = tracer.DefaultBaggageHeaderPrefix
 )
 
-func (t *mocktracer) Extract(carrier interface{}) (*tracer.SpanContext, error) {
+func (t *mocktracer) Extract(carrier any) (*tracer.SpanContext, error) {
 	return tracer.NewPropagator(&tracer.PropagatorConfig{
 		MaxTagsHeaderLen: 512,
 	}).Extract(carrier)
 }
 
-func (t *mocktracer) Inject(context *tracer.SpanContext, carrier interface{}) error {
+func (t *mocktracer) Inject(context *tracer.SpanContext, carrier any) error {
 	return tracer.NewPropagator(&tracer.PropagatorConfig{
 		MaxTagsHeaderLen: 512,
 	}).Inject(context, carrier)

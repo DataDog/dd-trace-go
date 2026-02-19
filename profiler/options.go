@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -243,9 +244,7 @@ func defaultConfig() (*config, error) {
 		tags = internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
 	}
-	for key, val := range internal.GetGitMetadataTags() {
-		tags[key] = val
-	}
+	maps.Copy(tags, internal.GetGitMetadataTags())
 	for key, val := range tags {
 		if val != "" {
 			WithTags(key + ":" + val)(&c)

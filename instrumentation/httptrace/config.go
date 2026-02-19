@@ -8,6 +8,7 @@ package httptrace
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,7 +74,7 @@ func newConfig() config {
 		if v == "*" {
 			c.allowAllBaggage = true
 		} else {
-			for _, part := range strings.Split(v, ",") {
+			for part := range strings.SplitSeq(v, ",") {
 				key := strings.TrimSpace(part)
 				if key == "" {
 					continue
@@ -123,8 +124,8 @@ func GetErrorCodesFromInput(s string) func(statusCode int) bool {
 	}
 	var codes []int
 	var ranges [][]int
-	vals := strings.Split(s, ",")
-	for _, val := range vals {
+	vals := strings.SplitSeq(s, ",")
+	for val := range vals {
 		// "-" indicates a range of values
 		if strings.Contains(val, "-") {
 			bounds := strings.Split(val, "-")
@@ -153,10 +154,8 @@ func GetErrorCodesFromInput(s string) func(statusCode int) bool {
 		}
 	}
 	return func(statusCode int) bool {
-		for _, c := range codes {
-			if c == statusCode {
-				return true
-			}
+		if slices.Contains(codes, statusCode) {
+			return true
 		}
 		for _, bounds := range ranges {
 			if statusCode >= bounds[0] && statusCode <= bounds[1] {

@@ -4,7 +4,6 @@
 // Copyright 2016 Datadog, Inc.
 
 //go:build !deadlock
-// +build !deadlock
 
 package locking
 
@@ -135,15 +134,13 @@ func TestRWMutexAllowsConcurrentRead(t *testing.T) {
 	m.RLock()
 
 	// Start multiple reader goroutines
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 3 {
+		wg.Go(func() {
 			m.RLock()
 			atomic.AddInt32(&readCount, 1)
 			time.Sleep(10 * time.Millisecond)
 			m.RUnlock()
-		}()
+		})
 	}
 
 	time.Sleep(50 * time.Millisecond)

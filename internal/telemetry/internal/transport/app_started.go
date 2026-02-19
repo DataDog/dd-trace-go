@@ -12,8 +12,8 @@ package transport
 type AppStarted struct {
 	Products          Products            `json:"products,omitempty"`
 	Configuration     []ConfKeyValue      `json:"configuration,omitempty"`
-	Error             Error               `json:"error,omitempty"`
-	InstallSignature  InstallSignature    `json:"install_signature,omitempty"`
+	Error             Error               `json:"error"`
+	InstallSignature  InstallSignature    `json:"install_signature"`
 	AdditionalPayload []AdditionalPayload `json:"additional_payload,omitempty"`
 }
 

@@ -8,7 +8,7 @@ package tracer
 import (
 	"container/list"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -154,13 +154,11 @@ func (d *abandonedSpansDebugger) Start(interval time.Duration) {
 		return
 	}
 	d.stop = make(chan struct{})
-	d.wg.Add(1)
-	go func() {
-		defer d.wg.Done()
+	d.wg.Go(func() {
 		tick := time.NewTicker(tickerInterval)
 		defer tick.Stop()
 		d.runConsumer(tick, &interval)
-	}()
+	})
 }
 
 func (d *abandonedSpansDebugger) runConsumer(tick *time.Ticker, interval *time.Duration) {
@@ -249,9 +247,7 @@ func (d *abandonedSpansDebugger) log(interval *time.Duration) {
 	for k := range d.buckets {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		return keys[i] < keys[j]
-	})
+	slices.Sort(keys)
 	for _, k := range keys {
 		if truncated {
 			break
