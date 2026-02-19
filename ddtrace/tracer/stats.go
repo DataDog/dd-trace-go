@@ -66,7 +66,7 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		ComputeStatsBySpanKind: true,
 		BucketInterval:         defaultStatsBucketSize,
 	}
-	env := c.agent.defaultEnv
+	env := c.agent.load().defaultEnv
 	if c.internalConfig.Env() != "" {
 		env = c.internalConfig.Env()
 	}
@@ -179,7 +179,7 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		Error:        s.error,
 		Meta:         s.meta,
 		Metrics:      s.metrics,
-		PeerTags:     c.cfg.agent.peerTags,
+		PeerTags:     c.cfg.agent.load().peerTags,
 		HTTPMethod:   httpMethod,
 		HTTPEndpoint: httpEndpoint,
 	})
@@ -195,7 +195,8 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 
 func (c *concentrator) shouldObfuscate() bool {
 	// Obfuscate if agent reports an obfuscation version AND our version is at least as new
-	return c.cfg.agent.obfuscationVersion > 0 && c.cfg.agent.obfuscationVersion <= tracerObfuscationVersion
+	agentObfVersion := c.cfg.agent.load().obfuscationVersion
+	return agentObfVersion > 0 && agentObfVersion <= tracerObfuscationVersion
 }
 
 // add s into the concentrator's internal stats buckets.
@@ -237,7 +238,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	if c.shouldObfuscate() {
 		obfVersion = tracerObfuscationVersion
 	} else {
-		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.obfuscationVersion)
+		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.load().obfuscationVersion)
 	}
 
 	if len(csps) == 0 {

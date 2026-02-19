@@ -8,8 +8,10 @@ package tracer
 import (
 	gocontext "context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"os"
 	"runtime/pprof"
@@ -276,7 +278,7 @@ func Start(opts ...StartOption) error {
 	// client is appropriately configured.
 	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
 	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.metaStructAvailable))
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
 
 	appsec.Start(appsecopts...)
 
@@ -467,14 +469,17 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
 		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
 		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
-		obfuscator: obfuscate.NewObfuscator(obfuscate.Config{
-			SQL: obfuscate.SQLConfig{
-				TableNames:       c.agent.HasFlag("table_names"),
-				ReplaceDigits:    c.agent.HasFlag("quantize_sql_tables") || c.agent.HasFlag("replace_sql_digits"),
-				KeepSQLAlias:     c.agent.HasFlag("keep_sql_alias"),
-				DollarQuotedFunc: c.agent.HasFlag("dollar_quoted_func"),
-			},
-		}),
+		obfuscator: obfuscate.NewObfuscator(func() obfuscate.Config {
+			af := c.agent.load()
+			return obfuscate.Config{
+				SQL: obfuscate.SQLConfig{
+					TableNames:       af.HasFlag("table_names"),
+					ReplaceDigits:    af.HasFlag("quantize_sql_tables") || af.HasFlag("replace_sql_digits"),
+					KeepSQLAlias:     af.HasFlag("keep_sql_alias"),
+					DollarQuotedFunc: af.HasFlag("dollar_quoted_func"),
+				},
+			}
+		}()),
 		statsd:      statsd,
 		dataStreams: dataStreamsProcessor,
 		logFile:     logFile,
@@ -518,7 +523,68 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		t.reportHealthMetricsAtInterval(statsInterval)
 	})
 	t.stats.Start()
+
+	// Periodically refresh agent capabilities from /info so that config changes
+	// (e.g. peer tags, span events support) take effect without a tracer restart.
+	// Skip when the agent is disabled (lambda / agentless / tracing disabled).
+	if c.agentEnabled() {
+		interval := c.agentInfoPollInterval
+		if interval <= 0 {
+			interval = defaultAgentInfoPollInterval
+		}
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			t.pollAgentInfo(interval)
+		}()
+	}
+
 	return t, nil
+}
+
+// defaultAgentInfoPollInterval is the default interval at which the tracer
+// polls the agent's /info endpoint for capability updates.
+const defaultAgentInfoPollInterval = 5 * time.Second
+
+// pollAgentInfo polls the agent /info endpoint at the given interval until the
+// tracer stops. It delegates each refresh to refreshAgentFeatures.
+func (t *tracer) pollAgentInfo(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			t.refreshAgentFeatures()
+		case <-t.stop:
+			return
+		}
+	}
+}
+
+// refreshAgentFeatures fetches a fresh snapshot from /info and atomically
+// updates the dynamic agent capabilities. Static fields that are baked into
+// components at startup (transport URL, statsd address, obfuscator config, etc.)
+// are preserved from the current snapshot so a poll can never change them.
+func (t *tracer) refreshAgentFeatures() {
+	newFeatures, err := fetchAgentFeatures(t.config.agentURL, t.config.httpClient)
+	if err != nil {
+		if !errors.Is(err, errAgentFeaturesNotSupported) {
+			log.Debug("agent info poll failed: %s", err.Error())
+		}
+		return // keep last-known-good
+	}
+	// Atomically graft the startup-frozen static fields from the current
+	// snapshot onto the fresh dynamic snapshot. update() handles the CAS
+	// loop in case a concurrent store races this write.
+	t.config.agent.update(func(current agentFeatures) agentFeatures {
+		newFeatures.v1ProtocolAvailable = current.v1ProtocolAvailable
+		newFeatures.StatsdPort = current.StatsdPort
+		newFeatures.evpProxyV2 = current.evpProxyV2
+		newFeatures.metaStructAvailable = current.metaStructAvailable
+		newFeatures.featureFlags = maps.Clone(current.featureFlags) // defensive copy
+		newFeatures.defaultEnv = current.defaultEnv
+		return newFeatures
+	})
 }
 
 // Flush flushes any buffered traces. Flush is in effect only if a tracer
@@ -777,7 +843,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if hostname := cfg.Hostname(); hostname != "" && cfg.ReportHostname() {
 		span.setMetaInit(keyHostname, hostname)
 	}
-	span.supportsEvents = t.config.agent.spanEventsAvailable
+	span.supportsEvents = t.config.agent.load().spanEventsAvailable
 
 	// add global tags
 	for k, v := range t.config.globalTags.get() {
