@@ -39,6 +39,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -1538,31 +1539,33 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 }
 
 func TestTracerAtomicFlush(t *testing.T) {
-	assert := assert.New(t)
-	tracer, transport, flush, stop, err := startTestTracer(t)
-	assert.Nil(err)
-	defer stop()
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, transport, flush, stop, err := startTestTracer(t, withNopInfoHTTPClient(), withNoopStats())
+		assert.Nil(err)
+		defer stop()
 
-	// Make sure we don't flush partial bits of traces
-	root := tracer.newRootSpan("pylons.request", "pylons", "/")
-	span := tracer.newChildSpan("redis.command", root)
-	span1 := tracer.newChildSpan("redis.command.1", span)
-	span2 := tracer.newChildSpan("redis.command.2", span)
-	span.Finish()
-	span1.Finish()
-	span2.Finish()
+		// Make sure we don't flush partial bits of traces
+		root := tracer.newRootSpan("pylons.request", "pylons", "/")
+		span := tracer.newChildSpan("redis.command", root)
+		span1 := tracer.newChildSpan("redis.command.1", span)
+		span2 := tracer.newChildSpan("redis.command.2", span)
+		span.Finish()
+		span1.Finish()
+		span2.Finish()
 
-	flush(-1)
-	time.Sleep(100 * time.Millisecond)
-	traces := transport.Traces()
-	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
+		flush(-1)
+		synctest.Wait() // wait for writer to process tick and find no complete trace
+		traces := transport.Traces()
+		assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
-	root.Finish()
+		root.Finish()
 
-	flush(1)
-	traces = transport.Traces()
-	assert.Len(traces, 1)
-	assert.Len(traces[0], 4, "all spans should show up at once")
+		flush(1)
+		traces = transport.Traces()
+		assert.Len(traces, 1)
+		assert.Len(traces[0], 4, "all spans should show up at once")
+	})
 }
 
 // TestTracerTraceMaxSize tests a bug that was encountered in environments
@@ -1717,32 +1720,23 @@ func TestTracerRace(t *testing.T) {
 // be using forceFlush() to make sure things are really sent to transport.
 // Here, we just wait until things show up, as we would do with a real program.
 func TestWorker(t *testing.T) {
-	tracer, transport, flush, stop, err := startTestTracer(t)
-	assert.Nil(t, err)
-	defer stop()
+	synctest.Test(t, func(t *testing.T) {
+		tracer, transport, flush, stop, err := startTestTracer(t, withNopInfoHTTPClient(), withNoopStats())
+		assert.Nil(t, err)
+		defer stop()
 
-	n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
-	for range n {
-		root := tracer.newRootSpan("pylons.request", "pylons", "/")
-		child := tracer.newChildSpan("redis.command", root)
-		child.Finish()
-		root.Finish()
-	}
-
-	flush(-1)
-	timeout := time.After(2 * time.Second * timeMultiplicator)
-loop:
-	for {
-		select {
-		case <-timeout:
-			t.Fatalf("timed out waiting, got %d < %d", transport.Len(), payloadQueueSize)
-		default:
-			if transport.Len() >= payloadQueueSize {
-				break loop
-			}
-			time.Sleep(10 * time.Millisecond)
+		n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
+		for range n {
+			root := tracer.newRootSpan("pylons.request", "pylons", "/")
+			child := tracer.newChildSpan("redis.command", root)
+			child.Finish()
+			root.Finish()
 		}
-	}
+
+		flush(-1)
+		synctest.Wait() // wait for writer to process the tick and flush queued traces
+		assert.GreaterOrEqual(t, transport.Len(), payloadQueueSize)
+	})
 }
 
 func TestPushPayload(t *testing.T) {
