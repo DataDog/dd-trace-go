@@ -31,8 +31,8 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(r Record) {
 	}
 	datastreams.InjectToBase64Carrier(ctx, carrier)
 	if tr.kafkaCfg.ConsumerGroupID != "" {
-		// only track Kafka lag if a consumer group is set.
-		// since there is no ack mechanism, we consider that messages read are committed right away.
+		// Only track Kafka lag if a consumer group is set.
+		// Since there is no ack mechanism, we consider that messages read are committed right away.
 		tracer.TrackKafkaCommitOffset(tr.kafkaCfg.ConsumerGroupID, r.GetTopic(), int32(r.GetPartition()), r.GetOffset())
 	}
 }
