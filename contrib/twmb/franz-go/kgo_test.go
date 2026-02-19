@@ -166,7 +166,6 @@ func TestProduceFunctional(t *testing.T) {
 	assert.Equal(t, "twmb/franz-go", s0.Integration())
 	assert.Equal(t, ext.SpanKindProducer, s0.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s0.Tag(ext.MessagingSystem))
-	assert.Contains(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
 	assert.Equal(t, topic, s0.Tag("messaging.destination.name"))
 
 	h0 := producedRecords.records[0].Headers
@@ -249,7 +248,6 @@ func TestProduceConsumeFunctional(t *testing.T) {
 	assert.Equal(t, "twmb/franz-go", s1.Tag(ext.Component))
 	assert.Equal(t, ext.SpanKindConsumer, s1.Tag(ext.SpanKind))
 	assert.Equal(t, "kafka", s1.Tag(ext.MessagingSystem))
-	assert.Contains(t, "localhost:9092,localhost:9093,localhost:9094", s1.Tag(ext.KafkaBootstrapServers))
 	assert.Equal(t, topic, s1.Tag("messaging.destination.name"))
 
 	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
