@@ -39,9 +39,9 @@ func startTelemetry(c *config) telemetry.Client {
 	// Read enabled value and origin atomically to prevent TOCTOU bugs
 	traceEnabled, traceEnabledOrigin := c.enabled.getCurrentAndOrigin()
 	telemetryConfigs := []telemetry.Configuration{
-		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
+		{Name: "agent_feature_drop_p0s", Value: c.agent.load().DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
-		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
+		{Name: "dogstatsd_port", Value: c.agent.load().StatsdPort},
 		{Name: "lambda_mode", Value: c.internalConfig.LogToStdout()},
 		{Name: "send_retries", Value: c.sendRetries},
 		{Name: "retry_interval", Value: c.internalConfig.RetryInterval()},
