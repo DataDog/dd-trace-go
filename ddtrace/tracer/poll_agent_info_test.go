@@ -38,29 +38,33 @@ func TestRefreshAgentFeaturesPreservesStaticFields(t *testing.T) {
 		n := callCount.Add(1)
 		if n == 1 {
 			// Startup response: set all static fields (v1, evpProxy, stats, etc.)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"endpoints":        []string{"/v0.6/stats", "/evp_proxy/v2/", "/v1.0/traces"},
-				"client_drop_p0s":  true,
-				"span_events":      true,
-				"span_meta_structs": true,
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"endpoints":           []string{"/v0.6/stats", "/evp_proxy/v2/", "/v1.0/traces"},
+				"client_drop_p0s":     true,
+				"span_events":         true,
+				"span_meta_structs":   true,
 				"obfuscation_version": 2,
-				"peer_tags":        []string{"peer.hostname"},
-				"feature_flags":    []string{"flag_a"},
-				"config":           map[string]interface{}{"statsd_port": 8999, "default_env": "prod"},
-			})
+				"peer_tags":           []string{"peer.hostname"},
+				"feature_flags":       []string{"flag_a"},
+				"config":              map[string]any{"statsd_port": 8999, "default_env": "prod"},
+			}); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 		} else {
 			// Poll response: all static-field-related values are different —
 			// refreshAgentFeatures must not apply them.
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"endpoints":        []string{}, // no v1.0/traces, no evp_proxy, no stats
-				"client_drop_p0s":  false,
-				"span_events":      false,
-				"span_meta_structs": false,
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"endpoints":           []string{}, // no v1.0/traces, no evp_proxy, no stats
+				"client_drop_p0s":     false,
+				"span_events":         false,
+				"span_meta_structs":   false,
 				"obfuscation_version": 0,
-				"peer_tags":        []string{},
-				"feature_flags":    []string{"other_flag"},
-				"config":           map[string]interface{}{"statsd_port": 1111, "default_env": "overwritten"},
-			})
+				"peer_tags":           []string{},
+				"feature_flags":       []string{"other_flag"},
+				"config":              map[string]any{"statsd_port": 1111, "default_env": "overwritten"},
+			}); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 		}
 	}))
 	defer srv.Close()
@@ -85,6 +89,7 @@ func TestRefreshAgentFeaturesPreservesStaticFields(t *testing.T) {
 
 	// Dynamic fields should reflect the poll response.
 	assert.False(t, after.DropP0s, "DropP0s must update dynamically")
+	assert.False(t, after.Stats, "Stats must update dynamically")
 	assert.False(t, after.spanEventsAvailable, "spanEventsAvailable must update dynamically")
 	assert.Zero(t, after.obfuscationVersion, "obfuscationVersion must update dynamically")
 	assert.Empty(t, after.peerTags, "peerTags must update dynamically")
@@ -111,11 +116,13 @@ func TestPollAgentInfoUpdatesFeaturesDynamically(t *testing.T) {
 		if enabled {
 			endpoints = []string{"/v0.6/stats"}
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"endpoints":       endpoints,
 			"client_drop_p0s": enabled,
 			"span_events":     enabled,
-		})
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer srv.Close()
 
@@ -143,11 +150,13 @@ func TestPollAgentInfoUpdatesFeaturesDynamically(t *testing.T) {
 // becomes unreachable, the last successfully fetched features are retained.
 func TestPollAgentInfoRetainsLastKnownGoodOnError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"endpoints":       []string{"/v0.6/stats"},
 			"client_drop_p0s": true,
 			"span_events":     true,
-		})
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 
 	tr, err := newTracer(
@@ -177,10 +186,12 @@ func TestPollAgentInfoGoroutineStopsOnTracerStop(t *testing.T) {
 	const pollInterval = 20 * time.Millisecond
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]any{
 			"endpoints":       []string{"/v0.6/stats"},
 			"client_drop_p0s": true,
-		})
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	}))
 	defer srv.Close()
 
@@ -190,9 +201,6 @@ func TestPollAgentInfoGoroutineStopsOnTracerStop(t *testing.T) {
 		withAgentInfoPollInterval(pollInterval),
 	)
 	require.NoError(t, err)
-
-	// Give the goroutine at least two ticks.
-	time.Sleep(3 * pollInterval)
 
 	// Stop must complete promptly — the poll goroutine should unblock on t.stop.
 	done := make(chan struct{})
@@ -207,4 +215,46 @@ func TestPollAgentInfoGoroutineStopsOnTracerStop(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("tracer.Stop() did not return in time; poll goroutine may be leaking")
 	}
+}
+
+// TestPollAgentInfoRetainsLastKnownGoodOn404 verifies that when the agent
+// returns 404 during a poll (e.g. agent downgrade), the previously fetched
+// dynamic features are retained rather than being zeroed out.
+func TestPollAgentInfoRetainsLastKnownGoodOn404(t *testing.T) {
+	var return404 atomic.Bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if return404.Load() {
+			http.NotFound(w, nil)
+			return
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"endpoints":       []string{"/v0.6/stats"},
+			"client_drop_p0s": true,
+			"span_events":     true,
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	tr, err := newTracer(
+		WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		WithAgentTimeout(2),
+	)
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	// Confirm features were fetched at startup.
+	require.True(t, tr.config.agent.load().DropP0s)
+	require.True(t, tr.config.agent.load().spanEventsAvailable)
+
+	// Simulate agent returning 404 (e.g. after a downgrade).
+	return404.Store(true)
+
+	// A poll that returns 404 must not wipe out the known-good features.
+	tr.refreshAgentFeatures()
+
+	assert.True(t, tr.config.agent.load().DropP0s, "DropP0s must be retained on 404 poll")
+	assert.True(t, tr.config.agent.load().spanEventsAvailable, "spanEventsAvailable must be retained on 404 poll")
 }
