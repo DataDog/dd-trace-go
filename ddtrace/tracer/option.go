@@ -718,6 +718,9 @@ func fetchAgentFeatures(agentURL *url.URL, httpClient *http.Client) (agentFeatur
 		// agent is older than 7.28.0; /info not available
 		return agentFeatures{}, errAgentFeaturesNotSupported
 	}
+	if resp.StatusCode != http.StatusOK {
+		return agentFeatures{}, fmt.Errorf("unexpected /info status: %d", resp.StatusCode)
+	}
 	type infoResponse struct {
 		Endpoints          []string `json:"endpoints"`
 		ClientDropP0s      bool     `json:"client_drop_p0s"`

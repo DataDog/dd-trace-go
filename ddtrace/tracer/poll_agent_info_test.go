@@ -142,7 +142,8 @@ func TestPollAgentInfoUpdatesFeaturesDynamically(t *testing.T) {
 
 	// Wait long enough for at least two poll ticks.
 	assert.Eventually(t, func() bool {
-		return tr.config.agent.load().DropP0s && tr.config.agent.load().Stats
+		a := tr.config.agent.load()
+		return a.DropP0s && a.Stats
 	}, 10*pollInterval, pollInterval, "features should update after polling")
 }
 
@@ -158,6 +159,7 @@ func TestPollAgentInfoRetainsLastKnownGoodOnError(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}))
+	defer srv.Close()
 
 	tr, err := newTracer(
 		WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
@@ -209,10 +211,12 @@ func TestPollAgentInfoGoroutineStopsOnTracerStop(t *testing.T) {
 		close(done)
 	}()
 
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
 	select {
 	case <-done:
 		// success: Stop returned before timeout
-	case <-time.After(2 * time.Second):
+	case <-timer.C:
 		t.Fatal("tracer.Stop() did not return in time; poll goroutine may be leaking")
 	}
 }
@@ -225,7 +229,7 @@ func TestPollAgentInfoRetainsLastKnownGoodOn404(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if return404.Load() {
-			http.NotFound(w, nil)
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		if err := json.NewEncoder(w).Encode(map[string]any{

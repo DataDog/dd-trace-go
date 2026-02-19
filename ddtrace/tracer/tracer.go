@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"maps"
 	"math"
+	"slices"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -573,15 +574,18 @@ func (t *tracer) refreshAgentFeatures() {
 	}
 	// Atomically graft the startup-frozen static fields from the current
 	// snapshot onto the fresh dynamic snapshot. update() handles the CAS
-	// loop in case a concurrent store races this write.
+	// loop in case a concurrent store races this write. fn must be a pure
+	// transform — work on a local copy f so retries start fresh.
 	t.config.agent.update(func(current agentFeatures) agentFeatures {
-		newFeatures.v1ProtocolAvailable = current.v1ProtocolAvailable
-		newFeatures.StatsdPort = current.StatsdPort
-		newFeatures.evpProxyV2 = current.evpProxyV2
-		newFeatures.metaStructAvailable = current.metaStructAvailable
-		newFeatures.featureFlags = maps.Clone(current.featureFlags) // defensive copy
-		newFeatures.defaultEnv = current.defaultEnv
-		return newFeatures
+		f := newFeatures
+		f.v1ProtocolAvailable = current.v1ProtocolAvailable
+		f.StatsdPort = current.StatsdPort
+		f.evpProxyV2 = current.evpProxyV2
+		f.metaStructAvailable = current.metaStructAvailable
+		f.featureFlags = maps.Clone(current.featureFlags)  // defensive copy of map
+		f.peerTags = slices.Clone(newFeatures.peerTags)    // defensive copy of slice
+		f.defaultEnv = current.defaultEnv
+		return f
 	})
 }
 
