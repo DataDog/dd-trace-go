@@ -23,10 +23,6 @@ func (h KafkaHeader) GetValue() []byte {
 	return h.Value
 }
 
-type Writer interface {
-	GetTopic() string
-}
-
 type Record interface {
 	GetValue() []byte
 	GetKey() []byte
