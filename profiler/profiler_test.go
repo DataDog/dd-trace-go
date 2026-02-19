@@ -593,10 +593,6 @@ func assertContainsCPUProfileRateLog(t *testing.T, traceData []byte, cpuProfileR
 	assert.True(t, bytes.Contains(traceData, fmt.Appendf(nil, "%d", cpuProfileRate)))
 }
 
-func sliceContains[T comparable](haystack []T, needle T) bool {
-	return slices.Contains(haystack, needle)
-}
-
 func TestExecutionTraceMisconfiguration(t *testing.T) {
 	rl := new(log.RecordLogger)
 	defer log.UseLogger(rl)()
@@ -638,7 +634,7 @@ func TestExecutionTraceRandom(t *testing.T) {
 		seenTraces := 0
 		for i := range count {
 			profile := backend.ReceiveProfile(t)
-			if sliceContains(profile.event.Attachments, "go.trace") && sliceContains(profile.tags, "go_execution_traced:yes") {
+			if slices.Contains(profile.event.Attachments, "go.trace") && slices.Contains(profile.tags, "go_execution_traced:yes") {
 				seenTraces++
 			} else if i == 0 {
 				t.Error("did not see a trace in the first upload")
