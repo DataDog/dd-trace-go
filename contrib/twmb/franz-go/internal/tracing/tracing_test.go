@@ -20,6 +20,8 @@ func TestTracerAnalyticsSettings(t *testing.T) {
 		assert.True(t, math.IsNaN(tr.analyticsRate))
 	})
 
+	// ???: This was copied from other tests. Do we really need it?
+	// Since it's being skipped.
 	t.Run("global", func(t *testing.T) {
 		t.Skip("global flag disabled")
 		testutils.SetGlobalAnalyticsRate(t, 0.4)
@@ -33,11 +35,28 @@ func TestTracerAnalyticsSettings(t *testing.T) {
 		assert.Equal(t, 1.0, tr.analyticsRate)
 	})
 
+	t.Run("disabled", func(t *testing.T) {
+		tr := NewTracer(KafkaConfig{}, WithAnalytics(false))
+		assert.True(t, math.IsNaN(tr.analyticsRate))
+	})
+
 	t.Run("override", func(t *testing.T) {
 		testutils.SetGlobalAnalyticsRate(t, 0.4)
 
 		tr := NewTracer(KafkaConfig{}, WithAnalyticsRate(0.2))
 		assert.Equal(t, 0.2, tr.analyticsRate)
+	})
+}
+
+func TestTracerDataStreamsSettings(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		tr := NewTracer(KafkaConfig{})
+		assert.False(t, tr.dataStreamsEnabled)
+	})
+
+	t.Run("withOption", func(t *testing.T) {
+		tr := NewTracer(KafkaConfig{}, WithDataStreams())
+		assert.True(t, tr.dataStreamsEnabled)
 	})
 
 	t.Run("withEnv", func(t *testing.T) {
