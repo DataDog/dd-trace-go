@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.8.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.7.0-rc.1
 	github.com/rs/zerolog v1.34.0
 	github.com/stretchr/testify v1.11.1
 )
