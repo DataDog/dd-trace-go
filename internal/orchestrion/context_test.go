@@ -261,7 +261,7 @@ func BenchmarkContextStackDepthScaling(b *testing.B) {
 			b.Cleanup(MockGLS())
 			k := key("bench")
 			// Pre-fill the stack to simulate leaked entries.
-			for i := 0; i < depth; i++ {
+			for range depth {
 				getDDContextStack().Push(k, true)
 			}
 			b.ReportAllocs()

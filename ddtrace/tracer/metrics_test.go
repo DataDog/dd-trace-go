@@ -76,7 +76,7 @@ func TestEnqueuedTracesHealthMetric(t *testing.T) {
 	assert.Nil(err)
 	defer stop()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		tracer.StartSpan("operation").Finish()
 	}
 	flush(3)

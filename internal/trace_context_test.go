@@ -98,7 +98,7 @@ func TestGLSLeakReproduction(t *testing.T) {
 	t.Cleanup(orchestrion.MockGLS())
 
 	const iterations = 1000
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		ctx := WithExecutionTraced(context.Background())
 		_ = WithExecutionNotTraced(ctx)
 		// Intentionally NO PopExecutionTraced — reproducing main's behavior.
@@ -129,7 +129,7 @@ func TestGLSStackDoesNotGrowOnRepeatedCycles(t *testing.T) {
 	t.Cleanup(orchestrion.MockGLS())
 
 	const iterations = 1000
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 		cleanup()            // span.Finish on the same goroutine
@@ -155,7 +155,7 @@ func TestGLSLeaksOnCrossGoroutineFinish(t *testing.T) {
 	t.Cleanup(orchestrion.MockGLSPerGoroutine())
 
 	const iterations = 100
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 
@@ -189,7 +189,7 @@ func TestNoGoroutineLeaksFromGLSOperations(t *testing.T) {
 	t.Cleanup(orchestrion.MockGLSPerGoroutine())
 
 	const iterations = 50
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 
@@ -213,7 +213,7 @@ func TestGLSMemoryStabilitySameGoroutine(t *testing.T) {
 	t.Cleanup(orchestrion.MockGLS())
 
 	// Warm up to let the allocator settle.
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 		cleanup()
@@ -225,7 +225,7 @@ func TestGLSMemoryStabilitySameGoroutine(t *testing.T) {
 	runtime.ReadMemStats(&before)
 
 	const iterations = 10_000
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 		cleanup()
@@ -263,7 +263,7 @@ func TestGLSMemoryGrowthCrossGoroutine(t *testing.T) {
 	t.Cleanup(orchestrion.MockGLSPerGoroutine())
 
 	// Warm up.
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 		var wg sync.WaitGroup
@@ -279,7 +279,7 @@ func TestGLSMemoryGrowthCrossGoroutine(t *testing.T) {
 	depthBefore := orchestrion.GLSStackDepth()
 
 	const iterations = 10_000
-	for i := 0; i < iterations; i++ {
+	for range iterations {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 		var wg sync.WaitGroup

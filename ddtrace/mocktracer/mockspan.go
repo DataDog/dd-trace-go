@@ -31,7 +31,7 @@ func newSpan(operationName string, cfg *tracer.StartSpanConfig) *tracer.Span {
 
 type Span struct {
 	sp    *tracer.Span
-	m     map[string]interface{}
+	m     map[string]any
 	links []tracer.SpanLink
 }
 
@@ -49,7 +49,7 @@ func (s *Span) OperationName() string {
 	return s.m[ext.SpanName].(string)
 }
 
-func (s *Span) SetTag(k string, v interface{}) {
+func (s *Span) SetTag(k string, v any) {
 	if s == nil {
 		return
 	}
@@ -57,7 +57,7 @@ func (s *Span) SetTag(k string, v interface{}) {
 	s.sp.SetTag(k, v)
 }
 
-func (s *Span) Tag(k string) interface{} {
+func (s *Span) Tag(k string) any {
 	if s == nil {
 		return nil
 	}
@@ -74,18 +74,18 @@ func (s *Span) Tag(k string) interface{} {
 	return nil
 }
 
-func (s *Span) Tags() map[string]interface{} {
+func (s *Span) Tags() map[string]any {
 	if s == nil {
-		return make(map[string]interface{})
+		return make(map[string]any)
 	}
 	tm := s.sp.AsMap()
-	m := make(map[string]interface{}, len(s.m)+len(tm))
+	m := make(map[string]any, len(s.m)+len(tm))
 	extractTags(s.m, m)
 	extractTags(tm, m)
 	return m
 }
 
-func extractTags(src, m map[string]interface{}) {
+func extractTags(src, m map[string]any) {
 	for k, v := range src {
 		switch k {
 		case ext.MapSpanStart:

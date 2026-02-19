@@ -359,7 +359,7 @@ func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemet
 
 // getTestValueForType generates appropriate test values based on parameter type.
 // Add support for new types here as setters with new parameter types are added.
-func getTestValueForType(t reflect.Type) interface{} {
+func getTestValueForType(t reflect.Type) any {
 	// Check for specific named types first (before kind checks)
 	if t == reflect.TypeOf(time.Duration(0)) {
 		return 10 * time.Second

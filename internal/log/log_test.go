@@ -104,7 +104,7 @@ func TestLogDirectory(t *testing.T) {
 
 		//ensure f.Close() is concurrent-safe and free of deadlocks
 		var wg sync.WaitGroup
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -180,7 +180,7 @@ func TestLog(t *testing.T) {
 
 		t.Run("limit", func(t *testing.T) {
 			tp.Reset()
-			for i := 0; i < defaultErrorLimit+1; i++ {
+			for i := range defaultErrorLimit + 1 {
 				Error("fifth message %d", i)
 			}
 
@@ -241,7 +241,6 @@ func TestSetLoggingRate(t *testing.T) {
 		},
 	}
 	for _, tC := range testCases {
-		tC := tC
 		errrate = time.Minute // reset global variable
 		t.Run(tC.input, func(t *testing.T) {
 			setLoggingRate(tC.input)

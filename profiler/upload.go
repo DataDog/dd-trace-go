@@ -35,7 +35,7 @@ var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-bas
 func (p *profiler) upload(bat batch) error {
 	statsd := p.cfg.statsd
 	var err error
-	for i := 0; i < maxRetries; i++ {
+	for range maxRetries {
 		select {
 		case <-p.exit:
 			if !p.cfg.flushOnExit {

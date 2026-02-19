@@ -141,7 +141,7 @@ func TestPrioritySampler(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 500; i++ {
+			for range 500 {
 				assert.NoError(ps.readRatesJSON(
 					io.NopCloser(strings.NewReader(
 						`{
@@ -158,7 +158,7 @@ func TestPrioritySampler(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 500; i++ {
+			for range 500 {
 				ps.getRate(mkSpan("obfuscate.http", "none"))
 				ps.getRate(mkSpan("other.service", "none"))
 			}
@@ -583,7 +583,7 @@ func TestRulesSampler(t *testing.T) {
 		s.SetTag("hostname", "hn-30")
 		return s
 	}
-	makeFinishedSpan := func(op, svc, resource string, tags map[string]interface{}) *Span {
+	makeFinishedSpan := func(op, svc, resource string, tags map[string]any) *Span {
 		s := newSpan(op, svc, resource, randUint64(), randUint64(), 0)
 		for k, v := range tags {
 			s.SetTag(k, v)
@@ -608,7 +608,7 @@ func TestRulesSampler(t *testing.T) {
 			spanSrv  string
 			spanName string
 			spanRsc  string
-			spanTags map[string]interface{}
+			spanTags map[string]any
 		}{
 			{
 				rules:   `[{"service": "web.non-matching*", "sample_rate": 0}, {"service": "web*", "sample_rate": 1}]`,
@@ -641,17 +641,17 @@ func TestRulesSampler(t *testing.T) {
 				rules:    `[{"resource": "http_*", "tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
 				spanRsc:  "http_rec",
-				spanTags: map[string]interface{}{"host": "COMP-1234"},
+				spanTags: map[string]any{"host": "COMP-1234"},
 			},
 			{
 				rules:    `[{"tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
-				spanTags: map[string]interface{}{"host": "COMP-1234"},
+				spanTags: map[string]any{"host": "COMP-1234"},
 			},
 			{
 				rules:    `[{"tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
-				spanTags: map[string]interface{}{"host": "COMP-1234"},
+				spanTags: map[string]any{"host": "COMP-1234"},
 			},
 		} {
 			t.Run("", func(t *testing.T) {
@@ -768,7 +768,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.NoError(err)
 				rs := newRulesSampler(nil, rules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]any{"hostname": "hn-30"})
 
 				result := rs.SampleSpan(span)
 				assert.True(result)
@@ -892,7 +892,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]any{"hostname": "hn-30",
 					"tag":        20.1,
 					"tier":       209,
 					"shall-pass": true,
@@ -962,7 +962,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.NoError(err)
 				rs := newRulesSampler(nil, rules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]interface{}{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]any{"hostname": "hn-30"})
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.metrics, keySpanSamplingMechanism)
@@ -1071,7 +1071,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]any{"hostname": "hn-30",
 					"tag": 20.1,
 				})
 				result := rs.SampleSpan(span)
@@ -1496,7 +1496,7 @@ func TestRulesSamplerConcurrency(t *testing.T) {
 	}
 
 	wg := &sync.WaitGroup{}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Add(1)
 		go span(wg)
 	}
@@ -1866,7 +1866,7 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 
 func BenchmarkGlobMatchSpan(b *testing.B) {
 	var spans []*Span
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		spans = append(spans, newSpan("name.ops.date", "srv.name.ops.date", "", 0, 0, 0))
 	}
 

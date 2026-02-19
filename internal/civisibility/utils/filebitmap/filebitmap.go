@@ -107,10 +107,7 @@ func (fb *FileBitmap) HasActiveBits() bool {
 
 // IntersectsWith returns true if this bitmap has at least one common set bit with the other bitmap.
 func (fb *FileBitmap) IntersectsWith(other *FileBitmap) bool {
-	minSize := len(fb.data)
-	if len(other.data) < minSize {
-		minSize = len(other.data)
-	}
+	minSize := min(len(other.data), len(fb.data))
 	for i := 0; i < minSize; i++ {
 		if (fb.data[i] & other.data[i]) != 0 {
 			return true

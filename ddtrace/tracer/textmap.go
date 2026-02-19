@@ -255,7 +255,7 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 // Inject defines the Propagator to propagate SpanContext data
 // out of the current process. The implementation propagates the
 // TraceID and the current active SpanID, as well as the Span baggage.
-func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) error {
+func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 	if spanCtx == nil {
 		return ErrInvalidSpanContext
 	}
@@ -276,7 +276,7 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier interface{}) er
 // Furthermore, if we have already successfully extracted a trace context and a
 // subsequent trace context has conflicting trace information, such information will
 // be relayed in the returned SpanContext with a SpanLink.
-func (p *chainedPropagator) Extract(carrier interface{}) (*SpanContext, error) {
+func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	var ctx *SpanContext
 	var links []SpanLink
 	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
@@ -425,7 +425,7 @@ type propagator struct {
 	cfg *PropagatorConfig
 }
 
-func (p *propagator) Inject(spanCtx *SpanContext, carrier interface{}) error {
+func (p *propagator) Inject(spanCtx *SpanContext, carrier any) error {
 	if spanCtx == nil {
 		return ErrInvalidSpanContext
 	}
@@ -507,7 +507,7 @@ func (p *propagator) marshalPropagatingTags(ctx *SpanContext) string {
 	return sb.String()
 }
 
-func (p *propagator) Extract(carrier interface{}) (*SpanContext, error) {
+func (p *propagator) Extract(carrier any) (*SpanContext, error) {
 	switch c := carrier.(type) {
 	case TextMapReader:
 		return p.extractTextMap(c)
@@ -646,7 +646,7 @@ const (
 // using B3 headers. Only TextMap carriers are supported.
 type propagatorB3 struct{}
 
-func (p *propagatorB3) Inject(spanCtx *SpanContext, carrier interface{}) error {
+func (p *propagatorB3) Inject(spanCtx *SpanContext, carrier any) error {
 	if spanCtx == nil {
 		return ErrInvalidSpanContext
 	}
@@ -682,7 +682,7 @@ func (*propagatorB3) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	return nil
 }
 
-func (p *propagatorB3) Extract(carrier interface{}) (*SpanContext, error) {
+func (p *propagatorB3) Extract(carrier any) (*SpanContext, error) {
 	switch c := carrier.(type) {
 	case TextMapReader:
 		return p.extractTextMap(c)
@@ -729,7 +729,7 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 // using B3 headers. Only TextMap carriers are supported.
 type propagatorB3SingleHeader struct{}
 
-func (p *propagatorB3SingleHeader) Inject(spanCtx *SpanContext, carrier interface{}) error {
+func (p *propagatorB3SingleHeader) Inject(spanCtx *SpanContext, carrier any) error {
 	if spanCtx == nil {
 		return ErrInvalidSpanContext
 	}
@@ -768,7 +768,7 @@ func (*propagatorB3SingleHeader) injectTextMap(spanCtx *SpanContext, writer Text
 	return nil
 }
 
-func (p *propagatorB3SingleHeader) Extract(carrier interface{}) (*SpanContext, error) {
+func (p *propagatorB3SingleHeader) Extract(carrier any) (*SpanContext, error) {
 	switch c := carrier.(type) {
 	case TextMapReader:
 		return p.extractTextMap(c)
@@ -830,7 +830,7 @@ const (
 // using W3C tracecontext/traceparent headers. Only TextMap carriers are supported.
 type propagatorW3c struct{}
 
-func (p *propagatorW3c) Inject(spanCtx *SpanContext, carrier interface{}) error {
+func (p *propagatorW3c) Inject(spanCtx *SpanContext, carrier any) error {
 	if spanCtx == nil {
 		return ErrInvalidSpanContext
 	}
@@ -1109,7 +1109,7 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	return b.String()
 }
 
-func (p *propagatorW3c) Extract(carrier interface{}) (*SpanContext, error) {
+func (p *propagatorW3c) Extract(carrier any) (*SpanContext, error) {
 	switch c := carrier.(type) {
 	case TextMapReader:
 		return p.extractTextMap(c)
@@ -1365,7 +1365,7 @@ func urlEncode(input string, safeCharacters string) string {
 // using baggage headers.
 type propagatorBaggage struct{}
 
-func (p *propagatorBaggage) Inject(spanCtx *SpanContext, carrier interface{}) error {
+func (p *propagatorBaggage) Inject(spanCtx *SpanContext, carrier any) error {
 	switch c := carrier.(type) {
 	case TextMapWriter:
 		return p.injectTextMap(spanCtx, c)
@@ -1417,7 +1417,7 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 	return nil
 }
 
-func (p *propagatorBaggage) Extract(carrier interface{}) (*SpanContext, error) {
+func (p *propagatorBaggage) Extract(carrier any) (*SpanContext, error) {
 	switch c := carrier.(type) {
 	case TextMapReader:
 		return p.extractTextMap(c)

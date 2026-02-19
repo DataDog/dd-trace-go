@@ -446,9 +446,9 @@ func (c *Transport) CreateExperiment(
 	method := http.MethodPost
 
 	if expConfig == nil {
-		expConfig = map[string]interface{}{}
+		expConfig = map[string]any{}
 	}
-	meta := map[string]interface{}{"tags": tags}
+	meta := map[string]any{"tags": tags}
 	body := CreateExperimentRequest{
 		Data: RequestData[RequestAttributesExperimentCreate]{
 			Type: resourceTypeExperiments,

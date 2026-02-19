@@ -67,7 +67,6 @@ func TestClientIP(t *testing.T) {
 			addr: &net.UnixAddr{Name: "/var/my.sock"},
 		},
 	} {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			_, clientIP := ClientIPTags(tc.md, false, tc.addr.String())
 			expectedClientIP, _ := netip.ParseAddr(tc.expectedClientIP)
@@ -119,7 +118,7 @@ type MockSpan struct {
 	Tags map[string]any
 }
 
-func (m *MockSpan) SetTag(key string, value interface{}) {
+func (m *MockSpan) SetTag(key string, value any) {
 	if m.Tags == nil {
 		m.Tags = make(map[string]any)
 	}
@@ -154,11 +153,10 @@ func TestTags(t *testing.T) {
 			expectedTag: `{"triggers":["one","two"]}`,
 		},
 	} {
-		eventCase := eventCase
 		for _, reqHeadersCase := range []struct {
 			name         string
 			headers      map[string][]string
-			expectedTags map[string]interface{}
+			expectedTags map[string]any
 		}{
 			{
 				name: "zero-headers",
@@ -169,7 +167,7 @@ func TestTags(t *testing.T) {
 					"X-Forwarded-For": {"1.2.3.4", "4.5.6.7"},
 					"my-header":       {"something"},
 				},
-				expectedTags: map[string]interface{}{
+				expectedTags: map[string]any{
 					"http.request.headers.x-forwarded-for": "1.2.3.4,4.5.6.7",
 				},
 			},
@@ -179,7 +177,7 @@ func TestTags(t *testing.T) {
 					"X-Forwarded-For": {"1.2.3.4"},
 					"my-header":       {"something"},
 				},
-				expectedTags: map[string]interface{}{
+				expectedTags: map[string]any{
 					"http.request.headers.x-forwarded-for": "1.2.3.4",
 				},
 			},
@@ -190,11 +188,10 @@ func TestTags(t *testing.T) {
 				},
 			},
 		} {
-			reqHeadersCase := reqHeadersCase
 			for _, respHeadersCase := range []struct {
 				name         string
 				headers      map[string][]string
-				expectedTags map[string]interface{}
+				expectedTags map[string]any
 			}{
 				{
 					name: "zero-headers",
@@ -205,7 +202,7 @@ func TestTags(t *testing.T) {
 						"Content-Type": {"application/json"},
 						"my-header":    {"something"},
 					},
-					expectedTags: map[string]interface{}{
+					expectedTags: map[string]any{
 						"http.response.headers.content-type": "application/json",
 					},
 				},
@@ -216,7 +213,6 @@ func TestTags(t *testing.T) {
 					},
 				},
 			} {
-				respHeadersCase := respHeadersCase
 				t.Run(fmt.Sprintf("%s-%s-%s", eventCase.name, reqHeadersCase.name, respHeadersCase.name), func(t *testing.T) {
 					var span MockSpan
 					waf.SetEventSpanTags(&span)
@@ -233,7 +229,7 @@ func TestTags(t *testing.T) {
 					setResponseHeadersTags(&span, respHeadersCase.headers)
 
 					if eventCase.events != nil {
-						require.Subset(t, span.Tags, map[string]interface{}{
+						require.Subset(t, span.Tags, map[string]any{
 							"_dd.appsec.json": eventCase.expectedTag,
 							"appsec.event":    true,
 							"_dd.origin":      "appsec",

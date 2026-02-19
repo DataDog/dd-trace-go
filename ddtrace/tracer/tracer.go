@@ -68,10 +68,10 @@ type Tracer interface {
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
 	// maintain the original casing due to MIME header canonicalization standards.
-	Extract(carrier interface{}) (*SpanContext, error)
+	Extract(carrier any) (*SpanContext, error)
 
 	// Inject injects a span context into the given carrier.
-	Inject(context *SpanContext, carrier interface{}) error
+	Inject(context *SpanContext, carrier any) error
 
 	// TracerConf returns a snapshot of the current configuration of the tracer.
 	TracerConf() TracerConf
@@ -368,14 +368,14 @@ func StartSpan(operationName string, opts ...StartSpanOption) *Span {
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Extract(carrier interface{}) (*SpanContext, error) {
+func Extract(carrier any) (*SpanContext, error) {
 	return getGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Inject(ctx *SpanContext, carrier interface{}) error {
+func Inject(ctx *SpanContext, carrier any) error {
 	return getGlobalTracer().Inject(ctx, carrier)
 }
 
@@ -908,7 +908,7 @@ func (t *tracer) Stop() {
 }
 
 // Inject uses the configured or default TextMap Propagator.
-func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
+func (t *tracer) Inject(ctx *SpanContext, carrier any) error {
 	if !t.config.enabled.get() {
 		return nil
 	}
@@ -955,7 +955,7 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 }
 
 // Extract uses the configured or default TextMap Propagator.
-func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
+func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 	if !t.config.enabled.get() {
 		return nil, nil
 	}

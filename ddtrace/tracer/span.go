@@ -70,8 +70,8 @@ type errorConfig struct {
 // properties set at any time during normal operation! This is used for testing only,
 // and should not be used in non-test code, or you may run into performance or other
 // issues.
-func (s *Span) AsMap() map[string]interface{} {
-	m := make(map[string]interface{})
+func (s *Span) AsMap() map[string]any {
+	m := make(map[string]any)
 	if s == nil {
 		return m
 	}
@@ -319,7 +319,7 @@ func (s *Span) BaggageItem(key string) string {
 }
 
 // SetTag adds a set of key/value metadata to the span.
-func (s *Span) SetTag(key string, value interface{}) {
+func (s *Span) SetTag(key string, value any) {
 	if s == nil {
 		return
 	}
@@ -377,7 +377,7 @@ func (s *Span) SetTag(key string, value interface{}) {
 	if v, ok := value.(fmt.Stringer); ok {
 		defer func() {
 			if e := recover(); e != nil {
-				if v := reflect.ValueOf(value); v.Kind() == reflect.Ptr && v.IsNil() {
+				if v := reflect.ValueOf(value); v.Kind() == reflect.Pointer && v.IsNil() {
 					// If .String() panics due to a nil receiver, we want to catch this
 					// and replace the string value with "<nil>", just as Sprintf does.
 					// Other panics should not be handled.
@@ -570,7 +570,7 @@ func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames
 
 // setTagErrorLocked sets the error tag. It accounts for various valid scenarios.
 // This method assumes the span lock is already held.
-func (s *Span) setTagErrorLocked(value interface{}, cfg errorConfig) {
+func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 	assert.RWMutexLocked(&s.mu)
 	setError := func(yes bool) {
 		if yes {

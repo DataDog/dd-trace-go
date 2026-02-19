@@ -387,10 +387,7 @@ type framesIterator struct {
 }
 
 func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
-	topFrameDepth := maxDepth / 4
-	if topFrameDepth < 1 {
-		topFrameDepth = 1
-	}
+	topFrameDepth := max(maxDepth/4, 1)
 	return &framesIterator{
 		frameOpts:     opts,
 		frames:        newQueue[runtime.Frame](maxDepth + 4),
@@ -406,10 +403,7 @@ func iterator(skip, maxDepth int, opts frameOptions) *framesIterator {
 // iteratorFromRaw creates an iterator from pre-captured PCs for deferred symbolication
 func iteratorFromRaw(pcs []uintptr, opts frameOptions) *framesIterator {
 	maxDepth := min(len(pcs), defaultMaxDepth)
-	topFrameDepth := maxDepth / 4
-	if topFrameDepth < 1 {
-		topFrameDepth = 1
-	}
+	topFrameDepth := max(maxDepth/4, 1)
 
 	return &framesIterator{
 		frameOpts:     opts,

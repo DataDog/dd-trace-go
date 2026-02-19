@@ -80,7 +80,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				var wg sync.WaitGroup
 
-				for j := 0; j < concurrency; j++ {
+				for range concurrency {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()

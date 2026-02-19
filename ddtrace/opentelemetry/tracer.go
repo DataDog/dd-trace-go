@@ -55,7 +55,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 	}
 	telemetry.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags).Submit(1.0)
 	var cfg tracer.StartSpanConfig
-	cfg.Tags = make(map[string]interface{})
+	cfg.Tags = make(map[string]any)
 	if opts, ok := spanOptionsFromContext(ctx); ok {
 		ddopts = append(ddopts, opts...)
 		for _, o := range opts {

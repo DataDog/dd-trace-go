@@ -83,7 +83,7 @@ func TestFetcherLogsWhenUsingCached(t *testing.T) {
 			}
 			return strconv.Itoa(count), nil
 		},
-		LogFailure: func(err error, v interface{}) {
+		LogFailure: func(err error, v any) {
 			errs = append(errs, fmt.Sprintf("%v, %v", err, v))
 		},
 	}

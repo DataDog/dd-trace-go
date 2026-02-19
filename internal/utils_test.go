@@ -30,7 +30,7 @@ func TestLockMapThrash(t *testing.T) {
 	t.Cleanup(cancel)
 	lm := NewLockMap(map[string]string{})
 	wg.Add(6)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		// Readers
 		go func() {
 			defer wg.Done()
@@ -170,7 +170,7 @@ func TestToFloat64(t *testing.T) {
 	)
 
 	for i, tt := range [...]struct {
-		value interface{}
+		value any
 		f     float64
 		ok    bool
 	}{

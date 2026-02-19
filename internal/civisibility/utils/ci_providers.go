@@ -52,8 +52,8 @@ var githubCheckRunIDRegex = regexp.MustCompile(`"k"\s*:\s*"check_run_id"\s*,\s*"
 type diagJobData struct {
 	Job struct {
 		D []struct {
-			K string      `json:"k"`
-			V interface{} `json:"v"`
+			K string `json:"k"`
+			V any    `json:"v"`
 		} `json:"d"`
 	} `json:"job"`
 }

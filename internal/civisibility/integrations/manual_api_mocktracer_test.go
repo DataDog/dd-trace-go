@@ -62,7 +62,7 @@ func createDDTest(now time.Time) (TestSession, TestModule, TestSuite, Test) {
 }
 
 func commonAssertions(assert *assert.Assertions, sessionSpan *mocktracer.Span) {
-	tags := map[string]interface{}{
+	tags := map[string]any{
 		"my-tag":              "my-value",
 		constants.Origin:      constants.CIAppTestOrigin,
 		constants.TestType:    constants.TestTypeTest,
@@ -107,7 +107,7 @@ func sessionAssertions(assert *assert.Assertions, now time.Time, sessionSpan *mo
 	assert.Equal(now.Unix(), sessionSpan.StartTime().Unix())
 	assert.Equal("my-testing-framework.test_session", sessionSpan.OperationName())
 
-	tags := map[string]interface{}{
+	tags := map[string]any{
 		ext.ResourceName:              "my-testing-framework.test_session.my-command",
 		ext.ErrorType:                 "ExitCode",
 		ext.ErrorMsg:                  "exit code is not zero.",
@@ -152,7 +152,7 @@ func moduleAssertions(assert *assert.Assertions, now time.Time, moduleSpan *mock
 	assert.Equal(now.Unix(), moduleSpan.StartTime().Unix())
 	assert.Equal("my-module-framework.test_module", moduleSpan.OperationName())
 
-	tags := map[string]interface{}{
+	tags := map[string]any{
 		ext.ResourceName:     "my-module",
 		ext.ErrorType:        "my-type",
 		ext.ErrorMsg:         "my-message",
@@ -200,7 +200,7 @@ func suiteAssertions(assert *assert.Assertions, now time.Time, suiteSpan *mocktr
 	assert.Equal(now.Unix(), suiteSpan.StartTime().Unix())
 	assert.Equal("my-module-framework.test_suite", suiteSpan.OperationName())
 
-	tags := map[string]interface{}{
+	tags := map[string]any{
 		ext.ResourceName:     "my-suite",
 		ext.ErrorType:        "my-type",
 		ext.ErrorMsg:         "my-message",
@@ -287,7 +287,7 @@ func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktrac
 	assert.Equal(now.Unix(), testSpan.StartTime().Unix())
 	assert.Equal("my-module-framework.test", testSpan.OperationName())
 
-	tags := map[string]interface{}{
+	tags := map[string]any{
 		ext.ResourceName:     "my-suite.my-test",
 		ext.ErrorType:        "my-type",
 		ext.ErrorMsg:         "my-message",

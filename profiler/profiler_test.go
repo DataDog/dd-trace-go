@@ -446,7 +446,7 @@ func TestAllUploaded(t *testing.T) {
 	// TODO: Further check that the uploaded profiles are all valid
 
 	var customLabelKeys []string
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
 	}
 
@@ -520,7 +520,7 @@ func TestCorrectTags(t *testing.T) {
 		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
 		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
 	}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		// We check the tags we get several times to try to have a
 		// better chance of catching a bug where the some of the tags
 		// are clobbered due to a bug caused by the same
@@ -640,7 +640,7 @@ func TestExecutionTraceRandom(t *testing.T) {
 		)
 
 		seenTraces := 0
-		for i := 0; i < count; i++ {
+		for i := range count {
 			profile := backend.ReceiveProfile(t)
 			if sliceContains(profile.event.Attachments, "go.trace") && sliceContains(profile.tags, "go_execution_traced:yes") {
 				seenTraces++
@@ -688,7 +688,7 @@ func TestExecutionTraceRandom(t *testing.T) {
 			// implementation. We keep a reasonably tight tolerance
 			// to ensure that an incorrect implementation is more likely
 			// to fail each time
-			for i := 0; i < 4; i++ {
+			for range 4 {
 				if doTrial(t, rate, 2.0) {
 					return
 				}
@@ -768,7 +768,7 @@ func TestExecutionTraceSizeLimit(t *testing.T) {
 	)
 
 	const expectedSize = 300 * 1024
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		m := backend.ReceiveProfile(t)
 		if p, ok := m.attachments["go.trace"]; ok {
 			if len(p) > expectedSize {

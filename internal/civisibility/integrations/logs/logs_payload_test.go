@@ -31,7 +31,7 @@ func TestLogsPayloadDecode(t *testing.T) {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
 			p := newLogsPayload()
-			for i := 0; i < n; i++ {
+			for i := range n {
 				p.push(newLogEntry(i%5 + 1))
 			}
 			var got logsEntriesPayload

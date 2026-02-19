@@ -26,7 +26,7 @@ type Tracer struct {
 	analyticsRate       float64
 	bootstrapServers    string
 	groupID             string
-	tagFns              map[string]func(msg Message) interface{}
+	tagFns              map[string]func(msg Message) any
 	dsmEnabled          bool
 	ckgoVersion         CKGoVersion
 	librdKafkaVersion   int
@@ -116,10 +116,10 @@ func WithAnalyticsRate(rate float64) OptionFn {
 
 // WithCustomTag will cause the given tagFn to be evaluated after executing
 // a query and attach the result to the span tagged by the key.
-func WithCustomTag(tag string, tagFn func(msg Message) interface{}) OptionFn {
+func WithCustomTag(tag string, tagFn func(msg Message) any) OptionFn {
 	return func(cfg *Tracer) {
 		if cfg.tagFns == nil {
-			cfg.tagFns = make(map[string]func(msg Message) interface{})
+			cfg.tagFns = make(map[string]func(msg Message) any)
 		}
 		cfg.tagFns[tag] = tagFn
 	}

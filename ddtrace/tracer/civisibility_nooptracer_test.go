@@ -271,7 +271,7 @@ func TestUseConfig(t *testing.T) {
 	t.Run("full config", func(t *testing.T) {
 		startTime := time.Now()
 		parent := &SpanContext{}
-		tags := map[string]interface{}{
+		tags := map[string]any{
 			"key": "value",
 		}
 		spanLinks := []SpanLink{

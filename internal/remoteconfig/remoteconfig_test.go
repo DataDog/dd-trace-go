@@ -571,7 +571,7 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		var cb ProductCallback
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			token, err := Subscribe(fmt.Sprintf("product-%d", i), cb, APMTracingMulticonfig)
 			if err != nil {
 				t.Errorf("subscribe failed: %v", err)
@@ -587,7 +587,7 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	// Read allCapabilities concurrently.
 	go func() {
 		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			c.allCapabilities()
 		}
 	}()

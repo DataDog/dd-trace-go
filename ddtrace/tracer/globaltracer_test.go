@@ -18,10 +18,10 @@ func (*raceTestTracer) StartSpan(_ string, _ ...StartSpanOption) *Span {
 	return nil
 }
 func (*raceTestTracer) SetServiceInfo(_, _, _ string) {}
-func (*raceTestTracer) Extract(_ interface{}) (*SpanContext, error) {
+func (*raceTestTracer) Extract(_ any) (*SpanContext, error) {
 	return nil, nil
 }
-func (*raceTestTracer) Inject(_ *SpanContext, _ interface{}) error { return nil }
+func (*raceTestTracer) Inject(_ *SpanContext, _ any) error { return nil }
 func (r *raceTestTracer) Stop() {
 	r.stopped = true
 }
@@ -52,7 +52,7 @@ func TestGlobalTracer(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(index int) {
 			defer wg.Done()
 			var tracer Tracer = tracers[index]
