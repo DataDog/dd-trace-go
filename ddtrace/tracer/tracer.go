@@ -744,9 +744,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	}
 	span.setMetaInit("language", "go")
 	// add tags from options
-	for k, v := range opts.Tags {
-		span.SetTag(k, v)
-	}
+	span.setTagsInit(opts.Tags)
 	isRootSpan := context == nil || context.span == nil
 	if isRootSpan {
 		traceprof.SetProfilerRootTags(span)
@@ -780,9 +778,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
 	// add global tags
-	for k, v := range t.config.globalTags.get() {
-		span.SetTag(k, v)
-	}
+	span.setTagsInit(t.config.globalTags.get())
 
 	if newSvc, ok := cfg.ServiceMapping(span.service); ok {
 		span.service = newSvc
