@@ -388,6 +388,54 @@ func TestEmptyPayloadV1(t *testing.T) {
 	assert.Empty(o)
 }
 
+// TestPayloadV1IncrementalChunkEncoding verifies that pushing N chunks into the
+// same payloadV1 produces a correctly encoded payload where every chunk retains
+// its original span data. Each chunk is encoded exactly once as it is pushed;
+// the shared string table persists across all pushes so duplicate strings are
+// de-duplicated payload-wide.
+func TestPayloadV1IncrementalChunkEncoding(t *testing.T) {
+	type chunkSpec struct {
+		service string
+		name    string
+		tagKey  string
+		tagVal  string
+	}
+	chunks := []chunkSpec{
+		{"svc-a", "op-a", "k", "alpha"},
+		{"svc-b", "op-b", "k", "beta"},  // "k" is a duplicate key → exercises cross-chunk string table
+		{"svc-c", "op-c", "k", "gamma"}, // third chunk to confirm in-place count update
+	}
+
+	p := newPayloadV1()
+	for _, c := range chunks {
+		s := newBasicSpan(c.name)
+		s.service = c.service
+		s.SetTag(c.tagKey, c.tagVal)
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, len(chunks), p.itemCount(), "payload chunk count must equal number of pushes")
+
+	encoded, err := io.ReadAll(p)
+	require.NoError(t, err)
+
+	got := newPayloadV1()
+	_, err = bytes.NewBuffer(encoded).WriteTo(got)
+	require.NoError(t, err)
+	_, err = got.decodeBuffer()
+	require.NoError(t, err)
+
+	require.Len(t, got.chunks, len(chunks), "decoded chunk count must match")
+	for i, c := range chunks {
+		require.Len(t, got.chunks[i].spans, 1, "chunk %d must have 1 span", i)
+		s := got.chunks[i].spans[0]
+		assert.Equal(t, c.service, s.service, "chunk %d: wrong service", i)
+		assert.Equal(t, c.name, s.name, "chunk %d: wrong name", i)
+		assert.Equal(t, c.tagVal, s.meta[c.tagKey], "chunk %d: wrong tag value", i)
+	}
+}
+
 func assertProcessTags(t *testing.T, payload spanLists) {
 	assert := assert.New(t)
 	for i, spanList := range payload {
