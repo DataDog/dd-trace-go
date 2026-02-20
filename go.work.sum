@@ -298,6 +298,7 @@ github.com/ebitengine/purego v0.8.3/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI
 github.com/ebitengine/purego v0.9.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/emicklei/go-restful v2.16.0+incompatible h1:rgqiKNjTnFQA6kkhFe16D8epTksy9HQ1MyrbDXSdYhM=
 github.com/emicklei/go-restful v2.16.0+incompatible/go.mod h1:otzb+WCGbkyDHkqmQmT5YD2WR4BBwUdeQoFo8l/7tVs=
+github.com/envoyproxy/go-control-plane v0.13.4 h1:zEqyPVyku6IvWCFwux4x9RxkLOMUL+1vC9xUFv5l2/M=
 github.com/envoyproxy/go-control-plane v0.13.4/go.mod h1:kDfuBlDVsSj2MjrLEtRWtHlsWIFcGyB2RMO44Dc5GZA=
 github.com/envoyproxy/go-control-plane/envoy v1.32.3/go.mod h1:F6hWupPfh75TBXGKA++MCT/CZHFq5r9/uwt/kQYkZfE=
 github.com/envoyproxy/go-control-plane/envoy v1.32.4/go.mod h1:Gzjc5k8JcJswLjAx1Zm+wSYE20UrLtt7JZMWiWQXQEw=
@@ -487,6 +488,7 @@ go.etcd.io/bbolt v1.3.10/go.mod h1:bK3UQLPJZly7IlNmV7uVHJDxfe5aK9Ll93e/74Y9oEQ=
 go.mozilla.org/pkcs7 v0.0.0-20200128120323-432b2356ecb1/go.mod h1:SNgMg+EgDFwmvSmLRTNKC5fegJjB7v23qTQ0XLGUNHk=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
 go.opentelemetry.io/collector/client v1.51.0/go.mod h1:lx+VIlIm1/qaUeWs4ozeV/Q9y9rJQGwQo+dnk+We5TQ=
+go.opentelemetry.io/collector/component v1.48.0/go.mod h1:Kmc9Z2CT53M2oRRf+WXHUHHgjCC+ADbiqfPO5mgZe3g=
 go.opentelemetry.io/collector/component v1.51.0/go.mod h1:Zlgwh4yTLDhJglOXqiyXZ7paepTvvoijfFjLqOr/Qww=
 go.opentelemetry.io/collector/config/configoptional v1.51.0/go.mod h1:nBG71pzrklmiPIp1XPQiO3RzlbLIolUlFrW30q1UXzM=
 go.opentelemetry.io/collector/config/configretry v1.51.0/go.mod h1:ZSTYqAJCq4qf+/4DGoIxCElDIl5yHt8XxEbcnpWBbMM=
@@ -595,6 +597,7 @@ go.opentelemetry.io/collector/featuregate v1.42.0/go.mod h1:d0tiRzVYrytB6LkcYgz2
 go.opentelemetry.io/collector/featuregate v1.43.0/go.mod h1:d0tiRzVYrytB6LkcYgz2ESFTv7OktRPQe0QEQcPt1L4=
 go.opentelemetry.io/collector/featuregate v1.44.0/go.mod h1:d0tiRzVYrytB6LkcYgz2ESFTv7OktRPQe0QEQcPt1L4=
 go.opentelemetry.io/collector/featuregate v1.46.0/go.mod h1:d0tiRzVYrytB6LkcYgz2ESFTv7OktRPQe0QEQcPt1L4=
+go.opentelemetry.io/collector/featuregate v1.48.0/go.mod h1:/1bclXgP91pISaEeNulRxzzmzMTm4I5Xih2SnI4HRSo=
 go.opentelemetry.io/collector/featuregate v1.50.0/go.mod h1:/1bclXgP91pISaEeNulRxzzmzMTm4I5Xih2SnI4HRSo=
 go.opentelemetry.io/collector/featuregate v1.51.0/go.mod h1:/1bclXgP91pISaEeNulRxzzmzMTm4I5Xih2SnI4HRSo=
 go.opentelemetry.io/collector/internal/fanoutconsumer v0.120.0 h1:vcY46z2WnYs0bcFulJX51O2dXc2sgWDymR91u/tV5EE=
@@ -660,6 +663,7 @@ go.opentelemetry.io/collector/pdata v1.42.0/go.mod h1:nnOmgf+RI/D5xYWgFPZ5nKuhf2
 go.opentelemetry.io/collector/pdata v1.43.0/go.mod h1:KsJzdDG9e5BaHlmYr0sqdSEKeEiSfKzoF+rdWU7J//w=
 go.opentelemetry.io/collector/pdata v1.44.0/go.mod h1:LnsjYysFc3AwMVh6KGNlkGKJUF2ReuWxtD9Hb3lSMZk=
 go.opentelemetry.io/collector/pdata v1.46.0/go.mod h1:D2e3BWCUC/bUg29WNzCDVN7Ab0Gzk7hGXZL2pnrDOn0=
+go.opentelemetry.io/collector/pdata v1.48.0/go.mod h1:jaf2JQGpfUreD1TOtGBPsq00ecOqM66NG15wALmdxKA=
 go.opentelemetry.io/collector/pdata v1.50.0/go.mod h1:G18lFpQYh4473PiEPqLd7BKfc8a/j+Fl4EfHWy1Ylx8=
 go.opentelemetry.io/collector/pdata v1.51.0/go.mod h1:GoX1bjKDR++mgFKdT7Hynv9+mdgQ1DDXbjs7/Ww209Q=
 go.opentelemetry.io/collector/pdata/pprofile v0.122.1/go.mod h1:+jSjgb4zRnNmr1R/zgVLVyTVSm9irfGrvGTrk3lDxSE=
