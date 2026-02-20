@@ -243,7 +243,7 @@ func Start(opts ...StartOption) error {
 		// CI Visibility agentless mode doesn't require remote configuration.
 
 		// start instrumentation telemetry unless it is disabled through the
-		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+		// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var or running under a Lambda function
 		t.telemetry = startTelemetry(t.config)
 
 		globalinternal.SetTracerInitialized(true)
@@ -290,7 +290,7 @@ func Start(opts ...StartOption) error {
 	}
 
 	// start instrumentation telemetry unless it is disabled through the
-	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var
+	// DD_INSTRUMENTATION_TELEMETRY_ENABLED env var or running under a Lambda function
 	t.telemetry = startTelemetry(t.config)
 
 	// store the configuration in an in-memory file and in a named anonymous mapping,
