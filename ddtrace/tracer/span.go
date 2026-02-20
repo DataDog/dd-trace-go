@@ -322,9 +322,15 @@ func (s *Span) SetTag(key string, value any) {
 	}
 	// To avoid dumping the memory address in case value is a pointer, we dereference it.
 	// Any pointer value that is a pointer to a pointer will be dumped as a string.
-	value = dereference(value)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	s.setTagLocked(key, value)
+}
+
+// setTagLocked sets a tag on the span. This method assumes the span lock is already held.
+func (s *Span) setTagLocked(key string, value any) {
+	assert.RWMutexLocked(&s.mu)
 
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
@@ -332,6 +338,7 @@ func (s *Span) SetTag(key string, value any) {
 	if s.finished {
 		return
 	}
+	value = dereference(value)
 	switch key {
 	case ext.Error:
 		s.setTagErrorLocked(value, errorConfig{

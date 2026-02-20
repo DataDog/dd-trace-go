@@ -780,9 +780,11 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
 	// add global tags
+	span.mu.Lock()
 	for k, v := range t.config.globalTags.get() {
-		span.SetTag(k, v)
+		span.setTagLocked(k, v)
 	}
+	span.mu.Unlock()
 
 	if newSvc, ok := cfg.ServiceMapping(span.service); ok {
 		span.service = newSvc

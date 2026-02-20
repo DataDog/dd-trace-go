@@ -1568,6 +1568,27 @@ func BenchmarkSetTagField(b *testing.B) {
 	}
 }
 
+func BenchmarkSetTagVsSetTagLocked(b *testing.B) {
+	span := newBasicSpan("bench.span")
+
+	b.ResetTimer()
+	b.Run("SetTag", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			span.SetTag("key", "value")
+		}
+	})
+	b.Run("setTagLocked", func(b *testing.B) {
+		span.mu.Lock()
+		defer span.mu.Unlock()
+
+		b.ReportAllocs()
+		for b.Loop() {
+			span.setTagLocked("key", "value")
+		}
+	})
+}
+
 func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
 	span := newBasicSpan("bench.span")
 
