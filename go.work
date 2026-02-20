@@ -12,6 +12,7 @@ use (
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
 	./contrib/cloud.google.com/go/pubsub.v2
+	./contrib/connectrpc/connect-go
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
 	./contrib/database/sql
