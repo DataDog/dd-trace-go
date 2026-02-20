@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -330,7 +331,7 @@ func storeConfig(c *config) {
 		log.Error("failed to store the configuration: %s", err.Error())
 	}
 
-	processContext := otelProcessContext{
+	processCtx := otelprocesscontext.OtelProcessContext{
 		DeploymentEnvironmentName: c.internalConfig.Env(),
 		HostName:                  c.internalConfig.Hostname(),
 		ServiceInstanceID:         globalconfig.RuntimeID(),
@@ -341,10 +342,9 @@ func storeConfig(c *config) {
 		TelemetrySdkName:          "dd-trace-go",
 	}
 
-	data, _ = processContext.MarshalMsg(nil)
-	err = globalinternal.CreateOtelProcessContextMapping(data)
+	err = processCtx.Publish()
 	if err != nil {
-		log.Error("failed to store the OTEL process context: %s", err.Error())
+		log.Error("failed to publish the OTEL process context: %s", err.Error())
 	}
 }
 
