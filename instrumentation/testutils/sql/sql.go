@@ -321,5 +321,5 @@ type Config struct {
 	DriverName string
 	TableName  string
 	ExpectName string
-	ExpectTags map[string]interface{}
+	ExpectTags map[string]any
 }

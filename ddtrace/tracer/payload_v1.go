@@ -143,7 +143,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		}
 
 		// TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
-		origin = span.Context().origin
+		origin = span.Context().origin // +checklocksignore - Read-only after init.
 
 		if dm := span.context.trace.propagatingTag(keyDecisionMaker); dm != "" {
 			if v, err := strconv.ParseInt(dm, 10, 32); err == nil {
@@ -445,26 +445,31 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		p.buf = encodeField(p.buf, fullSetBitmap, 8, span.error != 0, st)
 
 		// span attributes combine the meta (tags), metrics and meta_struct
-		attr := map[string]anyValue{}
+		// To avoid increased allocations, we serialize attributes immediately without
+		// creating an intermediate map.
+		size := len(span.meta) + len(span.metrics) + len(span.metaStruct)
+		p.buf = msgp.AppendUint32(p.buf, uint32(9))           // attributes fieldID
+		p.buf = msgp.AppendArrayHeader(p.buf, uint32(size)*3) // number of attributes
 		for k, v := range span.meta {
-			attr[k] = anyValue{
-				valueType: StringValueType,
-				value:     v,
-			}
+			p.buf = st.serialize(k, p.buf)
+			p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+			p.buf = st.serialize(v, p.buf)
 		}
 		for k, v := range span.metrics {
-			attr[k] = anyValue{
-				valueType: FloatValueType,
-				value:     v,
-			}
+			p.buf = st.serialize(k, p.buf)
+			p.buf = msgp.AppendUint32(p.buf, uint32(FloatValueType))
+			p.buf = msgp.AppendFloat64(p.buf, v)
 		}
 		for k, v := range span.metaStruct {
-			av := buildAnyValue(v)
-			if av != nil {
-				attr[k] = *av
+			msg, err := msgp.AppendIntf(nil, v)
+			if err != nil {
+				log.Error("failed to serialize meta_struct value for key %s: %v", k, err.Error())
+				continue
 			}
+			p.buf = st.serialize(k, p.buf)
+			p.buf = msgp.AppendUint32(p.buf, uint32(BytesValueType))
+			p.buf = msgp.AppendBytes(p.buf, msg)
 		}
-		p.encodeAttributes(fullSetBitmap, 9, attr, st)
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 10, span.spanType, st)
 		p.encodeSpanLinks(fullSetBitmap, 11, span.spanLinks, st)
@@ -532,20 +537,20 @@ func (p *payloadV1) encodeSpanLinks(bm bitmap, fieldID int, spanLinks []SpanLink
 	for _, link := range spanLinks {
 		p.buf = msgp.AppendMapHeader(p.buf, 5) // number of fields in span link
 
-		traceID := [16]byte{}
-		binary.BigEndian.PutUint64(traceID[:8], link.TraceIDHigh)
-		binary.BigEndian.PutUint64(traceID[8:], link.TraceID)
-		p.buf = encodeField(p.buf, fullSetBitmap, 1, traceID[:], st)
+		// Encode traceID field directly to avoid heap allocation
+		p.buf = msgp.AppendUint32(p.buf, uint32(1)) // field ID
+		p.buf = msgp.AppendBytesHeader(p.buf, 16)   // 16-byte traceID
+		p.buf = binary.BigEndian.AppendUint64(p.buf, link.TraceIDHigh)
+		p.buf = binary.BigEndian.AppendUint64(p.buf, link.TraceID)
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, link.SpanID, st)
 
-		attr := map[string]anyValue{}
+		p.buf = msgp.AppendUint32(p.buf, uint32(3))                           // attributes fieldID
+		p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(link.Attributes))*3) // number of attributes
 		for k, v := range link.Attributes {
-			attr[k] = anyValue{
-				valueType: StringValueType,
-				value:     v,
-			}
+			p.buf = st.serialize(k, p.buf)
+			p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+			p.buf = st.serialize(v, p.buf)
 		}
-		p.encodeAttributes(fullSetBitmap, 3, attr, st)
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 4, link.Tracestate, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 5, link.Flags, st)
@@ -567,39 +572,61 @@ func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEv
 		p.buf = encodeField(p.buf, fullSetBitmap, 1, event.TimeUnixNano, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 2, event.Name, st)
 
-		attr := map[string]anyValue{}
+		p.buf = msgp.AppendUint32(p.buf, uint32(3))                            // attributes fieldID
+		p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(event.Attributes))*3) // number of attributes
 		for k, v := range event.Attributes {
 			switch v.Type {
 			case spanEventAttributeTypeString:
-				attr[k] = anyValue{
-					valueType: StringValueType,
-					value:     v.StringValue,
-				}
+				p.buf = st.serialize(k, p.buf)
+				p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+				p.buf = st.serialize(v.StringValue, p.buf)
 			case spanEventAttributeTypeInt:
-				attr[k] = anyValue{
-					valueType: IntValueType,
-					value:     handleIntValue(v.IntValue),
-				}
+				p.buf = st.serialize(k, p.buf)
+				p.buf = msgp.AppendUint32(p.buf, uint32(IntValueType))
+				p.buf = msgp.AppendInt64(p.buf, v.IntValue)
 			case spanEventAttributeTypeDouble:
-				attr[k] = anyValue{
-					valueType: FloatValueType,
-					value:     v.DoubleValue,
-				}
+				p.buf = st.serialize(k, p.buf)
+				p.buf = msgp.AppendUint32(p.buf, uint32(FloatValueType))
+				p.buf = msgp.AppendFloat64(p.buf, v.DoubleValue)
 			case spanEventAttributeTypeBool:
-				attr[k] = anyValue{
-					valueType: BoolValueType,
-					value:     v.BoolValue,
-				}
+				p.buf = st.serialize(k, p.buf)
+				p.buf = msgp.AppendUint32(p.buf, uint32(BoolValueType))
+				p.buf = msgp.AppendBool(p.buf, v.BoolValue)
 			case spanEventAttributeTypeArray:
-				attr[k] = anyValue{
-					valueType: ArrayValueType,
-					value:     v.ArrayValue,
+				p.buf = st.serialize(k, p.buf)
+				p.buf = msgp.AppendUint32(p.buf, uint32(ArrayValueType))
+				p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(v.ArrayValue.Values))*3) // number of attributes
+				for _, v := range v.ArrayValue.Values {
+					p.encodeSpanEventArrayValues(k, v, st)
 				}
 			default:
 				log.Warn("dropped unsupported span event attribute type %d", v.Type)
 			}
 		}
-		p.encodeAttributes(fullSetBitmap, 3, attr, st)
+	}
+	return true, nil
+}
+
+func (p *payloadV1) encodeSpanEventArrayValues(k string, v *spanEventArrayAttributeValue, st *stringTable) (bool, error) {
+	switch v.Type {
+	case spanEventArrayAttributeValueTypeString:
+		p.buf = st.serialize(k, p.buf)
+		p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+		p.buf = st.serialize(v.StringValue, p.buf)
+	case spanEventArrayAttributeValueTypeInt:
+		p.buf = st.serialize(k, p.buf)
+		p.buf = msgp.AppendUint32(p.buf, uint32(IntValueType))
+		p.buf = msgp.AppendInt64(p.buf, v.IntValue)
+	case spanEventArrayAttributeValueTypeDouble:
+		p.buf = st.serialize(k, p.buf)
+		p.buf = msgp.AppendUint32(p.buf, uint32(FloatValueType))
+		p.buf = msgp.AppendFloat64(p.buf, v.DoubleValue)
+	case spanEventArrayAttributeValueTypeBool:
+		p.buf = st.serialize(k, p.buf)
+		p.buf = msgp.AppendUint32(p.buf, uint32(BoolValueType))
+		p.buf = msgp.AppendBool(p.buf, v.BoolValue)
+	default:
+		log.Warn("dropped unsupported span event array attribute type %d", v.Type)
 	}
 	return true, nil
 }
@@ -751,7 +778,7 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 // stringValue(2) - 0x102 (1 indicates this is a string, then a positive fixed int of 2 refers the 2nd index of the string table)
 type anyValue struct {
 	valueType int
-	value     interface{}
+	value     any
 }
 
 const (
@@ -763,26 +790,6 @@ const (
 	ArrayValueType              // []AnyValue -- 6
 	keyValueListType            // []keyValue -- 7
 )
-
-// buildAnyValue builds an anyValue from a given any type.
-func buildAnyValue(v any) *anyValue {
-	switch v := v.(type) {
-	case string:
-		return &anyValue{valueType: StringValueType, value: v}
-	case bool:
-		return &anyValue{valueType: BoolValueType, value: v}
-	case float64:
-		return &anyValue{valueType: FloatValueType, value: v}
-	case int32, int64:
-		return &anyValue{valueType: IntValueType, value: handleIntValue(v)}
-	case []byte:
-		return &anyValue{valueType: BytesValueType, value: v}
-	case arrayValue:
-		return &anyValue{valueType: ArrayValueType, value: v}
-	default:
-		return nil
-	}
-}
 
 func (a anyValue) encode(buf []byte, st *stringTable) []byte {
 	buf = msgp.AppendInt32(buf, int32(a.valueType))
@@ -892,37 +899,18 @@ func newStringTable() *stringTable {
 	}
 }
 
-// Adds a string to the string table if it does not already exist. Returns the index of the string.
-func (s *stringTable) add(str string) (idx index) {
-	sv := stringValue(str)
-	if _, ok := s.indices[sv]; ok {
-		return s.indices[sv]
-	}
-	s.indices[sv] = s.nextIndex
-	s.strings = append(s.strings, sv)
-	idx = s.nextIndex
-	s.nextIndex += 1
-	return
-}
-
-// Get returns the index of a string in the string table if it exists. Returns false if the string does not exist.
-func (s *stringTable) get(str string) (index, bool) {
-	sv := stringValue(str)
-	if idx, ok := s.indices[sv]; ok {
-		return idx, true
-	}
-	return -1, false
-}
-
+// Adds a string to the string table if it does not already exist.
 func (st *stringTable) serialize(value string, buf []byte) []byte {
-	if idx, ok := st.get(value); ok {
-		buf = idx.encode(buf)
-	} else {
-		s := stringValue(value)
-		buf = s.encode(buf)
-		st.add(value)
+	sv := stringValue(value)
+	if idx, ok := st.indices[sv]; ok {
+		return idx.encode(buf)
 	}
+	buf = sv.encode(buf)
+	st.indices[sv] = st.nextIndex
+	st.strings = append(st.strings, sv)
+	st.nextIndex++
 	return buf
+
 }
 
 // Reads a string from a byte slice and returns it from the string table if it exists.
@@ -940,7 +928,7 @@ func (s *stringTable) read(b []byte) (string, []byte, bool) {
 			return "", b, false
 		}
 		str := string(sv)
-		s.add(str)
+		s.serialize(str, b)
 		return str, o, true
 	}
 	// if b is an index
@@ -1134,7 +1122,19 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			var attr map[string]anyValue
 			attr, o, err = decodeAttributes(o, st)
 			for k, v := range attr {
-				span.SetTag(k, v.value)
+				// Decode meta struct values from bytes
+				if v.valueType == BytesValueType {
+					var decoded any
+					decoded, _, err = msgp.ReadIntfBytes(v.value.([]byte))
+					if err != nil {
+						break
+					}
+					span.mu.Lock()
+					span.setMetaStructLocked(k, decoded)
+					span.mu.Unlock()
+				} else {
+					span.SetTag(k, v.value)
+				}
 			}
 		case 10:
 			span.spanType, o, ok = st.read(o)

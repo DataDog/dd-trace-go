@@ -1498,11 +1498,11 @@
         "default": "false"
       }
     ],
-    "DD_TRACE_V1_PAYLOAD_FORMAT_ENABLED": [
+    "DD_TRACE_AGENT_PROTOCOL_VERSION": [
       {
-        "implementation": "A",
-        "type": "boolean",
-        "default": "false"
+        "implementation": "B",
+        "type": "string",
+        "default": "1.0"
       }
     ],
     "DD_TRACE_VALKEY_ANALYTICS_ENABLED": [

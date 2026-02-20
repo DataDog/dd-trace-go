@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -37,13 +38,20 @@ const customProfileLabelLimit = 10
 var (
 	mu             sync.Mutex
 	activeProfiler *profiler
-	containerID    = internal.ContainerID() // replaced in tests
-	entityID       = internal.EntityID()    // replaced in tests
+	containerID    atomic.Pointer[string]
+	entityID       atomic.Pointer[string]
 
-	// errProfilerStopped is a sentinel for suppressng errors if we are
+	// errProfilerStopped is a sentinel for suppressing errors if we are
 	// about to stop the profiler
 	errProfilerStopped = errors.New("profiler stopped")
 )
+
+func init() {
+	cid := internal.ContainerID()
+	containerID.Store(&cid)
+	eid := internal.EntityID()
+	entityID.Store(&eid)
+}
 
 // Start starts the profiler. If the profiler is already running, it will be
 // stopped and restarted with the given options.
@@ -290,19 +298,15 @@ func (p *profiler) run() {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
 	startTelemetry(p.cfg)
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		tick := time.NewTicker(p.cfg.period)
 		defer tick.Stop()
 		p.met.reset(now()) // collect baseline metrics at profiler start
 		p.collect(tick.C)
-	}()
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	})
+	p.wg.Go(func() {
 		p.send()
-	}()
+	})
 }
 
 // collect runs the profile types found in the configuration whenever the ticker receives

@@ -14,13 +14,20 @@ import (
 // It's designed to satisfy the dynamic configuration semantics (i.e reset, update, apply configuration changes).
 // This structure will be extended to track the origin of configuration values as well (e.g remote_config, env_var).
 type dynamicConfig[T any] struct {
-	locking.RWMutex
-	current   T                 // holds the current configuration value
-	startup   T                 // holds the startup configuration value
-	cfgName   string            // holds the name of the configuration, has to be compatible with telemetry.Configuration.Name
-	cfgOrigin telemetry.Origin  // holds the origin of the current configuration value (currently only supports remote_config, empty otherwise)
-	apply     func(T) bool      // executes any config-specific operations to propagate the update properly, returns whether the update was applied
-	equal     func(x, y T) bool // compares two configuration values, this is used to avoid unnecessary config and telemetry updates
+	mu locking.RWMutex
+
+	// holds the current configuration value
+	current T // +checklocks:mu
+	// holds the startup configuration value
+	startup T // +checklocks:mu
+	// holds the name of the configuration, has to be compatible with telemetry.Configuration.Name
+	cfgName string // +checklocks:mu
+	// holds the origin of the current configuration value (currently only supports remote_config, empty otherwise)
+	cfgOrigin telemetry.Origin // +checklocks:mu
+	// executes any config-specific operations to propagate the update properly, returns whether the update was applied
+	apply func(T) bool // +checklocks:mu
+	// compares two configuration values, this is used to avoid unnecessary config and telemetry updates
+	equal func(x, y T) bool // +checklocks:mu
 }
 
 func newDynamicConfig[T any](name string, val T, apply func(T) bool, equal func(x, y T) bool) dynamicConfig[T] {
@@ -36,15 +43,21 @@ func newDynamicConfig[T any](name string, val T, apply func(T) bool, equal func(
 
 // get returns the current configuration value
 func (dc *dynamicConfig[T]) get() T {
-	dc.RLock()
-	defer dc.RUnlock()
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
 	return dc.current
+}
+
+func (dc *dynamicConfig[T]) set(f func(current T) T) {
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+	dc.current = f(dc.current)
 }
 
 // update applies a new configuration value
 func (dc *dynamicConfig[T]) update(val T, origin telemetry.Origin) bool {
-	dc.Lock()
-	defer dc.Unlock()
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
 	if dc.equal(dc.current, val) {
 		return false
 	}
@@ -55,8 +68,8 @@ func (dc *dynamicConfig[T]) update(val T, origin telemetry.Origin) bool {
 
 // reset re-applies the startup configuration value
 func (dc *dynamicConfig[T]) reset() bool {
-	dc.Lock()
-	defer dc.Unlock()
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
 	if dc.equal(dc.current, dc.startup) {
 		return false
 	}
@@ -77,13 +90,42 @@ func (dc *dynamicConfig[T]) handleRC(val *T) bool {
 
 // toTelemetry returns the current configuration value as telemetry.Configuration
 func (dc *dynamicConfig[T]) toTelemetry() telemetry.Configuration {
-	dc.RLock()
-	defer dc.RUnlock()
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
 	return telemetry.Configuration{
 		Name:   dc.cfgName,
 		Value:  dc.current,
 		Origin: dc.cfgOrigin,
 	}
+}
+
+// setOrigin safely sets the configuration origin
+func (dc *dynamicConfig[T]) setOrigin(origin telemetry.Origin) {
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+	dc.cfgOrigin = origin
+}
+
+// Origin safely reads the configuration origin
+func (dc *dynamicConfig[T]) Origin() telemetry.Origin {
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
+	return dc.cfgOrigin
+}
+
+// getCurrentAndOrigin atomically reads both current value and origin
+// This prevents TOCTOU bugs when both values are needed
+func (dc *dynamicConfig[T]) getCurrentAndOrigin() (T, telemetry.Origin) {
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
+	return dc.current, dc.cfgOrigin
+}
+
+// setStartup updates the startup value (used during initialization)
+func (dc *dynamicConfig[T]) setStartup(val T) {
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+	dc.startup = val
 }
 
 func equal[T comparable](x, y T) bool {
@@ -105,7 +147,7 @@ func equalSlice[T comparable](x, y []T) bool {
 }
 
 // equalMap compares two maps of comparable keys and values
-func equalMap[T comparable](x, y map[T]interface{}) bool {
+func equalMap[T comparable](x, y map[T]any) bool {
 	if len(x) != len(y) {
 		return false
 	}

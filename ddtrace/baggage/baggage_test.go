@@ -196,10 +196,10 @@ func TestConcurrentAccessAndClear(t *testing.T) {
 	wg.Add(readers + writers)
 	errCh := make(chan string, readers)
 	// Readers – must ALWAYS observe the original baggage
-	for r := 0; r < readers; r++ {
+	for range readers {
 		go func(c context.Context) {
 			defer wg.Done()
-			for i := 0; i < iters; i++ {
+			for range iters {
 				if !assert.Equal(t, want, All(c), "baggage mutated") {
 					errCh <- fmt.Sprintf("baggage mutated: want %v, got %v", want, All(c))
 					return
@@ -209,11 +209,11 @@ func TestConcurrentAccessAndClear(t *testing.T) {
 		}(base)
 	}
 	// Writers – they fork their own context chains, never sharing variables
-	for w := 0; w < writers; w++ {
+	for range writers {
 		go func(c context.Context) {
 			defer wg.Done()
 			local := c
-			for i := 0; i < iters; i++ {
+			for range iters {
 				// alternates Set / Clear / Set to hit the nil‑map path
 				local = Set(local, "k", "v")
 				local = Clear(local)

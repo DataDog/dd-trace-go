@@ -68,10 +68,10 @@ type Tracer interface {
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
 	// maintain the original casing due to MIME header canonicalization standards.
-	Extract(carrier interface{}) (*SpanContext, error)
+	Extract(carrier any) (*SpanContext, error)
 
 	// Inject injects a span context into the given carrier.
-	Inject(context *SpanContext, carrier interface{}) error
+	Inject(context *SpanContext, carrier any) error
 
 	// TracerConf returns a snapshot of the current configuration of the tracer.
 	TracerConf() TracerConf
@@ -171,11 +171,13 @@ type tracer struct {
 	telemetry telemetry.Client
 
 	// State related to the Dynamic Instrumentation product.
-	dynInstMu struct {
-		locking.Mutex
-		ldSubscriptionToken    remoteconfig.SubscriptionToken
-		symDBSubscriptionToken remoteconfig.SubscriptionToken
-	}
+	dynInstSubscriptions dynInstSubscriptions
+}
+
+type dynInstSubscriptions struct {
+	mu                     locking.Mutex
+	ldSubscriptionToken    remoteconfig.SubscriptionToken // +checklocks:mu
+	symDBSubscriptionToken remoteconfig.SubscriptionToken // +checklocks:mu
 }
 
 const (
@@ -221,7 +223,7 @@ func Start(opts ...StartOption) error {
 	if err != nil {
 		return err
 	}
-	if !t.config.enabled.current {
+	if !t.config.enabled.get() {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -366,14 +368,14 @@ func StartSpan(operationName string, opts ...StartSpanOption) *Span {
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Extract(carrier interface{}) (*SpanContext, error) {
+func Extract(carrier any) (*SpanContext, error) {
 	return getGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Inject(ctx *SpanContext, carrier interface{}) error {
+func Inject(ctx *SpanContext, carrier any) error {
 	return getGlobalTracer().Inject(ctx, carrier)
 }
 
@@ -436,7 +438,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	// to distinguish between the case where the environment variable was not set and the case where
 	// it default to NaN.
 	if !math.IsNaN(c.internalConfig.GlobalSampleRate()) {
-		c.traceSampleRate.cfgOrigin = telemetry.OriginEnvVar
+		c.traceSampleRate.setOrigin(telemetry.OriginEnvVar)
 	}
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
@@ -495,20 +497,16 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.internalConfig.RuntimeMetricsEnabled() {
 		log.Debug("Runtime metrics enabled.")
-		t.wg.Add(1)
-		go func() {
-			defer t.wg.Done()
+		t.wg.Go(func() {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
-		}()
+		})
 	}
 	if c.internalConfig.DebugAbandonedSpans() {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.internalConfig.SpanTimeout())
 	}
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
+	t.wg.Go(func() {
 		tick := t.config.tickChan
 		if tick == nil {
 			ticker := time.NewTicker(flushInterval)
@@ -516,12 +514,10 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			tick = ticker.C
 		}
 		t.worker(tick)
-	}()
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
+	})
+	t.wg.Go(func() {
 		t.reportHealthMetricsAtInterval(statsInterval)
-	}()
+	})
 	t.stats.Start()
 	return t, nil
 }
@@ -728,16 +724,16 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
-	if context != nil && !context.baggageOnly {
+	if context != nil && !context.baggageOnly { // +checklocksignore - Read-only after init.
 		// this is a child span
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID
 		if p, ok := context.SamplingPriority(); ok {
 			span.setMetricInit(keySamplingPriority, float64(p))
 		}
-		if context.span == nil && context.origin != "" { // remote parent
+		if context.span == nil && context.origin != "" { // +checklocksignore - Read-only after init.
 			// mark origin
-			span.setMetaInit(keyOrigin, context.origin)
+			span.setMetaInit(keyOrigin, context.origin) // +checklocksignore - Read-only after init.
 		}
 		if context.reparentID != "" {
 			span.setMetaInit(keyReparentID, context.reparentID)
@@ -770,7 +766,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
-	if !t.config.enabled.current {
+	if !t.config.enabled.get() {
 		return nil
 	}
 	span := spanStart(operationName, options...)
@@ -909,8 +905,8 @@ func (t *tracer) Stop() {
 }
 
 // Inject uses the configured or default TextMap Propagator.
-func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
-	if !t.config.enabled.current {
+func (t *tracer) Inject(ctx *SpanContext, carrier any) error {
+	if !t.config.enabled.get() {
 		return nil
 	}
 
@@ -956,8 +952,8 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 }
 
 // Extract uses the configured or default TextMap Propagator.
-func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
-	if !t.config.enabled.current {
+func (t *tracer) Extract(carrier any) (*SpanContext, error) {
+	if !t.config.enabled.get() {
 		return nil, nil
 	}
 	ctx, err := t.config.propagator.Extract(carrier)
@@ -965,7 +961,7 @@ func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
 		if ctx.trace != nil &&
 			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
-			ctx.trace.priority = nil
+			ctx.trace.priority = nil // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 		}
 	}
 	if ctx != nil && ctx.trace != nil {
@@ -983,7 +979,7 @@ func (t *tracer) TracerConf() TracerConf {
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
-		Disabled:             !t.config.enabled.current,
+		Disabled:             !t.config.enabled.get(),
 		PartialFlush:         pfEnabled,
 		PartialFlushMinSpans: pfMin,
 		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
@@ -997,7 +993,7 @@ func (t *tracer) TracerConf() TracerConf {
 }
 
 func (t *tracer) submit(s *Span) {
-	if !t.config.enabled.current {
+	if !t.config.enabled.get() {
 		return
 	}
 	// we have an active tracer
@@ -1088,7 +1084,7 @@ func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Cont
 		// integrations. So update this context to be "not" execution
 		// traced so that derived contexts used by child spans don't get
 		// skipped.
-		ctx = globalinternal.WithExecutionNotTraced(ctx)
+		ctx, end = globalinternal.ScopedExecutionNotTraced(ctx)
 	}
 	var b [8]byte
 	binary.LittleEndian.PutUint64(b[:], span.spanID)

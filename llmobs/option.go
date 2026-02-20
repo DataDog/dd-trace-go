@@ -7,6 +7,7 @@ package llmobs
 
 import (
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
@@ -110,9 +111,7 @@ func WithAnnotatedTags(tags map[string]string) AnnotateOption {
 		if a.Tags == nil {
 			a.Tags = make(map[string]string)
 		}
-		for k, v := range tags {
-			a.Tags[k] = v
-		}
+		maps.Copy(a.Tags, tags)
 	}
 }
 
@@ -134,9 +133,7 @@ func WithAnnotatedMetadata(meta map[string]any) AnnotateOption {
 		if a.Metadata == nil {
 			a.Metadata = make(map[string]any)
 		}
-		for k, v := range meta {
-			a.Metadata[k] = v
-		}
+		maps.Copy(a.Metadata, meta)
 	}
 }
 
@@ -149,9 +146,7 @@ func WithAnnotatedMetrics(metrics map[string]float64) AnnotateOption {
 		if a.Metrics == nil {
 			a.Metrics = make(map[string]float64)
 		}
-		for k, v := range metrics {
-			a.Metrics[k] = v
-		}
+		maps.Copy(a.Metrics, metrics)
 	}
 }
 

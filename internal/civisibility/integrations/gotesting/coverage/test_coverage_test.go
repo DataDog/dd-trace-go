@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -206,13 +207,7 @@ func TestGetFilesCovered(t *testing.T) {
 	}
 
 	for _, expectedFile := range expectedFiles {
-		found := false
-		for _, file := range filesCovered {
-			if file == expectedFile {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(filesCovered, expectedFile)
 		if !found {
 			t.Errorf("Expected file %s to be in covered files", expectedFile)
 		}

@@ -54,12 +54,12 @@ func (t *ciVisibilityNoopTracer) StartSpan(operationName string, opts ...StartSp
 func (t *ciVisibilityNoopTracer) SetServiceInfo(_, _, _ string) {}
 
 // Extract implements Tracer.
-func (t *ciVisibilityNoopTracer) Extract(_ interface{}) (*SpanContext, error) {
+func (t *ciVisibilityNoopTracer) Extract(_ any) (*SpanContext, error) {
 	return nil, nil
 }
 
 // Inject implements Tracer.
-func (t *ciVisibilityNoopTracer) Inject(_ *SpanContext, _ interface{}) error { return nil }
+func (t *ciVisibilityNoopTracer) Inject(_ *SpanContext, _ any) error { return nil }
 
 // Stop implements Tracer.
 func (t *ciVisibilityNoopTracer) Stop() {

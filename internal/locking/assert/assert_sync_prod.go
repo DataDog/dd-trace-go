@@ -3,8 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//go:build !deadlock
-// +build !deadlock
+//go:build !deadlock && !debug
 
 package assert
 
@@ -23,11 +22,5 @@ func RWMutexLocked(m *locking.RWMutex) {
 }
 
 func RWMutexRLocked(m *locking.RWMutex) {
-	// A write lock also satisfies the read lock requirement because
-	// a write lock provides exclusive access that encompasses read-level exclusivity
-	if mutexasserts.RWMutexRLocked(m) || mutexasserts.RWMutexLocked(m) {
-		return
-	}
-	// Neither read-locked nor write-locked - trigger assertion failure
 	mutexasserts.AssertRWMutexRLocked(m)
 }

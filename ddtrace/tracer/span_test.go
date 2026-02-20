@@ -634,7 +634,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(numGoroutines)
-		for j := 0; j < numGoroutines; j++ {
+		for range numGoroutines {
 			go func() {
 				defer wg.Done()
 				childSpan := tracer.newChildSpan("child", rootSpan)
@@ -655,7 +655,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(numGoroutines)
-		for j := 0; j < numGoroutines; j++ {
+		for range numGoroutines {
 			go func() {
 				defer wg.Done()
 				childSpan := tracer.StartSpan(
@@ -1619,7 +1619,7 @@ func testConcurrentSpanSetTag(t *testing.T) {
 	const n = 100
 	wg := sync.WaitGroup{}
 	wg.Add(n * 2)
-	for i := 0; i < n; i++ {
+	for range n {
 		go func() {
 			tracer.Inject(span.Context(), TextMapCarrier(map[string]string{}))
 			wg.Done()

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -317,9 +318,7 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 	defer span.Finish(illmobs.FinishSpanConfig{Error: err})
 
 	tags := make(map[string]string)
-	for k, v := range e.cfg.tags {
-		tags[k] = v
-	}
+	maps.Copy(tags, e.cfg.tags)
 	tags["dataset_id"] = e.dataset.ID()
 	tags["dataset_record_id"] = rec.ID()
 	tags["experiment_id"] = e.id

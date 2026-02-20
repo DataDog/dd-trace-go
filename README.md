@@ -87,6 +87,8 @@ Targets:
   test-deadlock        Run tests with deadlock detection
   test-debug-deadlock  Run tests with debug and deadlock detection
   fix-modules          Fix module dependencies and consistency
+  fix/go               Apply go fix modernizations to Go code
+  fix/go/diff          Preview go fix modernizations (dry-run)
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
 ```

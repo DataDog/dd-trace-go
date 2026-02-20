@@ -11,6 +11,7 @@ package validate
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -48,10 +49,5 @@ func ValidHostname(hostname string) error {
 // check whether the name is in the list of local hostnames
 func isLocal(name string) bool {
 	name = strings.ToLower(name)
-	for _, val := range localhostIdentifiers {
-		if val == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(localhostIdentifiers, name)
 }

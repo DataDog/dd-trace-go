@@ -16,7 +16,7 @@ func TestEvaluateCondition_IsNull(t *testing.T) {
 	tests := []struct {
 		name      string
 		condition *condition
-		context   map[string]interface{}
+		context   map[string]any
 		expected  bool
 	}{
 		{
@@ -26,7 +26,7 @@ func TestEvaluateCondition_IsNull(t *testing.T) {
 				Attribute: "missing_attr",
 				Value:     true,
 			},
-			context:  map[string]interface{}{},
+			context:  map[string]any{},
 			expected: true,
 		},
 		{
@@ -36,7 +36,7 @@ func TestEvaluateCondition_IsNull(t *testing.T) {
 				Attribute: "missing_attr",
 				Value:     false,
 			},
-			context:  map[string]interface{}{},
+			context:  map[string]any{},
 			expected: false,
 		},
 		{
@@ -46,7 +46,7 @@ func TestEvaluateCondition_IsNull(t *testing.T) {
 				Attribute: "present_attr",
 				Value:     true,
 			},
-			context:  map[string]interface{}{"present_attr": "value"},
+			context:  map[string]any{"present_attr": "value"},
 			expected: false,
 		},
 		{
@@ -56,7 +56,7 @@ func TestEvaluateCondition_IsNull(t *testing.T) {
 				Attribute: "present_attr",
 				Value:     false,
 			},
-			context:  map[string]interface{}{"present_attr": "value"},
+			context:  map[string]any{"present_attr": "value"},
 			expected: true,
 		},
 	}
@@ -75,7 +75,7 @@ func TestEvaluateCondition_NumericComparison(t *testing.T) {
 	tests := []struct {
 		name      string
 		condition *condition
-		context   map[string]interface{}
+		context   map[string]any
 		expected  bool
 	}{
 		{
@@ -85,7 +85,7 @@ func TestEvaluateCondition_NumericComparison(t *testing.T) {
 				Attribute: "age",
 				Value:     18.0,
 			},
-			context:  map[string]interface{}{"age": 25},
+			context:  map[string]any{"age": 25},
 			expected: true,
 		},
 		{
@@ -95,7 +95,7 @@ func TestEvaluateCondition_NumericComparison(t *testing.T) {
 				Attribute: "age",
 				Value:     30.0,
 			},
-			context:  map[string]interface{}{"age": 25},
+			context:  map[string]any{"age": 25},
 			expected: false,
 		},
 		{
@@ -105,7 +105,7 @@ func TestEvaluateCondition_NumericComparison(t *testing.T) {
 				Attribute: "age",
 				Value:     25.0,
 			},
-			context:  map[string]interface{}{"age": 25},
+			context:  map[string]any{"age": 25},
 			expected: true,
 		},
 		{
@@ -115,7 +115,7 @@ func TestEvaluateCondition_NumericComparison(t *testing.T) {
 				Attribute: "age",
 				Value:     30.0,
 			},
-			context:  map[string]interface{}{"age": 25},
+			context:  map[string]any{"age": 25},
 			expected: true,
 		},
 		{
@@ -125,7 +125,7 @@ func TestEvaluateCondition_NumericComparison(t *testing.T) {
 				Attribute: "age",
 				Value:     25.0,
 			},
-			context:  map[string]interface{}{"age": 25},
+			context:  map[string]any{"age": 25},
 			expected: true,
 		},
 		{
@@ -135,7 +135,7 @@ func TestEvaluateCondition_NumericComparison(t *testing.T) {
 				Attribute: "score",
 				Value:     85.5,
 			},
-			context:  map[string]interface{}{"score": 90.7},
+			context:  map[string]any{"score": 90.7},
 			expected: true,
 		},
 	}
@@ -154,7 +154,7 @@ func TestEvaluateCondition_RegexMatching(t *testing.T) {
 	tests := []struct {
 		name      string
 		condition *condition
-		context   map[string]interface{}
+		context   map[string]any
 		expected  bool
 	}{
 		{
@@ -164,7 +164,7 @@ func TestEvaluateCondition_RegexMatching(t *testing.T) {
 				Attribute: "email",
 				Value:     ".*@example\\.com$",
 			},
-			context:  map[string]interface{}{"email": "user@example.com"},
+			context:  map[string]any{"email": "user@example.com"},
 			expected: true,
 		},
 		{
@@ -174,7 +174,7 @@ func TestEvaluateCondition_RegexMatching(t *testing.T) {
 				Attribute: "email",
 				Value:     ".*@example\\.com$",
 			},
-			context:  map[string]interface{}{"email": "user@other.com"},
+			context:  map[string]any{"email": "user@other.com"},
 			expected: false,
 		},
 		{
@@ -184,7 +184,7 @@ func TestEvaluateCondition_RegexMatching(t *testing.T) {
 				Attribute: "email",
 				Value:     ".*@spam\\.com$",
 			},
-			context:  map[string]interface{}{"email": "user@example.com"},
+			context:  map[string]any{"email": "user@example.com"},
 			expected: true,
 		},
 		{
@@ -194,7 +194,7 @@ func TestEvaluateCondition_RegexMatching(t *testing.T) {
 				Attribute: "email",
 				Value:     ".*@example\\.com$",
 			},
-			context:  map[string]interface{}{"email": "user@example.com"},
+			context:  map[string]any{"email": "user@example.com"},
 			expected: false,
 		},
 	}
@@ -213,7 +213,7 @@ func TestEvaluateCondition_SetMembership(t *testing.T) {
 	tests := []struct {
 		name      string
 		condition *condition
-		context   map[string]interface{}
+		context   map[string]any
 		expected  bool
 	}{
 		{
@@ -223,7 +223,7 @@ func TestEvaluateCondition_SetMembership(t *testing.T) {
 				Attribute: "country",
 				Value:     []string{"US", "CA", "MX"},
 			},
-			context:  map[string]interface{}{"country": "US"},
+			context:  map[string]any{"country": "US"},
 			expected: true,
 		},
 		{
@@ -233,7 +233,7 @@ func TestEvaluateCondition_SetMembership(t *testing.T) {
 				Attribute: "country",
 				Value:     []string{"US", "CA", "MX"},
 			},
-			context:  map[string]interface{}{"country": "UK"},
+			context:  map[string]any{"country": "UK"},
 			expected: false,
 		},
 		{
@@ -243,7 +243,7 @@ func TestEvaluateCondition_SetMembership(t *testing.T) {
 				Attribute: "country",
 				Value:     []string{"CN", "RU"},
 			},
-			context:  map[string]interface{}{"country": "US"},
+			context:  map[string]any{"country": "US"},
 			expected: true,
 		},
 		{
@@ -253,7 +253,7 @@ func TestEvaluateCondition_SetMembership(t *testing.T) {
 				Attribute: "country",
 				Value:     []string{"US", "CA"},
 			},
-			context:  map[string]interface{}{"country": "US"},
+			context:  map[string]any{"country": "US"},
 			expected: false,
 		},
 		{
@@ -261,9 +261,9 @@ func TestEvaluateCondition_SetMembership(t *testing.T) {
 			condition: &condition{
 				Operator:  operatorOneOf,
 				Attribute: "tier",
-				Value:     []interface{}{"gold", "platinum"},
+				Value:     []any{"gold", "platinum"},
 			},
-			context:  map[string]interface{}{"tier": "gold"},
+			context:  map[string]any{"tier": "gold"},
 			expected: true,
 		},
 	}
@@ -282,7 +282,7 @@ func TestEvaluateRule(t *testing.T) {
 	tests := []struct {
 		name     string
 		rule     *rule
-		context  map[string]interface{}
+		context  map[string]any
 		expected bool
 	}{
 		{
@@ -301,7 +301,7 @@ func TestEvaluateRule(t *testing.T) {
 					},
 				},
 			},
-			context: map[string]interface{}{
+			context: map[string]any{
 				"age":     25,
 				"country": "US",
 			},
@@ -323,7 +323,7 @@ func TestEvaluateRule(t *testing.T) {
 					},
 				},
 			},
-			context: map[string]interface{}{
+			context: map[string]any{
 				"age":     25,
 				"country": "UK",
 			},
@@ -358,7 +358,7 @@ func TestEvaluateShard(t *testing.T) {
 			},
 			TotalShards: totalShards,
 		}
-		context := map[string]interface{}{
+		context := map[string]any{
 			"targetingKey": targetingKey,
 		}
 
@@ -390,7 +390,7 @@ func TestEvaluateShard(t *testing.T) {
 			},
 			TotalShards: totalShards,
 		}
-		context := map[string]interface{}{
+		context := map[string]any{
 			"targetingKey": targetingKey,
 		}
 
@@ -408,7 +408,7 @@ func TestEvaluateShard(t *testing.T) {
 			},
 			TotalShards: 8192,
 		}
-		context := map[string]interface{}{}
+		context := map[string]any{}
 
 		result := evaluateShard(shard, context)
 		if result {
@@ -424,7 +424,7 @@ func TestEvaluateShard(t *testing.T) {
 			},
 			TotalShards: 8192,
 		}
-		context := map[string]interface{}{
+		context := map[string]any{
 			"targetingKey": "any-user",
 		}
 
@@ -443,7 +443,7 @@ func TestEvaluateAllocation(t *testing.T) {
 	tests := []struct {
 		name              string
 		allocation        *allocation
-		context           map[string]interface{}
+		context           map[string]any
 		currentTime       time.Time
 		expectMatch       bool
 		expectedVariation string
@@ -480,7 +480,7 @@ func TestEvaluateAllocation(t *testing.T) {
 					},
 				},
 			},
-			context: map[string]interface{}{
+			context: map[string]any{
 				"country":      "US",
 				"targetingKey": "user-123",
 			},
@@ -519,7 +519,7 @@ func TestEvaluateAllocation(t *testing.T) {
 					},
 				},
 			},
-			context: map[string]interface{}{
+			context: map[string]any{
 				"country":      "US",
 				"targetingKey": "user-123",
 			},
@@ -557,7 +557,7 @@ func TestEvaluateAllocation(t *testing.T) {
 					},
 				},
 			},
-			context: map[string]interface{}{
+			context: map[string]any{
 				"country":      "US",
 				"targetingKey": "user-123",
 			},
@@ -583,9 +583,9 @@ func TestEvaluateFlag(t *testing.T) {
 	tests := []struct {
 		name           string
 		flag           *flag
-		defaultValue   interface{}
-		context        map[string]interface{}
-		expectedValue  interface{}
+		defaultValue   any
+		context        map[string]any
+		expectedValue  any
 		expectedReason of.Reason
 	}{
 		{
@@ -596,7 +596,7 @@ func TestEvaluateFlag(t *testing.T) {
 				VariationType: valueTypeBoolean,
 			},
 			defaultValue:   false,
-			context:        map[string]interface{}{},
+			context:        map[string]any{},
 			expectedValue:  false,
 			expectedReason: of.DisabledReason,
 		},
@@ -642,7 +642,7 @@ func TestEvaluateFlag(t *testing.T) {
 				},
 			},
 			defaultValue: false,
-			context: map[string]interface{}{
+			context: map[string]any{
 				"country":      "US",
 				"targetingKey": "user-123",
 			},
@@ -691,7 +691,7 @@ func TestEvaluateFlag(t *testing.T) {
 				},
 			},
 			defaultValue: false,
-			context: map[string]interface{}{
+			context: map[string]any{
 				"country":      "US",
 				"targetingKey": "user-123",
 			},
@@ -736,7 +736,7 @@ func TestComputeShardIndex(t *testing.T) {
 func TestValidateVariantType(t *testing.T) {
 	tests := []struct {
 		name         string
-		value        interface{}
+		value        any
 		expectedType valueType
 		expectError  bool
 	}{
@@ -751,7 +751,7 @@ func TestValidateVariantType(t *testing.T) {
 		{"numeric valid int", 42, valueTypeNumeric, false},
 		{"numeric valid float", 42.5, valueTypeNumeric, false},
 		{"numeric invalid", "42", valueTypeNumeric, true},
-		{"json accepts anything", map[string]interface{}{"key": "value"}, valueTypeJSON, false},
+		{"json accepts anything", map[string]any{"key": "value"}, valueTypeJSON, false},
 	}
 
 	for _, tt := range tests {

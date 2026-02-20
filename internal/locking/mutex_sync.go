@@ -4,7 +4,6 @@
 // Copyright 2016 Datadog, Inc.
 
 //go:build !deadlock
-// +build !deadlock
 
 package locking
 

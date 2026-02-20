@@ -292,7 +292,7 @@ main.main()
 		spawnGoroutines := func(n int) func() {
 			executing := make(chan struct{})
 			stopping := make(chan struct{})
-			for i := 0; i < n; i++ {
+			for range n {
 				go func() {
 					executing <- struct{}{}
 					stopping <- struct{}{}
@@ -300,7 +300,7 @@ main.main()
 				<-executing
 			}
 			return func() {
-				for i := 0; i < n; i++ {
+				for range n {
 					<-stopping
 				}
 			}

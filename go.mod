@@ -11,7 +11,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace v0.75.2
 	github.com/DataDog/datadog-go/v5 v5.8.2
 	github.com/DataDog/go-libddwaf/v4 v4.8.0
-	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b633
+	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.7
 	github.com/cenkalti/backoff/v5 v5.0.3
@@ -32,23 +32,23 @@ require (
 	github.com/trailofbits/go-mutexasserts v0.0.0-20250514102930-c1f3d2e37561
 	go.opentelemetry.io/collector/pdata/pprofile v0.142.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
-	go.opentelemetry.io/otel v1.39.0
+	go.opentelemetry.io/otel v1.40.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.13.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.13.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.39.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.39.0
 	go.opentelemetry.io/otel/log v0.13.0
-	go.opentelemetry.io/otel/metric v1.39.0
-	go.opentelemetry.io/otel/sdk v1.39.0
+	go.opentelemetry.io/otel/metric v1.40.0
+	go.opentelemetry.io/otel/sdk v1.40.0
 	go.opentelemetry.io/otel/sdk/log v0.13.0
-	go.opentelemetry.io/otel/sdk/metric v1.39.0
-	go.opentelemetry.io/otel/trace v1.39.0
+	go.opentelemetry.io/otel/sdk/metric v1.40.0
+	go.opentelemetry.io/otel/trace v1.40.0
 	go.uber.org/goleak v1.3.0
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/exp v0.0.0-20251209150349-8475f28825e9
 	golang.org/x/mod v0.31.0
 	golang.org/x/sync v0.19.0
-	golang.org/x/sys v0.39.0
+	golang.org/x/sys v0.40.0
 	golang.org/x/time v0.14.0
 	golang.org/x/tools v0.40.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028

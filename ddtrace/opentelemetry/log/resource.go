@@ -7,6 +7,7 @@ package log
 
 import (
 	"context"
+	"maps"
 	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -65,9 +66,7 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	// Step 3: Overlay Datadog attributes (these win over OTEL)
 	// Start with OTEL attributes as base
 	attrs := make(map[string]string)
-	for k, v := range otelAttrs {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, otelAttrs)
 
 	// Overlay DD_SERVICE → service.name
 	if ddService := env.Get(envDDService); ddService != "" {
@@ -85,9 +84,7 @@ func buildResource(ctx context.Context, opts ...resource.Option) (*resource.Reso
 	}
 
 	// Overlay DD_TAGS (all key-value pairs)
-	for k, v := range ddTags {
-		attrs[k] = v
-	}
+	maps.Copy(attrs, ddTags)
 
 	// Step 4: Handle hostname with special rules
 	// OTEL_RESOURCE_ATTRIBUTES[host.name] has highest priority - never override it

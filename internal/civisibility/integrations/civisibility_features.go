@@ -247,9 +247,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 
 		// if early flake detection is enabled then we run the known tests request
 		if currentSettings.KnownTestsEnabled {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				ciEfdData, err := ciVisibilityClient.GetKnownTests()
 				if err != nil {
 					log.Error("civisibility: error getting CI visibility known tests data: %s", err.Error())
@@ -257,14 +255,12 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 					ciVisibilityKnownTests = *ciEfdData
 					log.Debug("civisibility: known tests data loaded.")
 				}
-			}()
+			})
 		}
 
 		// if ITR is enabled then we do the skippable tests request
 		if currentSettings.TestsSkipping {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				// get the skippable tests
 				correlationID, skippableTests, err := ciVisibilityClient.GetSkippableTests()
 				if err != nil {
@@ -274,14 +270,12 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 					setAdditionalTags(constants.ItrCorrelationIDTag, correlationID)
 					ciVisibilitySkippables = skippableTests
 				}
-			}()
+			})
 		}
 
 		// if test management is enabled then we do the test management request
 		if currentSettings.TestManagement.Enabled {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				testManagementTests, err := ciVisibilityClient.GetTestManagementTests()
 				if err != nil {
 					log.Error("civisibility: error getting CI visibility test management tests: %s", err.Error())
@@ -289,14 +283,12 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 					ciVisibilityTestManagementTests = *testManagementTests
 					log.Debug("civisibility: test management loaded [attemptToFixRetries: %d]", currentSettings.TestManagement.AttemptToFixRetries)
 				}
-			}()
+			})
 		}
 
 		// if wheter the settings response or the env var is true we load the impacted tests analyzer
 		if currentSettings.ImpactedTestsEnabled {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				iTests, err := impactedtests.NewImpactedTestAnalyzer()
 				if err != nil {
 					log.Error("civisibility: error getting CI visibility impacted tests analyzer: %s", err.Error())
@@ -304,7 +296,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 					ciVisibilityImpactedTestsAnalyzer = iTests
 					log.Debug("civisibility: impacted tests analyzer loaded")
 				}
-			}()
+			})
 		}
 
 		// wait for all the additional features to be loaded

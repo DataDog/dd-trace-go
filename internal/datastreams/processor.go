@@ -349,18 +349,14 @@ func (p *Processor) Start() {
 	}
 	p.stop = make(chan struct{})
 	p.flushRequest = make(chan chan<- struct{})
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		p.reportStats()
-	}()
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	})
+	p.wg.Go(func() {
 		tick := time.NewTicker(bucketDuration)
 		defer tick.Stop()
 		p.run(tick.C)
-	}()
+	})
 }
 
 // Flush triggers a flush and waits for it to complete.
