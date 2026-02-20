@@ -75,14 +75,23 @@ func New(t *testing.T) *MockAgent {
 	return &MockAgent{T: t}
 }
 
-func (m *MockAgent) Start(t *testing.T) {
-	m.T.Log("mockagent: starting")
-
+// Listen starts the mock agent's HTTP server and registers a cleanup to close
+// it. It must be called before the test's Setup function so that the HTTP
+// server claims its port before any call to net.FreePort, preventing the
+// TOCTOU race where FreePort releases a port that httptest.NewServer then
+// steals, causing the test server and mock agent to share the same address.
+func (m *MockAgent) Listen(t *testing.T) {
 	srv := httptest.NewServer(m)
 	m.srv = srv
 	t.Cleanup(srv.Close)
+}
 
-	srvURL, err := url.Parse(srv.URL)
+// Start configures environment variables and starts the tracer pointing at the
+// mock agent. Listen must have been called first (harness.Run ensures this).
+func (m *MockAgent) Start(t *testing.T) {
+	m.T.Log("mockagent: starting")
+
+	srvURL, err := url.Parse(m.srv.URL)
 	require.NoError(t, err)
 
 	// Increase WAF timeout to avoid flakiness due to ungodly slow CI hosts.
