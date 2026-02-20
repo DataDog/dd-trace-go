@@ -5,7 +5,7 @@
 
 //go:build !linux
 
-package internal
+package otelprocesscontext
 
 func CreateOtelProcessContextMapping(data []byte) error {
 	return nil

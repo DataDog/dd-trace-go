@@ -5,13 +5,12 @@
 
 //go:build linux
 
-package internal
+package otelprocesscontext
 
 import (
 	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"strconv"
@@ -20,14 +19,9 @@ import (
 	"unsafe"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
 )
 
 func getContextFromMapping(fields []string) []byte {
-	if fields[1] != "r--p" || fields[4] != "0" || fields[3] != "00:00" {
-		return nil
-	}
-
 	addrs := strings.SplitN(fields[0], "-", 2)
 	if len(addrs) < 2 {
 		return nil
@@ -37,79 +31,56 @@ func getContextFromMapping(fields []string) []byte {
 		return nil
 	}
 
-	vend, err := strconv.ParseUint(addrs[1], 16, 64)
-	if err != nil {
-		return nil
-	}
-
-	length := vend - vaddr
-	if length != uint64(otelContextMappingSize) {
-		return nil
-	}
-
 	header := (*processContextHeader)(unsafe.Pointer(uintptr(vaddr)))
 	if string(header.Signature[:]) != otelContextSignature {
 		return nil
 	}
-	if header.Version != 1 {
+	if header.Version != 2 {
+		return nil
+	}
+	if header.PublishedAtNs == 0 {
 		return nil
 	}
 
 	payload := make([]byte, header.PayloadSize)
-	copy(payload, unsafe.Slice((*byte)(unsafe.Pointer(header.PayloadAddr)), header.PayloadSize))
+	copy(payload, unsafe.Slice((*byte)(unsafe.Pointer(uintptr(header.PayloadAddr))), header.PayloadSize))
 	return payload
 }
 
-func getContextMapping(mapsFile io.Reader, useMappingNames bool) ([]byte, error) {
-	minFields := 5
-	if useMappingNames {
-		minFields++
+func isOtelContextName(name string) bool {
+	return name == "[anon:OTEL_CTX]" ||
+		name == "[anon_shmem:OTEL_CTX]" ||
+		strings.HasPrefix(name, "/memfd:OTEL_CTX")
+}
+
+func getContextMapping(mapsFile io.Reader) ([]byte, error) {
+	content, err := io.ReadAll(mapsFile)
+	if err != nil {
+		return nil, err
 	}
-	scanner := bufio.NewScanner(mapsFile)
+
+	scanner := bufio.NewScanner(bytes.NewReader(content))
 	for scanner.Scan() {
-
-		line := scanner.Text()
-		fields := strings.Fields(line)
-		if len(fields) < minFields {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 6 || !isOtelContextName(fields[5]) {
 			continue
 		}
-
-		if (useMappingNames && fields[5] != "[anon:OTEL_CTX]") || (!useMappingNames && fields[5] != "") {
-			continue
-		}
-
-		payload := getContextFromMapping(fields)
-		if payload != nil {
+		if payload := getContextFromMapping(fields); payload != nil {
 			return payload, nil
 		}
-
-		if useMappingNames {
-			// When using mapping names, we can stop after the first match.
-			break
-		}
 	}
+
 	return nil, errors.New("no context mapping found")
 }
 
-func readProcessLevelContext(useMappingNames bool) ([]byte, error) {
+func readProcessLevelContext() ([]byte, error) {
 	mapsFile, err := os.Open("/proc/self/maps")
 	if err != nil {
 		return nil, err
 	}
 	defer mapsFile.Close()
 
-	return getContextMapping(mapsFile, useMappingNames)
-}
-
-func kernelSupportsNamedAnonymousMappings() (bool, error) {
-	var uname unix.Utsname
-	if err := unix.Uname(&uname); err != nil {
-		return false, fmt.Errorf("could not get Kernel Version: %v", err)
-	}
-	var major, minor, patch uint32
-	_, _ = fmt.Fscanf(bytes.NewReader(uname.Release[:]), "%d.%d.%d", &major, &minor, &patch)
-
-	return major > 5 || (major == 5 && minor >= 17), nil
+	return getContextMapping(mapsFile)
 }
 
 func TestCreateOtelProcessContextMapping(t *testing.T) {
@@ -122,10 +93,7 @@ func TestCreateOtelProcessContextMapping(t *testing.T) {
 	err := CreateOtelProcessContextMapping(payload)
 	require.NoError(t, err)
 
-	supportsNamedAnonymousMappings, err := kernelSupportsNamedAnonymousMappings()
-	require.NoError(t, err)
-
-	ctx, err := readProcessLevelContext(supportsNamedAnonymousMappings)
+	ctx, err := readProcessLevelContext()
 	require.NoError(t, err)
 	require.Equal(t, payload, ctx)
 }
