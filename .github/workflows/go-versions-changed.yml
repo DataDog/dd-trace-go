@@ -59,3 +59,26 @@ jobs:
             --form "token=${{ secrets.APM_SDKS_BENCHMARKS_TRIGGER_TOKEN }}" \
             --form "ref=main" \
             "https://gitlab.ddbuild.io/api/v4/projects/${{ vars.APM_SDKS_BENCHMARKS_GL_PROJECT_ID }}/trigger/pipeline"
+
+  trigger-reliability-env:
+    needs: [go-versions]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch go-version-updated to datadog-reliability-env
+        # Requires a PAT with repo scope stored as RELIABILITY_ENV_DISPATCH_TOKEN.
+        # The receiving workflow (go-version-updated.yml) rotates deployment keys
+        # in deployment.cue/dashboards/golang.jsonnet and opens an auto-PR.
+        run: |
+          curl --fail --request POST \
+            --url "https://api.github.com/repos/DataDog/datadog-reliability-env/dispatches" \
+            --header "Authorization: Bearer ${{ secrets.RELIABILITY_ENV_DISPATCH_TOKEN }}" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --header "Content-Type: application/json" \
+            --data "{
+              \"event_type\": \"go-version-updated\",
+              \"client_payload\": {
+                \"stable_patch\": \"${{ needs.go-versions.outputs.stable_patch }}\",
+                \"oldstable_patch\": \"${{ needs.go-versions.outputs.oldstable_patch }}\"
+              }
+            }"
