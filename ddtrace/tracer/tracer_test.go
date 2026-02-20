@@ -2607,8 +2607,8 @@ func TestUserMonitoring(t *testing.T) {
 			}
 		}()
 
-		root.Finish()
 		wg.Wait()
+		root.Finish()
 	})
 }
 

@@ -1456,6 +1456,13 @@
         "default": "v0"
       }
     ],
+    "DD_TRACE_SPAN_POOL_ENABLED": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_TRACE_SQL_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
