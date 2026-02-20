@@ -328,6 +328,19 @@ func (s *Span) SetTag(key string, value any) {
 	s.setTagLocked(key, value)
 }
 
+// setTagsInit sets multiple tags on the span during initialization. It acquires
+// the span lock internally and returns early without locking if tags is empty.
+func (s *Span) setTagsInit(tags map[string]any) {
+	if len(tags) == 0 {
+		return
+	}
+	s.mu.Lock()
+	for k, v := range tags {
+		s.setTagLocked(k, v)
+	}
+	s.mu.Unlock()
+}
+
 // setTagLocked sets a tag on the span. This method assumes the span lock is already held.
 func (s *Span) setTagLocked(key string, value any) {
 	assert.RWMutexLocked(&s.mu)
