@@ -52,6 +52,21 @@ permissions:
   contents: read
 
 jobs:
+  go-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      stable: ${{ steps.versions.outputs.stable }}
+      oldstable: ${{ steps.versions.outputs.oldstable }}
+      matrix: ${{ steps.versions.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Read Go versions
+        id: versions
+        uses: ./.github/actions/go-versions
+
   # Prepare the cache of Go modules to share it will the other jobs.
   # This maximizes cache hits and minimizes the time spent downloading Go modules.
   # Note 1: @actions/cache is very sensitive and it's easy to mess up. Things to know:
@@ -105,11 +120,13 @@ jobs:
   macos:
     name: ${{ matrix.runs-on }} go${{ matrix.go-version }}
     runs-on: ${{ matrix.runs-on }}
-    needs: go-mod-caching
+    needs:
+      - go-versions
+      - go-mod-caching
     strategy:
       matrix:
         runs-on: [ macos-14, macos-latest ] # oldest and newest macos runners available
-        go-version: [ "1.26", "1.25" ]
+        go-version: ${{ fromJSON(needs.go-versions.outputs.matrix) }}
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -292,10 +309,12 @@ jobs:
     name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     # We use ARM runners when needed to avoid the performance hit of QEMU
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'ubuntu-24.04-arm' }}
-    needs: go-mod-caching
+    needs:
+      - go-versions
+      - go-mod-caching
     strategy:
       matrix:
-        go-version: [ "1.26", "1.25" ]
+        go-version: ${{ fromJSON(needs.go-versions.outputs.matrix) }}
         distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
 

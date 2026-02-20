@@ -1,0 +1,9 @@
+# Go version configuration for the dd-trace-go ecosystem.
+# Single source of truth consumed by GitHub Actions and GitLab CI pipelines.
+# See GO-VERSION-ROLLOUT.md for the full rollout procedure and automation details.
+# Changes on main trigger downstream container rebuilds in benchmarking-platform,
+# apm-sdks-benchmarks, and datadog-reliability-env via go-versions-changed.yml.
+stable: "1.26"
+oldstable: "1.25"
+stable_patch: "1.26.0"
+oldstable_patch: "1.25.7"
