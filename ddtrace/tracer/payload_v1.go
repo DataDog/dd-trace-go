@@ -201,8 +201,8 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		p.buf = encodeField(p.buf, p.bm, 9, p.appVersion, p.st)
 		p.encodeAttributes(p.bm, 10, p.attributes, p.st)
 		if p.bm.contains(11) {
-			p.buf = msgp.AppendUint32(p.buf, 11)          // field ID for chunks
-			p.buf = append(p.buf, 0xdd, 0, 0, 0, 0)      // array32 marker + 4-byte count = 0
+			p.buf = msgp.AppendUint32(p.buf, 11)    // field ID for chunks
+			p.buf = append(p.buf, 0xdd, 0, 0, 0, 0) // array32 marker + 4-byte count = 0
 			p.chunksCountOff = len(p.buf) - 4
 		}
 		p.staticBufLen = len(p.buf)
