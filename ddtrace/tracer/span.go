@@ -613,10 +613,11 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 			// instrumentation/errortrace approach
 			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
 			s.setMetaLocked(ext.ErrorHandlingStack, err.Format())
-			return
+		default:
+			stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+			s.setMetaLocked(ext.ErrorStack, stack)
+			s.setMetaLocked(ext.ErrorHandlingStack, stack)
 		}
-		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-		s.setMetaLocked(ext.ErrorHandlingStack, stack)
 	case nil:
 		// no error
 		setError(false)
