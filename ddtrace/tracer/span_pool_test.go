@@ -33,9 +33,8 @@ func TestSpanPoolReleaseClearsFields(t *testing.T) {
 	s.finished = true
 
 	saved := s
-	savedCtx := s.context
-	releaseSpan(s)
-	got := acquireSpan()
+	releaseSpan(s, true)
+	got := acquireSpan(true)
 
 	if got != saved {
 		t.Skip("sync.Pool did not return the same object; non-deterministic — skipping")
@@ -64,17 +63,13 @@ func TestSpanPoolReleaseClearsFields(t *testing.T) {
 	assert.Nil(t, got.spanLinks)
 	assert.Nil(t, got.spanEvents)
 
-	// SpanContext must be fully zeroed.
-	assert.Nil(t, savedCtx.span)
-	assert.Nil(t, savedCtx.trace)
-	assert.Equal(t, uint64(0), savedCtx.spanID)
-	assert.Nil(t, savedCtx.baggage)
-	assert.Nil(t, savedCtx.spanLinks)
-	assert.Equal(t, "", savedCtx.origin)
+	// SpanContext is intentionally NOT cleared. Context() is lock-free and
+	// external code may still read from it after Finish(). The context is
+	// replaced on reuse via newSpanContext in spanStart.
 }
 
 func TestSpanPoolPayloadCorrectness(t *testing.T) {
-	tracer, transport, flush, stop, err := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t, WithSpanPool(true))
 	require.NoError(t, err)
 	defer stop()
 
@@ -108,7 +103,7 @@ func TestSpanPoolPayloadCorrectness(t *testing.T) {
 }
 
 func TestSpanPoolRecycledSpanNoStaleData(t *testing.T) {
-	tracer, transport, flush, stop, err := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t, WithSpanPool(true))
 	require.NoError(t, err)
 	defer stop()
 
@@ -162,7 +157,7 @@ func TestSpanPoolRecycledSpanNoStaleData(t *testing.T) {
 }
 
 func TestSpanPoolMultipleRecycleRounds(t *testing.T) {
-	tracer, transport, flush, stop, err := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t, WithSpanPool(true))
 	require.NoError(t, err)
 	defer stop()
 
@@ -235,7 +230,7 @@ func TestSpanPoolMultipleRecycleRounds(t *testing.T) {
 }
 
 func TestSpanPoolSpanTypeAndErrorReset(t *testing.T) {
-	tracer, transport, flush, stop, err := startTestTracer(t)
+	tracer, transport, flush, stop, err := startTestTracer(t, WithSpanPool(true))
 	require.NoError(t, err)
 	defer stop()
 
@@ -287,10 +282,10 @@ func BenchmarkSpanPoolRelease(b *testing.B) {
 	// items, avoiding sync.Pool internal ring-buffer growth allocations
 	// that cause flaky B/op across runs (GC clears the pool between
 	// runN iterations, forcing ring-buffer rebuild with varying b.N).
-	s := acquireSpan()
+	s := acquireSpan(true)
 	for range b.N {
-		releaseSpan(s)
-		s = acquireSpan()
+		releaseSpan(s, true)
+		s = acquireSpan(true)
 	}
 }
 
@@ -400,7 +395,7 @@ func TestSpanPoolEndToEndConcurrentCorrectness(t *testing.T) {
 	const spansPerGoroutine = 50 // 500 total, well within payloadQueueSize
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent)
+	tr := newTracerTest(t, agent, WithSpanPool(true))
 
 	var wg sync.WaitGroup
 	for g := range numGoroutines {
@@ -451,7 +446,7 @@ func TestSpanPoolEndToEndParentChild(t *testing.T) {
 	const numPairs = 200
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent)
+	tr := newTracerTest(t, agent, WithSpanPool(true))
 
 	for i := range numPairs {
 		parent := tr.StartSpan("parent.op",
@@ -518,7 +513,7 @@ func TestSpanPoolEndToEndCorrectness(t *testing.T) {
 	const numSpans = 500
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent)
+	tr := newTracerTest(t, agent, WithSpanPool(true))
 
 	for i := range numSpans {
 		span := tr.StartSpan("pool.test",

@@ -379,7 +379,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
 		ProjectName:      env.Get(envLLMObsProjectName),
 	}
-	c.spanPoolEnabled = internal.BoolEnv("DD_TRACE_SPAN_POOL_ENABLED", true)
+	c.spanPoolEnabled = internal.BoolEnv("DD_TRACE_SPAN_POOL_ENABLED", false)
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -1408,7 +1408,7 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 }
 
 // WithSpanPool controls whether finished spans are recycled via sync.Pool.
-// When enabled (the default), spans are pooled for reduced allocation overhead.
+// When enabled, spans are pooled for reduced allocation overhead.
 // This is equivalent to the DD_TRACE_SPAN_POOL_ENABLED environment variable.
 func WithSpanPool(enabled bool) StartOption {
 	return func(c *config) {
