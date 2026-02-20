@@ -38,6 +38,7 @@ func init() {
 type KafkaConfig struct {
 	ConsumerGroupID string
 }
+
 type Tracer struct {
 	consumerServiceName string
 	producerServiceName string
