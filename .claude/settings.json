@@ -1,12 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(make:*)",
-      "Bash(go:*)",
-      "Bash(gh:*)",
-      "Bash(golangci-lint:*)",
-      "Bash(bash script/:*)",
-      "Bash(git:*)",
       "mcp__ide__getDiagnostics"
     ]
   }
