@@ -30,6 +30,14 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageTwmbFranzGo)
 }
 
+// NOTE: twmb/franz-go doesn't expose bootstrap servers, so we keep KafkaConfig minimal.
+// Adding bootstrap servers to KafkaConfig would match functionality of other
+// Kafka integrations (e.g., segmentio/kafka-go), but it likely would require hacking the OnBrokerConnect hook.
+
+// KafkaConfig holds information from the kafka config for span tags.
+type KafkaConfig struct {
+	ConsumerGroupID string
+}
 type Tracer struct {
 	consumerServiceName string
 	producerServiceName string

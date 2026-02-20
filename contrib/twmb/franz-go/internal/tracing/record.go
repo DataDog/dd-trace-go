@@ -32,8 +32,3 @@ type Record interface {
 	GetPartition() int32
 	GetOffset() int64
 }
-
-// KafkaConfig holds information from the kafka config for span tags.
-type KafkaConfig struct {
-	ConsumerGroupID string
-}
