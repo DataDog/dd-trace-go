@@ -22,7 +22,10 @@ STRICT=false
 for arg in "$@"; do
   case "$arg" in
     --strict) STRICT=true ;;
-    *) printf 'Unknown argument: %s\nUsage: %s [--strict]\n' "$arg" "$0" >&2; exit 1 ;;
+    *)
+      printf 'Unknown argument: %s\nUsage: %s [--strict]\n' "$arg" "$0" >&2
+      exit 1
+      ;;
   esac
 done
 
@@ -46,9 +49,15 @@ printf '  Expected version in go.mod/go.work: %s\n\n' "$oldstable_patch"
 failures=0
 warnings=0
 
-fail() { printf '  FAIL: %s\n' "$*" >&2; ((failures++)) || true; }
-warn() { printf '  WARN: %s\n' "$*"; ((warnings++)) || true; }
-ok()   { printf '  ok:   %s\n' "$*"; }
+fail() {
+  printf '  FAIL: %s\n' "$*" >&2
+  ((failures++)) || true
+}
+warn() {
+  printf '  WARN: %s\n' "$*"
+  ((warnings++)) || true
+}
+ok() { printf '  ok:   %s\n' "$*"; }
 
 # ----- Check go.work -----
 printf 'go.work:\n'

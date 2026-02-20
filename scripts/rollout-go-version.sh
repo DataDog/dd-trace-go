@@ -18,7 +18,10 @@ DRY_RUN=false
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
-    *) printf 'Unknown argument: %s\nUsage: %s [--dry-run]\n' "$arg" "$0" >&2; exit 1 ;;
+    *)
+      printf 'Unknown argument: %s\nUsage: %s [--dry-run]\n' "$arg" "$0" >&2
+      exit 1
+      ;;
   esac
 done
 
