@@ -24,7 +24,7 @@ const (
 	datadogKey      = "_datadog"
 	startTimeKey    = "x-datadog-start-time"
 	resourceNameKey = "x-datadog-resource-name"
-	maxSizeBytes    = 256 * 1024 // 256 KB
+	maxSizeBytes    = 1024 * 1024 // 1 MB
 )
 
 var instr = internal.Instr
