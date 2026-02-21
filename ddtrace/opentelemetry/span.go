@@ -8,6 +8,9 @@ package opentelemetry
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +22,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -204,6 +208,62 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 		},
 	}
 	s.events = append(s.events, e)
+}
+
+// RecordError will record err as an exception span event for this span. An
+// additional call to SetStatus is required if the Status of the Span should
+// be set to Error, as this method does not change the Span status. If this
+// span is not being recorded or err is nil then this method does nothing.
+func (s *span) RecordError(err error, opts ...oteltrace.EventOption) {
+	if !s.IsRecording() || err == nil {
+		return
+	}
+
+	opts = append(opts, oteltrace.WithAttributes(
+		semconv.ExceptionType(typeStr(err)),
+		semconv.ExceptionMessage(err.Error()),
+	))
+
+	cfg := oteltrace.NewEventConfig(opts...)
+	if cfg.StackTrace() {
+		buf := make([]byte, 2048)
+		n := runtime.Stack(buf, false)
+		stacktrace := string(buf[0:n])
+		opts = append(opts, oteltrace.WithAttributes(
+			semconv.ExceptionStacktrace(stacktrace),
+		))
+	}
+
+	s.AddEvent(semconv.ExceptionEventName, opts...)
+}
+
+func typeStr(i any) string {
+	t := reflect.TypeOf(i)
+	if t.PkgPath() == "" && t.Name() == "" {
+		// Likely a builtin type.
+		return t.String()
+	}
+	return fmt.Sprintf("%s.%s", t.PkgPath(), t.Name())
+}
+
+// AddLink adds OTel Span Links to the underlying Datadog span.
+func (s *span) AddLink(link oteltrace.Link) {
+	if !s.IsRecording() || !link.SpanContext.IsValid() {
+		return
+	}
+	ctx := otelCtxToDDCtx{link.SpanContext}
+	attrs := make(map[string]string, len(link.Attributes))
+	for _, a := range link.Attributes {
+		attrs[string(a.Key)] = a.Value.Emit()
+	}
+	s.DD.AddLink(tracer.SpanLink{
+		TraceID:     ctx.TraceIDLower(),
+		TraceIDHigh: ctx.TraceIDUpper(),
+		SpanID:      ctx.SpanID(),
+		Tracestate:  link.SpanContext.TraceState().String(),
+		Attributes:  attrs,
+		Flags:       uint32(link.SpanContext.TraceFlags()) | (1 << 31),
+	})
 }
 
 // SetAttributes sets the key-value pairs as tags on the span.
