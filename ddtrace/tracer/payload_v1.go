@@ -103,6 +103,7 @@ func newPayloadV1() *payloadV1 {
 }
 
 // push pushes a new item (a traceChunk)into the payload.
+// +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// We need to hydrate the payload with everything we get from the spans.
 	// Conceptually, our `t spanList` corresponds to one `traceChunk`.
@@ -421,6 +422,7 @@ func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, s
 }
 
 // encodeSpans encodes a list of spans associated with fieldID into p.buf in msgp format.
+// +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stringTable) (bool, error) {
 	if len(spans) == 0 || !bm.contains(uint32(fieldID)) {
 		return false, nil
@@ -1069,6 +1071,7 @@ func decodeSpans(b []byte, st *stringTable) (spanList, []byte, error) {
 
 // decode reads a span from a byte slice and populates the associated fields in the span.
 // This should only be used with decoding v1.0 payloads.
+// +checklocksignore — Initialization time, span being decoded and not yet shared.
 func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 	numFields, o, err := msgp.ReadMapHeaderBytes(b)
 	for range numFields {

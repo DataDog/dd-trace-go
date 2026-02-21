@@ -159,6 +159,7 @@ func (c *concentrator) runIngester() {
 	}
 }
 
+// +checklocksignore — Post-finish: reads finished span fields during stats computation.
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
 	resource := s.resource
 	if c.shouldObfuscate() {

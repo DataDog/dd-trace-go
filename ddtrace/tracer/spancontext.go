@@ -192,6 +192,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // baggage and other values from it. This method also pushes the span into the
 // new context's trace and as a result, it should not be called multiple times
 // for the same span.
+// +checklocksignore — Initialization time, context not yet shared.
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	context := &SpanContext{
 		spanID: span.spanID,
@@ -591,6 +592,7 @@ func (t *trace) setLocked(locked bool) {
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
+// +checklocksignore — Reads sp.metrics during initialization; span not yet shared.
 func (t *trace) push(sp *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -620,6 +622,7 @@ func (t *trace) push(sp *Span) {
 // setTraceTagsLocked sets all "trace level" tags on the provided span
 // t must already be locked.
 // +checklocksread:t.mu
+// +checklocks:s.mu
 func (t *trace) setTraceTagsLocked(s *Span) {
 	assert.RWMutexRLocked(&t.mu)
 	assert.RWMutexLocked(&s.mu)
@@ -644,7 +647,7 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 //
 // Lock ordering: span.mu -> trace.mu. The caller holds s.mu. This function acquires t.mu.
 // Invariant: The caller MUST hold s.mu.
-// TODO: Add checklocks annotation.
+// +checklocksignore — Caller holds s.mu (cross-struct lock; checklocks can't verify through SpanContext.finish indirection).
 func (t *trace) finishedOneLocked(s *Span) {
 	assert.RWMutexLocked(&s.mu)
 
@@ -774,7 +777,10 @@ func (t *trace) finishedOneLocked(s *Span) {
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
+// s.mu must be held for writing.
+// +checklocks:s.mu
 func setPeerService(s *Span, tc TracerConf) {
+	assert.RWMutexLocked(&s.mu)
 	spanKind := s.meta[ext.SpanKind]
 	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 
@@ -857,19 +863,26 @@ func deriveAWSPeerService(sm map[string]string) string {
 	return ""
 }
 
+// hasMetaKeyLocked checks if a key exists in the span's meta map.
+// s.mu must be held for reading.
+// +checklocks:s.mu
+func (s *Span) hasMetaKeyLocked(tag string) bool {
+	_, ok := s.meta[tag]
+	return ok
+}
+
 // setPeerServiceFromSource sets peer.service from the sources determined
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
+// s.mu must be held for writing.
+// +checklocks:s.mu
 func setPeerServiceFromSource(s *Span) string {
-	has := func(tag string) bool {
-		_, ok := s.meta[tag]
-		return ok
-	}
+	assert.RWMutexLocked(&s.mu)
 	var sources []string
 	useTargetHost := true
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
-	case has("aws_service"):
+	case s.hasMetaKeyLocked("aws_service"):
 		sources = []string{
 			"queuename",
 			"topicname",
@@ -882,16 +895,16 @@ func setPeerServiceFromSource(s *Span) string {
 			ext.CassandraContactPoints,
 		}
 		useTargetHost = false
-	case has(ext.DBSystem):
+	case s.hasMetaKeyLocked(ext.DBSystem):
 		sources = []string{
 			ext.DBName,
 			ext.DBInstance,
 		}
-	case has(ext.MessagingSystem):
+	case s.hasMetaKeyLocked(ext.MessagingSystem):
 		sources = []string{
 			ext.KafkaBootstrapServers,
 		}
-	case has(ext.RPCSystem):
+	case s.hasMetaKeyLocked(ext.RPCSystem):
 		sources = []string{
 			ext.RPCService,
 		}

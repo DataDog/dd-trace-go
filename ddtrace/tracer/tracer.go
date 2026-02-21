@@ -209,6 +209,11 @@ var statsInterval = 10 * time.Second
 // TODO: The entire Start/Stop code should be refactored, it's pretty gnarly.
 var startStopMu locking.Mutex
 
+// reportInitTime reports the tracer initialization duration as a telemetry metric.
+func reportInitTime(start time.Time) {
+	telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(start).Milliseconds()))
+}
+
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
@@ -216,9 +221,7 @@ func Start(opts ...StartOption) error {
 	startStopMu.Lock()
 	defer startStopMu.Unlock()
 
-	defer func(now time.Time) {
-		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
-	}(time.Now())
+	defer reportInitTime(time.Now())
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err
@@ -656,6 +659,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 	}
 }
 
+// +checklocksignore — Initialization time, span not yet shared.
 func spanStart(operationName string, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
 	for _, fn := range options {
@@ -763,6 +767,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
+// +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
 	if !t.config.enabled.get() {
 		return nil
@@ -832,6 +837,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
+// +checklocksignore — Initialization time, called from StartSpan before span is shared.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	// Important: The label keys are ordered alphabetically to take advantage of
 	// an upstream optimization that landed in go1.24.  This results in ~10%
@@ -868,6 +874,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 // spanResourcePIISafe returns true if s.resource can be considered to not
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
 // but http, rpc or custom (s.spanType == "") span resource names generally do not.
+// +checklocksignore — Reads spanType, immutable after initialization.
 func spanResourcePIISafe(s *Span) bool {
 	return s.spanType == ext.SpanTypeWeb || s.spanType == ext.AppTypeRPC || s.spanType == ""
 }
@@ -1050,6 +1057,7 @@ func (t *tracer) sample(span *Span) {
 	t.prioritySampling.apply(span)
 }
 
+// +checklocksignore — Initialization time, called from spanStart before span is shared.
 func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Context, func()) {
 	if !rt.IsEnabled() {
 		return ctx, func() {}

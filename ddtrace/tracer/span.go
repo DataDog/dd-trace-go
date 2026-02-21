@@ -5,6 +5,7 @@
 
 //msgp:ignore inheritedData
 //go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
+//go:generate go run ../../scripts/msgp_checklocks_ignore.go -type Span -file span_msgp.go
 
 package tracer
 
@@ -71,6 +72,7 @@ type errorConfig struct {
 // properties set at any time during normal operation! This is used for testing only,
 // and should not be used in non-test code, or you may run into performance or other
 // issues.
+// +checklocksignore — Test-only, not safe for concurrent use.
 func (s *Span) AsMap() map[string]any {
 	m := make(map[string]any)
 	if s == nil {
@@ -99,6 +101,7 @@ func (s *Span) AsMap() map[string]any {
 	return m
 }
 
+// +checklocksignore — Called from AsMap (test-only, not concurrent).
 func (s *Span) spanEventsAsJSONString() string {
 	if !s.supportsEvents {
 		return s.meta["events"]
@@ -117,36 +120,58 @@ func (s *Span) spanEventsAsJSONString() string {
 // Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
 type Span struct {
-	mu locking.RWMutex `msg:"-"` // all fields are protected by this RWMutex
+	// guards below fields
+	mu locking.RWMutex `msg:"-"`
 
-	name       string             `msg:"name"`                  // operation name
-	service    string             `msg:"service"`               // service name (i.e. "grpc.server", "http.request")
-	resource   string             `msg:"resource"`              // resource name (i.e. "/user?id=123", "SELECT * FROM users")
-	spanType   string             `msg:"type"`                  // protocol associated with the span (i.e. "web", "db", "cache")
-	start      int64              `msg:"start"`                 // span start time expressed in nanoseconds since epoch
-	duration   int64              `msg:"duration"`              // duration of the span expressed in nanoseconds
-	meta       map[string]string  `msg:"meta,omitempty"`        // arbitrary map of metadata
-	metaStruct metaStructMap      `msg:"meta_struct,omitempty"` // arbitrary map of metadata with structured values
-	metrics    map[string]float64 `msg:"metrics,omitempty"`     // arbitrary map of numeric metrics
-	spanID     uint64             `msg:"span_id"`               // identifier of this span
-	traceID    uint64             `msg:"trace_id"`              // lower 64-bits of the root span identifier
-	parentID   uint64             `msg:"parent_id"`             // identifier of the span's direct parent
-	error      int32              `msg:"error"`                 // error status of the span; 0 means no errors
-	spanLinks  []SpanLink         `msg:"span_links,omitempty"`  // links to other spans
-	spanEvents []spanEvent        `msg:"span_events,omitempty"` // events produced related to this span
+	// +checklocks:mu
+	name string `msg:"name"` // operation name
+	// +checklocks:mu
+	service string `msg:"service"` // service name (i.e. "grpc.server", "http.request")
+	// +checklocks:mu
+	resource string `msg:"resource"` // resource name (i.e. "/user?id=123", "SELECT * FROM users")
+	// +checklocks:mu
+	spanType string `msg:"type"` // protocol associated with the span (i.e. "web", "db", "cache")
+	// +checklocks:mu
+	start int64 `msg:"start"` // span start time expressed in nanoseconds since epoch
+	// +checklocks:mu
+	duration int64 `msg:"duration"` // duration of the span expressed in nanoseconds
+	// +checklocks:mu
+	meta map[string]string `msg:"meta,omitempty"` // arbitrary map of metadata
+	// +checklocks:mu
+	metaStruct metaStructMap `msg:"meta_struct,omitempty"` // arbitrary map of metadata with structured values
+	// +checklocks:mu
+	metrics map[string]float64 `msg:"metrics,omitempty"` // arbitrary map of numeric metrics
+	// +checklocks:mu
+	spanID uint64 `msg:"span_id"` // identifier of this span
+	// +checklocks:mu
+	traceID uint64 `msg:"trace_id"` // lower 64-bits of the root span identifier
+	// +checklocks:mu
+	parentID uint64 `msg:"parent_id"` // identifier of the span's direct parent
+	// +checklocks:mu
+	error int32 `msg:"error"` // error status of the span; 0 means no errors
+	// +checklocks:mu
+	spanLinks []SpanLink `msg:"span_links,omitempty"` // links to other spans
+	// +checklocks:mu
+	spanEvents []spanEvent `msg:"span_events,omitempty"` // events produced related to this span
 
-	goExecTraced   bool         `msg:"-"`
-	noDebugStack   bool         `msg:"-"` // disables debug stack traces
-	finished       bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
-	context        *SpanContext `msg:"-"` // span propagation context
-	integration    string       `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
-	supportsEvents bool         `msg:"-"` // whether the span supports native span events or not
+	goExecTraced bool         `msg:"-"`
+	noDebugStack bool         `msg:"-"` // disables debug stack traces
+	context      *SpanContext `msg:"-"` // span propagation context
+	// +checklocks:mu
+	supportsEvents bool `msg:"-"` // whether the span supports native span events or not
 
-	pprofCtxActive  context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
+	// +checklocks:mu
+	finished bool `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
+	// +checklocks:mu
+	integration string `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
+	// +checklocks:mu
+	pprofCtxActive context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
+
+	// +checklocks:mu
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
 
-	// ends execution tracer (runtime/trace) task, if started
-	taskEnd func() // +checklocks:mu
+	// +checklocks:mu
+	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
 // Context yields the SpanContext for this Span. Note that the return
@@ -203,11 +228,11 @@ func (s *Span) getAndRemoveMeta(key string) string {
 	return ""
 }
 
-// applyRateWithLock applies sampling rate and executes the provided function with the lock held.
-// Used by rules_sampler.go when applying trace sampling rules.
-// The function f is called with the lock held and should contain operations that need to be atomic.
+// applyTraceRuleSampling applies trace rule sampling to the span.
+// It sets the applied rate metric, evaluates Knuth rate-based sampling,
+// applies rate limiting, and sets the appropriate sampling priority.
 // Returns false if span is already finished, true otherwise.
-func (s *Span) applyRateWithLock(rate float64, f func()) bool {
+func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.SamplerName, limiter *rateLimiter, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -217,9 +242,22 @@ func (s *Span) applyRateWithLock(rate float64, f func()) bool {
 
 	s.setMetricLocked(keyRulesSamplerAppliedRate, rate)
 	delete(s.metrics, keySamplingPriorityRate)
-	if f != nil {
-		f()
+	s.setMetaLocked(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	if !sampledByRate(s.traceID, rate) {
+		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+		return true
 	}
+	if limiter == nil {
+		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+		return true
+	}
+	sampled, limiterRate := limiter.allowOne(now)
+	if sampled {
+		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
+	} else {
+		s.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
+	}
+	s.setMetricLocked(keyRulesSamplerLimiterRate, limiterRate)
 	return true
 }
 
@@ -315,6 +353,21 @@ func (s *Span) BaggageItem(key string) string {
 	return s.context.baggageItem(key)
 }
 
+// safeStringerValue safely calls v.String(), returning "<nil>" if it panics
+// due to a nil pointer receiver. All other panics are re-raised.
+func safeStringerValue(v fmt.Stringer, original any) (result string) {
+	defer func() {
+		if e := recover(); e != nil {
+			if rv := reflect.ValueOf(original); rv.Kind() == reflect.Ptr && rv.IsNil() {
+				result = "<nil>"
+				return
+			}
+			panic(e)
+		}
+	}()
+	return v.String()
+}
+
 // SetTag adds a set of key/value metadata to the span.
 func (s *Span) SetTag(key string, value any) {
 	if s == nil {
@@ -372,19 +425,7 @@ func (s *Span) SetTag(key string, value any) {
 		return
 	}
 	if v, ok := value.(fmt.Stringer); ok {
-		defer func() {
-			if e := recover(); e != nil {
-				if v := reflect.ValueOf(value); v.Kind() == reflect.Pointer && v.IsNil() {
-					// If .String() panics due to a nil receiver, we want to catch this
-					// and replace the string value with "<nil>", just as Sprintf does.
-					// Other panics should not be handled.
-					s.setMetaLocked(key, "<nil>")
-					return
-				}
-				panic(e)
-			}
-		}()
-		s.setMetaLocked(key, v.String())
+		s.setMetaLocked(key, safeStringerValue(v, value))
 		return
 	}
 
@@ -537,6 +578,8 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
+// s.mu must be held for writing.
+// +checklocks:s.mu
 func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	assert.RWMutexLocked(&s.mu)
 	// We don't lock spans when flushing, so we could have a data race when
@@ -553,6 +596,8 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 // If the trace is locked, the sampling priority is forced to the given value.
 //
 // This function is should only be used when applying a manual keep or drop decision.
+// s.mu must be held for writing.
+// +checklocks:s.mu
 func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	assert.RWMutexLocked(&s.mu)
 	// We don't lock spans when flushing, so we could have a data race when
@@ -565,25 +610,30 @@ func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames
 	s.context.forceSetSamplingPriority(priority, sampler)
 }
 
+// setErrorFlagLocked sets the error flag on the span and adjusts the trace error count.
+// s.mu must be held for writing.
+// +checklocks:s.mu
+func (s *Span) setErrorFlagLocked(yes bool) {
+	if yes {
+		if s.error == 0 {
+			// new error
+			s.context.errors.Add(1)
+		}
+		s.error = 1
+	} else {
+		if s.error > 0 {
+			// flip from active to inactive
+			s.context.errors.Add(-1)
+		}
+		s.error = 0
+	}
+}
+
 // setTagErrorLocked sets the error tag. It accounts for various valid scenarios.
-// This method assumes the span lock is already held.
+// s.mu must be held for writing.
+// +checklocks:s.mu
 func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 	assert.RWMutexLocked(&s.mu)
-	setError := func(yes bool) {
-		if yes {
-			if s.error == 0 {
-				// new error
-				s.context.errors.Add(1)
-			}
-			s.error = 1
-		} else {
-			if s.error > 0 {
-				// flip from active to inactive
-				s.context.errors.Add(-1)
-			}
-			s.error = 0
-		}
-	}
 	// We don't lock spans when flushing, so we could have a data race when
 	// modifying a span as it's being flushed. This protects us against that
 	// race, since spans are marked `finished` before we flush them.
@@ -593,12 +643,12 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 	switch v := value.(type) {
 	case bool:
 		// bool value as per Opentracing spec.
-		setError(v)
+		s.setErrorFlagLocked(v)
 	case error:
 		// if anyone sets an error value as the tag, be nice here
 		// and provide all the benefits.
 		// TODO: once Error Tracking fix is resolved, update relevant tags here. See #4095
-		setError(true)
+		s.setErrorFlagLocked(true)
 		s.setMetaLocked(ext.ErrorMsg, v.Error())
 		s.setMetaLocked(ext.ErrorType, reflect.TypeOf(v).String())
 		if cfg.noDebugStack {
@@ -620,11 +670,11 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 		s.setMetaLocked(ext.ErrorStack, stack)
 	case nil:
 		// no error
-		setError(false)
+		s.setErrorFlagLocked(false)
 	default:
 		// in all other cases, let's assume that setting this tag
 		// is the result of an error.
-		setError(true)
+		s.setErrorFlagLocked(true)
 	}
 }
 
@@ -656,12 +706,14 @@ func (s *Span) setMeta(key, v string) {
 }
 
 // setMetaLocked sets a string tag. This method assumes the span lock is already held.
+// +checklocks:s.mu
 func (s *Span) setMetaLocked(key, v string) {
 	assert.RWMutexLocked(&s.mu)
 	s.setMetaInit(key, v)
 }
 
 // setMetaInit sets a string tag without acquiring the lock and asserting the lock is held.
+// +checklocksignore — Initialization time, span not yet shared.
 func (s *Span) setMetaInit(key, v string) {
 	if s.meta == nil {
 		s.meta = make(map[string]string, 1)
@@ -682,6 +734,7 @@ func (s *Span) setMetaInit(key, v string) {
 }
 
 // setMetaStructLocked sets structured metadata. This method assumes the span lock is already held.
+// +checklocks:s.mu
 func (s *Span) setMetaStructLocked(key string, v any) {
 	assert.RWMutexLocked(&s.mu)
 	if s.metaStruct == nil {
@@ -691,6 +744,7 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 }
 
 // setTagBoolLocked sets a boolean tag on the span. This method assumes the span lock is already held.
+// +checklocks:s.mu
 func (s *Span) setTagBoolLocked(key string, v bool) {
 	assert.RWMutexLocked(&s.mu)
 	switch key {
@@ -719,6 +773,7 @@ func (s *Span) setTagBoolLocked(key string, v bool) {
 
 // setMetric sets a numeric tag during span initialization (before the span is published).
 // This method should only be used during span construction in spanStart and StartSpan.
+// +checklocksignore — Initialization time, span not yet shared.
 func (s *Span) setMetricInit(key string, v float64) {
 	if s.metrics == nil {
 		s.metrics = make(map[string]float64, 1)
@@ -737,6 +792,7 @@ func (s *Span) setMetric(key string, v float64) {
 
 // setMetricLocked sets a numeric tag, in our case called a metric. This method
 // assumes the span lock is already held.
+// +checklocks:s.mu
 func (s *Span) setMetricLocked(key string, v float64) {
 	assert.RWMutexLocked(&s.mu)
 	if s.metrics == nil {
@@ -775,7 +831,9 @@ func (s *Span) AddLink(link SpanLink) {
 }
 
 // serializeSpanLinksInMeta saves span links as a JSON string under `Span[meta][_dd.span_links]`.
+// +checklocks:s.mu
 func (s *Span) serializeSpanLinksInMeta() {
+	assert.RWMutexLocked(&s.mu)
 	if len(s.spanLinks) == 0 {
 		return
 	}
@@ -792,7 +850,9 @@ func (s *Span) serializeSpanLinksInMeta() {
 
 // serializeSpanEvents sets the span events from the current span in the correct transport, depending on whether the
 // agent supports the native method or not.
+// +checklocks:s.mu
 func (s *Span) serializeSpanEvents() {
+	assert.RWMutexLocked(&s.mu)
 	if len(s.spanEvents) == 0 {
 		return
 	}
@@ -919,7 +979,7 @@ func (s *Span) finish(finishTime int64) {
 	keep := true
 	tracer, hasTracer := getGlobalTracer().(*tracer)
 	if hasTracer {
-		if !tracer.config.enabled.current {
+		if !tracer.config.enabled.get() {
 			return
 		}
 		if tracer.config.canDropP0s() {
@@ -985,7 +1045,10 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 
 // shouldKeep reports whether the trace should be kept.
 // a single span being kept implies the whole trace being kept.
+// s.mu must be held for reading.
+// +checklocksread:s.mu
 func shouldKeep(s *Span) bool {
+	assert.RWMutexRLocked(&s.mu)
 	if p, ok := s.context.SamplingPriority(); ok && p > 0 {
 		// positive sampling priorities stay
 		return true
@@ -1001,8 +1064,10 @@ func shouldKeep(s *Span) bool {
 }
 
 // shouldComputeStats mentions whether this span needs to have stats computed for.
-// Warning: callers must guard!
+// s.mu must be held for reading.
+// +checklocksread:s.mu
 func shouldComputeStats(s *Span) bool {
+	assert.RWMutexRLocked(&s.mu)
 	if v, ok := s.metrics[keyMeasured]; ok && v == 1 {
 		return true
 	}
@@ -1044,6 +1109,7 @@ func (s *Span) String() string {
 }
 
 // Format implements fmt.Formatter.
+// +checklocksignore — Reads only immutable fields (spanID, traceID, parentID) set during init.
 func (s *Span) Format(f fmt.State, c rune) {
 	if s == nil {
 		fmt.Fprintf(f, "<nil>")
