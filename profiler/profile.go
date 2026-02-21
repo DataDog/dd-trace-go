@@ -56,6 +56,11 @@ const (
 	// This is private, as this trace requires special explicit configuration and
 	// shouldn't just be added to WithProfileTypes
 	executionTrace
+
+	// goroutineLeakProfile is the Go 1.26 experimental goroutine leak
+	// profile, which contains tracebacks of goroutines permanently blocked
+	// in synchronization
+	goroutineLeakProfile
 )
 
 // profileType holds the implementation details of a ProfileType.
@@ -224,6 +229,11 @@ var profileTypes = map[ProfileType]profileType{
 			closeErr := c.Close()
 			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},
+	},
+	goroutineLeakProfile: {
+		Name:     "goroutine-leak",
+		Filename: "goroutineleak.pprof",
+		Collect:  collectGenericProfile("goroutineleak", goroutineLeakProfile),
 	},
 }
 

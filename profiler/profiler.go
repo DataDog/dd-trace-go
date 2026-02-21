@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"slices"
 	"strings"
@@ -178,6 +179,10 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if env.Get("DD_PROFILING_WAIT_PROFILE") != "" {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
+	// Unconditionally enable goroutine leak profiling if it's available.
+	if goroutineLeakProfileAvailable() {
+		cfg.addProfileType(goroutineLeakProfile)
+	}
 	// Agentless upload is disabled by default as of v1.30.0, but
 	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
 	if cfg.agentless {
@@ -284,6 +289,22 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	p.uploadFunc = p.upload
 	return &p, nil
 }
+
+var goroutineLeakProfileAvailable = sync.OnceValue(func() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, s := range info.Settings {
+		if s.Key != "GOEXPERIMENT" {
+			continue
+		}
+		if strings.Contains(s.Value, "goroutineleakprofile") {
+			return true
+		}
+	}
+	return false
+})
 
 // run runs the profiler.
 func (p *profiler) run() {
@@ -461,6 +482,7 @@ func (p *profiler) enabledProfileTypes() []ProfileType {
 		expGoroutineWaitProfile,
 		MetricsProfile,
 		executionTrace,
+		goroutineLeakProfile,
 	}
 	enabled := []ProfileType{}
 	for _, t := range order {
