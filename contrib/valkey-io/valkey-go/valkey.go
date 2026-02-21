@@ -229,6 +229,9 @@ func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, cont
 	if c.user != "" {
 		opts = append(opts, tracer.Tag(ext.DBUser, c.user))
 	}
+	if c.cfg.dbInstance != "" {
+		opts = append(opts, tracer.Tag(ext.DBInstance, c.cfg.dbInstance))
+	}
 	return tracer.StartSpanFromContext(ctx, "valkey.command", opts...)
 }
 
