@@ -111,7 +111,13 @@ func startTelemetry(c *config) telemetry.Client {
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 	cfg := telemetry.ClientConfig{
 		HTTPClient: c.httpClient,
-		AgentURL:   c.agentURL.String(),
+	}
+	// Only omit the agent URL when the agent was reachable but explicitly does not
+	// expose the telemetry proxy endpoint (e.g. the Datadog Lambda extension).
+	// When the agent was unreachable at startup, we still set the URL so that
+	// telemetry is attempted rather than silently dropped.
+	if !c.agent.reachable || c.agent.hasTelemetryProxy {
+		cfg.AgentURL = c.agentURL.String()
 	}
 	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
 		cfg.APIKey = env.Get("DD_API_KEY")
