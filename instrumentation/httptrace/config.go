@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -47,7 +48,7 @@ type config struct {
 	baggageTagKeys                           map[string]struct{} // when allowAllBaggage is false, only tag baggage items whose keys are listed here.
 	resourceRenamingEnabled                  *bool
 	resourceRenamingAlwaysSimplifiedEndpoint bool
-	appsecEnabledMode                        func() bool // first state of Appsec (registered at the start of the application) // TODO: remove and use the real state of appsec
+	appsecEnabledMode                        func() bool // first AppSec enablement mode at startup.
 }
 
 func (c config) String() string {
@@ -68,7 +69,7 @@ func newConfig() config {
 		inferredProxyServicesEnabled:             internal.BoolEnv(envInferredProxyServicesEnabled, false),
 		baggageTagKeys:                           make(map[string]struct{}),
 		resourceRenamingAlwaysSimplifiedEndpoint: internal.BoolEnv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false),
-		appsecEnabledMode:                        sync.OnceValue(appsec.Enabled),
+		appsecEnabledMode:                        sync.OnceValue(appsecEnabledAtStartup),
 	}
 	if v, ok := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
 		if v == "*" {
@@ -93,6 +94,14 @@ func newConfig() config {
 		c.resourceRenamingEnabled = &vv
 	}
 	return c
+}
+
+func appsecEnabledAtStartup() bool {
+	enabled, set, _ := appsecconfig.IsEnabledByEnvironment()
+	if set {
+		return enabled
+	}
+	return appsec.Enabled()
 }
 
 func isServerError(statusCode int) bool {
