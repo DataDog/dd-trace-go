@@ -3,6 +3,9 @@ name: Gotip Testing
 on:
   # schedule: # nightly
   #   - cron: "0 0 * * *"
+  push:
+    branches:
+      - hannahkm/fix-gotip
   workflow_dispatch: { } # manually
 
 env:
@@ -30,9 +33,6 @@ jobs:
         run: |-
           ./scripts/install_tools.sh --bin-dir ${{ github.workspace }}/bin
           gotip download
-          gotip get -u -t github.com/DataDog/datadog-agent@main
-          gotip mod tidy
-          find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && gotip mod tidy && popd; done
       
       - name: Run tests
         env:
