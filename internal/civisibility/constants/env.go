@@ -20,6 +20,9 @@ const (
 	// This environment variable allows you to specify a custom URL for the agentless intake in CI Visibility mode.
 	CIVisibilityAgentlessURLEnvironmentVariable = "DD_CIVISIBILITY_AGENTLESS_URL"
 
+	// CIVisibilityAPIKeyEnvironmentVariable overrides DD_API_KEY for agentless mode.
+	CIVisibilityAPIKeyEnvironmentVariable = "DD_CIVISIBILITY_API_KEY"
+
 	// APIKeyEnvironmentVariable indicates the API key to be used for agentless intake.
 	// This environment variable should be set to your Datadog API key, allowing the agentless mode to authenticate and
 	// send data directly to the Datadog platform.
