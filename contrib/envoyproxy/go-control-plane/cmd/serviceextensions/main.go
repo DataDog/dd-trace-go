@@ -210,9 +210,6 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 		if err != nil {
 			return fmt.Errorf("gRPC server: %s", err)
 		}
-		if config.tls != nil {
-			log.Warn("service_extension: TLS is not supported with Unix domain socket, ignoring TLS configuration\n")
-		}
 		log.Info("service_extension: callout gRPC server started on unix://%s\n", config.extensionSocketPath)
 	} else {
 		lis, err = net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
