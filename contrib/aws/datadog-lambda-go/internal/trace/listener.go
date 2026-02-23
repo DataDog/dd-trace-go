@@ -80,6 +80,7 @@ func (l *Listener) initTracer() {
 	opts := append([]ddtracer.StartOption{
 		ddtracer.WithService(serviceName),
 		ddtracer.WithLambdaMode(extensionNotRunning),
+		ddtracer.WithStatsComputation(false),
 		ddtracer.WithGlobalTag("_dd.origin", "lambda"),
 		ddtracer.WithSendRetries(2),
 	}, l.tracerOptions...)
