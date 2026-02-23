@@ -21,7 +21,7 @@ jobs:
           DD_HOSTNAME: "github-actions-worker"
           DD_APM_ENABLED: true
           DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
+          DD_API_KEY: "${{ secrets.DD_API_KEY }}"
           DD_TEST_AGENT_HOST: "localhost"
           DD_TEST_AGENT_PORT: 9126
     steps:
