@@ -328,9 +328,9 @@ func (s *Span) SetTag(key string, value any) {
 	s.setTagLocked(key, value)
 }
 
-// setTagsInit sets multiple tags on the span during initialization. It acquires
+// setTags sets multiple tags on the span during initialization. It acquires
 // the span lock internally and returns early without locking if tags is empty.
-func (s *Span) setTagsInit(tags map[string]any) {
+func (s *Span) setTags(tags map[string]any) {
 	if len(tags) == 0 {
 		return
 	}
