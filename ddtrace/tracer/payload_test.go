@@ -317,6 +317,48 @@ func TestPayloadV1SpanLinkTraceID(t *testing.T) {
 	assert.Equal(uint64(789), link.SpanID)
 }
 
+// TestPayloadV1SpanEventArray tests that a span with a span event containing an ArrayValue
+// attribute (with two entries) serializes and deserializes correctly in payload v1.
+func TestPayloadV1SpanEventArray(t *testing.T) {
+	assert := assert.New(t)
+	p := newPayloadV1()
+
+	span := newBasicSpan("test.span")
+	span.supportsEvents = true
+	span.AddEvent("test.event", WithSpanEventAttributes(map[string]any{
+		"tags": []string{"first", "second"},
+	}))
+	_, err := p.push(spanList{span})
+	assert.NoError(err)
+
+	encoded, err := io.ReadAll(p)
+	assert.NoError(err)
+
+	got := newPayloadV1()
+	buf := bytes.NewBuffer(encoded)
+	_, err = buf.WriteTo(got)
+	assert.NoError(err)
+
+	_, err = got.decodeBuffer()
+	assert.NoError(err)
+
+	require.Len(t, got.chunks, 1)
+	require.Len(t, got.chunks[0].spans, 1)
+	require.Len(t, got.chunks[0].spans[0].spanEvents, 1)
+
+	event := got.chunks[0].spans[0].spanEvents[0]
+	assert.Equal("test.event", event.Name)
+	require.NotNil(t, event.Attributes["tags"])
+	attr := event.Attributes["tags"]
+	assert.Equal(spanEventAttributeTypeArray, attr.Type)
+	require.NotNil(t, attr.ArrayValue)
+	require.Len(t, attr.ArrayValue.Values, 2)
+	assert.Equal(spanEventArrayAttributeValueTypeString, attr.ArrayValue.Values[0].Type)
+	assert.Equal("first", attr.ArrayValue.Values[0].StringValue)
+	assert.Equal(spanEventArrayAttributeValueTypeString, attr.ArrayValue.Values[1].Type)
+	assert.Equal("second", attr.ArrayValue.Values[1].StringValue)
+}
+
 // TestPayloadV1EmbeddedStreamingStringTable tests that string values on the payload
 // can be encoded and decoded correctly after using the string table.
 // Tests repeated string values.
