@@ -7,6 +7,7 @@
 package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2"
 
 import (
+	"context"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -39,6 +40,9 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 		return nil, err
 	}
 	opts = append(opts, WithConfig(conf))
+	if clusterID := fetchClusterIDFromConsumer(c); clusterID != "" {
+		opts = append(opts, kafkatrace.WithClusterID(clusterID))
+	}
 	return WrapConsumer(c, opts...), nil
 }
 
@@ -49,7 +53,44 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 		return nil, err
 	}
 	opts = append(opts, WithConfig(conf))
+	if clusterID := fetchClusterIDFromProducer(p); clusterID != "" {
+		opts = append(opts, kafkatrace.WithClusterID(clusterID))
+	}
 	return WrapProducer(p, opts...), nil
+}
+
+func fetchClusterIDFromConsumer(c *kafka.Consumer) string {
+	admin, err := kafka.NewAdminClientFromConsumer(c)
+	if err != nil {
+		instr.Logger().Warn("failed to create admin client from consumer for cluster ID: %s", err)
+		return ""
+	}
+	defer admin.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	clusterID, err := admin.ClusterID(ctx)
+	if err != nil {
+		instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
+		return ""
+	}
+	return clusterID
+}
+
+func fetchClusterIDFromProducer(p *kafka.Producer) string {
+	admin, err := kafka.NewAdminClientFromProducer(p)
+	if err != nil {
+		instr.Logger().Warn("failed to create admin client from producer for cluster ID: %s", err)
+		return ""
+	}
+	defer admin.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	clusterID, err := admin.ClusterID(ctx)
+	if err != nil {
+		instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
+		return ""
+	}
+	return clusterID
 }
 
 // A Consumer wraps a kafka.Consumer.

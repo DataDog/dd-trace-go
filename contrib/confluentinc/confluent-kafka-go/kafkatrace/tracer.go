@@ -26,6 +26,7 @@ type Tracer struct {
 	analyticsRate       float64
 	bootstrapServers    string
 	groupID             string
+	clusterID           string
 	tagFns              map[string]func(msg Message) any
 	dsmEnabled          bool
 	ckgoVersion         CKGoVersion
@@ -140,6 +141,13 @@ func WithConfig(cg ConfigMap) OptionFn {
 				}
 			}
 		}
+	}
+}
+
+// WithClusterID sets the Kafka cluster ID for Data Streams monitoring.
+func WithClusterID(id string) OptionFn {
+	return func(tr *Tracer) {
+		tr.clusterID = id
 	}
 }
 
