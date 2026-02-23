@@ -67,5 +67,5 @@ func (s SamplerName) DecisionMaker() string {
 	}
 	// Fallback for unknown values (shouldn't happen in normal usage)
 	// Return Unknown
-	return "--1"
+	return samplerStrings[Unknown]
 }
