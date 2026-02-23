@@ -44,6 +44,7 @@ type tlsConfig struct {
 type serviceExtensionConfig struct {
 	extensionPort        string
 	extensionHost        string
+	extensionSocketPath  string
 	healthcheckPort      string
 	observabilityMode    bool
 	bodyParsingSizeLimit *int
@@ -102,6 +103,7 @@ func loadConfig() serviceExtensionConfig {
 	enableTLS := boolEnv("DD_SERVICE_EXTENSION_TLS", true)
 	keyFile := stringEnv("DD_SERVICE_EXTENSION_TLS_KEY_FILE", "localhost.key")
 	certFile := stringEnv("DD_SERVICE_EXTENSION_TLS_CERT_FILE", "localhost.crt")
+	socketPath := stringEnv("DD_SERVICE_EXTENSION_UDS_PATH", "")
 
 	extensionPortStr := strconv.FormatInt(int64(extensionPortInt), 10)
 	healthcheckPortStr := strconv.FormatInt(int64(healthcheckPortInt), 10)
@@ -117,6 +119,7 @@ func loadConfig() serviceExtensionConfig {
 	return serviceExtensionConfig{
 		extensionPort:        extensionPortStr,
 		extensionHost:        extensionHostStr,
+		extensionSocketPath:  socketPath,
 		healthcheckPort:      healthcheckPortStr,
 		observabilityMode:    observabilityMode,
 		bodyParsingSizeLimit: bodyParsingSizeLimit,
@@ -193,14 +196,35 @@ func startHealthCheck(ctx context.Context, config serviceExtensionConfig) error 
 }
 
 func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, config serviceExtensionConfig) error {
-	lis, err := net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
-	if err != nil {
-		return fmt.Errorf("gRPC server: %s", err)
+	var (
+		lis net.Listener
+		err error
+	)
+
+	if config.extensionSocketPath != "" {
+		// Unix domain socket mode: remove any stale socket file before binding.
+		if removeErr := os.Remove(config.extensionSocketPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			log.Warn("service_extension: could not remove stale socket file %s: %s\n", config.extensionSocketPath, removeErr)
+		}
+		lis, err = net.Listen("unix", config.extensionSocketPath)
+		if err != nil {
+			return fmt.Errorf("gRPC server: %s", err)
+		}
+		if config.tls != nil {
+			log.Warn("service_extension: TLS is not supported with Unix domain socket, ignoring TLS configuration\n")
+		}
+		log.Info("service_extension: callout gRPC server started on unix://%s\n", config.extensionSocketPath)
+	} else {
+		lis, err = net.Listen("tcp", config.extensionHost+":"+config.extensionPort)
+		if err != nil {
+			return fmt.Errorf("gRPC server: %s", err)
+		}
+		log.Info("service_extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
 	}
 
 	var serverOptions []grpc.ServerOption
 
-	if config.tls != nil {
+	if config.tls != nil && config.extensionSocketPath == "" {
 		cert, err := tls.LoadX509KeyPair(config.tls.certFile, config.tls.keyFile)
 		if err != nil {
 			return fmt.Errorf("failed to load key pair: %s", err)
@@ -221,13 +245,16 @@ func startGPRCSsl(ctx context.Context, service extproc.ExternalProcessorServer, 
 			BodyParsingSizeLimit: config.bodyParsingSizeLimit,
 		})
 
+	if config.extensionSocketPath != "" {
+		defer os.Remove(config.extensionSocketPath)
+	}
+
 	go func() {
 		<-ctx.Done()
 		grpcServer.GracefulStop()
 	}()
 
 	extproc.RegisterExternalProcessorServer(grpcServer, appsecEnvoyExternalProcessorServer)
-	log.Info("service_extension: callout gRPC server started on %s:%s\n", config.extensionHost, config.extensionPort)
 	if err := grpcServer.Serve(lis); err != nil {
 		return fmt.Errorf("error starting gRPC server: %s", err)
 	}

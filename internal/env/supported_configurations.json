@@ -770,6 +770,13 @@
         "default": "localhost.key"
       }
     ],
+    "DD_SERVICE_EXTENSION_UDS_PATH": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": ""
+      }
+    ],
     "DD_SERVICE_MAPPING": [
       {
         "implementation": "B",
@@ -908,6 +915,13 @@
         "implementation": "A",
         "type": "int",
         "default": "8126"
+      }
+    ],
+    "DD_TRACE_AGENT_PROTOCOL_VERSION": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "1.0"
       }
     ],
     "DD_TRACE_AGENT_URL": [
@@ -1489,13 +1503,6 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
-      }
-    ],
-    "DD_TRACE_AGENT_PROTOCOL_VERSION": [
-      {
-        "implementation": "B",
-        "type": "string",
-        "default": "1.0"
       }
     ],
     "DD_TRACE_VALKEY_ANALYTICS_ENABLED": [
