@@ -250,6 +250,20 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.HasFlag("b"))
 		assert.EqualValues(t, cfg.agent.peerTags, []string{"peer.hostname"})
 		assert.Equal(t, 2, cfg.agent.obfuscationVersion)
+		assert.False(t, cfg.agent.hasTelemetryProxy)
+		assert.True(t, cfg.agent.reachable)
+	})
+
+	t.Run("telemetry_proxy", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats","/telemetry/proxy/"],"client_drop_p0s":true}`))
+		}))
+		defer srv.Close()
+		cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
+		assert.NoError(t, err)
+		assert.True(t, cfg.agent.Stats)
+		assert.True(t, cfg.agent.hasTelemetryProxy)
+		assert.True(t, cfg.agent.reachable)
 	})
 
 	t.Run("default_env", func(t *testing.T) {

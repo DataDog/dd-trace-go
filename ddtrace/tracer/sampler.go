@@ -151,9 +151,9 @@ func newPrioritySampler() *prioritySampler {
 func parseServiceEnvKey(s string) serviceEnvKey {
 	var k serviceEnvKey
 	if after, ok := strings.CutPrefix(s, "service:"); ok {
-		if i := strings.Index(after, ",env:"); i >= 0 {
-			k.service = after[:i]
-			k.env = after[i+len(",env:"):]
+		if before, after0, ok0 := strings.Cut(after, ",env:"); ok0 {
+			k.service = before
+			k.env = after0
 		}
 	}
 	return k

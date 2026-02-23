@@ -115,18 +115,14 @@ func (c *concentrator) Start() {
 		return
 	}
 	c.stop = make(chan struct{})
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.wg.Go(func() {
 		tick := time.NewTicker(time.Duration(c.bucketSize) * time.Nanosecond)
 		defer tick.Stop()
 		c.runFlusher(tick.C)
-	}()
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	})
+	c.wg.Go(func() {
 		c.runIngester()
-	}()
+	})
 }
 
 // runFlusher runs the flushing loop which sends stats to the underlying transport.

@@ -39,7 +39,7 @@ func TestLimiterUnit(t *testing.T) {
 		l.start(startTime)
 		defer l.stop()
 		// No ticks between the requests
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			require.True(t, l.Allow())
 		}
 		require.False(t, l.Allow())
@@ -89,7 +89,7 @@ func TestLimiterUnit(t *testing.T) {
 		l := newTestTicker(100, 100)
 		l.start(startTime)
 		defer l.stop()
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			require.Truef(t, l.Allow(),
 				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
 			l.tick(50 * time.Millisecond)
@@ -102,7 +102,7 @@ func TestLimiterUnit(t *testing.T) {
 		l := newTestTicker(100, 100)
 		l.start(startTime)
 		defer l.stop()
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			require.Truef(t, l.Allow(),
 				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
 			startTime = startTime.Add(50 * time.Microsecond)
@@ -119,7 +119,7 @@ func TestLimiterUnit(t *testing.T) {
 		l.start(startTime)
 		defer l.stop()
 
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			l.tick(time.Millisecond)
 			require.Equalf(t, int64(100), l.t.tokens.Load(), "Bucket should have exactly 100 tokens")
 		}
@@ -132,7 +132,7 @@ func TestLimiterUnit(t *testing.T) {
 		l.start(startTime)
 		defer l.stop()
 
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			l.tick(3 * time.Second)
 		}
 		require.Equalf(t, int64(100), l.t.tokens.Load(), "Bucket should have exactly 100 tokens")
@@ -229,7 +229,7 @@ func TestLimiter(t *testing.T) {
 				defer l.stop()
 
 				for c := 0; c < burstAmount; c++ {
-					for i := 0; i < burstSize; i++ {
+					for range burstSize {
 						if !l.Allow() {
 							skipped++
 						} else {
@@ -281,7 +281,7 @@ func BenchmarkLimiter(b *testing.B) {
 
 						b.StartTimer() // Ensure the timer is started now...
 
-						for i := 0; i < 100; i++ {
+						for range 100 {
 							if !l.Allow() {
 								skipped.Add(1)
 							} else {

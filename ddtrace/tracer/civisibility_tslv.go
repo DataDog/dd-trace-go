@@ -160,7 +160,7 @@ type ciVisibilityEvent struct {
 //
 //	key - The tag key.
 //	value - The tag value.
-func (e *ciVisibilityEvent) SetTag(key string, value interface{}) {
+func (e *ciVisibilityEvent) SetTag(key string, value any) {
 	e.span.SetTag(key, value)
 	e.Content.Meta = e.span.meta
 	e.Content.Metrics = e.span.metrics

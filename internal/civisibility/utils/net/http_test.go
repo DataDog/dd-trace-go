@@ -47,10 +47,10 @@ func mockJSONMsgPackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Process JSON based on Content-Type
 	if r.Header.Get(HeaderContentType) == ContentTypeJSON {
-		var data map[string]interface{}
+		var data map[string]any
 		json.Unmarshal(body, &data)
 		w.Header().Set(HeaderContentType, ContentTypeJSON)
-		json.NewEncoder(w).Encode(map[string]interface{}{"received": data})
+		json.NewEncoder(w).Encode(map[string]any{"received": data})
 	}
 }
 
@@ -107,7 +107,7 @@ func TestSendJSONRequest(t *testing.T) {
 	config := RequestConfig{
 		Method:     "POST",
 		URL:        server.URL,
-		Body:       map[string]interface{}{"key": "value"},
+		Body:       map[string]any{"key": "value"},
 		Format:     "json",
 		Compressed: false,
 	}
@@ -117,10 +117,10 @@ func TestSendJSONRequest(t *testing.T) {
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "json", response.Format)
 
-	var result map[string]interface{}
+	var result map[string]any
 	err = response.Unmarshal(&result)
 	assert.NoError(t, err)
-	assert.Equal(t, "value", result["received"].(map[string]interface{})["key"])
+	assert.Equal(t, "value", result["received"].(map[string]any)["key"])
 }
 
 func TestSendMultipartFormDataRequest(t *testing.T) {
@@ -136,7 +136,7 @@ func TestSendMultipartFormDataRequest(t *testing.T) {
 			{
 				FieldName:   "file1",
 				FileName:    "test.json",
-				Content:     map[string]interface{}{"key": "value"},
+				Content:     map[string]any{"key": "value"},
 				ContentType: ContentTypeJSON,
 			},
 			{
@@ -153,7 +153,7 @@ func TestSendMultipartFormDataRequest(t *testing.T) {
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "json", response.Format)
 
-	var result map[string]interface{}
+	var result map[string]any
 	err = response.Unmarshal(&result)
 	assert.NoError(t, err)
 	assert.Equal(t, `{"key":"value"}`, result["file1"])
@@ -169,7 +169,7 @@ func TestSendJSONRequestWithGzipCompression(t *testing.T) {
 	config := RequestConfig{
 		Method:     "POST",
 		URL:        server.URL,
-		Body:       map[string]interface{}{"key": "value"},
+		Body:       map[string]any{"key": "value"},
 		Format:     "json",
 		Compressed: true,
 	}
@@ -179,11 +179,11 @@ func TestSendJSONRequestWithGzipCompression(t *testing.T) {
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "json", response.Format)
 
-	var result map[string]interface{}
+	var result map[string]any
 	err = response.Unmarshal(&result)
 	assert.NoError(t, err)
 	assert.NotNil(t, result["received"], "Expected 'received' key to be present in the response")
-	assert.Equal(t, "value", result["received"].(map[string]interface{})["key"])
+	assert.Equal(t, "value", result["received"].(map[string]any)["key"])
 }
 
 func TestSendMultipartFormDataRequestWithGzipCompression(t *testing.T) {
@@ -199,7 +199,7 @@ func TestSendMultipartFormDataRequestWithGzipCompression(t *testing.T) {
 			{
 				FieldName:   "file1",
 				FileName:    "test.json",
-				Content:     map[string]interface{}{"key": "value"},
+				Content:     map[string]any{"key": "value"},
 				ContentType: ContentTypeJSON,
 			},
 			{
@@ -217,7 +217,7 @@ func TestSendMultipartFormDataRequestWithGzipCompression(t *testing.T) {
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "json", response.Format)
 
-	var result map[string]interface{}
+	var result map[string]any
 	err = response.Unmarshal(&result)
 	assert.NoError(t, err)
 	assert.Equal(t, `{"key":"value"}`, result["file1"])
@@ -263,7 +263,7 @@ func TestExponentialBackoffDelays(t *testing.T) {
 
 	// Simulate exponential backoff with 3 retries and 1-second initial delay
 	var duration time.Duration
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		duration = duration + getExponentialBackoffDuration(i, 1*time.Second)
 	}
 
@@ -276,7 +276,7 @@ func TestCreateMultipartFormDataWithUnsupportedContentType(t *testing.T) {
 		{
 			FieldName:   "file1",
 			FileName:    "test.unknown",
-			Content:     map[string]interface{}{"key": "value"},
+			Content:     map[string]any{"key": "value"},
 			ContentType: "unsupported/content-type", // Unsupported content type
 		},
 	}
@@ -363,7 +363,7 @@ func TestSendPUTRequestWithJSONBody(t *testing.T) {
 	config := RequestConfig{
 		Method:     "PUT",
 		URL:        server.URL,
-		Body:       map[string]interface{}{"key": "value"},
+		Body:       map[string]any{"key": "value"},
 		Format:     "json",
 		Compressed: false,
 	}
@@ -422,7 +422,7 @@ func TestSendRequestWithCustomHeaders(t *testing.T) {
 		Headers: map[string]string{
 			customHeaderKey: customHeaderValue,
 		},
-		Body:       map[string]interface{}{"key": "value"},
+		Body:       map[string]any{"key": "value"},
 		Format:     "json",
 		Compressed: false,
 	}
@@ -537,7 +537,7 @@ func TestSendRequestWithUnsupportedFormat(t *testing.T) {
 	config := RequestConfig{
 		Method:     "POST",
 		URL:        "http://example.com",
-		Body:       map[string]interface{}{"key": "value"},
+		Body:       map[string]any{"key": "value"},
 		Format:     "unsupported_format", // Unsupported format
 		Compressed: false,
 	}
@@ -630,7 +630,7 @@ func TestResponseUnmarshalWithUnsupportedFormat(t *testing.T) {
 		CanUnmarshal: true,
 	}
 
-	var data interface{}
+	var data any
 	err := resp.Unmarshal(&data)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported format 'unknown'")
@@ -657,7 +657,7 @@ func TestSendRequestWithUnsupportedResponseFormat(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.True(t, resp.CanUnmarshal)
 
-	var data interface{}
+	var data any
 	err = resp.Unmarshal(&data)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported format 'unknown'")

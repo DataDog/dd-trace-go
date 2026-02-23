@@ -22,12 +22,12 @@ func (NoopTracer) StartSpan(_ string, _ ...StartSpanOption) *Span {
 func (NoopTracer) SetServiceInfo(_, _, _ string) {}
 
 // Extract implements Tracer.
-func (NoopTracer) Extract(_ interface{}) (*SpanContext, error) {
+func (NoopTracer) Extract(_ any) (*SpanContext, error) {
 	return nil, nil
 }
 
 // Inject implements Tracer.
-func (NoopTracer) Inject(_ *SpanContext, _ interface{}) error { return nil }
+func (NoopTracer) Inject(_ *SpanContext, _ any) error { return nil }
 
 // Stop implements Tracer.
 func (NoopTracer) Stop() {}

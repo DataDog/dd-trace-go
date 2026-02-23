@@ -107,7 +107,7 @@ func parsePatternNames(pattern string) ([]string, error) {
 	}
 	host := rest[:i]
 	rest = rest[i:]
-	if j := strings.IndexByte(host, '{'); j >= 0 {
+	if found0 := strings.Contains(host, "{"); found0 {
 		return nil, errors.New("host contains '{' (missing initial '/'?)")
 	}
 

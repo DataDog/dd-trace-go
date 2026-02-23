@@ -32,7 +32,7 @@ var fixedTime = now()
 func newSpanList(n int) spanList {
 	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 	list := make([]*Span, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].start = fixedTime
 	}
@@ -43,7 +43,7 @@ func newSpanList(n int) spanList {
 func newDetailedSpanList(n int) spanList {
 	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 	list := make([]*Span, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].context.trace.setPropagatingTag(keyDecisionMaker, "1")
 		list[i].start = fixedTime
@@ -67,7 +67,7 @@ func TestPayloadIntegrity(t *testing.T) {
 			assert := assert.New(t)
 			p := newPayload(traceProtocolV04)
 			lists := make(spanLists, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				list := newSpanList(i%5 + 1)
 				lists[i] = list
 				_, _ = p.push(list)
@@ -93,7 +93,7 @@ func TestPayloadV04Decode(t *testing.T) {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
 			p := newPayload(traceProtocolV04)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				_, _ = p.push(newSpanList(i%5 + 1))
 			}
 			var got spanLists
@@ -122,7 +122,7 @@ func TestPayloadV1Decode(t *testing.T) {
 			p.SetHostname("hostname")
 			p.SetAppVersion("appVersion")
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				_, _ = p.push(newSpanList(i%5 + 1))
 			}
 
@@ -155,7 +155,7 @@ func TestPayloadV1Decode(t *testing.T) {
 				p      = newPayloadV1()
 			)
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				_, _ = p.push(newDetailedSpanList(i%5 + 1))
 			}
 			encoded, err := io.ReadAll(p)
@@ -219,7 +219,7 @@ func TestPayloadV1Decode(t *testing.T) {
 			p.SetHostname("hostname")
 			p.SetAppVersion("appVersion")
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				sl := newSpanList(i%5 + 1)
 				sl[0].context.trace.setSamplingPriority(1, samplernames.Manual)
 				_, _ = p.push(sl)
@@ -245,7 +245,7 @@ func TestPayloadV1Decode(t *testing.T) {
 				assert = assert.New(t)
 				p      = newPayloadV1()
 			)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				sl := newSpanList(i%5 + 1)
 				createMetaStructMap(sl)
 				_, _ = p.push(sl)
@@ -418,7 +418,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		s := newBasicSpan("X")
 		s.meta["key"] = strings.Repeat("X", 10*1024)
 		trace := make(spanList, count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			trace[i] = s
 		}
 		b.ReportAllocs()
@@ -444,40 +444,36 @@ func TestPayloadConcurrentAccess(t *testing.T) {
 
 	// Create some test spans
 	spans := make(spanList, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		spans[i] = newBasicSpan("test-span")
 	}
 
 	var wg sync.WaitGroup
 
 	// Start multiple goroutines that perform concurrent operations
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 
 			// Push some spans
-			for j := 0; j < 5; j++ {
+			for range 5 {
 				_, _ = p.push(spans)
 			}
 
 			// Read size and item count concurrently
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				stats := p.stats()
 				_ = stats.size
 				_ = stats.itemCount
 			}
-		}()
+		})
 	}
 
 	// Also perform operations from the main goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 20; i++ {
+	wg.Go(func() {
+		for range 20 {
 			_ = p.stats().size
 		}
-	}()
+	})
 
 	wg.Wait()
 
@@ -503,40 +499,34 @@ func TestPayloadConcurrentReadWrite(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Concurrent writers
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 10; j++ {
+	for range 5 {
+		wg.Go(func() {
+			for range 10 {
 				_, _ = p.push(spans)
 			}
-		}()
+		})
 	}
 
 	// Concurrent readers
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 5 {
+		wg.Go(func() {
 			buf := make([]byte, 1024)
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				p.reset()
 				_, _ = p.Read(buf)
 			}
-		}()
+		})
 	}
 
 	// Concurrent size/count checkers
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 20; j++ {
+	for range 3 {
+		wg.Go(func() {
+			for range 20 {
 				stats := p.stats()
 				_ = stats.size
 				_ = stats.itemCount
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -632,20 +622,16 @@ func BenchmarkPayloadConcurrentAccess(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				var wg sync.WaitGroup
 
-				for j := 0; j < concurrency; j++ {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+				for range concurrency {
+					wg.Go(func() {
 						_, _ = p.push(spans)
-					}()
+					})
 				}
 
-				for j := 0; j < concurrency; j++ {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+				for range concurrency {
+					wg.Go(func() {
 						_ = p.stats()
-					}()
+					})
 				}
 
 				wg.Wait()
@@ -659,7 +645,7 @@ func TestMsgsizeAnalysis(t *testing.T) {
 	sizes := []int{1, 5, 10}
 	for _, numSpans := range sizes {
 		spans := make(spanList, numSpans)
-		for i := 0; i < numSpans; i++ {
+		for i := range numSpans {
 			span := newBasicSpan("test")
 			span.meta["data"] = strings.Repeat("x", 1024)
 			spans[i] = span

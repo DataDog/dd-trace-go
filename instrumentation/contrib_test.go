@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -97,13 +98,7 @@ func parsePackages(root string) ([]contribPkg, error) {
 
 		for _, imp := range node.Imports {
 			importStr := strings.Trim(imp.Path.Value, `"`)
-			found := false
-			for _, existing := range pkg.Imports {
-				if existing == importStr {
-					found = true
-					break
-				}
-			}
+			found := slices.Contains(pkg.Imports, importStr)
 			if !found {
 				pkg.Imports = append(pkg.Imports, importStr)
 			}
@@ -130,8 +125,8 @@ func getModulePath(root string) string {
 		return ""
 	}
 
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(data), "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
@@ -141,12 +136,7 @@ func getModulePath(root string) string {
 }
 
 func hasInstrumentationImport(p contribPkg) bool {
-	for _, imp := range p.Imports {
-		if imp == "github.com/DataDog/dd-trace-go/v2/instrumentation" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.Imports, "github.com/DataDog/dd-trace-go/v2/instrumentation")
 }
 
 type contribPkg struct {

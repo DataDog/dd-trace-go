@@ -150,8 +150,8 @@ func NewCodeOwners(filePath string) (*CodeOwners, error) {
 
 		finalLine := line
 		var ownersList []string
-		terms := strings.Fields(line)
-		for _, term := range terms {
+		terms := strings.FieldsSeq(line)
+		for term := range terms {
 			if len(term) == 0 {
 				continue
 			}

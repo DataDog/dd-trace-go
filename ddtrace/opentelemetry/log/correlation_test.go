@@ -45,7 +45,7 @@ func TestDDSpanContextToOtel(t *testing.T) {
 
 	// Verify span ID matches
 	spanIDBytes := make([]byte, 8)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		spanIDBytes[i] = byte(ddCtx.SpanID() >> (56 - 8*i))
 	}
 	var expectedSpanID [8]byte
@@ -201,7 +201,7 @@ func TestLogCorrelation(t *testing.T) {
 
 		// Verify span ID matches
 		spanIDBytes := make([]byte, 8)
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			spanIDBytes[i] = byte(ddCtx.SpanID() >> (56 - 8*i))
 		}
 		var expectedSpanID [8]byte
@@ -395,7 +395,7 @@ func TestLogCorrelation(t *testing.T) {
 
 		// First log should have DD span ID
 		ddSpanIDBytes := make([]byte, 8)
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			ddSpanIDBytes[i] = byte(ddSpan.Context().SpanID() >> (56 - 8*i))
 		}
 		var expectedDDSpanID [8]byte

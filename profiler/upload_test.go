@@ -42,7 +42,7 @@ func TestTryUploadUDS(t *testing.T) {
 		t.Skip("Unix domain sockets are non-functional on windows.")
 	}
 	profiles := make(chan profileMeta, 1)
-	server := httptest.NewUnstartedServer(&mockBackend{t: t, profiles: profiles})
+	server := httptest.NewUnstartedServer(&mockBackend{profiles: profiles})
 	udsPath := "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"
 	l, err := net.Listen("unix", udsPath)
 	if err != nil {
