@@ -116,7 +116,8 @@ func startTelemetry(c *config) telemetry.Client {
 	// expose the telemetry proxy endpoint (e.g. the Datadog Lambda extension).
 	// When the agent was unreachable at startup, we still set the URL so that
 	// telemetry is attempted rather than silently dropped.
-	if !c.agent.reachable || c.agent.hasTelemetryProxy {
+	// When the spans are emitted on stdout it means there is no agent at all in the env.
+	if (!c.agent.reachable || c.agent.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
 		cfg.AgentURL = c.agentURL.String()
 	}
 	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
