@@ -180,7 +180,7 @@ func TestStart(t *testing.T) {
 // profiler is already running will restart it with the given configuration.
 func TestStartWithoutStopReconfigures(t *testing.T) {
 	got := make(chan profileMeta)
-	backend := &mockBackend{profiles: got}
+	backend := &fakeBackend{profiles: got}
 	server, client := httpmem.ServerAndClient(backend)
 	defer server.Close()
 
@@ -347,13 +347,17 @@ type profileMeta struct {
 	err         error
 }
 
-type mockBackend struct {
+// fakeBackend is a stand-in for the profiling backend, for testing purposes.
+// It implements an HTTP server to which the client can send profiling data,
+// performs basic validation, and provides a method for tests to access the
+// received profile uploads in a structured form.
+type fakeBackend struct {
 	profiles chan profileMeta
 }
 
 // ReceiveProfile receives a profile from the backend and fails the test if
 // there was an error during the upload
-func (m *mockBackend) ReceiveProfile(t *testing.T) profileMeta {
+func (m *fakeBackend) ReceiveProfile(t *testing.T) profileMeta {
 	profile := <-m.profiles
 	if profile.err != nil {
 		t.Fatalf("profile upload failed: %s", profile.err)
@@ -361,7 +365,7 @@ func (m *mockBackend) ReceiveProfile(t *testing.T) profileMeta {
 	return profile
 }
 
-func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m *fakeBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h := r.Header.Get("DD-Telemetry-Request-Type"); len(h) > 0 {
 		return
 	}
@@ -415,9 +419,9 @@ func (m *mockBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // startTestProfiler starts up a profiler wired up to an in-memory mock backend
 // using the given profiler options, and returns the mock backend. The profiler
 // and mock backend will be stopped when the calling test case completes
-func startTestProfiler(t *testing.T, size int, options ...Option) *mockBackend {
+func startTestProfiler(t *testing.T, size int, options ...Option) *fakeBackend {
 	profiles := make(chan profileMeta, size)
-	backend := &mockBackend{profiles: profiles}
+	backend := &fakeBackend{profiles: profiles}
 	server, client := httpmem.ServerAndClient(backend)
 	t.Cleanup(func() { server.Close() })
 
@@ -839,7 +843,7 @@ func TestUDSDefault(t *testing.T) {
 	internal.DefaultTraceAgentUDSPath = socket
 
 	profiles := make(chan profileMeta, 1)
-	backend := &mockBackend{profiles: profiles}
+	backend := &fakeBackend{profiles: profiles}
 	mux := http.NewServeMux()
 	// Specifically set up a handler for /profiling/v1/input to test that we
 	// don't use the filesystem path to the Unix domain socket in the HTTP
