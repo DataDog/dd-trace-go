@@ -372,10 +372,7 @@ func (p *Processor) processInput(in *processorInput) {
 //
 // IDs longer than 255 bytes are truncated.
 func appendTransactionBytes(dst []byte, checkpointID byte, timestamp int64, transactionID string) []byte {
-	idLen := len(transactionID)
-	if idLen > 255 {
-		idLen = 255
-	}
+	idLen := min(len(transactionID), 255)
 	dst = append(dst, checkpointID)
 	dst = binary.BigEndian.AppendUint64(dst, uint64(timestamp))
 	dst = append(dst, byte(idLen))
