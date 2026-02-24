@@ -7,6 +7,12 @@
 
 package datastreams
 
+// Product bitmask values, matching the Java tracer.
+const (
+	productAPM uint64 = 1 // 00000001
+	productDSM uint64 = 2 // 00000010
+)
+
 // StatsPayload stores client computed stats.
 type StatsPayload struct {
 	// Env specifies the env. of the application, as defined by the user.
@@ -23,6 +29,10 @@ type StatsPayload struct {
 	Version string
 	// ProcessTags contains the process level tags.
 	ProcessTags []string
+	// ProductMask is a bitmask indicating which Datadog products are active.
+	// Bit 0 (1) = APM, Bit 1 (2) = DSM. Required by the backend to route
+	// transaction tracking data. Matches Java's ProductMask field.
+	ProductMask uint64
 }
 
 type ProduceOffset struct {
@@ -56,6 +66,13 @@ type StatsBucket struct {
 	Stats []StatsPoint
 	// Backlogs store information used to compute queue backlog
 	Backlogs []Backlog
+	// Transactions is a packed binary blob of transaction records for this bucket.
+	// Each record is: [checkpointId uint8][timestamp int64 big-endian][idLen uint8][id bytes].
+	Transactions []byte
+	// TransactionCheckpointIds is a packed binary blob mapping checkpoint IDs to names.
+	// Each entry is: [id uint8][nameLen uint8][name bytes].
+	// The name uses Ids (not IDs) to match the msgpack wire key expected by the backend.
+	TransactionCheckpointIds []byte //nolint:revive
 }
 
 // TimestampType can be either current or origin.
