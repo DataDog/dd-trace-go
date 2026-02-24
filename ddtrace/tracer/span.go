@@ -149,6 +149,45 @@ type Span struct {
 	taskEnd func() // +checklocks:mu
 }
 
+func (s *Span) clear() {
+	// Serialize after finish()'s deferred s.mu.Unlock(). The span may still
+	// be inside finish() when the worker receives the chunk, because the
+	// channel send happens before the deferred unlock. Acquiring the lock
+	// here guarantees finish() has fully completed before we zero the struct.
+	s.mu.Lock()
+	// Don't nil s.context here. External code may still call Context()
+	// after Finish(). A fresh SpanContext is assigned on reuse
+	// (newSpanContext in spanStart), so the old one is naturally replaced.
+	// Replace maps with fresh ones instead of clearing in-place.
+	// Old goroutines that still iterate over the previous maps (e.g., msgpack
+	// encoding) keep a stable reference and won't race with us.
+	s.meta = make(map[string]string, 1)
+	s.metrics = make(map[string]float64, 1)
+	s.metaStruct = nil
+	// Zero all fields (context ptr, slices, strings, etc.).
+	s.name = ""
+	s.service = ""
+	s.resource = ""
+	s.spanType = ""
+	s.start = 0
+	s.duration = 0
+	s.spanID = 0
+	s.traceID = 0
+	s.parentID = 0
+	s.error = 0
+	s.spanLinks = nil
+	s.spanEvents = nil
+	s.goExecTraced = false
+	s.noDebugStack = false
+	s.finished = false
+	s.integration = ""
+	s.supportsEvents = false
+	s.pprofCtxActive = nil
+	s.pprofCtxRestore = nil
+	s.taskEnd = nil
+	s.mu.Unlock()
+}
+
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
@@ -156,7 +195,10 @@ func (s *Span) Context() *SpanContext {
 	if s == nil {
 		return nil
 	}
-	return s.context
+	s.mu.RLock()
+	ctx := s.context
+	s.mu.RUnlock()
+	return ctx
 }
 
 type inheritedData struct {
@@ -456,13 +498,19 @@ func (s *Span) setProcessTags(pTags string) {
 // root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
 func (s *Span) Root() *Span {
-	if s == nil || s.context == nil {
+	if s == nil {
 		return nil
 	}
-	if s.context.trace == nil {
+	s.mu.RLock()
+	ctx := s.context
+	s.mu.RUnlock()
+	if ctx == nil {
 		return nil
 	}
-	return s.context.trace.root
+	if ctx.trace == nil {
+		return nil
+	}
+	return ctx.trace.root
 }
 
 // SetUser associates user information to the current trace which the
@@ -537,6 +585,7 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
+// +checklocks:s.mu
 func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	assert.RWMutexLocked(&s.mu)
 	// We don't lock spans when flushing, so we could have a data race when
@@ -553,6 +602,7 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 // If the trace is locked, the sampling priority is forced to the given value.
 //
 // This function is should only be used when applying a manual keep or drop decision.
+// +checklocks:s.mu
 func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	assert.RWMutexLocked(&s.mu)
 	// We don't lock spans when flushing, so we could have a data race when
@@ -567,6 +617,7 @@ func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames
 
 // setTagErrorLocked sets the error tag. It accounts for various valid scenarios.
 // This method assumes the span lock is already held.
+// +checklocks:s.mu
 func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 	assert.RWMutexLocked(&s.mu)
 	setError := func(yes bool) {
@@ -647,15 +698,8 @@ func takeStacktrace(depth uint, skip uint) string {
 	return stacktrace.Format(stack)
 }
 
-// setMeta sets a string tag during span initialization (before the span is published).
-// This method should only be used during span construction in spanStart and StartSpan.
-func (s *Span) setMeta(key, v string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.setMetaLocked(key, v)
-}
-
 // setMetaLocked sets a string tag. This method assumes the span lock is already held.
+// +checklocks:s.mu
 func (s *Span) setMetaLocked(key, v string) {
 	assert.RWMutexLocked(&s.mu)
 	s.setMetaInit(key, v)
@@ -682,6 +726,7 @@ func (s *Span) setMetaInit(key, v string) {
 }
 
 // setMetaStructLocked sets structured metadata. This method assumes the span lock is already held.
+// +checklocks:s.mu
 func (s *Span) setMetaStructLocked(key string, v any) {
 	assert.RWMutexLocked(&s.mu)
 	if s.metaStruct == nil {
@@ -691,6 +736,7 @@ func (s *Span) setMetaStructLocked(key string, v any) {
 }
 
 // setTagBoolLocked sets a boolean tag on the span. This method assumes the span lock is already held.
+// +checklocks:s.mu
 func (s *Span) setTagBoolLocked(key string, v bool) {
 	assert.RWMutexLocked(&s.mu)
 	switch key {
@@ -737,6 +783,7 @@ func (s *Span) setMetric(key string, v float64) {
 
 // setMetricLocked sets a numeric tag, in our case called a metric. This method
 // assumes the span lock is already held.
+// +checklocks:s.mu
 func (s *Span) setMetricLocked(key string, v float64) {
 	assert.RWMutexLocked(&s.mu)
 	if s.metrics == nil {
@@ -775,7 +822,9 @@ func (s *Span) AddLink(link SpanLink) {
 }
 
 // serializeSpanLinksInMeta saves span links as a JSON string under `Span[meta][_dd.span_links]`.
+// +checklocks:s.mu
 func (s *Span) serializeSpanLinksInMeta() {
+	assert.RWMutexLocked(&s.mu)
 	if len(s.spanLinks) == 0 {
 		return
 	}
@@ -792,7 +841,9 @@ func (s *Span) serializeSpanLinksInMeta() {
 
 // serializeSpanEvents sets the span events from the current span in the correct transport, depending on whether the
 // agent supports the native method or not.
+// +checklocks:s.mu
 func (s *Span) serializeSpanEvents() {
+	assert.RWMutexLocked(&s.mu)
 	if len(s.spanEvents) == 0 {
 		return
 	}
