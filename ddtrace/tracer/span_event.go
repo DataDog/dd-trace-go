@@ -159,6 +159,42 @@ func toSpanEventAttributeValueMsg(v any) *spanEventAttribute {
 		return floatSliceValue(v)
 	case []float32:
 		return floatSliceValue(v)
+	case arrayValue:
+		return arrayValueToSpanEventAttribute(v)
+	default:
+		return nil
+	}
+}
+
+// arrayValueToSpanEventAttribute converts a decoded arrayValue (from payload v1) to a spanEventAttribute.
+func arrayValueToSpanEventAttribute(arr arrayValue) *spanEventAttribute {
+	if arr == nil {
+		return nil
+	}
+	values := make([]*spanEventArrayAttributeValue, 0, len(arr))
+	for _, av := range arr {
+		if val := anyValueToSpanEventArrayAttributeValue(av); val != nil {
+			values = append(values, val)
+		}
+	}
+	return &spanEventAttribute{
+		Type: spanEventAttributeTypeArray,
+		ArrayValue: &spanEventArrayAttribute{
+			Values: values,
+		},
+	}
+}
+
+func anyValueToSpanEventArrayAttributeValue(av anyValue) *spanEventArrayAttributeValue {
+	switch av.valueType {
+	case StringValueType:
+		return &spanEventArrayAttributeValue{Type: spanEventArrayAttributeValueTypeString, StringValue: av.value.(string)}
+	case BoolValueType:
+		return &spanEventArrayAttributeValue{Type: spanEventArrayAttributeValueTypeBool, BoolValue: av.value.(bool)}
+	case IntValueType:
+		return &spanEventArrayAttributeValue{Type: spanEventArrayAttributeValueTypeInt, IntValue: av.value.(int64)}
+	case FloatValueType:
+		return &spanEventArrayAttributeValue{Type: spanEventArrayAttributeValueTypeDouble, DoubleValue: av.value.(float64)}
 	default:
 		return nil
 	}
