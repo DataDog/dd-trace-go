@@ -615,7 +615,6 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 			s.setMetaLocked(ext.ErrorHandlingStack, err.Format())
 		default:
 			stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-			s.setMetaLocked(ext.ErrorStack, stack)
 			s.setMetaLocked(ext.ErrorHandlingStack, stack)
 		}
 	case nil:
