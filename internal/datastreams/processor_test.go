@@ -562,6 +562,48 @@ func (t *noOpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+func TestTransactionBytesLongID(t *testing.T) {
+	longID := strings.Repeat("x", 300)
+	b := transactionBytes(1, 0, longID)
+	// Record layout: [checkpointId uint8][timestamp int64][idLen uint8][id bytes]
+	// ID must be capped at 255 bytes.
+	require.Equal(t, byte(255), b[9], "idLen field should be capped at 255")
+	require.Len(t, b, 1+8+1+255, "total record length should reflect the 255-byte cap")
+}
+
+func TestCheckpointRegistryLongName(t *testing.T) {
+	r := newCheckpointRegistry()
+	longName := strings.Repeat("n", 300)
+	id, ok := r.getOrAssign(longName)
+	assert.True(t, ok)
+	assert.Equal(t, byte(1), id)
+	// Encoded layout: [id uint8][nameLen uint8][name bytes].
+	// Name must be truncated to 255 bytes.
+	require.Len(t, r.encodedKeys, 1+1+255)
+	assert.Equal(t, byte(255), r.encodedKeys[1], "nameLen field should be capped at 255")
+}
+
+func TestAddTransactionFullRegistry(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	// Fill the registry to capacity so getOrAssign returns (0, false).
+	p.checkpoints.nextID = math.MaxUint8
+
+	ts := time.Now().Truncate(bucketDuration)
+	p.addTransaction(transactionEntry{
+		transactionID:  "tx-1",
+		checkpointName: "overflow",
+		timestamp:      ts.UnixNano(),
+	})
+
+	// The bucket should exist but carry no transaction bytes.
+	payloads := p.flush(ts.Add(bucketDuration * 2))
+	for _, payload := range payloads {
+		for _, bucket := range payload.Stats {
+			assert.Empty(t, bucket.Transactions, "no transactions should be recorded when the registry is full")
+		}
+	}
+}
+
 func BenchmarkSetCheckpoint(b *testing.B) {
 	client := &http.Client{
 		Transport: &noOpTransport{},
