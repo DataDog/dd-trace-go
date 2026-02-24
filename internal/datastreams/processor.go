@@ -365,25 +365,22 @@ func (p *Processor) processInput(in *processorInput) {
 	}
 }
 
-// transactionBytes serialises a single transaction entry into the compact binary
-// format shared with the Java tracer:
+// appendTransactionBytes appends a single transaction record to dst and returns
+// the extended slice. The wire format is shared with the Java tracer:
 //
 //	[checkpointId uint8][timestamp int64 big-endian][idLen uint8][id bytes]
 //
 // IDs longer than 255 bytes are truncated.
-func transactionBytes(checkpointID byte, timestamp int64, transactionID string) []byte {
-	idBytes := []byte(transactionID)
-	idLen := len(idBytes)
+func appendTransactionBytes(dst []byte, checkpointID byte, timestamp int64, transactionID string) []byte {
+	idLen := len(transactionID)
 	if idLen > 255 {
 		idLen = 255
-		idBytes = idBytes[:idLen]
 	}
-	buf := make([]byte, 1+8+1+idLen)
-	buf[0] = checkpointID
-	binary.BigEndian.PutUint64(buf[1:], uint64(timestamp))
-	buf[9] = byte(idLen)
-	copy(buf[10:], idBytes)
-	return buf
+	dst = append(dst, checkpointID)
+	dst = binary.BigEndian.AppendUint64(dst, uint64(timestamp))
+	dst = append(dst, byte(idLen))
+	dst = append(dst, transactionID[:idLen]...)
+	return dst
 }
 
 func (p *Processor) addTransaction(e transactionEntry) {
@@ -399,7 +396,7 @@ func (p *Processor) addTransaction(e transactionEntry) {
 		p.tsTypeCurrentBuckets[k] = b
 		return
 	}
-	b.transactions = append(b.transactions, transactionBytes(checkpointID, e.timestamp, e.transactionID)...)
+	b.transactions = appendTransactionBytes(b.transactions, checkpointID, e.timestamp, e.transactionID)
 	p.tsTypeCurrentBuckets[k] = b
 	log.Debug("datastreams: bucket now has %d transaction bytes", len(b.transactions))
 }
@@ -519,10 +516,8 @@ func (p *Processor) flush(now time.Time) map[string]StatsPayload {
 				TracerVersion: version.Tag,
 				Stats:         make([]StatsBucket, 0, 1),
 				ProcessTags:   processtags.GlobalTags().Slice(),
-				// ProductMask declares which Datadog products this tracer supports, not which
-				// products contributed data to this specific flush. We always advertise both
-				// APM (1) and DSM (2) because both are active whenever the DSM processor is
-				// running. The backend uses this field to route transaction-tracking data.
+				// ProductMask advertises supported products; always set to APM|DSM while
+				// the DSM processor is running.
 				ProductMask: productAPM | productDSM,
 			}
 		}

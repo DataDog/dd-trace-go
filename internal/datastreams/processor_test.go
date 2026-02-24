@@ -499,7 +499,7 @@ func TestCheckpointRegistryOverflow(t *testing.T) {
 
 func TestTransactionBytes(t *testing.T) {
 	ts := int64(1700000000000000000)
-	b := transactionBytes(3, ts, "my-tx")
+	b := appendTransactionBytes(nil, 3, ts, "my-tx")
 	require.Len(t, b, 1+8+1+5)
 
 	assert.Equal(t, byte(3), b[0])
@@ -564,7 +564,7 @@ func (t *noOpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestTransactionBytesLongID(t *testing.T) {
 	longID := strings.Repeat("x", 300)
-	b := transactionBytes(1, 0, longID)
+	b := appendTransactionBytes(nil, 1, 0, longID)
 	// Record layout: [checkpointId uint8][timestamp int64][idLen uint8][id bytes]
 	// ID must be capped at 255 bytes.
 	require.Equal(t, byte(255), b[9], "idLen field should be capped at 255")

@@ -51,13 +51,7 @@ func newHTTPTransport(agentURL *url.URL, client *http.Client) *httpTransport {
 }
 
 func (t *httpTransport) sendPipelineStats(p *StatsPayload) error {
-	txnBuckets := 0
-	for _, b := range p.Stats {
-		if len(b.Transactions) > 0 {
-			txnBuckets++
-		}
-	}
-	log.Debug("datastreams: sending pipeline_stats payload buckets=%d txn_buckets=%d", len(p.Stats), txnBuckets)
+	log.Debug("datastreams: sending pipeline_stats payload buckets=%d", len(p.Stats))
 	var buf bytes.Buffer
 	gzipWriter, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
 	if err != nil {

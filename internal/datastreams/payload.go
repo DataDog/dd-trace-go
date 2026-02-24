@@ -29,9 +29,7 @@ type StatsPayload struct {
 	Version string
 	// ProcessTags contains the process level tags.
 	ProcessTags []string
-	// ProductMask is a bitmask indicating which Datadog products are active.
-	// Bit 0 (1) = APM, Bit 1 (2) = DSM. Required by the backend to route
-	// transaction tracking data. Matches Java's ProductMask field.
+	// ProductMask is a bitmask of active Datadog products. Bit 0 (1) = APM, Bit 1 (2) = DSM.
 	ProductMask uint64
 }
 
