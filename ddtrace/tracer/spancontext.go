@@ -625,11 +625,21 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	for k, v := range t.propagatingTags {
 		s.setMetaLocked(k, v)
 	}
-	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
-		s.setMetaLocked(k, v)
-	}
+	updateTracerGitMetadataTags(s)
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMetaLocked(keyTraceID128, s.context.traceID.UpperHex())
+	}
+}
+
+// updateTracerGitMetadataTags updates the tracer git metadata tags on the given span.
+func updateTracerGitMetadataTags(s *Span) {
+	gitMetadataTags := sharedinternal.GetGitMetadataTags()
+	for ix := range sharedinternal.TracerGitMetadataKeys {
+		pair := sharedinternal.TracerGitMetadataKeys[ix]
+		src, dst := pair[0], pair[1]
+		if v := gitMetadataTags[src]; v != "" {
+			s.setMetaLocked(dst, v)
+		}
 	}
 }
 

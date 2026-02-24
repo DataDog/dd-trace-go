@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -1278,6 +1279,43 @@ func FuzzSpanIDHexEncoded(f *testing.F) {
 		actual := spanIDHexEncoded(v, p)
 		if actual != expected {
 			t.Fatalf("expected %s, got %s", expected, actual)
+		}
+	})
+}
+
+func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
+	b.Run("old GetTracerGitMetadataTags", func(b *testing.B) {
+		b.Setenv(internal.EnvGitMetadataEnabledFlag, "true")
+		internal.RefreshGitMetadataTags()
+		updateTags := func(tags map[string]string, key, value string) {
+			if _, ok := tags[key]; !ok && value != "" {
+				tags[key] = value
+			}
+		}
+		// Emulates old implementation of GetTracerGitMetadataTags
+		old := func() map[string]string {
+			results := make(map[string]string)
+			tags := internal.GetGitMetadataTags()
+			updateTags(results, internal.TraceTagRepositoryURL, tags[internal.TagRepositoryURL])
+			updateTags(results, internal.TraceTagCommitSha, tags[internal.TagCommitSha])
+			updateTags(results, internal.TraceTagGoPath, tags[internal.TagGoPath])
+			return results
+		}
+		var sink map[string]string
+		b.ResetTimer()
+		for b.Loop() {
+			sink = old()
+		}
+		// This is to avoid the compiler optimizing out the map allocation.
+		_ = sink
+	})
+	b.Run("new UpdateTracerGitMetadataTags", func(b *testing.B) {
+		b.Setenv(internal.EnvGitMetadataEnabledFlag, "true")
+		internal.RefreshGitMetadataTags()
+		span := newBasicSpan("span")
+		b.ResetTimer()
+		for b.Loop() {
+			updateTracerGitMetadataTags(span)
 		}
 	})
 }
