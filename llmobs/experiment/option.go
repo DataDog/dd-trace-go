@@ -7,7 +7,29 @@ package experiment
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
+	"github.com/DataDog/dd-trace-go/v2/llmobs/dataset"
 )
+
+// ProgressStatus represents the status of a progress event during experiment execution.
+type ProgressStatus string
+
+const (
+	ProgressRunning             ProgressStatus = "running"
+	ProgressTaskComplete        ProgressStatus = "task_complete"
+	ProgressEvaluationsComplete ProgressStatus = "evaluations_complete"
+	ProgressSuccess             ProgressStatus = "success"
+	ProgressError               ProgressStatus = "error"
+)
+
+// ProgressEvent represents a progress update during experiment execution.
+type ProgressEvent struct {
+	RecordIndex int
+	Status      ProgressStatus
+	Record      *dataset.Record
+	Output      any
+	Evaluations []*Evaluation
+	Error       error
+}
 
 type newCfg struct {
 	projectName       string
@@ -19,11 +41,7 @@ type newCfg struct {
 
 func defaultNewCfg(globalCfg *config.Config) *newCfg {
 	return &newCfg{
-		projectName:       globalCfg.ProjectName,
-		description:       "",
-		tags:              nil,
-		experimentCfg:     nil,
-		summaryEvaluators: nil,
+		projectName: globalCfg.ProjectName,
 	}
 }
 
@@ -63,17 +81,15 @@ func WithSummaryEvaluators(summaryEvaluators ...SummaryEvaluator) Option {
 }
 
 type runCfg struct {
-	maxConcurrency int
-	abortOnError   bool
-	sampleSize     int
+	maxConcurrency       int
+	abortOnError         bool
+	sampleSize           int
+	progressCallback     func(ProgressEvent)
+	onExperimentCreated  func(id, name string)
 }
 
 func defaultRunCfg() *runCfg {
-	return &runCfg{
-		maxConcurrency: 0,
-		abortOnError:   false,
-		sampleSize:     0,
-	}
+	return &runCfg{}
 }
 
 type RunOption func(cfg *runCfg)
@@ -93,5 +109,22 @@ func WithAbortOnError(abortOnError bool) RunOption {
 func WithSampleSize(sampleSize int) RunOption {
 	return func(cfg *runCfg) {
 		cfg.sampleSize = sampleSize
+	}
+}
+
+// WithProgressCallback sets a callback that is invoked for each progress event
+// during experiment execution. This enables real-time streaming of experiment
+// progress (e.g., for the devserver).
+func WithProgressCallback(fn func(ProgressEvent)) RunOption {
+	return func(cfg *runCfg) {
+		cfg.progressCallback = fn
+	}
+}
+
+// WithOnExperimentCreated sets a callback that is invoked after the experiment
+// is created on the backend, providing the experiment ID and run name.
+func WithOnExperimentCreated(fn func(id, name string)) RunOption {
+	return func(cfg *runCfg) {
+		cfg.onExperimentCreated = fn
 	}
 }

@@ -232,6 +232,10 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (*ExperimentRes
 	e.id = expResp.ID
 	e.runName = expResp.Name
 
+	if cfg.onExperimentCreated != nil {
+		cfg.onExperimentCreated(e.id, e.runName)
+	}
+
 	pushEventsTags := make([]string, len(e.tagsSlice))
 	copy(pushEventsTags, e.tagsSlice)
 	pushEventsTags = append(pushEventsTags, fmt.Sprintf("%s:%s", "experiment_id", e.id))
@@ -287,14 +291,36 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 			break
 		}
 		eg.Go(func() error {
+			recCopy := rec
+			if cfg.progressCallback != nil {
+				cfg.progressCallback(ProgressEvent{
+					RecordIndex: i,
+					Status:      ProgressRunning,
+					Record:      &recCopy,
+				})
+			}
 			res := e.runTaskForRecord(ctx, llmobs, i, rec)
 			if res.Error != nil {
+				if cfg.progressCallback != nil {
+					cfg.progressCallback(ProgressEvent{
+						RecordIndex: i,
+						Status:      ProgressError,
+						Record:      &recCopy,
+						Error:       res.Error,
+					})
+				}
 				retErr := fmt.Errorf("failed to process record %d: %w", i, res.Error)
 				if cfg.abortOnError {
 					return retErr
-				} else {
-					log.Warn("llmobs: %s", retErr)
 				}
+				log.Warn("llmobs: %s", retErr)
+			} else if cfg.progressCallback != nil {
+				cfg.progressCallback(ProgressEvent{
+					RecordIndex: i,
+					Status:      ProgressTaskComplete,
+					Record:      &recCopy,
+					Output:      res.Output,
+				})
 			}
 			results[i] = res
 			return nil
@@ -310,10 +336,7 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 }
 
 func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMObs, recIdx int, rec dataset.Record) *RecordResult {
-	var (
-		err error
-	)
-
+	var err error
 	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, illmobs.StartSpanConfig{})
 	defer span.Finish(illmobs.FinishSpanConfig{Error: err})
 
@@ -364,9 +387,8 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*RecordResult,
 					retErr := fmt.Errorf("evaluator %d (%s) failed on record %s: %w", evIdx, ev.Name(), res.Record.ID(), err)
 					if cfg.abortOnError {
 						return retErr
-					} else {
-						log.Warn("llmobs: %s", retErr)
 					}
+					log.Warn("llmobs: %s", retErr)
 				}
 				evs = append(evs, &Evaluation{
 					Name:  ev.Name(),
@@ -375,6 +397,22 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*RecordResult,
 				})
 			}
 			res.Evaluations = evs
+			if cfg.progressCallback != nil {
+				cfg.progressCallback(ProgressEvent{
+					RecordIndex: res.RecordIndex,
+					Status:      ProgressEvaluationsComplete,
+					Record:      res.Record,
+					Output:      res.Output,
+					Evaluations: res.Evaluations,
+				})
+				cfg.progressCallback(ProgressEvent{
+					RecordIndex: res.RecordIndex,
+					Status:      ProgressSuccess,
+					Record:      res.Record,
+					Output:      res.Output,
+					Evaluations: res.Evaluations,
+				})
+			}
 			return nil
 		})
 	}
@@ -386,7 +424,6 @@ func (e *Experiment) runSummaryEvaluators(ctx context.Context, results []*Record
 		return nil, nil
 	}
 
-	// Run summary evaluators
 	summaryEvals := make([]*Evaluation, 0, len(e.summaryEvaluators))
 	for evIdx, sumEv := range e.summaryEvaluators {
 		val, err := sumEv.Run(ctx, results)
@@ -396,9 +433,8 @@ func (e *Experiment) runSummaryEvaluators(ctx context.Context, results []*Record
 			retErr := fmt.Errorf("summary evaluator %d (%s) failed: %w", evIdx, sumEv.Name(), err)
 			if cfg.abortOnError {
 				return nil, retErr
-			} else {
-				log.Warn("llmobs: %s", retErr)
 			}
+			log.Warn("llmobs: %s", retErr)
 		}
 		summaryEvals = append(summaryEvals, &Evaluation{
 			Name:  sumEv.Name(),
@@ -422,19 +458,20 @@ func (e *Experiment) generateMetrics(results []*RecordResult, summaryEvals []*Ev
 			latestTimestamp = res.Timestamp
 		}
 		for _, ev := range res.Evaluations {
-			metrics = append(metrics, e.generateMetricFromEvaluation(res, ev, "custom"))
+			metrics = append(metrics, e.generateMetricEvent(ev, "custom", res.SpanID, res.TraceID, res.Timestamp.UnixMilli()))
 		}
 	}
 
-	// Generate metrics from summary evaluations
-	// Summary evaluations don't have associated spans, so we use empty span/trace IDs and latest timestamp
+	// Generate metrics from summary evaluations.
+	// Summary evaluations don't have associated spans, so we use empty span/trace IDs and latest timestamp.
+	latestMS := latestTimestamp.UnixMilli()
 	for _, sumEv := range summaryEvals {
-		metrics = append(metrics, e.generateMetricFromSummaryEvaluation(sumEv, latestTimestamp))
+		metrics = append(metrics, e.generateMetricEvent(sumEv, "summary", "", "", latestMS))
 	}
 	return metrics
 }
 
-func (e *Experiment) generateMetricFromEvaluation(res *RecordResult, ev *Evaluation, source string) transport.ExperimentEvalMetricEvent {
+func (e *Experiment) generateMetricEvent(ev *Evaluation, source, spanID, traceID string, timestampMS int64) transport.ExperimentEvalMetricEvent {
 	var (
 		catVal   *string
 		scoreVal *float64
@@ -459,49 +496,9 @@ func (e *Experiment) generateMetricFromEvaluation(res *RecordResult, ev *Evaluat
 
 	return transport.ExperimentEvalMetricEvent{
 		MetricSource:     source,
-		SpanID:           res.SpanID,
-		TraceID:          res.TraceID,
-		TimestampMS:      res.Timestamp.UnixMilli(),
-		MetricType:       metricType,
-		Label:            ev.Name,
-		CategoricalValue: catVal,
-		ScoreValue:       scoreVal,
-		BooleanValue:     boolVal,
-		Error:            transport.NewErrorMessage(ev.Error),
-		Tags:             e.tagsSlice,
-		ExperimentID:     e.id,
-	}
-}
-
-func (e *Experiment) generateMetricFromSummaryEvaluation(ev *Evaluation, timestamp time.Time) transport.ExperimentEvalMetricEvent {
-	var (
-		catVal   *string
-		scoreVal *float64
-		boolVal  *bool
-	)
-
-	metricType := "categorical"
-	switch t := ev.Value.(type) {
-	case bool:
-		metricType = "boolean"
-		boolVal = transport.AnyPtr(t)
-
-	case int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64, uintptr,
-		float32, float64:
-		metricType = "score"
-		scoreVal = transport.AnyPtr(asFloat64(t))
-
-	default:
-		catVal = transport.AnyPtr(fmt.Sprintf("%v", t))
-	}
-
-	// Summary evaluations don't have span/trace IDs, but use the latest timestamp from per-record evaluations
-	return transport.ExperimentEvalMetricEvent{
-		MetricSource:     "summary",
-		SpanID:           "",
-		TraceID:          "",
-		TimestampMS:      timestamp.UnixMilli(),
+		SpanID:           spanID,
+		TraceID:          traceID,
+		TimestampMS:      timestampMS,
 		MetricType:       metricType,
 		Label:            ev.Name,
 		CategoricalValue: catVal,
