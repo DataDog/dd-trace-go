@@ -678,9 +678,10 @@ func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEv
 			case spanEventAttributeTypeArray:
 				p.buf = st.serialize(k, p.buf)
 				p.buf = msgp.AppendUint32(p.buf, uint32(ArrayValueType))
-				p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(v.ArrayValue.Values))*3) // number of attributes
+				// Array format is (type, value) per element; decoder expects len/2 anyValues.
+				p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(v.ArrayValue.Values))*2)
 				for _, v := range v.ArrayValue.Values {
-					p.encodeSpanEventArrayValues(k, v, st)
+					p.encodeSpanEventArrayValues(v, st)
 				}
 			default:
 				log.Warn("dropped unsupported span event attribute type %d", v.Type)
@@ -690,22 +691,18 @@ func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEv
 	return true, nil
 }
 
-func (p *payloadV1) encodeSpanEventArrayValues(k string, v *spanEventArrayAttributeValue, st *stringTable) (bool, error) {
+func (p *payloadV1) encodeSpanEventArrayValues(v *spanEventArrayAttributeValue, st *stringTable) (bool, error) {
 	switch v.Type {
 	case spanEventArrayAttributeValueTypeString:
-		p.buf = st.serialize(k, p.buf)
 		p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
 		p.buf = st.serialize(v.StringValue, p.buf)
 	case spanEventArrayAttributeValueTypeInt:
-		p.buf = st.serialize(k, p.buf)
 		p.buf = msgp.AppendUint32(p.buf, uint32(IntValueType))
 		p.buf = msgp.AppendInt64(p.buf, v.IntValue)
 	case spanEventArrayAttributeValueTypeDouble:
-		p.buf = st.serialize(k, p.buf)
 		p.buf = msgp.AppendUint32(p.buf, uint32(FloatValueType))
 		p.buf = msgp.AppendFloat64(p.buf, v.DoubleValue)
 	case spanEventArrayAttributeValueTypeBool:
-		p.buf = st.serialize(k, p.buf)
 		p.buf = msgp.AppendUint32(p.buf, uint32(BoolValueType))
 		p.buf = msgp.AppendBool(p.buf, v.BoolValue)
 	default:
