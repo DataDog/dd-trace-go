@@ -835,7 +835,7 @@ func TestSendRequestWithContextTimeout(t *testing.T) {
 
 	// Server that sleeps longer than client timeout
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(2 * time.Second)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer ts.Close()
