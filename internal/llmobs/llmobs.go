@@ -428,7 +428,39 @@ func (l *LLMObs) submitLLMObsSpan(span *Span) {
 	l.spanEventsCh <- event
 }
 
+// BuildSpanEvent constructs the LLMObsSpanEvent for a finished span without
+// submitting it. The span must be finished before calling this method so that
+// duration is available. The returned event is not size-tracked or truncated.
+func (l *LLMObs) BuildSpanEvent(span *Span) *transport.LLMObsSpanEvent {
+	return l.buildSpanEvent(span)
+}
+
 func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
+	ev := l.buildSpanEvent(span)
+	if b, err := json.Marshal(ev); err == nil {
+		rawSize := len(b)
+		trackSpanEventRawSize(ev, rawSize)
+
+		truncated := false
+		if rawSize > sizeLimitEVPEvent {
+			log.Warn(
+				"llmobs: dropping llmobs span event input/output because its size (%s) exceeds the event size limit (5MB)",
+				readableBytes(rawSize),
+			)
+			truncated = dropSpanEventIO(ev)
+		}
+		actualSize := rawSize
+		if truncated {
+			if b, err := json.Marshal(ev); err == nil {
+				actualSize = len(b)
+			}
+		}
+		trackSpanEventSize(ev, actualSize, truncated)
+	}
+	return ev
+}
+
+func (l *LLMObs) buildSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	meta := make(map[string]any)
 
 	spanKind := span.spanKind
@@ -593,7 +625,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		ddAttrs.Scope = span.scope
 	}
 
-	ev := &transport.LLMObsSpanEvent{
+	return &transport.LLMObsSpanEvent{
 		SpanID:           spanID,
 		TraceID:          span.llmTraceID,
 		ParentID:         parentID,
@@ -610,30 +642,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		SpanLinks:        span.spanLinks,
 		DDAttributes:     ddAttrs,
 	}
-	if b, err := json.Marshal(ev); err == nil {
-		rawSize := len(b)
-		trackSpanEventRawSize(ev, rawSize)
-
-		truncated := false
-		if rawSize > sizeLimitEVPEvent {
-			log.Warn(
-				"llmobs: dropping llmobs span event input/output because its size (%s) exceeds the event size limit (5MB)",
-				readableBytes(rawSize),
-			)
-			truncated = dropSpanEventIO(ev)
-			if !truncated {
-				log.Debug("llmobs: attempted to drop span event IO but it was not present")
-			}
-		}
-		actualSize := rawSize
-		if truncated {
-			if b, err := json.Marshal(ev); err == nil {
-				actualSize = len(b)
-			}
-		}
-		trackSpanEventSize(ev, actualSize, truncated)
-	}
-	return ev
 }
 
 func dropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {
