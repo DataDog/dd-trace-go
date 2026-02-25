@@ -120,24 +120,24 @@ loop:
 	}
 }
 
-// nopRoundTripper is an http.RoundTripper that immediately returns 404 for all
+// noopRoundTripper is an http.RoundTripper that immediately returns 404 for all
 // requests without performing any network I/O. Used inside synctest bubbles to
 // prevent DNS resolution and TCP connects from violating the bubble boundary.
-type nopRoundTripper struct{}
+type noopRoundTripper struct{}
 
-func (nopRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+func (noopRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 	return &http.Response{
 		StatusCode: http.StatusNotFound,
 		Body:       io.NopCloser(strings.NewReader("")),
 	}, nil
 }
 
-// withNopInfoHTTPClient returns a StartOption that provides an HTTP client with
+// withNoopInfoHTTPClient returns a StartOption that provides an HTTP client with
 // a mock transport. This prevents the /info agent-discovery request from doing
 // any DNS resolution or network I/O inside a synctest bubble, while still
 // allowing the tracer to use agentTraceWriter (unlike WithLambdaMode).
-func withNopInfoHTTPClient() StartOption {
-	return WithHTTPClient(&http.Client{Transport: nopRoundTripper{}})
+func withNoopInfoHTTPClient() StartOption {
+	return WithHTTPClient(&http.Client{Transport: noopRoundTripper{}})
 }
 
 // setLogWriter sets the io.Writer that any new logTraceWriter will write to and returns a function
@@ -1541,7 +1541,7 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 func TestTracerAtomicFlush(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, transport, flush, stop, err := startTestTracer(t, withNopInfoHTTPClient(), withNoopStats())
+		tracer, transport, flush, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
 		assert.Nil(err)
 		defer stop()
 
@@ -1721,7 +1721,7 @@ func TestTracerRace(t *testing.T) {
 // Here, we just wait until things show up, as we would do with a real program.
 func TestWorker(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		tracer, transport, flush, stop, err := startTestTracer(t, withNopInfoHTTPClient(), withNoopStats())
+		tracer, transport, flush, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
 		assert.Nil(t, err)
 		defer stop()
 

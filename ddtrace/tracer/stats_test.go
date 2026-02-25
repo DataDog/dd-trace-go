@@ -35,7 +35,7 @@ func TestAlignTs(t *testing.T) {
 
 func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env string) *config {
 	assert := assert.New(t)
-	cfg, err := newTestConfig(withNopInfoHTTPClient(), func(c *config) {
+	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
 		c.transport = transport
 		c.internalConfig.SetEnv(env, internalconfig.OriginCode)
 	})
@@ -45,7 +45,7 @@ func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env str
 
 func newTestConfigWithTransport(t *testing.T, transport transport) *config {
 	assert := assert.New(t)
-	cfg, err := newTestConfig(withNopInfoHTTPClient(), func(c *config) {
+	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
 		c.transport = transport
 	})
 	assert.NoError(err)

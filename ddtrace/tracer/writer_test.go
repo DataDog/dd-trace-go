@@ -639,8 +639,8 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		var tg statsdtest.TestStatsdClient
-		// withNopInfoHTTPClient prevents DNS resolution for /info agent-discovery inside the bubble.
-		cfg, err := newTestConfig(withStatsdClient(&tg), withNopInfoHTTPClient())
+		// withNoopInfoHTTPClient prevents DNS resolution for /info agent-discovery inside the bubble.
+		cfg, err := newTestConfig(withStatsdClient(&tg), withNoopInfoHTTPClient())
 		require.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)

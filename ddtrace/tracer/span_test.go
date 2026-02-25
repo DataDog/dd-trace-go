@@ -153,8 +153,8 @@ func TestSpanFinish(t *testing.T) {
 		assert := assert.New(t)
 		wait := time.Millisecond * 2
 		// Use dummyTransport + nop HTTP client to avoid network I/O inside the synctest bubble.
-		// withNopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
-		tracer, err := newTracer(withTransport(newDummyTransport()), withNoopStats(), withNopInfoHTTPClient())
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
+		tracer, err := newTracer(withTransport(newDummyTransport()), withNoopStats(), withNoopInfoHTTPClient())
 		defer tracer.Stop()
 		assert.NoError(err)
 		span := tracer.newRootSpan("pylons.request", "pylons", "/")
@@ -172,9 +172,9 @@ func TestSpanFinishTwice(t *testing.T) {
 		assert := assert.New(t)
 		wait := time.Millisecond * 2
 
-		// withNopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
 		// withNoopStats prevents the statsd client from doing DNS resolution inside the bubble.
-		tracer, _, _, stop, err := startTestTracer(t, withNopInfoHTTPClient(), withNoopStats())
+		tracer, _, _, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
 		assert.Nil(err)
 		defer stop()
 
@@ -1096,9 +1096,9 @@ func TestUniqueTagKeys(t *testing.T) {
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		// withNopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
 		// withNoopStats prevents the statsd client from doing DNS resolution inside the bubble.
-		tracer, _, _, stop, err := startTestTracer(t, withNopInfoHTTPClient(), withNoopStats())
+		tracer, _, _, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
 		assert.Nil(t, err)
 		defer stop()
 
@@ -1438,9 +1438,9 @@ func TestRootSpanAccessor(t *testing.T) {
 func TestSpanStartAndFinishLogs(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tp := new(log.RecordLogger)
-		// withNopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
 		// withNoopStats prevents the statsd client from doing DNS resolution inside the bubble.
-		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugMode(true), withNopInfoHTTPClient(), withNoopStats())
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugMode(true), withNoopInfoHTTPClient(), withNoopStats())
 		assert.Nil(t, err)
 		defer stop()
 

@@ -64,7 +64,7 @@ func TestAbandonedSpansMetric(t *testing.T) {
 			var tg statsdtest.TestStatsdClient
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg), withNopInfoHTTPClient())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg), withNoopInfoHTTPClient())
 			assert.NoError(err)
 			defer stop()
 			s := tracer.StartSpan("operation", StartTime(bubbleNow.Add(-10*time.Minute)))
@@ -79,7 +79,7 @@ func TestAbandonedSpansMetric(t *testing.T) {
 			var tg statsdtest.TestStatsdClient
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg), withNopInfoHTTPClient())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg), withNoopInfoHTTPClient())
 			assert.NoError(err)
 			defer stop()
 			tracer.StartSpan("operation", StartTime(bubbleNow.Add(-10*time.Minute)), Tag(ext.Component, "some_integration_name"))
@@ -102,7 +102,7 @@ func TestAbandonedSpansMetric(t *testing.T) {
 			var tg statsdtest.TestStatsdClient
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg), withNopInfoHTTPClient())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withStatsdClient(&tg), withNoopInfoHTTPClient())
 			assert.NoError(err)
 			defer stop()
 			sf := tracer.StartSpan("op", StartTime(bubbleNow.Add(-10*time.Minute)))
@@ -139,7 +139,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			defer stop()
 			s := tracer.StartSpan("operation", StartTime(bubbleNow.Add(-10*time.Minute)))
@@ -155,7 +155,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			defer stop()
 			s := tracer.StartSpan("operation", StartTime(bubbleNow.Add(-10*time.Minute)))
@@ -174,7 +174,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			defer stop()
 			sf := tracer.StartSpan("op", StartTime(bubbleNow.Add(-10*time.Minute)))
@@ -199,7 +199,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(3*time.Minute), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(3*time.Minute), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			defer stop()
 			// s1 is 10 min old (older than 3 min timeout) → should be logged
@@ -226,7 +226,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(10*time.Minute), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(10*time.Minute), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			defer stop()
 			// s1 is 9 min old (newer than 10 min timeout) → should not be logged
@@ -246,7 +246,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			defer stop()
 			var sb strings.Builder
@@ -272,7 +272,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(100*time.Millisecond), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(100*time.Millisecond), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			defer stop()
 			var sb strings.Builder
@@ -302,7 +302,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(100*time.Millisecond), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(100*time.Millisecond), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			var sb strings.Builder
 			sb.WriteString(warnPrefix)
@@ -323,7 +323,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			defer stop()
 
@@ -344,7 +344,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			bubbleNow := time.Now()
 			assert := assert.New(t)
 			tp.Reset()
-			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNopInfoHTTPClient(), withNoopStats())
+			tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugSpansMode(500*time.Millisecond), withNoopInfoHTTPClient(), withNoopStats())
 			assert.Nil(err)
 			// Forget to revert this global variable will lead to broken tests if run multiples times through `-count`.
 			logSize = 10
