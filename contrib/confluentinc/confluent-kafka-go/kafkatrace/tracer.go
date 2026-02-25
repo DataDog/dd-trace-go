@@ -37,6 +37,10 @@ func (tr *Tracer) DSMEnabled() bool {
 	return tr.dsmEnabled
 }
 
+func (tr *Tracer) ClusterID() string {
+	return tr.clusterID
+}
+
 type Option interface {
 	apply(*Tracer)
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace"
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -179,6 +180,36 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, expected.GetHash(), p.GetHash())
 		})
 	}
+}
+
+func TestConsumerFunctionalWithClusterID(t *testing.T) {
+	testClusterID := "test-cluster-123"
+	action := func(c *Consumer) (*kafka.Message, error) {
+		return c.ReadMessage(3000 * time.Millisecond)
+	}
+	spans, msg := produceThenConsume(t, action,
+		[]Option{WithDataStreams(), kafkatrace.WithClusterID(testClusterID)},
+		[]Option{WithDataStreams(), kafkatrace.WithClusterID(testClusterID)},
+		false,
+	)
+	require.Len(t, spans, 2)
+
+	// Verify cluster ID is set as a span tag on both produce and consume spans
+	s0 := spans[0] // produce
+	assert.Equal(t, testClusterID, s0.Tag(ext.MessagingKafkaClusterID))
+	s1 := spans[1] // consume
+	assert.Equal(t, testClusterID, s1.Tag(ext.MessagingKafkaClusterID))
+
+	// Verify DSM pathway hash includes kafka_cluster_id in edge tags
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
+	assert.True(t, ok)
+	mt := mocktracer.Start()
+	ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+testClusterID)
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+testClusterID)
+	expected, _ := datastreams.PathwayFromContext(expectedCtx)
+	mt.Stop()
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
 }
 
 // This tests the deprecated behavior of using cfg.context as the context passed via kafka messages
@@ -428,9 +459,13 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 			return m
 		}
 		backlogsMap := toMap(backlogs)
-		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce")
+		clusterTag := ""
+		if c.tracer.ClusterID() != "" {
+			clusterTag = "kafka_cluster_id:" + c.tracer.ClusterID()
+		}
+		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce"+clusterTag)
 	}
 	return spans, msg2
 }
