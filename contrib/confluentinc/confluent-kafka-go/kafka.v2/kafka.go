@@ -39,10 +39,10 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, WithConfig(conf))
 	if clusterID := fetchClusterIDFromConsumer(c); clusterID != "" {
-		opts = append(opts, kafkatrace.WithClusterID(clusterID))
+		opts = append([]Option{kafkatrace.WithClusterID(clusterID)}, opts...)
 	}
+	opts = append(opts, WithConfig(conf))
 	return WrapConsumer(c, opts...), nil
 }
 
@@ -52,10 +52,10 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, WithConfig(conf))
 	if clusterID := fetchClusterIDFromProducer(p); clusterID != "" {
-		opts = append(opts, kafkatrace.WithClusterID(clusterID))
+		opts = append([]Option{kafkatrace.WithClusterID(clusterID)}, opts...)
 	}
+	opts = append(opts, WithConfig(conf))
 	return WrapProducer(p, opts...), nil
 }
 

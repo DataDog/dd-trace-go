@@ -172,8 +172,14 @@ func TestConsumerFunctional(t *testing.T) {
 			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
 			mt := mocktracer.Start()
-			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
-			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+			produceTags := []string{"direction:out", "topic:" + testTopic, "type:kafka"}
+			consumeTags := []string{"group:" + testGroupID, "direction:in", "topic:" + testTopic, "type:kafka"}
+			if clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string); ok && clusterID != "" {
+				produceTags = append(produceTags, "kafka_cluster_id:"+clusterID)
+				consumeTags = append(consumeTags, "kafka_cluster_id:"+clusterID)
+			}
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), produceTags...)
+			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, consumeTags...)
 			expected, _ := datastreams.PathwayFromContext(expectedCtx)
 			mt.Stop()
 			assert.NotEqual(t, expected.GetHash(), 0)
