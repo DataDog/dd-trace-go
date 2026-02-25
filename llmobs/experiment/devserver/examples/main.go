@@ -139,11 +139,30 @@ func main() {
 			Task:        task,
 			Dataset:     ds,
 			Evaluators:  evaluators,
-			DefaultConfig: map[string]any{
-				"model":         "gpt-3.5-turbo",
-				"accuracy":      1.0,
-				"prefix":        "",
-				"system_prompt": "You are a geography expert. Answer with just the city name.",
+			Parameters: map[string]*devserver.ParamDef{
+				"model": {
+					Type:        devserver.ParamTypeString,
+					Default:     "gpt-3.5-turbo",
+					Description: "LLM model to use",
+					Choices:     []any{"gpt-3.5-turbo", "gpt-4", "claude-3-sonnet"},
+				},
+				"system_prompt": {
+					Type:        devserver.ParamTypePrompt,
+					Default:     "You are a geography expert. Answer with just the city name.",
+					Description: "System prompt sent to the LLM",
+				},
+				"accuracy": {
+					Type:        devserver.ParamTypeNumber,
+					Default:     1.0,
+					Description: "Simulated correctness rate",
+					Min:         ptr(0.0),
+					Max:         ptr(1.0),
+				},
+				"prefix": {
+					Type:        devserver.ParamTypeString,
+					Default:     "",
+					Description: "Text prepended to every answer",
+				},
 			},
 			Tags: map[string]string{"env": "dev"},
 		}},
@@ -167,3 +186,5 @@ func main() {
 		log.Fatalf("server error: %v", err)
 	}
 }
+
+func ptr(f float64) *float64 { return &f }

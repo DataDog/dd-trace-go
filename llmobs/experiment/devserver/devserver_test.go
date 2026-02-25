@@ -67,9 +67,9 @@ func TestListHandler(t *testing.T) {
 		Task:        task,
 		Dataset:     ds,
 		Evaluators:  evaluators,
-		DefaultConfig: map[string]any{
-			"model":       "gpt-4",
-			"temperature": 0.7,
+		Parameters: map[string]*ParamDef{
+			"model":       {Type: ParamTypeString, Default: "gpt-4", Description: "LLM model"},
+			"temperature": {Type: ParamTypeNumber, Default: 0.7, Description: "Sampling temperature"},
 		},
 		Tags: map[string]string{"env": "test"},
 	}}
@@ -96,7 +96,10 @@ func TestListHandler(t *testing.T) {
 		assert.Equal(t, "test-task", exps[0].TaskName)
 		assert.Equal(t, 2, exps[0].DatasetLen)
 		assert.ElementsMatch(t, []string{"exact-match", "similarity"}, exps[0].Evaluators)
-		assert.Equal(t, map[string]any{"model": "gpt-4", "temperature": 0.7}, exps[0].DefaultConfig)
+		require.Len(t, exps[0].Parameters, 2)
+		assert.Equal(t, ParamTypeString, exps[0].Parameters["model"].Type)
+		assert.Equal(t, "gpt-4", exps[0].Parameters["model"].Default)
+		assert.Equal(t, ParamTypeNumber, exps[0].Parameters["temperature"].Type)
 	})
 
 	t.Run("method-not-allowed", func(t *testing.T) {
@@ -303,9 +306,9 @@ func TestEvalHandlerConfigOverride(t *testing.T) {
 		Task:        task,
 		Dataset:     ds,
 		Evaluators:  nil,
-		DefaultConfig: map[string]any{
-			"model":       "gpt-3.5",
-			"temperature": 0.5,
+		Parameters: map[string]*ParamDef{
+			"model":       {Type: ParamTypeString, Default: "gpt-3.5"},
+			"temperature": {Type: ParamTypeNumber, Default: 0.5},
 		},
 	}}
 	registry := NewRegistry(defs)

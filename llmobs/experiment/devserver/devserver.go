@@ -30,7 +30,7 @@ type ExperimentDefinition struct {
 	Dataset           *dataset.Dataset
 	Evaluators        []experiment.Evaluator
 	SummaryEvaluators []experiment.SummaryEvaluator
-	DefaultConfig     map[string]any
+	Parameters        map[string]*ParamDef
 	Tags              map[string]string
 }
 
