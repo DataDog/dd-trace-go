@@ -69,6 +69,8 @@ type StatsBucket struct {
 	Transactions []byte
 	// TransactionCheckpointIds is a packed binary blob mapping checkpoint IDs to names.
 	// Each entry is: [id uint8][nameLen uint8][name bytes].
+	// This custom binary encoding (rather than a msgpack array of structs) matches the
+	// Java tracer's wire format; the backend expects this exact layout.
 	// The name uses Ids (not IDs) to match the msgpack wire key expected by the backend.
 	TransactionCheckpointIds []byte //nolint:revive
 }
