@@ -173,6 +173,10 @@ type Client struct {
 
 	lastError        error
 	lastConfigStates []*configState
+
+	// agentRCDisabled is set to true when the agent returns 404 on /v0.7/config,
+	// indicating RC is disabled on the agent side. Protected by the Client's RWMutex.
+	agentRCDisabled bool
 }
 
 // subscription represents a callback that was registered to run on updates to a
@@ -303,6 +307,10 @@ func Reset() {
 }
 
 func (c *Client) updateState() {
+	if c.agentRCDisabled {
+		return // agent has signalled RC is disabled; polling suspended
+	}
+
 	data, err := c.newUpdateRequest()
 	if err != nil {
 		log.Error("remoteconfig: unexpected error while creating a new update request payload: %s", err.Error())
@@ -333,6 +341,12 @@ func (c *Client) updateState() {
 	}()
 
 	if sc := resp.StatusCode; sc != http.StatusOK {
+		if sc == http.StatusNotFound {
+			c.agentRCDisabled = true
+			log.Warn("remoteconfig: agent returned 404 on /v0.7/config; " +
+				"the agent likely has remote configuration disabled. " +
+				"RC polling suspended until service restart.")
+		}
 		log.Debug("remoteconfig: http request error: response status code is not 200 (OK) but %s", http.StatusText(sc))
 		return
 	}

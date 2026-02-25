@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
@@ -599,4 +601,31 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("allCapabilities deadlocked with concurrent subscribe")
 	}
+}
+
+func TestUpdateState404SuspendsPolling(t *testing.T) {
+	requestCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test-404"
+	cfg.HTTP = srv.Client()
+	c, err := newClient(cfg)
+	require.NoError(t, err)
+	c.endpoint = srv.URL
+
+	// First call: should hit the server and set agentRCDisabled.
+	assert.False(t, c.agentRCDisabled)
+	c.updateState()
+	assert.True(t, c.agentRCDisabled)
+	assert.Equal(t, 1, requestCount)
+
+	// Subsequent calls: should be no-ops (no HTTP requests made).
+	c.updateState()
+	c.updateState()
+	assert.Equal(t, 1, requestCount, "no additional requests should be made after 404")
 }
