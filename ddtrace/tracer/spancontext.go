@@ -637,6 +637,7 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 // updateTracerGitMetadataTags updates the tracer git metadata tags on the given span.
 // +checklocks:s.mu
 func updateTracerGitMetadataTags(s *Span) {
+	assert.RWMutexLocked(&s.mu)
 	gitMetadataTags := sharedinternal.GetGitMetadataTags()
 	for ix := range sharedinternal.TracerGitMetadataKeys {
 		pair := sharedinternal.TracerGitMetadataKeys[ix]
@@ -874,6 +875,7 @@ func deriveAWSPeerService(sm map[string]string) string {
 // s.mu must be held for reading.
 // +checklocks:s.mu
 func (s *Span) hasMetaKeyLocked(tag string) bool {
+	assert.RWMutexLocked(&s.mu)
 	_, ok := s.meta[tag]
 	return ok
 }

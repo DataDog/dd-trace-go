@@ -635,6 +635,7 @@ func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames
 // s.mu must be held for writing.
 // +checklocks:s.mu
 func (s *Span) setErrorFlagLocked(yes bool) {
+	assert.RWMutexLocked(&s.mu)
 	if yes {
 		if s.error == 0 {
 			// new error
