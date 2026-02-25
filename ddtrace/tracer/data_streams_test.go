@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestTrackTransactionPublicAPI verifies that TrackTransaction correctly
+// TestTrackDataStreamsTransactionPublicAPI verifies that TrackDataStreamsTransaction correctly
 // delegates to the underlying DSM processor when one is active.
-func TestTrackTransactionPublicAPI(t *testing.T) {
+func TestTrackDataStreamsTransactionPublicAPI(t *testing.T) {
 	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	Start(withNoopStats())
@@ -24,5 +24,5 @@ func TestTrackTransactionPublicAPI(t *testing.T) {
 	assert.NotNil(t, tr.GetDataStreamsProcessor(), "DSM processor should be non-nil when DD_DATA_STREAMS_ENABLED=true")
 
 	// Should not panic and should reach the processor.
-	TrackTransaction("msg-001", "ingested")
+	TrackDataStreamsTransaction("msg-001", "ingested")
 }
