@@ -635,6 +635,7 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 }
 
 // updateTracerGitMetadataTags updates the tracer git metadata tags on the given span.
+// +checklocks:s.mu
 func updateTracerGitMetadataTags(s *Span) {
 	gitMetadataTags := sharedinternal.GetGitMetadataTags()
 	for ix := range sharedinternal.TracerGitMetadataKeys {
