@@ -7,6 +7,7 @@ package experiment
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/dataset"
 )
 
@@ -29,6 +30,8 @@ type ProgressEvent struct {
 	Output      any
 	Evaluations []*Evaluation
 	Error       error
+	SpanEvent   *transport.LLMObsSpanEvent            // The LLMObs span event for this record (available after task completes)
+	EvalMetrics []transport.ExperimentEvalMetricEvent // Eval metric events (available after evaluations complete)
 }
 
 type newCfg struct {

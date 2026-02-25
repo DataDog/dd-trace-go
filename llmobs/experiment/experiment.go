@@ -157,6 +157,10 @@ type RecordResult struct {
 	TraceID     string    // Trace ID for tracing
 	Timestamp   time.Time // When the task was executed
 	Error       error     // Any error that occurred during task execution
+
+	// Span and eval metric events (for devserver streaming)
+	SpanEvent   *transport.LLMObsSpanEvent            // The LLMObs span event emitted for this record
+	EvalMetrics []transport.ExperimentEvalMetricEvent // Eval metric events for this record
 }
 
 // Evaluation represents the output of an evaluator.
@@ -307,6 +311,7 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 						Status:      ProgressError,
 						Record:      &recCopy,
 						Error:       res.Error,
+						SpanEvent:   res.SpanEvent,
 					})
 				}
 				retErr := fmt.Errorf("failed to process record %d: %w", i, res.Error)
@@ -320,6 +325,7 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 					Status:      ProgressTaskComplete,
 					Record:      &recCopy,
 					Output:      res.Output,
+					SpanEvent:   res.SpanEvent,
 				})
 			}
 			results[i] = res
@@ -336,9 +342,7 @@ func (e *Experiment) runTask(ctx context.Context, llmobs *illmobs.LLMObs, cfg *r
 }
 
 func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMObs, recIdx int, rec dataset.Record) *RecordResult {
-	var err error
 	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, illmobs.StartSpanConfig{})
-	defer span.Finish(illmobs.FinishSpanConfig{Error: err})
 
 	tags := make(map[string]string)
 	maps.Copy(tags, e.cfg.tags)
@@ -358,6 +362,9 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 		Tags:                     tags,
 	})
 
+	span.Finish(illmobs.FinishSpanConfig{Error: err})
+	spanEvent := llmobs.BuildSpanEvent(span)
+
 	return &RecordResult{
 		Record:      &rec,
 		Output:      out,
@@ -366,6 +373,7 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 		TraceID:     span.TraceID(),
 		Timestamp:   span.StartTime(),
 		Error:       err,
+		SpanEvent:   spanEvent,
 	}
 }
 
@@ -397,6 +405,7 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*RecordResult,
 				})
 			}
 			res.Evaluations = evs
+			res.EvalMetrics = e.buildRecordEvalMetrics(res)
 			if cfg.progressCallback != nil {
 				cfg.progressCallback(ProgressEvent{
 					RecordIndex: res.RecordIndex,
@@ -404,6 +413,8 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*RecordResult,
 					Record:      res.Record,
 					Output:      res.Output,
 					Evaluations: res.Evaluations,
+					SpanEvent:   res.SpanEvent,
+					EvalMetrics: res.EvalMetrics,
 				})
 				cfg.progressCallback(ProgressEvent{
 					RecordIndex: res.RecordIndex,
@@ -411,6 +422,8 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*RecordResult,
 					Record:      res.Record,
 					Output:      res.Output,
 					Evaluations: res.Evaluations,
+					SpanEvent:   res.SpanEvent,
+					EvalMetrics: res.EvalMetrics,
 				})
 			}
 			return nil
@@ -446,24 +459,34 @@ func (e *Experiment) runSummaryEvaluators(ctx context.Context, results []*Record
 	return summaryEvals, nil
 }
 
-func (e *Experiment) generateMetrics(results []*RecordResult, summaryEvals []*Evaluation) []transport.ExperimentEvalMetricEvent {
-	metrics := make([]transport.ExperimentEvalMetricEvent, 0, len(results)+len(summaryEvals))
+func (e *Experiment) buildRecordEvalMetrics(res *RecordResult) []transport.ExperimentEvalMetricEvent {
+	metrics := make([]transport.ExperimentEvalMetricEvent, 0, len(res.Evaluations))
+	for _, ev := range res.Evaluations {
+		metrics = append(metrics, e.generateMetricEvent(ev, "custom", res.SpanID, res.TraceID, res.Timestamp.UnixMilli()))
+	}
+	return metrics
+}
 
-	// Track latest timestamp for summary evaluations
+func (e *Experiment) generateMetrics(results []*RecordResult, summaryEvals []*Evaluation) []transport.ExperimentEvalMetricEvent {
+	var metrics []transport.ExperimentEvalMetricEvent
 	var latestTimestamp time.Time
 
-	// Generate metrics from per-record evaluations
 	for _, res := range results {
 		if res.Timestamp.After(latestTimestamp) {
 			latestTimestamp = res.Timestamp
 		}
-		for _, ev := range res.Evaluations {
-			metrics = append(metrics, e.generateMetricEvent(ev, "custom", res.SpanID, res.TraceID, res.Timestamp.UnixMilli()))
+		// Reuse pre-computed eval metrics when available (e.g. from runEvaluators),
+		// otherwise generate them on the fly.
+		if len(res.EvalMetrics) > 0 {
+			metrics = append(metrics, res.EvalMetrics...)
+		} else {
+			for _, ev := range res.Evaluations {
+				metrics = append(metrics, e.generateMetricEvent(ev, "custom", res.SpanID, res.TraceID, res.Timestamp.UnixMilli()))
+			}
 		}
 	}
 
-	// Generate metrics from summary evaluations.
-	// Summary evaluations don't have associated spans, so we use empty span/trace IDs and latest timestamp.
+	// Summary evaluations are not tied to individual spans.
 	latestMS := latestTimestamp.UnixMilli()
 	for _, sumEv := range summaryEvals {
 		metrics = append(metrics, e.generateMetricEvent(sumEv, "summary", "", "", latestMS))

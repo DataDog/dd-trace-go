@@ -241,6 +241,53 @@ func TestEvalHandlerStreaming(t *testing.T) {
 	assert.Equal(t, 2, statusSeen["task_complete"])
 	assert.Equal(t, 2, statusSeen["evaluations_complete"])
 	assert.Equal(t, 2, statusSeen["success"])
+
+	// Verify "success" events contain span and eval_metrics
+	for _, pe := range progressEvents {
+		data := pe.Data.(map[string]any)
+		if data["status"] != "success" {
+			continue
+		}
+
+		// Verify span event is present with expected fields
+		span, ok := data["span"].(map[string]any)
+		require.True(t, ok, "success event should contain a span object")
+		assert.NotEmpty(t, span["span_id"], "span should have span_id")
+		assert.NotEmpty(t, span["trace_id"], "span should have trace_id")
+		assert.Equal(t, "ok", span["status"])
+
+		meta, ok := span["meta"].(map[string]any)
+		require.True(t, ok, "span should have meta")
+		assert.Equal(t, "experiment", meta["span.kind"])
+		assert.NotNil(t, meta["input"], "span meta should have input")
+		assert.NotNil(t, meta["output"], "span meta should have output")
+		assert.NotNil(t, meta["expected_output"], "span meta should have expected_output")
+
+		// Verify eval_metrics are present
+		evalMetrics, ok := data["eval_metrics"].([]any)
+		require.True(t, ok, "success event should contain eval_metrics array")
+		assert.Len(t, evalMetrics, 2, "should have 2 eval metrics (exact-match + similarity)")
+
+		for _, em := range evalMetrics {
+			metric := em.(map[string]any)
+			assert.NotEmpty(t, metric["span_id"])
+			assert.NotEmpty(t, metric["trace_id"])
+			assert.NotEmpty(t, metric["label"])
+			assert.NotEmpty(t, metric["metric_type"])
+			assert.NotEmpty(t, metric["experiment_id"])
+		}
+	}
+
+	// Verify "task_complete" events contain span
+	for _, pe := range progressEvents {
+		data := pe.Data.(map[string]any)
+		if data["status"] != "task_complete" {
+			continue
+		}
+		span, ok := data["span"].(map[string]any)
+		require.True(t, ok, "task_complete event should contain a span object")
+		assert.NotEmpty(t, span["span_id"])
+	}
 }
 
 func TestEvalHandlerWithSampleSize(t *testing.T) {

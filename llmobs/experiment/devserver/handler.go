@@ -194,10 +194,14 @@ func handleStreamingEval(w http.ResponseWriter, r *http.Request, exp *experiment
 			case experiment.ProgressRunning:
 				if pe.Record != nil {
 					pd.Input = pe.Record.Input
+					pd.ExpectedOutput = pe.Record.ExpectedOutput
 				}
 			case experiment.ProgressTaskComplete:
 				pd.Output = pe.Output
+				pd.Span = pe.SpanEvent
 			case experiment.ProgressEvaluationsComplete:
+				pd.Span = pe.SpanEvent
+				pd.EvalMetrics = pe.EvalMetrics
 				if pe.Evaluations != nil {
 					evals := make(map[string]any, len(pe.Evaluations))
 					for _, ev := range pe.Evaluations {
@@ -210,11 +214,13 @@ func handleStreamingEval(w http.ResponseWriter, r *http.Request, exp *experiment
 					pd.Evaluations = evals
 				}
 			case experiment.ProgressError:
+				pd.Span = pe.SpanEvent
 				if pe.Error != nil {
 					pd.Error = &ErrorData{Message: pe.Error.Error()}
 				}
 			case experiment.ProgressSuccess:
-				// no extra fields needed
+				pd.Span = pe.SpanEvent
+				pd.EvalMetrics = pe.EvalMetrics
 			}
 			writeEvent(StreamEvent{Event: "progress", Data: pd})
 		}),
