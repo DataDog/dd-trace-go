@@ -257,9 +257,9 @@ func handleSyncEval(w http.ResponseWriter, r *http.Request, exp *experiment.Expe
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"experiment_name": result.ExperimentName,
-		"dataset_name":   result.DatasetName,
-		"results":        result.Results,
-		"scores":         scores,
+		"dataset_name":    result.DatasetName,
+		"results":         result.Results,
+		"scores":          scores,
 	})
 }
 

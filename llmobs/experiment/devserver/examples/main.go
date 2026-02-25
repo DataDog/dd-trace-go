@@ -14,7 +14,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -33,7 +32,8 @@ func main() {
 		tracer.WithLLMObsProjectName("devserver-example"),
 		tracer.WithService("devserver-example"),
 	); err != nil {
-		log.Fatalf("failed to start tracer: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to start tracer: %v\n", err)
+		os.Exit(1)
 	}
 	defer tracer.Stop()
 
@@ -46,7 +46,8 @@ func main() {
 			{Input: map[string]any{"question": "What is the capital of Japan?"}, ExpectedOutput: "Tokyo"},
 		})
 		if err != nil {
-			log.Fatalf("failed to create dataset: %v", err)
+			fmt.Fprintf(os.Stderr, "failed to create dataset: %v\n", err)
+			os.Exit(1)
 		}
 	}
 
@@ -183,7 +184,8 @@ func main() {
 	defer stop()
 
 	if err := srv.ListenAndServe(ctx); err != nil {
-		log.Fatalf("server error: %v", err)
+		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+		os.Exit(1)
 	}
 }
 

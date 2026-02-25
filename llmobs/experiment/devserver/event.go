@@ -27,15 +27,15 @@ type StartEventData struct {
 
 // ProgressEventData is the payload for "progress" events.
 type ProgressEventData struct {
-	RowIndex       int                                    `json:"row_index"`
-	Status         string                                 `json:"status"`
-	Input          any                                    `json:"input,omitempty"`
-	ExpectedOutput any                                    `json:"expected_output,omitempty"`
-	Output         any                                    `json:"output,omitempty"`
-	Error          *ErrorData                             `json:"error,omitempty"`
-	Evaluations    map[string]any                         `json:"evaluations,omitempty"`
-	Span           *transport.LLMObsSpanEvent             `json:"span,omitempty"`
-	EvalMetrics    []transport.ExperimentEvalMetricEvent   `json:"eval_metrics,omitempty"`
+	RowIndex       int                                   `json:"row_index"`
+	Status         string                                `json:"status"`
+	Input          any                                   `json:"input,omitempty"`
+	ExpectedOutput any                                   `json:"expected_output,omitempty"`
+	Output         any                                   `json:"output,omitempty"`
+	Error          *ErrorData                            `json:"error,omitempty"`
+	Evaluations    map[string]any                        `json:"evaluations,omitempty"`
+	Span           *transport.LLMObsSpanEvent            `json:"span,omitempty"`
+	EvalMetrics    []transport.ExperimentEvalMetricEvent `json:"eval_metrics,omitempty"`
 }
 
 // SummaryEventData is the payload for the "summary" event.
