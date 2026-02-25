@@ -117,7 +117,8 @@ func startTelemetry(c *config) telemetry.Client {
 	// When the agent was unreachable at startup, we still set the URL so that
 	// telemetry is attempted rather than silently dropped.
 	// When the spans are emitted on stdout it means there is no agent at all in the env.
-	if (!c.agent.reachable || c.agent.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
+	a := c.agent.load()
+	if (!a.reachable || a.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
 		cfg.AgentURL = c.agentURL.String()
 	}
 	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
