@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -337,9 +338,12 @@ func TestEvalHandlerConfigOverride(t *testing.T) {
 	ds := createTestDataset(t)
 
 	// Task that reads config
+	var mu sync.Mutex
 	var capturedCfg map[string]any
 	task := experiment.NewTask("config-task", func(ctx context.Context, rec dataset.Record, experimentCfg map[string]any) (any, error) {
+		mu.Lock()
 		capturedCfg = experimentCfg
+		mu.Unlock()
 		return "result", nil
 	})
 
