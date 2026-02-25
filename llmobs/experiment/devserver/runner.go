@@ -24,10 +24,10 @@ func mergeConfig(defaults, overrides map[string]any) map[string]any {
 }
 
 // filterEvaluators returns only the evaluators whose names appear in the given list.
-// If names is empty, all evaluators are returned.
+// If names is empty, no evaluators are returned (opt-in behavior).
 func filterEvaluators(all []experiment.Evaluator, names []string) []experiment.Evaluator {
 	if len(names) == 0 {
-		return all
+		return nil
 	}
 	nameSet := make(map[string]struct{}, len(names))
 	for _, n := range names {

@@ -196,7 +196,7 @@ func TestEvalHandlerStreaming(t *testing.T) {
 	registry := NewRegistry(defs)
 	handler := NewEvalHandler(registry)
 
-	body, _ := json.Marshal(EvalRequest{Name: "test-exp", Stream: true})
+	body, _ := json.Marshal(EvalRequest{Name: "test-exp", Stream: true, Evaluators: []string{"exact-match", "similarity"}})
 	req := httptest.NewRequest(http.MethodPost, "/eval", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -264,6 +264,7 @@ func TestEvalHandlerWithSampleSize(t *testing.T) {
 		Name:       "test-exp",
 		Stream:     true,
 		SampleSize: 1,
+		Evaluators: []string{"exact-match", "similarity"},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/eval", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -498,7 +499,7 @@ func TestFilterEvaluators(t *testing.T) {
 
 	t.Run("no-filter", func(t *testing.T) {
 		result := filterEvaluators(all, nil)
-		assert.Len(t, result, 3)
+		assert.Empty(t, result)
 	})
 	t.Run("filter-subset", func(t *testing.T) {
 		result := filterEvaluators(all, []string{"a", "c"})
