@@ -584,6 +584,8 @@ func (t *tracer) refreshAgentFeatures() {
 		f.featureFlags = maps.Clone(current.featureFlags) // defensive copy of map
 		f.peerTags = slices.Clone(newFeatures.peerTags)   // defensive copy of slice
 		f.defaultEnv = current.defaultEnv
+		f.reachable = current.reachable
+		f.hasTelemetryProxy = current.hasTelemetryProxy
 		return f
 	})
 }

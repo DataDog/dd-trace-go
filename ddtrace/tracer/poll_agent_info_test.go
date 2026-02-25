@@ -39,7 +39,7 @@ func TestRefreshAgentFeaturesPreservesStaticFields(t *testing.T) {
 		if n == 1 {
 			// Startup response: set all static fields (v1, evpProxy, stats, etc.)
 			if err := json.NewEncoder(w).Encode(map[string]any{
-				"endpoints":           []string{"/v0.6/stats", "/evp_proxy/v2/", "/v1.0/traces"},
+				"endpoints":           []string{"/v0.6/stats", "/evp_proxy/v2/", "/v1.0/traces", "/telemetry/proxy/"},
 				"client_drop_p0s":     true,
 				"span_events":         true,
 				"span_meta_structs":   true,
@@ -81,6 +81,8 @@ func TestRefreshAgentFeaturesPreservesStaticFields(t *testing.T) {
 	// Sanity-check startup response was applied correctly.
 	assert.True(t, startup.DropP0s)
 	assert.True(t, startup.spanEventsAvailable)
+	assert.True(t, startup.reachable)
+	assert.True(t, startup.hasTelemetryProxy)
 
 	// Trigger one manual refresh (bypassing the ticker).
 	tr.refreshAgentFeatures()
@@ -101,6 +103,8 @@ func TestRefreshAgentFeaturesPreservesStaticFields(t *testing.T) {
 	assert.Equal(t, startup.metaStructAvailable, after.metaStructAvailable, "metaStructAvailable must not change after startup")
 	assert.Equal(t, startup.featureFlags, after.featureFlags, "featureFlags must not change after startup")
 	assert.Equal(t, startup.defaultEnv, after.defaultEnv, "defaultEnv must not change after startup")
+	assert.Equal(t, startup.reachable, after.reachable, "reachable must not change after startup")
+	assert.Equal(t, startup.hasTelemetryProxy, after.hasTelemetryProxy, "hasTelemetryProxy must not change after startup")
 }
 
 // TestPollAgentInfoUpdatesFeaturesDynamically verifies that periodic polling
