@@ -287,13 +287,19 @@ func TestShouldDrop(t *testing.T) {
 			s.setSamplingPriority(tt.prio, samplernames.Default)
 			s.SetTag(ext.EventSampleRate, tt.rate)
 			s.context.errors.Store(tt.errors)
-			assert.Equal(t, shouldKeep(s), tt.want)
+			s.mu.RLock()
+			result := shouldKeep(s)
+			s.mu.RUnlock()
+			assert.Equal(t, result, tt.want)
 		})
 	}
 
 	t.Run("none", func(t *testing.T) {
 		s := newSpan("", "", "", 1, 1, 0)
-		assert.Equal(t, shouldKeep(s), false)
+		s.mu.RLock()
+		result := shouldKeep(s)
+		s.mu.RUnlock()
+		assert.Equal(t, result, false)
 	})
 }
 
@@ -314,7 +320,11 @@ func TestShouldComputeStats(t *testing.T) {
 		{map[string]float64{}, false},
 	} {
 		t.Run("", func(t *testing.T) {
-			assert.Equal(t, shouldComputeStats(&Span{metrics: tt.metrics}), tt.want)
+			s := &Span{metrics: tt.metrics}
+			s.mu.RLock()
+			result := shouldComputeStats(s)
+			s.mu.RUnlock()
+			assert.Equal(t, result, tt.want)
 		})
 	}
 }
@@ -564,7 +574,10 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			assert.NoError(t, err)
 			span := tracer.newRootSpan("root span", "my service", "my resource")
 			span.SetTag(scenario.tag, true)
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			result := shouldKeep(span)
+			span.mu.RUnlock()
+			assert.Equal(t, scenario.keep, result)
 		})
 
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
@@ -575,7 +588,10 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx))
 			span.SetTag(scenario.tag, true)
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			result := shouldKeep(span)
+			span.mu.RUnlock()
+			assert.Equal(t, scenario.keep, result)
 		})
 		t.Run(fmt.Sprintf("%s/upstream-drop-locked", scenario.tag), func(t *testing.T) {
 			tracer, err := newTracer()
@@ -598,7 +614,10 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 
 			// The sampling decision should be applied as manual sampling takes
 			// precedence over propagated decision
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			result := shouldKeep(span)
+			span.mu.RUnlock()
+			assert.Equal(t, scenario.keep, result)
 		})
 		t.Run(fmt.Sprintf("%s/upstream-keep-locked", scenario.tag), func(t *testing.T) {
 			tracer, err := newTracer()
@@ -621,7 +640,10 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 
 			// The sampling decision should be applied as manual sampling takes
 			// precedence over propagated decision
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			result := shouldKeep(span)
+			span.mu.RUnlock()
+			assert.Equal(t, scenario.keep, result)
 		})
 	}
 }

@@ -17,7 +17,6 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -187,6 +186,7 @@ func (sr *SamplingRule) EqualsFalseNegative(other *SamplingRule) bool {
 }
 
 // match returns true when the span's details match all the expected values in the rule.
+// +checklocksignore — Called from Finish() before s.finish(); span fields read-only at this point.
 func (sr *SamplingRule) match(s *Span) bool {
 	if sr.Service != nil && !sr.Service.MatchString(s.service) {
 		return false
@@ -477,24 +477,11 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 }
 
 func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, sampler samplernames.SamplerName) {
-	// Use the helper method to apply the rate and execute sampling logic with the lock held
-	span.applyRateWithLock(rate, func() {
-		// Set the Knuth sampling rate tag when trace sampling rules are applied
-		span.setMetaLocked(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
-
-		if !sampledByRate(span.traceID, rate) {
-			span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
-			return
-		}
-
-		sampled, limiterRate := rs.limiter.allowOne(now)
-		if sampled {
-			span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
-		} else {
-			span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
-		}
-		span.setMetricLocked(keyRulesSamplerLimiterRate, limiterRate)
-	})
+	var limiter *rateLimiter
+	if rs != nil {
+		limiter = rs.limiter
+	}
+	span.applyTraceRuleSampling(rate, sampler, limiter, now)
 }
 
 // limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and
@@ -547,6 +534,7 @@ func (rs *singleSpanRulesSampler) enabled() bool {
 // apply uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, then it returns false and the span is not
 // modified.
+// +checklocksignore — Called on finished spans during trace flushing.
 func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 	for _, rule := range rs.rules {
 		if rule.match(span) {
