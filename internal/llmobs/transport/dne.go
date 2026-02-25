@@ -489,6 +489,9 @@ func (c *Transport) PushExperimentEvents(
 	metrics []ExperimentEvalMetricEvent,
 	tags []string,
 ) error {
+	if len(metrics) == 0 {
+		return nil
+	}
 	path := fmt.Sprintf("%s/experiments/%s/events", endpointPrefixDNE, url.PathEscape(experimentID))
 	method := http.MethodPost
 
