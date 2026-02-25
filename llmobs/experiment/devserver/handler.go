@@ -19,23 +19,23 @@ import (
 type EvalRequest struct {
 	Name           string         `json:"name"`
 	Stream         bool           `json:"stream"`
-	ConfigOverride map[string]any `json:"configOverride,omitempty"`
+	ConfigOverride map[string]any `json:"config_override,omitempty"`
 	Evaluators     []string       `json:"evaluators,omitempty"`
-	SampleSize     int            `json:"sampleSize,omitempty"`
-	DatasetName    string         `json:"datasetName,omitempty"`
+	SampleSize     int            `json:"sample_size,omitempty"`
+	DatasetName    string         `json:"dataset_name,omitempty"`
 }
 
 // listExperimentView is the JSON representation of a single experiment in /list.
 type listExperimentView struct {
-	Name        string                `json:"name"`
-	Description string                `json:"description"`
-	ProjectName string                `json:"projectName"`
-	TaskName    string                `json:"taskName"`
-	DatasetName string                `json:"datasetName"`
-	DatasetLen  int                   `json:"datasetLen"`
-	Evaluators  []string              `json:"evaluators"`
-	Parameters  map[string]*ParamDef  `json:"parameters"`
-	Tags        map[string]string     `json:"tags,omitempty"`
+	Name        string                  `json:"name"`
+	Description string                  `json:"description"`
+	ProjectName string                  `json:"project_name"`
+	TaskName    string                  `json:"task_name"`
+	DatasetName string                  `json:"dataset_name"`
+	DatasetLen  int                     `json:"dataset_len"`
+	Evaluators  []string                `json:"evaluators"`
+	Config      map[string]*ConfigField `json:"config"`
+	Tags        map[string]string       `json:"tags,omitempty"`
 }
 
 // NewListHandler returns an http.Handler for GET /list.
@@ -61,7 +61,7 @@ func NewListHandler(registry *Registry) http.Handler {
 				DatasetName: def.Dataset.Name(),
 				DatasetLen:  def.Dataset.Len(),
 				Evaluators:  evNames,
-				Parameters:  def.Parameters,
+				Config:      def.Config,
 				Tags:        def.Tags,
 			})
 		}
@@ -111,7 +111,7 @@ func NewEvalHandler(registry *Registry) http.Handler {
 			ds = pulled
 		}
 
-		mergedCfg := mergeConfig(defaultsFromParams(def.Parameters), req.ConfigOverride)
+		mergedCfg := mergeConfig(defaultsFromConfig(def.Config), req.ConfigOverride)
 		evaluators := filterEvaluators(def.Evaluators, req.Evaluators)
 
 		var opts []experiment.Option
@@ -250,8 +250,8 @@ func handleSyncEval(w http.ResponseWriter, r *http.Request, exp *experiment.Expe
 	scores := buildSummaryScores(result)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"experimentName": result.ExperimentName,
-		"datasetName":    result.DatasetName,
+		"experiment_name": result.ExperimentName,
+		"dataset_name":   result.DatasetName,
 		"results":        result.Results,
 		"scores":         scores,
 	})

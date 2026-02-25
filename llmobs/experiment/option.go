@@ -81,11 +81,11 @@ func WithSummaryEvaluators(summaryEvaluators ...SummaryEvaluator) Option {
 }
 
 type runCfg struct {
-	maxConcurrency       int
-	abortOnError         bool
-	sampleSize           int
-	progressCallback     func(ProgressEvent)
-	onExperimentCreated  func(id, name string)
+	maxConcurrency      int
+	abortOnError        bool
+	sampleSize          int
+	progressCallback    func(ProgressEvent)
+	onExperimentCreated func(id, name string)
 }
 
 func defaultRunCfg() *runCfg {

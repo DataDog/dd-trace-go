@@ -14,16 +14,16 @@ type StreamEvent struct {
 
 // StartEventData is the payload for the "start" event.
 type StartEventData struct {
-	ExperimentName string `json:"experimentName"`
-	ProjectName    string `json:"projectName"`
-	ExperimentID   string `json:"experimentId"`
-	DatasetName    string `json:"datasetName"`
-	TotalRows      int    `json:"totalRows"`
+	ExperimentName string `json:"experiment_name"`
+	ProjectName    string `json:"project_name"`
+	ExperimentID   string `json:"experiment_id"`
+	DatasetName    string `json:"dataset_name"`
+	TotalRows      int    `json:"total_rows"`
 }
 
 // ProgressEventData is the payload for "progress" events.
 type ProgressEventData struct {
-	RowIndex    int            `json:"rowIndex"`
+	RowIndex    int            `json:"row_index"`
 	Status      string         `json:"status"`
 	Input       any            `json:"input,omitempty"`
 	Output      any            `json:"output,omitempty"`

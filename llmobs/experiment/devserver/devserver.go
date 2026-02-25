@@ -30,7 +30,7 @@ type ExperimentDefinition struct {
 	Dataset           *dataset.Dataset
 	Evaluators        []experiment.Evaluator
 	SummaryEvaluators []experiment.SummaryEvaluator
-	Parameters        map[string]*ParamDef
+	Config            map[string]*ConfigField
 	Tags              map[string]string
 }
 
@@ -71,9 +71,8 @@ func (r *Registry) List() map[string]*ExperimentDefinition {
 // with CORS support. For embedding into other frameworks, use NewListHandler and
 // NewEvalHandler directly with a Registry.
 type Server struct {
-	registry *Registry
-	cfg      *serverCfg
-	handler  http.Handler
+	cfg     *serverCfg
+	handler http.Handler
 }
 
 // New creates a new Server from a list of experiment definitions and options.
@@ -89,9 +88,8 @@ func New(defs []*ExperimentDefinition, opts ...Option) *Server {
 
 	handler := corsMiddleware(mux, cfg.corsOrigins)
 	return &Server{
-		registry: registry,
-		cfg:      cfg,
-		handler:  handler,
+		cfg:     cfg,
+		handler: handler,
 	}
 }
 

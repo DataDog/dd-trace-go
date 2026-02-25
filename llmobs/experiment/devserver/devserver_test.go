@@ -53,8 +53,7 @@ func TestRegistry(t *testing.T) {
 }
 
 func TestListHandler(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ds := createTestDataset(t)
 	task := createTestTask()
@@ -67,9 +66,9 @@ func TestListHandler(t *testing.T) {
 		Task:        task,
 		Dataset:     ds,
 		Evaluators:  evaluators,
-		Parameters: map[string]*ParamDef{
-			"model":       {Type: ParamTypeString, Default: "gpt-4", Description: "LLM model"},
-			"temperature": {Type: ParamTypeNumber, Default: 0.7, Description: "Sampling temperature"},
+		Config: map[string]*ConfigField{
+			"model":       {Type: ConfigFieldString, Default: "gpt-4", Description: "LLM model"},
+			"temperature": {Type: ConfigFieldNumber, Default: 0.7, Description: "Sampling temperature"},
 		},
 		Tags: map[string]string{"env": "test"},
 	}}
@@ -96,10 +95,10 @@ func TestListHandler(t *testing.T) {
 		assert.Equal(t, "test-task", exps[0].TaskName)
 		assert.Equal(t, 2, exps[0].DatasetLen)
 		assert.ElementsMatch(t, []string{"exact-match", "similarity"}, exps[0].Evaluators)
-		require.Len(t, exps[0].Parameters, 2)
-		assert.Equal(t, ParamTypeString, exps[0].Parameters["model"].Type)
-		assert.Equal(t, "gpt-4", exps[0].Parameters["model"].Default)
-		assert.Equal(t, ParamTypeNumber, exps[0].Parameters["temperature"].Type)
+		require.Len(t, exps[0].Config, 2)
+		assert.Equal(t, ConfigFieldString, exps[0].Config["model"].Type)
+		assert.Equal(t, "gpt-4", exps[0].Config["model"].Default)
+		assert.Equal(t, ConfigFieldNumber, exps[0].Config["temperature"].Type)
 	})
 
 	t.Run("method-not-allowed", func(t *testing.T) {
@@ -112,8 +111,7 @@ func TestListHandler(t *testing.T) {
 }
 
 func TestEvalHandlerSync(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ds := createTestDataset(t)
 	task := createTestTask()
@@ -142,7 +140,7 @@ func TestEvalHandlerSync(t *testing.T) {
 		var resp map[string]any
 		err := json.Unmarshal(rec.Body.Bytes(), &resp)
 		require.NoError(t, err)
-		assert.Equal(t, "test-exp", resp["experimentName"])
+		assert.Equal(t, "test-exp", resp["experiment_name"])
 	})
 
 	t.Run("not-found", func(t *testing.T) {
@@ -181,8 +179,7 @@ func TestEvalHandlerSync(t *testing.T) {
 }
 
 func TestEvalHandlerStreaming(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ds := createTestDataset(t)
 	task := createTestTask()
@@ -215,8 +212,8 @@ func TestEvalHandlerStreaming(t *testing.T) {
 	assert.Equal(t, "start", events[0].Event)
 	startData, ok := events[0].Data.(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "test-project", startData["projectName"])
-	assert.NotEmpty(t, startData["experimentId"])
+	assert.Equal(t, "test-project", startData["project_name"])
+	assert.NotEmpty(t, startData["experiment_id"])
 
 	// Last two events should be "summary" and "done"
 	assert.Equal(t, "summary", events[len(events)-2].Event)
@@ -247,8 +244,7 @@ func TestEvalHandlerStreaming(t *testing.T) {
 }
 
 func TestEvalHandlerWithSampleSize(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ds := createTestDataset(t)
 	task := createTestTask()
@@ -288,8 +284,7 @@ func TestEvalHandlerWithSampleSize(t *testing.T) {
 }
 
 func TestEvalHandlerConfigOverride(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ds := createTestDataset(t)
 
@@ -306,9 +301,9 @@ func TestEvalHandlerConfigOverride(t *testing.T) {
 		Task:        task,
 		Dataset:     ds,
 		Evaluators:  nil,
-		Parameters: map[string]*ParamDef{
-			"model":       {Type: ParamTypeString, Default: "gpt-3.5"},
-			"temperature": {Type: ParamTypeNumber, Default: 0.5},
+		Config: map[string]*ConfigField{
+			"model":       {Type: ConfigFieldString, Default: "gpt-3.5"},
+			"temperature": {Type: ConfigFieldNumber, Default: 0.5},
 		},
 	}}
 	registry := NewRegistry(defs)
@@ -318,8 +313,8 @@ func TestEvalHandlerConfigOverride(t *testing.T) {
 		Name:   "test-exp",
 		Stream: false,
 		ConfigOverride: map[string]any{
-			"model":  "gpt-4",
-			"top_p":  0.9,
+			"model": "gpt-4",
+			"top_p": 0.9,
 		},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/eval", bytes.NewReader(body))
@@ -328,14 +323,13 @@ func TestEvalHandlerConfigOverride(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	require.NotNil(t, capturedCfg)
-	assert.Equal(t, "gpt-4", capturedCfg["model"])        // overridden
-	assert.Equal(t, 0.5, capturedCfg["temperature"])       // kept from default
-	assert.Equal(t, 0.9, capturedCfg["top_p"])             // new from override
+	assert.Equal(t, "gpt-4", capturedCfg["model"])   // overridden
+	assert.Equal(t, 0.5, capturedCfg["temperature"]) // kept from default
+	assert.Equal(t, 0.9, capturedCfg["top_p"])       // new from override
 }
 
 func TestEvalHandlerEvaluatorFiltering(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ds := createTestDataset(t)
 	task := createTestTask()
@@ -431,8 +425,7 @@ func TestCORSMiddleware(t *testing.T) {
 }
 
 func TestServerHandler(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ds := createTestDataset(t)
 	task := createTestTask()

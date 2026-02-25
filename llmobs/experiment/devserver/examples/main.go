@@ -139,27 +139,27 @@ func main() {
 			Task:        task,
 			Dataset:     ds,
 			Evaluators:  evaluators,
-			Parameters: map[string]*devserver.ParamDef{
+			Config: map[string]*devserver.ConfigField{
 				"model": {
-					Type:        devserver.ParamTypeString,
+					Type:        devserver.ConfigFieldString,
 					Default:     "gpt-3.5-turbo",
 					Description: "LLM model to use",
 					Choices:     []any{"gpt-3.5-turbo", "gpt-4", "claude-3-sonnet"},
 				},
 				"system_prompt": {
-					Type:        devserver.ParamTypePrompt,
+					Type:        devserver.ConfigFieldPrompt,
 					Default:     "You are a geography expert. Answer with just the city name.",
 					Description: "System prompt sent to the LLM",
 				},
 				"accuracy": {
-					Type:        devserver.ParamTypeNumber,
+					Type:        devserver.ConfigFieldNumber,
 					Default:     1.0,
 					Description: "Simulated correctness rate",
 					Min:         ptr(0.0),
 					Max:         ptr(1.0),
 				},
 				"prefix": {
-					Type:        devserver.ParamTypeString,
+					Type:        devserver.ConfigFieldString,
 					Default:     "",
 					Description: "Text prepended to every answer",
 				},
@@ -175,8 +175,8 @@ func main() {
 	fmt.Println(`  curl http://localhost:8787/list`)
 	fmt.Println(`  curl -X POST http://localhost:8787/eval -d '{"name":"capitals","stream":false}'`)
 	fmt.Println(`  curl -X POST http://localhost:8787/eval -d '{"name":"capitals","stream":true}'`)
-	fmt.Println(`  curl -X POST http://localhost:8787/eval -d '{"name":"capitals","stream":true,"configOverride":{"accuracy":0.0}}'`)
-	fmt.Println(`  curl -X POST http://localhost:8787/eval -d '{"name":"capitals","stream":false,"configOverride":{"system_prompt":"Answer in a full sentence."}}'`)
+	fmt.Println(`  curl -X POST http://localhost:8787/eval -d '{"name":"capitals","stream":true,"config_override":{"accuracy":0.0}}'`)
+	fmt.Println(`  curl -X POST http://localhost:8787/eval -d '{"name":"capitals","stream":false,"config_override":{"system_prompt":"Answer in a full sentence."}}'`)
 	fmt.Println()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
