@@ -33,3 +33,9 @@ func WithAnalyticsRate(rate float64) Option {
 func WithDataStreams() Option {
 	return tracing.WithDataStreams()
 }
+
+// WithClusterID sets the Kafka cluster ID for Data Streams monitoring and span tagging.
+// This overrides the automatically detected cluster ID.
+func WithClusterID(clusterID string) Option {
+	return tracing.WithClusterID(clusterID)
+}
