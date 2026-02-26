@@ -14,10 +14,10 @@ func StartSpanFromContext(context.Context, string, ...StartSpanOption) (*Span, c
 // Package Functions
 func SetDataStreamsCheckpoint(context.Context, ...string) (context.Context, bool)
 func SetDataStreamsCheckpointWithParams(context.Context, options.CheckpointParams, ...string) (context.Context, bool)
+func TrackDataStreamsTransaction(string)
 func TrackKafkaCommitOffset(string, int32, int64)
 func TrackKafkaHighWatermarkOffset(string, string, int32, int64)
 func TrackKafkaProduceOffset(string, int32, int64)
-func TrackDataStreamsTransaction(string, string)
 
 // File: logger.go
 
