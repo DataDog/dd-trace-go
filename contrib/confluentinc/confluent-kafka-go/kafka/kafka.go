@@ -39,7 +39,9 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if clusterID := fetchClusterIDFromConsumer(c); clusterID != "" {
+	if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
+		return fetchClusterIDFromConsumer(c)
+	}); clusterID != "" {
 		opts = append([]Option{kafkatrace.WithClusterID(clusterID)}, opts...)
 	}
 	opts = append(opts, WithConfig(conf))
@@ -52,7 +54,9 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if clusterID := fetchClusterIDFromProducer(p); clusterID != "" {
+	if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
+		return fetchClusterIDFromProducer(p)
+	}); clusterID != "" {
 		opts = append([]Option{kafkatrace.WithClusterID(clusterID)}, opts...)
 	}
 	opts = append(opts, WithConfig(conf))
@@ -89,6 +93,28 @@ func fetchClusterIDFromProducer(p *kafka.Producer) string {
 	if err != nil {
 		instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
 		return ""
+	}
+	return clusterID
+}
+
+// clusterIDFromConfigOrFetch checks the cache for a cluster ID matching the
+// bootstrap servers in the config. On cache miss it calls fetchFn and caches
+// the result.
+func clusterIDFromConfigOrFetch(conf *kafka.ConfigMap, fetchFn func() string) string {
+	bs, err := conf.Get("bootstrap.servers", "")
+	if err != nil || bs.(string) == "" {
+		return fetchFn()
+	}
+	bootstrapServersString := kafkatrace.NormalizeBootstrapServers(bs.(string))
+	if bootstrapServersString == "" {
+		return fetchFn()
+	}
+	if cached, ok := kafkatrace.GetCachedClusterID(bootstrapServersString); ok {
+		return cached
+	}
+	clusterID := fetchFn()
+	if clusterID != "" {
+		kafkatrace.SetCachedClusterID(bootstrapServersString, clusterID)
 	}
 	return clusterID
 }
