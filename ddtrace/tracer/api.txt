@@ -17,7 +17,7 @@ func SetDataStreamsCheckpointWithParams(context.Context, options.CheckpointParam
 func TrackKafkaCommitOffset(string, int32, int64)
 func TrackKafkaHighWatermarkOffset(string, string, int32, int64)
 func TrackKafkaProduceOffset(string, int32, int64)
-func TrackDataStreamsTransaction(string)
+func TrackDataStreamsTransaction(string, string)
 
 // File: logger.go
 
