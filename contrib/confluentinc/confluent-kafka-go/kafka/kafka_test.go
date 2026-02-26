@@ -160,9 +160,18 @@ func TestConsumerFunctional(t *testing.T) {
 
 			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
+			clusterID := fetchTestClusterID(t)
 			mt := mocktracer.Start()
-			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
-			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+			produceEdges := []string{"direction:out", "topic:" + testTopic, "type:kafka"}
+			if clusterID != "" {
+				produceEdges = append(produceEdges, "kafka_cluster_id:"+clusterID)
+			}
+			consumeEdges := []string{"group:" + testGroupID, "direction:in", "topic:" + testTopic, "type:kafka"}
+			if clusterID != "" {
+				consumeEdges = append(consumeEdges, "kafka_cluster_id:"+clusterID)
+			}
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), produceEdges...)
+			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, consumeEdges...)
 			expected, _ := datastreams.PathwayFromContext(expectedCtx)
 			mt.Stop()
 			assert.NotEqual(t, expected.GetHash(), 0)
@@ -329,6 +338,26 @@ func TestProduceError(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
+}
+
+func fetchTestClusterID(t *testing.T) string {
+	t.Helper()
+	admin, err := kafka.NewAdminClient(&kafka.ConfigMap{
+		"bootstrap.servers": "127.0.0.1:9092",
+	})
+	if err != nil {
+		t.Logf("failed to create admin client for cluster ID: %s", err)
+		return ""
+	}
+	defer admin.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	clusterID, err := admin.ClusterID(ctx)
+	if err != nil {
+		t.Logf("failed to fetch cluster ID: %s", err)
+		return ""
+	}
+	return clusterID
 }
 
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)
