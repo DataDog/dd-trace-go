@@ -232,9 +232,16 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
 	assert.Equal(t, testTopic, s0.Tag("messaging.destination.name"))
 
+	clusterID, _ := s0.Tag(ext.MessagingKafkaClusterID).(string)
+
+	produceTags := []string{"direction:out", "topic:" + testTopic, "type:kafka"}
+	if clusterID != "" {
+		produceTags = append(produceTags, "kafka_cluster_id:"+clusterID)
+	}
+
 	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))))
 	assert.True(t, ok)
-	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), produceTags...)
 	expected, _ := datastreams.PathwayFromContext(expectedCtx)
 	assert.NotEqual(t, expected.GetHash(), 0)
 	assert.Equal(t, expected.GetHash(), p.GetHash())
@@ -258,11 +265,16 @@ func TestReadMessageFunctional(t *testing.T) {
 	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
 	assert.Equal(t, s0.TraceID(), s1.TraceID(), "spans should have the same trace id")
 
+	consumeTags := []string{"direction:in", "topic:" + testTopic, "type:kafka", "group:" + testGroupID}
+	if clusterID != "" {
+		consumeTags = append(consumeTags, "kafka_cluster_id:"+clusterID)
+	}
+
 	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&readMessages[0]))))
 	assert.True(t, ok)
 	expectedCtx, _ = tracer.SetDataStreamsCheckpoint(
 		datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))),
-		"direction:in", "topic:"+testTopic, "type:kafka", "group:"+testGroupID,
+		consumeTags...,
 	)
 	expected, _ = datastreams.PathwayFromContext(expectedCtx)
 	assert.NotEqual(t, expected.GetHash(), 0)
@@ -320,9 +332,16 @@ func TestFetchMessageFunctional(t *testing.T) {
 	assert.Equal(t, "localhost:9092,localhost:9093,localhost:9094", s0.Tag(ext.KafkaBootstrapServers))
 	assert.Equal(t, testTopic, s0.Tag("messaging.destination.name"))
 
+	clusterID, _ := s0.Tag(ext.MessagingKafkaClusterID).(string)
+
+	produceTags := []string{"direction:out", "topic:" + testTopic, "type:kafka"}
+	if clusterID != "" {
+		produceTags = append(produceTags, "kafka_cluster_id:"+clusterID)
+	}
+
 	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))))
 	assert.True(t, ok)
-	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), produceTags...)
 	expected, _ := datastreams.PathwayFromContext(expectedCtx)
 	assert.NotEqual(t, expected.GetHash(), 0)
 	assert.Equal(t, expected.GetHash(), p.GetHash())
@@ -345,11 +364,85 @@ func TestFetchMessageFunctional(t *testing.T) {
 	// context propagation
 	assert.Equal(t, s0.SpanID(), s1.ParentID(), "consume span should be child of the produce span")
 
+	consumeTags := []string{"direction:in", "topic:" + testTopic, "type:kafka", "group:" + testGroupID}
+	if clusterID != "" {
+		consumeTags = append(consumeTags, "kafka_cluster_id:"+clusterID)
+	}
+
 	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&readMessages[0]))))
 	assert.True(t, ok)
 	expectedCtx, _ = tracer.SetDataStreamsCheckpoint(
 		datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))),
-		"direction:in", "topic:"+testTopic, "type:kafka", "group:"+testGroupID,
+		consumeTags...,
+	)
+	expected, _ = datastreams.PathwayFromContext(expectedCtx)
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
+}
+
+func TestReadMessageFunctionalWithClusterID(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var (
+		messagesToWrite = []kafka.Message{
+			{
+				Key:   []byte("key1"),
+				Value: []byte("value1"),
+			},
+		}
+		readMessages []kafka.Message
+	)
+
+	spans, writtenMessages := genIntegrationTestSpans(
+		t,
+		mt,
+		func(t *testing.T, w *KafkaWriter) {
+			err := w.WriteMessages(context.Background(), messagesToWrite...)
+			require.NoError(t, err, "Expected to write message to topic")
+		},
+		func(t *testing.T, r *Reader) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			readMsg, err := r.ReadMessage(ctx)
+			require.NoError(t, err, "Expected to consume message")
+
+			readMessages = append(readMessages, readMsg)
+			err = r.CommitMessages(context.Background(), readMsg)
+			assert.NoError(t, err)
+		},
+		[]Option{WithDataStreams()},
+		[]Option{WithDataStreams()},
+	)
+
+	require.Len(t, writtenMessages, len(messagesToWrite))
+	require.Len(t, readMessages, len(messagesToWrite))
+
+	// Both produce and consume spans should have kafka_cluster_id set (auto-fetched)
+	s0 := spans[0] // produce span
+	s1 := spans[1] // consume span
+
+	clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string)
+	assert.True(t, ok, "produce span should have kafka_cluster_id tag")
+	assert.NotEmpty(t, clusterID, "cluster ID should not be empty")
+
+	consumerClusterID, ok := s1.Tag(ext.MessagingKafkaClusterID).(string)
+	assert.True(t, ok, "consume span should have kafka_cluster_id tag")
+	assert.Equal(t, clusterID, consumerClusterID, "cluster ID should match between produce and consume spans")
+
+	// Verify DSM pathway includes kafka_cluster_id in edge tags
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))))
+	assert.True(t, ok)
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+	expected, _ := datastreams.PathwayFromContext(expectedCtx)
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
+
+	p, ok = datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&readMessages[0]))))
+	assert.True(t, ok)
+	expectedCtx, _ = tracer.SetDataStreamsCheckpoint(
+		datastreams.ExtractFromBase64Carrier(context.Background(), tracing.NewMessageCarrier(wrapMessage(&writtenMessages[0]))),
+		"direction:in", "topic:"+testTopic, "type:kafka", "group:"+testGroupID, "kafka_cluster_id:"+clusterID,
 	)
 	expected, _ = datastreams.PathwayFromContext(expectedCtx)
 	assert.NotEqual(t, expected.GetHash(), 0)
