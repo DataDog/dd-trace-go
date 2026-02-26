@@ -179,22 +179,11 @@ jobs:
       - name: Run
         run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
 
-      - name: Install datadog-ci
-        if: ${{ always() }}
-        run: npm install -g @datadog/datadog-ci || sleep 60 && npm install -g @datadog/datadog-ci
-
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        run: |
-          datadog-ci junit upload \
-            logs*/reportJunit.xml \
-            --service system-tests \
-            --env ci \
-            --verbose \
-            --xpath-tag "test.codeowners=/testcase/properties/property[@name='test.codeowners']"
-        env:
-          DATADOG_SITE: datadoghq.com
-          DATADOG_API_KEY: ${{ secrets.DD_API_KEY }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@main
+        with:
+          datadog_api_key: ${{ secrets.DD_API_KEY }}
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -304,22 +293,11 @@ jobs:
         env:
           WEBLOG_VARIANT: ${{ matrix.weblog_variant }}
 
-      - name: Install datadog-ci
-        if: ${{ always() }}
-        run: npm install -g @datadog/datadog-ci || sleep 60 && npm install -g @datadog/datadog-ci
-
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        run: |
-          datadog-ci junit upload \
-            logs*/reportJunit.xml \
-            --service system-tests \
-            --env ci \
-            --verbose \
-            --xpath-tag "test.codeowners=/testcase/properties/property[@name='test.codeowners']"
-        env:
-          DATADOG_SITE: datadoghq.com
-          DATADOG_API_KEY: ${{ secrets.DD_API_KEY }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@main
+        with:
+          datadog_api_key: ${{ secrets.DD_API_KEY }}
 
       - name: Compress artifact
         if: ${{ always() }}
