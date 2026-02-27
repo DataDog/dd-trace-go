@@ -8,8 +8,6 @@ package otelprocesscontext
 //go:generate ./proto/generate.sh
 
 import (
-	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -46,19 +44,19 @@ func (ctx OtelProcessContext) marshalProto() []byte {
 		{"telemetry.sdk.name", ctx.TelemetrySdkName},
 	}
 
-	kvs := make([]*commonv1.KeyValue, 0, len(attrs))
+	kvs := make([]*KeyValue, 0, len(attrs))
 	for _, attr := range attrs {
 		if attr.val == "" {
 			continue
 		}
-		kvs = append(kvs, &commonv1.KeyValue{
+		kvs = append(kvs, &KeyValue{
 			Key:   attr.key,
-			Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: attr.val}},
+			Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: attr.val}},
 		})
 	}
 
 	b, _ := proto.Marshal(&ProcessContext{
-		Resource: &resourcev1.Resource{Attributes: kvs},
+		Resource: &Resource{Attributes: kvs},
 	})
 	return b
 }
