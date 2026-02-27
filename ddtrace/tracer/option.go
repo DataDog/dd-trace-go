@@ -223,11 +223,6 @@ type config struct {
 	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	spanAttributeSchemaVersion int
 
-	// peerServiceDefaultsEnabled indicates whether the peer.service tag calculation is enabled or not.
-	peerServiceDefaultsEnabled bool
-
-	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
-	peerServiceMappings map[string]string
 
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
@@ -360,13 +355,15 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
 
 	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
-	c.peerServiceDefaultsEnabled = true
 	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
-		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+		c.internalConfig.SetPeerServiceDefaultsEnabled(internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false), telemetry.OriginEnvVar)
+	} else {
+		c.internalConfig.SetPeerServiceDefaultsEnabled(true, telemetry.OriginCalculated)
 	}
-	c.peerServiceMappings = make(map[string]string)
 	if v := env.Get("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
+		peerServiceMappings := make(map[string]string)
+		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { peerServiceMappings[key] = val })
+		c.internalConfig.SetPeerServiceMappings(peerServiceMappings, telemetry.OriginEnvVar)
 	}
 
 	// LLM Observability config
@@ -987,17 +984,14 @@ func WithServiceMapping(from, to string) StartOption {
 // Related documentation: https://docs.datadoghq.com/tracing/guide/inferred-service-opt-in/?tab=go#apm-tracer-configuration
 func WithPeerServiceDefaults(enabled bool) StartOption {
 	return func(c *config) {
-		c.peerServiceDefaultsEnabled = enabled
+		c.internalConfig.SetPeerServiceDefaultsEnabled(enabled, telemetry.OriginCode)
 	}
 }
 
 // WithPeerServiceMapping determines the value of the peer.service tag "from" to be renamed to service "to".
 func WithPeerServiceMapping(from, to string) StartOption {
 	return func(c *config) {
-		if c.peerServiceMappings == nil {
-			c.peerServiceMappings = make(map[string]string)
-		}
-		c.peerServiceMappings[from] = to
+		c.internalConfig.SetPeerServiceMapping(from, to, telemetry.OriginCode)
 	}
 }
 
