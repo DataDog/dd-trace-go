@@ -8,8 +8,8 @@ package otelprocesscontext
 //go:generate ./proto/generate.sh
 
 import (
-	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
+	commonv1 "go.opentelemetry.io/proto/slim/otlp/common/v1"
+	resourcev1 "go.opentelemetry.io/proto/slim/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
 )
 

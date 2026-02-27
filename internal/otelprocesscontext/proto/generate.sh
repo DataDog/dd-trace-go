@@ -30,6 +30,8 @@ protoc \
     --go_out=internal/otelprocesscontext \
     --go_opt=paths=source_relative \
     "--go_opt=Mprocesscontext.proto=github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext;otelprocesscontext" \
+    "--go_opt=Mopentelemetry/proto/common/v1/common.proto=go.opentelemetry.io/proto/slim/otlp/common/v1;v1" \
+    "--go_opt=Mopentelemetry/proto/resource/v1/resource.proto=go.opentelemetry.io/proto/slim/otlp/resource/v1;v1" \
     --proto_path="${OTEL_PROTO_DIR}" \
     --proto_path=internal/otelprocesscontext/proto \
     processcontext.proto

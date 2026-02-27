@@ -25,8 +25,8 @@
 package otelprocesscontext
 
 import (
-	v11 "go.opentelemetry.io/proto/otlp/common/v1"
-	v1 "go.opentelemetry.io/proto/otlp/resource/v1"
+	v11 "go.opentelemetry.io/proto/slim/otlp/common/v1"
+	v1 "go.opentelemetry.io/proto/slim/otlp/resource/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
