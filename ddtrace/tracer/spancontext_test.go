@@ -1168,15 +1168,21 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 
 func TestTraceIDHexEncoded(t *testing.T) {
 	var tid traceID
-	tid.b[15] = 5
+	tid.value[15] = 5
 	tid.cacheHex()
 	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
 }
 
 func TestTraceIDEmpty(t *testing.T) {
-	var tid traceID
-	tid.b[15] = 5
-	assert.False(t, tid.Empty())
+	t.Run("empty", func(t *testing.T) {
+		var tid traceID
+		assert.True(t, tid.Empty())
+	})
+	t.Run("not empty", func(t *testing.T) {
+		var tid traceID
+		tid.value[15] = 5
+		assert.False(t, tid.Empty())
+	})
 }
 
 func TestSpanIDHexEncoded(t *testing.T) {
@@ -1260,6 +1266,15 @@ func BenchmarkSpanIDHexEncoded(b *testing.B) {
 func BenchmarkSpanIDSprintf(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		_ = fmt.Sprintf("%016x", 32)
+	}
+}
+
+func BenchmarkTraceIDHasUpper(b *testing.B) {
+	var tid traceID
+	tid.value[7] = 1
+	b.ResetTimer()
+	for b.Loop() {
+		_ = tid.HasUpper()
 	}
 }
 

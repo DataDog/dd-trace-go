@@ -34,32 +34,32 @@ var emptyTraceID [16]byte
 
 // traceID in big endian, i.e. <upper><lower>
 type traceID struct {
-	b          [16]byte
+	value      [16]byte
 	hexEncoded string
 }
 
 func (t *traceID) HexEncoded() string { return t.hexEncoded }
 
 func (t *traceID) Lower() uint64 {
-	return binary.BigEndian.Uint64(t.b[8:])
+	return binary.BigEndian.Uint64(t.value[8:])
 }
 
 func (t *traceID) Upper() uint64 {
-	return binary.BigEndian.Uint64(t.b[:8])
+	return binary.BigEndian.Uint64(t.value[:8])
 }
 
 func (t *traceID) SetLower(i uint64) {
-	binary.BigEndian.PutUint64(t.b[8:], i)
+	binary.BigEndian.PutUint64(t.value[8:], i)
 	t.cacheHex()
 }
 
 func (t *traceID) SetUpper(i uint64) {
-	binary.BigEndian.PutUint64(t.b[:8], i)
+	binary.BigEndian.PutUint64(t.value[:8], i)
 	t.cacheHex()
 }
 
-func (t *traceID) set(b [16]byte) {
-	t.b = b
+func (t *traceID) set(v [16]byte) {
+	t.value = v
 	t.cacheHex()
 }
 
@@ -73,12 +73,12 @@ func (t *traceID) SetUpperFromHex(s string) error {
 }
 
 func (t *traceID) Empty() bool {
-	return t.b == [16]byte{}
+	return t.value == emptyTraceID
 }
 
 func (t *traceID) HasUpper() bool {
-	for _, b := range t.b[:8] {
-		if b != 0 {
+	for ix := range t.value[:8] {
+		if t.value[ix] != 0 {
 			return true
 		}
 	}
@@ -88,7 +88,7 @@ func (t *traceID) HasUpper() bool {
 func (t *traceID) UpperHex() string { return t.hexEncoded[:16] }
 
 func (t *traceID) cacheHex() {
-	t.hexEncoded = hex.EncodeToString(t.b[:])
+	t.hexEncoded = hex.EncodeToString(t.value[:])
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
@@ -267,9 +267,9 @@ func (c *SpanContext) TraceID() string {
 // TraceIDBytes implements ddtrace.SpanContext.
 func (c *SpanContext) TraceIDBytes() [16]byte {
 	if c == nil {
-		return [16]byte{}
+		return emptyTraceID
 	}
-	return c.traceID.b
+	return c.traceID.value
 }
 
 // TraceIDLower implements ddtrace.SpanContext.
