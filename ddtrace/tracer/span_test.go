@@ -134,7 +134,7 @@ func BenchmarkAddLink(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		rootSpan.AddLink(link)
 	}
 }
@@ -1539,7 +1539,7 @@ func BenchmarkSetTagMetric(b *testing.B) {
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < b.N; i++ { //nolint:modernize
 		k := keys[i%len(keys)]
 		span.SetTag(k, float64(12.34))
 	}
@@ -1550,7 +1550,7 @@ func BenchmarkSetTagString(b *testing.B) {
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < b.N; i++ { //nolint:modernize
 		k := string(keys[i%len(keys)])
 		span.SetTag(k, "some text")
 	}
@@ -1562,7 +1562,7 @@ func BenchmarkSetTagStringPtr(b *testing.B) {
 	v := makePointer("some text")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < b.N; i++ { //nolint:modernize
 		k := keys[i%len(keys)]
 		span.SetTag(k, v)
 	}
@@ -1573,7 +1573,7 @@ func BenchmarkSetTagStringer(b *testing.B) {
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	value := &stringer{}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < b.N; i++ { //nolint:modernize
 		k := keys[i%len(keys)]
 		span.SetTag(k, value)
 	}
@@ -1584,7 +1584,7 @@ func BenchmarkSetTagField(b *testing.B) {
 	keys := []string{ext.ServiceName, ext.ResourceName, ext.SpanType}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < b.N; i++ { //nolint:modernize
 		k := keys[i%len(keys)]
 		span.SetTag(k, "some text")
 	}
@@ -1627,7 +1627,7 @@ func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
 	span.AddLink(SpanLink{TraceID: 0, SpanID: 0, Attributes: attributes})
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		span.serializeSpanLinksInMeta()
 	}
 }

@@ -237,25 +237,25 @@ func BenchmarkPrioritySamplerGetRate(b *testing.B) {
 	b.ResetTimer()
 	b.Run("old/hit", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = oldGetRate(ops, spnHit)
 		}
 	})
 	b.Run("new/hit", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = ps.getRate(spnHit)
 		}
 	})
 	b.Run("old/miss", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = oldGetRate(ops, spnMiss)
 		}
 	})
 	b.Run("new/miss", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = ps.getRate(spnMiss)
 		}
 	})

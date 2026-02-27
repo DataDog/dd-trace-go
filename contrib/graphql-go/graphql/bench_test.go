@@ -133,7 +133,7 @@ func BenchmarkGraphQL(b *testing.B) {
 				b.ReportAllocs()
 				schema, err := graphql.NewSchema(graphql.SchemaConfig{Query: rootQuery})
 				require.NoError(b, err)
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					b.StartTimer()
 					resp := graphql.Do(graphql.Params{
 						Schema:         schema,
@@ -162,7 +162,7 @@ func BenchmarkGraphQL(b *testing.B) {
 				require.NoError(b, err)
 				mt := mocktracer.Start()
 				defer mt.Stop()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					b.StartTimer()
 					resp := graphql.Do(graphql.Params{
 						Schema:         schema,

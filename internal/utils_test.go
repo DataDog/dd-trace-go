@@ -20,7 +20,7 @@ import (
 func BenchmarkIter(b *testing.B) {
 	m := NewLockMap(nil)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		m.Iter(func(_ string, _ string) {})
 	}
 }
@@ -148,7 +148,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 		cm := NewXSyncMapCounterMap()
 
 		wg := sync.WaitGroup{}
-		for range b.N {
+		for b.Loop() {
 			wg.Go(func() {
 				cm.Inc("key")
 			})

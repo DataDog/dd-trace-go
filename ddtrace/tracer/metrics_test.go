@@ -280,7 +280,7 @@ func BenchmarkSpansMetrics(b *testing.B) {
 	tracer, _, _, stop, err := startTestTracer(b, withStatsdClient(&tg))
 	assert.Nil(b, err)
 	defer stop()
-	for n := 0; n < b.N; n++ {
+	for n := 0; n < b.N; n++ { //nolint:modernize
 		for range n {
 			go tracer.StartSpan("operation").Finish()
 		}

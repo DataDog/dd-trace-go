@@ -79,13 +79,13 @@ func BenchmarkGLS(b *testing.B) {
 	}
 
 	b.Run("Set", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for i := 0; i < b.N; i++ { //nolint:modernize
 			set(i)
 		}
 	})
 
 	b.Run("Get", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			runtime.KeepAlive(get())
 		}
 	})

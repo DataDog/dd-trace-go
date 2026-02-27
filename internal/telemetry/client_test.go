@@ -1424,7 +1424,7 @@ func BenchmarkLogs(b *testing.B) {
 		})
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			c.Log(NewRecord(LogError, "this is supposed to be a ERROR log of representative length"), WithStacktrace())
 		}
 	})
@@ -1522,7 +1522,7 @@ func BenchmarkMetrics(b *testing.B) {
 		})
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			f(c, "init_time").Submit(1)
 		}
 	}, func(b *testing.B, f func(Client, string) MetricHandle) {

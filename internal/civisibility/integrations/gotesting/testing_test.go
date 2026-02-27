@@ -179,13 +179,13 @@ func BenchmarkFirst(gb *testing.B) {
 
 	var mapArray []map[string]string
 	b.Run("child01", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			mapArray = append(mapArray, map[string]string{})
 		}
 	})
 
 	b.Run("child02", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			mapArray = append(mapArray, map[string]string{})
 		}
 	})
