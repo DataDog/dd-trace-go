@@ -38,7 +38,12 @@ type traceID struct {
 	hexEncoded string
 }
 
-func (t *traceID) HexEncoded() string { return t.hexEncoded }
+func (t *traceID) HexEncoded() string {
+	if t.hexEncoded == "" {
+		t.cacheHex()
+	}
+	return t.hexEncoded
+}
 
 func (t *traceID) Lower() uint64 {
 	return binary.BigEndian.Uint64(t.value[8:])
@@ -50,12 +55,12 @@ func (t *traceID) Upper() uint64 {
 
 func (t *traceID) SetLower(i uint64) {
 	binary.BigEndian.PutUint64(t.value[8:], i)
-	t.cacheHex()
+	t.hexEncoded = ""
 }
 
 func (t *traceID) SetUpper(i uint64) {
 	binary.BigEndian.PutUint64(t.value[:8], i)
-	t.cacheHex()
+	t.hexEncoded = ""
 }
 
 func (t *traceID) set(v [16]byte) {
@@ -85,7 +90,7 @@ func (t *traceID) HasUpper() bool {
 	return false
 }
 
-func (t *traceID) UpperHex() string { return t.hexEncoded[:16] }
+func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
 
 func (t *traceID) cacheHex() {
 	t.hexEncoded = hex.EncodeToString(t.value[:])
