@@ -30,28 +30,37 @@ const TraceIDZero string = "00000000000000000000000000000000"
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
-type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
+var emptyTraceID [16]byte
 
-var emptyTraceID traceID
-
-func (t *traceID) HexEncoded() string {
-	return hex.EncodeToString(t[:])
+// traceID in big endian, i.e. <upper><lower>
+type traceID struct {
+	b          [16]byte
+	hexEncoded string
 }
 
+func (t *traceID) HexEncoded() string { return t.hexEncoded }
+
 func (t *traceID) Lower() uint64 {
-	return binary.BigEndian.Uint64(t[8:])
+	return binary.BigEndian.Uint64(t.b[8:])
 }
 
 func (t *traceID) Upper() uint64 {
-	return binary.BigEndian.Uint64(t[:8])
+	return binary.BigEndian.Uint64(t.b[:8])
 }
 
 func (t *traceID) SetLower(i uint64) {
-	binary.BigEndian.PutUint64(t[8:], i)
+	binary.BigEndian.PutUint64(t.b[8:], i)
+	t.cacheHex()
 }
 
 func (t *traceID) SetUpper(i uint64) {
-	binary.BigEndian.PutUint64(t[:8], i)
+	binary.BigEndian.PutUint64(t.b[:8], i)
+	t.cacheHex()
+}
+
+func (t *traceID) set(b [16]byte) {
+	t.b = b
+	t.cacheHex()
 }
 
 func (t *traceID) SetUpperFromHex(s string) error {
@@ -64,11 +73,11 @@ func (t *traceID) SetUpperFromHex(s string) error {
 }
 
 func (t *traceID) Empty() bool {
-	return *t == emptyTraceID
+	return t.b == [16]byte{}
 }
 
 func (t *traceID) HasUpper() bool {
-	for _, b := range t[:8] {
+	for _, b := range t.b[:8] {
 		if b != 0 {
 			return true
 		}
@@ -76,8 +85,10 @@ func (t *traceID) HasUpper() bool {
 	return false
 }
 
-func (t *traceID) UpperHex() string {
-	return hex.EncodeToString(t[:8])
+func (t *traceID) UpperHex() string { return t.hexEncoded[:16] }
+
+func (t *traceID) cacheHex() {
+	t.hexEncoded = hex.EncodeToString(t.b[:])
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
@@ -145,7 +156,7 @@ type spanContextV1Adapter interface {
 // to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
-	sc.traceID = c.TraceIDBytes()
+	sc.traceID.set(c.TraceIDBytes())
 	sc.spanID = c.SpanID()
 	sc.baggage = make(map[string]string) // +checklocksignore - Initialization time, not shared yet.
 	c.ForeachBaggageItem(func(k, v string) bool {
@@ -247,7 +258,7 @@ func (c *SpanContext) SpanID() uint64 {
 
 // TraceID implements ddtrace.SpanContext.
 func (c *SpanContext) TraceID() string {
-	if c == nil {
+	if c == nil || c.traceID.Empty() {
 		return TraceIDZero
 	}
 	return c.traceID.HexEncoded()
@@ -256,9 +267,9 @@ func (c *SpanContext) TraceID() string {
 // TraceIDBytes implements ddtrace.SpanContext.
 func (c *SpanContext) TraceIDBytes() [16]byte {
 	if c == nil {
-		return emptyTraceID
+		return [16]byte{}
 	}
-	return c.traceID
+	return c.traceID.b
 }
 
 // TraceIDLower implements ddtrace.SpanContext.
