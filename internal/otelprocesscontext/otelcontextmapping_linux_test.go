@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -83,11 +84,15 @@ func readProcessLevelContext() ([]byte, error) {
 	return getContextMapping(mapsFile)
 }
 
-func TestCreateOtelProcessContextMapping(t *testing.T) {
-	removeOtelProcessContextMapping()
+func restoreOtelProcessContextMapping(t *testing.T) {
+	t.Helper()
 	t.Cleanup(func() {
 		removeOtelProcessContextMapping()
 	})
+}
+
+func TestCreateOtelProcessContextMapping(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
 
 	payload := []byte("hello world")
 	err := CreateOtelProcessContextMapping(payload)
@@ -99,14 +104,142 @@ func TestCreateOtelProcessContextMapping(t *testing.T) {
 }
 
 func TestCreateOtelProcessContextMappingRejectsOversizedPayload(t *testing.T) {
-	removeOtelProcessContextMapping()
-	t.Cleanup(func() {
-		removeOtelProcessContextMapping()
-	})
+	restoreOtelProcessContextMapping(t)
 
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
 	oversizedPayload := make([]byte, otelContextMappingSize-headerSize+1)
 
 	err := CreateOtelProcessContextMapping(oversizedPayload)
 	require.Error(t, err)
+}
+
+func TestUpdateOtelProcessContextMapping(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
+
+	err := CreateOtelProcessContextMapping([]byte("initial payload"))
+	require.NoError(t, err)
+
+	updatedPayload := []byte("updated payload")
+	err = CreateOtelProcessContextMapping(updatedPayload)
+	require.NoError(t, err)
+
+	ctx, err := readProcessLevelContext()
+	require.NoError(t, err)
+	require.Equal(t, updatedPayload, ctx)
+}
+
+func TestUpdateOtelProcessContextMappingShorterPayload(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
+
+	err := CreateOtelProcessContextMapping([]byte("longer initial payload"))
+	require.NoError(t, err)
+
+	shortPayload := []byte("short")
+	err = CreateOtelProcessContextMapping(shortPayload)
+	require.NoError(t, err)
+
+	ctx, err := readProcessLevelContext()
+	require.NoError(t, err)
+	require.Equal(t, shortPayload, ctx)
+}
+
+func TestUpdateOtelProcessContextMappingRejectsOversizedPayload(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
+
+	err := CreateOtelProcessContextMapping([]byte("initial"))
+	require.NoError(t, err)
+
+	headerSize := int(unsafe.Sizeof(processContextHeader{}))
+	oversizedPayload := make([]byte, otelContextMappingSize-headerSize+1)
+
+	err = CreateOtelProcessContextMapping(oversizedPayload)
+	require.Error(t, err)
+}
+
+func TestUpdateOtelProcessContextMappingChangesTimestamp(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
+
+	err := CreateOtelProcessContextMapping([]byte("initial"))
+	require.NoError(t, err)
+
+	header := (*processContextHeader)(unsafe.Pointer(&existingMappingBytes[0]))
+	initialTimestamp := atomic.LoadUint64(&header.PublishedAtNs)
+	require.NotZero(t, initialTimestamp)
+
+	err = CreateOtelProcessContextMapping([]byte("updated"))
+	require.NoError(t, err)
+
+	newTimestamp := atomic.LoadUint64(&header.PublishedAtNs)
+	require.NotZero(t, newTimestamp)
+	require.NotEqual(t, newTimestamp, initialTimestamp)
+}
+
+// restoreMemfd returns a cleanup function that restores tryCreateMemfdMapping.
+func mockMemfdWithFailure(t *testing.T) {
+	t.Helper()
+	orig := tryCreateMemfdMapping
+	t.Cleanup(func() { tryCreateMemfdMapping = orig })
+	tryCreateMemfdMapping = func(_ int) ([]byte, error) {
+		return nil, errors.New("memfd failed")
+	}
+}
+
+// restorePrctl returns a cleanup function that restores setAnonymousMappingName.
+func mockPrctlWithFailure(t *testing.T) {
+	t.Helper()
+	orig := setAnonymousMappingName
+	t.Cleanup(func() { setAnonymousMappingName = orig })
+	setAnonymousMappingName = func(_ []byte, _ string) error {
+		return errors.New("prctl failed")
+	}
+}
+
+// TestCreateOtelProcessContextMappingMemfdFails verifies that the mapping is
+// still created successfully when memfd_create is unavailable, falling back to
+// an anonymous mmap named via prctl.
+func TestCreateOtelProcessContextMappingMemfdFails(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
+	mockMemfdWithFailure(t)
+
+	payload := []byte("hello from anon mmap")
+	require.NoError(t, CreateOtelProcessContextMapping(payload))
+
+	ctx, err := readProcessLevelContext()
+	require.NoError(t, err)
+	require.Equal(t, payload, ctx)
+}
+
+// TestCreateOtelProcessContextMappingPrctlFails verifies that a prctl failure
+// is not fatal when memfd_create succeeded (memfd is sufficient for discoverability).
+func TestCreateOtelProcessContextMappingPrctlFails(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
+	mockPrctlWithFailure(t)
+
+	payload := []byte("hello from memfd")
+	require.NoError(t, CreateOtelProcessContextMapping(payload))
+	require.NotNil(t, existingMappingBytes)
+}
+
+// TestCreateOtelProcessContextMappingBothFail verifies that an error is
+// returned and no mapping is left behind when both memfd_create and prctl fail.
+func TestCreateOtelProcessContextMappingBothFail(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
+	mockMemfdWithFailure(t)
+	mockPrctlWithFailure(t)
+
+	err := CreateOtelProcessContextMapping([]byte("hello"))
+	require.Error(t, err)
+	require.Nil(t, existingMappingBytes) // mapping must be cleaned up on error
+}
+
+func TestPublishOtelProcessContext(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
+
+	otelProcessContext := testContext
+	require.NoError(t, otelProcessContext.Publish())
+
+	ctx, err := readProcessLevelContext()
+	require.NoError(t, err)
+	attrs := attrMap(t, ctx)
+	require.Equal(t, expectedAttributes, attrs)
 }

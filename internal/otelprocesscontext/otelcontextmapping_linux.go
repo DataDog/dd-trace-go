@@ -39,7 +39,7 @@ type processContextHeader struct {
 	PayloadAddr   uint64
 }
 
-func tryCreateMemfdMapping(size int) ([]byte, error) {
+var tryCreateMemfdMapping = func(size int) ([]byte, error) {
 	fd, err := unix.MemfdCreate(otelContextSignature, unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING|unix.MFD_NOEXEC_SEAL)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,8 @@ func createOtelProcessContextMapping(data []byte) error {
 
 	prctlErr := setAnonymousMappingName(mappingBytes, otelContextSignature)
 
-	// If the memfd mapping failed, we should return an error if the prctl call also failed.
+	// Either memfd or prctl need to succeed for the mapping to be findable by other processes.
+	// If both failed, return an error.
 	if memfdErr != nil && prctlErr != nil {
 		_ = unix.Munmap(mappingBytes)
 		return fmt.Errorf("failed both to create memfd mapping and to set vma anon name: %w, %w", memfdErr, prctlErr)
@@ -114,7 +115,7 @@ func createOtelProcessContextMapping(data []byte) error {
 	return nil
 }
 
-func setAnonymousMappingName(mappingBytes []byte, name string) error {
+var setAnonymousMappingName = func(mappingBytes []byte, name string) error {
 	// prctl expects a null-terminated string
 	nameNullTerminated, _ := unix.ByteSliceFromString(name)
 	return unix.Prctl(

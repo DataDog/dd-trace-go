@@ -201,6 +201,8 @@ type AnyValue struct {
 	//	*AnyValue_BoolValue
 	//	*AnyValue_IntValue
 	//	*AnyValue_DoubleValue
+	//	*AnyValue_ArrayValue
+	//	*AnyValue_KvlistValue
 	//	*AnyValue_BytesValue
 	Value         isAnyValue_Value `protobuf_oneof:"value"`
 	unknownFields protoimpl.UnknownFields
@@ -280,6 +282,24 @@ func (x *AnyValue) GetDoubleValue() float64 {
 	return 0
 }
 
+func (x *AnyValue) GetArrayValue() *ArrayValue {
+	if x != nil {
+		if x, ok := x.Value.(*AnyValue_ArrayValue); ok {
+			return x.ArrayValue
+		}
+	}
+	return nil
+}
+
+func (x *AnyValue) GetKvlistValue() *KeyValueList {
+	if x != nil {
+		if x, ok := x.Value.(*AnyValue_KvlistValue); ok {
+			return x.KvlistValue
+		}
+	}
+	return nil
+}
+
 func (x *AnyValue) GetBytesValue() []byte {
 	if x != nil {
 		if x, ok := x.Value.(*AnyValue_BytesValue); ok {
@@ -309,6 +329,14 @@ type AnyValue_DoubleValue struct {
 	DoubleValue float64 `protobuf:"fixed64,4,opt,name=double_value,json=doubleValue,proto3,oneof"`
 }
 
+type AnyValue_ArrayValue struct {
+	ArrayValue *ArrayValue `protobuf:"bytes,5,opt,name=array_value,json=arrayValue,proto3,oneof"`
+}
+
+type AnyValue_KvlistValue struct {
+	KvlistValue *KeyValueList `protobuf:"bytes,6,opt,name=kvlist_value,json=kvlistValue,proto3,oneof"`
+}
+
 type AnyValue_BytesValue struct {
 	BytesValue []byte `protobuf:"bytes,7,opt,name=bytes_value,json=bytesValue,proto3,oneof"`
 }
@@ -321,7 +349,101 @@ func (*AnyValue_IntValue) isAnyValue_Value() {}
 
 func (*AnyValue_DoubleValue) isAnyValue_Value() {}
 
+func (*AnyValue_ArrayValue) isAnyValue_Value() {}
+
+func (*AnyValue_KvlistValue) isAnyValue_Value() {}
+
 func (*AnyValue_BytesValue) isAnyValue_Value() {}
+
+// ArrayValue is wire-compatible with opentelemetry.proto.common.v1.ArrayValue
+type ArrayValue struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Values        []*AnyValue            `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArrayValue) Reset() {
+	*x = ArrayValue{}
+	mi := &file_processcontext_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArrayValue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArrayValue) ProtoMessage() {}
+
+func (x *ArrayValue) ProtoReflect() protoreflect.Message {
+	mi := &file_processcontext_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArrayValue.ProtoReflect.Descriptor instead.
+func (*ArrayValue) Descriptor() ([]byte, []int) {
+	return file_processcontext_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ArrayValue) GetValues() []*AnyValue {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
+
+// KeyValueList is wire-compatible with opentelemetry.proto.common.v1.KeyValueList
+type KeyValueList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Values        []*KeyValue            `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *KeyValueList) Reset() {
+	*x = KeyValueList{}
+	mi := &file_processcontext_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyValueList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyValueList) ProtoMessage() {}
+
+func (x *KeyValueList) ProtoReflect() protoreflect.Message {
+	mi := &file_processcontext_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyValueList.ProtoReflect.Descriptor instead.
+func (*KeyValueList) Descriptor() ([]byte, []int) {
+	return file_processcontext_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *KeyValueList) GetValues() []*KeyValue {
+	if x != nil {
+		return x.Values
+	}
+	return nil
+}
 
 var File_processcontext_proto protoreflect.FileDescriptor
 
@@ -338,16 +460,24 @@ const file_processcontext_proto_rawDesc = "" +
 	"\x18dropped_attributes_count\x18\x02 \x01(\rR\x16droppedAttributesCount\"P\n" +
 	"\bKeyValue\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x122\n" +
-	"\x05value\x18\x02 \x01(\v2\x1c.otelprocesscontext.AnyValueR\x05value\"\xc0\x01\n" +
+	"\x05value\x18\x02 \x01(\v2\x1c.otelprocesscontext.AnyValueR\x05value\"\xca\x02\n" +
 	"\bAnyValue\x12#\n" +
 	"\fstring_value\x18\x01 \x01(\tH\x00R\vstringValue\x12\x1f\n" +
 	"\n" +
 	"bool_value\x18\x02 \x01(\bH\x00R\tboolValue\x12\x1d\n" +
 	"\tint_value\x18\x03 \x01(\x03H\x00R\bintValue\x12#\n" +
-	"\fdouble_value\x18\x04 \x01(\x01H\x00R\vdoubleValue\x12!\n" +
+	"\fdouble_value\x18\x04 \x01(\x01H\x00R\vdoubleValue\x12A\n" +
+	"\varray_value\x18\x05 \x01(\v2\x1e.otelprocesscontext.ArrayValueH\x00R\n" +
+	"arrayValue\x12E\n" +
+	"\fkvlist_value\x18\x06 \x01(\v2 .otelprocesscontext.KeyValueListH\x00R\vkvlistValue\x12!\n" +
 	"\vbytes_value\x18\a \x01(\fH\x00R\n" +
 	"bytesValueB\a\n" +
-	"\x05valueBRZPgithub.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext;otelprocesscontextb\x06proto3"
+	"\x05value\"B\n" +
+	"\n" +
+	"ArrayValue\x124\n" +
+	"\x06values\x18\x01 \x03(\v2\x1c.otelprocesscontext.AnyValueR\x06values\"D\n" +
+	"\fKeyValueList\x124\n" +
+	"\x06values\x18\x01 \x03(\v2\x1c.otelprocesscontext.KeyValueR\x06valuesBRZPgithub.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext;otelprocesscontextb\x06proto3"
 
 var (
 	file_processcontext_proto_rawDescOnce sync.Once
@@ -361,23 +491,29 @@ func file_processcontext_proto_rawDescGZIP() []byte {
 	return file_processcontext_proto_rawDescData
 }
 
-var file_processcontext_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_processcontext_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_processcontext_proto_goTypes = []any{
 	(*ProcessContext)(nil), // 0: otelprocesscontext.ProcessContext
 	(*Resource)(nil),       // 1: otelprocesscontext.Resource
 	(*KeyValue)(nil),       // 2: otelprocesscontext.KeyValue
 	(*AnyValue)(nil),       // 3: otelprocesscontext.AnyValue
+	(*ArrayValue)(nil),     // 4: otelprocesscontext.ArrayValue
+	(*KeyValueList)(nil),   // 5: otelprocesscontext.KeyValueList
 }
 var file_processcontext_proto_depIdxs = []int32{
 	1, // 0: otelprocesscontext.ProcessContext.resource:type_name -> otelprocesscontext.Resource
 	2, // 1: otelprocesscontext.ProcessContext.extra_attributes:type_name -> otelprocesscontext.KeyValue
 	2, // 2: otelprocesscontext.Resource.attributes:type_name -> otelprocesscontext.KeyValue
 	3, // 3: otelprocesscontext.KeyValue.value:type_name -> otelprocesscontext.AnyValue
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	4, // 4: otelprocesscontext.AnyValue.array_value:type_name -> otelprocesscontext.ArrayValue
+	5, // 5: otelprocesscontext.AnyValue.kvlist_value:type_name -> otelprocesscontext.KeyValueList
+	3, // 6: otelprocesscontext.ArrayValue.values:type_name -> otelprocesscontext.AnyValue
+	2, // 7: otelprocesscontext.KeyValueList.values:type_name -> otelprocesscontext.KeyValue
+	8, // [8:8] is the sub-list for method output_type
+	8, // [8:8] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_processcontext_proto_init() }
@@ -390,6 +526,8 @@ func file_processcontext_proto_init() {
 		(*AnyValue_BoolValue)(nil),
 		(*AnyValue_IntValue)(nil),
 		(*AnyValue_DoubleValue)(nil),
+		(*AnyValue_ArrayValue)(nil),
+		(*AnyValue_KvlistValue)(nil),
 		(*AnyValue_BytesValue)(nil),
 	}
 	type x struct{}
@@ -398,7 +536,7 @@ func file_processcontext_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_processcontext_proto_rawDesc), len(file_processcontext_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
