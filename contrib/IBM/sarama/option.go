@@ -82,7 +82,7 @@ func WithGroupID(groupID string) OptionFn {
 	}
 }
 
-// WithClusterID sets the Kafka cluster ID for Data Streams monitoring and span tagging.
+// WithClusterID sets the Kafka cluster ID for span tagging and Data Streams Monitoring.
 func WithClusterID(clusterID string) OptionFn {
 	return func(cfg *config) {
 		cfg.clusterID = clusterID
