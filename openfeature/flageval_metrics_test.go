@@ -151,9 +151,6 @@ func TestRecord(t *testing.T) {
 			if got := getAttr(dp, attrFlagKey); got != tc.flagKey {
 				t.Errorf("flag key: got %q, want %q", got, tc.flagKey)
 			}
-			if got := getAttr(dp, attrProviderName); got != providerNameAttr {
-				t.Errorf("provider name: got %q, want %q", got, providerNameAttr)
-			}
 			if got := getAttr(dp, attrVariant); got != tc.wantVariant {
 				t.Errorf("variant: got %q, want %q", got, tc.wantVariant)
 			}

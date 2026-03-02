@@ -18,20 +18,18 @@ import (
 )
 
 const (
-	meterName        = "github.com/DataDog/dd-trace-go/openfeature"
-	metricName       = "feature_flag.evaluations"
-	metricUnit       = "{evaluation}"
-	metricDesc       = "Number of feature flag evaluations"
-	providerNameAttr = "Datadog"
+	meterName  = "github.com/DataDog/dd-trace-go/openfeature"
+	metricName = "feature_flag.evaluations"
+	metricUnit = "{evaluation}"
+	metricDesc = "Number of feature flag evaluations"
 )
 
 // Attribute keys (following OTel semconv naming)
 var (
-	attrFlagKey      = attribute.Key("feature_flag.key")
-	attrProviderName = attribute.Key("feature_flag.provider.name")
-	attrVariant      = attribute.Key("feature_flag.result.variant")
-	attrReason       = attribute.Key("feature_flag.result.reason")
-	attrErrorType    = attribute.Key("error.type")
+	attrFlagKey   = attribute.Key("feature_flag.key")
+	attrVariant   = attribute.Key("feature_flag.result.variant")
+	attrReason    = attribute.Key("feature_flag.result.reason")
+	attrErrorType = attribute.Key("error.type")
 )
 
 // flagEvalMetrics manages OTel metric instruments for flag evaluation tracking.
@@ -80,7 +78,6 @@ func (m *flagEvalMetrics) record(
 ) {
 	attrs := []attribute.KeyValue{
 		attrFlagKey.String(flagKey),
-		attrProviderName.String(providerNameAttr),
 		attrVariant.String(variantKey),
 		attrReason.String(reason),
 	}
