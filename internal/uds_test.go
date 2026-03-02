@@ -6,8 +6,13 @@
 package internal
 
 import (
+	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -159,4 +164,144 @@ func TestUDSClientTransportConfig(t *testing.T) {
 	assert.Equal(t, 90*time.Second, tr.IdleConnTimeout)
 	assert.Equal(t, 10*time.Second, tr.TLSHandshakeTimeout)
 	assert.Equal(t, 1*time.Second, tr.ExpectContinueTimeout)
+}
+
+// TestUDSConcurrentConnectionReuse verifies that MaxIdleConnsPerHost=100 prevents
+// connection churn when many goroutines send requests concurrently over a UDS socket.
+// Before the fix, MaxIdleConnsPerHost defaulted to 2, which forced new connections
+// for every request beyond the 2-connection idle pool, causing "connection reset by
+// peer" errors under agent backpressure.
+func TestUDSConcurrentConnectionReuse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping connection pool test in short mode")
+	}
+
+	dir, err := os.MkdirTemp("", "uds-pool-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	socketPath := filepath.Join(dir, "test.socket")
+	ln, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	var newConnections atomic.Int64
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+		ConnState: func(_ net.Conn, state http.ConnState) {
+			if state == http.StateNew {
+				newConnections.Add(1)
+			}
+		},
+	}
+	go srv.Serve(ln) //nolint:errcheck
+	defer srv.Close()
+
+	client := UDSClient(socketPath, 5*time.Second)
+
+	const (
+		numGoroutines = 50
+		requestsEach  = 10
+	)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+
+	for range numGoroutines {
+		wg.Go(func() {
+			<-start
+			for range requestsEach {
+				req, err := http.NewRequest(http.MethodGet, "http://localhost/", nil)
+				if err != nil {
+					return
+				}
+				resp, err := client.Do(req)
+				if err != nil {
+					return
+				}
+				resp.Body.Close()
+			}
+		})
+	}
+
+	close(start)
+	wg.Wait()
+
+	// With MaxIdleConnsPerHost=100, each goroutine reuses its connection for all
+	// 10 requests. Expect ~50 new connections (one per goroutine), not 500 (one
+	// per request as would happen with the old MaxIdleConnsPerHost=2 default).
+	assert.LessOrEqual(t, newConnections.Load(), int64(55),
+		"connections should be reused; got %d new connections for %d requests",
+		newConnections.Load(), numGoroutines*requestsEach)
+}
+
+// TestUDSServerCloseRecovery verifies that the UDS HTTP client recovers transparently
+// from server-side connection closes, which reproduce agent backpressure / restart
+// scenarios that previously caused "broken pipe" or "connection reset by peer" errors.
+func TestUDSServerCloseRecovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping connection recovery test in short mode")
+	}
+
+	dir, err := os.MkdirTemp("", "uds-recovery-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	socketPath := filepath.Join(dir, "test.socket")
+	ln, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	var requestCount atomic.Int64
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			n := requestCount.Add(1)
+			// Force connection close every 5th request to simulate agent backpressure.
+			if n%5 == 0 {
+				w.Header().Set("Connection", "close")
+			}
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	go srv.Serve(ln) //nolint:errcheck
+	defer srv.Close()
+
+	client := UDSClient(socketPath, 5*time.Second)
+
+	const (
+		numGoroutines = 20
+		requestsEach  = 20
+	)
+
+	start := make(chan struct{})
+	var successes atomic.Int64
+	var wg sync.WaitGroup
+
+	for range numGoroutines {
+		wg.Go(func() {
+			<-start
+			for range requestsEach {
+				req, err := http.NewRequest(http.MethodGet, "http://localhost/", nil)
+				if err != nil {
+					continue
+				}
+				resp, err := client.Do(req)
+				if err != nil {
+					continue
+				}
+				resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					successes.Add(1)
+				}
+			}
+		})
+	}
+
+	close(start)
+	wg.Wait()
+
+	// All requests must succeed. The HTTP client transparently opens a new
+	// connection after a server-forced close, so no request should be lost.
+	assert.Equal(t, int64(numGoroutines*requestsEach), successes.Load(),
+		"all requests should succeed despite periodic server-side connection closes")
 }
