@@ -40,7 +40,12 @@ type processContextHeader struct {
 }
 
 var tryCreateMemfdMapping = func(size int) ([]byte, error) {
-	fd, err := unix.MemfdCreate(otelContextSignature, unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING|unix.MFD_NOEXEC_SEAL)
+	fallbackFlags := unix.MFD_CLOEXEC | unix.MFD_ALLOW_SEALING
+	fd, err := unix.MemfdCreate(otelContextSignature, fallbackFlags|unix.MFD_NOEXEC_SEAL)
+	if err != nil && err == unix.EINVAL {
+		// Older kernels may not support MFD_NOEXEC_SEAL, so we try again without it.
+		fd, err = unix.MemfdCreate(otelContextSignature, fallbackFlags)
+	}
 	if err != nil {
 		return nil, err
 	}
