@@ -358,7 +358,7 @@ func (s *Span) BaggageItem(key string) string {
 func safeStringerValue(v fmt.Stringer, original any) (result string) {
 	defer func() {
 		if e := recover(); e != nil {
-			if rv := reflect.ValueOf(original); rv.Kind() == reflect.Ptr && rv.IsNil() {
+			if rv := reflect.ValueOf(original); rv.Kind() == reflect.Pointer && rv.IsNil() {
 				result = "<nil>"
 				return
 			}
