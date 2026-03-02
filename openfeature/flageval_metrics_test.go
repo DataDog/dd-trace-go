@@ -186,7 +186,7 @@ func TestRecordMultipleEvaluations(t *testing.T) {
 	ctx := context.Background()
 
 	// Record 5 evaluations of the same flag with the same attributes
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		m.record(ctx, "my-flag", "variant-a", "targeting_match", nil)
 	}
 
