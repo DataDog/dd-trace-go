@@ -77,107 +77,99 @@ func getAttr(dp metricdata.DataPoint[int64], key attribute.Key) string {
 	return val.AsString()
 }
 
-func TestRecordSuccess(t *testing.T) {
-	m, reader := setupTestMetrics(t)
-	ctx := context.Background()
-
-	m.record(ctx, "my-flag", "variant-a", "targeting_match", nil)
-
-	rm := collectMetrics(t, reader)
-	dps := findCounter(t, rm)
-
-	if len(dps) != 1 {
-		t.Fatalf("expected 1 data point, got %d", len(dps))
+func TestRecord(t *testing.T) {
+	tests := []struct {
+		name        string
+		flagKey     string
+		variant     string
+		reason      string
+		err         error
+		wantValue   int64
+		wantReason  string
+		wantVariant string
+		wantError   string // empty means no error.type attribute expected
+	}{
+		{
+			name:        "success with targeting match",
+			flagKey:     "my-flag",
+			variant:     "variant-a",
+			reason:      "targeting_match",
+			err:         nil,
+			wantValue:   1,
+			wantReason:  "targeting_match",
+			wantVariant: "variant-a",
+		},
+		{
+			name:        "error flag not found",
+			flagKey:     "missing-flag",
+			variant:     "",
+			reason:      "error",
+			err:         fmt.Errorf("%w: %q", errFlagNotFound, "missing-flag"),
+			wantValue:   1,
+			wantReason:  "error",
+			wantVariant: "",
+			wantError:   "flag_not_found",
+		},
+		{
+			name:        "default reason",
+			flagKey:     "my-flag",
+			variant:     "",
+			reason:      "default",
+			err:         nil,
+			wantValue:   1,
+			wantReason:  "default",
+			wantVariant: "",
+		},
+		{
+			name:        "disabled flag",
+			flagKey:     "disabled-flag",
+			variant:     "",
+			reason:      "disabled",
+			err:         nil,
+			wantValue:   1,
+			wantReason:  "disabled",
+			wantVariant: "",
+		},
 	}
 
-	dp := dps[0]
-	if dp.Value != 1 {
-		t.Errorf("expected counter value 1, got %d", dp.Value)
-	}
-	if got := getAttr(dp, attrFlagKey); got != "my-flag" {
-		t.Errorf("expected flag key 'my-flag', got %q", got)
-	}
-	if got := getAttr(dp, attrProviderName); got != providerNameAttr {
-		t.Errorf("expected provider name %q, got %q", providerNameAttr, got)
-	}
-	if got := getAttr(dp, attrVariant); got != "variant-a" {
-		t.Errorf("expected variant 'variant-a', got %q", got)
-	}
-	if got := getAttr(dp, attrReason); got != "targeting_match" {
-		t.Errorf("expected reason 'targeting_match', got %q", got)
-	}
-	// No error.type on success
-	if _, ok := dp.Attributes.Value(attrErrorType); ok {
-		t.Error("expected no error.type attribute on successful evaluation")
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m, reader := setupTestMetrics(t)
+			m.record(context.Background(), tc.flagKey, tc.variant, tc.reason, tc.err)
 
-func TestRecordError(t *testing.T) {
-	m, reader := setupTestMetrics(t)
-	ctx := context.Background()
+			rm := collectMetrics(t, reader)
+			dps := findCounter(t, rm)
 
-	m.record(ctx, "missing-flag", "", "error", fmt.Errorf("%w: %q", errFlagNotFound, "missing-flag"))
+			if len(dps) != 1 {
+				t.Fatalf("expected 1 data point, got %d", len(dps))
+			}
 
-	rm := collectMetrics(t, reader)
-	dps := findCounter(t, rm)
-
-	if len(dps) != 1 {
-		t.Fatalf("expected 1 data point, got %d", len(dps))
-	}
-
-	dp := dps[0]
-	if dp.Value != 1 {
-		t.Errorf("expected counter value 1, got %d", dp.Value)
-	}
-	if got := getAttr(dp, attrReason); got != "error" {
-		t.Errorf("expected reason 'error', got %q", got)
-	}
-	if got := getAttr(dp, attrErrorType); got != "flag_not_found" {
-		t.Errorf("expected error type 'flag_not_found', got %q", got)
-	}
-	if got := getAttr(dp, attrVariant); got != "" {
-		t.Errorf("expected empty variant, got %q", got)
-	}
-}
-
-func TestRecordDefault(t *testing.T) {
-	m, reader := setupTestMetrics(t)
-	ctx := context.Background()
-
-	m.record(ctx, "my-flag", "", "default", nil)
-
-	rm := collectMetrics(t, reader)
-	dps := findCounter(t, rm)
-
-	if len(dps) != 1 {
-		t.Fatalf("expected 1 data point, got %d", len(dps))
-	}
-
-	dp := dps[0]
-	if got := getAttr(dp, attrReason); got != "default" {
-		t.Errorf("expected reason 'default', got %q", got)
-	}
-	if got := getAttr(dp, attrVariant); got != "" {
-		t.Errorf("expected empty variant, got %q", got)
-	}
-}
-
-func TestRecordDisabled(t *testing.T) {
-	m, reader := setupTestMetrics(t)
-	ctx := context.Background()
-
-	m.record(ctx, "disabled-flag", "", "disabled", nil)
-
-	rm := collectMetrics(t, reader)
-	dps := findCounter(t, rm)
-
-	if len(dps) != 1 {
-		t.Fatalf("expected 1 data point, got %d", len(dps))
-	}
-
-	dp := dps[0]
-	if got := getAttr(dp, attrReason); got != "disabled" {
-		t.Errorf("expected reason 'disabled', got %q", got)
+			dp := dps[0]
+			if dp.Value != tc.wantValue {
+				t.Errorf("value: got %d, want %d", dp.Value, tc.wantValue)
+			}
+			if got := getAttr(dp, attrFlagKey); got != tc.flagKey {
+				t.Errorf("flag key: got %q, want %q", got, tc.flagKey)
+			}
+			if got := getAttr(dp, attrProviderName); got != providerNameAttr {
+				t.Errorf("provider name: got %q, want %q", got, providerNameAttr)
+			}
+			if got := getAttr(dp, attrVariant); got != tc.wantVariant {
+				t.Errorf("variant: got %q, want %q", got, tc.wantVariant)
+			}
+			if got := getAttr(dp, attrReason); got != tc.wantReason {
+				t.Errorf("reason: got %q, want %q", got, tc.wantReason)
+			}
+			if tc.wantError == "" {
+				if _, ok := dp.Attributes.Value(attrErrorType); ok {
+					t.Error("expected no error.type attribute on successful evaluation")
+				}
+			} else {
+				if got := getAttr(dp, attrErrorType); got != tc.wantError {
+					t.Errorf("error.type: got %q, want %q", got, tc.wantError)
+				}
+			}
+		})
 	}
 }
 
@@ -185,7 +177,6 @@ func TestRecordMultipleEvaluations(t *testing.T) {
 	m, reader := setupTestMetrics(t)
 	ctx := context.Background()
 
-	// Record 5 evaluations of the same flag with the same attributes
 	for range 5 {
 		m.record(ctx, "my-flag", "variant-a", "targeting_match", nil)
 	}
@@ -196,7 +187,6 @@ func TestRecordMultipleEvaluations(t *testing.T) {
 	if len(dps) != 1 {
 		t.Fatalf("expected 1 aggregated data point, got %d", len(dps))
 	}
-
 	if dps[0].Value != 5 {
 		t.Errorf("expected counter value 5, got %d", dps[0].Value)
 	}
@@ -216,7 +206,6 @@ func TestRecordDifferentFlags(t *testing.T) {
 		t.Fatalf("expected 2 data points (different attribute sets), got %d", len(dps))
 	}
 
-	// Verify both flags are present
 	flags := map[string]bool{}
 	for _, dp := range dps {
 		flags[getAttr(dp, attrFlagKey)] = true
@@ -244,22 +233,10 @@ func TestClassifyError(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := classifyError(tc.err)
-			if got != tc.expected {
+			if got := classifyError(tc.err); got != tc.expected {
 				t.Errorf("classifyError(%v) = %q, want %q", tc.err, got, tc.expected)
 			}
 		})
-	}
-}
-
-
-func TestShutdownClean(t *testing.T) {
-	m, _ := setupTestMetrics(t)
-
-	// ownsProvider is false for test metrics, so this should be a noop
-	err := m.shutdown(context.Background())
-	if err != nil {
-		t.Errorf("expected clean shutdown, got error: %v", err)
 	}
 }
 
@@ -285,17 +262,14 @@ func TestRecordAllErrorTypes(t *testing.T) {
 	rm := collectMetrics(t, reader)
 	dps := findCounter(t, rm)
 
-	// Each error type creates a separate data point due to different error.type attributes
 	if len(dps) != len(errorCases) {
 		t.Fatalf("expected %d data points, got %d", len(errorCases), len(dps))
 	}
 
-	// Collect all error types
 	errorTypes := map[string]bool{}
 	for _, dp := range dps {
 		errorTypes[getAttr(dp, attrErrorType)] = true
 	}
-
 	for _, tc := range errorCases {
 		if !errorTypes[tc.expected] {
 			t.Errorf("expected error type %q in data points", tc.expected)
@@ -303,118 +277,96 @@ func TestRecordAllErrorTypes(t *testing.T) {
 	}
 }
 
-func TestIntegrationEvaluateRecordsMetric(t *testing.T) {
-	// Test that provider.evaluate() records metrics
-	provider := newDatadogProvider(ProviderConfig{})
-	config := createTestConfig()
-	provider.updateConfiguration(config)
-
-	// Replace the flagEvalMetrics with a test one
-	m, reader := setupTestMetrics(t)
-	provider.flagEvalMetrics = m
-
-	ctx := context.Background()
-
-	// Evaluate a flag that should match
-	flatCtx := of.FlattenedContext{
-		"targetingKey": "user-123",
-		"country":      "US",
-	}
-	result := provider.evaluate(ctx, "bool-flag", false, flatCtx)
-	if result.Error != nil {
-		t.Fatalf("unexpected evaluation error: %v", result.Error)
-	}
-	if result.Reason != of.TargetingMatchReason {
-		t.Errorf("expected TargetingMatchReason, got %v", result.Reason)
-	}
-
-	rm := collectMetrics(t, reader)
-	dps := findCounter(t, rm)
-
-	if len(dps) != 1 {
-		t.Fatalf("expected 1 metric data point, got %d", len(dps))
-	}
-
-	dp := dps[0]
-	if got := getAttr(dp, attrFlagKey); got != "bool-flag" {
-		t.Errorf("expected flag key 'bool-flag', got %q", got)
-	}
-	if got := getAttr(dp, attrReason); got != "targeting_match" {
-		t.Errorf("expected reason 'targeting_match', got %q", got)
-	}
-	if got := getAttr(dp, attrVariant); got != "on" {
-		t.Errorf("expected variant 'on', got %q", got)
+func TestShutdownClean(t *testing.T) {
+	m, _ := setupTestMetrics(t)
+	if err := m.shutdown(context.Background()); err != nil {
+		t.Errorf("expected clean shutdown, got error: %v", err)
 	}
 }
 
-func TestIntegrationEvaluateRecordsErrorMetric(t *testing.T) {
-	// Test that evaluating a non-existent flag records an error metric
-	provider := newDatadogProvider(ProviderConfig{})
-	config := createTestConfig()
-	provider.updateConfiguration(config)
-
-	m, reader := setupTestMetrics(t)
-	provider.flagEvalMetrics = m
-
-	ctx := context.Background()
-	flatCtx := of.FlattenedContext{
-		"targetingKey": "user-123",
+func TestIntegrationEvaluate(t *testing.T) {
+	tests := []struct {
+		name        string
+		flagKey     string
+		defaultVal  any
+		flatCtx     of.FlattenedContext
+		setConfig   bool
+		wantReason  string
+		wantVariant string
+		wantError   string
+	}{
+		{
+			name:       "targeting match records metric",
+			flagKey:    "bool-flag",
+			defaultVal: false,
+			flatCtx: of.FlattenedContext{
+				"targetingKey": "user-123",
+				"country":      "US",
+			},
+			setConfig:   true,
+			wantReason:  "targeting_match",
+			wantVariant: "on",
+		},
+		{
+			name:       "non-existent flag records error metric",
+			flagKey:    "non-existent-flag",
+			defaultVal: "default",
+			flatCtx: of.FlattenedContext{
+				"targetingKey": "user-123",
+			},
+			setConfig:  true,
+			wantReason: "error",
+			wantError:  "flag_not_found",
+		},
+		{
+			name:       "no configuration records error metric",
+			flagKey:    "any-flag",
+			defaultVal: "default",
+			flatCtx: of.FlattenedContext{
+				"targetingKey": "user-123",
+			},
+			setConfig:  false,
+			wantReason: "error",
+			wantError:  "no_configuration",
+		},
 	}
 
-	result := provider.evaluate(ctx, "non-existent-flag", "default", flatCtx)
-	if result.Error == nil {
-		t.Fatal("expected evaluation error for non-existent flag")
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newDatadogProvider(ProviderConfig{})
+			if tc.setConfig {
+				provider.updateConfiguration(createTestConfig())
+			}
 
-	rm := collectMetrics(t, reader)
-	dps := findCounter(t, rm)
+			m, reader := setupTestMetrics(t)
+			provider.flagEvalMetrics = m
 
-	if len(dps) != 1 {
-		t.Fatalf("expected 1 metric data point, got %d", len(dps))
-	}
+			provider.evaluate(context.Background(), tc.flagKey, tc.defaultVal, tc.flatCtx)
 
-	dp := dps[0]
-	if got := getAttr(dp, attrFlagKey); got != "non-existent-flag" {
-		t.Errorf("expected flag key 'non-existent-flag', got %q", got)
-	}
-	if got := getAttr(dp, attrReason); got != "error" {
-		t.Errorf("expected reason 'error', got %q", got)
-	}
-	if got := getAttr(dp, attrErrorType); got != "flag_not_found" {
-		t.Errorf("expected error type 'flag_not_found', got %q", got)
-	}
-}
+			rm := collectMetrics(t, reader)
+			dps := findCounter(t, rm)
 
-func TestIntegrationNoConfigRecordsMetric(t *testing.T) {
-	// Test that evaluating without configuration records the right error metric
-	provider := newDatadogProvider(ProviderConfig{})
-	// Do NOT set configuration
+			if len(dps) != 1 {
+				t.Fatalf("expected 1 metric data point, got %d", len(dps))
+			}
 
-	m, reader := setupTestMetrics(t)
-	provider.flagEvalMetrics = m
-
-	ctx := context.Background()
-	flatCtx := of.FlattenedContext{
-		"targetingKey": "user-123",
-	}
-
-	result := provider.evaluate(ctx, "any-flag", "default", flatCtx)
-	if result.Error == nil {
-		t.Fatal("expected evaluation error when no configuration loaded")
-	}
-
-	rm := collectMetrics(t, reader)
-	dps := findCounter(t, rm)
-
-	if len(dps) != 1 {
-		t.Fatalf("expected 1 metric data point, got %d", len(dps))
-	}
-
-	dp := dps[0]
-	if got := getAttr(dp, attrReason); got != "error" {
-		t.Errorf("expected reason 'error', got %q", got)
-	}
-	if got := getAttr(dp, attrErrorType); got != "no_configuration" {
-		t.Errorf("expected error type 'no_configuration', got %q", got)
+			dp := dps[0]
+			if got := getAttr(dp, attrFlagKey); got != tc.flagKey {
+				t.Errorf("flag key: got %q, want %q", got, tc.flagKey)
+			}
+			if got := getAttr(dp, attrReason); got != tc.wantReason {
+				t.Errorf("reason: got %q, want %q", got, tc.wantReason)
+			}
+			if tc.wantVariant != "" {
+				if got := getAttr(dp, attrVariant); got != tc.wantVariant {
+					t.Errorf("variant: got %q, want %q", got, tc.wantVariant)
+				}
+			}
+			if tc.wantError != "" {
+				if got := getAttr(dp, attrErrorType); got != tc.wantError {
+					t.Errorf("error.type: got %q, want %q", got, tc.wantError)
+				}
+			}
+		})
 	}
 }
