@@ -6,6 +6,8 @@
 package tracer
 
 import (
+	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-go/v5/statsd"
 
@@ -334,4 +337,77 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	group := actualStats[0].Stats[0].Stats[0]
 	assert.Equal(t, uniqueMethod, group.GetHTTPMethod())
 	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
+}
+
+// failingStatsTransport is a transport whose sendStats fails a configurable
+// number of times before succeeding, used to test retry behaviour.
+type failingStatsTransport struct {
+	dummyTransport
+	failCount    int
+	sendAttempts int
+	statsSent    bool
+}
+
+func (t *failingStatsTransport) sendStats(_ *pb.ClientStatsPayload, _ int) error {
+	t.sendAttempts++
+	if t.failCount > 0 {
+		t.failCount--
+		return errors.New("stats send failed")
+	}
+	t.statsSent = true
+	return nil
+}
+
+func TestStatsFlushRetries(t *testing.T) {
+	testcases := []struct {
+		configRetries int
+		retryInterval time.Duration
+		failCount     int
+		statsSent     bool
+		expAttempts   int
+	}{
+		{configRetries: 0, retryInterval: time.Millisecond, failCount: 0, statsSent: true, expAttempts: 1},
+		{configRetries: 0, retryInterval: time.Millisecond, failCount: 1, statsSent: false, expAttempts: 1},
+
+		{configRetries: 1, retryInterval: time.Millisecond, failCount: 0, statsSent: true, expAttempts: 1},
+		{configRetries: 1, retryInterval: time.Millisecond, failCount: 1, statsSent: true, expAttempts: 2},
+		{configRetries: 1, retryInterval: time.Millisecond, failCount: 2, statsSent: false, expAttempts: 2},
+
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 0, statsSent: true, expAttempts: 1},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 1, statsSent: true, expAttempts: 2},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 2, statsSent: true, expAttempts: 3},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 3, statsSent: false, expAttempts: 3},
+	}
+
+	bucketSize := int64(500_000)
+	s := Span{
+		name:     "http.request",
+		start:    time.Now().UnixNano() + 3*bucketSize,
+		duration: 1,
+		metrics:  map[string]float64{keyMeasured: 1},
+	}
+
+	for _, test := range testcases {
+		name := fmt.Sprintf("retries=%d/fails=%d/sent=%v", test.configRetries, test.failCount, test.statsSent)
+		t.Run(name, func(t *testing.T) {
+			p := &failingStatsTransport{failCount: test.failCount}
+			cfg, err := newTestConfig(func(c *config) {
+				c.transport = p
+				c.sendRetries = test.configRetries
+				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
+				c.internalConfig.SetEnv("someEnv", internalconfig.OriginCode)
+			})
+			require.NoError(t, err)
+
+			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
+			ss, ok := c.newTracerStatSpan(&s, nil)
+			require.True(t, ok)
+			c.Start()
+			c.In <- ss
+			c.Stop()
+
+			assert.Equal(t, test.expAttempts, p.sendAttempts)
+			assert.Equal(t, test.statsSent, p.statsSent)
+		})
+	}
 }

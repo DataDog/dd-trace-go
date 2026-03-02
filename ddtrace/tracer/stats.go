@@ -252,7 +252,17 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	for _, csp := range csps {
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
-		if err := c.cfg.transport.sendStats(csp, obfVersion); err != nil {
+		var err error
+		for attempt := 0; attempt <= c.cfg.sendRetries; attempt++ {
+			err = c.cfg.transport.sendStats(csp, obfVersion)
+			if err == nil {
+				break
+			}
+			if attempt < c.cfg.sendRetries {
+				time.Sleep(c.cfg.internalConfig.RetryInterval())
+			}
+		}
+		if err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
 			log.Error("Error sending stats payload: %s", err.Error())
 		}
