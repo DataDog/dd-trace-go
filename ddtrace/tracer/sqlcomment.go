@@ -211,8 +211,8 @@ func (c *SQLCommentCarrier) Extract() (*SpanContext, error) {
 // It returns a span context with the appropriate attributes
 func spanContextFromTraceComment(c string) (*SpanContext, error) {
 	var ctx SpanContext
-	kvs := strings.Split(c, ",")
-	for _, unparsedKV := range kvs {
+	kvs := strings.SplitSeq(c, ",")
+	for unparsedKV := range kvs {
 		splitKV := strings.Split(unparsedKV, "=")
 		if len(splitKV) != 2 {
 			return nil, ErrSpanContextCorrupted

@@ -213,8 +213,8 @@ func assertTest(t *testing.T) {
 	hasSuite := false
 	hasTest := false
 
-	assertCommon := func(spanTags map[string]interface{}) {
-		assert.Subset(spanTags, map[string]interface{}{
+	assertCommon := func(spanTags map[string]any) {
+		assert.Subset(spanTags, map[string]any{
 			constants.Origin:          constants.CIAppTestOrigin,
 			constants.TestType:        constants.TestTypeTest,
 			constants.LogicalCPUCores: float64(runtime.NumCPU()),
@@ -247,7 +247,7 @@ func assertTest(t *testing.T) {
 
 		// Assert Session
 		if spanTags[ext.SpanType] == constants.SpanTypeTestSession {
-			assert.Subset(spanTags, map[string]interface{}{
+			assert.Subset(spanTags, map[string]any{
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
 			assert.Contains(spanTags, constants.TestSessionIDTag)
@@ -257,7 +257,7 @@ func assertTest(t *testing.T) {
 
 		// Assert Module
 		if spanTags[ext.SpanType] == constants.SpanTypeTestModule {
-			assert.Subset(spanTags, map[string]interface{}{
+			assert.Subset(spanTags, map[string]any{
 				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
@@ -270,7 +270,7 @@ func assertTest(t *testing.T) {
 
 		// Assert Suite
 		if spanTags[ext.SpanType] == constants.SpanTypeTestSuite {
-			assert.Subset(spanTags, map[string]interface{}{
+			assert.Subset(spanTags, map[string]any{
 				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 			})
@@ -285,7 +285,7 @@ func assertTest(t *testing.T) {
 
 		// Assert Test
 		if spanTags[ext.SpanType] == constants.SpanTypeTest {
-			assert.Subset(spanTags, map[string]interface{}{
+			assert.Subset(spanTags, map[string]any{
 				constants.TestModule:    "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting",
 				constants.TestFramework: "golang.org/pkg/testing",
 				constants.TestSuite:     "testing_test.go",

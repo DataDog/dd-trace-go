@@ -105,22 +105,16 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 	// simulating "real-world" usage of the Kafka client.
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		readerA := tc.newReader(topicA)
 		defer func() { require.NoError(t, readerA.Close()) }()
 		m, err := readerA.ReadMessage(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, "Hello World!", string(m.Value))
 		assert.Equal(t, "Key-A", string(m.Key))
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		readerB := tc.newReader(topicB)
 		defer func() { require.NoError(t, readerB.Close()) }()
 		m, err := readerB.FetchMessage(ctx)
@@ -129,7 +123,7 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 		assert.Equal(t, "Key-A", string(m.Key))
 		err = readerB.CommitMessages(ctx, m)
 		require.NoError(t, err)
-	}()
+	})
 	wg.Wait()
 }
 

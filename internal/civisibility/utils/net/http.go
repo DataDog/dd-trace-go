@@ -43,10 +43,10 @@ const (
 
 // FormFile represents a file to be uploaded in a multipart form request.
 type FormFile struct {
-	FieldName   string      // The name of the form field
-	FileName    string      // The name of the file
-	Content     interface{} // The content of the file (can be []byte, map, struct, etc.)
-	ContentType string      // The MIME type of the file (e.g., "application/json", "application/octet-stream")
+	FieldName   string // The name of the form field
+	FileName    string // The name of the file
+	Content     any    // The content of the file (can be []byte, map, struct, etc.)
+	ContentType string // The MIME type of the file (e.g., "application/json", "application/octet-stream")
 }
 
 // RequestConfig holds configuration for a request.
@@ -54,7 +54,7 @@ type RequestConfig struct {
 	Method     string            // HTTP method: GET or POST
 	URL        string            // Request URL
 	Headers    map[string]string // Additional HTTP headers
-	Body       interface{}       // Request body for JSON, MessagePack, or raw bytes
+	Body       any               // Request body for JSON, MessagePack, or raw bytes
 	Format     string            // Format: "json" or "msgpack"
 	Compressed bool              // Whether to use gzip compression
 	Files      []FormFile        // Files to be uploaded in a multipart form data request
@@ -72,7 +72,7 @@ type Response struct {
 }
 
 // Unmarshal deserializes the response body into the provided target based on the response format.
-func (r *Response) Unmarshal(target interface{}) error {
+func (r *Response) Unmarshal(target any) error {
 	if !r.CanUnmarshal {
 		return fmt.Errorf("cannot unmarshal response with status code %d", r.StatusCode)
 	}
@@ -337,7 +337,7 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 // Helper functions for data serialization, compression, and handling multipart form data
 
 // serializeData serializes the data based on the format.
-func serializeData(data interface{}, format string) ([]byte, error) {
+func serializeData(data any, format string) ([]byte, error) {
 	switch v := data.(type) {
 	case []byte:
 		// If it's already a byte array, use it directly
@@ -398,15 +398,14 @@ func exponentialBackoff(retryCount int, initialDelay time.Duration) {
 // getExponentialBackoffDuration calculates the backoff duration based on the retry count and initial delay.
 func getExponentialBackoffDuration(retryCount int, initialDelay time.Duration) time.Duration {
 	maxDelay := 10 * time.Second
-	delay := initialDelay * (1 << uint(retryCount)) // Exponential backoff
-	if delay > maxDelay {
-		delay = maxDelay
-	}
+	delay := min(
+		// Exponential backoff
+		initialDelay*(1<<uint(retryCount)), maxDelay)
 	return delay
 }
 
 // prepareContent prepares the content for a FormFile by serializing it if needed.
-func prepareContent(content interface{}, contentType string) ([]byte, error) {
+func prepareContent(content any, contentType string) ([]byte, error) {
 	if contentType == ContentTypeJSON {
 		return serializeData(content, FormatJSON)
 	} else if contentType == ContentTypeMessagePack {

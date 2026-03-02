@@ -282,13 +282,19 @@ func TestShouldDrop(t *testing.T) {
 			s.setSamplingPriority(tt.prio, samplernames.Default)
 			s.SetTag(ext.EventSampleRate, tt.rate)
 			s.context.errors.Store(tt.errors)
-			assert.Equal(t, shouldKeep(s), tt.want)
+			s.mu.RLock()
+			result := shouldKeep(s)
+			s.mu.RUnlock()
+			assert.Equal(t, result, tt.want)
 		})
 	}
 
 	t.Run("none", func(t *testing.T) {
 		s := newSpan("", "", "", 1, 1, 0)
-		assert.Equal(t, shouldKeep(s), false)
+		s.mu.RLock()
+		result := shouldKeep(s)
+		s.mu.RUnlock()
+		assert.Equal(t, result, false)
 	})
 }
 
@@ -309,7 +315,11 @@ func TestShouldComputeStats(t *testing.T) {
 		{map[string]float64{}, false},
 	} {
 		t.Run("", func(t *testing.T) {
-			assert.Equal(t, shouldComputeStats(&Span{metrics: tt.metrics}), tt.want)
+			s := &Span{metrics: tt.metrics}
+			s.mu.RLock()
+			result := shouldComputeStats(s)
+			s.mu.RUnlock()
+			assert.Equal(t, result, tt.want)
 		})
 	}
 }
@@ -345,7 +355,7 @@ func TestSpanFinishWithError(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	errMsg, _ := getMeta(span, ext.ErrorMsg)
 	errType, _ := getMeta(span, ext.ErrorType)
-	errStack, _ := getMeta(span, ext.ErrorStack)
+	errStack, _ := getMeta(span, ext.ErrorHandlingStack)
 	assert.Equal("test error", errMsg)
 	assert.Equal("*errors.errorString", errType)
 	assert.NotEmpty(errStack)
@@ -360,7 +370,7 @@ func TestSpanFinishWithErrorNoDebugStack(t *testing.T) {
 
 	errMsg, _ := getMeta(span, ext.ErrorMsg)
 	errType, _ := getMeta(span, ext.ErrorType)
-	_, hasErrStack := getMeta(span, ext.ErrorStack)
+	_, hasErrStack := getMeta(span, ext.ErrorHandlingStack)
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", errMsg)
 	assert.Equal("*errors.errorString", errType)
@@ -376,7 +386,7 @@ func TestSpanFinishWithErrorStackFrames(t *testing.T) {
 
 	errMsg, _ := getMeta(span, ext.ErrorMsg)
 	errType, _ := getMeta(span, ext.ErrorType)
-	errStack, _ := getMeta(span, ext.ErrorStack)
+	errStack, _ := getMeta(span, ext.ErrorHandlingStack)
 
 	assert.Equal(int32(1), span.error)
 	assert.Equal("test error", errMsg)
@@ -430,7 +440,7 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("abc", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.NotEmpty(span.meta[ext.ErrorStack])
+	assert.NotEmpty(span.meta[ext.ErrorHandlingStack])
 
 	span.SetTag(ext.Error, "something else")
 	assert.Equal(int32(1), span.error)
@@ -534,13 +544,13 @@ func TestSpanSetTagError(t *testing.T) {
 	t.Run("off", func(t *testing.T) {
 		span := newBasicSpan("web.request")
 		span.SetTag(ext.ErrorNoStackTrace, errors.New("error value with no trace"))
-		assert.Empty(t, span.meta[ext.ErrorStack])
+		assert.Empty(t, span.meta[ext.ErrorHandlingStack])
 	})
 
 	t.Run("on", func(t *testing.T) {
 		span := newBasicSpan("web.request")
 		span.SetTag(ext.Error, errors.New("error value with trace"))
-		assert.NotEmpty(t, span.meta[ext.ErrorStack])
+		assert.NotEmpty(t, span.meta[ext.ErrorHandlingStack])
 	})
 }
 
@@ -559,7 +569,10 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			assert.NoError(t, err)
 			span := tracer.newRootSpan("root span", "my service", "my resource")
 			span.SetTag(scenario.tag, true)
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			result := shouldKeep(span)
+			span.mu.RUnlock()
+			assert.Equal(t, scenario.keep, result)
 		})
 
 		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
@@ -570,7 +583,10 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			spanCtx.setSamplingPriority(scenario.p, samplernames.RemoteRate)
 			span := tracer.StartSpan("non-local root span", ChildOf(spanCtx))
 			span.SetTag(scenario.tag, true)
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			result := shouldKeep(span)
+			span.mu.RUnlock()
+			assert.Equal(t, scenario.keep, result)
 		})
 		t.Run(fmt.Sprintf("%s/upstream-drop-locked", scenario.tag), func(t *testing.T) {
 			tracer, err := newTracer()
@@ -593,7 +609,10 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 
 			// The sampling decision should be applied as manual sampling takes
 			// precedence over propagated decision
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			result := shouldKeep(span)
+			span.mu.RUnlock()
+			assert.Equal(t, scenario.keep, result)
 		})
 		t.Run(fmt.Sprintf("%s/upstream-keep-locked", scenario.tag), func(t *testing.T) {
 			tracer, err := newTracer()
@@ -616,7 +635,10 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 
 			// The sampling decision should be applied as manual sampling takes
 			// precedence over propagated decision
-			assert.Equal(t, scenario.keep, shouldKeep(span))
+			span.mu.RLock()
+			result := shouldKeep(span)
+			span.mu.RUnlock()
+			assert.Equal(t, scenario.keep, result)
 		})
 	}
 }
@@ -634,7 +656,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(numGoroutines)
-		for j := 0; j < numGoroutines; j++ {
+		for range numGoroutines {
 			go func() {
 				defer wg.Done()
 				childSpan := tracer.newChildSpan("child", rootSpan)
@@ -655,7 +677,7 @@ func TestTraceManualKeepRace(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(numGoroutines)
-		for j := 0; j < numGoroutines; j++ {
+		for range numGoroutines {
 			go func() {
 				defer wg.Done()
 				childSpan := tracer.StartSpan(
@@ -875,7 +897,7 @@ func TestErrorStack(t *testing.T) {
 		assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
 		assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
 
-		stack := span.meta[ext.ErrorStack]
+		stack := span.meta[ext.ErrorHandlingStack]
 		assert.NotEqual("", stack)
 
 		span.Finish()
@@ -896,7 +918,7 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("Something wrong", span.meta[ext.ErrorMsg])
 	assert.Equal("*errors.errorString", span.meta[ext.ErrorType])
-	assert.NotEqual("", span.meta[ext.ErrorStack])
+	assert.NotEqual("", span.meta[ext.ErrorHandlingStack])
 	span.Finish()
 
 	// operating on a finished span is a no-op
@@ -912,7 +934,7 @@ func TestSpanError(t *testing.T) {
 	assert.Equal(nMeta+3, len(meta))
 	assert.Equal("", meta[ext.ErrorMsg])
 	assert.Equal("", meta[ext.ErrorType])
-	assert.Equal("", meta[ext.ErrorStack])
+	assert.Equal("", meta[ext.ErrorHandlingStack])
 }
 
 func TestSpanError_Typed(t *testing.T) {
@@ -928,7 +950,7 @@ func TestSpanError_Typed(t *testing.T) {
 	assert.Equal(int32(1), span.error)
 	assert.Equal("boom", span.meta[ext.ErrorMsg])
 	assert.Equal("*tracer.boomError", span.meta[ext.ErrorType])
-	assert.NotEqual("", span.meta[ext.ErrorStack])
+	assert.NotEqual("", span.meta[ext.ErrorHandlingStack])
 }
 
 func TestSpanErrorNil(t *testing.T) {
@@ -1059,7 +1081,7 @@ func TestSpanErrorNoStackTrace(t *testing.T) {
 		span.SetTag(ext.ErrorNoStackTrace, errors.New("test"))
 		span.Finish()
 
-		errStack, _ := getMeta(span, ext.ErrorStack)
+		errStack, _ := getMeta(span, ext.ErrorHandlingStack)
 		errMsg, _ := getMeta(span, ext.ErrorMsg)
 		errType, _ := getMeta(span, ext.ErrorType)
 		assert.Equal(int32(1), span.error)
@@ -1568,6 +1590,27 @@ func BenchmarkSetTagField(b *testing.B) {
 	}
 }
 
+func BenchmarkSetTagVsSetTagLocked(b *testing.B) {
+	span := newBasicSpan("bench.span")
+
+	b.ResetTimer()
+	b.Run("SetTag", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			span.SetTag("key", "value")
+		}
+	})
+	b.Run("setTagLocked", func(b *testing.B) {
+		span.mu.Lock()
+		defer span.mu.Unlock()
+
+		b.ReportAllocs()
+		for b.Loop() {
+			span.setTagLocked("key", "value")
+		}
+	})
+}
+
 func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
 	span := newBasicSpan("bench.span")
 
@@ -1619,7 +1662,7 @@ func testConcurrentSpanSetTag(t *testing.T) {
 	const n = 100
 	wg := sync.WaitGroup{}
 	wg.Add(n * 2)
-	for i := 0; i < n; i++ {
+	for range n {
 		go func() {
 			tracer.Inject(span.Context(), TextMapCarrier(map[string]string{}))
 			wg.Done()

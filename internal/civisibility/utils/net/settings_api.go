@@ -35,7 +35,7 @@ type (
 		RepositoryURL  string             `json:"repository_url,omitempty"`
 		Branch         string             `json:"branch,omitempty"`
 		Sha            string             `json:"sha,omitempty"`
-		Configurations testConfigurations `json:"configurations,omitempty"`
+		Configurations testConfigurations `json:"configurations"`
 	}
 
 	settingsResponse struct {
@@ -43,7 +43,7 @@ type (
 			ID         string               `json:"id"`
 			Type       string               `json:"type"`
 			Attributes SettingsResponseData `json:"attributes"`
-		} `json:"data,omitempty"`
+		} `json:"data"`
 	}
 
 	SettingsResponseData struct {

@@ -46,7 +46,7 @@ func errorType(err error) string {
 	}
 
 	errType := reflect.TypeOf(err)
-	if errType.Kind() == reflect.Ptr {
+	if errType.Kind() == reflect.Pointer {
 		errType = errType.Elem()
 	}
 

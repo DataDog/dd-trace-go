@@ -241,10 +241,10 @@ func TestLogPropagators(t *testing.T) {
 
 type prop struct{}
 
-func (p *prop) Inject(_ *SpanContext, _ interface{}) (e error) {
+func (p *prop) Inject(_ *SpanContext, _ any) (e error) {
 	return
 }
-func (p *prop) Extract(_ interface{}) (sctx *SpanContext, e error) {
+func (p *prop) Extract(_ any) (sctx *SpanContext, e error) {
 	return
 }
 

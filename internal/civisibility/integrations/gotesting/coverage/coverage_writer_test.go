@@ -50,7 +50,7 @@ func TestCoverageWriterConcurrentFlush(t *testing.T) {
 	writer := newCoverageWriter()
 	coverage := &testCoverage{}
 
-	for i := 0; i < concurrentConnectionLimit+1; i++ {
+	for range concurrentConnectionLimit + 1 {
 		writer.add(coverage)
 	}
 	writer.flush()

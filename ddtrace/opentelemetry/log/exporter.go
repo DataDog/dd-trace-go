@@ -468,7 +468,7 @@ func resolveHeaders() map[string]string {
 // Spaces are trimmed, invalid entries (no '=') are silently ignored
 func parseHeaders(str string) map[string]string {
 	headers := make(map[string]string)
-	for _, entry := range strings.Split(str, ",") {
+	for entry := range strings.SplitSeq(str, ",") {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue

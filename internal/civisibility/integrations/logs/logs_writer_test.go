@@ -50,7 +50,7 @@ func TestLogsWriterConcurrentFlush(t *testing.T) {
 	writer := newLogsWriter()
 	entry := &logEntry{}
 
-	for i := 0; i < concurrentConnectionLimit+1; i++ {
+	for range concurrentConnectionLimit + 1 {
 		writer.add(entry)
 	}
 	writer.flush()

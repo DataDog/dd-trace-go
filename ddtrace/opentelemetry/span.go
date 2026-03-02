@@ -30,7 +30,7 @@ type span struct {
 	mu         sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
 	DD         *tracer.Span
 	finished   bool
-	attributes map[string]interface{}
+	attributes map[string]any
 	spanKind   oteltrace.SpanKind
 	finishOpts []tracer.FinishOption
 	statusInfo
@@ -192,7 +192,7 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 		return
 	}
 	c := oteltrace.NewEventConfig(opts...)
-	attrs := make(map[string]interface{})
+	attrs := make(map[string]any)
 	for _, a := range c.Attributes() {
 		attrs[string(a.Key)] = a.Value.AsInterface()
 	}
@@ -230,7 +230,7 @@ func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 
 // toReservedAttributes recognizes a set of span attributes that have a special meaning.
 // These tags should supersede other values.
-func toReservedAttributes(k string, v attribute.Value) (string, interface{}) {
+func toReservedAttributes(k string, v attribute.Value) (string, any) {
 	switch k {
 	case "operation.name":
 		if ops := strings.ToLower(v.AsString()); ops != "" {

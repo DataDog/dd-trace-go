@@ -211,11 +211,11 @@ func (ht headerTag) toString() string {
 
 type tags []string
 
-func (t *tags) toMap() *map[string]interface{} {
+func (t *tags) toMap() *map[string]any {
 	if t == nil {
 		return nil
 	}
-	m := make(map[string]interface{}, len(*t))
+	m := make(map[string]any, len(*t))
 	for _, tag := range *t {
 		if kv := strings.SplitN(tag, ":", 2); len(kv) == 2 {
 			m[kv[0]] = kv[1]

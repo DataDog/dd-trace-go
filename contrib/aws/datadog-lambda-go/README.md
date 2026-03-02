@@ -54,6 +54,8 @@ Follow the [installation instructions](https://docs.datadoghq.com/serverless/ins
 
 See the [advanced configuration options](https://docs.datadoghq.com/serverless/configuration) to tag your telemetry, capture request/response payloads, filter or scrub sensitive information from logs or traces, and more.
 
+Note: The Datadog Extension handles trace stats server-side. Therefore this Lambda wrapper always disables client-side trace stats computation when initializing the tracer, regardless of `DD_TRACE_STATS_COMPUTATION_ENABLED`. 
+
 ## Opening Issues
 
 If you encounter a bug with this package, we want to hear about it. Before opening a new issue, search the existing issues to avoid duplicates.
@@ -75,5 +77,3 @@ For product feedback and questions, join the `#serverless` channel in the [Datad
 Unless explicitly stated otherwise all files in this package are licensed under the Apache License Version 2.0.
 
 This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
-
-

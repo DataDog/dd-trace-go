@@ -324,7 +324,7 @@ func TestDatasetCRUDOperations(t *testing.T) {
 		largeString := strings.Repeat("x", 1500000) // ~1.5MB
 
 		// Append 4 large records to exceed the 5MB threshold
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			ds.Append(Record{
 				Input: map[string]any{
 					"large_field": largeString,
@@ -876,7 +876,7 @@ func TestDatasetPull(t *testing.T) {
 		assert.Equal(t, 3, requestCount, "should have made 3 requests for 3 pages")
 
 		// Verify each record
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			rec, ok := ds.Record(i)
 			require.True(t, ok, "record %d should exist", i)
 			inputMap, ok := rec.Input.(map[string]any)
@@ -1133,7 +1133,7 @@ func randomString(n int) string {
 
 func randomMap(k int) map[string]any {
 	m := make(map[string]any, k)
-	for i := 0; i < k; i++ {
+	for range k {
 		key := randomString(5)
 		// Randomly assign int or string
 		if rand.Intn(2) == 0 {
@@ -1157,7 +1157,7 @@ func randomRecord() *Record {
 
 func generateRandomRecords(n int) []*Record {
 	records := make([]*Record, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		records[i] = randomRecord()
 	}
 	return records

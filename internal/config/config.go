@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"net/url"
 	"os"
@@ -536,9 +537,7 @@ func (c *Config) FeatureFlags() map[string]struct{} {
 	defer c.mu.RUnlock()
 	// Return a copy to prevent external modification
 	result := make(map[string]struct{}, len(c.featureFlags))
-	for k, v := range c.featureFlags {
-		result[k] = v
-	}
+	maps.Copy(result, c.featureFlags)
 	return result
 }
 
@@ -565,9 +564,7 @@ func (c *Config) ServiceMappings() map[string]string {
 		return nil
 	}
 	result := make(map[string]string, len(c.serviceMappings))
-	for k, v := range c.serviceMappings {
-		result[k] = v
-	}
+	maps.Copy(result, c.serviceMappings)
 	return result
 }
 

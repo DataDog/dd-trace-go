@@ -68,10 +68,10 @@ type Tracer interface {
 	// Extract extracts a span context from a given carrier. Note that baggage item
 	// keys will always be lower-cased to maintain consistency. It is impossible to
 	// maintain the original casing due to MIME header canonicalization standards.
-	Extract(carrier interface{}) (*SpanContext, error)
+	Extract(carrier any) (*SpanContext, error)
 
 	// Inject injects a span context into the given carrier.
-	Inject(context *SpanContext, carrier interface{}) error
+	Inject(context *SpanContext, carrier any) error
 
 	// TracerConf returns a snapshot of the current configuration of the tracer.
 	TracerConf() TracerConf
@@ -209,6 +209,11 @@ var statsInterval = 10 * time.Second
 // TODO: The entire Start/Stop code should be refactored, it's pretty gnarly.
 var startStopMu locking.Mutex
 
+// reportInitTime reports the tracer initialization duration as a telemetry metric.
+func reportInitTime(start time.Time) {
+	telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(start).Milliseconds()))
+}
+
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
@@ -216,9 +221,7 @@ func Start(opts ...StartOption) error {
 	startStopMu.Lock()
 	defer startStopMu.Unlock()
 
-	defer func(now time.Time) {
-		telemetry.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Submit(float64(time.Since(now).Milliseconds()))
-	}(time.Now())
+	defer reportInitTime(time.Now())
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err
@@ -368,14 +371,14 @@ func StartSpan(operationName string, opts ...StartSpanOption) *Span {
 // Extract extracts a SpanContext from the carrier. The carrier is expected
 // to implement TextMapReader, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Extract(carrier interface{}) (*SpanContext, error) {
+func Extract(carrier any) (*SpanContext, error) {
 	return getGlobalTracer().Extract(carrier)
 }
 
 // Inject injects the given SpanContext into the carrier. The carrier is
 // expected to implement TextMapWriter, otherwise an error is returned.
 // If the tracer is not started, calling this function is a no-op.
-func Inject(ctx *SpanContext, carrier interface{}) error {
+func Inject(ctx *SpanContext, carrier any) error {
 	return getGlobalTracer().Inject(ctx, carrier)
 }
 
@@ -496,20 +499,16 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.internalConfig.RuntimeMetricsEnabled() {
 		log.Debug("Runtime metrics enabled.")
-		t.wg.Add(1)
-		go func() {
-			defer t.wg.Done()
+		t.wg.Go(func() {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
-		}()
+		})
 	}
 	if c.internalConfig.DebugAbandonedSpans() {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
 		t.abandonedSpansDebugger.Start(t.config.internalConfig.SpanTimeout())
 	}
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
+	t.wg.Go(func() {
 		tick := t.config.tickChan
 		if tick == nil {
 			ticker := time.NewTicker(flushInterval)
@@ -517,12 +516,10 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 			tick = ticker.C
 		}
 		t.worker(tick)
-	}()
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
+	})
+	t.wg.Go(func() {
 		t.reportHealthMetricsAtInterval(statsInterval)
-	}()
+	})
 	t.stats.Start()
 	return t, nil
 }
@@ -662,6 +659,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 	}
 }
 
+// +checklocksignore — Initialization time, span not yet shared.
 func spanStart(operationName string, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
 	for _, fn := range options {
@@ -728,16 +726,16 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
-	if context != nil && !context.baggageOnly {
+	if context != nil && !context.baggageOnly { // +checklocksignore - Read-only after init.
 		// this is a child span
 		span.traceID = context.traceID.Lower()
 		span.parentID = context.spanID
 		if p, ok := context.SamplingPriority(); ok {
 			span.setMetricInit(keySamplingPriority, float64(p))
 		}
-		if context.span == nil && context.origin != "" { // remote parent
+		if context.span == nil && context.origin != "" { // +checklocksignore - Read-only after init.
 			// mark origin
-			span.setMetaInit(keyOrigin, context.origin)
+			span.setMetaInit(keyOrigin, context.origin) // +checklocksignore - Read-only after init.
 		}
 		if context.reparentID != "" {
 			span.setMetaInit(keyReparentID, context.reparentID)
@@ -750,9 +748,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	}
 	span.setMetaInit("language", "go")
 	// add tags from options
-	for k, v := range opts.Tags {
-		span.SetTag(k, v)
-	}
+	span.setTags(opts.Tags)
 	isRootSpan := context == nil || context.span == nil
 	if isRootSpan {
 		traceprof.SetProfilerRootTags(span)
@@ -769,6 +765,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 }
 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
+// +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
 	if !t.config.enabled.get() {
 		return nil
@@ -786,9 +783,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	span.supportsEvents = t.config.agent.spanEventsAvailable
 
 	// add global tags
-	for k, v := range t.config.globalTags.get() {
-		span.SetTag(k, v)
-	}
+	span.setTags(t.config.globalTags.get())
 
 	if newSvc, ok := cfg.ServiceMapping(span.service); ok {
 		span.service = newSvc
@@ -838,6 +833,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // endpoint filtering feature to span. When span finishes, any pprof labels
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
+// +checklocksignore — Initialization time, called from StartSpan before span is shared.
 func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 	// Important: The label keys are ordered alphabetically to take advantage of
 	// an upstream optimization that landed in go1.24.  This results in ~10%
@@ -874,6 +870,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
 // spanResourcePIISafe returns true if s.resource can be considered to not
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
 // but http, rpc or custom (s.spanType == "") span resource names generally do not.
+// +checklocksignore — Reads spanType, immutable after initialization.
 func spanResourcePIISafe(s *Span) bool {
 	return s.spanType == ext.SpanTypeWeb || s.spanType == ext.AppTypeRPC || s.spanType == ""
 }
@@ -908,7 +905,7 @@ func (t *tracer) Stop() {
 }
 
 // Inject uses the configured or default TextMap Propagator.
-func (t *tracer) Inject(ctx *SpanContext, carrier interface{}) error {
+func (t *tracer) Inject(ctx *SpanContext, carrier any) error {
 	if !t.config.enabled.get() {
 		return nil
 	}
@@ -955,7 +952,7 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 }
 
 // Extract uses the configured or default TextMap Propagator.
-func (t *tracer) Extract(carrier interface{}) (*SpanContext, error) {
+func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 	if !t.config.enabled.get() {
 		return nil, nil
 	}
@@ -1056,6 +1053,7 @@ func (t *tracer) sample(span *Span) {
 	t.prioritySampling.apply(span)
 }
 
+// +checklocksignore — Initialization time, called from spanStart before span is shared.
 func startExecutionTracerTask(ctx gocontext.Context, span *Span) (gocontext.Context, func()) {
 	if !rt.IsEnabled() {
 		return ctx, func() {}

@@ -29,7 +29,7 @@ func TestEndpointCounter(t *testing.T) {
 
 	t.Run("no limit", func(t *testing.T) {
 		ec := NewEndpointCounter(-1)
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			ec.Inc(fmt.Sprint(i))
 		}
 		require.Equal(t, 100, len(ec.GetAndReset()))

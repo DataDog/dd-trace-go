@@ -60,10 +60,10 @@ func TestConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 
 	wg.Add(nbGoRoutines)
-	for i := 0; i < nbGoRoutines; i++ {
+	for range nbGoRoutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < nbSets; j++ {
+			for j := range nbSets {
 				set(j)
 				assert.Equal(t, j, get())
 			}

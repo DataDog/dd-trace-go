@@ -86,10 +86,10 @@ func (c *ciVisibilityCommon) SetError(options ...ErrorOption) {
 }
 
 // SetTag sets a tag on the event.
-func (c *ciVisibilityCommon) SetTag(key string, value interface{}) { c.span.SetTag(key, value) }
+func (c *ciVisibilityCommon) SetTag(key string, value any) { c.span.SetTag(key, value) }
 
 // GetTag retrieves a tag from the event.
-func (c *ciVisibilityCommon) GetTag(key string) (interface{}, bool) {
+func (c *ciVisibilityCommon) GetTag(key string) (any, bool) {
 	// Check if the span is nil
 	if c.span == nil {
 		return nil, false

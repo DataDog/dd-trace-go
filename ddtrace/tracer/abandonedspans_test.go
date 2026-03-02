@@ -242,7 +242,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		defer stop()
 		var sb strings.Builder
 		sb.WriteString(warnPrefix)
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStartTime))
 			if i%2 == 0 {
 				s.Finish()
@@ -266,12 +266,12 @@ func TestReportAbandonedSpans(t *testing.T) {
 		defer stop()
 		var sb strings.Builder
 		sb.WriteString(warnPrefix)
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStartTime))
 			s.Finish()
 			time.Sleep(15 * time.Millisecond)
 		}
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			s := tracer.StartSpan(fmt.Sprintf("operation2-%d", i), StartTime(spanStartTime))
 			sb.WriteString(formatSpanString(s))
 			time.Sleep(15 * time.Millisecond)
@@ -294,7 +294,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 		var sb strings.Builder
 		sb.WriteString(warnPrefix)
 
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			s := tracer.StartSpan(fmt.Sprintf("operation%d", i), StartTime(spanStartTime))
 			sb.WriteString(formatSpanString(s))
 		}

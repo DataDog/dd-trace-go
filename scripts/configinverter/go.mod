@@ -7,6 +7,6 @@ require (
 	github.com/dave/jennifer v1.7.1
 )
 
-require golang.org/x/mod v0.31.0 // indirect
+require golang.org/x/mod v0.32.0 // indirect
 
 replace github.com/DataDog/dd-trace-go/v2 => ../..

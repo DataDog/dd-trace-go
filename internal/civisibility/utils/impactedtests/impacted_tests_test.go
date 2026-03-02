@@ -17,11 +17,11 @@ import (
 
 // dummyTestSpan is a dummy implementation of the TestSpan interface for testing purposes.
 type dummyTestSpan struct {
-	tags map[string]interface{}
+	tags map[string]any
 }
 
 // AsMap returns the tags map.
-func (d *dummyTestSpan) AsMap() map[string]interface{} {
+func (d *dummyTestSpan) AsMap() map[string]any {
 	return d.tags
 }
 
@@ -32,7 +32,7 @@ func (d *dummyTestSpan) SetTag(key string, value any) {
 
 // newDummyTestSpan creates a new dummyTestSpan.
 func newDummyTestSpan() *dummyTestSpan {
-	return &dummyTestSpan{tags: make(map[string]interface{})}
+	return &dummyTestSpan{tags: make(map[string]any)}
 }
 
 // TestParseGitDiffOutput tests the parseGitDiffOutput function.

@@ -7,6 +7,7 @@ package llmobs
 
 import (
 	"encoding/json"
+	"maps"
 	"sync"
 	"time"
 
@@ -527,8 +528,6 @@ func updateMapKeys[K comparable, V any](src map[K]V, updates map[K]V) map[K]V {
 	if src == nil {
 		src = make(map[K]V, len(updates))
 	}
-	for k, v := range updates {
-		src[k] = v
-	}
+	maps.Copy(src, updates)
 	return src
 }
