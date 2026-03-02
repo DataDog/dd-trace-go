@@ -162,7 +162,7 @@ func DebugEnabled() bool {
 }
 
 // Debug prints the given message if the level is LevelDebug.
-func Debug(fmt string, a ...interface{}) {
+func Debug(fmt string, a ...any) {
 	if !DebugEnabled() {
 		return
 	}
@@ -170,12 +170,12 @@ func Debug(fmt string, a ...interface{}) {
 }
 
 // Warn prints a warning message.
-func Warn(fmt string, a ...interface{}) {
+func Warn(fmt string, a ...any) {
 	printMsg(LevelWarn, fmt, a...)
 }
 
 // Info prints an informational message.
-func Info(fmt string, a ...interface{}) {
+func Info(fmt string, a ...any) {
 	printMsg(LevelInfo, fmt, a...)
 }
 
@@ -219,7 +219,7 @@ type errorReport struct {
 
 // Error reports an error. Errors get aggregated and logged periodically. The
 // default is once per minute or once every DD_LOGGING_RATE number of seconds.
-func Error(format string, a ...interface{}) {
+func Error(format string, a ...any) {
 	key := format // format should 99.9% of the time be constant
 	if reachedLimit(key) {
 		// avoid too much lock contention on spammy errors
@@ -284,7 +284,7 @@ func flushLocked() {
 	erron = false
 }
 
-func printMsg(lvl Level, format string, a ...interface{}) {
+func printMsg(lvl Level, format string, a ...any) {
 	var b strings.Builder
 	b.Grow(len(prefixMsg) + 1 + len(lvl.String()) + 2 + len(format))
 	b.WriteString(prefixMsg)

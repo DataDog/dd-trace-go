@@ -34,11 +34,11 @@ func (m *MockDdTslvEvent) SetError(options ...ErrorOption) {
 	m.Called(options)
 }
 
-func (m *MockDdTslvEvent) SetTag(key string, value interface{}) {
+func (m *MockDdTslvEvent) SetTag(key string, value any) {
 	m.Called(key, value)
 }
 
-func (m *MockDdTslvEvent) GetTag(key string) (interface{}, bool) {
+func (m *MockDdTslvEvent) GetTag(key string) (any, bool) {
 	args := m.Called(key)
 	return args.Get(0), true
 }

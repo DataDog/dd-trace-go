@@ -57,7 +57,7 @@ func (s *customSampler) Sample(span *Span) bool {
 // rateSampler samples from a sample rate.
 type rateSampler struct {
 	locking.RWMutex
-	rate float64
+	rate float64 // +checklocks:RWMutex
 }
 
 // NewAllSampler is a short-hand for NewRateSampler(1). It is all-permissive.
@@ -92,6 +92,7 @@ func (r *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
+// +checklocksignore — Fast path reads r.rate without lock (deliberate); s.traceID is immutable after init.
 func (r *rateSampler) Sample(s *Span) bool {
 	if r.rate == 1 {
 		// fast path
@@ -151,9 +152,9 @@ func newPrioritySampler() *prioritySampler {
 func parseServiceEnvKey(s string) serviceEnvKey {
 	var k serviceEnvKey
 	if after, ok := strings.CutPrefix(s, "service:"); ok {
-		if i := strings.Index(after, ",env:"); i >= 0 {
-			k.service = after[:i]
-			k.env = after[i+len(",env:"):]
+		if before, after0, ok0 := strings.Cut(after, ",env:"); ok0 {
+			k.service = before
+			k.env = after0
 		}
 	}
 	return k
@@ -185,6 +186,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 
 // getRate returns the sampling rate to be used for the given span. Callers must
 // guard the span.
+// +checklocksignore — Called during initialization in StartSpan, span not yet shared.
 func (ps *prioritySampler) getRate(spn *Span) float64 {
 	key := serviceEnvKey{service: spn.service, env: spn.meta[ext.Environment]}
 	ps.mu.RLock()
@@ -197,6 +199,7 @@ func (ps *prioritySampler) getRate(spn *Span) float64 {
 
 // apply applies sampling priority to the given span. Caller must ensure it is safe
 // to modify the span.
+// +checklocksignore — Called during initialization in StartSpan, span not yet shared.
 func (ps *prioritySampler) apply(spn *Span) {
 	rate := ps.getRate(spn)
 	if sampledByRate(spn.traceID, rate) {

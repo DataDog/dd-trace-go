@@ -133,8 +133,8 @@ func getSafeDirectoryConfig() string {
 		}
 
 		// Use the repo root (parent of .git) for safe.directory
-		if strings.HasSuffix(gitDir, string(filepath.Separator)+".git") {
-			safeDirectoryValue = strings.TrimSuffix(gitDir, string(filepath.Separator)+".git")
+		if before, ok := strings.CutSuffix(gitDir, string(filepath.Separator)+".git"); ok {
+			safeDirectoryValue = before
 		} else {
 			safeDirectoryValue = gitDir
 		}
@@ -679,9 +679,9 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 	}
 
 	// create the objects shas string
-	var objectsShasString string
+	var objectsShasString strings.Builder
 	for _, objectSha := range objectsShas {
-		objectsShasString += objectSha + "\n"
+		objectsShasString.WriteString(objectSha + "\n")
 	}
 
 	workingDirectory := func() string {
@@ -707,7 +707,7 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 		}
 
 		// git pack-objects --compression=9 --max-pack-size={MaxPackFileSizeInMb}m "{temporaryPath}"
-		out, err = execGitStringWithInput(telemetry.PackObjectsCommandsType, objectsShasString,
+		out, err = execGitStringWithInput(telemetry.PackObjectsCommandsType, objectsShasString.String(),
 			"pack-objects", "--compression=9", "--max-pack-size="+strconv.Itoa(MaxPackFileSizeInMb)+"m", temporaryPath+"/")
 		if err == nil {
 			break
@@ -939,8 +939,8 @@ func isMainLikeBranch(branchName, remoteName string) bool {
 // removeRemotePrefix removes the remote prefix from a branch name
 func removeRemotePrefix(branchName, remoteName string) string {
 	prefix := remoteName + "/"
-	if strings.HasPrefix(branchName, prefix) {
-		return strings.TrimPrefix(branchName, prefix)
+	if after, ok := strings.CutPrefix(branchName, prefix); ok {
+		return after
 	}
 	return branchName
 }
@@ -976,8 +976,8 @@ func getRemoteBranches(remoteName string) ([]string, error) {
 
 	var branches []string
 	if remoteOut != "" {
-		remoteBranches := strings.Split(strings.TrimSpace(remoteOut), "\n")
-		for _, branch := range remoteBranches {
+		remoteBranches := strings.SplitSeq(strings.TrimSpace(remoteOut), "\n")
+		for branch := range remoteBranches {
 			if strings.TrimSpace(branch) != "" {
 				branches = append(branches, strings.TrimSpace(branch))
 			}

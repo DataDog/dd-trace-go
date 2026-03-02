@@ -96,7 +96,7 @@ func consumeMessage(t *testing.T, addrs []string, cfg *sarama.Config) {
 	defer func() { assert.NoError(t, partitionConsumer.Close(), "failed to close partition consumer") }()
 
 	expectedMessages := []string{"Hello, World!", "Another message to avoid flaky tests"}
-	for i := 0; i < len(expectedMessages); i++ {
+	for i := range len(expectedMessages) {
 		select {
 		case msg := <-partitionConsumer.Messages():
 			require.Equal(t, expectedMessages[i], string(msg.Value))

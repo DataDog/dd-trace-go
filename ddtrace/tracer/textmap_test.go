@@ -450,7 +450,7 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 
 func TestTextMapPropagator(t *testing.T) {
 	bigMap := make(map[string]string)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		bigMap[fmt.Sprintf("someKey%d", i)] = fmt.Sprintf("someValue%d", i)
 	}
 	tests := []struct {
@@ -1597,7 +1597,7 @@ func TestEnvVars(t *testing.T) {
 						"tracestate": "valid_vendor=a:1",
 					}
 					// dd part of the tracestate must not exceed 256 characters
-					for i := 0; i < 32; i++ {
+					for i := range 32 {
 						ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.a%v", i)] = "i"
 					}
 					headers := TextMapCarrier(map[string]string{})
@@ -2261,7 +2261,7 @@ func BenchmarkInjectDatadog(b *testing.B) {
 	assert.NoError(b, err)
 	root := tracer.StartSpan("test")
 	defer root.Finish()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		setPropagatingTag(root.Context(), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
 	}
 	dst := map[string]string{}
@@ -2284,7 +2284,7 @@ func BenchmarkInjectW3C(b *testing.B) {
 	setPropagatingTag(ctx, tracestateHeader,
 		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// _dd.p. prefix is needed for w3c
 		k := fmt.Sprintf("_dd.p.k%d", i)
 		v := fmt.Sprintf("v%d", i)
@@ -2484,10 +2484,10 @@ func TestPropagatingTagsConcurrency(t *testing.T) {
 	assert.NoError(t, err)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 1_000; i++ {
+	for range 1_000 {
 		root := trc.StartSpan("test")
 		wg.Add(5)
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			go func() {
 				defer wg.Done()
 				trc.Inject(root.Context(), TextMapCarrier(make(map[string]string)))
@@ -2741,7 +2741,7 @@ func TestInjectBaggageMaxItems(t *testing.T) {
 	root := tracer.StartSpan("web.request")
 	ctx := root.Context()
 
-	for i := 0; i < baggageMaxItems+2; i++ {
+	for i := range baggageMaxItems + 2 {
 		iString := strconv.Itoa(i)
 		ctx.setBaggageItem("key"+iString, "val"+iString)
 	}

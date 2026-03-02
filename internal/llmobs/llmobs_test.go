@@ -101,7 +101,7 @@ func TestStartSpan(t *testing.T) {
 			spanContext, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(fmt.Sprintf("failed to extract span context: %v", err)))
+				w.Write(fmt.Appendf(nil, "failed to extract span context: %v", err))
 				return
 			}
 

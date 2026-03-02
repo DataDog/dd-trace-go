@@ -38,7 +38,7 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 
 	tc.logger.Info().Ctx(ctx).Send()
 
-	var data map[string]interface{}
+	var data map[string]any
 	if err := json.Unmarshal([]byte(tc.logs.String()), &data); err != nil {
 		assert.Fail(t, err.Error())
 	}

@@ -64,7 +64,7 @@ func matchConfig(name, value string, origin telemetry.Origin, id string) func([]
 
 // matchDefaultConfig is a helper to create a matcher for default telemetry configurations.
 // Default configs should always have SeqID=defaultSeqID (1).
-func matchDefaultConfig(name string, value interface{}, origin telemetry.Origin) func([]telemetry.Configuration) bool {
+func matchDefaultConfig(name string, value any, origin telemetry.Origin) func([]telemetry.Configuration) bool {
 	return func(configs []telemetry.Configuration) bool {
 		if len(configs) != 1 {
 			return false

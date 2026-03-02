@@ -6,6 +6,7 @@
 package processtags
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -77,9 +78,7 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 	if p.tags == nil {
 		p.tags = make(map[string]string)
 	}
-	for k, v := range newTags {
-		p.tags[k] = v
-	}
+	maps.Copy(p.tags, newTags)
 
 	// loop over the sorted map keys so the resulting string and slice versions are created consistently.
 	keys := make([]string, 0, len(p.tags))

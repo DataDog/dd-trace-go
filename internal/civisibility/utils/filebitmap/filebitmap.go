@@ -8,6 +8,7 @@ package filebitmap
 import (
 	"fmt"
 	"math/bits"
+	"strings"
 )
 
 // FileBitmap represents a memory-efficient, modifiable bitmap.
@@ -107,11 +108,8 @@ func (fb *FileBitmap) HasActiveBits() bool {
 
 // IntersectsWith returns true if this bitmap has at least one common set bit with the other bitmap.
 func (fb *FileBitmap) IntersectsWith(other *FileBitmap) bool {
-	minSize := len(fb.data)
-	if len(other.data) < minSize {
-		minSize = len(other.data)
-	}
-	for i := 0; i < minSize; i++ {
+	minSize := min(len(other.data), len(fb.data))
+	for i := range minSize {
 		if (fb.data[i] & other.data[i]) != 0 {
 			return true
 		}
@@ -139,7 +137,7 @@ func Or(a, b *FileBitmap, reuseBuffer bool) *FileBitmap {
 	}
 
 	// Perform bitwise OR on the overlapping region.
-	for i := 0; i < minSize; i++ {
+	for i := range minSize {
 		res.data[i] = a.data[i] | b.data[i]
 	}
 
@@ -179,7 +177,7 @@ func And(a, b *FileBitmap, reuseBuffer bool) *FileBitmap {
 	}
 
 	// Perform bitwise AND on the overlapping region.
-	for i := 0; i < minSize; i++ {
+	for i := range minSize {
 		res.data[i] = a.data[i] & b.data[i]
 	}
 	// For the remaining bytes (if any), fill with 0.
@@ -218,9 +216,9 @@ func (fb *FileBitmap) GetBuffer() []byte {
 
 // String returns a string representation of the bitmap as a binary string.
 func (fb *FileBitmap) String() string {
-	s := ""
+	var s strings.Builder
 	for _, b := range fb.data {
-		s += fmt.Sprintf("%08b", b)
+		fmt.Fprintf(&s, "%08b", b)
 	}
-	return s
+	return s.String()
 }

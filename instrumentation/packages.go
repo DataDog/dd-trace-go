@@ -7,6 +7,7 @@ package instrumentation
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -963,8 +964,6 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 // GetPackages returns a map of Package to the corresponding instrumented module.
 func GetPackages() map[Package]PackageInfo {
 	cp := make(map[Package]PackageInfo)
-	for pkg, info := range packages {
-		cp[pkg] = info
-	}
+	maps.Copy(cp, packages)
 	return cp
 }

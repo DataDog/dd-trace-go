@@ -4,7 +4,6 @@
 // Copyright 2016 Datadog, Inc.
 
 //go:build debug && !deadlock
-// +build debug,!deadlock
 
 package assert
 

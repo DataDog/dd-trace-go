@@ -35,7 +35,7 @@ var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-bas
 func (p *profiler) upload(bat batch) error {
 	statsd := p.cfg.statsd
 	var err error
-	for i := 0; i < maxRetries; i++ {
+	for range maxRetries {
 		select {
 		case <-p.exit:
 			if !p.cfg.flushOnExit {
@@ -101,11 +101,11 @@ func (p *profiler) doRequest(bat batch) error {
 	if p.cfg.apiKey != "" {
 		req.Header.Set("DD-API-KEY", p.cfg.apiKey)
 	}
-	if containerID != "" {
-		req.Header.Set("Datadog-Container-ID", containerID)
+	if cid := containerID.Load(); cid != nil && *cid != "" {
+		req.Header.Set("Datadog-Container-ID", *cid)
 	}
-	if entityID != "" {
-		req.Header.Set("Datadog-Entity-ID", entityID)
+	if eid := entityID.Load(); eid != nil && *eid != "" {
+		req.Header.Set("Datadog-Entity-ID", *eid)
 	}
 	req.Header.Set("Content-Type", contentType)
 

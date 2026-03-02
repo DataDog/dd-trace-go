@@ -52,8 +52,8 @@ var githubCheckRunIDRegex = regexp.MustCompile(`"k"\s*:\s*"check_run_id"\s*,\s*"
 type diagJobData struct {
 	Job struct {
 		D []struct {
-			K string      `json:"k"`
-			V interface{} `json:"v"`
+			K string `json:"k"`
+			V any    `json:"v"`
 		} `json:"d"`
 	} `json:"job"`
 }
@@ -398,8 +398,8 @@ func normalizeRef(name string) string {
 
 	// Iterate over prefixes and remove them if present
 	for _, prefix := range prefixes {
-		if strings.HasPrefix(name, prefix) {
-			name = strings.TrimPrefix(name, prefix)
+		if after, ok := strings.CutPrefix(name, prefix); ok {
+			name = after
 		}
 	}
 	return name

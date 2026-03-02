@@ -216,7 +216,7 @@ func TestConcurrentSetAttributes(_ *testing.T) {
 	defer span.End()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		i := i
 		go func(_ int) {
@@ -297,21 +297,19 @@ func BenchmarkOTelConcurrentTracing(b *testing.B) {
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		wg := sync.WaitGroup{}
-		for i := 0; i < 100; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range 100 {
+			wg.Go(func() {
 				ctx := context.Background()
 				newCtx, parent := tr.Start(ctx, "parent")
 				parent.SetAttributes(attribute.String("ServiceName", "pylons"),
 					attribute.String("ResourceName", "/"))
 				defer parent.End()
 
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					_, child := tr.Start(newCtx, "child")
 					child.End()
 				}
-			}()
+			})
 		}
 	}
 }

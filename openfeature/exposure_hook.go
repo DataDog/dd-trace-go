@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
@@ -71,9 +72,7 @@ func (h *exposureHook) After(
 	// Build flat context from evaluation context
 	flatContext := make(map[string]any)
 	flatContext[of.TargetingKey] = targetingKey
-	for k, v := range evalContext.Attributes() {
-		flatContext[k] = v
-	}
+	maps.Copy(flatContext, evalContext.Attributes())
 
 	// Flatten attributes for exposure event
 	flattenedAttrs := flattenContext(flatContext)

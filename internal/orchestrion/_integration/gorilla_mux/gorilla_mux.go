@@ -104,7 +104,7 @@ func (tc *TestCaseRouterParallel) Run(_ context.Context, t *testing.T) {
 	errChan := make(chan error, numRequests)
 	statusChan := make(chan int, numRequests)
 
-	for i := 0; i < numRequests; i++ {
+	for range numRequests {
 		go func() {
 			defer wg.Done()
 			resp, err := http.Get(fmt.Sprintf("http://%s/ping", tc.Server.Addr))
@@ -139,7 +139,7 @@ func (tc *TestCaseRouterParallel) ExpectedTraces() trace.Traces {
 	// Each concurrent request should produce its own trace
 	const numRequests = 10
 	traces := make(trace.Traces, numRequests)
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		traces[i] = &trace.Trace{
 			Tags: map[string]any{
 				"name":     "http.request",

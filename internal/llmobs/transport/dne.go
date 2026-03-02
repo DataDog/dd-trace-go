@@ -171,7 +171,7 @@ type ResponseMeta struct {
 
 type ResponseList[T any] struct {
 	Data []ResponseData[T] `json:"data"`
-	Meta ResponseMeta      `json:"meta,omitempty"`
+	Meta ResponseMeta      `json:"meta"`
 }
 
 type ResponseData[T any] struct {
@@ -446,9 +446,9 @@ func (c *Transport) CreateExperiment(
 	method := http.MethodPost
 
 	if expConfig == nil {
-		expConfig = map[string]interface{}{}
+		expConfig = map[string]any{}
 	}
-	meta := map[string]interface{}{"tags": tags}
+	meta := map[string]any{"tags": tags}
 	body := CreateExperimentRequest{
 		Data: RequestData[RequestAttributesExperimentCreate]{
 			Type: resourceTypeExperiments,

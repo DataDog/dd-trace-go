@@ -71,3 +71,21 @@ func TrackKafkaHighWatermarkOffset(cluster string, topic string, partition int32
 		}
 	}
 }
+
+// TrackDataStreamsTransaction records a manual transaction checkpoint observation
+// for Data Streams Monitoring. Call this each time a transaction with the given
+// transactionID is observed at the named checkpoint in your pipeline.
+//
+// transactionID is an application-defined identifier for the transaction (e.g. a
+// message ID or correlation ID). IDs longer than 255 bytes are silently truncated.
+//
+// checkpointName is a stable label for the processing stage (e.g. "ingested",
+// "processed", "delivered"). A maximum of 254 unique checkpoint names are supported
+// per processor lifetime; additional names beyond this limit are silently dropped.
+func TrackDataStreamsTransaction(transactionID, checkpointName string) {
+	if t, ok := getGlobalTracer().(dataStreamsContainer); ok {
+		if p := t.GetDataStreamsProcessor(); p != nil {
+			p.TrackTransaction(transactionID, checkpointName)
+		}
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -50,6 +51,7 @@ func newHTTPTransport(agentURL *url.URL, client *http.Client) *httpTransport {
 }
 
 func (t *httpTransport) sendPipelineStats(p *StatsPayload) error {
+	log.Debug("datastreams: sending pipeline_stats payload buckets=%d", len(p.Stats))
 	var buf bytes.Buffer
 	gzipWriter, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
 	if err != nil {
@@ -75,6 +77,7 @@ func (t *httpTransport) sendPipelineStats(p *StatsPayload) error {
 	}
 	defer resp.Body.Close()
 	defer io.Copy(io.Discard, req.Body)
+	log.Debug("datastreams: pipeline_stats POST status=%d", resp.StatusCode)
 	if code := resp.StatusCode; code >= 400 {
 		// error, check the body for context information and
 		// return a nice error.

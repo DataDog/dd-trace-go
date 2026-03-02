@@ -225,7 +225,7 @@ func mapSampleRate(ot string) (string, error) {
 func mapPropagationStyle(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	supportedStyles := make([]string, 0)
-	for _, otStyle := range strings.Split(ot, ",") {
+	for otStyle := range strings.SplitSeq(ot, ",") {
 		otStyle = strings.TrimSpace(otStyle)
 		if _, ok := propagationMapping[otStyle]; ok {
 			supportedStyles = append(supportedStyles, propagationMapping[otStyle])

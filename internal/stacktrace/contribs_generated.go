@@ -484,8 +484,6 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/julienschmidt/httprouter",
 		"github.com/kballard/go-shellquote",
 		"github.com/kevinmbeaulieu/eq-go",
-		"github.com/kisielk/errcheck",
-		"github.com/kisielk/gotool",
 		"github.com/klauspost/compress",
 		"github.com/klauspost/cpuid/v2",
 		"github.com/knz/go-libedit",
