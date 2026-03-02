@@ -223,7 +223,6 @@ type config struct {
 	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	spanAttributeSchemaVersion int
 
-
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
@@ -354,16 +353,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 	namingschema.LoadFromEnv()
 	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
 
-	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
-	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
-		c.internalConfig.SetPeerServiceDefaultsEnabled(internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false), telemetry.OriginEnvVar)
-	} else {
+	// peer.service tag default calculation is enabled by default if using attribute schema >= 1.
+	// This logic lives here (rather than in loadConfig) because spanAttributeSchemaVersion
+	// is parsed via namingschema which understands "v0"/"v1" strings, while loadConfig uses getInt.
+	// TODO: move to loadConfig once spanAttributeSchemaVersion is fully migrated.
+	if c.spanAttributeSchemaVersion >= int(namingschema.SchemaV1) {
 		c.internalConfig.SetPeerServiceDefaultsEnabled(true, telemetry.OriginCalculated)
-	}
-	if v := env.Get("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		peerServiceMappings := make(map[string]string)
-		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { peerServiceMappings[key] = val })
-		c.internalConfig.SetPeerServiceMappings(peerServiceMappings, telemetry.OriginEnvVar)
 	}
 
 	// LLM Observability config
