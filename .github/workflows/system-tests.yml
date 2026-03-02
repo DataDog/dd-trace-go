@@ -316,7 +316,7 @@ jobs:
           path: artifact.tar.gz
 
   build-tracer-release:
-    if: github.event_name == 'schedule'
+    # if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout dd-trace-go
@@ -332,7 +332,7 @@ jobs:
           path: dd-trace-go
 
   tracer-release:
-    if: github.event_name == 'schedule'
+    # if: github.event_name == 'schedule'
     needs: build-tracer-release
     uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
     secrets:
