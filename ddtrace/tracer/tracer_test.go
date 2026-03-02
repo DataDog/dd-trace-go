@@ -1346,7 +1346,25 @@ func TestTracerPrioritySampler(t *testing.T) {
 
 	tr.awaitPayload(t, 1)
 	flush(-1)
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the priority sampler to update its rates from the agent response.
+	// flush() sends the payload in a goroutine that reads the rate_by_service
+	// response asynchronously, so we must poll rather than use a fixed sleep.
+	timeout := time.After(time.Second * timeMultiplicator)
+	for {
+		tr.prioritySampling.mu.RLock()
+		rate := tr.prioritySampling.defaultRate
+		tr.prioritySampling.mu.RUnlock()
+		// Expected default rate to be 0.1 after reading the agent response.
+		if rate == 0.1 {
+			break
+		}
+		select {
+		case <-timeout:
+			t.Fatal("timed out waiting for priority sampler rates to update")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 
 	for i, tt := range []struct {
 		service, env string
