@@ -11,11 +11,8 @@ import (
 	"sync"
 )
 
-var clusterIDCache sync.Map // normalized bootstrap servers -> cluster ID
+var clusterIDCache sync.Map
 
-// NormalizeBootstrapServers returns a canonical form of a comma-separated
-// bootstrap servers string. It trims whitespace, removes empty entries,
-// and sorts entries lexicographically.
 func NormalizeBootstrapServers(bootstrapServers string) string {
 	var parts []string
 	for s := range strings.SplitSeq(bootstrapServers, ",") {
@@ -28,8 +25,6 @@ func NormalizeBootstrapServers(bootstrapServers string) string {
 	return strings.Join(parts, ",")
 }
 
-// GetCachedClusterID returns the cached cluster ID for the given normalized
-// bootstrap servers string, and whether it was found.
 func GetCachedClusterID(normalizedBootstrapServers string) (string, bool) {
 	if normalizedBootstrapServers == "" {
 		return "", false
@@ -41,8 +36,6 @@ func GetCachedClusterID(normalizedBootstrapServers string) (string, bool) {
 	return v.(string), true
 }
 
-// SetCachedClusterID stores a cluster ID for the given normalized bootstrap
-// servers. Empty keys or values are silently ignored.
 func SetCachedClusterID(normalizedBootstrapServers, clusterID string) {
 	if normalizedBootstrapServers == "" || clusterID == "" {
 		return
@@ -50,7 +43,6 @@ func SetCachedClusterID(normalizedBootstrapServers, clusterID string) {
 	clusterIDCache.Store(normalizedBootstrapServers, clusterID)
 }
 
-// ResetClusterIDCache clears the cluster ID cache. Intended for use in tests.
 func ResetClusterIDCache() {
 	clusterIDCache = sync.Map{}
 }
