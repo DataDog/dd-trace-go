@@ -6,10 +6,13 @@
 package internal
 
 import (
+	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUnixDataSocketURL(t *testing.T) {
@@ -145,4 +148,15 @@ func TestUnixDataSocketURL(t *testing.T) {
 			assert.Equal(t, tt.expected, UnixDataSocketURL(tt.path))
 		})
 	}
+}
+
+func TestUDSClientTransportConfig(t *testing.T) {
+	client := UDSClient("/var/run/datadog/apm.socket", 10*time.Second)
+	tr, ok := client.Transport.(*http.Transport)
+	require.True(t, ok, "Transport should be *http.Transport")
+	assert.Equal(t, 100, tr.MaxIdleConns)
+	assert.Equal(t, 100, tr.MaxIdleConnsPerHost)
+	assert.Equal(t, 90*time.Second, tr.IdleConnTimeout)
+	assert.Equal(t, 10*time.Second, tr.TLSHandshakeTimeout)
+	assert.Equal(t, 1*time.Second, tr.ExpectContinueTimeout)
 }
