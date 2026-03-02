@@ -2203,8 +2203,9 @@ func genBigTraces(b *testing.B) {
 		}
 	}()
 
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for b.Loop() {
+	for i := 0; i < b.N; i++ { //nolint:modernize
 		for range 10 {
 			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
 			for range 10_000 {
@@ -2242,8 +2243,9 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	assert.Nil(b, err)
 	defer stop()
 
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for b.Loop() {
+	for i := 0; i < b.N; i++ { //nolint:modernize
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span.Finish()
 	}
@@ -2625,6 +2627,7 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 }
 
 func BenchmarkSingleSpanRetention(b *testing.B) {
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("no-rules", func(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
@@ -2634,7 +2637,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for b.Loop() {
+		for i := 0; i < b.N; i++ { //nolint:modernize
 			span := tracer.StartSpan("name_1")
 			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
@@ -2654,7 +2657,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for b.Loop() {
+		for i := 0; i < b.N; i++ { //nolint:modernize
 			span := tracer.StartSpan("name_1")
 			for range 50 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
@@ -2678,7 +2681,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for b.Loop() {
+		for i := 0; i < b.N; i++ { //nolint:modernize
 			span := tracer.StartSpan("name_1")
 			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
