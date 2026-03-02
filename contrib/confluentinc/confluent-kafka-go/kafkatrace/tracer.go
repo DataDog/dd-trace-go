@@ -41,6 +41,10 @@ func (tr *Tracer) ClusterID() string {
 	return tr.clusterID
 }
 
+func (tr *Tracer) SetClusterID(id string) {
+	tr.clusterID = id
+}
+
 type Option interface {
 	apply(*Tracer)
 }
@@ -145,13 +149,6 @@ func WithConfig(cg ConfigMap) OptionFn {
 				}
 			}
 		}
-	}
-}
-
-// WithClusterID sets the Kafka cluster ID for Data Streams monitoring.
-func WithClusterID(id string) OptionFn {
-	return func(tr *Tracer) {
-		tr.clusterID = id
 	}
 }
 

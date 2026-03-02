@@ -39,13 +39,14 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, WithConfig(conf))
+	wrapped := WrapConsumer(c, opts...)
 	if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
 		return fetchClusterIDFromConsumer(c)
 	}); clusterID != "" {
-		opts = append([]Option{kafkatrace.WithClusterID(clusterID)}, opts...)
+		wrapped.tracer.SetClusterID(clusterID)
 	}
-	opts = append(opts, WithConfig(conf))
-	return WrapConsumer(c, opts...), nil
+	return wrapped, nil
 }
 
 // NewProducer calls kafka.NewProducer and wraps the resulting Producer.
@@ -54,13 +55,14 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts = append(opts, WithConfig(conf))
+	wrapped := WrapProducer(p, opts...)
 	if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
 		return fetchClusterIDFromProducer(p)
 	}); clusterID != "" {
-		opts = append([]Option{kafkatrace.WithClusterID(clusterID)}, opts...)
+		wrapped.tracer.SetClusterID(clusterID)
 	}
-	opts = append(opts, WithConfig(conf))
-	return WrapProducer(p, opts...), nil
+	return wrapped, nil
 }
 
 func fetchClusterIDFromConsumer(c *kafka.Consumer) string {
@@ -70,7 +72,7 @@ func fetchClusterIDFromConsumer(c *kafka.Consumer) string {
 		return ""
 	}
 	defer admin.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	clusterID, err := admin.ClusterID(ctx)
 	if err != nil {
@@ -87,7 +89,7 @@ func fetchClusterIDFromProducer(p *kafka.Producer) string {
 		return ""
 	}
 	defer admin.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	clusterID, err := admin.ClusterID(ctx)
 	if err != nil {

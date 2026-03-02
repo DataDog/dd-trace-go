@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace"
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -189,29 +188,32 @@ func TestConsumerFunctional(t *testing.T) {
 }
 
 func TestConsumerFunctionalWithClusterID(t *testing.T) {
-	testClusterID := "test-cluster-123"
 	action := func(c *Consumer) (*kafka.Message, error) {
 		return c.ReadMessage(3000 * time.Millisecond)
 	}
 	spans, msg := produceThenConsume(t, action,
-		[]Option{WithDataStreams(), kafkatrace.WithClusterID(testClusterID)},
-		[]Option{WithDataStreams(), kafkatrace.WithClusterID(testClusterID)},
+		[]Option{WithDataStreams()},
+		[]Option{WithDataStreams()},
 		false,
 	)
 	require.Len(t, spans, 2)
 
-	// Verify cluster ID is set as a span tag on both produce and consume spans
+	// Verify cluster ID is set as a span tag on both produce and consume spans.
+	// The cluster ID is auto-fetched from the broker, so we just verify it's
+	// present and consistent across spans.
 	s0 := spans[0] // produce
-	assert.Equal(t, testClusterID, s0.Tag(ext.MessagingKafkaClusterID))
 	s1 := spans[1] // consume
-	assert.Equal(t, testClusterID, s1.Tag(ext.MessagingKafkaClusterID))
+	clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string)
+	require.True(t, ok, "produce span should have a cluster ID tag")
+	assert.NotEmpty(t, clusterID)
+	assert.Equal(t, clusterID, s1.Tag(ext.MessagingKafkaClusterID))
 
 	// Verify DSM pathway hash includes kafka_cluster_id in edge tags
 	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 	assert.True(t, ok)
 	mt := mocktracer.Start()
-	ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+testClusterID)
-	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+testClusterID)
+	ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
 	expected, _ := datastreams.PathwayFromContext(expectedCtx)
 	mt.Stop()
 	assert.NotEqual(t, expected.GetHash(), 0)
