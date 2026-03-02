@@ -14,6 +14,8 @@ When migrating a configuration value from another package (e.g. `ddtrace/tracer`
 - **Delete old state**: remove the migrated field from any legacy config structs once no longer referenced.
 - **Update tests**: tests should call the singleton setter/getter (or set env vars) rather than mutating legacy fields.
 
+Sample migration PR: https://github.com/DataDog/dd-trace-go/pull/4214
+
 ## Hot paths & performance guidelines
 
 Some configuration accessors may be called in hot paths (e.g., span start/finish, partial flush logic).
