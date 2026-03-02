@@ -56,6 +56,9 @@ func (w *wrappedDispatcher) Run() {
 			tracer.Tag(ext.MessagingDestinationName, msg.Topic),
 			tracer.Measured(),
 		}
+		if w.cfg.clusterID != "" {
+			opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, w.cfg.clusterID))
+		}
 		if !math.IsNaN(w.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
 		}
@@ -76,7 +79,7 @@ func (w *wrappedDispatcher) Run() {
 		next := tracer.StartSpan(w.cfg.consumerSpanName, opts...)
 		// reinject the span context so consumers can pick it up
 		tracer.Inject(next.Context(), carrier)
-		setConsumeCheckpoint(w.cfg.dataStreamsEnabled, w.cfg.groupID, msg)
+		setConsumeCheckpoint(w.cfg.dataStreamsEnabled, w.cfg.groupID, w.cfg.clusterID, msg)
 		w.messages <- msg
 
 		// if the next message was received, finish the previous span

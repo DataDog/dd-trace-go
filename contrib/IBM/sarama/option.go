@@ -7,10 +7,17 @@ package sarama
 
 import (
 	"math"
+	"strings"
+	"sync"
 
 	"github.com/IBM/sarama"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+)
+
+var (
+	clusterIDCache   = make(map[string]string)
+	clusterIDCacheMu sync.Mutex
 )
 
 type config struct {
@@ -21,6 +28,7 @@ type config struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	groupID             string
+	clusterID           string
 	consumerCustomTags  map[string]func(msg *sarama.ConsumerMessage) any
 	producerCustomTags  map[string]func(msg *sarama.ProducerMessage) any
 }
@@ -72,6 +80,60 @@ func WithGroupID(groupID string) OptionFn {
 	return func(cfg *config) {
 		cfg.groupID = groupID
 	}
+}
+
+// WithClusterID sets the Kafka cluster ID for Data Streams monitoring and span tagging.
+func WithClusterID(clusterID string) OptionFn {
+	return func(cfg *config) {
+		cfg.clusterID = clusterID
+	}
+}
+
+// WithBrokers enables automatic detection of the Kafka cluster ID by connecting
+// to the given broker addresses and fetching cluster metadata. The result is
+// cached by the broker address list so that repeated calls with the same brokers
+// do not make additional metadata requests.
+func WithBrokers(saramaConfig *sarama.Config, addrs []string) OptionFn {
+	return func(cfg *config) {
+		if len(addrs) == 0 {
+			return
+		}
+		if clusterID := fetchClusterID(saramaConfig, addrs); clusterID != "" {
+			cfg.clusterID = clusterID
+		}
+	}
+}
+
+func fetchClusterID(saramaConfig *sarama.Config, addrs []string) string {
+	key := strings.Join(addrs, ",")
+
+	clusterIDCacheMu.Lock()
+	if id, ok := clusterIDCache[key]; ok {
+		clusterIDCacheMu.Unlock()
+		return id
+	}
+	clusterIDCacheMu.Unlock()
+
+	broker := sarama.NewBroker(addrs[0])
+	if err := broker.Open(saramaConfig); err != nil {
+		instr.Logger().Warn("contrib/IBM/sarama: failed to open broker for cluster ID: %s", err)
+		return ""
+	}
+	defer broker.Close()
+
+	resp, err := broker.GetMetadata(&sarama.MetadataRequest{Version: 4})
+	if err != nil {
+		instr.Logger().Warn("contrib/IBM/sarama: failed to fetch Kafka cluster ID: %s", err)
+		return ""
+	}
+	if resp.ClusterID == nil {
+		return ""
+	}
+
+	clusterIDCacheMu.Lock()
+	clusterIDCache[key] = *resp.ClusterID
+	clusterIDCacheMu.Unlock()
+	return *resp.ClusterID
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.

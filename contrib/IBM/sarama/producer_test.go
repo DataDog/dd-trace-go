@@ -6,6 +6,7 @@
 package sarama
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -13,8 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 func TestSyncProducer(t *testing.T) {
@@ -56,6 +59,54 @@ func TestSyncProducer(t *testing.T) {
 
 		assertDSMProducerPathway(t, topic, msg1)
 	}
+}
+
+func TestSyncProducerWithClusterID(t *testing.T) {
+	cfg := newIntegrationTestConfig(t)
+	topic := topicName(t)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producer, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
+	require.NoError(t, err)
+	producer = WrapSyncProducer(cfg, producer, WithDataStreams(), WithBrokers(cfg, kafkaBrokers))
+	defer func() {
+		assert.NoError(t, producer.Close())
+	}()
+
+	msg1 := &sarama.ProducerMessage{
+		Topic:    topic,
+		Value:    sarama.StringEncoder("test 1"),
+		Metadata: "test",
+	}
+	_, _, err = producer.SendMessage(msg1)
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	s := spans[0]
+	assert.Equal(t, "kafka.produce", s.OperationName())
+
+	clusterID, ok := s.Tag(ext.MessagingKafkaClusterID).(string)
+	assert.True(t, ok, "produce span should have kafka_cluster_id tag")
+	assert.NotEmpty(t, clusterID, "cluster ID should not be empty")
+
+	// Verify DSM pathway includes kafka_cluster_id in edge tags
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(),
+		NewProducerMessageCarrier(msg1),
+	))
+	require.True(t, ok, "pathway not found in kafka message")
+
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		"direction:out", "topic:"+topic, "type:kafka", "kafka_cluster_id:"+clusterID,
+	)
+	expected, _ := datastreams.PathwayFromContext(expectedCtx)
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
 }
 
 func TestSyncProducerSendMessages(t *testing.T) {
