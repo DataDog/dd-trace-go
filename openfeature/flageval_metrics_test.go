@@ -212,31 +212,6 @@ func TestRecordDifferentFlags(t *testing.T) {
 	}
 }
 
-func TestClassifyError(t *testing.T) {
-	tests := []struct {
-		name     string
-		err      error
-		expected string
-	}{
-		{"flag not found", errFlagNotFound, "flag_not_found"},
-		{"wrapped flag not found", fmt.Errorf("context: %w", errFlagNotFound), "flag_not_found"},
-		{"type mismatch", errTypeMismatch, "type_mismatch"},
-		{"wrapped type mismatch", fmt.Errorf("%w: got string", errTypeMismatch), "type_mismatch"},
-		{"parse error", errParseError, "parse_error"},
-		{"no configuration", errNoConfiguration, "no_configuration"},
-		{"general error", errors.New("some unknown error"), "general"},
-		{"context cancelled", context.Canceled, "general"},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := classifyError(tc.err); got != tc.expected {
-				t.Errorf("classifyError(%v) = %q, want %q", tc.err, got, tc.expected)
-			}
-		})
-	}
-}
-
 func TestRecordAllErrorTypes(t *testing.T) {
 	m, reader := setupTestMetrics(t)
 	ctx := context.Background()

@@ -83,10 +83,25 @@ func (m *flagEvalMetrics) record(
 	}
 
 	if evalErr != nil {
-		attrs = append(attrs, attrErrorType.String(classifyError(evalErr)))
+		errType := "general"
+		for sentinel, tag := range errorTypeTags {
+			if errors.Is(evalErr, sentinel) {
+				errType = tag
+				break
+			}
+		}
+		attrs = append(attrs, attrErrorType.String(errType))
 	}
 
 	m.counter.Add(ctx, 1, otelmetric.WithAttributes(attrs...))
+}
+
+// errorTypeTags maps sentinel errors to low-cardinality metric tag values.
+var errorTypeTags = map[error]string{
+	errFlagNotFound:    "flag_not_found",
+	errTypeMismatch:    "type_mismatch",
+	errParseError:      "parse_error",
+	errNoConfiguration: "no_configuration",
 }
 
 // shutdown gracefully shuts down the meter provider.
@@ -95,21 +110,5 @@ func (m *flagEvalMetrics) shutdown(ctx context.Context) error {
 		return ddmetric.Shutdown(ctx, m.meterProvider)
 	}
 	return nil
-}
-
-// classifyError maps Go errors to low-cardinality error type strings.
-func classifyError(err error) string {
-	switch {
-	case errors.Is(err, errFlagNotFound):
-		return "flag_not_found"
-	case errors.Is(err, errTypeMismatch):
-		return "type_mismatch"
-	case errors.Is(err, errParseError):
-		return "parse_error"
-	case errors.Is(err, errNoConfiguration):
-		return "no_configuration"
-	default:
-		return "general"
-	}
 }
 
