@@ -11,6 +11,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -130,18 +131,24 @@ type serviceEnvKey struct {
 	service, env string
 }
 
+// rampUpInterval is the minimum duration between successive 2x rate increases.
+const rampUpInterval = time.Second
+
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.
 type prioritySampler struct {
 	mu          locking.RWMutex
 	rates       map[serviceEnvKey]float64 // +checklocks:mu
 	defaultRate float64                   // +checklocks:mu
+	lastCapped  time.Time                 // +checklocks:mu
+	now         func() time.Time          // for testing; defaults to time.Now
 }
 
 func newPrioritySampler() *prioritySampler {
 	return &prioritySampler{
 		rates:       make(map[serviceEnvKey]float64),
 		defaultRate: 1.,
+		now:         time.Now,
 	}
 }
 
@@ -160,7 +167,24 @@ func parseServiceEnvKey(s string) serviceEnvKey {
 	return k
 }
 
+// cappedRate returns a rate that is at most 2x the old rate when increasing.
+// Rate decreases and transitions from zero are applied immediately.
+// When canIncrease is false (cooldown not elapsed), increases are held at oldRate.
+func cappedRate(oldRate, newRate float64, canIncrease bool) float64 {
+	if newRate <= oldRate || oldRate == 0 {
+		return newRate
+	}
+	if !canIncrease {
+		return oldRate
+	}
+	return min(oldRate*2, newRate)
+}
+
 // readRatesJSON will try to read the rates as JSON from the given io.ReadCloser.
+// When a new rate for a service is higher than the current rate, the increase is
+// capped at 2x the current rate (at most once per rampUpInterval). This prevents
+// a spike in sampled traces when the agent restarts and temporarily reports
+// rate=1.0 for all services.
 func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	var payload struct {
 		Rates map[string]float64 `json:"rate_by_service"`
@@ -176,6 +200,29 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+	now := ps.now()
+	canIncrease := ps.lastCapped.IsZero() || now.Sub(ps.lastCapped) >= rampUpInterval
+	capApplied := false
+	for key, newRate := range rates {
+		if key == defaultRateKey {
+			continue // handled separately below
+		}
+		oldRate, ok := ps.rates[key]
+		if !ok {
+			oldRate = ps.defaultRate
+		}
+		applied := cappedRate(oldRate, newRate, canIncrease)
+		capApplied = capApplied || applied != newRate
+		rates[key] = applied
+	}
+	if newDefault, ok := rates[defaultRateKey]; ok {
+		applied := cappedRate(ps.defaultRate, newDefault, canIncrease)
+		capApplied = capApplied || applied != newDefault
+		rates[defaultRateKey] = applied
+	}
+	if capApplied {
+		ps.lastCapped = now
+	}
 	ps.rates = rates
 	if v, ok := ps.rates[defaultRateKey]; ok {
 		ps.defaultRate = v
