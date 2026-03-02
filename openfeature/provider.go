@@ -91,7 +91,7 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
 	metrics, err := newFlagEvalMetrics()
 	if err != nil {
-		log.Error("openfeature: failed to create flag evaluation metrics: %v", err)
+		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error())
 	}
 
 	p := &DatadogProvider{
