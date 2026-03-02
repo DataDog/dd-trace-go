@@ -20,6 +20,8 @@ import (
 	"unsafe"
 
 	"github.com/stretchr/testify/require"
+	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -249,17 +251,21 @@ func TestPublishOtelProcessContext(t *testing.T) {
 	restoreOtelProcessContextMapping(t)
 
 	pc := &ProcessContext{
-		Resource: &Resource{
-			Attributes: []*KeyValue{
-				{Key: "deployment.environment.name", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "production"}}},
-				{Key: "host.name", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "my-host"}}},
-				{Key: "service.instance.id", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "abc-123"}}},
-				{Key: "service.name", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "my-service"}}},
-				{Key: "service.version", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "1.2.3"}}},
-				{Key: "telemetry.sdk.language", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "go"}}},
-				{Key: "telemetry.sdk.name", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "dd-trace-go"}}},
-				{Key: "telemetry.sdk.version", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "1.0.0"}}},
+		Resource: &resourcev1.Resource{
+			Attributes: []*commonv1.KeyValue{
+				{Key: "deployment.environment.name", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "production"}}},
+				{Key: "host.name", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "my-host"}}},
+				{Key: "service.instance.id", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "abc-123"}}},
+				{Key: "service.name", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "my-service"}}},
+				{Key: "service.version", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "1.2.3"}}},
+				{Key: "telemetry.sdk.language", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "go"}}},
+				{Key: "telemetry.sdk.name", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "dd-trace-go"}}},
+				{Key: "telemetry.sdk.version", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "1.0.0"}}},
+				{Key: "container.id", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "1234567890"}}},
 			},
+		},
+		ExtraAttributes: []*commonv1.KeyValue{
+			{Key: "datadog.process_tags", Value: &commonv1.AnyValue{Value: &commonv1.AnyValue_StringValue{StringValue: "tag1=value1,tag2=value2"}}},
 		},
 	}
 	require.NoError(t, PublishProcessContext(pc))
@@ -276,5 +282,6 @@ func TestPublishOtelProcessContext(t *testing.T) {
 		"telemetry.sdk.language":      "go",
 		"telemetry.sdk.name":          "dd-trace-go",
 		"telemetry.sdk.version":       "1.0.0",
+		"container.id":                "1234567890",
 	}, attrs)
 }

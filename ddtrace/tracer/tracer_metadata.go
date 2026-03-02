@@ -4,7 +4,12 @@
 // Copyright 2023 Datadog, Inc.
 package tracer
 
-import "github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext"
+import (
+	commonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	resourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext"
+)
 
 // Metadata represents the configuration of the tracer.
 //
@@ -48,28 +53,28 @@ func (m Metadata) toProcessContext() *otelprocesscontext.ProcessContext {
 		{"telemetry.sdk.name", "dd-trace-go"},
 		{"container.id", m.ContainerID},
 	}
-	kvs := make([]*otelprocesscontext.KeyValue, 0, len(attrs))
+	kvs := make([]*commonv1.KeyValue, 0, len(attrs))
 	for _, a := range attrs {
 		if a.val == "" {
 			continue
 		}
-		kvs = append(kvs, &otelprocesscontext.KeyValue{
+		kvs = append(kvs, &commonv1.KeyValue{
 			Key: a.key,
-			Value: &otelprocesscontext.AnyValue{
-				Value: &otelprocesscontext.AnyValue_StringValue{StringValue: a.val},
+			Value: &commonv1.AnyValue{
+				Value: &commonv1.AnyValue_StringValue{StringValue: a.val},
 			},
 		})
 	}
-	extraAttrs := []*otelprocesscontext.KeyValue{
+	extraAttrs := []*commonv1.KeyValue{
 		{
 			Key: "datadog.process_tags",
-			Value: &otelprocesscontext.AnyValue{
-				Value: &otelprocesscontext.AnyValue_StringValue{StringValue: m.ProcessTags},
+			Value: &commonv1.AnyValue{
+				Value: &commonv1.AnyValue_StringValue{StringValue: m.ProcessTags},
 			},
 		},
 	}
 	return &otelprocesscontext.ProcessContext{
-		Resource:        &otelprocesscontext.Resource{Attributes: kvs},
+		Resource:        &resourcev1.Resource{Attributes: kvs},
 		ExtraAttributes: extraAttrs,
 	}
 }
