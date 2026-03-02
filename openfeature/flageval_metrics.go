@@ -111,4 +111,3 @@ func (m *flagEvalMetrics) shutdown(ctx context.Context) error {
 	}
 	return nil
 }
-
