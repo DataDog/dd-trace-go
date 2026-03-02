@@ -58,6 +58,9 @@ type DatadogProvider struct {
 	// Exposure tracking
 	exposureWriter *exposureWriter
 	exposureHook   *exposureHook
+
+	// Flag evaluation metrics (OTel counter)
+	flagEvalMetrics *flagEvalMetrics
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -85,12 +88,19 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// Create exposure hook
 	hook := newExposureHook(writer)
 
+	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
+	metrics, err := newFlagEvalMetrics()
+	if err != nil {
+		log.Error("openfeature: failed to create flag evaluation metrics: %v", err)
+	}
+
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
-		exposureWriter: writer,
-		exposureHook:   hook,
+		exposureWriter:  writer,
+		exposureHook:    hook,
+		flagEvalMetrics: metrics,
 	}
 	p.configChange.L = &p.mu
 	return p
@@ -203,6 +213,10 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		if p.exposureWriter != nil {
 			p.exposureWriter.flush()
 			p.exposureWriter.stop()
+		}
+		// Shut down flag evaluation metrics
+		if p.flagEvalMetrics != nil {
+			_ = p.flagEvalMetrics.shutdown(ctx)
 		}
 		done <- err
 	}()
@@ -412,6 +426,11 @@ func (p *DatadogProvider) evaluate(
 	log.Debug("openfeature: evaluating flag %q", flagKey)
 	defer func() {
 		log.Debug("openfeature: evaluated flag %q: value=%v, reason=%s, error=%v", flagKey, res.Value, res.Reason, res.Error)
+		// Record flag evaluation metric
+		if p.flagEvalMetrics != nil {
+			p.flagEvalMetrics.record(ctx, flagKey, res.VariantKey,
+				mapReason(res.Reason), res.Error)
+		}
 	}()
 
 	// Check if context was cancelled before starting evaluation
