@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -429,7 +430,7 @@ func (p *DatadogProvider) evaluate(
 		// Record flag evaluation metric
 		if p.flagEvalMetrics != nil {
 			p.flagEvalMetrics.record(ctx, flagKey, res.VariantKey,
-				mapReason(res.Reason), res.Error)
+				strings.ToLower(string(res.Reason)), res.Error)
 		}
 	}()
 

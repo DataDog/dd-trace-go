@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"time"
 
-	of "github.com/open-feature/go-sdk/openfeature"
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 
@@ -117,18 +116,3 @@ func classifyError(err error) string {
 	}
 }
 
-// mapReason converts OpenFeature Reason to a metric-friendly string.
-func mapReason(reason of.Reason) string {
-	switch reason {
-	case of.TargetingMatchReason:
-		return "targeting_match"
-	case of.DefaultReason:
-		return "default"
-	case of.DisabledReason:
-		return "disabled"
-	case of.ErrorReason:
-		return "error"
-	default:
-		return string(reason)
-	}
-}

@@ -252,27 +252,6 @@ func TestClassifyError(t *testing.T) {
 	}
 }
 
-func TestMapReason(t *testing.T) {
-	tests := []struct {
-		reason   of.Reason
-		expected string
-	}{
-		{of.TargetingMatchReason, "targeting_match"},
-		{of.DefaultReason, "default"},
-		{of.DisabledReason, "disabled"},
-		{of.ErrorReason, "error"},
-		{of.Reason("CUSTOM_REASON"), "CUSTOM_REASON"},
-	}
-
-	for _, tc := range tests {
-		t.Run(string(tc.reason), func(t *testing.T) {
-			got := mapReason(tc.reason)
-			if got != tc.expected {
-				t.Errorf("mapReason(%q) = %q, want %q", tc.reason, got, tc.expected)
-			}
-		})
-	}
-}
 
 func TestShutdownClean(t *testing.T) {
 	m, _ := setupTestMetrics(t)
