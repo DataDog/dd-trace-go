@@ -331,18 +331,7 @@ func storeConfig(c *config) {
 		log.Error("failed to store the configuration: %s", err.Error())
 	}
 
-	processCtx := otelprocesscontext.OtelProcessContext{
-		DeploymentEnvironmentName: c.internalConfig.Env(),
-		HostName:                  c.internalConfig.Hostname(),
-		ServiceInstanceID:         globalconfig.RuntimeID(),
-		ServiceName:               c.serviceName,
-		ServiceVersion:            c.internalConfig.Version(),
-		TelemetrySDKLanguage:      "go",
-		TelemetrySDKVersion:       version.Tag,
-		TelemetrySdkName:          "dd-trace-go",
-	}
-
-	err = processCtx.Publish()
+	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
 	if err != nil {
 		log.Error("failed to publish the OTEL process context: %s", err.Error())
 	}

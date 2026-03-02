@@ -13,48 +13,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var testContext = OtelProcessContext{
-	DeploymentEnvironmentName: "production",
-	HostName:                  "my-host",
-	ServiceInstanceID:         "abc-123",
-	ServiceName:               "my-service",
-	ServiceVersion:            "1.2.3",
-	TelemetrySDKLanguage:      "go",
-	TelemetrySDKVersion:       "1.0.0",
-	TelemetrySdkName:          "opentelemetry",
-}
-
-var expectedAttributes = map[string]string{
-	"deployment.environment.name": "production",
-	"host.name":                   "my-host",
-	"service.instance.id":         "abc-123",
-	"service.name":                "my-service",
-	"service.version":             "1.2.3",
-	"telemetry.sdk.language":      "go",
-	"telemetry.sdk.version":       "1.0.0",
-	"telemetry.sdk.name":          "opentelemetry",
-}
-
-// attrMap unmarshals proto bytes into a key/value map for easy assertion.
-func attrMap(t *testing.T, b []byte) map[string]string {
-	t.Helper()
-	var pc ProcessContext
-	require.NoError(t, proto.Unmarshal(b, &pc))
-	m := make(map[string]string)
-	for _, kv := range pc.GetResource().GetAttributes() {
-		m[kv.GetKey()] = kv.GetValue().GetStringValue()
-	}
-	return m
-}
-
-func TestMarshalProtoFullContext(t *testing.T) {
-	ctx := testContext
-	b := ctx.marshalProto()
-	require.NotEmpty(t, b)
-
-	require.Equal(t, expectedAttributes, attrMap(t, b))
-}
-
 // TestWireCompatibilityOurResourceToSlim marshals our Resource type and
 // verifies the bytes decode correctly as the slim OTLP Resource.
 func TestWireCompatibilityOurResourceToSlim(t *testing.T) {

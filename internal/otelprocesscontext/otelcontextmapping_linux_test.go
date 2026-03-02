@@ -20,7 +20,20 @@ import (
 	"unsafe"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 )
+
+// attrMap unmarshals proto bytes into a key/value map for easy assertion.
+func attrMap(t *testing.T, b []byte) map[string]string {
+	t.Helper()
+	var pc ProcessContext
+	require.NoError(t, proto.Unmarshal(b, &pc))
+	m := make(map[string]string)
+	for _, kv := range pc.GetResource().GetAttributes() {
+		m[kv.GetKey()] = kv.GetValue().GetStringValue()
+	}
+	return m
+}
 
 func getContextFromMapping(fields []string) []byte {
 	addrs := strings.SplitN(fields[0], "-", 2)
@@ -235,11 +248,33 @@ func TestCreateOtelProcessContextMappingBothFail(t *testing.T) {
 func TestPublishOtelProcessContext(t *testing.T) {
 	restoreOtelProcessContextMapping(t)
 
-	otelProcessContext := testContext
-	require.NoError(t, otelProcessContext.Publish())
+	pc := &ProcessContext{
+		Resource: &Resource{
+			Attributes: []*KeyValue{
+				{Key: "deployment.environment.name", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "production"}}},
+				{Key: "host.name", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "my-host"}}},
+				{Key: "service.instance.id", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "abc-123"}}},
+				{Key: "service.name", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "my-service"}}},
+				{Key: "service.version", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "1.2.3"}}},
+				{Key: "telemetry.sdk.language", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "go"}}},
+				{Key: "telemetry.sdk.name", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "dd-trace-go"}}},
+				{Key: "telemetry.sdk.version", Value: &AnyValue{Value: &AnyValue_StringValue{StringValue: "1.0.0"}}},
+			},
+		},
+	}
+	require.NoError(t, PublishProcessContext(pc))
 
 	ctx, err := readProcessLevelContext()
 	require.NoError(t, err)
 	attrs := attrMap(t, ctx)
-	require.Equal(t, expectedAttributes, attrs)
+	require.Equal(t, map[string]string{
+		"deployment.environment.name": "production",
+		"host.name":                   "my-host",
+		"service.instance.id":         "abc-123",
+		"service.name":                "my-service",
+		"service.version":             "1.2.3",
+		"telemetry.sdk.language":      "go",
+		"telemetry.sdk.name":          "dd-trace-go",
+		"telemetry.sdk.version":       "1.0.0",
+	}, attrs)
 }
