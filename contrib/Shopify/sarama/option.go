@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"sync"
 
@@ -15,10 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var (
-	clusterIDCache   = make(map[string]string)
-	clusterIDCacheMu sync.Mutex
-)
+var clusterIDCache sync.Map // normalized bootstrap servers -> cluster ID
 
 const defaultServiceName = "kafka"
 
@@ -79,13 +77,6 @@ func WithGroupID(groupID string) OptionFn {
 	}
 }
 
-// WithClusterID sets the Kafka cluster ID for span tagging and Data Streams Monitoring.
-func WithClusterID(clusterID string) OptionFn {
-	return func(cfg *config) {
-		cfg.clusterID = clusterID
-	}
-}
-
 // WithBrokers enables automatic detection of the Kafka cluster ID by connecting
 // to the given broker addresses and fetching cluster metadata. The result is
 // cached by the broker address list so that repeated calls with the same brokers
@@ -101,15 +92,29 @@ func WithBrokers(saramaConfig *sarama.Config, addrs []string) OptionFn {
 	}
 }
 
-func fetchClusterID(saramaConfig *sarama.Config, addrs []string) string {
-	key := strings.Join(addrs, ",")
-
-	clusterIDCacheMu.Lock()
-	if id, ok := clusterIDCache[key]; ok {
-		clusterIDCacheMu.Unlock()
-		return id
+// normalizeBootstrapServers returns a canonical form of a list of broker
+// addresses. It trims whitespace, removes empty entries, and sorts entries
+// lexicographically.
+func normalizeBootstrapServers(addrs []string) string {
+	var parts []string
+	for _, s := range addrs {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			parts = append(parts, s)
+		}
 	}
-	clusterIDCacheMu.Unlock()
+	slices.Sort(parts)
+	return strings.Join(parts, ",")
+}
+
+func fetchClusterID(saramaConfig *sarama.Config, addrs []string) string {
+	key := normalizeBootstrapServers(addrs)
+	if key == "" {
+		return ""
+	}
+	if v, ok := clusterIDCache.Load(key); ok {
+		return v.(string)
+	}
 
 	broker := sarama.NewBroker(addrs[0])
 	if err := broker.Open(saramaConfig); err != nil {
@@ -127,9 +132,7 @@ func fetchClusterID(saramaConfig *sarama.Config, addrs []string) string {
 		return ""
 	}
 
-	clusterIDCacheMu.Lock()
-	clusterIDCache[key] = *resp.ClusterID
-	clusterIDCacheMu.Unlock()
+	clusterIDCache.Store(key, *resp.ClusterID)
 	return *resp.ClusterID
 }
 
