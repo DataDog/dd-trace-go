@@ -30,8 +30,6 @@ const TraceIDZero string = "00000000000000000000000000000000"
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
-var emptyTraceID [16]byte
-
 // traceID in big endian, i.e. <upper><lower>
 type traceID struct {
 	value      [16]byte
@@ -65,7 +63,7 @@ func (t *traceID) SetUpper(i uint64) {
 
 func (t *traceID) set(v [16]byte) {
 	t.value = v
-	t.cacheHex()
+	t.hexEncoded = ""
 }
 
 func (t *traceID) SetUpperFromHex(s string) error {
@@ -78,7 +76,7 @@ func (t *traceID) SetUpperFromHex(s string) error {
 }
 
 func (t *traceID) Empty() bool {
-	return t.value == emptyTraceID
+	return t.value == [16]byte{}
 }
 
 func (t *traceID) HasUpper() bool {
@@ -272,7 +270,7 @@ func (c *SpanContext) TraceID() string {
 // TraceIDBytes implements ddtrace.SpanContext.
 func (c *SpanContext) TraceIDBytes() [16]byte {
 	if c == nil {
-		return emptyTraceID
+		return [16]byte{}
 	}
 	return c.traceID.value
 }
