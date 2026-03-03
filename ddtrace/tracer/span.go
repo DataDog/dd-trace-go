@@ -358,7 +358,7 @@ func (s *Span) BaggageItem(key string) string {
 func safeStringerValue(v fmt.Stringer, original any) (result string) {
 	defer func() {
 		if e := recover(); e != nil {
-			if rv := reflect.ValueOf(original); rv.Kind() == reflect.Ptr && rv.IsNil() {
+			if rv := reflect.ValueOf(original); rv.Kind() == reflect.Pointer && rv.IsNil() {
 				result = "<nil>"
 				return
 			}
@@ -669,7 +669,6 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 	case error:
 		// if anyone sets an error value as the tag, be nice here
 		// and provide all the benefits.
-		// TODO: once Error Tracking fix is resolved, update relevant tags here. See #4095
 		s.setErrorFlagLocked(true)
 		s.setMetaLocked(ext.ErrorMsg, v.Error())
 		s.setMetaLocked(ext.ErrorType, reflect.TypeOf(v).String())
@@ -678,18 +677,18 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 		}
 		switch err := v.(type) {
 		case xerrors.Formatter:
-			s.setMetaLocked(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
 		case fmt.Formatter:
 			// pkg/errors approach
-			s.setMetaLocked(ext.ErrorDetails, fmt.Sprintf("%+v", v))
+			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
 		case *errortrace.TracerError:
 			// instrumentation/errortrace approach
 			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
 			s.setMetaLocked(ext.ErrorHandlingStack, err.Format())
-			return
+		default:
+			stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+			s.setMetaLocked(ext.ErrorHandlingStack, stack)
 		}
-		stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-		s.setMetaLocked(ext.ErrorStack, stack)
 	case nil:
 		// no error
 		s.setErrorFlagLocked(false)

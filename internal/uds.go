@@ -33,7 +33,10 @@ func UDSClient(socketPath string, timeout time.Duration) *http.Client {
 					Net:  "unix",
 				}).String())
 			},
-			MaxIdleConns:          100,
+			MaxIdleConns: 100,
+			// All UDS requests share a single synthetic hostname, so MaxIdleConnsPerHost
+			// must match MaxIdleConns to prevent connection churn under concurrent flushes.
+			MaxIdleConnsPerHost:   100,
 			IdleConnTimeout:       90 * time.Second,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
