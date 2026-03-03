@@ -2997,3 +2997,22 @@ func TestContinueSpan(t *testing.T) {
 		assert.Nil(t, span)
 	})
 }
+
+func BenchmarkContinueSpan(b *testing.B) {
+	tracer, _, _, stop, err := startTestTracer(b)
+	assert.NoError(b, err)
+	defer stop()
+
+	root := tracer.StartSpan("root")
+	root.Finish()
+
+	carrier := TextMapCarrier(map[string]string{})
+	err = Inject(root.Context(), carrier)
+	assert.NoError(b, err)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, err := ContinueSpan("child", carrier)
+		assert.NoError(b, err)
+	}
+}
