@@ -60,6 +60,7 @@ jobs:
     env:
       INTEGRATION: true
     strategy:
+      fail-fast: false
       matrix:
         chunk: ${{ fromJson(needs.set-up.outputs.matrix) }}
     services:
@@ -82,6 +83,8 @@ jobs:
           - 8126:8126
       testagent:
         image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
+        options: >-
+          --health-cmd "bash -c '</dev/tcp/127.0.0.1/9126'"
         ports:
           - 9126:9126
         env:
@@ -259,6 +262,40 @@ jobs:
         if: always()
         uses: ./.github/actions/supported_configurations_validation
 
+      - name: Get Datadog APM Test Agent Logs
+        if: always()
+        shell: bash
+        run: docker logs ${{ job.services.testagent.id }}
+
+      - name: Get Datadog APM Test Agent Trace Check Summary Results
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p /tmp/trace-check-results
+          RESPONSE_CODE=$(curl -s -w "%{http_code}" -o /tmp/trace-check-results/failures-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
+          curl -s -o /tmp/trace-check-results/summary-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/summary?return_all=true"
+          echo "$RESPONSE_CODE" > /tmp/trace-check-results/response_code-${{ strategy.job-index }}.txt
+          echo "APM Test Agent Check Traces Summary Results:"
+          jq "." /tmp/trace-check-results/summary-${{ strategy.job-index }}.json
+          if [[ $RESPONSE_CODE -eq 200 ]]; then
+              echo " - All APM Test Agent Check Traces returned successful!"
+          else
+              echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
+              echo "Failures:"
+              cat /tmp/trace-check-results/failures-${{ strategy.job-index }}.json
+              exit 1
+          fi
+
+      - name: Upload Trace Check Results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: trace-check-results-${{ strategy.job-index }}
+          path: /tmp/trace-check-results/
+          retention-days: 1
+          if-no-files-found: ignore
+
   test-contrib:
     needs:
       - test-contrib-matrix
@@ -267,6 +304,51 @@ jobs:
     if: success() || failure()
     continue-on-error: true
     steps:
+      - name: Download Trace Check Results
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: /tmp/trace-check-results
+          pattern: trace-check-results-*
+          merge-multiple: true
+
+      - name: Aggregate Trace Check Results
+        if: always()
+        shell: bash
+        run: |
+          echo "=== Aggregated APM Test Agent Trace Check Results ==="
+          FOUND_RESPONSE_CODES=0
+          FAILED=0
+          for rc_file in /tmp/trace-check-results/response_code-*.txt; do
+              if [[ -f "$rc_file" ]]; then
+                  FOUND_RESPONSE_CODES=1
+                  RC=$(cat "$rc_file")
+                  if [[ "$RC" -ne 200 ]]; then
+                      FAILED=1
+                  fi
+              fi
+          done
+          if [[ $FOUND_RESPONSE_CODES -eq 0 ]]; then
+              echo "::warning::No trace-check artifacts were downloaded; skipping strict aggregation."
+              exit 0
+          fi
+          for summary in /tmp/trace-check-results/summary-*.json; do
+              if [[ -f "$summary" ]]; then
+                  echo "Summary ($summary):"
+                  jq "." "$summary"
+              fi
+          done
+          if [[ $FAILED -ne 0 ]]; then
+              echo "Trace check failures detected:"
+              for f in /tmp/trace-check-results/failures-*.json; do
+                  if [[ -f "$f" ]]; then
+                      echo "--- $f ---"
+                      cat "$f"
+                  fi
+              done
+              exit 1
+          fi
+          echo " - All APM Test Agent Check Traces returned successful!"
+
       - name: Success
         if: needs.test-contrib-matrix.result == 'success'
         run: echo "Success!"
@@ -342,65 +424,3 @@ jobs:
       - name: Supported Configurations Diff Check
         if: always()
         uses: ./.github/actions/supported_configurations_validation
-
-  upload-test-results:
-    needs:
-      - test-contrib
-      - test-core
-    if: always() # Make sure this always runs, even if test-contrib or test-core fails
-    runs-on:
-      group: "APM Larger Runners"
-    services:
-      datadog-agent:
-        image: registry.datadoghq.com/agent:latest
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "invalid_key_but_this_is_fine"
-          DD_TEST_AGENT_HOST: "localhost"
-          DD_TEST_AGENT_PORT: 9126
-        options: >-
-          --health-cmd "bash -c '</dev/tcp/127.0.0.1/8126'"
-        ports:
-          - 8125:8125/udp
-          - 8126:8126
-      testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
-        ports:
-          - 9126:9126
-        env:
-          LOG_LEVEL: DEBUG
-          TRACE_LANGUAGE: golang
-          ENABLED_CHECKS: trace_stall,trace_count_header,trace_peer_service,trace_dd_service
-          PORT: 9126
-          DD_SUPPRESS_TRACE_PARSE_ERRORS: true
-          DD_POOL_TRACE_CHECK_FAILURES: true
-          DD_DISABLE_ERROR_RESPONSES: true
-    steps:
-      - name: Get Datadog APM Test Agent Logs
-        if: always()
-        shell: bash
-        run: docker logs ${{ job.services.testagent.id }}
-
-      - name: Get Datadog APM Test Agent Trace Check Summary Results
-        if: always()
-        shell: bash
-        run: |
-              RESPONSE=$(curl -s -w "\n%{http_code}" -o response.txt "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
-              RESPONSE_CODE=$(echo "$RESPONSE" | awk 'END {print $NF}')
-              curl -s -o summary_response.txt "http://127.0.0.1:9126/test/trace_check/summary?return_all=true"
-              if [[ $RESPONSE_CODE -eq 200 ]]; then
-                  echo " "
-                  cat response.txt
-                  echo " - All APM Test Agent Check Traces returned successful!"
-                  echo "APM Test Agent Check Traces Summary Results:"
-                  jq "." summary_response.txt
-              else
-                  echo "APM Test Agent Check Traces failed with response code: $RESPONSE_CODE"
-                  echo "Failures:"
-                  cat response.txt
-                  echo "APM Test Agent Check Traces Summary Results:"
-                  jq "." summary_response.txt
-                  exit 1
-              fi
