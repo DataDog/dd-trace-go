@@ -10,4 +10,6 @@ runs:
   steps:
     - name: Upload Coverage
       shell: bash
-      run: bash <(curl -s https://codecov.io/bash) -t ${{ inputs.codecov-token }}
+      env:
+        CODECOV_TOKEN: ${{ inputs.codecov-token }}
+      run: bash <(curl -s https://codecov.io/bash)
