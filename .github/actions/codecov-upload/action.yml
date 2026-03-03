@@ -1,0 +1,13 @@
+# Composite action to upload coverage reports to Codecov
+name: 'Codecov Upload'
+description: 'Upload coverage reports to Codecov'
+inputs:
+  codecov-token:
+    required: true
+    description: Codecov token used to upload coverage reports
+runs:
+  using: "composite"
+  steps:
+    - name: Upload Coverage
+      shell: bash
+      run: bash <(curl -s https://codecov.io/bash) -t ${{ inputs.codecov-token }}
