@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -60,8 +59,8 @@ type DatadogProvider struct {
 	exposureWriter *exposureWriter
 	exposureHook   *exposureHook
 
-	// Flag evaluation metrics (OTel counter)
-	flagEvalMetrics *flagEvalMetrics
+	// Flag evaluation metrics hook (OTel counter via Finally hook)
+	flagEvalHook *flagEvalHook
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -99,9 +98,9 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
-		exposureWriter:  writer,
-		exposureHook:    hook,
-		flagEvalMetrics: metrics,
+		exposureWriter: writer,
+		exposureHook:   hook,
+		flagEvalHook:   newFlagEvalHook(metrics),
 	}
 	p.configChange.L = &p.mu
 	return p
@@ -216,8 +215,8 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			p.exposureWriter.stop()
 		}
 		// Shut down flag evaluation metrics
-		if p.flagEvalMetrics != nil {
-			_ = p.flagEvalMetrics.shutdown(ctx)
+		if p.flagEvalHook != nil && p.flagEvalHook.metrics != nil {
+			_ = p.flagEvalHook.metrics.shutdown(ctx)
 		}
 		done <- err
 	}()
@@ -409,12 +408,16 @@ func (p *DatadogProvider) ObjectEvaluation(
 }
 
 // Hooks returns the hooks for this provider.
-// This includes the exposure tracking hook.
+// This includes the exposure tracking hook and the flag evaluation metrics hook.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
+	var hooks []openfeature.Hook
 	if p.exposureHook != nil {
-		return []openfeature.Hook{p.exposureHook}
+		hooks = append(hooks, p.exposureHook)
 	}
-	return []openfeature.Hook{}
+	if p.flagEvalHook != nil {
+		hooks = append(hooks, p.flagEvalHook)
+	}
+	return hooks
 }
 
 // evaluate is the core evaluation method that all type-specific methods use.
@@ -427,11 +430,6 @@ func (p *DatadogProvider) evaluate(
 	log.Debug("openfeature: evaluating flag %q", flagKey)
 	defer func() {
 		log.Debug("openfeature: evaluated flag %q: value=%v, reason=%s, error=%v", flagKey, res.Value, res.Reason, res.Error)
-		// Record flag evaluation metric
-		if p.flagEvalMetrics != nil {
-			p.flagEvalMetrics.record(ctx, flagKey, res.VariantKey,
-				strings.ToLower(string(res.Reason)), res.Error)
-		}
 	}()
 
 	// Check if context was cancelled before starting evaluation

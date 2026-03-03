@@ -7,10 +7,11 @@ package openfeature
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"strings"
 	"time"
 
+	of "github.com/open-feature/go-sdk/openfeature"
 	"go.opentelemetry.io/otel/attribute"
 	otelmetric "go.opentelemetry.io/otel/metric"
 
@@ -31,6 +32,33 @@ var (
 	attrReason    = attribute.Key("feature_flag.result.reason")
 	attrErrorType = attribute.Key("error.type")
 )
+
+// flagEvalHook implements the OpenFeature Hook interface to track flag evaluation metrics.
+// It uses the Finally hook stage so that metrics are recorded after all evaluation logic
+// completes, including type conversion errors and "not ready" state evaluations.
+type flagEvalHook struct {
+	of.UnimplementedHook
+	metrics *flagEvalMetrics
+}
+
+// newFlagEvalHook creates a new flag evaluation metrics hook.
+func newFlagEvalHook(m *flagEvalMetrics) *flagEvalHook {
+	return &flagEvalHook{metrics: m}
+}
+
+// Finally is called after every flag evaluation (success or error).
+// It records a metric for the evaluation result.
+func (h *flagEvalHook) Finally(
+	ctx context.Context,
+	hookContext of.HookContext,
+	details of.InterfaceEvaluationDetails,
+	_ of.HookHints,
+) {
+	if h.metrics == nil {
+		return
+	}
+	h.metrics.record(ctx, hookContext.FlagKey(), details)
+}
 
 // flagEvalMetrics manages OTel metric instruments for flag evaluation tracking.
 type flagEvalMetrics struct {
@@ -66,40 +94,37 @@ func newFlagEvalMetrics() (*flagEvalMetrics, error) {
 	}, nil
 }
 
-// record records a single flag evaluation.
+// record records a single flag evaluation from the evaluation details.
 func (m *flagEvalMetrics) record(
 	ctx context.Context,
 	flagKey string,
-	variantKey string,
-	reason string,
-	evalErr error,
+	details of.InterfaceEvaluationDetails,
 ) {
 	attrs := []attribute.KeyValue{
 		attrFlagKey.String(flagKey),
-		attrVariant.String(variantKey),
-		attrReason.String(reason),
+		attrVariant.String(details.Variant),
+		attrReason.String(strings.ToLower(string(details.Reason))),
 	}
 
-	if evalErr != nil {
-		errType := "general"
-		for sentinel, tag := range errorTypeTags {
-			if errors.Is(evalErr, sentinel) {
-				errType = tag
-				break
-			}
-		}
-		attrs = append(attrs, attrErrorType.String(errType))
+	if details.ErrorCode != "" {
+		attrs = append(attrs, attrErrorType.String(errorCodeToTag(details.ErrorCode)))
 	}
 
 	m.counter.Add(ctx, 1, otelmetric.WithAttributes(attrs...))
 }
 
-// errorTypeTags maps sentinel errors to low-cardinality metric tag values.
-var errorTypeTags = map[error]string{
-	errFlagNotFound:    "flag_not_found",
-	errTypeMismatch:    "type_mismatch",
-	errParseError:      "parse_error",
-	errNoConfiguration: "no_configuration",
+// errorCodeToTag maps OpenFeature ErrorCode values to low-cardinality metric tag values.
+func errorCodeToTag(code of.ErrorCode) string {
+	switch code {
+	case of.FlagNotFoundCode:
+		return "flag_not_found"
+	case of.TypeMismatchCode:
+		return "type_mismatch"
+	case of.ParseErrorCode:
+		return "parse_error"
+	default:
+		return "general"
+	}
 }
 
 // shutdown gracefully shuts down the meter provider.

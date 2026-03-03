@@ -7,9 +7,8 @@ package openfeature
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"testing"
+	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
 	"go.opentelemetry.io/otel/attribute"
@@ -76,13 +75,24 @@ func getAttr(dp metricdata.DataPoint[int64], key attribute.Key) string {
 	return val.AsString()
 }
 
+// makeDetails constructs an InterfaceEvaluationDetails for testing record().
+func makeDetails(variant string, reason of.Reason, errorCode of.ErrorCode) of.InterfaceEvaluationDetails {
+	return of.InterfaceEvaluationDetails{
+		EvaluationDetails: of.EvaluationDetails{
+			ResolutionDetail: of.ResolutionDetail{
+				Variant:   variant,
+				Reason:    reason,
+				ErrorCode: errorCode,
+			},
+		},
+	}
+}
+
 func TestRecord(t *testing.T) {
 	tests := []struct {
 		name        string
 		flagKey     string
-		variant     string
-		reason      string
-		err         error
+		details     of.InterfaceEvaluationDetails
 		wantValue   int64
 		wantReason  string
 		wantVariant string
@@ -91,9 +101,7 @@ func TestRecord(t *testing.T) {
 		{
 			name:        "success with targeting match",
 			flagKey:     "my-flag",
-			variant:     "variant-a",
-			reason:      "targeting_match",
-			err:         nil,
+			details:     makeDetails("variant-a", of.TargetingMatchReason, ""),
 			wantValue:   1,
 			wantReason:  "targeting_match",
 			wantVariant: "variant-a",
@@ -101,9 +109,7 @@ func TestRecord(t *testing.T) {
 		{
 			name:        "error flag not found",
 			flagKey:     "missing-flag",
-			variant:     "",
-			reason:      "error",
-			err:         fmt.Errorf("%w: %q", errFlagNotFound, "missing-flag"),
+			details:     makeDetails("", of.ErrorReason, of.FlagNotFoundCode),
 			wantValue:   1,
 			wantReason:  "error",
 			wantVariant: "",
@@ -112,9 +118,7 @@ func TestRecord(t *testing.T) {
 		{
 			name:        "default reason",
 			flagKey:     "my-flag",
-			variant:     "",
-			reason:      "default",
-			err:         nil,
+			details:     makeDetails("", of.DefaultReason, ""),
 			wantValue:   1,
 			wantReason:  "default",
 			wantVariant: "",
@@ -122,9 +126,7 @@ func TestRecord(t *testing.T) {
 		{
 			name:        "disabled flag",
 			flagKey:     "disabled-flag",
-			variant:     "",
-			reason:      "disabled",
-			err:         nil,
+			details:     makeDetails("", of.DisabledReason, ""),
 			wantValue:   1,
 			wantReason:  "disabled",
 			wantVariant: "",
@@ -134,7 +136,7 @@ func TestRecord(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m, reader := setupTestMetrics(t)
-			m.record(context.Background(), tc.flagKey, tc.variant, tc.reason, tc.err)
+			m.record(context.Background(), tc.flagKey, tc.details)
 
 			rm := collectMetrics(t, reader)
 			dps := findCounter(t, rm)
@@ -173,8 +175,9 @@ func TestRecordMultipleEvaluations(t *testing.T) {
 	m, reader := setupTestMetrics(t)
 	ctx := context.Background()
 
+	details := makeDetails("variant-a", of.TargetingMatchReason, "")
 	for range 5 {
-		m.record(ctx, "my-flag", "variant-a", "targeting_match", nil)
+		m.record(ctx, "my-flag", details)
 	}
 
 	rm := collectMetrics(t, reader)
@@ -192,8 +195,8 @@ func TestRecordDifferentFlags(t *testing.T) {
 	m, reader := setupTestMetrics(t)
 	ctx := context.Background()
 
-	m.record(ctx, "flag-a", "on", "targeting_match", nil)
-	m.record(ctx, "flag-b", "off", "default", nil)
+	m.record(ctx, "flag-a", makeDetails("on", of.TargetingMatchReason, ""))
+	m.record(ctx, "flag-b", makeDetails("off", of.DefaultReason, ""))
 
 	rm := collectMetrics(t, reader)
 	dps := findCounter(t, rm)
@@ -216,18 +219,17 @@ func TestRecordAllErrorTypes(t *testing.T) {
 	ctx := context.Background()
 
 	errorCases := []struct {
-		err      error
+		code     of.ErrorCode
 		expected string
 	}{
-		{errFlagNotFound, "flag_not_found"},
-		{errTypeMismatch, "type_mismatch"},
-		{errParseError, "parse_error"},
-		{errNoConfiguration, "no_configuration"},
-		{errors.New("unknown"), "general"},
+		{of.FlagNotFoundCode, "flag_not_found"},
+		{of.TypeMismatchCode, "type_mismatch"},
+		{of.ParseErrorCode, "parse_error"},
+		{of.GeneralCode, "general"},
 	}
 
 	for _, tc := range errorCases {
-		m.record(ctx, "test-flag", "", "error", tc.err)
+		m.record(ctx, "test-flag", makeDetails("", of.ErrorReason, tc.code))
 	}
 
 	rm := collectMetrics(t, reader)
@@ -248,89 +250,140 @@ func TestRecordAllErrorTypes(t *testing.T) {
 	}
 }
 
+// TestIntegrationEvaluate tests that the flag evaluation hook correctly records
+// metrics when evaluations flow through the full OpenFeature client lifecycle.
 func TestIntegrationEvaluate(t *testing.T) {
-	tests := []struct {
-		name        string
-		flagKey     string
-		defaultVal  any
-		flatCtx     of.FlattenedContext
-		setConfig   bool
-		wantReason  string
-		wantVariant string
-		wantError   string
-	}{
-		{
-			name:       "targeting match records metric",
-			flagKey:    "bool-flag",
-			defaultVal: false,
-			flatCtx: of.FlattenedContext{
-				"targetingKey": "user-123",
-				"country":      "US",
-			},
-			setConfig:   true,
-			wantReason:  "targeting_match",
-			wantVariant: "on",
-		},
-		{
-			name:       "non-existent flag records error metric",
-			flagKey:    "non-existent-flag",
-			defaultVal: "default",
-			flatCtx: of.FlattenedContext{
-				"targetingKey": "user-123",
-			},
-			setConfig:  true,
-			wantReason: "error",
-			wantError:  "flag_not_found",
-		},
-		{
-			name:       "no configuration records error metric",
-			flagKey:    "any-flag",
-			defaultVal: "default",
-			flatCtx: of.FlattenedContext{
-				"targetingKey": "user-123",
-			},
-			setConfig:  false,
-			wantReason: "error",
-			wantError:  "no_configuration",
-		},
-	}
+	t.Run("targeting match records metric via hook", func(t *testing.T) {
+		provider := newDatadogProvider(ProviderConfig{})
+		provider.updateConfiguration(createTestConfig())
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			provider := newDatadogProvider(ProviderConfig{})
-			if tc.setConfig {
-				provider.updateConfiguration(createTestConfig())
-			}
+		m, reader := setupTestMetrics(t)
+		provider.flagEvalHook.metrics = m
 
-			m, reader := setupTestMetrics(t)
-			provider.flagEvalMetrics = m
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-			provider.evaluate(context.Background(), tc.flagKey, tc.defaultVal, tc.flatCtx)
+		domain := "test-eval-match"
+		if err := of.SetNamedProviderWithContextAndWait(ctx, domain, provider); err != nil {
+			t.Fatalf("failed to set provider: %v", err)
+		}
 
-			rm := collectMetrics(t, reader)
-			dps := findCounter(t, rm)
-
-			if len(dps) != 1 {
-				t.Fatalf("expected 1 metric data point, got %d", len(dps))
-			}
-
-			dp := dps[0]
-			if got := getAttr(dp, attrFlagKey); got != tc.flagKey {
-				t.Errorf("flag key: got %q, want %q", got, tc.flagKey)
-			}
-			if got := getAttr(dp, attrReason); got != tc.wantReason {
-				t.Errorf("reason: got %q, want %q", got, tc.wantReason)
-			}
-			if tc.wantVariant != "" {
-				if got := getAttr(dp, attrVariant); got != tc.wantVariant {
-					t.Errorf("variant: got %q, want %q", got, tc.wantVariant)
-				}
-			}
-			if tc.wantError != "" {
-				if got := getAttr(dp, attrErrorType); got != tc.wantError {
-					t.Errorf("error.type: got %q, want %q", got, tc.wantError)
-				}
-			}
+		client := of.NewClient(domain)
+		evalCtx := of.NewEvaluationContext("user-123", map[string]any{
+			"country": "US",
 		})
-	}
+
+		_, err := client.BooleanValue(ctx, "bool-flag", false, evalCtx)
+		if err != nil {
+			t.Fatalf("evaluation failed: %v", err)
+		}
+
+		rm := collectMetrics(t, reader)
+		dps := findCounter(t, rm)
+
+		if len(dps) != 1 {
+			t.Fatalf("expected 1 metric data point, got %d", len(dps))
+		}
+
+		dp := dps[0]
+		if got := getAttr(dp, attrFlagKey); got != "bool-flag" {
+			t.Errorf("flag key: got %q, want %q", got, "bool-flag")
+		}
+		if got := getAttr(dp, attrReason); got != "targeting_match" {
+			t.Errorf("reason: got %q, want %q", got, "targeting_match")
+		}
+		if got := getAttr(dp, attrVariant); got != "on" {
+			t.Errorf("variant: got %q, want %q", got, "on")
+		}
+		if _, ok := dp.Attributes.Value(attrErrorType); ok {
+			t.Error("expected no error.type attribute on successful evaluation")
+		}
+	})
+
+	t.Run("flag not found records error metric via hook", func(t *testing.T) {
+		provider := newDatadogProvider(ProviderConfig{})
+		provider.updateConfiguration(createTestConfig())
+
+		m, reader := setupTestMetrics(t)
+		provider.flagEvalHook.metrics = m
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		domain := "test-eval-notfound"
+		if err := of.SetNamedProviderWithContextAndWait(ctx, domain, provider); err != nil {
+			t.Fatalf("failed to set provider: %v", err)
+		}
+
+		client := of.NewClient(domain)
+		evalCtx := of.NewEvaluationContext("user-123", nil)
+
+		// Evaluate a non-existent flag — should record flag_not_found error
+		_, _ = client.StringValue(ctx, "non-existent-flag", "default", evalCtx)
+
+		rm := collectMetrics(t, reader)
+		dps := findCounter(t, rm)
+
+		if len(dps) != 1 {
+			t.Fatalf("expected 1 metric data point, got %d", len(dps))
+		}
+
+		dp := dps[0]
+		if got := getAttr(dp, attrFlagKey); got != "non-existent-flag" {
+			t.Errorf("flag key: got %q, want %q", got, "non-existent-flag")
+		}
+		if got := getAttr(dp, attrReason); got != "error" {
+			t.Errorf("reason: got %q, want %q", got, "error")
+		}
+		if got := getAttr(dp, attrErrorType); got != "flag_not_found" {
+			t.Errorf("error.type: got %q, want %q", got, "flag_not_found")
+		}
+	})
+
+	// This test proves the hook catches type conversion errors that the old
+	// evaluate()-level recording approach missed. string-flag returns a string
+	// value, but we call BooleanValue which triggers a type mismatch error
+	// AFTER evaluate() returns.
+	t.Run("type conversion error records type_mismatch metric via hook", func(t *testing.T) {
+		provider := newDatadogProvider(ProviderConfig{})
+		provider.updateConfiguration(createTestConfig())
+
+		m, reader := setupTestMetrics(t)
+		provider.flagEvalHook.metrics = m
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		domain := "test-eval-typemismatch"
+		if err := of.SetNamedProviderWithContextAndWait(ctx, domain, provider); err != nil {
+			t.Fatalf("failed to set provider: %v", err)
+		}
+
+		client := of.NewClient(domain)
+		evalCtx := of.NewEvaluationContext("user-123", map[string]any{
+			"age": 25,
+		})
+
+		// string-flag returns "version-2" (string), but we request a boolean.
+		// The type mismatch happens in BooleanEvaluation after evaluate() returns.
+		_, _ = client.BooleanValue(ctx, "string-flag", false, evalCtx)
+
+		rm := collectMetrics(t, reader)
+		dps := findCounter(t, rm)
+
+		if len(dps) != 1 {
+			t.Fatalf("expected 1 metric data point, got %d", len(dps))
+		}
+
+		dp := dps[0]
+		if got := getAttr(dp, attrFlagKey); got != "string-flag" {
+			t.Errorf("flag key: got %q, want %q", got, "string-flag")
+		}
+		if got := getAttr(dp, attrReason); got != "error" {
+			t.Errorf("reason: got %q, want %q", got, "error")
+		}
+		if got := getAttr(dp, attrErrorType); got != "type_mismatch" {
+			t.Errorf("error.type: got %q, want %q", got, "type_mismatch")
+		}
+	})
 }
