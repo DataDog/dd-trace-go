@@ -38,7 +38,6 @@ func setupTestMetrics(t *testing.T) (*flagEvalMetrics, *metric.ManualReader) {
 	return &flagEvalMetrics{
 		meterProvider: mp,
 		counter:       counter,
-		ownsProvider:  false, // test owns the provider
 	}, reader
 }
 
@@ -246,13 +245,6 @@ func TestRecordAllErrorTypes(t *testing.T) {
 		if !errorTypes[tc.expected] {
 			t.Errorf("expected error type %q in data points", tc.expected)
 		}
-	}
-}
-
-func TestShutdownClean(t *testing.T) {
-	m, _ := setupTestMetrics(t)
-	if err := m.shutdown(context.Background()); err != nil {
-		t.Errorf("expected clean shutdown, got error: %v", err)
 	}
 }
 

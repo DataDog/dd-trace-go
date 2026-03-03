@@ -36,7 +36,6 @@ var (
 type flagEvalMetrics struct {
 	meterProvider otelmetric.MeterProvider
 	counter       otelmetric.Int64Counter
-	ownsProvider  bool // true if we created the provider (and must shut it down)
 }
 
 // newFlagEvalMetrics creates a new metrics tracker.
@@ -64,7 +63,6 @@ func newFlagEvalMetrics() (*flagEvalMetrics, error) {
 	return &flagEvalMetrics{
 		meterProvider: mp,
 		counter:       counter,
-		ownsProvider:  true,
 	}, nil
 }
 
@@ -106,8 +104,5 @@ var errorTypeTags = map[error]string{
 
 // shutdown gracefully shuts down the meter provider.
 func (m *flagEvalMetrics) shutdown(ctx context.Context) error {
-	if m.ownsProvider {
-		return ddmetric.Shutdown(ctx, m.meterProvider)
-	}
-	return nil
+	return ddmetric.Shutdown(ctx, m.meterProvider)
 }
