@@ -1872,7 +1872,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		assert.Nil(b, err)
 		rs := newSingleSpanRulesSampler(rules)
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			for _, span := range spans {
 				rs.apply(span)
 			}
@@ -1885,7 +1885,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		assert.Nil(b, err)
 		rs := newSingleSpanRulesSampler(rules)
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			for _, span := range spans {
 				rs.apply(span)
 			}
@@ -1900,7 +1900,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		rs := newSingleSpanRulesSampler(rules)
 
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			for _, span := range spans {
 				rs.apply(span)
 			}

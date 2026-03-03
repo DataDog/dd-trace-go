@@ -1392,7 +1392,7 @@ func BenchmarkLogs(b *testing.B) {
 		})
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			c.Log(NewRecord(LogDebug, "this is supposed to be a DEBUG log of representative length with a variable message: "+strconv.Itoa(i%10)))
 		}
 	})
@@ -1408,7 +1408,7 @@ func BenchmarkLogs(b *testing.B) {
 		})
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			c.Log(NewRecord(LogWarn, "this is supposed to be a WARN log of representative length"), WithTags([]string{"key:" + strconv.Itoa(i%10)}))
 		}
 	})
@@ -1537,7 +1537,7 @@ func BenchmarkMetrics(b *testing.B) {
 
 		b.ResetTimer()
 		handle := f(c, "init_time")
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			handle.Submit(1)
 		}
 	})

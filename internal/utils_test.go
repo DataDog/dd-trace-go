@@ -109,7 +109,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 
 		b.ResetTimer()
 		cm := NewXSyncMapCounterMap()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			// We increment the first key w 75% probability and the rest
 			// increment the rest of the keys.
 			// This is to benchmark the expected case of most spans starting
@@ -132,7 +132,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		cm := NewXSyncMapCounterMap()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			cm.Inc("key-" + strconv.Itoa(i))
 		}
 

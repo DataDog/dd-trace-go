@@ -79,7 +79,7 @@ func BenchmarkGLS(b *testing.B) {
 	}
 
 	b.Run("Set", func(b *testing.B) {
-		for i := 0; i < b.N; i++ { //nolint:modernize
+		for i := range b.N {
 			set(i)
 		}
 	})

@@ -2205,7 +2205,7 @@ func genBigTraces(b *testing.B) {
 
 	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ { //nolint:modernize
+	for range b.N {
 		for range 10 {
 			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
 			for range 10_000 {
@@ -2245,7 +2245,7 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 
 	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ { //nolint:modernize
+	for range b.N { //nolint:modernize
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span.Finish()
 	}
@@ -2637,7 +2637,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ { //nolint:modernize
+		for range b.N {
 			span := tracer.StartSpan("name_1")
 			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
@@ -2657,7 +2657,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ { //nolint:modernize
+		for range b.N {
 			span := tracer.StartSpan("name_1")
 			for range 50 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
@@ -2681,7 +2681,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ { //nolint:modernize
+		for range b.N {
 			span := tracer.StartSpan("name_1")
 			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
