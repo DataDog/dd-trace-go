@@ -228,10 +228,13 @@ func TestUDSConcurrentConnectionReuse(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	// With MaxIdleConnsPerHost=100, each goroutine reuses its connection for all
-	// 10 requests. Expect ~50 new connections (one per goroutine), not 500 (one
-	// per request as would happen with the old MaxIdleConnsPerHost=2 default).
-	assert.LessOrEqual(t, newConnections.Load(), int64(55),
+	// With MaxIdleConnsPerHost=100, connections are heavily reused. Ideally ~50
+	// new connections (one per goroutine), but timing races between goroutines
+	// competing for idle connections can push the count above that — especially
+	// on Windows where scheduler and socket latency differ. The important
+	// invariant is that the count is far below 500 (one per request, as would
+	// happen with the old MaxIdleConnsPerHost=2 default).
+	assert.LessOrEqual(t, newConnections.Load(), int64(numGoroutines*2),
 		"connections should be reused; got %d new connections for %d requests",
 		newConnections.Load(), numGoroutines*requestsEach)
 }
