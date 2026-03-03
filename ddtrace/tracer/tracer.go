@@ -382,6 +382,23 @@ func Inject(ctx *SpanContext, carrier any) error {
 	return getGlobalTracer().Inject(ctx, carrier)
 }
 
+// ContinueSpan starts a new span with the given operation name and set of options.
+// If the carrier contains a valid span context, the new span will be a child of the existing span.
+// If the carrier does not contain a valid span context, an error is returned.
+func ContinueSpan[C TextMapReader](operationName string, carrier C, opts ...StartSpanOption) (*Span, error) {
+	tr := getGlobalTracer()
+	spanCtx, err := tr.Extract(carrier)
+	if err != nil {
+		return nil, err
+	}
+	if spanCtx != nil {
+		opts = append(opts, WithStartSpanConfig(&StartSpanConfig{
+			Parent: spanCtx,
+		}))
+	}
+	return tr.StartSpan(operationName, opts...), nil
+}
+
 // SetUser associates user information to the current trace which the
 // provided span belongs to. The options can be used to tune which user
 // bit of information gets monitored. In case of distributed traces,
