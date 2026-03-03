@@ -130,8 +130,14 @@ func loadConfig() *Config {
 	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
 	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
 	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
-	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
-	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	cfg.spanAttributeSchemaVersion = get(provider, "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0, parseSpanAttributeSchema)
+	// peer.service tag default calculation is enabled by default if using attribute schema >= 1.
+	// When schema >= v1 the env var default is overridden to true.
+	if cfg.spanAttributeSchemaVersion >= 1 {
+		cfg.peerServiceDefaultsEnabled = true
+	} else {
+		cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	}
 	cfg.peerServiceMappings = provider.getMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
 	cfg.debugAbandonedSpans = provider.getBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
 	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
