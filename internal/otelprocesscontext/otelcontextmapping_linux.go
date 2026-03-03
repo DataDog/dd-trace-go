@@ -8,6 +8,7 @@
 package otelprocesscontext
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"structs"
@@ -18,6 +19,9 @@ import (
 
 	"golang.org/x/sys/unix"
 )
+
+// ErrPayloadTooLarge is returned when the payload exceeds the fixed mapping size
+var ErrPayloadTooLarge = errors.New("data size is too large for the mapping size")
 
 const (
 	otelContextSignature = "OTEL_CTX"
@@ -66,7 +70,7 @@ func CreateOtelProcessContextMapping(data []byte) error {
 func createOtelProcessContextMapping(data []byte) error {
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
 	if len(data)+headerSize > otelContextMappingSize {
-		return fmt.Errorf("data size is too large for the mapping size")
+		return ErrPayloadTooLarge
 	}
 
 	// Try memfd_create first; fall back to anonymous mapping
@@ -135,7 +139,7 @@ var setAnonymousMappingName = func(mappingBytes []byte, name string) error {
 func updateOtelProcessContextMapping(data []byte) error {
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
 	if len(data)+headerSize > otelContextMappingSize {
-		return fmt.Errorf("data size is too large for the mapping size")
+		return ErrPayloadTooLarge
 	}
 
 	header := (*processContextHeader)(unsafe.Pointer(&existingMappingBytes[0]))

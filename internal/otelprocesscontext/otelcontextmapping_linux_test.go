@@ -123,7 +123,7 @@ func TestCreateOtelProcessContextMappingRejectsOversizedPayload(t *testing.T) {
 	oversizedPayload := make([]byte, otelContextMappingSize-headerSize+1)
 
 	err := CreateOtelProcessContextMapping(oversizedPayload)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrPayloadTooLarge)
 }
 
 func TestUpdateOtelProcessContextMapping(t *testing.T) {
@@ -166,7 +166,7 @@ func TestUpdateOtelProcessContextMappingRejectsOversizedPayload(t *testing.T) {
 	oversizedPayload := make([]byte, otelContextMappingSize-headerSize+1)
 
 	err = CreateOtelProcessContextMapping(oversizedPayload)
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrPayloadTooLarge)
 }
 
 func TestUpdateOtelProcessContextMappingChangesTimestamp(t *testing.T) {
