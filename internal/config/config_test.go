@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -306,7 +307,7 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 					if len(call.Arguments) > 0 {
 						if configs, ok := call.Arguments[0].([]telemetry.Configuration); ok && len(configs) > 0 {
 							config := configs[0]
-							if config.Origin == testOrigin && config.SeqID > defaultSeqID {
+							if config.Origin == testOrigin && config.SeqID > configtelemetry.DefaultSeqID {
 								foundTelemetry = true
 								break
 							}
@@ -316,8 +317,8 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 			}
 
 			assert.True(t, foundTelemetry,
-				"%s: no telemetry with origin=%v and seqID > %d. Fix: call reportTelemetry() OR add to settersWithoutTelemetry/specialCaseSetters",
-				methodName, testOrigin, defaultSeqID)
+				"%s: no telemetry with origin=%v and seqID > %d. Fix: call configtelemetry.Report() OR add to settersWithoutTelemetry/specialCaseSetters",
+				methodName, testOrigin, configtelemetry.DefaultSeqID)
 		})
 	}
 }

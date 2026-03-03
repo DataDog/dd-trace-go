@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package config
+package provider
 
 import (
 	"fmt"
@@ -107,12 +107,10 @@ var propagationMapping = map[string]string{
 	"none":         "none",
 }
 
-// mapService maps OTEL_SERVICE_NAME to DD_SERVICE
 func mapService(ot string) (string, error) {
 	return ot, nil
 }
 
-// mapMetrics maps OTEL_METRICS_EXPORTER to DD_RUNTIME_METRICS_ENABLED
 func mapMetrics(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if ot == "none" {
@@ -121,7 +119,6 @@ func mapMetrics(ot string) (string, error) {
 	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
-// mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG
 func mapLogLevel(ot string) (string, error) {
 	if strings.TrimSpace(strings.ToLower(ot)) == "debug" {
 		return "true", nil
@@ -129,7 +126,6 @@ func mapLogLevel(ot string) (string, error) {
 	return "", fmt.Errorf("the following configuration is not supported: OTEL_LOG_LEVEL=%v", ot)
 }
 
-// mapEnabled maps OTEL_TRACES_EXPORTER to DD_TRACE_ENABLED
 func mapEnabled(ot string) (string, error) {
 	if strings.TrimSpace(strings.ToLower(ot)) == "none" {
 		return "false", nil
@@ -137,7 +133,6 @@ func mapEnabled(ot string) (string, error) {
 	return "", fmt.Errorf("the following configuration is not supported: OTEL_TRACES_EXPORTER=%v", ot)
 }
 
-// mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE
 func otelTraceIDRatio() string {
 	if v := env.Get("OTEL_TRACES_SAMPLER_ARG"); v != "" {
 		return v
@@ -145,7 +140,6 @@ func otelTraceIDRatio() string {
 	return "1.0"
 }
 
-// mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE
 func mapSampleRate(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if v, ok := unsupportedSamplerMapping[ot]; ok {
@@ -164,7 +158,6 @@ func mapSampleRate(ot string) (string, error) {
 	return "", fmt.Errorf("unknown sampling configuration %v", ot)
 }
 
-// mapPropagationStyle maps OTEL_PROPAGATORS to DD_TRACE_PROPAGATION_STYLE
 func mapPropagationStyle(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	supportedStyles := make([]string, 0)
@@ -179,13 +172,10 @@ func mapPropagationStyle(ot string) (string, error) {
 	return strings.Join(supportedStyles, ","), nil
 }
 
-// mapDDTags maps OTEL_RESOURCE_ATTRIBUTES to DD_TAGS
 func mapDDTags(ot string) (string, error) {
 	ddTags := make([]string, 0)
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
-		// replace otel delimiter with dd delimiter and normalize tag names
 		if ddkey, ok := ddTagsMapping[key]; ok {
-			// map reserved otel tag names to dd tag names
 			ddTags = append([]string{ddkey + internal.DDTagsDelimiter + val}, ddTags...)
 		} else {
 			ddTags = append(ddTags, key+internal.DDTagsDelimiter+val)

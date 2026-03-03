@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package config
+package provider
 
 import (
 	"testing"
@@ -108,7 +108,6 @@ func TestOtelEnvConfigSource(t *testing.T) {
 		source := &otelEnvConfigSource{}
 		v := source.get("DD_TAGS")
 
-		// service.name should be mapped to "service"
 		assert.Contains(t, v, "service:my-service")
 		assert.Contains(t, v, "env:prod")
 		assert.Contains(t, v, "custom.key:value")
