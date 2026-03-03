@@ -407,6 +407,18 @@ func (z *StatsBucket) DecodeMsg(dc *msgp.Reader) (err error) {
 					}
 				}
 			}
+		case "Transactions":
+			z.Transactions, err = dc.ReadBytes(z.Transactions)
+			if err != nil {
+				err = msgp.WrapError(err, "Transactions")
+				return
+			}
+		case "TransactionCheckpointIds":
+			z.TransactionCheckpointIds, err = dc.ReadBytes(z.TransactionCheckpointIds)
+			if err != nil {
+				err = msgp.WrapError(err, "TransactionCheckpointIds")
+				return
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -420,9 +432,9 @@ func (z *StatsBucket) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *StatsBucket) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 4
+	// map header, size 6
 	// write "Start"
-	err = en.Append(0x84, 0xa5, 0x53, 0x74, 0x61, 0x72, 0x74)
+	err = en.Append(0x86, 0xa5, 0x53, 0x74, 0x61, 0x72, 0x74)
 	if err != nil {
 		return
 	}
@@ -498,6 +510,26 @@ func (z *StatsBucket) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
+	// write "Transactions"
+	err = en.Append(0xac, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73)
+	if err != nil {
+		return
+	}
+	err = en.WriteBytes(z.Transactions)
+	if err != nil {
+		err = msgp.WrapError(err, "Transactions")
+		return
+	}
+	// write "TransactionCheckpointIds"
+	err = en.Append(0xb8, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x43, 0x68, 0x65, 0x63, 0x6b, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x49, 0x64, 0x73)
+	if err != nil {
+		return
+	}
+	err = en.WriteBytes(z.TransactionCheckpointIds)
+	if err != nil {
+		err = msgp.WrapError(err, "TransactionCheckpointIds")
+		return
+	}
 	return
 }
 
@@ -515,6 +547,7 @@ func (z *StatsBucket) Msgsize() (s int) {
 		}
 		s += 6 + msgp.Int64Size
 	}
+	s += 13 + msgp.BytesPrefixSize + len(z.Transactions) + 25 + msgp.BytesPrefixSize + len(z.TransactionCheckpointIds)
 	return
 }
 
@@ -604,6 +637,12 @@ func (z *StatsPayload) DecodeMsg(dc *msgp.Reader) (err error) {
 					return
 				}
 			}
+		case "ProductMask":
+			z.ProductMask, err = dc.ReadUint64()
+			if err != nil {
+				err = msgp.WrapError(err, "ProductMask")
+				return
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -617,9 +656,9 @@ func (z *StatsPayload) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *StatsPayload) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 7
+	// map header, size 8
 	// write "Env"
-	err = en.Append(0x87, 0xa3, 0x45, 0x6e, 0x76)
+	err = en.Append(0x88, 0xa3, 0x45, 0x6e, 0x76)
 	if err != nil {
 		return
 	}
@@ -702,6 +741,16 @@ func (z *StatsPayload) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
+	// write "ProductMask"
+	err = en.Append(0xab, 0x50, 0x72, 0x6f, 0x64, 0x75, 0x63, 0x74, 0x4d, 0x61, 0x73, 0x6b)
+	if err != nil {
+		return
+	}
+	err = en.WriteUint64(z.ProductMask)
+	if err != nil {
+		err = msgp.WrapError(err, "ProductMask")
+		return
+	}
 	return
 }
 
@@ -715,6 +764,7 @@ func (z *StatsPayload) Msgsize() (s int) {
 	for za0002 := range z.ProcessTags {
 		s += msgp.StringPrefixSize + len(z.ProcessTags[za0002])
 	}
+	s += 12 + msgp.Uint64Size
 	return
 }
 

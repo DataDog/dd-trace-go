@@ -1,0 +1,19 @@
+# Composite action to upload coverage reports to Codecov
+name: 'Codecov Upload'
+description: 'Upload coverage reports to Codecov'
+inputs:
+  codecov-token:
+    required: true
+    description: Codecov token used to upload coverage reports
+runs:
+  using: "composite"
+  steps:
+    - name: Upload Coverage
+      shell: bash
+      env:
+        CODECOV_TOKEN: ${{ inputs.codecov-token }}
+      run: |
+        OS=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
+        curl -Os "https://cli.codecov.io/latest/${OS}/codecov"
+        chmod +x codecov
+        ./codecov --verbose upload-process --fail-on-error

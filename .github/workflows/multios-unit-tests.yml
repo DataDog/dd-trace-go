@@ -82,5 +82,7 @@ jobs:
 
       - name: Upload Coverage
         if: always()
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true
+        uses: ./.github/actions/codecov-upload
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
