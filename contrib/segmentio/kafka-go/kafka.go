@@ -8,6 +8,7 @@ package kafka // import "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-
 import (
 	"context"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -20,10 +21,19 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-var (
-	clusterIDCache   = make(map[string]string)
-	clusterIDCacheMu sync.Mutex
-)
+var clusterIDCache sync.Map
+
+func normalizeBootstrapServers(addrs []string) string {
+	var parts []string
+	for _, s := range addrs {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			parts = append(parts, s)
+		}
+	}
+	slices.Sort(parts)
+	return strings.Join(parts, ",")
+}
 
 // A Reader wraps a kafka.Reader.
 type Reader struct {
@@ -43,17 +53,19 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 		Reader: c,
 	}
 	cfg := tracing.KafkaConfig{}
-	if c.Config().Brokers != nil {
-		bootstrapServersString := strings.Join(c.Config().Brokers, ",")
-		cfg.BootstrapServers = bootstrapServersString
-		if clusterID := fetchClusterID(bootstrapServersString, c.Config().Brokers); clusterID != "" {
-			cfg.ClusterID = clusterID
-		}
+	brokers := c.Config().Brokers
+	if brokers != nil {
+		cfg.BootstrapServers = strings.Join(brokers, ",")
 	}
 	if c.Config().GroupID != "" {
 		cfg.ConsumerGroupID = c.Config().GroupID
 	}
 	wrapped.tracer = tracing.NewTracer(cfg, opts...)
+	if brokers != nil {
+		wrapped.tracer.FetchClusterIDAsync(func() string {
+			return fetchClusterID(brokers)
+		})
+	}
 	tracing.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.tracer)
 	return wrapped
 }
@@ -61,6 +73,7 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 // Close calls the underlying Reader.Close and if polling is enabled, finishes
 // any remaining span.
 func (r *Reader) Close() error {
+	r.tracer.WaitForClusterID()
 	err := r.Reader.Close()
 	if r.prev != nil {
 		r.prev.Finish()
@@ -118,45 +131,45 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 		Writer: w,
 	}
 	cfg := tracing.KafkaConfig{}
+	addrs := parseAddrs(w.Addr)
 	if w.Addr.String() != "" {
-		bootstrapServersString := w.Addr.String()
-		cfg.BootstrapServers = bootstrapServersString
-		if clusterID := fetchClusterID(bootstrapServersString, parseAddrs(w.Addr)); clusterID != "" {
-			cfg.ClusterID = clusterID
-		}
+		cfg.BootstrapServers = w.Addr.String()
 	}
 	writer.tracer = tracing.NewTracer(cfg, opts...)
+	if len(addrs) > 0 {
+		writer.tracer.FetchClusterIDAsync(func() string {
+			return fetchClusterID(addrs)
+		})
+	}
 	tracing.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer)
 	return writer
 }
 
-// fetchClusterID returns the Kafka cluster ID for the given bootstrap servers,
-// using a cache keyed by bootstrapServersString to avoid repeated metadata requests.
-func fetchClusterID(bootstrapServersString string, addrs []string) string {
+func fetchClusterID(addrs []string) string {
 	if len(addrs) == 0 {
 		return ""
 	}
-	clusterIDCacheMu.Lock()
-	if id, ok := clusterIDCache[bootstrapServersString]; ok {
-		clusterIDCacheMu.Unlock()
-		return id
+	key := normalizeBootstrapServers(addrs)
+	if key == "" {
+		return ""
 	}
-	clusterIDCacheMu.Unlock()
+	if v, ok := clusterIDCache.Load(key); ok {
+		return v.(string)
+	}
 
 	client := &kafka.Client{
 		Addr: kafka.TCP(addrs...),
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	resp, err := client.Metadata(ctx, &kafka.MetadataRequest{})
 	if err != nil {
 		tracing.Logger().Warn("contrib/segmentio/kafka-go: failed to fetch Kafka cluster ID: %s", err)
 		return ""
 	}
-
-	clusterIDCacheMu.Lock()
-	clusterIDCache[bootstrapServersString] = resp.ClusterID
-	clusterIDCacheMu.Unlock()
+	if resp.ClusterID != "" {
+		clusterIDCache.Store(key, resp.ClusterID)
+	}
 	return resp.ClusterID
 }
 

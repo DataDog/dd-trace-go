@@ -21,8 +21,8 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(msg Message) {
 	if tr.kafkaCfg.ConsumerGroupID != "" {
 		edges = append(edges, "group:"+tr.kafkaCfg.ConsumerGroupID)
 	}
-	if tr.kafkaCfg.ClusterID != "" {
-		edges = append(edges, "kafka_cluster_id:"+tr.kafkaCfg.ClusterID)
+	if tr.ClusterID() != "" {
+		edges = append(edges, "kafka_cluster_id:"+tr.ClusterID())
 	}
 	carrier := NewMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
@@ -37,7 +37,7 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(msg Message) {
 	if tr.kafkaCfg.ConsumerGroupID != "" {
 		// only track Kafka lag if a consumer group is set.
 		// since there is no ack mechanism, we consider that messages read are committed right away.
-		tracer.TrackKafkaCommitOffsetWithCluster(tr.kafkaCfg.ConsumerGroupID, msg.GetTopic(), int32(msg.GetPartition()), msg.GetOffset(), tr.kafkaCfg.ClusterID)
+		tracer.TrackKafkaCommitOffsetWithCluster(tr.kafkaCfg.ConsumerGroupID, msg.GetTopic(), int32(msg.GetPartition()), msg.GetOffset(), tr.ClusterID())
 	}
 }
 
@@ -54,8 +54,8 @@ func (tr *Tracer) SetProduceDSMCheckpoint(msg Message, writer Writer) {
 	}
 
 	edges := []string{"direction:out", "topic:" + topic, "type:kafka"}
-	if tr.kafkaCfg.ClusterID != "" {
-		edges = append(edges, "kafka_cluster_id:"+tr.kafkaCfg.ClusterID)
+	if tr.ClusterID() != "" {
+		edges = append(edges, "kafka_cluster_id:"+tr.ClusterID())
 	}
 	carrier := MessageCarrier{msg}
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
