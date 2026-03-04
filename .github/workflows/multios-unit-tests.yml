@@ -86,3 +86,11 @@ jobs:
         uses: ./.github/actions/codecov-upload
         with:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload Coverage to Datadog
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: ./datadog-ci coverage upload --format=go coverage.txt
+        env:
+          DD_API_KEY: ${{ secrets.DD_CI_API_KEY }}
