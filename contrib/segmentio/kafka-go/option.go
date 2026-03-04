@@ -33,4 +33,3 @@ func WithAnalyticsRate(rate float64) Option {
 func WithDataStreams() Option {
 	return tracing.WithDataStreams()
 }
-
