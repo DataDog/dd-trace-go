@@ -124,7 +124,8 @@ func (h *agentTraceWriter) flush() {
 			// standard library. See dd-trace-go#976
 			h.statsd.Count("datadog.tracer.queue.enqueued.traces", int64(atomic.SwapUint32(&h.tracesQueued, 0)), nil, 1)
 			if p.protocol() == traceProtocolV1 {
-				putPayloadV1(p.(*payloadV1))
+				sp := p.(*safePayload)
+				putPayloadV1(sp.p.(*payloadV1))
 			} else {
 				p.clear()
 			}
