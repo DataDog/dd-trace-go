@@ -162,11 +162,13 @@ func genIntegrationTestSpans(t *testing.T, mt mocktracer.Tracer, writerOp func(t
 		writtenMessages = append(writtenMessages, messages...)
 	}
 	w := WrapWriter(kw, writerOpts...)
+	w.tracer.WaitForClusterID()
 	writerOp(t, w)
 	err := w.Close()
 	require.NoError(t, err)
 
 	r := WrapReader(testReader(), readerOpts...)
+	r.tracer.WaitForClusterID()
 	readerOp(t, r)
 	err = r.Close()
 	require.NoError(t, err)

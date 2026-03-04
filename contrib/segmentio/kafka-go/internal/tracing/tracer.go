@@ -96,14 +96,6 @@ func WithDataStreams() Option {
 	})
 }
 
-// WithClusterID sets the Kafka cluster ID for Data Streams monitoring and span tagging.
-// This overrides the automatically detected cluster ID.
-func WithClusterID(clusterID string) Option {
-	return OptionFn(func(tr *Tracer) {
-		tr.kafkaCfg.ClusterID = clusterID
-	})
-}
-
 func (tr *Tracer) ClusterID() string {
 	tr.clusterIDMu.RLock()
 	defer tr.clusterIDMu.RUnlock()

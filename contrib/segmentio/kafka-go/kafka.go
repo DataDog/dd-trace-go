@@ -178,6 +178,12 @@ func parseAddrs(addr net.Addr) []string {
 	return strings.Split(addr.String(), ",")
 }
 
+// Close calls the underlying Writer.Close.
+func (w *KafkaWriter) Close() error {
+	w.tracer.WaitForClusterID()
+	return w.Writer.Close()
+}
+
 // WriteMessages calls kafka-go.Writer.WriteMessages and traces the requests.
 func (w *KafkaWriter) WriteMessages(ctx context.Context, msgs ...kafka.Message) error {
 	// although there's only one call made to the SyncProducer, the messages are
