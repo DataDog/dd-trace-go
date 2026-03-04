@@ -167,10 +167,6 @@ func (p *configProvider) getIntWithValidator(key string, def int, validate func(
 	})
 }
 
-func (p *configProvider) getIntWithParser(key string, def int, parse func(string) (int, bool)) int {
-	return get(p, key, def, parse)
-}
-
 func (p *configProvider) getMap(key string, def map[string]string) map[string]string {
 	return get(p, key, def, func(v string) (map[string]string, bool) {
 		m := parseMapString(v)
