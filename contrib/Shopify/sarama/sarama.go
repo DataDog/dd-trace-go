@@ -70,8 +70,8 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 				tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 				tracer.Measured(),
 			}
-			if cfg.clusterID != "" {
-				opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, cfg.clusterID))
+			if cfg.ClusterID() != "" {
+				opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, cfg.ClusterID()))
 			}
 			if !math.IsNaN(cfg.analyticsRate) {
 				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -88,7 +88,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 			next := tracer.StartSpan(cfg.consumerSpanName, opts...)
 			// reinject the span context so consumers can pick it up
 			tracer.Inject(next.Context(), carrier)
-			setConsumeCheckpoint(cfg.dataStreamsEnabled, cfg.groupID, cfg.clusterID, msg)
+			setConsumeCheckpoint(cfg.dataStreamsEnabled, cfg.groupID, cfg.ClusterID(), msg)
 
 			wrapped.messages <- msg
 
@@ -141,11 +141,11 @@ type syncProducer struct {
 // SendMessage calls sarama.SyncProducer.SendMessage and traces the request.
 func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
 	span := startProducerSpan(p.cfg, p.version, msg)
-	setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.cfg.clusterID, msg, p.version)
+	setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.cfg.ClusterID(), msg, p.version)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
 	finishProducerSpan(span, partition, offset, err)
 	if err == nil && p.cfg.dataStreamsEnabled {
-		tracer.TrackKafkaProduceOffsetWithCluster(msg.Topic, partition, offset, p.cfg.clusterID)
+		tracer.TrackKafkaProduceOffsetWithCluster(msg.Topic, partition, offset, p.cfg.ClusterID())
 	}
 	return partition, offset, err
 }
@@ -156,7 +156,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	// treated individually, so we create a span for each one
 	spans := make([]*tracer.Span, len(msgs))
 	for i, msg := range msgs {
-		setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.cfg.clusterID, msg, p.version)
+		setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.cfg.ClusterID(), msg, p.version)
 		spans[i] = startProducerSpan(p.cfg, p.version, msg)
 	}
 	err := p.SyncProducer.SendMessages(msgs)
@@ -166,7 +166,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	if err == nil && p.cfg.dataStreamsEnabled {
 		// we only track Kafka lag if messages have been sent successfully. Otherwise, we have no way to know to which partition data was sent to.
 		for _, msg := range msgs {
-			tracer.TrackKafkaProduceOffsetWithCluster(msg.Topic, msg.Partition, msg.Offset, p.cfg.clusterID)
+			tracer.TrackKafkaProduceOffsetWithCluster(msg.Topic, msg.Partition, msg.Offset, p.cfg.ClusterID())
 		}
 	}
 	return err
@@ -248,7 +248,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 			select {
 			case msg := <-wrapped.input:
 				span := startProducerSpan(cfg, saramaConfig.Version, msg)
-				setProduceCheckpoint(cfg.dataStreamsEnabled, cfg.clusterID, msg, saramaConfig.Version)
+				setProduceCheckpoint(cfg.dataStreamsEnabled, cfg.ClusterID(), msg, saramaConfig.Version)
 				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
 					spanID := span.Context().SpanID()
@@ -266,7 +266,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 				}
 				if cfg.dataStreamsEnabled {
 					// we only track Kafka lag if returning successes is enabled. Otherwise, we have no way to know to which partition data was sent to.
-					tracer.TrackKafkaProduceOffsetWithCluster(msg.Topic, msg.Partition, msg.Offset, cfg.clusterID)
+					tracer.TrackKafkaProduceOffsetWithCluster(msg.Topic, msg.Partition, msg.Offset, cfg.ClusterID())
 				}
 				if spanctx, spanFound := getSpanContext(msg); spanFound {
 					spanID := spanctx.SpanID()
@@ -306,8 +306,8 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.MessagingDestinationName, msg.Topic),
 	}
-	if cfg.clusterID != "" {
-		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, cfg.clusterID))
+	if cfg.ClusterID() != "" {
+		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, cfg.ClusterID()))
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))

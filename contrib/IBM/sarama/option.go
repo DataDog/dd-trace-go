@@ -27,8 +27,21 @@ type config struct {
 	dataStreamsEnabled  bool
 	groupID             string
 	clusterID           string
+	clusterIDMu         sync.RWMutex
 	consumerCustomTags  map[string]func(msg *sarama.ConsumerMessage) any
 	producerCustomTags  map[string]func(msg *sarama.ProducerMessage) any
+}
+
+func (cfg *config) ClusterID() string {
+	cfg.clusterIDMu.RLock()
+	defer cfg.clusterIDMu.RUnlock()
+	return cfg.clusterID
+}
+
+func (cfg *config) setClusterID(id string) {
+	cfg.clusterIDMu.Lock()
+	defer cfg.clusterIDMu.Unlock()
+	cfg.clusterID = id
 }
 
 func defaults(cfg *config) {
@@ -89,9 +102,19 @@ func WithBrokers(saramaConfig *sarama.Config, addrs []string) OptionFn {
 		if len(addrs) == 0 {
 			return
 		}
-		if clusterID := fetchClusterID(saramaConfig, addrs); clusterID != "" {
-			cfg.clusterID = clusterID
+		key := normalizeBootstrapServers(addrs)
+		if key == "" {
+			return
 		}
+		if v, ok := clusterIDCache.Load(key); ok {
+			cfg.clusterID = v.(string)
+			return
+		}
+		go func() {
+			if clusterID := fetchClusterID(saramaConfig, addrs); clusterID != "" {
+				cfg.setClusterID(clusterID)
+			}
+		}()
 	}
 }
 

@@ -192,12 +192,7 @@ func TestSyncProducerWithClusterID(t *testing.T) {
 	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, nil, sarama.ErrNoError)
 	seedBroker.Returns(metadataResponse)
 
-	// Queue a second metadata response for fetchClusterID (called by WithBrokers).
 	testClusterID := "test-cluster-123"
-	clusterMetadataResponse := new(sarama.MetadataResponse)
-	clusterMetadataResponse.Version = 4
-	clusterMetadataResponse.ClusterID = &testClusterID
-	seedBroker.Returns(clusterMetadataResponse)
 
 	prodSuccess := new(sarama.ProduceResponse)
 	prodSuccess.Version = 2
@@ -210,6 +205,10 @@ func TestSyncProducerWithClusterID(t *testing.T) {
 
 	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
 	require.NoError(t, err)
+	// Pre-populate the cluster ID cache so WithBrokers takes the synchronous path.
+	key := normalizeBootstrapServers([]string{seedBroker.Addr()})
+	clusterIDCache.Store(key, testClusterID)
+	t.Cleanup(func() { clusterIDCache.Delete(key) })
 	producer = WrapSyncProducer(cfg, producer, WithDataStreams(), WithBrokers(cfg, []string{seedBroker.Addr()}))
 
 	msg1 := &sarama.ProducerMessage{
