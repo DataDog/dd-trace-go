@@ -41,11 +41,13 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	}
 	opts = append(opts, WithConfig(conf))
 	wrapped := WrapConsumer(c, opts...)
-	if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
-		return fetchClusterIDFromConsumer(c)
-	}); clusterID != "" {
-		wrapped.tracer.SetClusterID(clusterID)
-	}
+	go func() {
+		if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
+			return fetchClusterIDFromConsumer(c)
+		}); clusterID != "" {
+			wrapped.tracer.SetClusterID(clusterID)
+		}
+	}()
 	return wrapped, nil
 }
 
@@ -57,11 +59,13 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	}
 	opts = append(opts, WithConfig(conf))
 	wrapped := WrapProducer(p, opts...)
-	if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
-		return fetchClusterIDFromProducer(p)
-	}); clusterID != "" {
-		wrapped.tracer.SetClusterID(clusterID)
-	}
+	go func() {
+		if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
+			return fetchClusterIDFromProducer(p)
+		}); clusterID != "" {
+			wrapped.tracer.SetClusterID(clusterID)
+		}
+	}()
 	return wrapped, nil
 }
 

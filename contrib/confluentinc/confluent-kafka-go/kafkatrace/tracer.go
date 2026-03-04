@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -27,6 +28,7 @@ type Tracer struct {
 	bootstrapServers    string
 	groupID             string
 	clusterID           string
+	clusterIDMu         sync.RWMutex
 	tagFns              map[string]func(msg Message) any
 	dsmEnabled          bool
 	ckgoVersion         CKGoVersion
@@ -38,10 +40,14 @@ func (tr *Tracer) DSMEnabled() bool {
 }
 
 func (tr *Tracer) ClusterID() string {
+	tr.clusterIDMu.RLock()
+	defer tr.clusterIDMu.RUnlock()
 	return tr.clusterID
 }
 
 func (tr *Tracer) SetClusterID(id string) {
+	tr.clusterIDMu.Lock()
+	defer tr.clusterIDMu.Unlock()
 	tr.clusterID = id
 }
 

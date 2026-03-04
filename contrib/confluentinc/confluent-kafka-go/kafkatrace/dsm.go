@@ -18,7 +18,7 @@ func (tr *Tracer) TrackCommitOffsets(offsets []TopicPartition, err error) {
 		return
 	}
 	for _, tp := range offsets {
-		tracer.TrackKafkaCommitOffsetWithCluster(tr.groupID, tp.GetTopic(), tp.GetPartition(), tp.GetOffset(), tr.clusterID)
+		tracer.TrackKafkaCommitOffsetWithCluster(tr.groupID, tp.GetTopic(), tp.GetPartition(), tp.GetOffset(), tr.ClusterID())
 	}
 }
 
@@ -28,7 +28,7 @@ func (tr *Tracer) TrackHighWatermarkOffset(offsets []TopicPartition, consumer Co
 	}
 	for _, tp := range offsets {
 		if _, high, err := consumer.GetWatermarkOffsets(tp.GetTopic(), tp.GetPartition()); err == nil {
-			tracer.TrackKafkaHighWatermarkOffset(tr.clusterID, tp.GetTopic(), tp.GetPartition(), high)
+			tracer.TrackKafkaHighWatermarkOffset(tr.ClusterID(), tp.GetTopic(), tp.GetPartition(), high)
 		}
 	}
 }
@@ -39,7 +39,7 @@ func (tr *Tracer) TrackProduceOffsets(msg Message) {
 		return
 	}
 	tp := msg.GetTopicPartition()
-	tracer.TrackKafkaProduceOffsetWithCluster(tp.GetTopic(), tp.GetPartition(), tp.GetOffset(), tr.clusterID)
+	tracer.TrackKafkaProduceOffsetWithCluster(tp.GetTopic(), tp.GetPartition(), tp.GetOffset(), tr.ClusterID())
 }
 
 func (tr *Tracer) SetConsumeCheckpoint(msg Message) {
@@ -50,8 +50,8 @@ func (tr *Tracer) SetConsumeCheckpoint(msg Message) {
 	if tr.groupID != "" {
 		edges = append(edges, "group:"+tr.groupID)
 	}
-	if tr.clusterID != "" {
-		edges = append(edges, "kafka_cluster_id:"+tr.clusterID)
+	if tr.ClusterID() != "" {
+		edges = append(edges, "kafka_cluster_id:"+tr.ClusterID())
 	}
 	carrier := NewMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
@@ -70,8 +70,8 @@ func (tr *Tracer) SetProduceCheckpoint(msg Message) {
 		return
 	}
 	edges := []string{"direction:out", "topic:" + msg.GetTopicPartition().GetTopic(), "type:kafka"}
-	if tr.clusterID != "" {
-		edges = append(edges, "kafka_cluster_id:"+tr.clusterID)
+	if tr.ClusterID() != "" {
+		edges = append(edges, "kafka_cluster_id:"+tr.ClusterID())
 	}
 	carrier := NewMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(

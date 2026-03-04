@@ -25,22 +25,22 @@ func NormalizeBootstrapServers(bootstrapServers string) string {
 	return strings.Join(parts, ",")
 }
 
-func GetCachedClusterID(normalizedBootstrapServers string) (string, bool) {
-	if normalizedBootstrapServers == "" {
+func GetCachedClusterID(bootstrapServers string) (string, bool) {
+	if bootstrapServers == "" {
 		return "", false
 	}
-	v, ok := clusterIDCache.Load(normalizedBootstrapServers)
+	v, ok := clusterIDCache.Load(bootstrapServers)
 	if !ok {
 		return "", false
 	}
 	return v.(string), true
 }
 
-func SetCachedClusterID(normalizedBootstrapServers, clusterID string) {
-	if normalizedBootstrapServers == "" || clusterID == "" {
+func SetCachedClusterID(bootstrapServers, clusterID string) {
+	if bootstrapServers == "" || clusterID == "" {
 		return
 	}
-	clusterIDCache.Store(normalizedBootstrapServers, clusterID)
+	clusterIDCache.Store(bootstrapServers, clusterID)
 }
 
 func ResetClusterIDCache() {
