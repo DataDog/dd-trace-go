@@ -19,18 +19,25 @@ import (
 
 const (
 	ffeProductName = "FFE_FLAGS"
-	ffeCapability  = 46
 )
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	provider := newDatadogProvider(config)
 
+	// Fast path: tracer already subscribed to FFE_FLAGS during its RC setup.
+	// Attach provider and replay any buffered config.
+	if attachProvider(provider) {
+		log.Debug("openfeature: attached to tracer's RC subscription")
+		return provider, nil
+	}
+
+	// Slow path: no tracer, or tracer started without FFE enabled.
+	// Start RC ourselves and subscribe.
 	if err := remoteconfig.Start(remoteconfig.DefaultClientConfig()); err != nil {
 		return nil, fmt.Errorf("failed to start Remote Config: %w", err)
 	}
 
-	// Subscribe to Remote Config updates for the OpenFeature product
-	if _, err := remoteconfig.Subscribe(ffeProductName, provider.rcCallback, ffeCapability); err != nil {
+	if _, err := remoteconfig.Subscribe(ffeProductName, provider.rcCallback, remoteconfig.FFEFlagEvaluation); err != nil {
 		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider ?)", err)
 	}
 
@@ -200,6 +207,6 @@ func validateFlag(flagKey string, flag *flag) error {
 func stopRemoteConfig() error {
 	log.Debug("openfeature: unregistered from Remote Config")
 	// For now, we can unregister the capability to stop receiving updates
-	_ = remoteconfig.UnregisterCapability(ffeCapability)
+	_ = remoteconfig.UnregisterCapability(remoteconfig.FFEFlagEvaluation)
 	return nil
 }
