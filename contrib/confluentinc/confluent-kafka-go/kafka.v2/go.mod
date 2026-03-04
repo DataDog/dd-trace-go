@@ -70,7 +70,6 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.4 // indirect
 	github.com/shirou/gopsutil/v4 v4.25.11 // indirect
 	github.com/shoenig/go-m1cpu v0.1.7 // indirect
-	github.com/spf13/pflag v1.0.7 // indirect
 	github.com/tinylib/msgp v1.6.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
@@ -89,11 +88,10 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20251209150349-8475f28825e9 // indirect
 	golang.org/x/mod v0.32.0 // indirect
-	golang.org/x/oauth2 v0.32.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
