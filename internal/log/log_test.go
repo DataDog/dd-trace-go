@@ -249,7 +249,7 @@ func TestSetLoggingRate(t *testing.T) {
 
 func BenchmarkError(b *testing.B) {
 	Error("k %s", "a") // warm up cache
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		Error("k %s", "a")
 	}
 }
@@ -279,7 +279,7 @@ func containsMessage(lvl, m string, lines []string) bool {
 func BenchmarkLog(b *testing.B) {
 	UseLogger(DiscardLogger{})
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		Warn("test")
 	}
 }

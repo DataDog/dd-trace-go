@@ -2140,7 +2140,7 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	defer stop()
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		wg := sync.WaitGroup{}
 		for range 100 {
 			wg.Go(func() {
@@ -2203,8 +2203,9 @@ func genBigTraces(b *testing.B) {
 		}
 	}()
 
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for range b.N {
 		for range 10 {
 			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
 			for range 10_000 {
@@ -2242,8 +2243,9 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	assert.Nil(b, err)
 	defer stop()
 
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for range b.N { //nolint:modernize
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span.Finish()
 	}
@@ -2258,7 +2260,7 @@ func BenchmarkStartSpan(b *testing.B) {
 	ctx := ContextWithSpan(context.TODO(), root)
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		s, ok := SpanFromContext(ctx)
 		if !ok {
 			b.Fatal("no span")
@@ -2284,7 +2286,7 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 			ctx := ContextWithSpan(context.TODO(), root)
 			wgready.Done()
 			<-start
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				s, ok := SpanFromContext(ctx)
 				if !ok {
 					b.Error("no span")
@@ -2302,7 +2304,7 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 
 func BenchmarkGenSpanID(b *testing.B) {
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		generateSpanID(0)
 	}
 }
@@ -2618,13 +2620,14 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 	assert.Nil(b, err)
 	defer stop()
 
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		span := tracer.StartSpan("test")
 		span.Finish(StackFrames(64, 0))
 	}
 }
 
 func BenchmarkSingleSpanRetention(b *testing.B) {
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("no-rules", func(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
@@ -2634,7 +2637,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			span := tracer.StartSpan("name_1")
 			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
@@ -2654,7 +2657,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			span := tracer.StartSpan("name_1")
 			for range 50 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
@@ -2678,7 +2681,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			span := tracer.StartSpan("name_1")
 			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))

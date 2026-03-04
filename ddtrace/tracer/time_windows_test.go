@@ -12,13 +12,13 @@ import (
 )
 
 func BenchmarkNormalTimeNow(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		lowPrecisionNow()
 	}
 }
 
 func BenchmarkHighPrecisionTime(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		highPrecisionNow()
 	}
 }
