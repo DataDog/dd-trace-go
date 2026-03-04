@@ -644,7 +644,8 @@ func (c *Config) PeerServiceMapping(from string) (to string, ok bool) {
 
 func (c *Config) SetPeerServiceMappings(mappings map[string]string, origin telemetry.Origin) {
 	c.mu.Lock()
-	c.peerServiceMappings = mappings
+	c.peerServiceMappings = make(map[string]string, len(mappings))
+	maps.Copy(c.peerServiceMappings, mappings)
 	all := make([]string, 0, len(c.peerServiceMappings))
 	for k, v := range c.peerServiceMappings {
 		all = append(all, fmt.Sprintf("%s:%s", k, v))
