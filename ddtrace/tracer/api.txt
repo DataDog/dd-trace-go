@@ -362,7 +362,7 @@ type TracerConf struct {
 	PartialFlush bool
 	PartialFlushMinSpans int
 	PeerServiceDefaults bool
-	PeerServiceMappings map[string]string
+	PeerServiceMapping func(string) (string, bool)
 	ServiceTag string
 	TracingAsTransport bool
 	VersionTag string

@@ -50,12 +50,14 @@ type TracerConf struct { //nolint:revive
 	PartialFlush         bool
 	PartialFlushMinSpans int
 	PeerServiceDefaults  bool
-	PeerServiceMappings  map[string]string
-	EnvTag               string
-	VersionTag           string
-	ServiceTag           string
-	TracingAsTransport   bool
-	isLambdaFunction     bool
+	// PeerServiceMapping performs a single-key lookup without copying the underlying map.
+	// This avoids lock contention and per-call allocations on the hot path.
+	PeerServiceMapping func(string) (string, bool)
+	EnvTag             string
+	VersionTag         string
+	ServiceTag         string
+	TracingAsTransport bool
+	isLambdaFunction   bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -983,7 +985,7 @@ func (t *tracer) TracerConf() TracerConf {
 		PartialFlush:         pfEnabled,
 		PartialFlushMinSpans: pfMin,
 		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
-		PeerServiceMappings:  t.config.internalConfig.PeerServiceMappings(),
+		PeerServiceMapping:   t.config.internalConfig.PeerServiceMapping,
 		EnvTag:               t.config.internalConfig.Env(),
 		VersionTag:           t.config.internalConfig.Version(),
 		ServiceTag:           t.config.serviceName,
