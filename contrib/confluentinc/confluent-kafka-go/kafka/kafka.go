@@ -41,13 +41,11 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	}
 	opts = append(opts, WithConfig(conf))
 	wrapped := WrapConsumer(c, opts...)
-	go func() {
-		if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
+	wrapped.tracer.FetchClusterIDAsync(func() string {
+		return clusterIDFromConfigOrFetch(conf, func() string {
 			return fetchClusterIDFromConsumer(c)
-		}); clusterID != "" {
-			wrapped.tracer.SetClusterID(clusterID)
-		}
-	}()
+		})
+	})
 	return wrapped, nil
 }
 
@@ -59,13 +57,11 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	}
 	opts = append(opts, WithConfig(conf))
 	wrapped := WrapProducer(p, opts...)
-	go func() {
-		if clusterID := clusterIDFromConfigOrFetch(conf, func() string {
+	wrapped.tracer.FetchClusterIDAsync(func() string {
+		return clusterIDFromConfigOrFetch(conf, func() string {
 			return fetchClusterIDFromProducer(p)
-		}); clusterID != "" {
-			wrapped.tracer.SetClusterID(clusterID)
-		}
-	}()
+		})
+	})
 	return wrapped, nil
 }
 
@@ -146,6 +142,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 // Close calls the underlying Consumer.Close and if polling is enabled, finishes
 // any remaining span.
 func (c *Consumer) Close() error {
+	c.tracer.WaitForClusterID()
 	err := c.Consumer.Close()
 	// we only close the previous span if consuming via the events channel is
 	// not enabled, because otherwise there would be a data race from the
@@ -258,6 +255,7 @@ func (p *Producer) Events() chan kafka.Event {
 // Close calls the underlying Producer.Close and also closes the internal
 // wrapping producer channel.
 func (p *Producer) Close() {
+	p.tracer.WaitForClusterID()
 	close(p.produceChannel)
 	p.Producer.Close()
 }

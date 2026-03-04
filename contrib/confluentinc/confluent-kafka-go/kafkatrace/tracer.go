@@ -29,6 +29,7 @@ type Tracer struct {
 	groupID             string
 	clusterID           string
 	clusterIDMu         sync.RWMutex
+	clusterIDReady      chan struct{}
 	tagFns              map[string]func(msg Message) any
 	dsmEnabled          bool
 	ckgoVersion         CKGoVersion
@@ -49,6 +50,25 @@ func (tr *Tracer) SetClusterID(id string) {
 	tr.clusterIDMu.Lock()
 	defer tr.clusterIDMu.Unlock()
 	tr.clusterID = id
+}
+
+// FetchClusterIDAsync launches a background goroutine to fetch the cluster ID.
+// Use WaitForClusterID to block until the fetch completes.
+func (tr *Tracer) FetchClusterIDAsync(fetchFn func() string) {
+	tr.clusterIDReady = make(chan struct{})
+	go func() {
+		defer close(tr.clusterIDReady)
+		if id := fetchFn(); id != "" {
+			tr.SetClusterID(id)
+		}
+	}()
+}
+
+// WaitForClusterID blocks until any in-flight async cluster ID fetch completes.
+func (tr *Tracer) WaitForClusterID() {
+	if tr.clusterIDReady != nil {
+		<-tr.clusterIDReady
+	}
 }
 
 type Option interface {
