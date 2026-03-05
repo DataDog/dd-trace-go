@@ -40,6 +40,12 @@ var (
 
 	// mTracer contains the mock tracer instance for testing purposes
 	mTracer mocktracer.Tracer
+
+	logsIsEnabledFunc                         = logs.IsEnabled
+	logsInitializeFunc                        = logs.Initialize
+	startAdditionalFeaturesInitializationFunc = func(serviceName string) {
+		go func() { ensureAdditionalFeaturesInitialization(serviceName) }()
+	}
 )
 
 // EnsureCiVisibilityInitialization initializes the CI visibility tracer if it hasn't been initialized already.
@@ -104,7 +110,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		}
 
 		// Initializing additional features asynchronously
-		go func() { ensureAdditionalFeaturesInitialization(serviceName) }()
+		startAdditionalFeaturesInitializationFunc(serviceName)
 
 		// Initialize the tracer
 		log.Debug("civisibility: initializing tracer")
@@ -114,9 +120,9 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		// Initialize the logs
 		if disableLogsForOfflineMode {
 			log.Debug("civisibility: logs initialization skipped for test optimization offline/file mode")
-		} else if logs.IsEnabled() {
+		} else if logsIsEnabledFunc() {
 			log.Debug("civisibility: initializing logs for service: %s", serviceName)
-			logs.Initialize(serviceName)
+			logsInitializeFunc(serviceName)
 		} else {
 			log.Debug("civisibility: logs are disabled")
 		}

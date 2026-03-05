@@ -192,6 +192,28 @@ func TestCurrentTestOptimizationMode_PayloadFiles(t *testing.T) {
 	}
 }
 
+func TestWritePayloadFileDisabledMode(t *testing.T) {
+	ResetTestOptimizationModeForTesting()
+	t.Cleanup(ResetTestOptimizationModeForTesting)
+
+	err := WritePayloadFile("tests", []byte(`{"ok":true}`))
+	if err == nil {
+		t.Fatal("expected payload file mode disabled error")
+	}
+}
+
+func TestWritePayloadFileInvalidKind(t *testing.T) {
+	ResetTestOptimizationModeForTesting()
+	t.Cleanup(ResetTestOptimizationModeForTesting)
+
+	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
+
+	if err := WritePayloadFile("unknown", []byte(`{"ok":true}`)); err == nil {
+		t.Fatal("expected unsupported payload file kind error")
+	}
+}
+
 func TestCacheHTTPFile(t *testing.T) {
 	ResetTestOptimizationModeForTesting()
 	t.Cleanup(ResetTestOptimizationModeForTesting)

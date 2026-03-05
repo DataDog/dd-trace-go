@@ -194,3 +194,39 @@ func TestSettingsApiRequestFromManifestCacheMissingFile(t *testing.T) {
 	assert.Equal(t, SettingsResponseData{}, *settings)
 	assert.Equal(t, 0, hits)
 }
+
+func TestSettingsApiRequestFromManifestCacheMalformedFile(t *testing.T) {
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(civisibilityutils.ResetTestOptimizationModeForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "cache", "http", "settings.json"), []byte("{invalid"), 0o644); err != nil {
+		t.Fatalf("write malformed settings cache: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(constants.CIVisibilityManifestFilePath, manifestPath)
+
+	cInterface := NewClient()
+	settings, err := cInterface.GetSettings()
+	assert.NoError(t, err)
+	assert.Equal(t, SettingsResponseData{}, *settings)
+	assert.Equal(t, 0, hits)
+}

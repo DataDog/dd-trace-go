@@ -117,3 +117,123 @@ func TestCoverageApiRequestPayloadFilesModeWritesJSON(t *testing.T) {
 	assert.Contains(t, payloadMap, "metadata")
 	assert.Contains(t, payloadMap, "coverages")
 }
+
+func TestCoverageApiRequestPayloadFilesModeWritesJSONFormatPayload(t *testing.T) {
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(civisibilityutils.ResetTestOptimizationModeForTesting)
+
+	outDir := t.TempDir()
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	os.Setenv(constants.CIVisibilityUndeclaredOutputsDir, outDir)
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+
+	cInterface := NewClient()
+	jsonPayload := []byte(`{"version":2,"metadata":{},"coverages":[]}`)
+
+	err := cInterface.SendCoveragePayloadWithFormat(bytes.NewReader(jsonPayload), FormatJSON)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, hits)
+
+	matches, err := filepath.Glob(filepath.Join(outDir, "payloads", "coverage", "coverage-*.json"))
+	assert.NoError(t, err)
+	assert.Len(t, matches, 1)
+
+	raw, err := os.ReadFile(matches[0])
+	assert.NoError(t, err)
+
+	var payloadMap map[string]any
+	assert.NoError(t, json.Unmarshal(raw, &payloadMap))
+	assert.Contains(t, payloadMap, "version")
+	assert.Contains(t, payloadMap, "metadata")
+	assert.Contains(t, payloadMap, "coverages")
+}
+
+func TestCoverageApiRequestPayloadFilesModeMissingOutputDirMsgpack(t *testing.T) {
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(civisibilityutils.ResetTestOptimizationModeForTesting)
+
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+
+	cInterface := NewClient()
+	err := cInterface.SendCoveragePayloadWithFormat(bytes.NewReader(testCoverageMsgpackPayload()), FormatMessagePack)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), constants.CIVisibilityUndeclaredOutputsDir)
+	assert.Equal(t, 0, hits)
+
+	matches, globErr := filepath.Glob(filepath.Join(tempDir, "payloads", "coverage", "coverage-*.json"))
+	assert.NoError(t, globErr)
+	assert.Empty(t, matches)
+}
+
+func TestCoverageApiRequestPayloadFilesModeMissingOutputDirJSON(t *testing.T) {
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(civisibilityutils.ResetTestOptimizationModeForTesting)
+
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+
+	cInterface := NewClient()
+	err := cInterface.SendCoveragePayloadWithFormat(bytes.NewReader([]byte(`{"version":2,"metadata":{},"coverages":[]}`)), FormatJSON)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), constants.CIVisibilityUndeclaredOutputsDir)
+	assert.Equal(t, 0, hits)
+
+	matches, globErr := filepath.Glob(filepath.Join(tempDir, "payloads", "coverage", "coverage-*.json"))
+	assert.NoError(t, globErr)
+	assert.Empty(t, matches)
+}
+
+func testCoverageMsgpackPayload() []byte {
+	payload := msgp.AppendMapHeader(nil, 3)
+	payload = msgp.AppendString(payload, "version")
+	payload = msgp.AppendInt(payload, 2)
+	payload = msgp.AppendString(payload, "metadata")
+	payload = msgp.AppendMapHeader(payload, 0)
+	payload = msgp.AppendString(payload, "coverages")
+	payload = msgp.AppendArrayHeader(payload, 0)
+	return payload
+}

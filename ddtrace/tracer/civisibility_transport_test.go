@@ -209,3 +209,44 @@ func TestCiVisibilityTransportPayloadFilesModeWritesJSON(t *testing.T) {
 	assert.Contains(t, payloadMap, "metadata")
 	assert.Contains(t, payloadMap, "events")
 }
+
+func TestCiVisibilityTransportPayloadFilesModeMissingOutputDir(t *testing.T) {
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(civisibilityutils.ResetTestOptimizationModeForTesting)
+
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		hits++
+	}))
+	defer srv.Close()
+
+	parsedURL, _ := url.Parse(srv.URL)
+	cfg, err := newTestConfig()
+	assert.NoError(t, err)
+	cfg.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
+	cfg.httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
+	cfg.agentURL = parsedURL
+
+	transport := newCiVisibilityTransport(cfg)
+	p := newCiVisibilityPayload()
+	for _, trace := range getTestTrace(1, 1) {
+		for _, span := range trace {
+			_, pushErr := p.push(getCiVisibilityEvent(span))
+			assert.NoError(t, pushErr)
+		}
+	}
+
+	_, err = transport.send(p.payload)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), constants.CIVisibilityUndeclaredOutputsDir)
+	assert.Equal(t, 0, hits)
+
+	matches, globErr := filepath.Glob(filepath.Join(tempDir, "payloads", "tests", "tests-*.json"))
+	assert.NoError(t, globErr)
+	assert.Empty(t, matches)
+}

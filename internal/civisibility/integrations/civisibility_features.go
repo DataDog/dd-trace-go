@@ -67,6 +67,8 @@ var (
 
 	// ciVisibilityImpactedTestsAnalyzer contains the CI Visibility impacted tests analyzer
 	ciVisibilityImpactedTestsAnalyzer *impactedtests.ImpactedTestAnalyzer
+
+	uploadRepositoryChangesFunc = uploadRepositoryChanges
 )
 
 func ensureSettingsInitialization(serviceName string) {
@@ -89,7 +91,7 @@ func ensureSettingsInitialization(serviceName string) {
 				defer func() {
 					close(uploadChannel)
 				}()
-				bytes, err := uploadRepositoryChanges()
+				bytes, err := uploadRepositoryChangesFunc()
 				if err != nil {
 					log.Error("civisibility: error uploading repository changes: %s", err.Error())
 				} else {

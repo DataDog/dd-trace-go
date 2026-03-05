@@ -82,8 +82,9 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 				var cachedResponse settingsResponse
 				if err := json.Unmarshal(raw, &cachedResponse); err == nil {
 					return &cachedResponse.Data.Attributes, nil
+				} else {
+					log.Debug("civisibility.settings: invalid settings cache file %s: %s", cacheFile, err.Error())
 				}
-				log.Debug("civisibility.settings: invalid settings cache file %s: %s", cacheFile, err.Error())
 			} else {
 				log.Debug("civisibility.settings: cannot read settings cache file %s: %s", cacheFile, err.Error())
 			}
