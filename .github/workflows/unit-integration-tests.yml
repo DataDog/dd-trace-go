@@ -12,6 +12,7 @@ on:
         type: string
         default: ""
 
+
 env:
   DD_APPSEC_WAF_TIMEOUT: 1m # Increase time WAF time budget to reduce CI flakiness
   # Users may build our library with GOTOOLCHAIN=local. If they do, and our
