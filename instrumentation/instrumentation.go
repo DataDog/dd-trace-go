@@ -79,6 +79,19 @@ func (i *Instrumentation) ServiceName(component Component, opCtx OperationContex
 	return n.buildServiceNameV0(opCtx)
 }
 
+// ServiceSourceWithService is the service source value used when the service
+// name is explicitly set via a WithService option.
+const ServiceSourceWithService = "opt.WithService"
+
+// ServiceNameWithSource returns a StartSpanOption that sets both the service
+// name and its source. The source tracks the origin of the service name
+// override for _dd.svc_src.
+func ServiceNameWithSource(name string, source string) tracer.StartSpanOption {
+	return func(cfg *tracer.StartSpanConfig) {
+		tracer.Tag(internal.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})(cfg)
+	}
+}
+
 // OperationName returns the operation name to be set for the given instrumentation component.
 func (i *Instrumentation) OperationName(component Component, opCtx OperationContext) string {
 	op, ok := i.info.naming[component]

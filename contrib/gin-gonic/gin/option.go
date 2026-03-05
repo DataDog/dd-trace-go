@@ -23,6 +23,7 @@ type config struct {
 	analyticsRate float64
 	resourceNamer func(c *gin.Context) string
 	serviceName   string
+	serviceSource string
 	ignoreRequest func(c *gin.Context) bool
 	isStatusError func(statusCode int) bool
 	useGinErrors  bool
@@ -30,13 +31,16 @@ type config struct {
 }
 
 func newConfig(serviceName string) *config {
+	serviceSource := "opt.middleware"
 	if serviceName == "" {
 		serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+		serviceSource = "gin-gonic"
 	}
 	cfg := &config{
 		analyticsRate: instr.AnalyticsRate(true),
 		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
+		serviceSource: serviceSource,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
 		useGinErrors:  false,
 		headerTags:    instr.HTTPHeadersAsTags(),

@@ -19,6 +19,7 @@ import (
 
 type config struct {
 	serviceName        string
+	serviceSource      string
 	spanName           string
 	analyticsRate      float64
 	dsn                string
@@ -145,9 +146,13 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
 	cfg.serviceName = defaultServiceName(driverName, rc)
+	cfg.serviceSource = "database/sql"
 	cfg.spanName = getSpanName(driverName)
 	if rc != nil {
 		// use registered config as the default value for some options
+		if rc.serviceSource != "" {
+			cfg.serviceSource = rc.serviceSource
+		}
 		if math.IsNaN(cfg.analyticsRate) {
 			cfg.analyticsRate = rc.analyticsRate
 		}
@@ -195,6 +200,7 @@ func getSpanName(driverName string) string {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithService
 	}
 }
 
