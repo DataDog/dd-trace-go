@@ -96,7 +96,6 @@ func TestMain(m *testing.M) {
 	// below. And we should definitely try to not add any new ones here!
 	opts := []goleak.Option{
 		goleak.IgnoreAnyFunction("github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.initalizeDynamicInstrumentationRemoteConfigState.func1"),
-		goleak.IgnoreAnyFunction("github.com/open-feature/go-sdk/openfeature.(*eventExecutor).startEventListener.func1.1"),
 	}
 	if err := goleak.Find(opts...); err != nil {
 		fmt.Fprintf(os.Stderr, "goleak: Errors on successful test run: %v\n\n", err)
