@@ -198,12 +198,12 @@ func validateFlag(flagKey string, flag *flag) error {
 // This should be called when shutting down the application or when
 // the OpenFeature provider is no longer needed.
 //
-// Note: This function is currently not fully implemented as Remote Config
-// doesn't provide an Unsubscribe method yet. The provider will continue
-// to receive updates until the Remote Config client is stopped.
+// Note: In the slow path, this package discards the subscription token from
+// Subscribe(), so we cannot call Unsubscribe(). Instead we unregister the
+// capability which stops updates. In the fast path (tracer subscribed),
+// the subscription is owned by the tracer.
 func stopRemoteConfig() error {
 	log.Debug("openfeature: unregistered from Remote Config")
-	// For now, we can unregister the capability to stop receiving updates
 	_ = remoteconfig.UnregisterCapability(remoteconfig.FFEFlagEvaluation)
 	return nil
 }
