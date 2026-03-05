@@ -2094,6 +2094,138 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 	}
 }
 
+func TestCappedRate(t *testing.T) {
+	tests := []struct {
+		name        string
+		oldRate     float64
+		newRate     float64
+		canIncrease bool
+		wantRate    float64
+		wantApplied bool
+	}{
+		{
+			name:        "decrease applied immediately",
+			oldRate:     0.8,
+			newRate:     0.2,
+			canIncrease: true,
+			wantRate:    0.2,
+			wantApplied: false,
+		},
+		{
+			name:        "equal rate unchanged",
+			oldRate:     0.5,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: false,
+		},
+		{
+			name:        "increase from zero applied immediately",
+			oldRate:     0,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: false,
+		},
+		{
+			name:        "increase capped at 2x",
+			oldRate:     0.1,
+			newRate:     1.0,
+			canIncrease: true,
+			wantRate:    0.2,
+			wantApplied: true,
+		},
+		{
+			name:        "increase within 2x not capped",
+			oldRate:     0.3,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: true,
+		},
+		{
+			name:        "increase exactly 2x",
+			oldRate:     0.25,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: true,
+		},
+		{
+			name:        "increase blocked during cooldown",
+			oldRate:     0.1,
+			newRate:     1.0,
+			canIncrease: false,
+			wantRate:    0.1,
+			wantApplied: false,
+		},
+		{
+			name:        "decrease during cooldown still applied",
+			oldRate:     0.8,
+			newRate:     0.2,
+			canIncrease: false,
+			wantRate:    0.2,
+			wantApplied: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rate, applied := cappedRate(tt.oldRate, tt.newRate, tt.canIncrease)
+			assert.Equal(t, tt.wantRate, rate)
+			assert.Equal(t, tt.wantApplied, applied)
+		})
+	}
+}
+
+func TestPrioritySamplerRampCooldownNoReset(t *testing.T) {
+	// When a rate increase arrives during cooldown, lastCapped must NOT be
+	// updated. Otherwise each blocked increase would push out the cooldown
+	// window and delay subsequent ramp-up steps indefinitely.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			s := &Span{service: svc, meta: map[string]string{}}
+			if env != "" {
+				s.meta["env"] = env
+			}
+			return s
+		}
+
+		// Set initial low rate.
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.01}}`,
+		))))
+		assert.Equal(0.01, ps.getRate(mkSpan("web", "prod")))
+
+		// Wait for cooldown, apply increase: 0.01 → 0.02.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Before rampUpInterval elapses, send another increase.
+		// Rate should be held at 0.02 (cooldown) and lastCapped should
+		// NOT be reset.
+		time.Sleep(rampUpInterval / 2)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Wait for the remaining half of rampUpInterval from the original
+		// cap. Since lastCapped was NOT reset by the blocked increase,
+		// this should allow the next ramp-up step.
+		time.Sleep(rampUpInterval / 2)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.04, ps.getRate(mkSpan("web", "prod")))
+	})
+}
+
 func TestPrioritySamplerRampUp(t *testing.T) {
 	// When rates increase, each readRatesJSON call caps the increase at 2x
 	// provided at least rampUpInterval has elapsed.

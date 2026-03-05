@@ -168,14 +168,14 @@ func parseServiceEnvKey(s string) serviceEnvKey {
 // cappedRate returns a rate that is at most 2x the old rate when increasing.
 // Rate decreases and transitions from zero are applied immediately.
 // When canIncrease is false (cooldown not elapsed), increases are held at oldRate.
-func cappedRate(oldRate, newRate float64, canIncrease bool) float64 {
+func cappedRate(oldRate, newRate float64, canIncrease bool) (float64, bool) {
 	if newRate <= oldRate || oldRate == 0 {
-		return newRate
+		return newRate, false
 	}
 	if !canIncrease {
-		return oldRate
+		return oldRate, false
 	}
-	return min(oldRate*2, newRate)
+	return min(oldRate*2, newRate), true
 }
 
 // readRatesJSON will try to read the rates as JSON from the given io.ReadCloser.
@@ -209,16 +209,16 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 		if !ok {
 			oldRate = ps.defaultRate
 		}
-		applied := cappedRate(oldRate, newRate, canIncrease)
-		capApplied = capApplied || applied != newRate
-		rates[key] = applied
+		rate, applied := cappedRate(oldRate, newRate, canIncrease)
+		capApplied = capApplied || applied
+		rates[key] = rate
 	}
 	if newDefault, ok := rates[defaultRateKey]; ok {
-		applied := cappedRate(ps.defaultRate, newDefault, canIncrease)
-		capApplied = capApplied || applied != newDefault
-		rates[defaultRateKey] = applied
+		rate, applied := cappedRate(ps.defaultRate, newDefault, canIncrease)
+		capApplied = capApplied || applied
+		rates[defaultRateKey] = rate
 	}
-	if capApplied {
+	if canIncrease && capApplied {
 		ps.lastCapped = now
 	}
 	ps.rates = rates
