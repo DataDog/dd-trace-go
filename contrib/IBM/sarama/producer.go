@@ -28,11 +28,11 @@ type syncProducer struct {
 // SendMessage calls sarama.SyncProducer.SendMessage and traces the request.
 func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
 	span := startProducerSpan(p.cfg, p.version, msg)
-	setProduceCheckpoint(p.cfg.dataStreamsEnabled, msg, p.version)
+	setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.cfg.ClusterID(), msg, p.version)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
 	finishProducerSpan(span, partition, offset, err)
 	if err == nil && p.cfg.dataStreamsEnabled {
-		tracer.TrackKafkaProduceOffset(msg.Topic, partition, offset)
+		tracer.TrackKafkaProduceOffsetWithCluster(msg.Topic, partition, offset, p.cfg.ClusterID())
 	}
 	return partition, offset, err
 }
@@ -43,7 +43,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	// treated individually, so we create a span for each one
 	spans := make([]*tracer.Span, len(msgs))
 	for i, msg := range msgs {
-		setProduceCheckpoint(p.cfg.dataStreamsEnabled, msg, p.version)
+		setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.cfg.ClusterID(), msg, p.version)
 		spans[i] = startProducerSpan(p.cfg, p.version, msg)
 	}
 	err := p.SyncProducer.SendMessages(msgs)
@@ -53,7 +53,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	if err == nil && p.cfg.dataStreamsEnabled {
 		// we only track Kafka lag if messages have been sent successfully. Otherwise, we have no way to know to which partition data was sent to.
 		for _, msg := range msgs {
-			tracer.TrackKafkaProduceOffset(msg.Topic, msg.Partition, msg.Offset)
+			tracer.TrackKafkaProduceOffsetWithCluster(msg.Topic, msg.Partition, msg.Offset, p.cfg.ClusterID())
 		}
 	}
 	return err
@@ -133,7 +133,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 			select {
 			case msg := <-wrapped.input:
 				span := startProducerSpan(cfg, saramaConfig.Version, msg)
-				setProduceCheckpoint(cfg.dataStreamsEnabled, msg, saramaConfig.Version)
+				setProduceCheckpoint(cfg.dataStreamsEnabled, cfg.ClusterID(), msg, saramaConfig.Version)
 				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
 					spanID := span.Context().SpanID()
@@ -151,7 +151,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 				}
 				if cfg.dataStreamsEnabled {
 					// we only track Kafka lag if returning successes is enabled. Otherwise, we have no way to know to which partition data was sent to.
-					tracer.TrackKafkaProduceOffset(msg.Topic, msg.Partition, msg.Offset)
+					tracer.TrackKafkaProduceOffsetWithCluster(msg.Topic, msg.Partition, msg.Offset, cfg.ClusterID())
 				}
 				if spanctx, spanFound := getProducerSpanContext(msg); spanFound {
 					spanID := spanctx.SpanID()
@@ -190,6 +190,9 @@ func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.Pro
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 		tracer.Tag(ext.MessagingDestinationName, msg.Topic),
+	}
+	if cfg.ClusterID() != "" {
+		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, cfg.ClusterID()))
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -231,11 +234,14 @@ func getProducerSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContext, b
 	return spanctx, true
 }
 
-func setProduceCheckpoint(enabled bool, msg *sarama.ProducerMessage, version sarama.KafkaVersion) {
+func setProduceCheckpoint(enabled bool, clusterID string, msg *sarama.ProducerMessage, version sarama.KafkaVersion) {
 	if !enabled || msg == nil {
 		return
 	}
 	edges := []string{"direction:out", "topic:" + msg.Topic, "type:kafka"}
+	if clusterID != "" {
+		edges = append(edges, "kafka_cluster_id:"+clusterID)
+	}
 	carrier := NewProducerMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBase64Carrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getProducerMsgSize(msg)}, edges...)
 	if !ok || !version.IsAtLeast(sarama.V0_11_0_0) {

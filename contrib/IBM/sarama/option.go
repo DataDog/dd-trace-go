@@ -6,11 +6,13 @@
 package sarama
 
 import (
+	"context"
 	"math"
 
 	"github.com/IBM/sarama"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/kafkaclusterid"
 )
 
 type config struct {
@@ -21,8 +23,17 @@ type config struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	groupID             string
+	clusterIDFetcher    kafkaclusterid.Fetcher
 	consumerCustomTags  map[string]func(msg *sarama.ConsumerMessage) any
 	producerCustomTags  map[string]func(msg *sarama.ProducerMessage) any
+}
+
+func (cfg *config) ClusterID() string {
+	return cfg.clusterIDFetcher.ID()
+}
+
+func (cfg *config) setClusterID(id string) {
+	cfg.clusterIDFetcher.SetID(id)
 }
 
 func defaults(cfg *config) {
@@ -72,6 +83,64 @@ func WithGroupID(groupID string) OptionFn {
 	return func(cfg *config) {
 		cfg.groupID = groupID
 	}
+}
+
+// WithBrokers enables automatic detection of the Kafka cluster ID by connecting
+// to the given broker addresses and fetching cluster metadata. The result is
+// cached by the broker address list so that repeated calls with the same brokers
+// do not make additional metadata requests.
+func WithBrokers(saramaConfig *sarama.Config, addrs []string) OptionFn {
+	return func(cfg *config) {
+		if len(addrs) == 0 {
+			return
+		}
+		key := kafkaclusterid.NormalizeBootstrapServersList(addrs)
+		if key == "" {
+			return
+		}
+		if cached, ok := kafkaclusterid.GetCachedID(key); ok {
+			cfg.clusterIDFetcher.SetID(cached)
+			return
+		}
+		cfg.clusterIDFetcher.FetchAsync(func(ctx context.Context) string {
+			id := fetchClusterID(ctx, saramaConfig, addrs)
+			if id != "" {
+				kafkaclusterid.SetCachedID(key, id)
+			}
+			return id
+		})
+	}
+}
+
+func fetchClusterID(ctx context.Context, saramaConfig *sarama.Config, addrs []string) string {
+	key := kafkaclusterid.NormalizeBootstrapServersList(addrs)
+	if key == "" {
+		return ""
+	}
+	if cached, ok := kafkaclusterid.GetCachedID(key); ok {
+		return cached
+	}
+	if ctx.Err() != nil {
+		return ""
+	}
+
+	broker := sarama.NewBroker(addrs[0])
+	if err := broker.Open(saramaConfig); err != nil {
+		instr.Logger().Warn("contrib/IBM/sarama: failed to open broker for cluster ID: %s", err)
+		return ""
+	}
+	defer broker.Close()
+
+	resp, err := broker.GetMetadata(&sarama.MetadataRequest{Version: 4})
+	if err != nil {
+		instr.Logger().Warn("contrib/IBM/sarama: failed to fetch Kafka cluster ID: %s", err)
+		return ""
+	}
+	if resp.ClusterID == nil {
+		return ""
+	}
+
+	return *resp.ClusterID
 }
 
 // WithAnalytics enables Trace Analytics for all started spans.

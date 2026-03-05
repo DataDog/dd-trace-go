@@ -70,13 +70,16 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 	}
 }
 
-func setConsumeCheckpoint(enabled bool, groupID string, msg *sarama.ConsumerMessage) {
+func setConsumeCheckpoint(enabled bool, groupID, clusterID string, msg *sarama.ConsumerMessage) {
 	if !enabled || msg == nil {
 		return
 	}
 	edges := []string{"direction:in", "topic:" + msg.Topic, "type:kafka"}
 	if groupID != "" {
 		edges = append(edges, "group:"+groupID)
+	}
+	if clusterID != "" {
+		edges = append(edges, "kafka_cluster_id:"+clusterID)
 	}
 	carrier := NewConsumerMessageCarrier(msg)
 
@@ -88,7 +91,7 @@ func setConsumeCheckpoint(enabled bool, groupID string, msg *sarama.ConsumerMess
 	if groupID != "" {
 		// only track Kafka lag if a consumer group is set.
 		// since there is no ack mechanism, we consider that messages read are committed right away.
-		tracer.TrackKafkaCommitOffset(groupID, msg.Topic, msg.Partition, msg.Offset)
+		tracer.TrackKafkaCommitOffsetWithCluster(groupID, msg.Topic, msg.Partition, msg.Offset, clusterID)
 	}
 }
 

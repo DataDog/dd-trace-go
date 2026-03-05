@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/kafkaclusterid"
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
@@ -174,6 +175,63 @@ func TestSyncProducer(t *testing.T) {
 		assert.NotEqual(t, expected.GetHash(), 0)
 		assert.Equal(t, expected.GetHash(), p.GetHash())
 	}
+}
+
+func TestSyncProducerWithClusterID(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	seedBroker := sarama.NewMockBroker(t, 1)
+	defer seedBroker.Close()
+
+	leader := sarama.NewMockBroker(t, 2)
+	defer leader.Close()
+
+	metadataResponse := new(sarama.MetadataResponse)
+	metadataResponse.Version = 1
+	metadataResponse.AddBroker(leader.Addr(), leader.BrokerID())
+	metadataResponse.AddTopicPartition("my_topic", 0, leader.BrokerID(), nil, nil, nil, sarama.ErrNoError)
+	seedBroker.Returns(metadataResponse)
+
+	testClusterID := "test-cluster-123"
+
+	prodSuccess := new(sarama.ProduceResponse)
+	prodSuccess.Version = 2
+	prodSuccess.AddTopicPartition("my_topic", 0, sarama.ErrNoError)
+	leader.Returns(prodSuccess)
+
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	cfg.Producer.Return.Successes = true
+
+	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
+	require.NoError(t, err)
+	// Pre-populate the cluster ID cache so WithBrokers takes the synchronous path.
+	key := kafkaclusterid.NormalizeBootstrapServersList([]string{seedBroker.Addr()})
+	kafkaclusterid.SetCachedID(key, testClusterID)
+	t.Cleanup(func() { kafkaclusterid.ResetCache() })
+	producer = WrapSyncProducer(cfg, producer, WithDataStreams(), WithBrokers(cfg, []string{seedBroker.Addr()}))
+
+	msg1 := &sarama.ProducerMessage{
+		Topic:    "my_topic",
+		Value:    sarama.StringEncoder("test 1"),
+		Metadata: "test",
+	}
+	_, _, err = producer.SendMessage(msg1)
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	s := spans[0]
+	assert.Equal(t, testClusterID, s.Tag(ext.MessagingKafkaClusterID))
+
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewProducerMessageCarrier(msg1)))
+	require.True(t, ok, "pathway not found in context")
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:my_topic", "type:kafka", "kafka_cluster_id:"+testClusterID)
+	expected, _ := datastreams.PathwayFromContext(expectedCtx)
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
 }
 
 func TestSyncProducerSendMessages(t *testing.T) {
