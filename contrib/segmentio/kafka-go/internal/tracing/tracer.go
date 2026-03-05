@@ -6,10 +6,11 @@
 package tracing
 
 import (
+	"context"
 	"math"
-	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/kafkaclusterid"
 )
 
 var instr *instrumentation.Instrumentation
@@ -26,8 +27,7 @@ type Tracer struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	kafkaCfg            KafkaConfig
-	clusterIDMu         sync.RWMutex
-	clusterIDReady      chan struct{}
+	clusterIDFetcher kafkaclusterid.Fetcher
 }
 
 // Option describes options for the Kafka integration.
@@ -97,31 +97,23 @@ func WithDataStreams() Option {
 }
 
 func (tr *Tracer) ClusterID() string {
-	tr.clusterIDMu.RLock()
-	defer tr.clusterIDMu.RUnlock()
-	return tr.kafkaCfg.ClusterID
+	return tr.clusterIDFetcher.ID()
 }
 
 func (tr *Tracer) SetClusterID(id string) {
-	tr.clusterIDMu.Lock()
-	defer tr.clusterIDMu.Unlock()
-	tr.kafkaCfg.ClusterID = id
+	tr.clusterIDFetcher.SetID(id)
 }
 
-func (tr *Tracer) FetchClusterIDAsync(fetchFn func() string) {
-	tr.clusterIDReady = make(chan struct{})
-	go func() {
-		defer close(tr.clusterIDReady)
-		if id := fetchFn(); id != "" {
-			tr.SetClusterID(id)
-		}
-	}()
+func (tr *Tracer) FetchClusterIDAsync(fetchFn func(ctx context.Context) string) {
+	tr.clusterIDFetcher.FetchAsync(fetchFn)
 }
 
 func (tr *Tracer) WaitForClusterID() {
-	if tr.clusterIDReady != nil {
-		<-tr.clusterIDReady
-	}
+	tr.clusterIDFetcher.Wait()
+}
+
+func (tr *Tracer) StopClusterIDFetch() {
+	tr.clusterIDFetcher.Stop()
 }
 
 func Logger() instrumentation.Logger {
