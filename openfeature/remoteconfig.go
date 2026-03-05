@@ -14,11 +14,8 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
-)
-
-const (
-	ffeProductName = "FFE_FLAGS"
 )
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
@@ -37,7 +34,7 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 		return nil, fmt.Errorf("failed to start Remote Config: %w", err)
 	}
 
-	if _, err := remoteconfig.Subscribe(ffeProductName, provider.rcCallback, remoteconfig.FFEFlagEvaluation); err != nil {
+	if _, err := remoteconfig.Subscribe(internalffe.FFEProductName, provider.rcCallback, remoteconfig.FFEFlagEvaluation); err != nil {
 		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider ?)", err)
 	}
 
