@@ -179,6 +179,12 @@ jobs:
       - name: Run
         run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
 
+      - name: Upload test results to Test Optimization
+        if: ${{ always() }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@main
+        with:
+          datadog_api_key: ${{ secrets.DD_API_KEY }}
+
       - name: Compress artifact
         if: ${{ always() }}
         run: |
@@ -287,6 +293,12 @@ jobs:
         env:
           WEBLOG_VARIANT: ${{ matrix.weblog_variant }}
 
+      - name: Upload test results to Test Optimization
+        if: ${{ always() }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@main
+        with:
+          datadog_api_key: ${{ secrets.DD_API_KEY }}
+
       - name: Compress artifact
         if: ${{ always() }}
         run: |
@@ -303,17 +315,42 @@ jobs:
           name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz
 
+  tracer-release:
+    # if: github.event_name == 'schedule'
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
+    secrets:
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      TEST_OPTIMIZATION_API_KEY: ${{ secrets.DD_API_KEY }}
+    permissions:
+      contents: read
+      packages: write
+    with:
+      library: golang
+      ref: main
+      scenarios_groups: tracer-release
+      skip_empty_scenarios: true
+      _system_tests_dev_mode: true
+      push_to_test_optimization: true
+      desired_execution_time: 300
+
   system-tests-done:
     name: System Tests
     needs:
       - system-tests
       - system-tests-docker-images
+      - tracer-release
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.system-tests.result == 'success' && needs.system-tests-docker-images.result == 'success'
+        if: |
+          needs.system-tests.result == 'success'
+          && needs.system-tests-docker-images.result == 'success'
+          && (needs.tracer-release.result == 'success' || needs.tracer-release.result == 'skipped')
         run: echo "Success!"
       - name: Failure
-        if: needs.system-tests.result != 'success' || needs.system-tests-docker-images.result != 'success'
+        if: |
+          needs.system-tests.result != 'success'
+          || needs.system-tests-docker-images.result != 'success'
+          || (needs.tracer-release.result != 'success' && needs.tracer-release.result != 'skipped')
         run: echo "Failure!" && exit 1
