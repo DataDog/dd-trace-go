@@ -10,15 +10,16 @@ import (
 	"math"
 	"net"
 	"strings"
-	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/kafkaclusterid"
 )
 
 type Tracer struct {
 	PrevSpan            *tracer.Span
+	ClusterIDFetcher    kafkaclusterid.Fetcher
 	ctx                 context.Context
 	consumerServiceName string
 	producerServiceName string
@@ -27,9 +28,6 @@ type Tracer struct {
 	analyticsRate       float64
 	bootstrapServers    string
 	groupID             string
-	clusterID           string
-	clusterIDMu         sync.RWMutex
-	clusterIDReady      chan struct{}
 	tagFns              map[string]func(msg Message) any
 	dsmEnabled          bool
 	ckgoVersion         CKGoVersion
@@ -41,34 +39,30 @@ func (tr *Tracer) DSMEnabled() bool {
 }
 
 func (tr *Tracer) ClusterID() string {
-	tr.clusterIDMu.RLock()
-	defer tr.clusterIDMu.RUnlock()
-	return tr.clusterID
+	return tr.ClusterIDFetcher.ID()
 }
 
 func (tr *Tracer) SetClusterID(id string) {
-	tr.clusterIDMu.Lock()
-	defer tr.clusterIDMu.Unlock()
-	tr.clusterID = id
+	tr.ClusterIDFetcher.SetID(id)
 }
 
 // FetchClusterIDAsync launches a background goroutine to fetch the cluster ID.
-// Use WaitForClusterID to block until the fetch completes.
-func (tr *Tracer) FetchClusterIDAsync(fetchFn func() string) {
-	tr.clusterIDReady = make(chan struct{})
-	go func() {
-		defer close(tr.clusterIDReady)
-		if id := fetchFn(); id != "" {
-			tr.SetClusterID(id)
-		}
-	}()
+// The goroutine is cancelled when StopClusterIDFetch is called.
+func (tr *Tracer) FetchClusterIDAsync(fetchFn func(ctx context.Context) string) {
+	tr.ClusterIDFetcher.FetchAsync(fetchFn)
 }
 
-// WaitForClusterID blocks until any in-flight async cluster ID fetch completes.
+// StopClusterIDFetch cancels any in-flight cluster ID fetch and waits for the
+// goroutine to finish cleanup. This returns near-instantly because the context
+// cancellation causes in-flight network calls to abort.
+func (tr *Tracer) StopClusterIDFetch() {
+	tr.ClusterIDFetcher.Stop()
+}
+
+// WaitForClusterID blocks until any in-flight cluster ID fetch completes.
+// Use this in tests to ensure the cluster ID is available before asserting.
 func (tr *Tracer) WaitForClusterID() {
-	if tr.clusterIDReady != nil {
-		<-tr.clusterIDReady
-	}
+	tr.ClusterIDFetcher.Wait()
 }
 
 type Option interface {

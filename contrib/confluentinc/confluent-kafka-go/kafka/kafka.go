@@ -41,9 +41,9 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	}
 	opts = append(opts, WithConfig(conf))
 	wrapped := WrapConsumer(c, opts...)
-	wrapped.tracer.FetchClusterIDAsync(func() string {
+	wrapped.tracer.FetchClusterIDAsync(func(ctx context.Context) string {
 		return clusterIDFromConfigOrFetch(conf, func() string {
-			return fetchClusterIDFromConsumer(c)
+			return fetchClusterIDFromConsumer(ctx, c)
 		})
 	})
 	return wrapped, nil
@@ -57,22 +57,22 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	}
 	opts = append(opts, WithConfig(conf))
 	wrapped := WrapProducer(p, opts...)
-	wrapped.tracer.FetchClusterIDAsync(func() string {
+	wrapped.tracer.FetchClusterIDAsync(func(ctx context.Context) string {
 		return clusterIDFromConfigOrFetch(conf, func() string {
-			return fetchClusterIDFromProducer(p)
+			return fetchClusterIDFromProducer(ctx, p)
 		})
 	})
 	return wrapped, nil
 }
 
-func fetchClusterIDFromConsumer(c *kafka.Consumer) string {
+func fetchClusterIDFromConsumer(ctx context.Context, c *kafka.Consumer) string {
 	admin, err := kafka.NewAdminClientFromConsumer(c)
 	if err != nil {
 		instr.Logger().Warn("failed to create admin client from consumer for cluster ID: %s", err)
 		return ""
 	}
 	defer admin.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	clusterID, err := admin.ClusterID(ctx)
 	if err != nil {
@@ -82,14 +82,14 @@ func fetchClusterIDFromConsumer(c *kafka.Consumer) string {
 	return clusterID
 }
 
-func fetchClusterIDFromProducer(p *kafka.Producer) string {
+func fetchClusterIDFromProducer(ctx context.Context, p *kafka.Producer) string {
 	admin, err := kafka.NewAdminClientFromProducer(p)
 	if err != nil {
 		instr.Logger().Warn("failed to create admin client from producer for cluster ID: %s", err)
 		return ""
 	}
 	defer admin.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	clusterID, err := admin.ClusterID(ctx)
 	if err != nil {
@@ -142,7 +142,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 // Close calls the underlying Consumer.Close and if polling is enabled, finishes
 // any remaining span.
 func (c *Consumer) Close() error {
-	c.tracer.WaitForClusterID()
+	c.tracer.StopClusterIDFetch()
 	err := c.Consumer.Close()
 	// we only close the previous span if consuming via the events channel is
 	// not enabled, because otherwise there would be a data race from the
@@ -255,7 +255,7 @@ func (p *Producer) Events() chan kafka.Event {
 // Close calls the underlying Producer.Close and also closes the internal
 // wrapping producer channel.
 func (p *Producer) Close() {
-	p.tracer.WaitForClusterID()
+	p.tracer.StopClusterIDFetch()
 	close(p.produceChannel)
 	p.Producer.Close()
 }
