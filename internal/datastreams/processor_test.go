@@ -645,7 +645,7 @@ func BenchmarkSetCheckpoint(b *testing.B) {
 	}
 	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
 	p.Start()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
 	}
 	p.Stop()
@@ -659,7 +659,7 @@ func BenchmarkSetCheckpointProcessTags(b *testing.B) {
 	}
 	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
 	p.Start()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
 	}
 	p.Stop()

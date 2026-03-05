@@ -1102,7 +1102,7 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 
 func BenchmarkBaggageItemPresent(b *testing.B) {
 	ctx := SpanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		ctx.ForeachBaggageItem(func(_, _ string) bool {
 			return true
 		})
@@ -1111,7 +1111,7 @@ func BenchmarkBaggageItemPresent(b *testing.B) {
 
 func BenchmarkBaggageItemEmpty(b *testing.B) {
 	ctx := SpanContext{}
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		ctx.ForeachBaggageItem(func(_, _ string) bool {
 			return true
 		})
@@ -1251,13 +1251,13 @@ func TestSpanProcessTags(t *testing.T) {
 }
 
 func BenchmarkSpanIDHexEncoded(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		_ = spanIDHexEncoded(32, 16)
 	}
 }
 
 func BenchmarkSpanIDSprintf(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		_ = fmt.Sprintf("%016x", 32)
 	}
 }

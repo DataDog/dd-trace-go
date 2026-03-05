@@ -186,7 +186,7 @@ func BenchmarkNodeHash(b *testing.B) {
 	service := "benchmark-runner"
 	env := "test"
 	edgeTags := []string{"event_type:dog", "exchange:local", "group:all", "topic:off", "type:writer"}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		nodeHash(service, env, edgeTags, nil)
 	}
 }
