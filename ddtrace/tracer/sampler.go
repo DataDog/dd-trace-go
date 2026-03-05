@@ -141,14 +141,12 @@ type prioritySampler struct {
 	rates       map[serviceEnvKey]float64 // +checklocks:mu
 	defaultRate float64                   // +checklocks:mu
 	lastCapped  time.Time                 // +checklocks:mu
-	now         func() time.Time          // for testing; defaults to time.Now
 }
 
 func newPrioritySampler() *prioritySampler {
 	return &prioritySampler{
 		rates:       make(map[serviceEnvKey]float64),
 		defaultRate: 1.,
-		now:         time.Now,
 	}
 }
 
@@ -200,7 +198,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	now := ps.now()
+	now := time.Now()
 	canIncrease := ps.lastCapped.IsZero() || now.Sub(ps.lastCapped) >= rampUpInterval
 	capApplied := false
 	for key, newRate := range rates {
