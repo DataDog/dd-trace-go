@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/kafkaclusterid"
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/assert"
@@ -206,9 +207,9 @@ func TestSyncProducerWithClusterID(t *testing.T) {
 	producer, err := sarama.NewSyncProducer([]string{seedBroker.Addr()}, cfg)
 	require.NoError(t, err)
 	// Pre-populate the cluster ID cache so WithBrokers takes the synchronous path.
-	key := normalizeBootstrapServers([]string{seedBroker.Addr()})
-	clusterIDCache.Store(key, testClusterID)
-	t.Cleanup(func() { clusterIDCache.Delete(key) })
+	key := kafkaclusterid.NormalizeBootstrapServersList([]string{seedBroker.Addr()})
+	kafkaclusterid.SetCachedID(key, testClusterID)
+	t.Cleanup(func() { kafkaclusterid.ResetCache() })
 	producer = WrapSyncProducer(cfg, producer, WithDataStreams(), WithBrokers(cfg, []string{seedBroker.Addr()}))
 
 	msg1 := &sarama.ProducerMessage{

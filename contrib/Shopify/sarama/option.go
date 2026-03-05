@@ -6,17 +6,14 @@
 package sarama
 
 import (
+	"context"
 	"math"
-	"slices"
-	"strings"
-	"sync"
 
 	"github.com/Shopify/sarama"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/kafkaclusterid"
 )
-
-var clusterIDCache sync.Map // normalized bootstrap servers -> cluster ID
 
 const defaultServiceName = "kafka"
 
@@ -28,20 +25,15 @@ type config struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	groupID             string
-	clusterID           string
-	clusterIDMu         sync.RWMutex
+	clusterIDFetcher    kafkaclusterid.Fetcher
 }
 
 func (cfg *config) ClusterID() string {
-	cfg.clusterIDMu.RLock()
-	defer cfg.clusterIDMu.RUnlock()
-	return cfg.clusterID
+	return cfg.clusterIDFetcher.ID()
 }
 
 func (cfg *config) setClusterID(id string) {
-	cfg.clusterIDMu.Lock()
-	defer cfg.clusterIDMu.Unlock()
-	cfg.clusterID = id
+	cfg.clusterIDFetcher.SetID(id)
 }
 
 func defaults(cfg *config) {
@@ -99,44 +91,34 @@ func WithBrokers(saramaConfig *sarama.Config, addrs []string) OptionFn {
 		if len(addrs) == 0 {
 			return
 		}
-		key := normalizeBootstrapServers(addrs)
+		key := kafkaclusterid.NormalizeBootstrapServersList(addrs)
 		if key == "" {
 			return
 		}
-		if v, ok := clusterIDCache.Load(key); ok {
-			cfg.clusterID = v.(string)
+		if cached, ok := kafkaclusterid.GetCachedID(key); ok {
+			cfg.clusterIDFetcher.SetID(cached)
 			return
 		}
-		go func() {
-			if clusterID := fetchClusterID(saramaConfig, addrs); clusterID != "" {
-				cfg.setClusterID(clusterID)
+		cfg.clusterIDFetcher.FetchAsync(func(ctx context.Context) string {
+			id := fetchClusterID(ctx, saramaConfig, addrs)
+			if id != "" {
+				kafkaclusterid.SetCachedID(key, id)
 			}
-		}()
+			return id
+		})
 	}
 }
 
-// normalizeBootstrapServers returns a canonical form of a list of broker
-// addresses. It trims whitespace, removes empty entries, and sorts entries
-// lexicographically.
-func normalizeBootstrapServers(addrs []string) string {
-	var parts []string
-	for _, s := range addrs {
-		s = strings.TrimSpace(s)
-		if s != "" {
-			parts = append(parts, s)
-		}
-	}
-	slices.Sort(parts)
-	return strings.Join(parts, ",")
-}
-
-func fetchClusterID(saramaConfig *sarama.Config, addrs []string) string {
-	key := normalizeBootstrapServers(addrs)
+func fetchClusterID(ctx context.Context, saramaConfig *sarama.Config, addrs []string) string {
+	key := kafkaclusterid.NormalizeBootstrapServersList(addrs)
 	if key == "" {
 		return ""
 	}
-	if v, ok := clusterIDCache.Load(key); ok {
-		return v.(string)
+	if cached, ok := kafkaclusterid.GetCachedID(key); ok {
+		return cached
+	}
+	if ctx.Err() != nil {
+		return ""
 	}
 
 	broker := sarama.NewBroker(addrs[0])
@@ -155,7 +137,6 @@ func fetchClusterID(saramaConfig *sarama.Config, addrs []string) string {
 		return ""
 	}
 
-	clusterIDCache.Store(key, *resp.ClusterID)
 	return *resp.ClusterID
 }
 

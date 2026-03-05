@@ -71,7 +71,7 @@ func TestSyncProducerWithClusterID(t *testing.T) {
 	producer, err := sarama.NewSyncProducer(kafkaBrokers, cfg)
 	require.NoError(t, err)
 	// Pre-populate the cluster ID cache so WithBrokers takes the synchronous path.
-	clusterID := fetchClusterID(cfg, kafkaBrokers)
+	clusterID := fetchClusterID(context.Background(), cfg, kafkaBrokers)
 	require.NotEmpty(t, clusterID, "cluster ID should be available from integration broker")
 	producer = WrapSyncProducer(cfg, producer, WithDataStreams(), WithBrokers(cfg, kafkaBrokers))
 	defer func() {
