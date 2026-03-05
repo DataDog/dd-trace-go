@@ -6,9 +6,12 @@
 package net
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -73,6 +76,22 @@ type (
 )
 
 func (c *client) GetSettings() (*SettingsResponseData, error) {
+	if utils.IsManifestModeEnabled() {
+		if cacheFile, ok := utils.CacheHTTPFile("settings.json"); ok {
+			if raw, err := os.ReadFile(cacheFile); err == nil {
+				var cachedResponse settingsResponse
+				if err := json.Unmarshal(raw, &cachedResponse); err == nil {
+					return &cachedResponse.Data.Attributes, nil
+				}
+				log.Debug("civisibility.settings: invalid settings cache file %s: %s", cacheFile, err.Error())
+			} else {
+				log.Debug("civisibility.settings: cannot read settings cache file %s: %s", cacheFile, err.Error())
+			}
+		}
+		// Compatible with Bazel offline mode: if cache is missing or invalid, features are disabled.
+		return &SettingsResponseData{}, nil
+	}
+
 	if c.repositoryURL == "" || c.commitSha == "" {
 		return nil, fmt.Errorf("civisibility.GetSettings: repository URL and commit SHA are required")
 	}

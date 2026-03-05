@@ -875,6 +875,20 @@
         "default": null
       }
     ],
+    "DD_TEST_OPTIMIZATION_MANIFEST_FILE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TEST_SESSION_NAME": [
       {
         "implementation": "A",
@@ -908,6 +922,13 @@
         "implementation": "A",
         "type": "int",
         "default": "8126"
+      }
+    ],
+    "DD_TRACE_AGENT_PROTOCOL_VERSION": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "1.0"
       }
     ],
     "DD_TRACE_AGENT_URL": [
@@ -1489,13 +1510,6 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
-      }
-    ],
-    "DD_TRACE_AGENT_PROTOCOL_VERSION": [
-      {
-        "implementation": "B",
-        "type": "string",
-        "default": "1.0"
       }
     ],
     "DD_TRACE_VALKEY_ANALYTICS_ENABLED": [

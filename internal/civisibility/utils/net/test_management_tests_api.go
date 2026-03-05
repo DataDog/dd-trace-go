@@ -6,9 +6,12 @@
 package net
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
@@ -68,6 +71,21 @@ type (
 )
 
 func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModules, error) {
+	if utils.IsManifestModeEnabled() {
+		if cacheFile, ok := utils.CacheHTTPFile("test_management.json"); ok {
+			if raw, err := os.ReadFile(cacheFile); err == nil {
+				var cachedResponse testManagementTestsResponse
+				if err := json.Unmarshal(raw, &cachedResponse); err == nil {
+					return &cachedResponse.Data.Attributes, nil
+				}
+			}
+		}
+		// Compatible with Bazel offline mode: missing or invalid cache means empty test management response.
+		return &TestManagementTestsResponseDataModules{
+			Modules: map[string]TestManagementTestsResponseDataSuites{},
+		}, nil
+	}
+
 	if c.repositoryURL == "" {
 		return nil, fmt.Errorf("civisibility.GetTestManagementTests: repository URL is required")
 	}

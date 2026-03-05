@@ -11,8 +11,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -111,4 +115,148 @@ func TestSkippableApiRequestFailToGet(t *testing.T) {
 	assert.Empty(t, correlationID)
 	assert.Nil(t, skippables)
 	assert.Contains(t, err.Error(), "sending skippable tests request")
+}
+
+func TestSkippableApiRequestFromManifestCache(t *testing.T) {
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(civisibilityutils.ResetTestOptimizationModeForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cachedResponse := skippableResponse{
+		Meta: skippableResponseMeta{
+			CorrelationID: "cache-correlation-id",
+		},
+		Data: []skippableResponseData{
+			{
+				ID:   "id-1",
+				Type: "test",
+				Attributes: SkippableResponseDataAttributes{
+					Suite: "suite",
+					Name:  "match",
+					Configurations: testConfigurations{
+						OsPlatform: runtime.GOOS,
+					},
+				},
+			},
+			{
+				ID:   "id-2",
+				Type: "test",
+				Attributes: SkippableResponseDataAttributes{
+					Suite: "suite",
+					Name:  "filtered-out",
+					Configurations: testConfigurations{
+						OsPlatform: "definitely-not-a-real-os",
+					},
+				},
+			},
+		},
+	}
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	rawResponse, err := json.Marshal(cachedResponse)
+	if err != nil {
+		t.Fatalf("marshal cache response: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "cache", "http", "skippable_tests.json"), rawResponse, 0o644); err != nil {
+		t.Fatalf("write skippable cache: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(constants.CIVisibilityManifestFilePath, manifestPath)
+
+	cInterface := NewClient()
+	correlationID, skippables, err := cInterface.GetSkippableTests()
+	assert.NoError(t, err)
+	assert.Equal(t, "cache-correlation-id", correlationID)
+	assert.Equal(t, 0, hits)
+	assert.Contains(t, skippables, "suite")
+	assert.Contains(t, skippables["suite"], "match")
+	assert.NotContains(t, skippables["suite"], "filtered-out")
+}
+
+func TestSkippableApiRequestFromManifestCacheMissingFile(t *testing.T) {
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(civisibilityutils.ResetTestOptimizationModeForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(constants.CIVisibilityManifestFilePath, manifestPath)
+
+	cInterface := NewClient()
+	correlationID, skippables, err := cInterface.GetSkippableTests()
+	assert.NoError(t, err)
+	assert.Equal(t, "", correlationID)
+	assert.Equal(t, map[string]map[string][]SkippableResponseDataAttributes{}, skippables)
+	assert.Equal(t, 0, hits)
+}
+
+func TestSkippableApiRequestFromManifestCacheMalformedFile(t *testing.T) {
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(civisibilityutils.ResetTestOptimizationModeForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "cache", "http", "skippable_tests.json"), []byte("{invalid"), 0o644); err != nil {
+		t.Fatalf("write malformed skippable cache: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(constants.CIVisibilityManifestFilePath, manifestPath)
+
+	cInterface := NewClient()
+	correlationID, skippables, err := cInterface.GetSkippableTests()
+	assert.NoError(t, err)
+	assert.Equal(t, "", correlationID)
+	assert.Equal(t, map[string]map[string][]SkippableResponseDataAttributes{}, skippables)
+	assert.Equal(t, 0, hits)
 }

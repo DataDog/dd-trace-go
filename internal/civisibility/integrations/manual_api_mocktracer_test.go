@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -79,6 +81,42 @@ func commonAssertions(assert *assert.Assertions, sessionSpan *mocktracer.Span) {
 	assert.Contains(spanTags, constants.RuntimeName)
 	assert.Contains(spanTags, constants.GitRepositoryURL)
 	assert.Contains(spanTags, constants.GitCommitSHA)
+}
+
+func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
+
+	utils.ResetCITags()
+	utils.ResetCIMetrics()
+	utils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(func() {
+		utils.ResetCITags()
+		utils.ResetCIMetrics()
+		utils.ResetTestOptimizationModeForTesting()
+	})
+
+	now := time.Now()
+	session := createDDTestSession(now)
+	session.Close(0)
+
+	finishedSpans := mockTracer.FinishedSpans()
+	assert.NotEmpty(finishedSpans)
+	spanTags := finishedSpans[0].Tags()
+
+	for key := range spanTags {
+		assert.False(strings.HasPrefix(key, "ci."), "unexpected ci tag key %q", key)
+		assert.False(strings.HasPrefix(key, "git."), "unexpected git tag key %q", key)
+		assert.False(strings.HasPrefix(key, "os."), "unexpected os tag key %q", key)
+		assert.False(strings.HasPrefix(key, "runtime."), "unexpected runtime tag key %q", key)
+		assert.NotEqual(constants.CIEnvVars, key, "unexpected env vars tag")
+	}
+
+	assert.Contains(spanTags, constants.TestCommand)
+	assert.Contains(spanTags, constants.Origin)
 }
 
 func TestTestSession(t *testing.T) {

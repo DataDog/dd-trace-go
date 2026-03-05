@@ -8,10 +8,12 @@ package tracer
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
 )
@@ -156,4 +159,53 @@ func TestCIVisibilityTransportSecureLogging(t *testing.T) {
 			assert.Equal(t, test.expected, result, "Failed for input: %s", test.input)
 		}
 	})
+}
+
+func TestCiVisibilityTransportPayloadFilesModeWritesJSON(t *testing.T) {
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(civisibilityutils.ResetTestOptimizationModeForTesting)
+
+	outDir := t.TempDir()
+	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, outDir)
+	civisibilityutils.ResetTestOptimizationModeForTesting()
+
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		hits++
+	}))
+	defer srv.Close()
+
+	parsedURL, _ := url.Parse(srv.URL)
+	cfg, err := newTestConfig()
+	assert.NoError(t, err)
+	cfg.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
+	cfg.httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
+	cfg.agentURL = parsedURL
+
+	transport := newCiVisibilityTransport(cfg)
+	p := newCiVisibilityPayload()
+	for _, trace := range getTestTrace(1, 1) {
+		for _, span := range trace {
+			_, pushErr := p.push(getCiVisibilityEvent(span))
+			assert.NoError(t, pushErr)
+		}
+	}
+
+	_, err = transport.send(p.payload)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, hits)
+
+	matches, err := filepath.Glob(filepath.Join(outDir, "payloads", "tests", "tests-*.json"))
+	assert.NoError(t, err)
+	assert.Len(t, matches, 1)
+
+	raw, err := os.ReadFile(matches[0])
+	assert.NoError(t, err)
+
+	var payloadMap map[string]any
+	assert.NoError(t, json.Unmarshal(raw, &payloadMap))
+	assert.Contains(t, payloadMap, "version")
+	assert.Contains(t, payloadMap, "metadata")
+	assert.Contains(t, payloadMap, "events")
 }

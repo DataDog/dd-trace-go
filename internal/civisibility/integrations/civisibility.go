@@ -110,8 +110,11 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
 
+		disableLogsForOfflineMode := utils.IsManifestModeEnabled() || utils.IsPayloadFilesModeEnabled()
 		// Initialize the logs
-		if logs.IsEnabled() {
+		if disableLogsForOfflineMode {
+			log.Debug("civisibility: logs initialization skipped for test optimization offline/file mode")
+		} else if logs.IsEnabled() {
 			log.Debug("civisibility: initializing logs for service: %s", serviceName)
 			logs.Initialize(serviceName)
 		} else {

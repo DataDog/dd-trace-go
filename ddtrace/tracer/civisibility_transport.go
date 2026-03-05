@@ -19,6 +19,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -133,6 +134,17 @@ func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) 
 	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {
 		return nil, fmt.Errorf("cannot create buffer payload: %v", bufferErr)
+	}
+
+	if utils.IsPayloadFilesModeEnabled() {
+		jsonPayload, err := utils.MsgpackToJSON(buffer.Bytes())
+		if err != nil {
+			return nil, fmt.Errorf("cannot convert payload to json: %w", err)
+		}
+		if err := utils.WritePayloadFile("tests", jsonPayload); err != nil {
+			return nil, fmt.Errorf("cannot write test payload file: %w", err)
+		}
+		return io.NopCloser(bytes.NewReader(nil)), nil
 	}
 
 	if t.agentless {
