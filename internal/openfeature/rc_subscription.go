@@ -49,6 +49,14 @@ func SubscribeRC() error {
 		return nil
 	}
 
+	// Check if already subscribed via slow path (provider created before tracer).
+	// This avoids creating a duplicate subscription that would buffer forever.
+	if has, _ := remoteconfig.HasProduct(FFEProductName); has {
+		rcState.subscribed = true
+		log.Debug("openfeature: RC product %s already subscribed via provider", FFEProductName)
+		return nil
+	}
+
 	if _, err := remoteconfig.Subscribe(FFEProductName, forwardingCallback, remoteconfig.FFEFlagEvaluation); err != nil {
 		return err
 	}
