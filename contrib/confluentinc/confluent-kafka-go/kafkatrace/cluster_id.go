@@ -5,7 +5,7 @@
 
 package kafkatrace
 
-import "github.com/DataDog/dd-trace-go/v2/internal/kafkaclusterid"
+import "github.com/DataDog/dd-trace-go/v2/instrumentation/kafkaclusterid"
 
 // NormalizeBootstrapServers returns a canonical form of a comma-separated list
 // of broker addresses.
