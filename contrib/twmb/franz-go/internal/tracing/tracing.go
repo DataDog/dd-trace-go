@@ -16,7 +16,6 @@ import (
 	"context"
 	"math"
 
-	// NOTE: Think of it as external constants.
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
