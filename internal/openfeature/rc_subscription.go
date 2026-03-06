@@ -35,7 +35,7 @@ var rcState struct {
 	sync.Mutex
 	subscribed bool
 	callback   Callback
-	buffered   *remoteconfig.ProductUpdate // latest snapshot; RC sends full state each time
+	buffered   remoteconfig.ProductUpdate // latest snapshot; RC sends full state each time
 }
 
 // SubscribeRC subscribes to the FFE_FLAGS RC product using a forwarding
@@ -80,7 +80,7 @@ func forwardingCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplySt
 	// Buffer the latest update for replay.
 	cpy := make(remoteconfig.ProductUpdate, len(update))
 	maps.Copy(cpy, update)
-	rcState.buffered = &cpy
+	rcState.buffered = cpy
 
 	// Acknowledge all paths so RC doesn't consider them errored.
 	statuses := make(map[string]rc.ApplyStatus, len(update))
@@ -107,7 +107,7 @@ func AttachCallback(cb Callback) bool {
 	// Replay the buffered update if there is one.
 	if rcState.buffered != nil {
 		log.Debug("openfeature: replaying buffered RC config to provider")
-		cb(*rcState.buffered)
+		cb(rcState.buffered)
 		rcState.buffered = nil
 	}
 

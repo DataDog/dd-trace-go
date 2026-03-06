@@ -24,14 +24,14 @@ func SetSubscribedForTest(v bool) {
 }
 
 // SetBufferedForTest sets a buffered update for testing.
-func SetBufferedForTest(u *remoteconfig.ProductUpdate) {
+func SetBufferedForTest(u remoteconfig.ProductUpdate) {
 	rcState.Lock()
 	defer rcState.Unlock()
 	rcState.buffered = u
 }
 
 // GetBufferedForTest returns the current buffered update for testing.
-func GetBufferedForTest() *remoteconfig.ProductUpdate {
+func GetBufferedForTest() remoteconfig.ProductUpdate {
 	rcState.Lock()
 	defer rcState.Unlock()
 	return rcState.buffered

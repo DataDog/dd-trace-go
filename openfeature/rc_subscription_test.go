@@ -62,7 +62,7 @@ func TestAttachProviderReplaysBufferedConfig(t *testing.T) {
 
 	// Simulate SubscribeRC + a buffered update arriving before provider exists.
 	internalffe.SetSubscribedForTest(true)
-	internalffe.SetBufferedForTest(&remoteconfig.ProductUpdate{"path/config": data})
+	internalffe.SetBufferedForTest(remoteconfig.ProductUpdate{"path/config": data})
 
 	provider := newDatadogProvider(ProviderConfig{})
 	got := attachProvider(provider)
@@ -111,7 +111,7 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 	require.NoError(t, err)
 
 	internalffe.SetSubscribedForTest(true)
-	internalffe.SetBufferedForTest(&remoteconfig.ProductUpdate{"path/fast": data})
+	internalffe.SetBufferedForTest(remoteconfig.ProductUpdate{"path/fast": data})
 
 	// startWithRemoteConfig should use the fast path.
 	provider, err := startWithRemoteConfig(ProviderConfig{})

@@ -26,7 +26,7 @@ func TestForwardingCallbackBuffersWhenNoCallback(t *testing.T) {
 
 	rcState.Lock()
 	require.NotNil(t, rcState.buffered)
-	assert.Contains(t, *rcState.buffered, "path/1")
+	assert.Contains(t, rcState.buffered, "path/1")
 	rcState.Unlock()
 }
 
@@ -39,8 +39,8 @@ func TestForwardingCallbackBuffersOnlyLatest(t *testing.T) {
 
 	rcState.Lock()
 	require.NotNil(t, rcState.buffered)
-	assert.NotContains(t, *rcState.buffered, "path/old")
-	assert.Contains(t, *rcState.buffered, "path/new")
+	assert.NotContains(t, rcState.buffered, "path/old")
+	assert.Contains(t, rcState.buffered, "path/new")
 	rcState.Unlock()
 }
 
@@ -89,7 +89,7 @@ func TestAttachCallbackReplaysBuffer(t *testing.T) {
 	buffered := remoteconfig.ProductUpdate{"path/buf": []byte(`buffered`)}
 	rcState.Lock()
 	rcState.subscribed = true
-	rcState.buffered = &buffered
+	rcState.buffered = buffered
 	rcState.Unlock()
 
 	var received remoteconfig.ProductUpdate
