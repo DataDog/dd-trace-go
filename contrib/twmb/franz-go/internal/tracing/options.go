@@ -14,7 +14,8 @@ type Option interface {
 	apply(*Tracer)
 }
 
-// OptionFn represents options applicable to NewReader, NewWriter, WrapReader and WrapWriter
+// OptionFn represents tracing options applicable to kgotrace.NewClient (which
+// wraps kgo.NewClient)
 type OptionFn func(*Tracer)
 
 func (fn OptionFn) apply(cfg *Tracer) {
