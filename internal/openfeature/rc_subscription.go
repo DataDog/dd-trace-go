@@ -128,6 +128,11 @@ func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerSubscribed bool, 
 		return true, nil
 	}
 
+	// Slow path: tracer didn't subscribe, so we need to start RC and subscribe ourselves.
+	if err := remoteconfig.Start(remoteconfig.DefaultClientConfig()); err != nil {
+		return false, fmt.Errorf("failed to start Remote Config: %w", err)
+	}
+
 	if has, _ := remoteconfig.HasProduct(FFEProductName); has {
 		return false, fmt.Errorf("RC product %s already subscribed", FFEProductName)
 	}

@@ -21,11 +21,8 @@ import (
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	provider := newDatadogProvider(config)
 
-	if err := remoteconfig.Start(remoteconfig.DefaultClientConfig()); err != nil {
-		return nil, fmt.Errorf("failed to start Remote Config: %w", err)
-	}
-
-	// Try to subscribe via the internal package, which serializes with tracer subscription.
+	// Subscribe via the internal package, which serializes with tracer subscription
+	// and starts RC only if needed (slow path).
 	tracerSubscribed, err := internalffe.SubscribeProvider(provider.rcCallback)
 	if err != nil {
 		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider?)", err)
