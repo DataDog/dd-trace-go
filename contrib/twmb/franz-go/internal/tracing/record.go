@@ -5,11 +5,16 @@
 
 package tracing
 
+// Header abstracts access to Kafka message headers. This interface allows
+// the tracing package to read/write headers without depending on franz-go types,
+// enabling the KafkaHeadersCarrier to inject/extract span context.
 type Header interface {
 	GetKey() string
 	GetValue() []byte
 }
 
+// KafkaHeader is a concrete implementation of Header used by KafkaHeadersCarrier
+// when setting headers on a record during span context injection.
 type KafkaHeader struct {
 	Key   string
 	Value []byte
@@ -23,6 +28,9 @@ func (h KafkaHeader) GetValue() []byte {
 	return h.Value
 }
 
+// Record abstracts a Kafka record for tracing purposes. This interface decouples
+// the internal tracing logic from franz-go's kgo.Record type, allowing the tracing
+// package to be tested independently.
 type Record interface {
 	GetValue() []byte
 	GetKey() []byte
