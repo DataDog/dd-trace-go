@@ -21,24 +21,26 @@ import (
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	provider := newDatadogProvider(config)
 
-	// Fast path: tracer already subscribed to FFE_FLAGS during its RC setup.
-	// Attach provider and replay any buffered config.
-	if attachProvider(provider) {
-		log.Debug("openfeature: attached to tracer's RC subscription")
-		return provider, nil
-	}
-
-	// Slow path: no tracer, or tracer started without FFE enabled.
-	// Start RC ourselves and subscribe.
 	if err := remoteconfig.Start(remoteconfig.DefaultClientConfig()); err != nil {
 		return nil, fmt.Errorf("failed to start Remote Config: %w", err)
 	}
 
-	if _, err := remoteconfig.Subscribe(internalffe.FFEProductName, provider.rcCallback, remoteconfig.FFEFlagEvaluation); err != nil {
-		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider ?)", err)
+	// Try to subscribe via the internal package, which serializes with tracer subscription.
+	tracerSubscribed, err := internalffe.SubscribeProvider(provider.rcCallback)
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider?)", err)
 	}
 
-	log.Debug("openfeature: successfully subscribed to Remote Config updates")
+	if tracerSubscribed {
+		if !attachProvider(provider) {
+			// This shouldn't happen since SubscribeProvider just told us tracer subscribed.
+			return nil, fmt.Errorf("failed to attach to tracer's RC subscription")
+		}
+		log.Debug("openfeature: attached to tracer's RC subscription")
+	} else {
+		log.Debug("openfeature: successfully subscribed to Remote Config updates")
+	}
+
 	return provider, nil
 }
 

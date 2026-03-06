@@ -123,3 +123,25 @@ func TestAttachCallbackNoBuffer(t *testing.T) {
 	assert.True(t, got)
 	assert.False(t, called, "callback should not be called when no buffer")
 }
+
+func TestForwardingCallbackDeepCopiesBuffer(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+
+	// Create original data that we'll modify after buffering.
+	original := []byte(`{"format":"SERVER"}`)
+	update := remoteconfig.ProductUpdate{"path/1": original}
+
+	forwardingCallback(update)
+
+	// Modify the original byte slice after buffering.
+	original[0] = 'X'
+
+	// Verify buffered data is independent of the original.
+	rcState.Lock()
+	buffered := rcState.buffered["path/1"]
+	rcState.Unlock()
+
+	assert.Equal(t, byte('{'), buffered[0], "buffered data should be isolated from original")
+	assert.Equal(t, byte('X'), original[0], "original should be modified")
+}

@@ -11,7 +11,8 @@
 package openfeature
 
 import (
-	"maps"
+	"bytes"
+	"fmt"
 	"sync"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -49,11 +50,8 @@ func SubscribeRC() error {
 		return nil
 	}
 
-	// Check if already subscribed via slow path (provider created before tracer).
-	// This avoids creating a duplicate subscription that would buffer forever.
 	if has, _ := remoteconfig.HasProduct(FFEProductName); has {
-		rcState.subscribed = true
-		log.Debug("openfeature: RC product %s already subscribed via provider", FFEProductName)
+		log.Debug("openfeature: RC product %s already subscribed via provider, skipping tracer subscription", FFEProductName)
 		return nil
 	}
 
@@ -79,7 +77,9 @@ func forwardingCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplySt
 
 	// Buffer the latest update for replay.
 	cpy := make(remoteconfig.ProductUpdate, len(update))
-	maps.Copy(cpy, update)
+	for k, v := range update {
+		cpy[k] = bytes.Clone(v)
+	}
 	rcState.buffered = cpy
 
 	// Acknowledge all paths so RC doesn't consider them errored.
@@ -102,9 +102,13 @@ func AttachCallback(cb Callback) bool {
 		return false
 	}
 
+	if rcState.callback != nil {
+		log.Warn("openfeature: callback already attached, multiple providers are not supported")
+		return false
+	}
+
 	rcState.callback = cb
 
-	// Replay the buffered update if there is one.
 	if rcState.buffered != nil {
 		log.Debug("openfeature: replaying buffered RC config to provider")
 		cb(rcState.buffered)
@@ -112,4 +116,26 @@ func AttachCallback(cb Callback) bool {
 	}
 
 	return true
+}
+
+// SubscribeProvider attempts to subscribe a provider callback to RC.
+// It holds the subscription mutex to prevent races with SubscribeRC.
+func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerSubscribed bool, err error) {
+	rcState.Lock()
+	defer rcState.Unlock()
+
+	if rcState.subscribed {
+		return true, nil
+	}
+
+	if has, _ := remoteconfig.HasProduct(FFEProductName); has {
+		return false, fmt.Errorf("RC product %s already subscribed", FFEProductName)
+	}
+
+	if _, err := remoteconfig.Subscribe(FFEProductName, cb, remoteconfig.FFEFlagEvaluation); err != nil {
+		return false, err
+	}
+
+	log.Debug("openfeature: provider subscribed to RC product %s", FFEProductName)
+	return false, nil
 }
