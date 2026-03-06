@@ -17,9 +17,10 @@ import (
 
 	"github.com/tinylib/msgp/msgp"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestCoverageApiRequest(t *testing.T) {

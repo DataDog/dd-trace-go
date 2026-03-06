@@ -11,10 +11,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testing.T) {

@@ -15,9 +15,10 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSkippableApiRequest(t *testing.T) {
