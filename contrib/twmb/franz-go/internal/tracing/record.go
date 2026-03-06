@@ -5,6 +5,8 @@
 
 package tracing
 
+import "context"
+
 // Header abstracts access to Kafka message headers. This interface allows
 // the tracing package to read/write headers without depending on franz-go types,
 // enabling the KafkaHeadersCarrier to inject/extract span context.
@@ -39,4 +41,5 @@ type Record interface {
 	GetTopic() string
 	GetPartition() int32
 	GetOffset() int64
+	GetContext() context.Context
 }
