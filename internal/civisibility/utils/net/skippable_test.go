@@ -75,7 +75,10 @@ func TestSkippableApiRequest(t *testing.T) {
 	assert.Equal(t, "correlation_id", correlationID)
 	assert.Len(t, skippables, 1)
 	assert.Len(t, skippables["suite"], 1)
-	assert.Equal(t, expectedResponse.Data[0].Attributes, skippables["suite"]["name"][0])
+	if assert.Contains(t, skippables["suite"], "name") {
+		assert.Len(t, skippables["suite"]["name"], 1)
+		assert.Equal(t, expectedResponse.Data[0].Attributes, skippables["suite"]["name"][0])
+	}
 }
 
 func TestSkippableApiRequestFailToUnmarshal(t *testing.T) {
