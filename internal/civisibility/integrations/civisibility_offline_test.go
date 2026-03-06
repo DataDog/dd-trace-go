@@ -21,7 +21,7 @@ func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testin
 	resetCIVisibilityStateForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
 
-	t.Setenv(constants.CIVisibilityManifestFilePath, writeSettingsManifestCache(t, true, true))
+	t.Setenv(constants.CIVisibilityManifestFilePath, writeSettingsManifestCache(t, true, true, true))
 	utils.ResetTestOptimizationModeForTesting()
 
 	var uploadCalls int
@@ -34,13 +34,14 @@ func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testin
 
 	assert.Equal(t, 0, uploadCalls)
 	assert.True(t, ciVisibilitySettings.RequireGit)
+	assert.False(t, ciVisibilitySettings.TestsSkipping)
 }
 
 func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDisablesImpactedTests(t *testing.T) {
 	resetCIVisibilityStateForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
 
-	t.Setenv(constants.CIVisibilityManifestFilePath, writeSettingsManifestCache(t, true, true))
+	t.Setenv(constants.CIVisibilityManifestFilePath, writeSettingsManifestCache(t, true, true, true))
 	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
 	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
 	utils.ResetTestOptimizationModeForTesting()
@@ -58,40 +59,34 @@ func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDis
 	assert.False(t, ciVisibilitySettings.ImpactedTestsEnabled)
 }
 
-func TestInternalCiVisibilityInitializationManifestModeSkipsLogsInitialization(t *testing.T) {
-	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
-
-	t.Setenv(constants.CIVisibilityManifestFilePath, writeSettingsManifestCache(t, false, false))
+func TestShouldInitializeCiVisibilityLogsDisablesManifestMode(t *testing.T) {
+	t.Setenv(constants.CIVisibilityManifestFilePath, writeSettingsManifestCache(t, false, false, false))
 	utils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(utils.ResetTestOptimizationModeForTesting)
 
-	var initializeCalls int
-	logsIsEnabledFunc = func() bool { return true }
-	logsInitializeFunc = func(string) { initializeCalls++ }
-
-	initializeCiVisibilityLogs("manifest-service")
-
-	assert.Equal(t, 0, initializeCalls)
+	assert.False(t, shouldInitializeCiVisibilityLogs(false))
+	assert.False(t, shouldInitializeCiVisibilityLogs(true))
 }
 
-func TestInternalCiVisibilityInitializationPayloadFilesModeSkipsLogsInitialization(t *testing.T) {
-	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
-
+func TestShouldInitializeCiVisibilityLogsDisablesPayloadFilesMode(t *testing.T) {
 	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
 	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
 	utils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(utils.ResetTestOptimizationModeForTesting)
 
-	var initializeCalls int
-	logsIsEnabledFunc = func() bool { return true }
-	logsInitializeFunc = func(string) { initializeCalls++ }
-
-	initializeCiVisibilityLogs("payload-files-service")
-
-	assert.Equal(t, 0, initializeCalls)
+	assert.False(t, shouldInitializeCiVisibilityLogs(false))
+	assert.False(t, shouldInitializeCiVisibilityLogs(true))
 }
 
-func writeSettingsManifestCache(t *testing.T, requireGit bool, impactedTestsEnabled bool) string {
+func TestShouldInitializeCiVisibilityLogsAllowsOnlineEnabledMode(t *testing.T) {
+	utils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(utils.ResetTestOptimizationModeForTesting)
+
+	assert.False(t, shouldInitializeCiVisibilityLogs(false))
+	assert.True(t, shouldInitializeCiVisibilityLogs(true))
+}
+
+func writeSettingsManifestCache(t *testing.T, requireGit bool, impactedTestsEnabled bool, testsSkipping bool) string {
 	t.Helper()
 
 	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
@@ -110,6 +105,8 @@ func writeSettingsManifestCache(t *testing.T, requireGit bool, impactedTestsEnab
 			"attributes": map[string]any{
 				"require_git":            requireGit,
 				"impacted_tests_enabled": impactedTestsEnabled,
+				"itr_enabled":            testsSkipping,
+				"tests_skipping":         testsSkipping,
 			},
 		},
 	}

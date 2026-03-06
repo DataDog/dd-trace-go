@@ -8,7 +8,6 @@ package integrations
 import (
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
@@ -27,8 +26,6 @@ func resetCIVisibilityStateForTesting() {
 	ciVisibilityImpactedTestsAnalyzer = nil
 
 	uploadRepositoryChangesFunc = uploadRepositoryChanges
-	logsIsEnabledFunc = logs.IsEnabled
-	logsInitializeFunc = logs.Initialize
 
 	utils.ResetCITags()
 	utils.ResetCIMetrics()

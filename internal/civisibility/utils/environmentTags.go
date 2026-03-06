@@ -34,9 +34,10 @@ var (
 	addedMetrics      map[string]float64 // addedMetrics holds the metrics added by the user
 	ciMetricsMutex    sync.Mutex
 
-	getProviderTagsFunc                  = getProviderTags
-	getLocalGitDataFunc                  = getLocalGitData
-	fetchCommitDataFunc                  = fetchCommitData
+	getProviderTagsFunc = getProviderTags
+	getLocalGitDataFunc = getLocalGitData
+	fetchCommitDataFunc = fetchCommitData
+	// applyEnvironmentalDataIfRequiredFunc is a must-not-call test seam used to prove payload-file mode skips git enrichment.
 	applyEnvironmentalDataIfRequiredFunc = applyEnvironmentalDataIfRequired
 )
 

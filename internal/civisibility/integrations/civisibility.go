@@ -40,9 +40,6 @@ var (
 
 	// mTracer contains the mock tracer instance for testing purposes
 	mTracer mocktracer.Tracer
-
-	logsIsEnabledFunc  = logs.IsEnabled
-	logsInitializeFunc = logs.Initialize
 )
 
 // EnsureCiVisibilityInitialization initializes the CI visibility tracer if it hasn't been initialized already.
@@ -127,17 +124,24 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 }
 
 func initializeCiVisibilityLogs(serviceName string) {
-	disableLogsForOfflineMode := utils.IsManifestModeEnabled() || utils.IsPayloadFilesModeEnabled()
-	if disableLogsForOfflineMode {
-		log.Debug("civisibility: logs initialization skipped for test optimization offline/file mode")
+	if !shouldInitializeCiVisibilityLogs(logs.IsEnabled()) {
+		if utils.IsManifestModeEnabled() || utils.IsPayloadFilesModeEnabled() {
+			log.Debug("civisibility: logs initialization skipped for test optimization offline/file mode")
+			return
+		}
+		log.Debug("civisibility: logs are disabled")
 		return
 	}
-	if logsIsEnabledFunc() {
-		log.Debug("civisibility: initializing logs for service: %s", serviceName)
-		logsInitializeFunc(serviceName)
-		return
+
+	log.Debug("civisibility: initializing logs for service: %s", serviceName)
+	logs.Initialize(serviceName)
+}
+
+func shouldInitializeCiVisibilityLogs(logsEnabled bool) bool {
+	if utils.IsManifestModeEnabled() || utils.IsPayloadFilesModeEnabled() {
+		return false
 	}
-	log.Debug("civisibility: logs are disabled")
+	return logsEnabled
 }
 
 // PushCiVisibilityCloseAction adds a close action to be executed when CI visibility exits.

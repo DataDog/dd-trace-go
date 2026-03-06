@@ -68,6 +68,7 @@ var (
 	// ciVisibilityImpactedTestsAnalyzer contains the CI Visibility impacted tests analyzer
 	ciVisibilityImpactedTestsAnalyzer *impactedtests.ImpactedTestAnalyzer
 
+	// uploadRepositoryChangesFunc is a must-not-call test seam used to prove offline/file modes suppress git upload.
 	uploadRepositoryChangesFunc = uploadRepositoryChanges
 )
 
@@ -174,6 +175,13 @@ func ensureSettingsInitialization(serviceName string) {
 		testManagementAttemptToFixRetriesEnv := internal.IntEnv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, -1)
 		if testManagementAttemptToFixRetriesEnv != -1 {
 			ciSettings.TestManagement.AttemptToFixRetries = testManagementAttemptToFixRetriesEnv
+		}
+
+		if utils.IsManifestModeEnabled() {
+			if ciSettings.TestsSkipping {
+				log.Debug("civisibility: test skipping disabled in manifest mode")
+			}
+			ciSettings.TestsSkipping = false
 		}
 
 		// payload-file mode must avoid impacted-tests git workflows.

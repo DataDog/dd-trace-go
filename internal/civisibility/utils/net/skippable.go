@@ -6,9 +6,7 @@
 package net
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
@@ -64,59 +62,7 @@ type (
 
 func (c *client) GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error) {
 	if utils.IsManifestModeEnabled() {
-		responseObject := skippableResponse{
-			Data: []skippableResponseData{},
-		}
-		if cacheFile, ok := utils.CacheHTTPFile("skippable_tests.json"); ok {
-			if raw, readErr := os.ReadFile(cacheFile); readErr == nil {
-				if unmarshalErr := json.Unmarshal(raw, &responseObject); unmarshalErr != nil {
-					return "", map[string]map[string][]SkippableResponseDataAttributes{}, nil
-				}
-			} else {
-				return "", map[string]map[string][]SkippableResponseDataAttributes{}, nil
-			}
-		} else {
-			return "", map[string]map[string][]SkippableResponseDataAttributes{}, nil
-		}
-
-		skippableTestsMap := map[string]map[string][]SkippableResponseDataAttributes{}
-		for _, data := range responseObject.Data {
-			// Keep the same config filters used for backend responses.
-			if data.Attributes.Configurations.OsPlatform != "" && c.testConfigurations.OsPlatform != "" &&
-				data.Attributes.Configurations.OsPlatform != c.testConfigurations.OsPlatform {
-				continue
-			}
-			if data.Attributes.Configurations.OsArchitecture != "" && c.testConfigurations.OsArchitecture != "" &&
-				data.Attributes.Configurations.OsArchitecture != c.testConfigurations.OsArchitecture {
-				continue
-			}
-			if data.Attributes.Configurations.OsVersion != "" && c.testConfigurations.OsVersion != "" &&
-				data.Attributes.Configurations.OsVersion != c.testConfigurations.OsVersion {
-				continue
-			}
-			if data.Attributes.Configurations.RuntimeName != "" && c.testConfigurations.RuntimeName != "" &&
-				data.Attributes.Configurations.RuntimeName != c.testConfigurations.RuntimeName {
-				continue
-			}
-			if data.Attributes.Configurations.RuntimeArchitecture != "" && c.testConfigurations.RuntimeArchitecture != "" &&
-				data.Attributes.Configurations.RuntimeArchitecture != c.testConfigurations.RuntimeArchitecture {
-				continue
-			}
-			if data.Attributes.Configurations.RuntimeVersion != "" && c.testConfigurations.RuntimeVersion != "" &&
-				data.Attributes.Configurations.RuntimeVersion != c.testConfigurations.RuntimeVersion {
-				continue
-			}
-
-			testsMap, suiteExists := skippableTestsMap[data.Attributes.Suite]
-			if !suiteExists {
-				testsMap = map[string][]SkippableResponseDataAttributes{}
-				skippableTestsMap[data.Attributes.Suite] = testsMap
-			}
-
-			testsMap[data.Attributes.Name] = append(testsMap[data.Attributes.Name], data.Attributes)
-		}
-
-		return responseObject.Meta.CorrelationID, skippableTestsMap, nil
+		return "", map[string]map[string][]SkippableResponseDataAttributes{}, nil
 	}
 
 	if c.repositoryURL == "" || c.commitSha == "" {
