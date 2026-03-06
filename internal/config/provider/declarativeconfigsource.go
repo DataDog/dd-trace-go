@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	// File paths are supported on linux only.
 	localFilePath   = "/etc/datadog-agent/application_monitoring.yaml"
 	managedFilePath = "/etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml"
 
@@ -52,6 +53,7 @@ func parseFile(filePath string) *declarativeConfig {
 	info, err := os.Stat(filePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
+			// It's expected that the declarative config file may not exist; its absence is not an error.
 			log.Warn("Failed to stat declarative config file %q, dropping: %v", filePath, err.Error())
 		}
 		return emptyDeclarativeConfig()

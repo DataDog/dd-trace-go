@@ -149,6 +149,7 @@ DD_KEY_1: value_1
 	})
 
 	t.Run("malformed YAML - duplicate keys", func(t *testing.T) {
+		// yaml.v3 treats duplicate keys as an error.
 		data := `
 config_id: 67890
 apm_configuration_default:
