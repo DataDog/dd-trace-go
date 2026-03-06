@@ -5,8 +5,6 @@
 package tracing
 
 import (
-	"context"
-
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -22,7 +20,7 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(r Record) {
 	}
 	carrier := NewKafkaHeadersCarrier(r)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
-		datastreams.ExtractFromBase64Carrier(context.Background(), carrier),
+		datastreams.ExtractFromBase64Carrier(r.GetContext(), carrier),
 		options.CheckpointParams{PayloadSize: getConsumerMsgSize(r)},
 		edges...,
 	)
@@ -47,7 +45,7 @@ func (tr *Tracer) SetProduceDSMCheckpoint(r Record) {
 	edges := []string{"direction:out", "topic:" + topic, "type:kafka"}
 	carrier := NewKafkaHeadersCarrier(r)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
-		datastreams.ExtractFromBase64Carrier(context.Background(), carrier),
+		datastreams.ExtractFromBase64Carrier(r.GetContext(), carrier),
 		options.CheckpointParams{PayloadSize: getProducerMsgSize(r)},
 		edges...,
 	)
