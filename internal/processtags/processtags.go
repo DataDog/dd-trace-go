@@ -117,6 +117,16 @@ func Reload() {
 	}
 }
 
+// isValidTagValue returns false for values that are not meaningful as process tags.
+// This filters out empty strings, filesystem roots, and the "bin" directory.
+func isValidTagValue(value string) bool {
+	switch value {
+	case "", "/", "\\", "bin":
+		return false
+	}
+	return true
+}
+
 func collect() map[string]string {
 	tags := make(map[string]string)
 	execPath, err := os.Executable()
@@ -125,14 +135,19 @@ func collect() map[string]string {
 	} else {
 		baseDirName := filepath.Base(filepath.Dir(execPath))
 		tags[tagEntrypointName] = filepath.Base(execPath)
-		tags[tagEntrypointBasedir] = baseDirName
+		if isValidTagValue(baseDirName) {
+			tags[tagEntrypointBasedir] = baseDirName
+		}
 		tags[tagEntrypointType] = entrypointTypeExecutable
 	}
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Debug("failed to get working directory: %s", err.Error())
 	} else {
-		tags[tagEntrypointWorkdir] = filepath.Base(wd)
+		workdir := filepath.Base(wd)
+		if isValidTagValue(workdir) {
+			tags[tagEntrypointWorkdir] = workdir
+		}
 	}
 	return tags
 }
