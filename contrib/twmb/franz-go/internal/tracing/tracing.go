@@ -122,10 +122,17 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, r Record, spanOpts ...tr
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
 
-	// TODO: Do we need to add span links here?
-
 	opts = append(opts, spanOpts...)
 	carrier := NewKafkaHeadersCarrier(r)
+
+	if spanctx, err := tracer.Extract(carrier); err == nil {
+		// If there are span links as a result of context extraction, add them as a StartSpanOption
+		if spanctx != nil && spanctx.SpanLinks() != nil {
+			opts = append(opts, tracer.WithSpanLinks(spanctx.SpanLinks()))
+		}
+		opts = append(opts, tracer.ChildOf(spanctx))
+	}
+
 	span, _ := tracer.StartSpanFromContext(ctx, tr.producerSpanName, opts...)
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
 		instr.Logger().Debug("contrib/twmb/franz-go: Failed to inject span context into carrier for produce span, %s", err.Error())
