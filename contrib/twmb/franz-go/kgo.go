@@ -52,15 +52,7 @@ func NewClient(kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) (*Client, error
 		return nil, fmt.Errorf("failed to create kgo.Client: %w", err)
 	}
 	wrapped.Client = client
-
-	// We initialize a tracer with only the consumer group ID on its
-	// KafkaConfig, since kgo.Client doesn't expose seed brokers to set
-	// the bootstrap servers. Setting the bootstrap servers is done in the
-	// OnBrokerConnect hook.
-	groupID, _ := wrapped.Client.GroupMetadata()
-	wrapped.tracer = tracing.NewTracer(tracing.KafkaConfig{
-		ConsumerGroupID: groupID,
-	}, tracingOpts...)
+	wrapped.tracer = tracing.NewTracer(tracing.KafkaConfig{}, tracingOpts...)
 
 	return wrapped, nil
 }
