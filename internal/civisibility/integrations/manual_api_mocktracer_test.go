@@ -121,7 +121,7 @@ func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
 	assert.Contains(spanTags, constants.Origin)
 }
 
-func TestPayloadFilesModeUsesWorkspaceFromEnvironmentalDataForWorkingDirectory(t *testing.T) {
+func TestPayloadFilesModeUsesAvailableWorkspaceMetadataForWorkingDirectory(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
 
@@ -142,6 +142,11 @@ func TestPayloadFilesModeUsesWorkspaceFromEnvironmentalDataForWorkingDirectory(t
 	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
 	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
 	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, envDataPath)
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_WORKSPACE", workspaceDir)
+	t.Setenv("GITHUB_REPOSITORY", "acme/repo")
+	t.Setenv("GITHUB_SERVER_URL", "https://github.com")
+	t.Setenv("GITHUB_SHA", "commit-sha")
 
 	utils.ResetCITags()
 	utils.ResetCIMetrics()
@@ -160,6 +165,7 @@ func TestPayloadFilesModeUsesWorkspaceFromEnvironmentalDataForWorkingDirectory(t
 	)
 	assert.Equal("pkg", session.WorkingDirectory())
 	assert.Equal("https://github.com/acme/repo.git", utils.GetCITags()[constants.GitRepositoryURL])
+	assert.Equal(workspaceDir, utils.GetCITags()[constants.CIWorkspacePath])
 
 	session.Close(0)
 }
