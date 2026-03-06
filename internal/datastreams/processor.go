@@ -618,10 +618,10 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 }
 
 func (p *Processor) TrackKafkaCommitOffset(group string, topic string, partition int32, offset int64) {
-	p.TrackKafkaCommitOffsetWithCluster(group, topic, partition, offset, "")
+	p.TrackKafkaCommitOffsetWithCluster("", group, topic, partition, offset)
 }
 
-func (p *Processor) TrackKafkaCommitOffsetWithCluster(group string, topic string, partition int32, offset int64, cluster string) {
+func (p *Processor) TrackKafkaCommitOffsetWithCluster(cluster string, group string, topic string, partition int32, offset int64) {
 	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		group:      group,

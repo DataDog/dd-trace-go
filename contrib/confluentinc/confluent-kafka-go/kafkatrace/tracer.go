@@ -27,12 +27,12 @@ type Tracer struct {
 	analyticsRate       float64
 	bootstrapServers    string
 	groupID             string
-	clusterID              string
-	clusterIDMu            sync.RWMutex
-	cancelClusterIDFetch   context.CancelFunc
-	clusterIDDone          chan struct{}
-	tagFns                 map[string]func(msg Message) any
-	dsmEnabled          bool
+	clusterID            string
+	clusterIDMu          sync.RWMutex
+	cancelClusterIDFetch context.CancelFunc
+	clusterIDDone        chan struct{}
+	tagFns               map[string]func(msg Message) any
+	dsmEnabled           bool
 	ckgoVersion         CKGoVersion
 	librdKafkaVersion   int
 }

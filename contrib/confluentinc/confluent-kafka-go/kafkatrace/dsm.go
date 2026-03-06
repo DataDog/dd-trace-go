@@ -18,7 +18,7 @@ func (tr *Tracer) TrackCommitOffsets(offsets []TopicPartition, err error) {
 		return
 	}
 	for _, tp := range offsets {
-		tracer.TrackKafkaCommitOffsetWithCluster(tr.groupID, tp.GetTopic(), tp.GetPartition(), tp.GetOffset(), tr.ClusterID())
+		tracer.TrackKafkaCommitOffsetWithCluster(tr.ClusterID(), tr.groupID, tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
 	}
 }
 

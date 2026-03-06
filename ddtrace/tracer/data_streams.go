@@ -45,14 +45,14 @@ func SetDataStreamsCheckpointWithParams(ctx context.Context, params options.Chec
 // TrackKafkaCommitOffset should be used in the consumer, to track when it acks offset.
 // if used together with TrackKafkaProduceOffset it can generate a Kafka lag in seconds metric.
 func TrackKafkaCommitOffset(group, topic string, partition int32, offset int64) {
-	TrackKafkaCommitOffsetWithCluster(group, topic, partition, offset, "")
+	TrackKafkaCommitOffsetWithCluster("", group, topic, partition, offset)
 }
 
 // TrackKafkaCommitOffsetWithCluster is like TrackKafkaCommitOffset but also associates the offset with a Kafka cluster ID.
-func TrackKafkaCommitOffsetWithCluster(group, topic string, partition int32, offset int64, cluster string) {
+func TrackKafkaCommitOffsetWithCluster(cluster, group, topic string, partition int32, offset int64) {
 	if t, ok := getGlobalTracer().(dataStreamsContainer); ok {
 		if p := t.GetDataStreamsProcessor(); p != nil {
-			p.TrackKafkaCommitOffsetWithCluster(group, topic, partition, offset, cluster)
+			p.TrackKafkaCommitOffsetWithCluster(cluster, group, topic, partition, offset)
 		}
 	}
 }
