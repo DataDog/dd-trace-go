@@ -39,9 +39,9 @@ func startTelemetry(c *config) telemetry.Client {
 	// Read enabled value and origin atomically to prevent TOCTOU bugs
 	traceEnabled, traceEnabledOrigin := c.enabled.getCurrentAndOrigin()
 	telemetryConfigs := []telemetry.Configuration{
-		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
+		{Name: "agent_feature_drop_p0s", Value: c.agent.load().DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
-		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
+		{Name: "dogstatsd_port", Value: c.agent.load().StatsdPort},
 		{Name: "lambda_mode", Value: c.internalConfig.LogToStdout()},
 		{Name: "send_retries", Value: c.sendRetries},
 		{Name: "retry_interval", Value: c.internalConfig.RetryInterval()},
@@ -117,7 +117,8 @@ func startTelemetry(c *config) telemetry.Client {
 	// When the agent was unreachable at startup, we still set the URL so that
 	// telemetry is attempted rather than silently dropped.
 	// When the spans are emitted on stdout it means there is no agent at all in the env.
-	if (!c.agent.reachable || c.agent.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
+	a := c.agent.load()
+	if (!a.reachable || a.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
 		cfg.AgentURL = c.agentURL.String()
 	}
 	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
