@@ -2989,3 +2989,47 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	require.ErrorIs(t, err, remoteconfig.ErrClientNotStarted)
 	require.False(t, got, "remote config should be disabled after Stop()")
 }
+
+func TestContinueSpan(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	root := tracer.StartSpan("root")
+	root.Finish()
+
+	t.Run("with parent", func(t *testing.T) {
+		carrier := TextMapCarrier(map[string]string{})
+		err = Inject(root.Context(), carrier)
+		assert.NoError(t, err)
+
+		span, err := ContinueSpan("child", carrier)
+		assert.NoError(t, err)
+		assert.Equal(t, root.traceID, span.traceID)
+		assert.Equal(t, root.spanID, span.parentID)
+	})
+	t.Run("no parent", func(t *testing.T) {
+		span, err := ContinueSpan("child", TextMapCarrier(map[string]string{}))
+		assert.ErrorIs(t, err, ErrSpanContextNotFound)
+		assert.Nil(t, span)
+	})
+}
+
+func BenchmarkContinueSpan(b *testing.B) {
+	tracer, _, _, stop, err := startTestTracer(b)
+	assert.NoError(b, err)
+	defer stop()
+
+	root := tracer.StartSpan("root")
+	root.Finish()
+
+	carrier := TextMapCarrier(map[string]string{})
+	err = Inject(root.Context(), carrier)
+	assert.NoError(b, err)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, err := ContinueSpan("child", carrier)
+		assert.NoError(b, err)
+	}
+}
