@@ -19,17 +19,6 @@ func TestTracerAnalyticsSettings(t *testing.T) {
 		tr := NewTracer(KafkaConfig{})
 		assert.True(t, math.IsNaN(tr.analyticsRate))
 	})
-
-	// ???: This was copied from other tests. Do we really need it?
-	// Since it's being skipped.
-	t.Run("global", func(t *testing.T) {
-		t.Skip("global flag disabled")
-		testutils.SetGlobalAnalyticsRate(t, 0.4)
-
-		tr := NewTracer(KafkaConfig{})
-		assert.Equal(t, 0.4, tr.analyticsRate)
-	})
-
 	t.Run("enabled", func(t *testing.T) {
 		tr := NewTracer(KafkaConfig{}, WithAnalytics(true))
 		assert.Equal(t, 1.0, tr.analyticsRate)
