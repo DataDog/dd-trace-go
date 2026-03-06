@@ -1,0 +1,57 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
+// Wire-compatible implementation proto for OTEP 4719 ProcessContext
+// (https://github.com/open-telemetry/opentelemetry-specification/pull/4719).
+// This file redefines common OTLP messages to avoid importing
+// go.opentelemetry.io/proto/otlp everywhere.
+// All field numbers match the upstream OTel schema exactly.
+
+syntax = "proto3";
+
+package otelprocesscontext;
+
+option go_package = "github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext;otelprocesscontext";
+
+// ProcessContext is wire-compatible with opentelemetry.proto.common.v1.ProcessContext.
+message ProcessContext {
+  Resource resource = 1;
+  repeated KeyValue extra_attributes = 2;
+}
+
+// Resource is wire-compatible with opentelemetry.proto.resource.v1.Resource.
+message Resource {
+  repeated KeyValue attributes = 1;
+  uint32 dropped_attributes_count = 2;
+}
+
+// KeyValue is wire-compatible with opentelemetry.proto.common.v1.KeyValue.
+message KeyValue {
+  string key = 1;
+  AnyValue value = 2;
+}
+
+// AnyValue is wire-compatible with opentelemetry.proto.common.v1.AnyValue.
+message AnyValue {
+  oneof value {
+    string string_value = 1;
+    bool bool_value = 2;
+    int64 int_value = 3;
+    double double_value = 4;
+    ArrayValue array_value = 5;
+    KeyValueList kvlist_value = 6;
+    bytes bytes_value = 7;
+  }
+}
+
+// ArrayValue is wire-compatible with opentelemetry.proto.common.v1.ArrayValue
+message ArrayValue {
+  repeated AnyValue values = 1;
+}
+
+// KeyValueList is wire-compatible with opentelemetry.proto.common.v1.KeyValueList
+message KeyValueList {
+  repeated KeyValue values = 1;
+}
