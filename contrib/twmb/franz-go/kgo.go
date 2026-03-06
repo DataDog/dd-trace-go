@@ -31,6 +31,8 @@ func ClientOptions(opts ...kgo.Opt) []kgo.Opt {
 	return opts
 }
 
+// TODO: Implement NewClientWithOptions + NewClient
+
 // NewClient wraps kgo.NewClient and returns a *Client that is a wrapper around
 // the kgo.Client. It also starts a tracer and sets up the hooks to start and
 // finish spans.
