@@ -162,16 +162,8 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.True(t, ok)
 			clusterID := fetchTestClusterID(t)
 			mt := mocktracer.Start()
-			produceEdges := []string{"direction:out", "topic:" + testTopic, "type:kafka"}
-			if clusterID != "" {
-				produceEdges = append(produceEdges, "kafka_cluster_id:"+clusterID)
-			}
-			consumeEdges := []string{"group:" + testGroupID, "direction:in", "topic:" + testTopic, "type:kafka"}
-			if clusterID != "" {
-				consumeEdges = append(consumeEdges, "kafka_cluster_id:"+clusterID)
-			}
-			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), produceEdges...)
-			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, consumeEdges...)
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
 			expected, _ := datastreams.PathwayFromContext(expectedCtx)
 			mt.Stop()
 			assert.NotEqual(t, expected.GetHash(), 0)
@@ -345,18 +337,13 @@ func fetchTestClusterID(t *testing.T) string {
 	admin, err := kafka.NewAdminClient(&kafka.ConfigMap{
 		"bootstrap.servers": "127.0.0.1:9092",
 	})
-	if err != nil {
-		t.Logf("failed to create admin client for cluster ID: %s", err)
-		return ""
-	}
+	require.NoError(t, err)
 	defer admin.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	clusterID, err := admin.ClusterID(ctx)
-	if err != nil {
-		t.Logf("failed to fetch cluster ID: %s", err)
-		return ""
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, clusterID)
 	return clusterID
 }
 
