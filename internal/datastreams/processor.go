@@ -122,13 +122,25 @@ func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte
 		TransactionCheckpointIds: checkpointNameMapping,
 	}
 	for key, offset := range b.latestProduceOffsets {
-		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_produce"}, Value: offset})
+		tags := []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_produce"}
+		if key.cluster != "" {
+			tags = append(tags, fmt.Sprintf("kafka_cluster_id:%s", key.cluster))
+		}
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
 	for key, offset := range b.latestCommitOffsets {
-		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("consumer_group:%s", key.group), fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_commit"}, Value: offset})
+		tags := []string{fmt.Sprintf("consumer_group:%s", key.group), fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_commit"}
+		if key.cluster != "" {
+			tags = append(tags, fmt.Sprintf("kafka_cluster_id:%s", key.cluster))
+		}
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
 	for key, offset := range b.latestHighWatermarkOffsets {
-		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_high_watermark"}, Value: offset})
+		tags := []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_high_watermark"}
+		if key.cluster != "" {
+			tags = append(tags, fmt.Sprintf("kafka_cluster_id:%s", key.cluster))
+		}
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
 	return exported
 }
@@ -167,12 +179,14 @@ type processorStats struct {
 type partitionKey struct {
 	partition int32
 	topic     string
+	cluster   string
 }
 
 type partitionConsumerKey struct {
 	partition int32
 	topic     string
 	group     string
+	cluster   string
 }
 
 type offsetType int
@@ -190,6 +204,7 @@ type kafkaOffset struct {
 	partition  int32
 	offsetType offsetType
 	timestamp  int64
+	cluster    string
 }
 
 type bucketKey struct {
@@ -342,6 +357,7 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 		b.latestProduceOffsets[partitionKey{
 			partition: o.partition,
 			topic:     o.topic,
+			cluster:   o.cluster,
 		}] = o.offset
 		return
 	}
@@ -349,6 +365,7 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 		b.latestHighWatermarkOffsets[partitionKey{
 			partition: o.partition,
 			topic:     o.topic,
+			cluster:   o.cluster,
 		}] = o.offset
 		return
 	}
@@ -356,6 +373,7 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 		partition: o.partition,
 		group:     o.group,
 		topic:     o.topic,
+		cluster:   o.cluster,
 	}] = o.offset
 }
 
@@ -600,25 +618,35 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 }
 
 func (p *Processor) TrackKafkaCommitOffset(group string, topic string, partition int32, offset int64) {
+	p.TrackKafkaCommitOffsetWithCluster("", group, topic, partition, offset)
+}
+
+func (p *Processor) TrackKafkaCommitOffsetWithCluster(cluster string, group string, topic string, partition int32, offset int64) {
 	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		group:      group,
 		topic:      topic,
 		partition:  partition,
 		offsetType: commitOffset,
-		timestamp:  p.time().UnixNano()}})
+		timestamp:  p.time().UnixNano(),
+		cluster:    cluster}})
 	if dropped {
 		atomic.AddInt64(&p.stats.dropped, 1)
 	}
 }
 
 func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offset int64) {
+	p.TrackKafkaProduceOffsetWithCluster("", topic, partition, offset)
+}
+
+func (p *Processor) TrackKafkaProduceOffsetWithCluster(cluster string, topic string, partition int32, offset int64) {
 	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		topic:      topic,
 		partition:  partition,
 		offsetType: produceOffset,
 		timestamp:  p.time().UnixNano(),
+		cluster:    cluster,
 	}})
 	if dropped {
 		atomic.AddInt64(&p.stats.dropped, 1)
@@ -626,14 +654,14 @@ func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offse
 }
 
 // TrackKafkaHighWatermarkOffset should be used in the consumer, to track the high watermark offsets of each partition.
-// The first argument is the Kafka cluster ID, and will be used later.
-func (p *Processor) TrackKafkaHighWatermarkOffset(_ string, topic string, partition int32, offset int64) {
+func (p *Processor) TrackKafkaHighWatermarkOffset(cluster string, topic string, partition int32, offset int64) {
 	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		topic:      topic,
 		partition:  partition,
 		offsetType: highWatermarkOffset,
 		timestamp:  p.time().UnixNano(),
+		cluster:    cluster,
 	}})
 	if dropped {
 		atomic.AddInt64(&p.stats.dropped, 1)

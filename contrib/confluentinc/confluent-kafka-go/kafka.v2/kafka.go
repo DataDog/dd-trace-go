@@ -7,6 +7,7 @@
 package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2"
 
 import (
+	"context"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -39,7 +40,13 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 		return nil, err
 	}
 	opts = append(opts, WithConfig(conf))
-	return WrapConsumer(c, opts...), nil
+	wrapped := WrapConsumer(c, opts...)
+	wrapped.tracer.FetchClusterIDAsync(func(ctx context.Context) string {
+		return clusterIDFromConfigOrFetch(conf, func() string {
+			return fetchClusterIDFromConsumer(ctx, c)
+		})
+	})
+	return wrapped, nil
 }
 
 // NewProducer calls kafka.NewProducer and wraps the resulting Producer.
@@ -49,7 +56,65 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 		return nil, err
 	}
 	opts = append(opts, WithConfig(conf))
-	return WrapProducer(p, opts...), nil
+	wrapped := WrapProducer(p, opts...)
+	wrapped.tracer.FetchClusterIDAsync(func(ctx context.Context) string {
+		return clusterIDFromConfigOrFetch(conf, func() string {
+			return fetchClusterIDFromProducer(ctx, p)
+		})
+	})
+	return wrapped, nil
+}
+
+func fetchClusterIDFromConsumer(ctx context.Context, c *kafka.Consumer) string {
+	admin, err := kafka.NewAdminClientFromConsumer(c)
+	return fetchClusterID(ctx, admin, err)
+}
+
+func fetchClusterIDFromProducer(ctx context.Context, p *kafka.Producer) string {
+	admin, err := kafka.NewAdminClientFromProducer(p)
+	return fetchClusterID(ctx, admin, err)
+}
+
+func fetchClusterID(ctx context.Context, admin *kafka.AdminClient, err error) string {
+	if err != nil {
+		instr.Logger().Warn("failed to create admin client for cluster ID: %s", err)
+		return ""
+	}
+	defer admin.Close()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	clusterID, err := admin.ClusterID(ctx)
+	if err != nil {
+		instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
+		return ""
+	}
+	return clusterID
+}
+
+// clusterIDFromConfigOrFetch checks the cache for a cluster ID matching the
+// bootstrap servers in the config. On cache miss it calls fetchFn and caches
+// the result.
+func clusterIDFromConfigOrFetch(conf *kafka.ConfigMap, fetchFn func() string) string {
+	v, err := conf.Get("bootstrap.servers", "")
+	if err != nil {
+		return fetchFn()
+	}
+	bs := v.(string)
+	if bs == "" {
+		return fetchFn()
+	}
+	bootstrapServersString := kafkatrace.NormalizeBootstrapServers(bs)
+	if bootstrapServersString == "" {
+		return fetchFn()
+	}
+	if cached, ok := kafkatrace.GetCachedClusterID(bootstrapServersString); ok {
+		return cached
+	}
+	clusterID := fetchFn()
+	if clusterID != "" {
+		kafkatrace.SetCachedClusterID(bootstrapServersString, clusterID)
+	}
+	return clusterID
 }
 
 // A Consumer wraps a kafka.Consumer.
@@ -73,6 +138,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 // Close calls the underlying Consumer.Close and if polling is enabled, finishes
 // any remaining span.
 func (c *Consumer) Close() error {
+	c.tracer.StopClusterIDFetch()
 	err := c.Consumer.Close()
 	// we only close the previous span if consuming via the events channel is
 	// not enabled, because otherwise there would be a data race from the
@@ -185,6 +251,7 @@ func (p *Producer) Events() chan kafka.Event {
 // Close calls the underlying Producer.Close and also closes the internal
 // wrapping producer channel.
 func (p *Producer) Close() {
+	p.tracer.StopClusterIDFetch()
 	close(p.produceChannel)
 	p.Producer.Close()
 }

@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -17,23 +18,71 @@ import (
 )
 
 type Tracer struct {
-	PrevSpan            *tracer.Span
-	ctx                 context.Context
-	consumerServiceName string
-	producerServiceName string
-	consumerSpanName    string
-	producerSpanName    string
-	analyticsRate       float64
-	bootstrapServers    string
-	groupID             string
-	tagFns              map[string]func(msg Message) any
-	dsmEnabled          bool
-	ckgoVersion         CKGoVersion
-	librdKafkaVersion   int
+	PrevSpan             *tracer.Span
+	ctx                  context.Context
+	consumerServiceName  string
+	producerServiceName  string
+	consumerSpanName     string
+	producerSpanName     string
+	analyticsRate        float64
+	bootstrapServers     string
+	groupID              string
+	clusterID            string
+	clusterIDMu          sync.RWMutex
+	cancelClusterIDFetch context.CancelFunc
+	clusterIDDone        chan struct{}
+	tagFns               map[string]func(msg Message) any
+	dsmEnabled           bool
+	ckgoVersion          CKGoVersion
+	librdKafkaVersion    int
 }
 
 func (tr *Tracer) DSMEnabled() bool {
 	return tr.dsmEnabled
+}
+
+func (tr *Tracer) ClusterID() string {
+	tr.clusterIDMu.RLock()
+	defer tr.clusterIDMu.RUnlock()
+	return tr.clusterID
+}
+
+func (tr *Tracer) SetClusterID(id string) {
+	tr.clusterIDMu.Lock()
+	defer tr.clusterIDMu.Unlock()
+	tr.clusterID = id
+}
+
+// FetchClusterIDAsync launches a background goroutine to fetch the cluster ID.
+// The fetch can be cancelled by calling CancelClusterIDFetch.
+func (tr *Tracer) FetchClusterIDAsync(fetchFn func(ctx context.Context) string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	tr.cancelClusterIDFetch = cancel
+	tr.clusterIDDone = make(chan struct{})
+	go func() {
+		defer close(tr.clusterIDDone)
+		if id := fetchFn(ctx); id != "" {
+			tr.SetClusterID(id)
+		}
+	}()
+}
+
+// StopClusterIDFetch cancels any in-flight async cluster ID fetch and waits
+// for the goroutine to finish.
+func (tr *Tracer) StopClusterIDFetch() {
+	if tr.cancelClusterIDFetch != nil {
+		tr.cancelClusterIDFetch()
+	}
+	if tr.clusterIDDone != nil {
+		<-tr.clusterIDDone
+	}
+}
+
+// WaitForClusterID blocks until any in-flight async cluster ID fetch completes.
+func (tr *Tracer) WaitForClusterID() {
+	if tr.clusterIDDone != nil {
+		<-tr.clusterIDDone
+	}
 }
 
 type Option interface {

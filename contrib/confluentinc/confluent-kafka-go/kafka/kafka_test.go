@@ -160,9 +160,10 @@ func TestConsumerFunctional(t *testing.T) {
 
 			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
+			clusterID := fetchTestClusterID(t)
 			mt := mocktracer.Start()
-			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
-			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
 			expected, _ := datastreams.PathwayFromContext(expectedCtx)
 			mt.Stop()
 			assert.NotEqual(t, expected.GetHash(), 0)
@@ -331,6 +332,21 @@ func TestProduceError(t *testing.T) {
 	assert.Len(t, spans, 1)
 }
 
+func fetchTestClusterID(t *testing.T) string {
+	t.Helper()
+	admin, err := kafka.NewAdminClient(&kafka.ConfigMap{
+		"bootstrap.servers": "127.0.0.1:9092",
+	})
+	require.NoError(t, err)
+	defer admin.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	clusterID, err := admin.ClusterID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, clusterID)
+	return clusterID
+}
+
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)
 
 func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]*mocktracer.Span, *kafka.Message) {
@@ -346,6 +362,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"go.delivery.reports": true,
 	}, producerOpts...)
 	require.NoError(t, err)
+	p.tracer.WaitForClusterID()
 
 	delivery := make(chan kafka.Event, 1)
 	err = p.Produce(&kafka.Message{
@@ -371,6 +388,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"enable.auto.offset.store": false,
 	}, consumerOpts...)
 	require.NoError(t, err)
+	c.tracer.WaitForClusterID()
 
 	err = c.Assign([]kafka.TopicPartition{
 		{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
@@ -400,9 +418,12 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 			return m
 		}
 		backlogsMap := toMap(backlogs)
-		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce")
+		clusterID := c.tracer.ClusterID()
+		require.NotEmpty(t, clusterID)
+		clusterTag := "kafka_cluster_id:" + clusterID
+		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce"+clusterTag)
 	}
 	return spans, msg2
 }
