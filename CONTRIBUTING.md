@@ -270,6 +270,17 @@ docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.63.3 golangci-l
 
 ## Code quality
 
+### Instrumentation library design principles
+
+Key principles for instrumentation code (integrations under `contrib/` and core tracing packages):
+
+- **Never block in library initialization.** I/O or external data fetching in `New*`, `Wrap*`,
+  or `Setup*` must be asynchronous. Use goroutines for best-effort enrichment.
+- **`WithX` option functions are user-facing API.** Do not use them to pass internal-only state
+  between layers; use unexported fields or setter methods instead.
+
+See [CLAUDE.md](./CLAUDE.md) for detailed guidance and code examples on these and other patterns.
+
 ### Favor string concatenation and string builders over fmt.Sprintf and its variants
 
 [fmt.Sprintf](https://pkg.go.dev/fmt#Sprintf) can introduce unnecessary overhead when building a string. Favor [string builders](https://pkg.go.dev/strings#Builder), or simple string concatenation, `a + "b" + c` over `fmt.Sprintf` when possible, especially in hot paths.
