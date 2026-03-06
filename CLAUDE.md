@@ -3,12 +3,6 @@
 This file provides coding guidelines for AI coding assistants working in this repository.
 Please follow these rules in addition to the patterns visible in the existing codebase.
 
-## Formatting
-
-Always run `make format` (or `gofmt -w ./...`) before committing. CI enforces `gofmt` via
-golangci-lint and will reject unformatted files. Prefer `make lint` to catch all issues before
-pushing.
-
 ## Instrumentation Library Principles
 
 ### Never block in library initialization
@@ -70,53 +64,38 @@ func TrackKafkaCommitOffsetWithCluster(group, topic string, partition int32, off
 func TrackKafkaCommitOffsetWithCluster(cluster, group, topic string, partition int32, offset int64)
 ```
 
-### Keep implementation details out of public function signatures
+### Public functions must encapsulate their preconditions
 
-Parameter names in exported functions must describe the caller's logical intent, not how the
-function processes the input internally. If a function normalizes, sorts, or transforms its
-input, do that inside—don't encode the processing state in the parameter name.
+If a function requires its input to be in a particular form (normalized, sorted, trimmed),
+do that transformation inside the function—do not externalize it as a caller obligation
+encoded in the parameter name. A public function signature should describe what the caller
+provides, not what the function needs internally.
 
 ```go
-// Bad: "normalized" is an implementation detail; forces callers to know about it
+// Bad: "normalized" is a precondition pushed onto the caller; forces callers to know
+// about and perform normalization before calling, and leaks the implementation detail
 func GetCachedClusterID(normalizedBootstrapServers string) (string, bool)
 
-// Good: callers provide bootstrap servers; normalization is internal
-func GetCachedClusterID(bootstrapServers string) (string, bool)
+// Good: the function accepts raw input and normalizes internally
+func GetCachedClusterID(bootstrapServers string) (string, bool) {
+    key := normalizeBootstrapServers(bootstrapServers)
+    ...
+}
 ```
 
 ## Code Quality
 
-### Avoid repeated type assertions
-
-Perform a type assertion once and assign to a local variable when the result is used more
-than once. Repeated `x.(T)` expressions on the same value are a code smell.
-
-```go
-// Bad
-if bs.(string) == "" {
-    return fetchFn()
-}
-normalized := normalize(bs.(string))
-
-// Good
-bsStr := bs.(string)
-if bsStr == "" {
-    return fetchFn()
-}
-normalized := normalize(bsStr)
-```
-
-### Extract helpers for near-identical code blocks
+### Inject dependencies instead of duplicating bodies
 
 When two functions share the same body and differ only in how a single dependency is
-constructed, extract the shared logic into a helper that accepts the already-constructed
-dependency. Do not leave near-duplicate blocks in place.
+constructed, do not duplicate the body. Instead, extract the shared logic into a helper
+that accepts the already-constructed dependency, and call it from both sites.
 
 ```go
-// Bad: fetchClusterIDFromConsumer and fetchClusterIDFromProducer are identical except
-// for how the admin client is constructed.
+// Bad: fetchClusterIDFromConsumer and fetchClusterIDFromProducer are identical
+// except for how the admin client is constructed — the body is duplicated.
 
-// Good: extract shared logic
+// Good: extract the shared body; each caller constructs and passes its own admin client
 func fetchClusterIDFromAdmin(admin *kafka.AdminClient) string {
     ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
     defer cancel()
@@ -127,11 +106,11 @@ func fetchClusterIDFromAdmin(admin *kafka.AdminClient) string {
     }
     return clusterID
 }
+
+func fetchClusterIDFromConsumer(c *kafka.Consumer) string {
+    admin, err := kafka.NewAdminClientFromConsumer(c)
+    if err != nil { ... }
+    defer admin.Close()
+    return fetchClusterIDFromAdmin(admin)
+}
 ```
-
-### Consider input-scale assumptions for normalization algorithms
-
-When writing key-normalization logic (sorting, hashing, joining), note the expected scale of
-the input. For inputs that could be large (e.g. a Kafka `bootstrap.servers` list with many
-brokers), prefer an O(n) algorithm or document the size assumption explicitly if O(n log n)
-is acceptable.
