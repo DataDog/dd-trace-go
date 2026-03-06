@@ -67,25 +67,17 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 
 func fetchClusterIDFromConsumer(ctx context.Context, c *kafka.Consumer) string {
 	admin, err := kafka.NewAdminClientFromConsumer(c)
-	if err != nil {
-		instr.Logger().Warn("failed to create admin client from consumer for cluster ID: %s", err)
-		return ""
-	}
-	defer admin.Close()
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	clusterID, err := admin.ClusterID(ctx)
-	if err != nil {
-		instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
-		return ""
-	}
-	return clusterID
+	return fetchClusterID(ctx, admin, err)
 }
 
 func fetchClusterIDFromProducer(ctx context.Context, p *kafka.Producer) string {
 	admin, err := kafka.NewAdminClientFromProducer(p)
+	return fetchClusterID(ctx, admin, err)
+}
+
+func fetchClusterID(ctx context.Context, admin *kafka.AdminClient, err error) string {
 	if err != nil {
-		instr.Logger().Warn("failed to create admin client from producer for cluster ID: %s", err)
+		instr.Logger().Warn("failed to create admin client for cluster ID: %s", err)
 		return ""
 	}
 	defer admin.Close()
