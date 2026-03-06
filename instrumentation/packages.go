@@ -23,6 +23,7 @@ const (
 	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
 	PackageGCPPubsub            Package = "cloud.google.com/go/pubsub.v1"
 	PackageGCPPubsubV2          Package = "cloud.google.com/go/pubsub.v2"
+	PackageConnectRPC           Package = "connectrpc/connect-go"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
 	PackageDatabaseSQL          Package = "database/sql"
@@ -508,6 +509,24 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("grpc.client"),
 				buildOpNameV0:      staticName("grpc.client"),
 				buildOpNameV1:      staticName("grpc.client.request"),
+			},
+		},
+	},
+	PackageConnectRPC: {
+		TracedPackage: "connectrpc.com/connect",
+		EnvVarPrefix:  "CONNECT",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("connect.server"),
+				buildOpNameV0:      staticName("connect.server"),
+				buildOpNameV1:      staticName("connect.server.request"),
+			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("connect.client"),
+				buildOpNameV0:      staticName("connect.client"),
+				buildOpNameV1:      staticName("connect.client.request"),
 			},
 		},
 	},

@@ -53,6 +53,8 @@ func TestNamingSchema(t *testing.T) {
 		gocqlTest,
 		grpcServerTest,
 		grpcClientTest,
+		connectRPCServerTest,
+		connectRPCClientTest,
 		fiberV2Test,
 		redigoTest,
 		netHTTPServerServeMux,
