@@ -167,8 +167,23 @@ jobs:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
+      - name: Read Go versions
+        id: go-versions
+        shell: bash
+        run: |
+          file="binaries/dd-trace-go/go-versions.yml"
+          stable=$(grep '^stable:' "$file" | sed 's/.*"\(.*\)".*/\1/')
+          if [[ -z "$stable" ]]; then
+            echo "ERROR: Failed to parse stable version from ${file}" >&2
+            exit 1
+          fi
+          echo "stable=${stable}" >> "$GITHUB_OUTPUT"
+          echo "Go stable version: ${stable}"
+
       - name: Build weblog
         run: ./build.sh -i weblog
+        env:
+          GO_VERSION: ${{ steps.go-versions.outputs.stable }}
 
       - name: Build runner
         uses: ./.github/actions/install_runner
