@@ -41,5 +41,6 @@ type Record interface {
 	GetTopic() string
 	GetPartition() int32
 	GetOffset() int64
+	// GetContext returns the context associated with this record for tracing propagation.
 	GetContext() context.Context
 }

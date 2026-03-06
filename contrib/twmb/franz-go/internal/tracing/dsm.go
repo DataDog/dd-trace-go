@@ -57,7 +57,8 @@ func (tr *Tracer) SetProduceDSMCheckpoint(r Record) {
 	datastreams.InjectToBase64Carrier(ctx, carrier)
 }
 
-func getMsgSize(r Record) (size int64) {
+func getMsgSize(r Record) int64 {
+	var size int64
 	for _, header := range r.GetHeaders() {
 		size += int64(len(header.GetKey()) + len(header.GetValue()))
 	}
