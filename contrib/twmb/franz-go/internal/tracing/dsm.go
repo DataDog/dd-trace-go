@@ -21,7 +21,7 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(r Record) {
 	carrier := NewKafkaHeadersCarrier(r)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		datastreams.ExtractFromBase64Carrier(r.GetContext(), carrier),
-		options.CheckpointParams{PayloadSize: getConsumerMsgSize(r)},
+		options.CheckpointParams{PayloadSize: getMsgSize(r)},
 		edges...,
 	)
 	if !ok {
@@ -46,7 +46,7 @@ func (tr *Tracer) SetProduceDSMCheckpoint(r Record) {
 	carrier := NewKafkaHeadersCarrier(r)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		datastreams.ExtractFromBase64Carrier(r.GetContext(), carrier),
-		options.CheckpointParams{PayloadSize: getProducerMsgSize(r)},
+		options.CheckpointParams{PayloadSize: getMsgSize(r)},
 		edges...,
 	)
 	if !ok {
@@ -57,20 +57,7 @@ func (tr *Tracer) SetProduceDSMCheckpoint(r Record) {
 	datastreams.InjectToBase64Carrier(ctx, carrier)
 }
 
-func getProducerMsgSize(r Record) (size int64) {
-	for _, header := range r.GetHeaders() {
-		size += int64(len(header.GetKey()) + len(header.GetValue()))
-	}
-	if r.GetValue() != nil {
-		size += int64(len(r.GetValue()))
-	}
-	if r.GetKey() != nil {
-		size += int64(len(r.GetKey()))
-	}
-	return size
-}
-
-func getConsumerMsgSize(r Record) (size int64) {
+func getMsgSize(r Record) (size int64) {
 	for _, header := range r.GetHeaders() {
 		size += int64(len(header.GetKey()) + len(header.GetValue()))
 	}
