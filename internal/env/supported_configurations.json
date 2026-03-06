@@ -877,14 +877,14 @@
     ],
     "DD_TEST_OPTIMIZATION_MANIFEST_FILE": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "string",
         "default": null
       }
     ],
     "DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES": [
       {
-        "implementation": "A",
+        "implementation": "C",
         "type": "boolean",
         "default": "false"
       }
