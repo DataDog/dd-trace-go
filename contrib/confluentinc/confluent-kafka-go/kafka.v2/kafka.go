@@ -95,11 +95,15 @@ func fetchClusterID(ctx context.Context, admin *kafka.AdminClient, err error) st
 // bootstrap servers in the config. On cache miss it calls fetchFn and caches
 // the result.
 func clusterIDFromConfigOrFetch(conf *kafka.ConfigMap, fetchFn func() string) string {
-	bs, err := conf.Get("bootstrap.servers", "")
-	if err != nil || bs.(string) == "" {
+	v, err := conf.Get("bootstrap.servers", "")
+	if err != nil {
 		return fetchFn()
 	}
-	bootstrapServersString := kafkatrace.NormalizeBootstrapServers(bs.(string))
+	bs := v.(string)
+	if bs == "" {
+		return fetchFn()
+	}
+	bootstrapServersString := kafkatrace.NormalizeBootstrapServers(bs)
 	if bootstrapServersString == "" {
 		return fetchFn()
 	}
@@ -134,8 +138,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 // Close calls the underlying Consumer.Close and if polling is enabled, finishes
 // any remaining span.
 func (c *Consumer) Close() error {
-	c.tracer.CancelClusterIDFetch()
-	c.tracer.WaitForClusterID()
+	c.tracer.StopClusterIDFetch()
 	err := c.Consumer.Close()
 	// we only close the previous span if consuming via the events channel is
 	// not enabled, because otherwise there would be a data race from the
@@ -248,8 +251,7 @@ func (p *Producer) Events() chan kafka.Event {
 // Close calls the underlying Producer.Close and also closes the internal
 // wrapping producer channel.
 func (p *Producer) Close() {
-	p.tracer.CancelClusterIDFetch()
-	p.tracer.WaitForClusterID()
+	p.tracer.StopClusterIDFetch()
 	close(p.produceChannel)
 	p.Producer.Close()
 }

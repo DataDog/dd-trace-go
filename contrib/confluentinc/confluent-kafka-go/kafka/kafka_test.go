@@ -418,9 +418,12 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 			return m
 		}
 		backlogsMap := toMap(backlogs)
-		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce")
+		clusterID := c.tracer.ClusterID()
+		require.NotEmpty(t, clusterID)
+		clusterTag := "kafka_cluster_id:" + clusterID
+		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce"+clusterTag)
 	}
 	return spans, msg2
 }

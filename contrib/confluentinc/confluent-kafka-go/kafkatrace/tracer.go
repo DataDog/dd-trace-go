@@ -18,23 +18,23 @@ import (
 )
 
 type Tracer struct {
-	PrevSpan            *tracer.Span
-	ctx                 context.Context
-	consumerServiceName string
-	producerServiceName string
-	consumerSpanName    string
-	producerSpanName    string
-	analyticsRate       float64
-	bootstrapServers    string
-	groupID             string
+	PrevSpan             *tracer.Span
+	ctx                  context.Context
+	consumerServiceName  string
+	producerServiceName  string
+	consumerSpanName     string
+	producerSpanName     string
+	analyticsRate        float64
+	bootstrapServers     string
+	groupID              string
 	clusterID            string
 	clusterIDMu          sync.RWMutex
 	cancelClusterIDFetch context.CancelFunc
 	clusterIDDone        chan struct{}
 	tagFns               map[string]func(msg Message) any
 	dsmEnabled           bool
-	ckgoVersion         CKGoVersion
-	librdKafkaVersion   int
+	ckgoVersion          CKGoVersion
+	librdKafkaVersion    int
 }
 
 func (tr *Tracer) DSMEnabled() bool {
@@ -67,10 +67,14 @@ func (tr *Tracer) FetchClusterIDAsync(fetchFn func(ctx context.Context) string) 
 	}()
 }
 
-// CancelClusterIDFetch cancels any in-flight async cluster ID fetch.
-func (tr *Tracer) CancelClusterIDFetch() {
+// StopClusterIDFetch cancels any in-flight async cluster ID fetch and waits
+// for the goroutine to finish.
+func (tr *Tracer) StopClusterIDFetch() {
 	if tr.cancelClusterIDFetch != nil {
 		tr.cancelClusterIDFetch()
+	}
+	if tr.clusterIDDone != nil {
+		<-tr.clusterIDDone
 	}
 }
 
