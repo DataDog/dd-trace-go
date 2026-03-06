@@ -276,8 +276,8 @@ Any I/O or external data fetching done during `New*`, `Wrap*`, or `Setup*` calls
 asynchronous. Users do not expect their observability library to add latency to their service
 startup. Use goroutines for best-effort enrichment (e.g. fetching cluster IDs, metadata).
 
-If the async work holds resources that must be released, ensure `Close()` waits for completion
-(e.g. via `sync.WaitGroup` or channel drain) before the underlying resource is closed.
+If the async work is still running when `Close()` is called, cancel it (e.g. via a context or
+stop channel) so that `Close()` is not blocked waiting for background work to finish.
 
 ```go
 // Bad: blocks the caller's goroutine for up to 2s
@@ -308,7 +308,7 @@ methods, or internal configuration types instead.
 opts = append(opts, WithClusterID(clusterID))
 
 // Good: use an unexported setter
-wrapped.tracer.SetClusterID(clusterID)
+wrapped.tracer.setClusterID(clusterID)
 ```
 
 ### Order public API parameters from broadest to narrowest scope
