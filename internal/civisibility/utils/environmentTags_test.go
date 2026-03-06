@@ -119,3 +119,136 @@ func TestGetRelativePathFromCITagsSourceRoot(t *testing.T) {
 	relPath = GetRelativePathFromCITagsSourceRoot(absPath)
 	assert.Equal(t, absPath, relPath)
 }
+
+func TestGetCITagsUsesGitEnrichmentOutsidePayloadFilesMode(t *testing.T) {
+	ResetCITags()
+	ResetTestOptimizationModeForTesting()
+	t.Cleanup(ResetCITags)
+	t.Cleanup(ResetTestOptimizationModeForTesting)
+
+	originalGetProviderTagsFunc := getProviderTagsFunc
+	originalGetLocalGitDataFunc := getLocalGitDataFunc
+	originalFetchCommitDataFunc := fetchCommitDataFunc
+	originalApplyEnvironmentalDataIfRequiredFunc := applyEnvironmentalDataIfRequiredFunc
+	t.Cleanup(func() {
+		getProviderTagsFunc = originalGetProviderTagsFunc
+		getLocalGitDataFunc = originalGetLocalGitDataFunc
+		fetchCommitDataFunc = originalFetchCommitDataFunc
+		applyEnvironmentalDataIfRequiredFunc = originalApplyEnvironmentalDataIfRequiredFunc
+	})
+
+	var getLocalGitDataCalls int
+	var fetchCommitDataCalls int
+	var applyEnvironmentalDataCalls int
+
+	getProviderTagsFunc = func() map[string]string {
+		return map[string]string{
+			constants.CIJobName:     "job-name",
+			constants.GitHeadCommit: "head-sha",
+		}
+	}
+	getLocalGitDataFunc = func() (localGitData, error) {
+		getLocalGitDataCalls++
+		return localGitData{
+			localCommitData: localCommitData{
+				CommitSha:     "commit-sha",
+				CommitMessage: "commit-message",
+			},
+			SourceRoot:    "/tmp/workspace",
+			RepositoryURL: "https://example.com/repo.git",
+			Branch:        "main",
+		}, nil
+	}
+	fetchCommitDataFunc = func(commitSha string) (localCommitData, error) {
+		fetchCommitDataCalls++
+		assert.Equal(t, "head-sha", commitSha)
+		return localCommitData{
+			CommitSha:     "head-sha",
+			CommitMessage: "head-message",
+		}, nil
+	}
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {
+		applyEnvironmentalDataCalls++
+		tags["env.applied"] = "true"
+	}
+
+	tags := GetCITags()
+	assert.Equal(t, 1, getLocalGitDataCalls)
+	assert.Equal(t, 1, fetchCommitDataCalls)
+	assert.Equal(t, 1, applyEnvironmentalDataCalls)
+	assert.Equal(t, "/tmp/workspace", tags[constants.CIWorkspacePath])
+	assert.Equal(t, "https://example.com/repo.git", tags[constants.GitRepositoryURL])
+	assert.Equal(t, "commit-sha", tags[constants.GitCommitSHA])
+	assert.Equal(t, "head-message", tags[constants.GitHeadMessage])
+	assert.Equal(t, "true", tags["env.applied"])
+}
+
+func TestGetCITagsKeepsInternalEnrichmentInPayloadFilesMode(t *testing.T) {
+	ResetCITags()
+	ResetTestOptimizationModeForTesting()
+	t.Cleanup(ResetCITags)
+	t.Cleanup(ResetTestOptimizationModeForTesting)
+
+	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
+	ResetTestOptimizationModeForTesting()
+
+	originalGetProviderTagsFunc := getProviderTagsFunc
+	originalGetLocalGitDataFunc := getLocalGitDataFunc
+	originalFetchCommitDataFunc := fetchCommitDataFunc
+	originalApplyEnvironmentalDataIfRequiredFunc := applyEnvironmentalDataIfRequiredFunc
+	t.Cleanup(func() {
+		getProviderTagsFunc = originalGetProviderTagsFunc
+		getLocalGitDataFunc = originalGetLocalGitDataFunc
+		fetchCommitDataFunc = originalFetchCommitDataFunc
+		applyEnvironmentalDataIfRequiredFunc = originalApplyEnvironmentalDataIfRequiredFunc
+	})
+
+	var getLocalGitDataCalls int
+	var fetchCommitDataCalls int
+	var applyEnvironmentalDataCalls int
+
+	getProviderTagsFunc = func() map[string]string {
+		return map[string]string{
+			constants.CIJobName:     "job-name",
+			constants.GitHeadCommit: "head-sha",
+		}
+	}
+	getLocalGitDataFunc = func() (localGitData, error) {
+		getLocalGitDataCalls++
+		return localGitData{
+			localCommitData: localCommitData{
+				CommitSha:     "commit-sha",
+				CommitMessage: "commit-message",
+			},
+			SourceRoot:    "/tmp/workspace",
+			RepositoryURL: "https://example.com/repo.git",
+			Branch:        "main",
+		}, nil
+	}
+	fetchCommitDataFunc = func(commitSha string) (localCommitData, error) {
+		fetchCommitDataCalls++
+		assert.Equal(t, "head-sha", commitSha)
+		return localCommitData{
+			CommitSha:     "head-sha",
+			CommitMessage: "head-message",
+		}, nil
+	}
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {
+		applyEnvironmentalDataCalls++
+		tags["env.applied"] = "true"
+	}
+
+	tags := GetCITags()
+	assert.Equal(t, 1, getLocalGitDataCalls)
+	assert.Equal(t, 1, fetchCommitDataCalls)
+	assert.Equal(t, 1, applyEnvironmentalDataCalls)
+	assert.Contains(t, tags, constants.TestCommand)
+	assert.Contains(t, tags, constants.TestSessionName)
+	assert.Equal(t, "/tmp/workspace", tags[constants.CIWorkspacePath])
+	assert.Equal(t, "https://example.com/repo.git", tags[constants.GitRepositoryURL])
+	assert.Equal(t, "commit-sha", tags[constants.GitCommitSHA])
+	assert.Equal(t, "head-message", tags[constants.GitHeadMessage])
+	assert.Equal(t, "true", tags["env.applied"])
+	assert.Equal(t, "job-name-"+tags[constants.TestCommand], tags[constants.TestSessionName])
+}

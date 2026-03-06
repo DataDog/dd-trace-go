@@ -50,6 +50,15 @@ const (
 	// CIVisibilityEnvironmentDataFilePath is the environment variable that holds the path to the file containing the environmental data.
 	CIVisibilityEnvironmentDataFilePath = "DD_TEST_OPTIMIZATION_ENV_DATA_FILE"
 
+	// CIVisibilityManifestFilePath is the environment variable that holds a (possibly runfiles-relative) path to manifest.txt.
+	CIVisibilityManifestFilePath = "DD_TEST_OPTIMIZATION_MANIFEST_FILE"
+
+	// CIVisibilityPayloadsInFiles indicates whether CI Visibility payloads should be written to files instead of sent over the network.
+	CIVisibilityPayloadsInFiles = "DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES"
+
+	// CIVisibilityUndeclaredOutputsDir is the Bazel writable output directory used when payloads are written to files.
+	CIVisibilityUndeclaredOutputsDir = "TEST_UNDECLARED_OUTPUTS_DIR"
+
 	// CIVisibilityImpactedTestsDetectionEnabled indicates if the impacted tests detection feature is enabled.
 	CIVisibilityImpactedTestsDetectionEnabled = "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED"
 

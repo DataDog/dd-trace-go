@@ -33,6 +33,12 @@ var (
 	originalCiMetrics map[string]float64 // originalCiMetrics holds the original CI/CD metrics after all the CMDs
 	addedMetrics      map[string]float64 // addedMetrics holds the metrics added by the user
 	ciMetricsMutex    sync.Mutex
+
+	getProviderTagsFunc = getProviderTags
+	getLocalGitDataFunc = getLocalGitData
+	fetchCommitDataFunc = fetchCommitData
+	// applyEnvironmentalDataIfRequiredFunc is a must-not-call test seam used to prove payload-file mode skips git enrichment.
+	applyEnvironmentalDataIfRequiredFunc = applyEnvironmentalDataIfRequired
 )
 
 // GetCITags retrieves and caches the CI/CD tags from environment variables.
@@ -212,7 +218,7 @@ func GetRelativePathFromCITagsSourceRoot(path string) string {
 //
 //	A map[string]string containing the extracted CI/CD tags.
 func createCITagsMap() map[string]string {
-	localTags := getProviderTags()
+	localTags := getProviderTagsFunc()
 
 	// Populate runtime values
 	localTags[constants.OSPlatform] = runtime.GOOS
@@ -258,7 +264,7 @@ func createCITagsMap() map[string]string {
 	}
 
 	// Populate missing git data
-	gitData, _ := getLocalGitData()
+	gitData, _ := getLocalGitDataFunc()
 
 	// Populate Git metadata from the local Git repository if not already present in localTags
 	if _, ok := localTags[constants.CIWorkspacePath]; !ok {
@@ -301,7 +307,7 @@ func createCITagsMap() map[string]string {
 
 	// If the head commit SHA is available, populate additional Git head metadata
 	if headCommitSha, ok := localTags[constants.GitHeadCommit]; ok {
-		if headCommitData, err := fetchCommitData(headCommitSha); err != nil {
+		if headCommitData, err := fetchCommitDataFunc(headCommitSha); err != nil {
 			log.Warn("civisibility: failed to fetch head commit data for %s: %s", headCommitSha, err.Error())
 		} else if headCommitSha == headCommitData.CommitSha {
 			localTags[constants.GitHeadAuthorDate] = headCommitData.AuthorDate.String()
@@ -317,7 +323,7 @@ func createCITagsMap() map[string]string {
 	}
 
 	// Apply environmental data if is available
-	applyEnvironmentalDataIfRequired(localTags)
+	applyEnvironmentalDataIfRequiredFunc(localTags)
 
 	log.Debug("civisibility: workspace directory: %s", localTags[constants.CIWorkspacePath])
 	log.Debug("civisibility: common tags created with %d items", len(localTags))

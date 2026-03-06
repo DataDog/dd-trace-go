@@ -110,13 +110,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
 
-		// Initialize the logs
-		if logs.IsEnabled() {
-			log.Debug("civisibility: initializing logs for service: %s", serviceName)
-			logs.Initialize(serviceName)
-		} else {
-			log.Debug("civisibility: logs are disabled")
-		}
+		initializeCiVisibilityLogs(serviceName)
 
 		// Handle SIGINT and SIGTERM signals to ensure we close all open spans and flush the tracer before exiting
 		signals := make(chan os.Signal, 1)
@@ -127,6 +121,27 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 			os.Exit(1)
 		}()
 	})
+}
+
+func initializeCiVisibilityLogs(serviceName string) {
+	if !shouldInitializeCiVisibilityLogs(logs.IsEnabled()) {
+		if utils.IsManifestModeEnabled() || utils.IsPayloadFilesModeEnabled() {
+			log.Debug("civisibility: logs initialization skipped for test optimization offline/file mode")
+			return
+		}
+		log.Debug("civisibility: logs are disabled")
+		return
+	}
+
+	log.Debug("civisibility: initializing logs for service: %s", serviceName)
+	logs.Initialize(serviceName)
+}
+
+func shouldInitializeCiVisibilityLogs(logsEnabled bool) bool {
+	if utils.IsManifestModeEnabled() || utils.IsPayloadFilesModeEnabled() {
+		return false
+	}
+	return logsEnabled
 }
 
 // PushCiVisibilityCloseAction adds a close action to be executed when CI visibility exits.

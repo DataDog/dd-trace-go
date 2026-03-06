@@ -67,6 +67,9 @@ var (
 
 	// ciVisibilityImpactedTestsAnalyzer contains the CI Visibility impacted tests analyzer
 	ciVisibilityImpactedTestsAnalyzer *impactedtests.ImpactedTestAnalyzer
+
+	// uploadRepositoryChangesFunc is a must-not-call test seam used to prove offline/file modes suppress git upload.
+	uploadRepositoryChangesFunc = uploadRepositoryChanges
 )
 
 func ensureSettingsInitialization(serviceName string) {
@@ -81,19 +84,25 @@ func ensureSettingsInitialization(serviceName string) {
 			return
 		}
 
-		// upload the repository changes
 		var uploadChannel = make(chan struct{})
-		go func() {
-			defer func() {
-				close(uploadChannel)
+		uploadEnabled := !utils.IsManifestModeEnabled() && !utils.IsPayloadFilesModeEnabled()
+		if uploadEnabled {
+			// upload the repository changes
+			go func() {
+				defer func() {
+					close(uploadChannel)
+				}()
+				bytes, err := uploadRepositoryChangesFunc()
+				if err != nil {
+					log.Error("civisibility: error uploading repository changes: %s", err.Error())
+				} else {
+					log.Debug("civisibility: uploaded %d bytes in pack files", bytes)
+				}
 			}()
-			bytes, err := uploadRepositoryChanges()
-			if err != nil {
-				log.Error("civisibility: error uploading repository changes: %s", err.Error())
-			} else {
-				log.Debug("civisibility: uploaded %d bytes in pack files", bytes)
-			}
-		}()
+		} else {
+			close(uploadChannel)
+			log.Debug("civisibility: repository upload disabled for current test optimization mode")
+		}
 
 		//Wait for the upload with timeout func
 		waitUpload := func(timeout time.Duration) bool {
@@ -123,7 +132,7 @@ func ensureSettingsInitialization(serviceName string) {
 		}
 
 		// check if we need to wait for the upload to finish and repeat the settings request or we can just continue
-		if ciSettings.RequireGit {
+		if uploadEnabled && ciSettings.RequireGit {
 			log.Debug("civisibility: waiting for the git upload to finish and repeating the settings request")
 			if !waitUpload(1 * time.Minute) {
 				log.Error("civisibility: error getting CI visibility settings due to timeout")
@@ -168,6 +177,18 @@ func ensureSettingsInitialization(serviceName string) {
 			ciSettings.TestManagement.AttemptToFixRetries = testManagementAttemptToFixRetriesEnv
 		}
 
+		if utils.IsManifestModeEnabled() {
+			if ciSettings.TestsSkipping {
+				log.Debug("civisibility: test skipping disabled in manifest mode")
+			}
+			ciSettings.TestsSkipping = false
+		}
+
+		// payload-file mode must avoid impacted-tests git workflows.
+		if utils.IsPayloadFilesModeEnabled() {
+			ciSettings.ImpactedTestsEnabled = false
+		}
+
 		// determine if subtest-specific features are enabled via environment variables
 		subtestFeaturesEnabled := internal.BoolEnv(constants.CIVisibilitySubtestFeaturesEnabled, true)
 		if !subtestFeaturesEnabled {
@@ -176,13 +197,17 @@ func ensureSettingsInitialization(serviceName string) {
 		ciSettings.SubtestFeaturesEnabled = subtestFeaturesEnabled
 
 		// check if we need to wait for the upload to finish before continuing
-		if ciSettings.ImpactedTestsEnabled {
-			log.Debug("civisibility: impacted tests is enabled we need to wait for the upload to finish (for the unshallow process)")
-			waitUpload(30 * time.Second)
+		if uploadEnabled {
+			if ciSettings.ImpactedTestsEnabled {
+				log.Debug("civisibility: impacted tests is enabled we need to wait for the upload to finish (for the unshallow process)")
+				waitUpload(30 * time.Second)
+			} else {
+				log.Debug("civisibility: no need to wait for the git upload to finish")
+				// Enqueue a close action to wait for the upload to finish before finishing the process
+				PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
+			}
 		} else {
-			log.Debug("civisibility: no need to wait for the git upload to finish")
-			// Enqueue a close action to wait for the upload to finish before finishing the process
-			PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
+			log.Debug("civisibility: no upload wait required")
 		}
 
 		// set the ciVisibilitySettings with the settings from the backend

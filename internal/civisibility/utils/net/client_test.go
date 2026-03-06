@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
 func saveEnv() []string {
@@ -22,6 +24,7 @@ func restoreEnv(env []string) {
 		kv := strings.SplitN(e, "=", 2)
 		os.Setenv(kv[0], kv[1])
 	}
+	civisibilityutils.ResetTestOptimizationModeForTesting()
 }
 
 func TestNewClient_DefaultValues(t *testing.T) {

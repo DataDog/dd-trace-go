@@ -6,11 +6,14 @@
 package net
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
@@ -36,6 +39,31 @@ func (c *client) SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, forma
 	if ciTestCovPayload == nil {
 		return errors.New("coverage payload is nil")
 	}
+
+	if utils.IsPayloadFilesModeEnabled() {
+		payloadBytes, err := io.ReadAll(ciTestCovPayload)
+		if err != nil {
+			return fmt.Errorf("failed to read coverage payload: %w", err)
+		}
+
+		switch format {
+		case FormatMessagePack:
+			jsonPayload, err := utils.MsgpackToJSON(payloadBytes)
+			if err != nil {
+				return fmt.Errorf("failed to convert coverage payload to json: %w", err)
+			}
+			return utils.WritePayloadFile("coverage", jsonPayload)
+		case FormatJSON:
+			var compact bytes.Buffer
+			if err := json.Compact(&compact, payloadBytes); err != nil {
+				return fmt.Errorf("invalid coverage json payload: %w", err)
+			}
+			return utils.WritePayloadFile("coverage", compact.Bytes())
+		default:
+			return fmt.Errorf("unsupported format: %s", format)
+		}
+	}
+
 	// Create a dummy event to send with the coverage payload.
 	dummyEvent := FormFile{
 		FieldName:   "event",
