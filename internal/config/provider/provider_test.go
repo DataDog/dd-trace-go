@@ -7,6 +7,7 @@ package provider
 
 import (
 	"os"
+	"reflect"
 	"testing"
 
 	"net/url"
@@ -16,7 +17,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -61,14 +61,14 @@ func matchConfig(name, value string, origin telemetry.Origin, id string) func([]
 }
 
 // matchDefaultConfig is a helper to create a matcher for default telemetry configurations.
-// Default configs should always have SeqID=configtelemetry.DefaultSeqID.
-func matchDefaultConfig(name string, value any, origin telemetry.Origin) func([]telemetry.Configuration) bool {
+// Defaults are identified by origin == OriginDefault; SeqID ordering is tested in configtelemetry_test.go.
+func matchDefaultConfig(name string, value any) func([]telemetry.Configuration) bool {
 	return func(configs []telemetry.Configuration) bool {
 		if len(configs) != 1 {
 			return false
 		}
 		c := configs[0]
-		return c.Name == name && c.Value == value && c.Origin == origin && c.ID == telemetry.EmptyID && c.SeqID == configtelemetry.DefaultSeqID
+		return c.Name == name && reflect.DeepEqual(c.Value, value) && c.Origin == telemetry.OriginDefault && c.ID == telemetry.EmptyID
 	}
 }
 
@@ -450,20 +450,19 @@ apm_configuration_default:
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(capture.captureMatcher("DD_SERVICE", "managed-service", telemetry.OriginManagedStableConfig, "managed-123")))
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(capture.captureMatcher("DD_SERVICE", "env-service", telemetry.OriginEnvVar, telemetry.EmptyID)))
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(capture.captureMatcher("DD_SERVICE", "local-service", telemetry.OriginLocalStableConfig, "local-456")))
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_SERVICE", "default-service", telemetry.OriginDefault)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_SERVICE", "default-service")))
 
 		managedSeq := capture.get("DD_SERVICE", "managed-service", telemetry.OriginManagedStableConfig)
 		envSeq := capture.get("DD_SERVICE", "env-service", telemetry.OriginEnvVar)
 		localSeq := capture.get("DD_SERVICE", "local-service", telemetry.OriginLocalStableConfig)
 		assert.Greater(t, managedSeq, envSeq, "Managed (highest priority) should have higher SeqID than Env")
 		assert.Greater(t, envSeq, localSeq, "Env should have higher SeqID than Local (lowest priority)")
-		assert.Greater(t, localSeq, configtelemetry.DefaultSeqID, "All non-default configs should have SeqID > DefaultSeqID")
 
 		env := p.GetString("DD_ENV", "default-env")
 		assert.Equal(t, "local-env", env)
 
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_ENV", "local-env", telemetry.OriginLocalStableConfig, "local-456")))
-		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_ENV", "default-env", telemetry.OriginDefault)))
+		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_ENV", "default-env")))
 	})
 
 	t.Run("still reports defaults via telemetry when key missing or invalid", func(t *testing.T) {
@@ -477,13 +476,13 @@ apm_configuration_default:
 		urlKey, urlDef := "DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:9000"}
 		mapKey, mapDef := "DD_SERVICE_MAPPING", map[string]string{"a": "b"}
 
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: strKey, Value: strDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: configtelemetry.DefaultSeqID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: boolKey, Value: boolDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: configtelemetry.DefaultSeqID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: intKey, Value: intDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: configtelemetry.DefaultSeqID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: floatKey, Value: floatDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: configtelemetry.DefaultSeqID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: durKey, Value: durDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: configtelemetry.DefaultSeqID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: urlKey, Value: urlDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: configtelemetry.DefaultSeqID}}).Return()
-		telemetryClient.On("RegisterAppConfigs", []telemetry.Configuration{{Name: mapKey, Value: mapDef, Origin: telemetry.OriginDefault, ID: telemetry.EmptyID, SeqID: configtelemetry.DefaultSeqID}}).Return()
+		telemetryClient.On("RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig(strKey, strDef))).Return()
+		telemetryClient.On("RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig(boolKey, boolDef))).Return()
+		telemetryClient.On("RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig(intKey, intDef))).Return()
+		telemetryClient.On("RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig(floatKey, floatDef))).Return()
+		telemetryClient.On("RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig(durKey, durDef))).Return()
+		telemetryClient.On("RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig(urlKey, urlDef))).Return()
+		telemetryClient.On("RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig(mapKey, mapDef))).Return()
 		defer telemetry.MockClient(telemetryClient)()
 
 		p := newTestProvider(newTestConfigSource(map[string]string{}, telemetry.OriginEnvVar))
