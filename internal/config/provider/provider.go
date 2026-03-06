@@ -5,16 +5,6 @@
 
 // Package provider resolves configuration values from multiple sources in priority order
 // and reports telemetry for each value found.
-//
-// # Usage Contract
-//
-// Use the exported typed getters (GetBool, GetInt, GetString, etc.) to read configuration.
-// Do not call the generic [get] helper directly — it is an internal implementation detail
-// shared by the typed getters and is intentionally unexported.
-//
-// To add support for a new configuration value type, add a new typed getter method on
-// [Provider] that delegates to get with an appropriate parse function.
-// To add validation for an existing type, use GetIntWithValidator or GetFloatWithValidator.
 package provider
 
 import (
@@ -42,14 +32,12 @@ type idAwareConfigSource interface {
 }
 
 // Provider resolves configuration values from an ordered list of sources.
-// Sources are listed in ascending priority order: the last source wins.
+// Sources are listed in descending priority order: the first source wins.
 type Provider struct {
 	sources []configSource
 }
 
-// New returns a Provider configured with the default source stack:
-// managed declarative config → DD env vars → OTEL env vars → local declarative config.
-// Sources are listed lowest-priority first; the last entry in the slice wins.
+// New returns a Provider configured with the following source list, in descending order of priority.
 func New() *Provider {
 	return &Provider{
 		sources: []configSource{
