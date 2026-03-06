@@ -8,16 +8,13 @@ package integrations
 import (
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
 func resetCIVisibilityStateForTesting() {
-	ciVisibilityInitializationOnce = sync.Once{}
 	settingsInitializationOnce = sync.Once{}
-	additionalFeaturesInitializationOnce = sync.Once{}
 
 	closeActions = nil
 
@@ -32,18 +29,8 @@ func resetCIVisibilityStateForTesting() {
 	uploadRepositoryChangesFunc = uploadRepositoryChanges
 	logsIsEnabledFunc = logs.IsEnabled
 	logsInitializeFunc = logs.Initialize
-	startAdditionalFeaturesInitializationFunc = func(serviceName string) {
-		go func() { ensureAdditionalFeaturesInitialization(serviceName) }()
-	}
 
 	utils.ResetCITags()
 	utils.ResetCIMetrics()
 	utils.ResetTestOptimizationModeForTesting()
-	civisibility.SetState(civisibility.StateUninitialized)
-}
-
-func restoreCIVisibilityMockForTesting() {
-	resetCIVisibilityStateForTesting()
-	additionalFeaturesInitializationOnce.Do(func() {})
-	mockTracer = InitializeCIVisibilityMock()
 }

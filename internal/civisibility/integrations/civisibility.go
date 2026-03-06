@@ -41,11 +41,8 @@ var (
 	// mTracer contains the mock tracer instance for testing purposes
 	mTracer mocktracer.Tracer
 
-	logsIsEnabledFunc                         = logs.IsEnabled
-	logsInitializeFunc                        = logs.Initialize
-	startAdditionalFeaturesInitializationFunc = func(serviceName string) {
-		go func() { ensureAdditionalFeaturesInitialization(serviceName) }()
-	}
+	logsIsEnabledFunc  = logs.IsEnabled
+	logsInitializeFunc = logs.Initialize
 )
 
 // EnsureCiVisibilityInitialization initializes the CI visibility tracer if it hasn't been initialized already.
@@ -110,22 +107,13 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		}
 
 		// Initializing additional features asynchronously
-		startAdditionalFeaturesInitializationFunc(serviceName)
+		go func() { ensureAdditionalFeaturesInitialization(serviceName) }()
 
 		// Initialize the tracer
 		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
 
-		disableLogsForOfflineMode := utils.IsManifestModeEnabled() || utils.IsPayloadFilesModeEnabled()
-		// Initialize the logs
-		if disableLogsForOfflineMode {
-			log.Debug("civisibility: logs initialization skipped for test optimization offline/file mode")
-		} else if logsIsEnabledFunc() {
-			log.Debug("civisibility: initializing logs for service: %s", serviceName)
-			logsInitializeFunc(serviceName)
-		} else {
-			log.Debug("civisibility: logs are disabled")
-		}
+		initializeCiVisibilityLogs(serviceName)
 
 		// Handle SIGINT and SIGTERM signals to ensure we close all open spans and flush the tracer before exiting
 		signals := make(chan os.Signal, 1)
@@ -136,6 +124,20 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 			os.Exit(1)
 		}()
 	})
+}
+
+func initializeCiVisibilityLogs(serviceName string) {
+	disableLogsForOfflineMode := utils.IsManifestModeEnabled() || utils.IsPayloadFilesModeEnabled()
+	if disableLogsForOfflineMode {
+		log.Debug("civisibility: logs initialization skipped for test optimization offline/file mode")
+		return
+	}
+	if logsIsEnabledFunc() {
+		log.Debug("civisibility: initializing logs for service: %s", serviceName)
+		logsInitializeFunc(serviceName)
+		return
+	}
+	log.Debug("civisibility: logs are disabled")
 }
 
 // PushCiVisibilityCloseAction adds a close action to be executed when CI visibility exits.

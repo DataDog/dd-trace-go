@@ -13,14 +13,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 )
 
 func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(restoreCIVisibilityMockForTesting)
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(constants.CIVisibilityManifestFilePath, writeSettingsManifestCache(t, true, true))
 	utils.ResetTestOptimizationModeForTesting()
@@ -39,7 +38,7 @@ func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testin
 
 func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDisablesImpactedTests(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(restoreCIVisibilityMockForTesting)
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(constants.CIVisibilityManifestFilePath, writeSettingsManifestCache(t, true, true))
 	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
@@ -61,37 +60,33 @@ func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDis
 
 func TestInternalCiVisibilityInitializationManifestModeSkipsLogsInitialization(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(restoreCIVisibilityMockForTesting)
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(constants.CIVisibilityManifestFilePath, writeSettingsManifestCache(t, false, false))
-	t.Setenv("DD_SERVICE", "manifest-service")
 	utils.ResetTestOptimizationModeForTesting()
 
 	var initializeCalls int
 	logsIsEnabledFunc = func() bool { return true }
 	logsInitializeFunc = func(string) { initializeCalls++ }
-	startAdditionalFeaturesInitializationFunc = func(string) {}
 
-	internalCiVisibilityInitialization(func([]tracer.StartOption) {})
+	initializeCiVisibilityLogs("manifest-service")
 
 	assert.Equal(t, 0, initializeCalls)
 }
 
 func TestInternalCiVisibilityInitializationPayloadFilesModeSkipsLogsInitialization(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(restoreCIVisibilityMockForTesting)
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
 	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
-	t.Setenv("DD_SERVICE", "payload-files-service")
 	utils.ResetTestOptimizationModeForTesting()
 
 	var initializeCalls int
 	logsIsEnabledFunc = func() bool { return true }
 	logsInitializeFunc = func(string) { initializeCalls++ }
-	startAdditionalFeaturesInitializationFunc = func(string) {}
 
-	internalCiVisibilityInitialization(func([]tracer.StartOption) {})
+	initializeCiVisibilityLogs("payload-files-service")
 
 	assert.Equal(t, 0, initializeCalls)
 }
