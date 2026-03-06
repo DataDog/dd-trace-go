@@ -87,8 +87,8 @@ func (c *Client) PollRecords(ctx context.Context, maxPollRecords int) kgo.Fetche
 func (c *Client) OnProduceRecordBuffered(r *kgo.Record) {
 	wrapped := wrapRecord(r)
 	span := c.tracer.StartProduceSpan(r.Context, wrapped)
-	c.tracer.SetProduceDSMCheckpoint(wrapped)
 	r.Context = tracer.ContextWithSpan(r.Context, span)
+	c.tracer.SetProduceDSMCheckpoint(wrapped)
 }
 
 func (c *Client) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
@@ -123,8 +123,8 @@ func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 
 	wrapped := wrapRecord(r)
 	span := c.tracer.StartConsumeSpan(r.Context, wrapped)
-	c.tracer.SetConsumeDSMCheckpoint(wrapped)
 	r.Context = tracer.ContextWithSpan(r.Context, span)
+	c.tracer.SetConsumeDSMCheckpoint(wrapped)
 
 	c.activeSpansMu.Lock()
 	c.activeSpans = append(c.activeSpans, span)
