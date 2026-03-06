@@ -645,8 +645,7 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageTwmbFranzGo: {
 		TracedPackage: "github.com/twmb/franz-go",
-		// TODO: Should we change this prefix?
-		EnvVarPrefix: "KAFKA",
+		EnvVarPrefix:  "KAFKA",
 		naming: map[Component]componentNames{
 			ComponentConsumer: {
 				useDDServiceV0:     true,
