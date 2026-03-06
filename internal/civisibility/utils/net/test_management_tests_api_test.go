@@ -12,12 +12,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // TestTestManagementTestsApiRequest tests the successful scenario for GetTestManagementTests.
@@ -266,6 +268,12 @@ func TestTestManagementTestsApiRequestFromManifestCacheMalformedFile(t *testing.
 	setCiVisibilityEnv(path, server.URL)
 	os.Setenv(constants.CIVisibilityManifestFilePath, manifestPath)
 
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
 	cInterface := NewClient()
 	responseData, err := cInterface.GetTestManagementTests()
 	assert.NoError(t, err)
@@ -273,4 +281,14 @@ func TestTestManagementTestsApiRequestFromManifestCacheMalformedFile(t *testing.
 		Modules: map[string]TestManagementTestsResponseDataSuites{},
 	}, *responseData)
 	assert.Equal(t, 0, hits)
+	assert.True(t, containsTestManagementLogLine(recordLogger.Logs(), "invalid test management cache file"))
+}
+
+func containsTestManagementLogLine(lines []string, want string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, want) {
+			return true
+		}
+	}
+	return false
 }

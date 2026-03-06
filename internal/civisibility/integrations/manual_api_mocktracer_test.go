@@ -6,8 +6,10 @@
 package integrations
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -117,6 +119,49 @@ func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
 
 	assert.Contains(spanTags, constants.TestCommand)
 	assert.Contains(spanTags, constants.Origin)
+}
+
+func TestPayloadFilesModeUsesWorkspaceFromEnvironmentalDataForWorkingDirectory(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	workspaceDir := t.TempDir()
+	subDir := filepath.Join(workspaceDir, "pkg")
+	assert.NoError(os.MkdirAll(subDir, 0o755))
+	t.Chdir(subDir)
+
+	envDataPath := filepath.Join(t.TempDir(), "env.json")
+	envData := map[string]string{
+		constants.CIWorkspacePath:  workspaceDir,
+		constants.GitRepositoryURL: "https://github.com/acme/repo.git",
+	}
+	rawEnvData, err := json.Marshal(envData)
+	assert.NoError(err)
+	assert.NoError(os.WriteFile(envDataPath, rawEnvData, 0o644))
+
+	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
+	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, envDataPath)
+
+	utils.ResetCITags()
+	utils.ResetCIMetrics()
+	utils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(func() {
+		utils.ResetCITags()
+		utils.ResetCIMetrics()
+		utils.ResetTestOptimizationModeForTesting()
+	})
+
+	now := time.Now()
+	session := CreateTestSession(
+		WithTestSessionCommand("my-command"),
+		WithTestSessionFramework("my-testing-framework", "framework-version"),
+		WithTestSessionStartTime(now),
+	)
+	assert.Equal("pkg", session.WorkingDirectory())
+	assert.Equal("https://github.com/acme/repo.git", utils.GetCITags()[constants.GitRepositoryURL])
+
+	session.Close(0)
 }
 
 func TestTestSession(t *testing.T) {

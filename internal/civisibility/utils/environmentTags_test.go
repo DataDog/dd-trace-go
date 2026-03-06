@@ -183,7 +183,7 @@ func TestGetCITagsUsesGitEnrichmentOutsidePayloadFilesMode(t *testing.T) {
 	assert.Equal(t, "true", tags["env.applied"])
 }
 
-func TestGetCITagsSkipsGitEnrichmentInPayloadFilesMode(t *testing.T) {
+func TestGetCITagsKeepsInternalEnrichmentInPayloadFilesMode(t *testing.T) {
 	ResetCITags()
 	ResetTestOptimizationModeForTesting()
 	t.Cleanup(ResetCITags)
@@ -216,21 +216,39 @@ func TestGetCITagsSkipsGitEnrichmentInPayloadFilesMode(t *testing.T) {
 	}
 	getLocalGitDataFunc = func() (localGitData, error) {
 		getLocalGitDataCalls++
-		return localGitData{}, nil
+		return localGitData{
+			localCommitData: localCommitData{
+				CommitSha:     "commit-sha",
+				CommitMessage: "commit-message",
+			},
+			SourceRoot:    "/tmp/workspace",
+			RepositoryURL: "https://example.com/repo.git",
+			Branch:        "main",
+		}, nil
 	}
-	fetchCommitDataFunc = func(string) (localCommitData, error) {
+	fetchCommitDataFunc = func(commitSha string) (localCommitData, error) {
 		fetchCommitDataCalls++
-		return localCommitData{}, nil
+		assert.Equal(t, "head-sha", commitSha)
+		return localCommitData{
+			CommitSha:     "head-sha",
+			CommitMessage: "head-message",
+		}, nil
 	}
-	applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {
+	applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {
 		applyEnvironmentalDataCalls++
+		tags["env.applied"] = "true"
 	}
 
 	tags := GetCITags()
-	assert.Equal(t, 0, getLocalGitDataCalls)
-	assert.Equal(t, 0, fetchCommitDataCalls)
-	assert.Equal(t, 0, applyEnvironmentalDataCalls)
+	assert.Equal(t, 1, getLocalGitDataCalls)
+	assert.Equal(t, 1, fetchCommitDataCalls)
+	assert.Equal(t, 1, applyEnvironmentalDataCalls)
 	assert.Contains(t, tags, constants.TestCommand)
 	assert.Contains(t, tags, constants.TestSessionName)
+	assert.Equal(t, "/tmp/workspace", tags[constants.CIWorkspacePath])
+	assert.Equal(t, "https://example.com/repo.git", tags[constants.GitRepositoryURL])
+	assert.Equal(t, "commit-sha", tags[constants.GitCommitSHA])
+	assert.Equal(t, "head-message", tags[constants.GitHeadMessage])
+	assert.Equal(t, "true", tags["env.applied"])
 	assert.Equal(t, "job-name-"+tags[constants.TestCommand], tags[constants.TestSessionName])
 }

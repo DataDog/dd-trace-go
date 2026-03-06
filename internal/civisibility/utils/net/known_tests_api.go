@@ -13,6 +13,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -61,7 +62,11 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 				var cachedResponse knownTestsResponse
 				if err := json.Unmarshal(raw, &cachedResponse); err == nil {
 					return &cachedResponse.Data.Attributes, nil
+				} else {
+					log.Debug("civisibility.known_tests: invalid known tests cache file %s: %s", cacheFile, err.Error())
 				}
+			} else {
+				log.Debug("civisibility.known_tests: cannot read known tests cache file %s: %s", cacheFile, err.Error())
 			}
 		}
 		// Compatible with Bazel offline mode: missing or invalid cache means empty known tests response.

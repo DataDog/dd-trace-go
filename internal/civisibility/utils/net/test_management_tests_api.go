@@ -13,6 +13,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -77,7 +78,11 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 				var cachedResponse testManagementTestsResponse
 				if err := json.Unmarshal(raw, &cachedResponse); err == nil {
 					return &cachedResponse.Data.Attributes, nil
+				} else {
+					log.Debug("civisibility.test_management: invalid test management cache file %s: %s", cacheFile, err.Error())
 				}
+			} else {
+				log.Debug("civisibility.test_management: cannot read test management cache file %s: %s", cacheFile, err.Error())
 			}
 		}
 		// Compatible with Bazel offline mode: missing or invalid cache means empty test management response.
