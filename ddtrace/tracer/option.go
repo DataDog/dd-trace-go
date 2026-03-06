@@ -133,8 +133,9 @@ var (
 
 // Supported trace protocols.
 const (
-	traceProtocolV04 = 0.4 // v0.4 (default)
-	traceProtocolV1  = 1.0 // v1.0
+	traceProtocolV04  = 0.4 // v0.4 (default)
+	traceProtocolV1   = 1.0 // v1.0
+	traceProtocolOTLP = 2.0 // represents the OTLP protocol
 )
 
 // config holds the tracer configuration.
