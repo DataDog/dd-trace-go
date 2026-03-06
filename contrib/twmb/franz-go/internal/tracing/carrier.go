@@ -9,7 +9,6 @@ type KafkaHeadersCarrier struct {
 	record Record
 }
 
-// compile time type assertion
 var _ interface {
 	tracer.TextMapWriter
 	tracer.TextMapReader
