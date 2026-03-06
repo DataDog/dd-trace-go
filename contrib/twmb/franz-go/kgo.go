@@ -57,6 +57,8 @@ func NewClient(kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) (*Client, error
 	return wrapped, nil
 }
 
+// finishAndClearActiveSpans finishes all active spans and clears the list of
+// active spans.
 func (c *Client) finishAndClearActiveSpans() {
 	c.activeSpansMu.Lock()
 	for _, span := range c.activeSpans {
