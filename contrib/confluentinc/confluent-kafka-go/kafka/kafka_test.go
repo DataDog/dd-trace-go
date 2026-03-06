@@ -426,13 +426,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		toMap := func(_ []mocktracer.DSMBacklog) map[string]struct{} {
 			m := make(map[string]struct{})
 			for _, b := range backlogs {
-				var filtered []string
-				for _, tag := range b.Tags {
-					if !strings.HasPrefix(tag, "kafka_cluster_id:") {
-						filtered = append(filtered, tag)
-					}
-				}
-				m[strings.Join(filtered, "")] = struct{}{}
+				m[strings.Join(b.Tags, "")] = struct{}{}
 			}
 			return m
 		}

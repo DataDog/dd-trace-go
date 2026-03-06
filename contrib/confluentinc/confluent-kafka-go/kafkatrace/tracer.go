@@ -27,10 +27,11 @@ type Tracer struct {
 	analyticsRate       float64
 	bootstrapServers    string
 	groupID             string
-	clusterID           string
-	clusterIDMu         sync.RWMutex
-	clusterIDReady      chan struct{}
-	tagFns              map[string]func(msg Message) any
+	clusterID              string
+	clusterIDMu            sync.RWMutex
+	cancelClusterIDFetch   context.CancelFunc
+	clusterIDDone          chan struct{}
+	tagFns                 map[string]func(msg Message) any
 	dsmEnabled          bool
 	ckgoVersion         CKGoVersion
 	librdKafkaVersion   int
@@ -53,21 +54,30 @@ func (tr *Tracer) SetClusterID(id string) {
 }
 
 // FetchClusterIDAsync launches a background goroutine to fetch the cluster ID.
-// Use WaitForClusterID to block until the fetch completes.
-func (tr *Tracer) FetchClusterIDAsync(fetchFn func() string) {
-	tr.clusterIDReady = make(chan struct{})
+// The fetch can be cancelled by calling CancelClusterIDFetch.
+func (tr *Tracer) FetchClusterIDAsync(fetchFn func(ctx context.Context) string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	tr.cancelClusterIDFetch = cancel
+	tr.clusterIDDone = make(chan struct{})
 	go func() {
-		defer close(tr.clusterIDReady)
-		if id := fetchFn(); id != "" {
+		defer close(tr.clusterIDDone)
+		if id := fetchFn(ctx); id != "" {
 			tr.SetClusterID(id)
 		}
 	}()
 }
 
+// CancelClusterIDFetch cancels any in-flight async cluster ID fetch.
+func (tr *Tracer) CancelClusterIDFetch() {
+	if tr.cancelClusterIDFetch != nil {
+		tr.cancelClusterIDFetch()
+	}
+}
+
 // WaitForClusterID blocks until any in-flight async cluster ID fetch completes.
 func (tr *Tracer) WaitForClusterID() {
-	if tr.clusterIDReady != nil {
-		<-tr.clusterIDReady
+	if tr.clusterIDDone != nil {
+		<-tr.clusterIDDone
 	}
 }
 

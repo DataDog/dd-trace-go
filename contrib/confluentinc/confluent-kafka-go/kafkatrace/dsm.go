@@ -39,7 +39,7 @@ func (tr *Tracer) TrackProduceOffsets(msg Message) {
 		return
 	}
 	tp := msg.GetTopicPartition()
-	tracer.TrackKafkaProduceOffsetWithCluster(tp.GetTopic(), tp.GetPartition(), tp.GetOffset(), tr.ClusterID())
+	tracer.TrackKafkaProduceOffsetWithCluster(tr.ClusterID(), tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
 }
 
 func (tr *Tracer) SetConsumeCheckpoint(msg Message) {

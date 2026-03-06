@@ -60,14 +60,14 @@ func TrackKafkaCommitOffsetWithCluster(group, topic string, partition int32, off
 // TrackKafkaProduceOffset should be used in the producer, to track when it produces a message.
 // if used together with TrackKafkaCommitOffset it can generate a Kafka lag in seconds metric.
 func TrackKafkaProduceOffset(topic string, partition int32, offset int64) {
-	TrackKafkaProduceOffsetWithCluster(topic, partition, offset, "")
+	TrackKafkaProduceOffsetWithCluster("", topic, partition, offset)
 }
 
 // TrackKafkaProduceOffsetWithCluster is like TrackKafkaProduceOffset but also associates the offset with a Kafka cluster ID.
-func TrackKafkaProduceOffsetWithCluster(topic string, partition int32, offset int64, cluster string) {
+func TrackKafkaProduceOffsetWithCluster(cluster string, topic string, partition int32, offset int64) {
 	if t, ok := getGlobalTracer().(dataStreamsContainer); ok {
 		if p := t.GetDataStreamsProcessor(); p != nil {
-			p.TrackKafkaProduceOffsetWithCluster(topic, partition, offset, cluster)
+			p.TrackKafkaProduceOffsetWithCluster(cluster, topic, partition, offset)
 		}
 	}
 }

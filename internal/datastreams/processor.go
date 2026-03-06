@@ -636,10 +636,10 @@ func (p *Processor) TrackKafkaCommitOffsetWithCluster(group string, topic string
 }
 
 func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offset int64) {
-	p.TrackKafkaProduceOffsetWithCluster(topic, partition, offset, "")
+	p.TrackKafkaProduceOffsetWithCluster("", topic, partition, offset)
 }
 
-func (p *Processor) TrackKafkaProduceOffsetWithCluster(topic string, partition int32, offset int64, cluster string) {
+func (p *Processor) TrackKafkaProduceOffsetWithCluster(cluster string, topic string, partition int32, offset int64) {
 	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		topic:      topic,
