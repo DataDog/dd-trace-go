@@ -819,6 +819,13 @@
         "default": "true"
       }
     ],
+    "DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL": [
+      {
+        "implementation": "B",
+        "type": "decimal",
+        "default": "86400.0"
+      }
+    ],
     "DD_TELEMETRY_HEARTBEAT_INTERVAL": [
       {
         "implementation": "B",
