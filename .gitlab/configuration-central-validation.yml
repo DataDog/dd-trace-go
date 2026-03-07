@@ -2,12 +2,12 @@
 # This URL is available in the dd-gitlab/publish-content-addresable-templates job whenever
 # a change is made on the one-pipeline template.
 variables:
-  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/f14ac28614630d12bcfe6cba4fd8d72dce142c62ff0b053ba7c323622104ebd7/scripts/config-inversion/
+  SCRIPTS_BASE_URL: https://gitlab-templates.ddbuild.io/libdatadog/one-pipeline/ca/08f5ae1940400eedde075868f4f053f4f527ac4efdef2f939c4e2cf6df6f5b60/scripts/config-inversion/
 
 .download-scripts-from-template: &download-scripts-from-template
   - mkdir -p scripts
   - |
-    for script_file in "config-inversion-local-validation.py" "config-inversion-update-supported-range.py"
+    for script_file in "config-inversion-local-validation.py" "config-inversion-update-supported-range.py" "config_parser.py" "config_inversion_verify_format.py" "v1-config-schema.json" "v2-config-schema.json"
     do
       curl --location --fail --show-error --output "scripts/${script_file}" "${SCRIPTS_BASE_URL}/${script_file}"
       chmod +x scripts/$script_file
@@ -22,6 +22,7 @@ variables:
     BACKFILLED: ""
   before_script:
     - *download-scripts-from-template
+    - pip3 install jsonschema
   script:
     - scripts/config-inversion-local-validation.py
 
