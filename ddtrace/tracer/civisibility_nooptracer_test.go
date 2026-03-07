@@ -238,7 +238,18 @@ func TestCiVisibilityNoopTracer_TracerConf(t *testing.T) {
 	wrappedConf := wrapped.TracerConf()
 	tracerConf := tr.TracerConf()
 
-	assert.Equal(t, tracerConf, wrappedConf)
+	// Compare all fields except PeerServiceMapping (functions can't be compared with reflect.DeepEqual).
+	assert.Equal(t, tracerConf.CanComputeStats, wrappedConf.CanComputeStats)
+	assert.Equal(t, tracerConf.CanDropP0s, wrappedConf.CanDropP0s)
+	assert.Equal(t, tracerConf.DebugAbandonedSpans, wrappedConf.DebugAbandonedSpans)
+	assert.Equal(t, tracerConf.Disabled, wrappedConf.Disabled)
+	assert.Equal(t, tracerConf.PartialFlush, wrappedConf.PartialFlush)
+	assert.Equal(t, tracerConf.PartialFlushMinSpans, wrappedConf.PartialFlushMinSpans)
+	assert.Equal(t, tracerConf.PeerServiceDefaults, wrappedConf.PeerServiceDefaults)
+	assert.Equal(t, tracerConf.EnvTag, wrappedConf.EnvTag)
+	assert.Equal(t, tracerConf.VersionTag, wrappedConf.VersionTag)
+	assert.Equal(t, tracerConf.ServiceTag, wrappedConf.ServiceTag)
+	assert.Equal(t, tracerConf.TracingAsTransport, wrappedConf.TracingAsTransport)
 }
 
 func TestCiVisibilityNoopTracer_Flush(t *testing.T) {
