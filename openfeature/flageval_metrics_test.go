@@ -124,6 +124,16 @@ func TestRecord(t *testing.T) {
 			wantAllocation: "default-allocation",
 		},
 		{
+			name:    "empty allocation key omitted",
+			flagKey: "my-flag",
+			details: makeDetails("variant-a", of.TargetingMatchReason, "", of.FlagMetadata{
+				metadataAllocationKey: "",
+			}),
+			wantValue:   1,
+			wantReason:  "targeting_match",
+			wantVariant: "variant-a",
+		},
+		{
 			name:        "error flag not found",
 			flagKey:     "missing-flag",
 			details:     makeDetails("", of.ErrorReason, of.FlagNotFoundCode),
