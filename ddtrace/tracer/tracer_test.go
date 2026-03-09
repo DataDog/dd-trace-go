@@ -16,7 +16,6 @@ import (
 	"io"
 	llog "log"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -32,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	tracertest "github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -46,11 +46,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func (t *tracer) newEnvSpan(service, env string) *Span {
+func newEnvSpan(t Tracer, service, env string) *Span {
 	return t.StartSpan("test.op", SpanType("test"), ServiceName(service), ResourceName("/"), Tag(ext.Environment, env))
 }
 
 func (t *tracer) newRootSpan(name, service, resource string) *Span {
+	return newRootSpan(t, name, service, resource)
+}
+
+func newRootSpan(t Tracer, name, service, resource string) *Span {
 	return t.StartSpan(name, SpanType("test"), ServiceName(service), ResourceName(resource))
 }
 
@@ -139,6 +143,7 @@ func (noopRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 func withNoopInfoHTTPClient() StartOption {
 	return WithHTTPClient(&http.Client{Transport: noopRoundTripper{}})
 }
+
 
 // setLogWriter sets the io.Writer that any new logTraceWriter will write to and returns a function
 // which will return the io.Writer to its original value.
@@ -1335,28 +1340,16 @@ func TestTracerSampler(t *testing.T) {
 
 func TestTracerPrioritySampler(t *testing.T) {
 	assert := assert.New(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{
-			"rate_by_service":{
-				"service:,env:":0.1,
-				"service:my-service,env:":0.2,
-				"service:my-service,env:default":0.2,
-				"service:my-service,env:other":0.3
-			}
-		}`))
-	}))
-	defer srv.Close()
-	url := "http://" + srv.Listener.Addr().String()
+	tr, agent, err := bootstrapInspectableTracer(t)
+	require.NoError(t, err)
 
-	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url, internal.DefaultHTTPClient(defaultHTTPTimeout, false))),
-	)
-	assert.Nil(err)
-	defer stop()
+	agent.Info().RateByService("", "", 0.1)
+	agent.Info().RateByService("my-service", "", 0.2)
+	agent.Info().RateByService("my-service", "default", 0.2)
+	agent.Info().RateByService("my-service", "other", 0.3)
 
 	// default rates (1.0)
-	s := tr.newEnvSpan("pylons", "")
+	s := newEnvSpan(tr, "pylons", "")
 	assert.Equal(1., s.metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.metrics[keySamplingPriority])
 	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
@@ -1364,10 +1357,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	assert.True(ok)
 	assert.EqualValues(p, s.metrics[keySamplingPriority])
 	s.Finish()
-
-	tr.awaitPayload(t, 1)
-	flush(-1)
-	time.Sleep(100 * time.Millisecond)
+	tr.Flush()
 
 	for i, tt := range []struct {
 		service, env string
@@ -1392,7 +1382,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 			rate:    0.3,
 		},
 	} {
-		s := tr.newEnvSpan(tt.service, tt.env)
+		s := newEnvSpan(tr, tt.service, tt.env)
 		assert.Equal(tt.rate, s.metrics[keySamplingPriorityRate], strconv.Itoa(i))
 		prio, ok := s.metrics[keySamplingPriority]
 		if prio > 0 {
@@ -1415,21 +1405,25 @@ func TestTracerPrioritySampler(t *testing.T) {
 
 func TestTracerEdgeSampler(t *testing.T) {
 	assert := assert.New(t)
+	agent, err := startAgentTest(t)
+	assert.Nil(err)
 
 	// a sample rate of 0 should sample nothing
-	tracer0, _, _, stop, err := startTestTracer(t,
-		withTransport(newDefaultTransport()),
+	tracer0, err := startInspectableTracer(t,
+		agent,
 		WithSamplerRate(0),
 	)
 	assert.Nil(err)
-	defer stop()
 	// a sample rate of 1 should sample everything
-	tracer1, _, _, stop, err := startTestTracer(t,
-		withTransport(newDefaultTransport()),
+	tracer1, err := startInspectableTracer(t,
+		agent,
 		WithSamplerRate(1),
 	)
 	assert.Nil(err)
-	defer stop()
+
+	// Set tracer1 as global. span.Finish() submits chunks through the global
+	// tracer, so all spans from both tracers end up on tracer1's worker.
+	setGlobalTracer(tracer1)
 
 	count := payloadQueueSize / 3
 
@@ -1440,8 +1434,10 @@ func TestTracerEdgeSampler(t *testing.T) {
 		span1.Finish()
 	}
 
-	assert.Equal(tracer0.traceWriter.(*agentTraceWriter).payload.stats().itemCount, 0)
-	tracer1.awaitPayload(t, count)
+	tracer0.Flush()
+	tracer1.Flush()
+
+	assert.Equal(333, agent.CountSpans())
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -1740,20 +1736,28 @@ func TestWorker(t *testing.T) {
 }
 
 func TestPushPayload(t *testing.T) {
-	tracer, _, flush, stop, err := startTestTracer(t)
+	tr, agent, err := bootstrapInspectableTracer(t)
 	assert.Nil(t, err)
-	defer stop()
 
 	s := newBasicSpan("3MB")
 	s.meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
+	s.meta["_dd.test_id"] = "1"
 
+	tracer := tr.(*tracer)
 	// half payload size reached
 	tracer.pushChunk(&chunk{[]*Span{s}, true})
-	tracer.awaitPayload(t, 1)
+	tracer.Flush()
 
 	// payload size exceeded
+	s.meta["_dd.test_id"] = "2"
 	tracer.pushChunk(&chunk{[]*Span{s}, true})
-	flush(2)
+	tracer.Flush()
+
+	as := agent.FindSpan(tracertest.With().Tag("_dd.test_id", "1"))
+	assert.NotNil(t, as)
+
+	as = agent.FindSpan(tracertest.With().Tag("_dd.test_id", "2"))
+	assert.NotNil(t, as)
 }
 
 func TestPushTrace(t *testing.T) {
@@ -2038,16 +2042,16 @@ func TestEnvironment(t *testing.T) {
 
 func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
+		assert := assert.New(t)
 		t.Setenv(internal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
 		internal.RefreshGitMetadataTags()
 
-		tracer, _, _, stop, err := startTestTracer(t)
-		assert.Nil(t, err)
-		defer stop()
+		tracer, _, err := bootstrapInspectableTracer(t)
+		assert.NoError(err)
 
-		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
+		tracer.Flush()
 
 		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
 		assert.Equal("github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
