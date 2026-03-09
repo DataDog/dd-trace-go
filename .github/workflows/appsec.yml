@@ -195,8 +195,9 @@ jobs:
       - name: Upload Coverage
         if: always()
         continue-on-error: true
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+        uses: ./.github/actions/codecov-upload
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -276,8 +277,9 @@ jobs:
       - name: Upload Coverage
         if: always()
         continue-on-error: true
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+        uses: ./.github/actions/codecov-upload
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
@@ -430,8 +432,9 @@ jobs:
       - name: Upload Coverage
         if: always()
         continue-on-error: true
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+        uses: ./.github/actions/codecov-upload
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
