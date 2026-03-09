@@ -12,7 +12,9 @@ import (
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
@@ -26,7 +28,7 @@ type TestCase interface {
 	// skip the test entirely, for example if prerequisites of its dependencies
 	// are not satisfied by the test environment.
 	//
-	// The tracer is not yet started when Setup is executed.
+	// The tracer is not started yet when Setup is executed.
 	Setup(context.Context, *testing.T)
 
 	// Run executes the test case after starting the tracer. This should perform
@@ -49,8 +51,6 @@ func Run(t *testing.T, tc TestCase) {
 	t.Helper()
 	require.True(t, built.WithOrchestrion, "this test suite must be run with orchestrion enabled")
 
-	mockAgent := agent.New(t)
-
 	ctx := context.Background()
 	if deadline, ok := t.Deadline(); ok {
 		var cancel context.CancelFunc
@@ -58,26 +58,65 @@ func Run(t *testing.T, tc TestCase) {
 		defer cancel()
 	}
 
-	// Listen before Setup so the mock agent's port is bound before any call to
-	// net.FreePort inside Setup. Without this ordering, httptest.NewServer
-	// (called inside Start) can steal the port that FreePort just released,
-	// making the test server and mock agent share the same address.
-	mockAgent.Listen(t)
+	// Increase WAF timeout to avoid flakiness on slow CI hosts.
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+	// Neutralize API Security sampling to prevent test flakiness.
+	t.Setenv("DD_API_SECURITY_SAMPLE_DELAY", "0")
+
+	// Bootstrap the inspectable tracer and its mock agent. The agent's HTTP
+	// server starts immediately (before Setup), so its port is bound before any
+	// call to net.FreePort inside Setup — preventing TOCTOU port-binding races.
+	tr, agent, err := tracertest.Bootstrap(t,
+		tracer.WithSampler(tracer.NewAllSampler()),
+		tracer.WithLogStartup(false),
+		tracer.WithLogger(testLogger{t}),
+		tracer.WithAppSecEnabled(true),
+	)
+	require.NoError(t, err)
 
 	t.Log("Running setup")
 	tc.Setup(ctx, t)
-	mockAgent.Start(t)
 
 	t.Log("Running test")
 	tc.Run(ctx, t)
 
-	got := mockAgent.Traces(t)
-	t.Logf("Received %d traces", len(got))
-	for i, tr := range got {
-		t.Logf("[%d] Trace contains a total of %d spans:\n%v", i, tr.NumSpans(), tr)
-	}
+	tr.Stop()
 
-	for _, expected := range tc.ExpectedTraces() {
-		expected.RequireAnyMatch(t, got)
+	t.Logf("Received %d spans", agent.CountSpans())
+	requireTraceMatch(t, agent, tc.ExpectedTraces())
+}
+
+type testLogger struct {
+	*testing.T
+}
+
+func (l testLogger) Log(msg string) {
+	l.T.Log(msg)
+}
+
+func requireTraceMatch(t testing.TB, a agenttest.Agent, expected trace.Traces) {
+	t.Helper()
+	for _, exp := range expected {
+		requireSpanMatch(t, a, exp, 0)
 	}
+}
+
+func requireSpanMatch(t testing.TB, a agenttest.Agent, exp *trace.Trace, parentSpanID uint64) {
+	t.Helper()
+	m := traceToMatcher(exp)
+	if parentSpanID != 0 {
+		m = m.ParentOf(parentSpanID)
+	}
+	found := a.RequireSpan(t, m)
+	for _, child := range exp.Children {
+		requireSpanMatch(t, a, child, uint64(found.SpanID))
+	}
+}
+
+func traceToMatcher(tr *trace.Trace) *agenttest.SpanMatch {
+	m := agenttest.With()
+	for k, v := range tr.Tags {
+		m = m.Tag(k, v)
+	}
+	return m
 }
