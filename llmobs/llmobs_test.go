@@ -15,7 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
@@ -29,7 +30,6 @@ func TestStartSpan(t *testing.T) {
 
 	t.Run("llm-span-with-all-options", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, spanCtx := llmobs.StartLLMSpan(ctx, "test-llm-span",
 			llmobs.WithSessionID(sessionID),
@@ -63,13 +63,12 @@ func TestStartSpan(t *testing.T) {
 		assert.False(t, ok)
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-llm-span", spans[0].Name)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-llm-span")
+		assert.Equal(t, "test-llm-span", span0.Name)
 	})
 	t.Run("workflow-span", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, spanCtx := llmobs.StartWorkflowSpan(ctx, "test-workflow")
 		span.Finish()
@@ -88,52 +87,48 @@ func TestStartSpan(t *testing.T) {
 		assert.False(t, ok)
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-workflow", spans[0].Name)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-workflow")
+		assert.Equal(t, "test-workflow", span0.Name)
 	})
 	t.Run("agent-span", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartAgentSpan(ctx, "test-agent")
 		span.Finish()
 		assert.Equal(t, "agent", span.Kind())
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-agent", spans[0].Name)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-agent")
+		assert.Equal(t, "test-agent", span0.Name)
 	})
 	t.Run("tool-span", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartToolSpan(ctx, "test-tool")
 		span.Finish()
 		assert.Equal(t, "tool", span.Kind())
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-tool", spans[0].Name)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-tool")
+		assert.Equal(t, "test-tool", span0.Name)
 	})
 	t.Run("task-span", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartTaskSpan(ctx, "test-task")
 		span.Finish()
 		assert.Equal(t, "task", span.Kind())
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-task", spans[0].Name)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-task")
+		assert.Equal(t, "test-task", span0.Name)
 	})
 	t.Run("embedding-span", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, spanCtx := llmobs.StartEmbeddingSpan(ctx, "test-embedding")
 		span.Finish()
@@ -148,13 +143,12 @@ func TestStartSpan(t *testing.T) {
 		assert.NotNil(t, embeddingSpan)
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-embedding", spans[0].Name)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-embedding")
+		assert.Equal(t, "test-embedding", span0.Name)
 	})
 	t.Run("retrieval-span", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, spanCtx := llmobs.StartRetrievalSpan(ctx, "test-retrieval")
 		span.Finish()
@@ -169,13 +163,12 @@ func TestStartSpan(t *testing.T) {
 		assert.NotNil(t, retrievalSpan)
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-retrieval", spans[0].Name)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-retrieval")
+		assert.Equal(t, "test-retrieval", span0.Name)
 	})
 	t.Run("finish-options", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartLLMSpan(ctx, "finish-options")
 
@@ -189,16 +182,15 @@ func TestStartSpan(t *testing.T) {
 
 		// Should not do anything if called more than once
 		span.Finish()
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "finish-options", spans[0].Name)
-		assert.Equal(t, "test error", spans[0].Meta["error.message"])
-		assert.NotEmpty(t, spans[0].Meta["error.stack"])
-		assert.Equal(t, "*errors.errorString", spans[0].Meta["error.type"])
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "finish-options")
+		assert.Equal(t, "finish-options", span0.Name)
+		assert.Equal(t, "test error", span0.Meta["error.message"])
+		assert.NotEmpty(t, span0.Meta["error.stack"])
+		assert.Equal(t, "*errors.errorString", span0.Meta["error.type"])
 	})
 	t.Run("span-links", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartLLMSpan(ctx, "span-links")
 
@@ -209,10 +201,10 @@ func TestStartSpan(t *testing.T) {
 		span.AddLink(link)
 		span.Finish()
 
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "span-links", spans[0].Name)
-		assert.Len(t, spans[0].SpanLinks, 1)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "span-links")
+		assert.Equal(t, "span-links", span0.Name)
+		assert.Len(t, span0.SpanLinks, 1)
 	})
 	t.Run("tracer-not-running", func(t *testing.T) {
 		// ensure tracer is not running
@@ -247,12 +239,12 @@ func TestStartSpan(t *testing.T) {
 	})
 	t.Run("llmobs-not-enabled", func(t *testing.T) {
 		// Start tracer without LLMObs
-		tt := testtracer.Start(t, testtracer.WithTracerStartOpts(
+		_, _, err := tracertest.Bootstrap(t,
 			tracer.WithLLMObsEnabled(false),
 			tracer.WithService("test-service"),
 			tracer.WithLogStartup(false),
-		))
-		defer tt.Stop()
+		)
+		require.NoError(t, err)
 
 		// All span creation should return noop spans and not panic
 		assert.NotPanics(t, func() {
@@ -280,8 +272,7 @@ func TestStartSpan(t *testing.T) {
 		})
 	})
 	t.Run("parent-child-spans", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		// Create parent span
 		parentSpan, parentCtx := llmobs.StartWorkflowSpan(ctx, "parent-workflow")
@@ -311,7 +302,6 @@ func TestSpanAnnotations(t *testing.T) {
 
 	t.Run("llm-span-annotations", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-annotations")
 
@@ -336,19 +326,18 @@ func TestSpanAnnotations(t *testing.T) {
 		span.AnnotateLLMIO(nil, nil)
 		span.Finish()
 
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-llm-annotations", spans[0].Name)
-		assert.Contains(t, spans[0].Meta, "input")
-		assert.Contains(t, spans[0].Meta, "output")
-		assert.Contains(t, spans[0].Meta["metadata"], "temperature")
-		assert.NotEmpty(t, spans[0].Metrics)
-		assert.NotEmpty(t, spans[0].Tags)
-		assert.Equal(t, "session-123", spans[0].SessionID)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-llm-annotations")
+		assert.Equal(t, "test-llm-annotations", span0.Name)
+		assert.Contains(t, span0.Meta, "input")
+		assert.Contains(t, span0.Meta, "output")
+		assert.Contains(t, span0.Meta["metadata"], "temperature")
+		assert.NotEmpty(t, span0.Metrics)
+		assert.NotEmpty(t, span0.Tags)
+		assert.Equal(t, "session-123", span0.SessionID)
 	})
 	t.Run("llm-span-with-tool-calls", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-with-tools")
 
@@ -393,14 +382,14 @@ func TestSpanAnnotations(t *testing.T) {
 		span.AnnotateLLMIO(input, output)
 		span.Finish()
 
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-llm-with-tools", spans[0].Name)
-		assert.Contains(t, spans[0].Meta, "input")
-		assert.Contains(t, spans[0].Meta, "output")
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-llm-with-tools")
+		assert.Equal(t, "test-llm-with-tools", span0.Name)
+		assert.Contains(t, span0.Meta, "input")
+		assert.Contains(t, span0.Meta, "output")
 
 		// Verify tool calls are in the payload
-		inputMeta, ok := spans[0].Meta["input"].(map[string]any)
+		inputMeta, ok := span0.Meta["input"].(map[string]any)
 		require.True(t, ok, "input should be a map")
 		messages, ok := inputMeta["messages"].([]any)
 		require.True(t, ok, "input messages should be an array")
@@ -421,7 +410,7 @@ func TestSpanAnnotations(t *testing.T) {
 		assert.Equal(t, "function", toolCall["type"])
 
 		// Verify tool results are in the payload
-		outputMeta, ok := spans[0].Meta["output"].(map[string]any)
+		outputMeta, ok := span0.Meta["output"].(map[string]any)
 		require.True(t, ok, "output should be a map")
 		outputMessages, ok := outputMeta["messages"].([]any)
 		require.True(t, ok, "output messages should be an array")
@@ -447,7 +436,6 @@ func TestSpanAnnotations(t *testing.T) {
 	})
 	t.Run("text-io-span-annotations", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartWorkflowSpan(ctx, "test-workflow-annotations")
 
@@ -459,16 +447,15 @@ func TestSpanAnnotations(t *testing.T) {
 		span.Finish()
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-workflow-annotations", spans[0].Name)
-		assert.Equal(t, map[string]any{"value": "input text"}, spans[0].Meta["input"])
-		assert.Equal(t, map[string]any{"value": "output text"}, spans[0].Meta["output"])
-		assert.NotEmpty(t, spans[0].Tags)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-workflow-annotations")
+		assert.Equal(t, "test-workflow-annotations", span0.Name)
+		assert.Equal(t, map[string]any{"value": "input text"}, span0.Meta["input"])
+		assert.Equal(t, map[string]any{"value": "output text"}, span0.Meta["output"])
+		assert.NotEmpty(t, span0.Tags)
 	})
 	t.Run("embedding-span-annotations", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartEmbeddingSpan(ctx, "test-embedding-annotations")
 
@@ -482,15 +469,14 @@ func TestSpanAnnotations(t *testing.T) {
 		span.Finish()
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-embedding-annotations", spans[0].Name)
-		assert.Contains(t, spans[0].Meta, "input")
-		assert.Contains(t, spans[0].Meta, "output")
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-embedding-annotations")
+		assert.Equal(t, "test-embedding-annotations", span0.Name)
+		assert.Contains(t, span0.Meta, "input")
+		assert.Contains(t, span0.Meta, "output")
 	})
 	t.Run("retrieval-span-annotations", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartRetrievalSpan(ctx, "test-retrieval-annotations")
 
@@ -505,11 +491,11 @@ func TestSpanAnnotations(t *testing.T) {
 		span.Finish()
 
 		// Verify span was actually sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-retrieval-annotations", spans[0].Name)
-		assert.Contains(t, spans[0].Meta, "input")
-		assert.Contains(t, spans[0].Meta, "output")
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-retrieval-annotations")
+		assert.Equal(t, "test-retrieval-annotations", span0.Name)
+		assert.Contains(t, span0.Meta, "input")
+		assert.Contains(t, span0.Meta, "output")
 	})
 }
 
@@ -518,7 +504,6 @@ func TestEvaluationMetrics(t *testing.T) {
 
 	t.Run("evaluation-from-span", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartLLMSpan(ctx, "test-eval-span")
 		span.Finish()
@@ -537,19 +522,19 @@ func TestEvaluationMetrics(t *testing.T) {
 		)
 
 		// Verify span was sent
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "test-eval-span", spans[0].Name)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-eval-span")
+		assert.Equal(t, "test-eval-span", span0.Name)
 
 		// Verify metrics were sent (6 total: accuracy, score, valid, count, rating, quality)
-		metrics := tt.WaitForLLMObsMetrics(t, 6)
-		require.Len(t, metrics, 6)
-
-		// Check that we have the expected labels
-		labels := make([]string, len(metrics))
-		for i, metric := range metrics {
-			labels[i] = metric.Label
-		}
+		assert.Equal(t, 6, tt.MetricCount())
+		accuracy := tt.RequireMetric(t, "accuracy")
+		score := tt.RequireMetric(t, "score")
+		valid := tt.RequireMetric(t, "valid")
+		count := tt.RequireMetric(t, "count")
+		rating := tt.RequireMetric(t, "rating")
+		quality := tt.RequireMetric(t, "quality")
+		labels := []string{accuracy.Label, score.Label, valid.Label, count.Label, rating.Label, quality.Label}
 		assert.Contains(t, labels, "accuracy")
 		assert.Contains(t, labels, "score")
 		assert.Contains(t, labels, "valid")
@@ -559,7 +544,6 @@ func TestEvaluationMetrics(t *testing.T) {
 	})
 	t.Run("evaluation-from-tag", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		tag := llmobs.JoinTag{Key: "session_id", Value: "session-123"}
 
@@ -571,13 +555,13 @@ func TestEvaluationMetrics(t *testing.T) {
 			llmobs.WithEvaluationTags([]string{"source:user"}),
 		)
 
-		metrics := tt.WaitForLLMObsMetrics(t, 4)
-		require.Len(t, metrics, 4)
-
-		labels := make([]string, len(metrics))
-		for i, metric := range metrics {
-			labels[i] = metric.Label
-		}
+		tracer.Flush()
+		assert.Equal(t, 4, tt.MetricCount())
+		feedback := tt.RequireMetric(t, "feedback")
+		rating := tt.RequireMetric(t, "rating")
+		approved := tt.RequireMetric(t, "approved")
+		sentiment := tt.RequireMetric(t, "sentiment")
+		labels := []string{feedback.Label, rating.Label, approved.Label, sentiment.Label}
 		assert.Contains(t, labels, "feedback")
 		assert.Contains(t, labels, "rating")
 		assert.Contains(t, labels, "approved")
@@ -585,7 +569,6 @@ func TestEvaluationMetrics(t *testing.T) {
 	})
 	t.Run("evaluation-with-different-span-types", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		// Test that evaluation works with all span types, not just LLM spans
 		llmSpan, _ := llmobs.StartLLMSpan(ctx, "llm-eval")
@@ -617,38 +600,25 @@ func TestEvaluationMetrics(t *testing.T) {
 		})
 
 		// Verify all spans were sent (7 total)
-		spans := tt.WaitForLLMObsSpans(t, 7)
-		require.Len(t, spans, 7)
-
-		// Check that we have all expected span names
-		spanNames := make([]string, len(spans))
-		for i, span := range spans {
-			spanNames[i] = span.Name
-		}
-		assert.Contains(t, spanNames, "llm-eval")
-		assert.Contains(t, spanNames, "workflow-eval")
-		assert.Contains(t, spanNames, "agent-eval")
-		assert.Contains(t, spanNames, "tool-eval")
-		assert.Contains(t, spanNames, "task-eval")
-		assert.Contains(t, spanNames, "embedding-eval")
-		assert.Contains(t, spanNames, "retrieval-eval")
+		tracer.Flush()
+		assert.Equal(t, 7, tt.SpanCount())
+		tt.RequireSpan(t, "llm-eval")
+		tt.RequireSpan(t, "workflow-eval")
+		tt.RequireSpan(t, "agent-eval")
+		tt.RequireSpan(t, "tool-eval")
+		tt.RequireSpan(t, "task-eval")
+		tt.RequireSpan(t, "embedding-eval")
+		tt.RequireSpan(t, "retrieval-eval")
 
 		// Verify all metrics were sent (7 total)
-		metrics := tt.WaitForLLMObsMetrics(t, 7)
-		require.Len(t, metrics, 7)
-
-		// Check that we have all expected metric labels
-		labels := make([]string, len(metrics))
-		for i, metric := range metrics {
-			labels[i] = metric.Label
-		}
-		assert.Contains(t, labels, "llm_quality")
-		assert.Contains(t, labels, "workflow_score")
-		assert.Contains(t, labels, "agent_success")
-		assert.Contains(t, labels, "tool_rating")
-		assert.Contains(t, labels, "task_complete")
-		assert.Contains(t, labels, "embedding_accuracy")
-		assert.Contains(t, labels, "retrieval_relevance")
+		assert.Equal(t, 7, tt.MetricCount())
+		tt.RequireMetric(t, "llm_quality")
+		tt.RequireMetric(t, "workflow_score")
+		tt.RequireMetric(t, "agent_success")
+		tt.RequireMetric(t, "tool_rating")
+		tt.RequireMetric(t, "task_complete")
+		tt.RequireMetric(t, "embedding_accuracy")
+		tt.RequireMetric(t, "retrieval_relevance")
 	})
 	t.Run("tracer-not-running", func(t *testing.T) {
 		// ensure tracer is not running
@@ -668,12 +638,12 @@ func TestEvaluationMetrics(t *testing.T) {
 	})
 	t.Run("llmobs-not-enabled", func(t *testing.T) {
 		// Start tracer without LLMObs
-		tt := testtracer.Start(t, testtracer.WithTracerStartOpts(
+		_, _, err := tracertest.Bootstrap(t,
 			tracer.WithLLMObsEnabled(false),
 			tracer.WithService("test-service"),
 			tracer.WithLogStartup(false),
-		))
-		defer tt.Stop()
+		)
+		require.NoError(t, err)
 
 		span, _ := llmobs.StartLLMSpan(ctx, "noop-span")
 
@@ -689,19 +659,15 @@ func TestEvaluationMetrics(t *testing.T) {
 	})
 }
 
-func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
-	defaultOpts := []testtracer.Option{
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("test-app"),
-			tracer.WithLogStartup(false),
-		),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
-	}
-	allOpts := append(defaultOpts, opts...)
-	tt := testtracer.Start(t, allOpts...)
-	t.Cleanup(tt.Stop)
-	return tt
+func testTracer(t *testing.T, tracerOpts ...tracer.StartOption) *llmobstest.Collector {
+	t.Helper()
+	coll := llmobstest.New(t)
+	_, _, err := tracertest.Bootstrap(t, append([]tracer.StartOption{
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-app"),
+		tracer.WithLogStartup(false),
+		coll.TracerOption(),
+	}, tracerOpts...)...)
+	require.NoError(t, err)
+	return coll
 }

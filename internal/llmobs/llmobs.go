@@ -144,33 +144,41 @@ type LLMObs struct {
 	mu            sync.Mutex
 	running       bool
 	wg            sync.WaitGroup
-	stopCh        chan struct{} // signal stop
+	sendWg        sync.WaitGroup // tracks only async batchSend goroutines
+	stopCh        chan struct{}  // signal stop
 	flushNowCh    chan struct{}
+	flushSyncCh   chan chan struct{} // synchronous flush: send a done channel, blocks until flush completes
 	flushInterval time.Duration
 }
 
 func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
-	agentSupportsLLMObs := cfg.AgentFeatures.EVPProxyV2
-	if !agentSupportsLLMObs {
-		log.Debug("llmobs: agent not available or does not support llmobs")
-	}
-	if cfg.AgentlessEnabled != nil {
-		if !*cfg.AgentlessEnabled && !agentSupportsLLMObs {
-			return nil, errAgentModeNotSupported
-		}
-		cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
+	if cfg.TestBaseURL != "" {
+		// TestBaseURL overrides all transport URL construction and bypasses
+		// agent-mode/agentless-mode detection. Used in tests only.
+		cfg.ResolvedAgentlessEnabled = false
 	} else {
-		// if agentlessEnabled is not set and evp_proxy is supported in the agent, default to use the agent
-		cfg.ResolvedAgentlessEnabled = !agentSupportsLLMObs
-		if cfg.ResolvedAgentlessEnabled {
-			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agentless mode")
-		} else {
-			log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agent mode")
+		agentSupportsLLMObs := cfg.AgentFeatures.EVPProxyV2
+		if !agentSupportsLLMObs {
+			log.Debug("llmobs: agent not available or does not support llmobs")
 		}
-	}
+		if cfg.AgentlessEnabled != nil {
+			if !*cfg.AgentlessEnabled && !agentSupportsLLMObs {
+				return nil, errAgentModeNotSupported
+			}
+			cfg.ResolvedAgentlessEnabled = *cfg.AgentlessEnabled
+		} else {
+			// if agentlessEnabled is not set and evp_proxy is supported in the agent, default to use the agent
+			cfg.ResolvedAgentlessEnabled = !agentSupportsLLMObs
+			if cfg.ResolvedAgentlessEnabled {
+				log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agentless mode")
+			} else {
+				log.Debug("llmobs: DD_LLMOBS_AGENTLESS_ENABLED not set, defaulting to agent mode")
+			}
+		}
 
-	if cfg.ResolvedAgentlessEnabled && !isAPIKeyValid(cfg.TracerConfig.APIKey) {
-		return nil, errAgentlessRequiresAPIKey
+		if cfg.ResolvedAgentlessEnabled && !isAPIKeyValid(cfg.TracerConfig.APIKey) {
+			return nil, errAgentlessRequiresAPIKey
+		}
 	}
 	if cfg.MLApp == "" {
 		return nil, errMLAppRequired
@@ -186,6 +194,7 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 		evalMetricsCh: make(chan *transport.LLMObsMetric),
 		stopCh:        make(chan struct{}),
 		flushNowCh:    make(chan struct{}, 1),
+		flushSyncCh:   make(chan chan struct{}),
 		flushInterval: defaultFlushInterval,
 	}, nil
 }
@@ -242,6 +251,13 @@ func Flush() {
 	}
 }
 
+// FlushSync flushes all buffered LLMObs data and blocks until the send completes.
+func FlushSync() {
+	if activeLLMObs != nil {
+		activeLLMObs.FlushSync()
+	}
+}
+
 // Run starts the worker loop that processes span events and metrics.
 func (l *LLMObs) Run() {
 	l.mu.Lock()
@@ -268,16 +284,29 @@ func (l *LLMObs) Run() {
 
 			case <-ticker.C:
 				params := l.clearBuffersNonLocked()
+				l.sendWg.Add(1)
 				l.wg.Go(func() {
+					defer l.sendWg.Done()
 					l.batchSend(params)
 				})
 
 			case <-l.flushNowCh:
 				log.Debug("llmobs: on-demand flush signal")
 				params := l.clearBuffersNonLocked()
+				l.sendWg.Add(1)
 				l.wg.Go(func() {
+					defer l.sendWg.Done()
 					l.batchSend(params)
 				})
+
+			case done := <-l.flushSyncCh:
+				log.Debug("llmobs: synchronous flush signal")
+				// Wait for any in-flight async sends to complete so their
+				// data is visible to callers when FlushSync returns.
+				l.sendWg.Wait()
+				params := l.clearBuffersNonLocked()
+				l.batchSend(params)
+				close(done)
 
 			case <-l.stopCh:
 				log.Debug("llmobs: stop signal")
@@ -310,6 +339,13 @@ func (l *LLMObs) Flush() {
 	case l.flushNowCh <- struct{}{}:
 	default:
 	}
+}
+
+// FlushSync flushes all currently buffered data and blocks until the HTTP send completes.
+func (l *LLMObs) FlushSync() {
+	done := make(chan struct{})
+	l.flushSyncCh <- done
+	<-done
 }
 
 // Stop requests shutdown, drains what’s already in the channels, flushes, and waits.

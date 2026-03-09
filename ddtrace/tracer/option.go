@@ -1417,6 +1417,16 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 	}
 }
 
+// withLLMObsTestBaseURL configures LLM Observability to send all data to the
+// given base URL, bypassing agent-mode/agentless-mode detection and URL
+// construction. For use in tests only (via ddtrace/x/llmobstest).
+// Linked with go:linkname from ddtrace/x/llmobstest.
+func withLLMObsTestBaseURL(url string) StartOption {
+	return func(c *config) {
+		c.llmobs.TestBaseURL = url
+	}
+}
+
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	mu         locking.RWMutex

@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 )
 
 func TestIntentCapture(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
@@ -82,10 +82,8 @@ func TestIntentCapture(t *testing.T) {
 	assert.NotContains(t, receivedArgs, "telemetry")
 
 	// Verify intent was recorded on the LLMObs span
-	spans := tt.WaitForLLMObsSpans(t, 1)
-	require.Len(t, spans, 1)
-
-	toolSpan := spans[0]
+	tracer.Flush()
+	toolSpan := tt.RequireSpan(t, "calculator")
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 	assert.Equal(t, "calculator", toolSpan.Name)
 	assert.Contains(t, toolSpan.Meta, "intent")
@@ -93,8 +91,7 @@ func TestIntentCapture(t *testing.T) {
 }
 
 func TestIntentCaptureConcurrentListTools(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
