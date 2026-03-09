@@ -9,6 +9,7 @@ package valkey
 import (
 	"context"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -82,7 +83,9 @@ func (c *client) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResu
 }
 
 func (c *client) DoMulti(ctx context.Context, multi ...valkey.Completed) []valkey.ValkeyResult {
-	span, ctx := c.startSpan(ctx, processCommandMulti(multi))
+	info := buildPipelineInfo(countCommandNames(multi))
+	span, ctx := c.startSpan(ctx, command{statement: info.resource})
+	setValkeyPipelineTags(span, info)
 	resp := c.client.DoMulti(ctx, multi...)
 	c.finishSpan(span, c.firstError(resp))
 	return resp
@@ -104,7 +107,9 @@ func (c *client) DoCache(ctx context.Context, cmd valkey.Cacheable, ttl time.Dur
 }
 
 func (c *client) DoMultiCache(ctx context.Context, multi ...valkey.CacheableTTL) []valkey.ValkeyResult {
-	span, ctx := c.startSpan(ctx, processCommandMultiCache(multi))
+	info := buildPipelineInfo(countCacheableCommandNames(multi))
+	span, ctx := c.startSpan(ctx, command{statement: info.resource})
+	setValkeyPipelineTags(span, info)
 	resp := c.client.DoMultiCache(ctx, multi...)
 	c.finishSpan(span, c.firstError(resp))
 	return resp
@@ -118,7 +123,9 @@ func (c *client) DoStream(ctx context.Context, cmd valkey.Completed) (resp valke
 }
 
 func (c *client) DoMultiStream(ctx context.Context, multi ...valkey.Completed) valkey.MultiValkeyResultStream {
-	span, ctx := c.startSpan(ctx, processCommandMulti(multi))
+	info := buildPipelineInfo(countCommandNames(multi))
+	span, ctx := c.startSpan(ctx, command{statement: info.resource})
+	setValkeyPipelineTags(span, info)
 	resp := c.client.DoMultiStream(ctx, multi...)
 	c.finishSpan(span, resp.Error())
 	return resp
@@ -183,7 +190,9 @@ func (c *dedicatedClient) Do(ctx context.Context, cmd valkey.Completed) valkey.V
 }
 
 func (c *dedicatedClient) DoMulti(ctx context.Context, multi ...valkey.Completed) []valkey.ValkeyResult {
-	span, ctx := c.startSpan(ctx, processCommandMulti(multi))
+	info := buildPipelineInfo(countCommandNames(multi))
+	span, ctx := c.startSpan(ctx, command{statement: info.resource})
+	setValkeyPipelineTags(span, info)
 	resp := c.dedicatedClient.DoMulti(ctx, multi...)
 	c.finishSpan(span, c.firstError(resp))
 	return resp
@@ -217,7 +226,7 @@ func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, cont
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
 		tracer.Tag(ext.TargetDB, c.dbIndex),
 	}
-	if c.cfg.rawCommand {
+	if c.cfg.rawCommand && cmd.raw != "" {
 		opts = append(opts, tracer.Tag(ext.ValkeyRawCommand, cmd.raw))
 	}
 	if c.host != "" {
@@ -266,41 +275,64 @@ func processCommand(cmd commander) command {
 	}
 }
 
-func processCommandMulti(multi []valkey.Completed) command {
-	var cmds []command
-	for _, cmd := range multi {
-		cmds = append(cmds, processCommand(&cmd))
-	}
-	return multiCommand(cmds)
+type pipelineInfo struct {
+	resource string // deduplicated command names sorted alphabetically (e.g. "DEL GET SET")
+	commands string // command count breakdown (e.g. "DEL:1 GET:2 SET:3")
+	length   int    // total number of commands
 }
 
-func processCommandMultiCache(multi []valkey.CacheableTTL) command {
-	var cmds []command
-	for _, cmd := range multi {
-		cmds = append(cmds, processCommand(&cmd.Cmd))
+func buildPipelineInfo(counts map[string]int) pipelineInfo {
+	names := make([]string, 0, len(counts))
+	total := 0
+	for name, count := range counts {
+		names = append(names, name)
+		total += count
 	}
-	return multiCommand(cmds)
+	sort.Strings(names)
+	resource := strings.Builder{}
+	commands := strings.Builder{}
+	for i, name := range names {
+		if i > 0 {
+			resource.WriteString(" ")
+			commands.WriteString(" ")
+		}
+		resource.WriteString(name)
+		commands.WriteString(name)
+		commands.WriteString(":")
+		commands.WriteString(strconv.Itoa(counts[name]))
+	}
+	return pipelineInfo{
+		resource: resource.String(),
+		commands: commands.String(),
+		length:   total,
+	}
 }
 
-func multiCommand(cmds []command) command {
-	// limit to the 5 first
-	if len(cmds) > 5 {
-		cmds = cmds[:5]
-	}
-	statement := strings.Builder{}
-	raw := strings.Builder{}
-	for i, cmd := range cmds {
-		statement.WriteString(cmd.statement)
-		raw.WriteString(cmd.raw)
-		if i != len(cmds)-1 {
-			statement.WriteString(" ")
-			raw.WriteString(" ")
+func setValkeyPipelineTags(span *tracer.Span, info pipelineInfo) {
+	span.SetTag(ext.ValkeyPipelineLength, info.length)
+	span.SetTag(ext.ValkeyPipelineCommandCounts, info.commands)
+}
+
+func countCommandNames(multi []valkey.Completed) map[string]int {
+	counts := make(map[string]int, len(multi))
+	for _, cmd := range multi {
+		cmds := cmd.Commands()
+		if len(cmds) > 0 {
+			counts[cmds[0]]++
 		}
 	}
-	return command{
-		statement: statement.String(),
-		raw:       raw.String(),
+	return counts
+}
+
+func countCacheableCommandNames(multi []valkey.CacheableTTL) map[string]int {
+	counts := make(map[string]int, len(multi))
+	for _, cmd := range multi {
+		cmds := cmd.Cmd.Commands()
+		if len(cmds) > 0 {
+			counts[cmds[0]]++
+		}
 	}
+	return counts
 }
 
 func setClientCacheTags(s *tracer.Span, result valkey.ValkeyResult) {

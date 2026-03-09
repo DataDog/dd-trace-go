@@ -71,6 +71,12 @@ const (
 
 	// RedisClientCachePXAT is the remaining PXAT in seconds of client side cache.
 	RedisClientCachePXAT = "db.redis.client.cache.pxat"
+
+	// RedisPipelineLength is the total number of commands in a pipeline.
+	RedisPipelineLength = "redis.pipeline.length"
+
+	// RedisPipelineCommandCounts is a summary of command types and their counts in a pipeline (e.g. "GET:2 SET:3").
+	RedisPipelineCommandCounts = "redis.pipeline.command_counts"
 )
 
 // Valkey tags.
@@ -89,6 +95,12 @@ const (
 
 	// ValkeyClientCachePXAT is the remaining PXAT in seconds of client side cache.
 	ValkeyClientCachePXAT = "db.valkey.client.cache.pxat"
+
+	// ValkeyPipelineLength is the total number of commands in a pipeline.
+	ValkeyPipelineLength = "valkey.pipeline.length"
+
+	// ValkeyPipelineCommandCounts is a summary of command types and their counts in a pipeline (e.g. "GET:2 SET:3").
+	ValkeyPipelineCommandCounts = "valkey.pipeline.command_counts"
 )
 
 // Cassandra tags.
