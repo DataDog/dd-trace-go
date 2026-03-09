@@ -51,7 +51,7 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 }
 ```
 
-If background work is running when `Close()` is called, cancel it via context or stop
+If background work is running when the resource is released -- such as db.Close() -- cancel it via context or stop
 channel so `Close()` does not block.
 
 ## Option pattern
