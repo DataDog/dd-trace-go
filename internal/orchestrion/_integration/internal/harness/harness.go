@@ -128,6 +128,31 @@ func requireSpanMatch(t testing.TB, a agenttest.Agent, exp *trace.Trace, parentS
 func traceToMatcher(tr *trace.Trace) *agenttest.SpanMatch {
 	m := agenttest.With()
 	for k, v := range tr.Tags {
+		switch k {
+		case "name":
+			if s, ok := v.(string); ok {
+				m = m.Operation(s)
+			}
+		case "service":
+			if s, ok := v.(string); ok {
+				m = m.Service(s)
+			}
+		case "resource":
+			if s, ok := v.(string); ok {
+				m = m.Resource(s)
+			}
+		case "type":
+			if s, ok := v.(string); ok {
+				m = m.Type(s)
+			}
+		default:
+			m = m.Tag(k, v)
+		}
+	}
+	for k, v := range tr.Meta {
+		m = m.Tag(k, v)
+	}
+	for k, v := range tr.Metrics {
 		m = m.Tag(k, v)
 	}
 	return m
