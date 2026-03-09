@@ -62,16 +62,31 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 			},
 			Children: trace.Traces{
 				{
+					// fasthttp server span (intermediate — fiber uses fasthttp internally)
 					Tags: map[string]any{
 						"name":     "http.request",
 						"resource": "GET /ping",
-						"service":  "fiber",
+						"service":  "fasthttp",
 						"type":     "web",
 					},
 					Meta: map[string]string{
-						"http.url":  "/ping", // This is implemented incorrectly in the fiber.v2 dd-trace-go integration.
-						"component": "gofiber/fiber.v2",
+						"component": "valyala/fasthttp",
 						"span.kind": "server",
+					},
+					Children: trace.Traces{
+						{
+							Tags: map[string]any{
+								"name":     "http.request",
+								"resource": "GET /ping",
+								"service":  "fiber",
+								"type":     "web",
+							},
+							Meta: map[string]string{
+								"http.url":  "/ping", // This is implemented incorrectly in the fiber.v2 dd-trace-go integration.
+								"component": "gofiber/fiber.v2",
+								"span.kind": "server",
+							},
+						},
 					},
 				},
 			},
