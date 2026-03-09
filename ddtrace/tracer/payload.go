@@ -49,6 +49,11 @@ type payload interface {
 
 // newPayload returns a ready to use payload.
 func newPayload(protocol float64) payload {
+	if protocol == traceProtocolOTLP {
+		return &safePayload{
+			p: newPayloadOTLP(),
+		}
+	}
 	if protocol == traceProtocolV1 {
 		return &safePayload{
 			p: newPayloadV1(),
