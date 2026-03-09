@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
 // Package agenttest provides a mock APM agent for inspecting traces in tests.
 //
 // The agent collects spans sent via its in-process HTTP transport and exposes

@@ -1,3 +1,8 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
 // Package tracertest provides functions to start an inspectable tracer backed
 // by an in-process mock agent. It is intended for integration-style tests where
 // you want to verify actual spans produced by instrumented code without relying
