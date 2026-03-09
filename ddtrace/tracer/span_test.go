@@ -152,12 +152,9 @@ func TestSpanFinish(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		wait := time.Millisecond * 2
-		// Use dummyTransport + nop HTTP client to avoid network I/O inside the synctest bubble.
-		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
-		tracer, err := newTracer(withTransport(newDummyTransport()), withNoopStats(), withNoopInfoHTTPClient())
-		defer tracer.Stop()
+		tracer, _, err := bootstrapInspectableTracer(t)
 		assert.NoError(err)
-		span := tracer.newRootSpan("pylons.request", "pylons", "/")
+		span := newRootSpan(tracer, "pylons.request", "pylons", "/")
 
 		// the finish should set finished and the duration
 		time.Sleep(wait) // instant: fake clock advances 2ms
@@ -172,25 +169,20 @@ func TestSpanFinishTwice(t *testing.T) {
 		assert := assert.New(t)
 		wait := time.Millisecond * 2
 
-		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
-		// withNoopStats prevents the statsd client from doing DNS resolution inside the bubble.
-		tracer, _, _, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
-		assert.Nil(err)
-		defer stop()
-
-		assert.Equal(tracer.traceWriter.(*agentTraceWriter).payload.stats().itemCount, 0)
+		tracer, agent, err := bootstrapInspectableTracer(t)
+		assert.NoError(err)
 
 		// the finish must be idempotent
-		span := tracer.newRootSpan("pylons.request", "pylons", "/")
+		span := newRootSpan(tracer, "pylons.request", "pylons", "/")
 		time.Sleep(wait) // instant: fake clock advances 2ms
 		span.Finish()
-		tracer.awaitPayload(t, 1)
+		tracer.Flush()
 
 		// check that the span does not have any span links serialized
 		// spans don't have span links by default and they are serialized in the meta map
 		// as part of the Finish call
 		_, spanLinksStr := getMeta(span, "_dd.span_links")
-		assert.Zero(spanLinksStr)
+		assert.False(spanLinksStr)
 
 		// manipulate the span
 		span.AddLink(SpanLink{
@@ -204,12 +196,12 @@ func TestSpanFinishTwice(t *testing.T) {
 		previousDuration := span.duration
 		time.Sleep(wait) // instant: fake clock advances 2ms
 		span.Finish()
+		tracer.Flush()
 
 		assert.Equal(previousDuration, span.duration)
 		_, spanLinksStr = getMeta(span, "_dd.span_links")
-		assert.Zero(spanLinksStr)
-
-		tracer.awaitPayload(t, 1) // this checks that no other span was seen by the tracerWriter
+		assert.False(spanLinksStr)
+		assert.Equal(1, agent.CountSpans())
 	})
 }
 

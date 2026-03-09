@@ -108,22 +108,6 @@ func TestMain(m *testing.M) {
 	}
 }
 
-func (t *tracer) awaitPayload(tst *testing.T, n int) {
-	timeout := time.After(time.Second * timeMultiplicator)
-loop:
-	for {
-		select {
-		case <-timeout:
-			tst.Fatalf("timed out waiting for payload to contain %d", n)
-		default:
-			if t.traceWriter.(*agentTraceWriter).payload.stats().itemCount == n {
-				break loop
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-}
-
 // noopRoundTripper is an http.RoundTripper that immediately returns 404 for all
 // requests without performing any network I/O. Used inside synctest bubbles to
 // prevent DNS resolution and TCP connects from violating the bubble boundary.
@@ -143,7 +127,6 @@ func (noopRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 func withNoopInfoHTTPClient() StartOption {
 	return WithHTTPClient(&http.Client{Transport: noopRoundTripper{}})
 }
-
 
 // setLogWriter sets the io.Writer that any new logTraceWriter will write to and returns a function
 // which will return the io.Writer to its original value.
