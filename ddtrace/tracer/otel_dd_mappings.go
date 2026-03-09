@@ -67,6 +67,12 @@ var otelDDConfigs = map[string]*otelDDEnv{
 		remapper: mapDDTags,
 		handsOff: false,
 	},
+	"traceProtocol": {
+		dd:       "DD_TRACE_AGENT_PROTOCOL_VERSION",
+		ot:       "OTEL_TRACES_EXPORTER",
+		remapper: mapTraceProtocol,
+		handsOff: false,
+	},
 }
 
 var ddTagsMapping = map[string]string{
@@ -191,7 +197,18 @@ func mapEnabled(ot string) (string, error) {
 	if strings.TrimSpace(strings.ToLower(ot)) == "none" {
 		return "false", nil
 	}
-	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
+	return "true", nil
+}
+
+func mapTraceProtocol(ot string) (string, error) {
+	switch strings.TrimSpace(strings.ToLower(ot)) {
+	case "none":
+		return "", nil // not relevant to protocol
+	case "otlp":
+		return "2.0", nil
+	default:
+		return "", fmt.Errorf("the following configuration is not supported: OTEL_TRACES_EXPORTER=%v", ot)
+	}
 }
 
 // mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE

@@ -458,7 +458,7 @@ func minInts(a, b int) int {
 	return b
 }
 
-func TestTraceProtocol(t *testing.T) {
+func TestAgentTraceWriterProtocol(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("v1.0, no endpoint", func(t *testing.T) {
@@ -515,6 +515,34 @@ func TestTraceProtocol(t *testing.T) {
 		cfg, err := newTestConfig(
 			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
 		)
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV1, h.payload.protocol())
+	})
+
+	t.Run("otlp", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolOTLP, h.payload.protocol())
+	})
+
+	t.Run("DD overrides OTEL", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
+
+		// Create a mock agent endpoint to mimic having a v1 trace endpoint
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
+		}))
+		defer srv.Close()
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		)
+
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV1, h.payload.protocol())

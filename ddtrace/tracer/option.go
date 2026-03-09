@@ -467,7 +467,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
-	if c.agent.v1ProtocolAvailable {
+
+	if getDDorOtelConfig("traceProtocol") == "2.0" {
+		c.traceProtocol = traceProtocolOTLP
+	} else if c.agent.v1ProtocolAvailable {
 		c.traceProtocol = traceProtocolV1
 		if t, ok := c.transport.(*httpTransport); ok {
 			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
