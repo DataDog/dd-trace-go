@@ -15,6 +15,8 @@ import (
 	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
+	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
@@ -122,8 +124,10 @@ func bootstrapInspectableTracer(tb testing.TB, opts ...StartOption) (Tracer, age
 		return nil, nil, err
 	}
 	setGlobalTracer(tracer)
+	globalinternal.SetTracerInitialized(true)
 	tb.Cleanup(func() {
 		setGlobalTracer(&NoopTracer{})
+		globalinternal.SetTracerInitialized(false)
 	})
 	return tracer, agent, nil
 }
@@ -141,12 +145,6 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 	// cannot be used because orchestrion forcibly replaces it with a default
 	// client to avoid self-tracing.
 	tracer.config.transport.(*httpTransport).client = &http.Client{Transport: agent.Transport()}
-	if tracer.config.llmobs.Enabled {
-		if err := llmobs.Start(tracer.config.llmobs, &llmobsTracerAdapter{}); err != nil {
-			return nil, fmt.Errorf("failed to start llmobs: %w", err)
-		}
-		tb.Cleanup(llmobs.Stop)
-	}
 	tracer.flushHandler = func(done chan<- struct{}) {
 		// This is a stronger flush logic, as it drains `tracer.out` before flushing.
 		// The default weaker flush doesn't allow to be used in tests without
@@ -171,6 +169,17 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 		// timeout-based WaitForSpans polling in tests.
 		llmobs.FlushSync()
 		done <- struct{}{}
+	}
+	// The following lines are related to services that need to be started for
+	// the tests to work. This is kind of hack because we can't call `tracer.Start`.
+	// We should refactor the initialization of these services as `startServices` at
+	// some point.
+	appsec.Start(tracer.config.appsecStartOptions...)
+	if tracer.config.llmobs.Enabled {
+		if err := llmobs.Start(tracer.config.llmobs, &llmobsTracerAdapter{}); err != nil {
+			return nil, fmt.Errorf("failed to start llmobs: %w", err)
+		}
+		tb.Cleanup(llmobs.Stop)
 	}
 	tb.Cleanup(tracer.Stop)
 	return tracer, nil
