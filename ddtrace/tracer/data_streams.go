@@ -86,12 +86,7 @@ func TrackKafkaHighWatermarkOffset(cluster string, topic string, partition int32
 // "processed", "delivered"). A maximum of 254 unique checkpoint names are supported
 // per processor lifetime; additional names beyond this limit are silently dropped.
 func TrackDataStreamsTransaction(ctx context.Context, transactionID, checkpointName string) {
-	tagActiveSpan(ctx, transactionID, checkpointName)
-	if t, ok := getGlobalTracer().(dataStreamsContainer); ok {
-		if p := t.GetDataStreamsProcessor(); p != nil {
-			p.TrackTransaction(transactionID, checkpointName)
-		}
-	}
+	TrackDataStreamsTransactionAt(ctx, transactionID, checkpointName, time.Now())
 }
 
 // TrackDataStreamsTransactionAt is like TrackDataStreamsTransaction but records the
