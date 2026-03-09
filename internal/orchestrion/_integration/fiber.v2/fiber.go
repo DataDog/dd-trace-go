@@ -7,7 +7,6 @@ package fiber
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -28,9 +27,10 @@ type TestCase struct {
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.App = fiber.New(fiber.Config{DisableStartupMessage: true})
 	tc.App.Get("/ping", func(c *fiber.Ctx) error { return c.JSON(map[string]any{"message": "pong"}) })
-	tc.addr = fmt.Sprintf("127.0.0.1:%d", net.FreePort(t))
+	ln := net.FreeListener(t)
+	tc.addr = ln.Addr().String()
 
-	go func() { assert.NoError(t, tc.App.Listen(tc.addr)) }()
+	go func() { assert.NoError(t, tc.App.Listener(ln)) }()
 	t.Cleanup(func() {
 		assert.NoError(t, tc.App.ShutdownWithTimeout(10*time.Second))
 	})
