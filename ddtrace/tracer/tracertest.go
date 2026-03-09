@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
+// +checklocksignore
 func toAgentSpan(span *Span) *agenttest.Span {
 	as := &agenttest.Span{
 		SpanID:    span.spanID,
@@ -50,55 +51,60 @@ func toAgentSpan(span *Span) *agenttest.Span {
 	return as
 }
 
+func handleV04Traces(r io.Reader) []*agenttest.Span {
+	var spans []*agenttest.Span
+	reader := msgp.NewReader(r)
+	numTraces, err := reader.ReadArrayHeader()
+	if err != nil {
+		return spans
+	}
+	for range numTraces {
+		numSpans, err := reader.ReadArrayHeader()
+		if err != nil {
+			return spans
+		}
+		for range numSpans {
+			s := &Span{}
+			if err := s.DecodeMsg(reader); err != nil {
+				return spans
+			}
+			spans = append(spans, toAgentSpan(s))
+		}
+	}
+	return spans
+}
+
+// +checklocksignore
+func handleV1Traces(r io.Reader) []*agenttest.Span {
+	var spans []*agenttest.Span
+	body, err := io.ReadAll(r)
+	if err != nil {
+		return spans
+	}
+	p := &payloadV1{buf: body}
+	if _, err := p.decodeBuffer(); err != nil {
+		return spans
+	}
+	for _, chunk := range p.chunks {
+		var tid uint64
+		if len(chunk.traceID) >= 16 {
+			tid = binary.BigEndian.Uint64(chunk.traceID[8:])
+		} else if len(chunk.traceID) >= 8 {
+			tid = binary.BigEndian.Uint64(chunk.traceID)
+		}
+		for _, s := range chunk.spans {
+			s.traceID = tid
+			spans = append(spans, toAgentSpan(s))
+		}
+	}
+	return spans
+}
+
 func startAgentTest(tb testing.TB) (agenttest.Agent, error) {
 	tb.Helper()
 	agent := agenttest.New()
-	agent.HandleTraces("/v0.4/traces", func(r io.Reader) []*agenttest.Span {
-		var spans []*agenttest.Span
-		reader := msgp.NewReader(r)
-		numTraces, err := reader.ReadArrayHeader()
-		if err != nil {
-			return spans
-		}
-		for range numTraces {
-			numSpans, err := reader.ReadArrayHeader()
-			if err != nil {
-				return spans
-			}
-			for range numSpans {
-				s := &Span{}
-				if err := s.DecodeMsg(reader); err != nil {
-					return spans
-				}
-				spans = append(spans, toAgentSpan(s))
-			}
-		}
-		return spans
-	})
-	agent.HandleTraces("/v1.0/traces", func(r io.Reader) []*agenttest.Span {
-		var spans []*agenttest.Span
-		body, err := io.ReadAll(r)
-		if err != nil {
-			return spans
-		}
-		p := &payloadV1{buf: body}
-		if _, err := p.decodeBuffer(); err != nil {
-			return spans
-		}
-		for _, chunk := range p.chunks {
-			var tid uint64
-			if len(chunk.traceID) >= 16 {
-				tid = binary.BigEndian.Uint64(chunk.traceID[8:])
-			} else if len(chunk.traceID) >= 8 {
-				tid = binary.BigEndian.Uint64(chunk.traceID)
-			}
-			for _, s := range chunk.spans {
-				s.traceID = tid
-				spans = append(spans, toAgentSpan(s))
-			}
-		}
-		return spans
-	})
+	agent.HandleTraces("/v0.4/traces", handleV04Traces)
+	agent.HandleTraces("/v1.0/traces", handleV1Traces)
 	if err := agent.Start(tb); err != nil {
 		return nil, err
 	}
