@@ -21,9 +21,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
 
 func init() {
@@ -722,10 +723,11 @@ func TestServiceName(t *testing.T) {
 // TestTracerStartedMultipleTimes tests a v2 regression where the global service name was being set to an empty string
 // when the tracer is started more than once.
 func TestTracerStartedMultipleTimes(t *testing.T) {
-	tt1 := testtracer.Start(t)
-	defer tt1.Stop()
-	tt2 := testtracer.Start(t, testtracer.WithTracerStartOpts(tracer.WithService("global_service")))
-	defer tt2.Stop()
+	assert := assert.New(t)
+	_, _, err := tracertest.Bootstrap(t)
+	require.NoError(t, err)
+	tr, agent, err := tracertest.Bootstrap(t, tracer.WithService("global_service"))
+	require.NoError(t, err)
 
 	router := gin.New()
 	router.Use(Middleware(""))
@@ -738,10 +740,10 @@ func TestTracerStartedMultipleTimes(t *testing.T) {
 	router.ServeHTTP(w, r)
 	response := w.Result()
 	defer response.Body.Close()
-	assert.Equal(t, response.StatusCode, 200)
+	assert.Equal(response.StatusCode, 200)
 
-	spans := tt2.WaitForSpans(t, 1)
-	span := spans[0]
-
-	assert.Equal(t, "global_service", span.Service)
+	tr.Flush()
+	assert.Equal(1, agent.CountSpans())
+	span := agent.RequireSpan(t, agenttest.With().Service("global_service"))
+	assert.NotNil(span)
 }

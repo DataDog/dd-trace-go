@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
@@ -35,37 +36,38 @@ func TestWithHeaderTags(t *testing.T) {
 	}
 
 	t.Run("default-off", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-
-		headerTags := instrumentation.NewHeaderTags([]string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"})
-		setupReq()
-		spans := mt.FinishedSpans()
 		assert := assert.New(t)
-		assert.Equal(len(spans), 1)
-		s := spans[0]
+		tracer, agent, err := tracertest.Bootstrap(t)
+		require.NoError(t, err)
 
-		headerTags.Iter(func(_ string, tag string) {
-			assert.NotContains(s.Tags(), tag)
+		htArgs := []string{"h!e@a-d.e*r", "2header", "3header", "x-datadog-header"}
+		headerTags := instrumentation.NewHeaderTags(htArgs)
+		setupReq()
+		tracer.Flush()
+
+		assert.Equal(1, agent.CountSpans())
+		s := agent.RequireSpan(t)
+		headerTags.Iter(func(header string, tag string) {
+			assert.NotContains(s.Tags, tag)
 		})
 	})
 	t.Run("integration", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		assert := assert.New(t)
+		tr, agent, err := tracertest.Bootstrap(t)
+		require.NoError(t, err)
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
 		headerTags := instrumentation.NewHeaderTags(htArgs)
 
 		r := setupReq(WithHeaderTags(htArgs))
-		spans := mt.FinishedSpans()
-		assert := assert.New(t)
-		assert.Equal(len(spans), 1)
-		s := spans[0]
+		tr.Flush()
 
+		assert.Equal(1, agent.CountSpans())
+		s := agent.RequireSpan(t)
 		headerTags.Iter(func(header string, tag string) {
-			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags[tag])
 		})
-		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+		assert.NotContains(s.Tags, "http.headers.x-datadog-header")
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -73,19 +75,19 @@ func TestWithHeaderTags(t *testing.T) {
 		testutils.SetGlobalHeaderTags(t, htArgs...)
 		headerTags := instrumentation.NewHeaderTags(htArgs)
 
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		assert := assert.New(t)
+		tr, agent, err := tracertest.Bootstrap(t)
+		require.NoError(t, err)
 
 		r := setupReq()
-		spans := mt.FinishedSpans()
-		assert := assert.New(t)
-		require.Len(t, spans, 1)
-		s := spans[0]
+		tr.Flush()
 
+		assert.Equal(1, agent.CountSpans())
+		s := agent.RequireSpan(t)
 		headerTags.Iter(func(header string, tag string) {
-			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags[tag])
 		})
-		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+		assert.NotContains(s.Tags, "http.headers.x-datadog-header")
 	})
 
 	t.Run("override", func(t *testing.T) {
@@ -93,30 +95,32 @@ func TestWithHeaderTags(t *testing.T) {
 		testutils.SetGlobalHeaderTags(t, htArgsGlobal...)
 		headerTagsGlobal := instrumentation.NewHeaderTags(htArgsGlobal)
 
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		assert := assert.New(t)
+		tr, agent, err := tracertest.Bootstrap(t)
+		require.NoError(t, err)
 
 		htArgs := []string{"h!e@a-d.e*r", "2header:tag"}
 		headerTags := instrumentation.NewHeaderTags(htArgs)
 
 		r := setupReq(WithHeaderTags(htArgs))
-		spans := mt.FinishedSpans()
-		assert := assert.New(t)
-		require.Len(t, spans, 1)
-		s := spans[0]
+		tr.Flush()
 
+		require.Equal(t, 1, agent.CountSpans())
+		s := agent.RequireSpan(t)
 		headerTags.Iter(func(header string, tag string) {
-			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags[tag])
 		})
-		assert.NotContains(s.Tags(), "http.headers.x-datadog-header")
+		assert.NotContains(s.Tags, "http.headers.x-datadog-header")
 		headerTagsGlobal.Iter(func(_ string, tag string) {
-			assert.NotContains(s.Tags(), tag)
+			assert.NotContains(s.Tags, tag)
 		})
 	})
 
 	t.Run("wrap-handler", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
+		assert := assert.New(t)
+		tr, agent, err := tracertest.Bootstrap(t)
+		require.NoError(t, err)
+
 		htArgs := []string{"h!e@a-d.e*r", "2header", "3header"}
 		headerTags := instrumentation.NewHeaderTags(htArgs)
 
@@ -132,19 +136,15 @@ func TestWithHeaderTags(t *testing.T) {
 		r.Header.Set("3header", "3val")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
+		tr.Flush()
 
-		assert := assert.New(t)
 		assert.Equal(200, w.Code)
 		assert.Equal("OK\n", w.Body.String())
-
-		spans := mt.FinishedSpans()
-		assert.Equal(1, len(spans))
-
-		s := spans[0]
-		assert.Equal("http.request", s.OperationName())
-
+		assert.Equal(1, agent.CountSpans())
+		s := agent.RequireSpan(t)
+		assert.Equal("http.request", s.Operation)
 		headerTags.Iter(func(header string, tag string) {
-			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags()[tag])
+			assert.Equal(strings.Join(r.Header.Values(header), ","), s.Tags[tag])
 		})
 	})
 }
