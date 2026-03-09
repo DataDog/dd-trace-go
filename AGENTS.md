@@ -15,12 +15,6 @@ make test/contrib   # contrib integration tests only (requires Docker)
 make tools-install  # install all dev tools
 ```
 
-**Per-package tests** — use these during contrib development for faster feedback:
-
-```shell
-cd contrib/<vendor>/<library> && go test ./...
-```
-
 **New modules** — after adding a new `go.mod`, add the module to `go.work` and run
 `make fix-modules` to update `go.work.sum`.
 
@@ -33,43 +27,16 @@ go run ./scripts/configinverter/main.go generate
 
 ## Repository layout
 
-- `ddtrace/` — core tracing API and tracer implementation; `ddtrace/tracer/api.txt`
-  tracks the public API surface and is reviewed on every change
+- `ddtrace/` — core tracing API and tracer implementation
 - `contrib/` — instrumentation integrations (one subdirectory per third-party library,
   each with its own `go.mod`)
 - `instrumentation/` — shared helpers used across contrib packages
 - `internal/` — internal packages; not part of the public API, can change freely
 - `profiler/` — continuous profiling client
 
+Each directory has its own `AGENTS.md` with area-specific conventions.
+
 ## Code conventions
-
-### Library initialization
-
-`New*`, `Wrap*`, and `Setup*` functions must never block. Any I/O or network calls during
-initialization must be asynchronous (goroutines). See CONTRIBUTING.md → *Never block in
-library initialization* for the rationale and examples.
-
-### Option functions
-
-`WithX` option functions are **user-facing public API only**. Never use them to pass
-internal state between library layers — use unexported setters or struct fields instead.
-
-### API design
-
-- Order parameters from broadest → narrowest scope (e.g., cluster → group → topic →
-  partition → offset for Kafka)
-- Public functions must encapsulate their preconditions — callers must not need to
-  pre-process arguments before calling
-- Prefer specific names for feature-specific APIs (`TrackDataStreamTransaction`, not
-  the overly generic `TrackTransaction`)
-
-### Lock discipline (`checklocks`)
-
-- Functions that must be called with a lock held are named with the `Locked` suffix
-  (e.g., `setTagLocked`, `setPropagatingTagLocked`)
-- Annotate such functions with `// +checklocks:s.mu` (or the relevant field name)
-- Do not use closures inside locked regions — they confuse the `checklocks` static
-  analyzer; extract them into named methods instead
 
 ### Naming
 
@@ -135,19 +102,6 @@ alignment for new files.
   advancement rather than `assert.Eventually` with wall-clock timeouts
 - Benchmark changes must not introduce measurement artifacts; use `//nolint:modernize`
   when `b.Loop()` would skew results
-
-## Contrib package conventions
-
-New contrib packages must:
-
-- Use a module path ending in `/v2` in the `go.mod` `module` declaration (e.g.,
-  `github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2`); the directory on disk
-  does **not** have a `/v2` suffix (e.g., `contrib/rs/zerolog/`)
-- Include `option.go` with the standard `Option` interface / `OptionFn` pattern
-- Include `example_test.go` with runnable usage examples
-- Include an `orchestrion.yml` for automatic instrumentation support
-- Have the standard copyright header on all files — copy it from any existing file
-  (CI enforces this and will block the merge)
 
 ## Opening pull requests
 
