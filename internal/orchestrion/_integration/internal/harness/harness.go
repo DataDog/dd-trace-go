@@ -18,6 +18,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
+// TestCasePreBootstrap is an optional interface for test cases that need to
+// configure the environment before the tracer is bootstrapped (e.g., to set
+// AppSec rule files via env vars).
+type TestCasePreBootstrap interface {
+	PreBootstrap(context.Context, *testing.T)
+}
+
 // TestCase describes the general contract for tests. Each package in this
 // directory is expected to export a [TestCase] structure implementing this
 // interface.
@@ -63,9 +70,14 @@ func Run(t *testing.T, tc TestCase) {
 	// Neutralize API Security sampling to prevent test flakiness.
 	t.Setenv("DD_API_SECURITY_SAMPLE_DELAY", "0")
 
-	// Bootstrap the inspectable tracer and its mock agent. The agent's HTTP
-	// server starts immediately (before Setup), so its port is bound before any
-	// call to net.FreePort inside Setup — preventing TOCTOU port-binding races.
+	if pb, ok := tc.(TestCasePreBootstrap); ok {
+		pb.PreBootstrap(ctx, t)
+		if t.Skipped() {
+			return
+		}
+	}
+
+	// Bootstrap the inspectable tracer and its mock agent.
 	tr, agent, err := tracertest.Bootstrap(t,
 		tracer.WithSampler(tracer.NewAllSampler()),
 		tracer.WithLogStartup(false),
