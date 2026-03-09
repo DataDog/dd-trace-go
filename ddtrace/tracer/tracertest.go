@@ -12,9 +12,10 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/tinylib/msgp/msgp"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
-	"github.com/tinylib/msgp/msgp"
 )
 
 func toAgentSpan(span *Span) *agenttest.Span {
