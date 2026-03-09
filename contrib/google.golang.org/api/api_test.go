@@ -212,7 +212,7 @@ func BenchmarkWrapRoundTripper(b *testing.B) {
 	require.NoError(b, err)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		svc.Bookshelves.List("montana.banana").Do()
 	}
 }
@@ -220,7 +220,7 @@ func BenchmarkWrapRoundTripper(b *testing.B) {
 func BenchmarkInitApiEndpointsTree(b *testing.B) {
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		initAPIEndpointsTree()
 	}
 }
