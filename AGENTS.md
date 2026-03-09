@@ -102,7 +102,7 @@ alignment for new files.
   advancement rather than `assert.Eventually` with wall-clock timeouts
 - Benchmark changes must not introduce measurement artifacts; use `//nolint:modernize`
   when `b.Loop()` would skew results
-
+- When introducing concurrency logic, add tests to stress test the code
 ## Opening pull requests
 
 Use the PR template (`.github/pull_request_template.md`). Every PR must include:
