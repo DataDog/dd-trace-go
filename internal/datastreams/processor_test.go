@@ -207,7 +207,9 @@ func TestProcessor(t *testing.T) {
 
 	t.Run("test_service_name_override", func(t *testing.T) {
 		p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
-		tp := time.Now().Truncate(bucketDuration)
+		// Use a fixed time so the test is deterministic regardless of wall-clock speed.
+		tp := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC).Truncate(bucketDuration)
+		p.timeSource = func() time.Time { return tp }
 		p.add(statsPoint{
 			serviceName:    "service1",
 			edgeTags:       []string{"type:edge-1"},
@@ -237,7 +239,7 @@ func TestProcessor(t *testing.T) {
 				ProcessTags: processtags.GlobalTags().Slice(),
 				Stats: []StatsBucket{
 					{
-						Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
+						Start:    uint64(tp.Add(-10 * time.Second).UnixNano()),
 						Duration: uint64(bucketDuration.Nanoseconds()),
 						Stats: []StatsPoint{{
 							EdgeTags:       []string{"type:edge-1"},
@@ -251,7 +253,7 @@ func TestProcessor(t *testing.T) {
 						Backlogs: []Backlog{},
 					},
 					{
-						Start:    uint64(tp1.UnixNano()),
+						Start:    uint64(tp.UnixNano()),
 						Duration: uint64(bucketDuration.Nanoseconds()),
 						Stats: []StatsPoint{{
 							EdgeTags:       []string{"type:edge-1"},
@@ -276,7 +278,7 @@ func TestProcessor(t *testing.T) {
 				ProcessTags: processtags.GlobalTags().Slice(),
 				Stats: []StatsBucket{
 					{
-						Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
+						Start:    uint64(tp.Add(-10 * time.Second).UnixNano()),
 						Duration: uint64(bucketDuration.Nanoseconds()),
 						Stats: []StatsPoint{{
 							EdgeTags:       []string{"type:edge-1"},
@@ -290,7 +292,7 @@ func TestProcessor(t *testing.T) {
 						Backlogs: []Backlog{},
 					},
 					{
-						Start:    uint64(tp1.UnixNano()),
+						Start:    uint64(tp.UnixNano()),
 						Duration: uint64(bucketDuration.Nanoseconds()),
 						Stats: []StatsPoint{{
 							EdgeTags:       []string{"type:edge-1"},
