@@ -149,6 +149,22 @@ New contrib packages must:
 - Have the standard copyright header on all files — copy it from any existing file
   (CI enforces this and will block the merge)
 
+## Opening pull requests
+
+Use the PR template (`.github/pull_request_template.md`). Every PR must include:
+
+- **What does this PR do?** — a brief description of the change
+- **Motivation** — why the change is needed; link related issues (`Fixes #XXXX` auto-closes them)
+- **Reviewer's Checklist** — fill in or explicitly mark items N/A with a reason
+
+If you don't have enough context to fill in a section (e.g., whether a system test is
+needed, or which team label applies), **ask the user before opening the PR** rather than
+leaving sections blank or guessing.
+
+PR titles must follow [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/)
+format: `<type>(<scope>): <description>` — e.g.,
+`feat(contrib/http): add support for custom headers`.
+
 ## Definition of done
 
 A task is complete when **all** of the following pass locally before pushing:
