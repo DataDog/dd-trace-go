@@ -175,7 +175,21 @@ func (a *agent) RequireSpan(t testing.TB, matchers ...*SpanMatch) *Span {
 	t.Helper()
 	s := a.FindSpan(matchers...)
 	if s == nil {
-		t.Fatal("no span found matching the given conditions")
+		a.mu.Lock()
+		spans := make([]*Span, len(a.spans))
+		copy(spans, a.spans)
+		a.mu.Unlock()
+		var buf []byte
+		for i, sp := range spans {
+			buf = fmt.Appendf(buf, "  [%d] spanID=%d parentID=%d name=%q service=%q resource=%q type=%q\n",
+				i, sp.SpanID, sp.ParentID, sp.Operation, sp.Service, sp.Resource, sp.Type)
+			for _, m := range matchers {
+				for _, cond := range m.FailedConditions(sp) {
+					buf = fmt.Appendf(buf, "        FAIL: %s\n", cond)
+				}
+			}
+		}
+		t.Fatalf("no span found matching the given conditions; collected %d span(s):\n%s", len(spans), buf)
 	}
 	return s
 }
