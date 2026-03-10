@@ -1351,9 +1351,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	// response asynchronously, so we must poll rather than use a fixed sleep.
 	timeout := time.After(time.Second * timeMultiplicator)
 	for {
-		tr.prioritySampling.mu.RLock()
-		rate := tr.prioritySampling.defaultRate
-		tr.prioritySampling.mu.RUnlock()
+		rate := tr.prioritySampling.getDefaultRate()
 		// Expected default rate to be 0.1 after reading the agent response.
 		if rate == 0.1 {
 			break
