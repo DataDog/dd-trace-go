@@ -8,6 +8,7 @@ package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/con
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -67,7 +68,13 @@ func fetchClusterIDAsync(tr *kafkatrace.Tracer, conf *kafka.ConfigMap) {
 }
 
 func fetchClusterID(conf *kafka.ConfigMap) string {
-	admin, err := kafka.NewAdminClient(conf)
+	adminConf := &kafka.ConfigMap{}
+	for k, v := range *conf {
+		if !strings.HasPrefix(k, "go.") {
+			(*adminConf)[k] = v
+		}
+	}
+	admin, err := kafka.NewAdminClient(adminConf)
 	if err != nil {
 		instr.Logger().Warn("failed to create admin client for cluster ID: %s", err)
 		return ""
