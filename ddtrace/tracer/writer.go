@@ -99,6 +99,9 @@ func (h *agentTraceWriter) stop() {
 
 // newPayload returns a new payload based on the trace protocol.
 func (h *agentTraceWriter) newPayload() payload {
+	if h.config.traceProtocol == traceProtocolOTLP {
+		return &safePayload{p: newPayloadOTLP(h.config)}
+	}
 	return newPayload(h.config.traceProtocol)
 }
 

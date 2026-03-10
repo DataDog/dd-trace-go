@@ -9,10 +9,10 @@ import (
 	"bytes"
 	"errors"
 
-	"google.golang.org/protobuf/proto"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // TODO: Handle concurrent reads and writes for this struct. Update methods accordingly.
@@ -28,13 +28,33 @@ type payloadOTLP struct {
 	reader *bytes.Reader
 }
 
-func newPayloadOTLP() *payloadOTLP {
+func newPayloadOTLP(c *config) *payloadOTLP {
 	return &payloadOTLP{
-		resource: &otlpresource.Resource{},
-		scope:    &otlpcommon.InstrumentationScope{},
+		resource: buildResource(c),
+		scope:    &otlpcommon.InstrumentationScope{Name: "dd-trace-go"},
 		spans:    make([]*otlptrace.Span, 0),
 		reader:   bytes.NewReader([]byte{}),
 	}
+}
+
+// buildResource constructs the OTLP Resource from resolved tracer configuration.
+// If c is nil (e.g. in tests), an empty resource is returned.
+func buildResource(c *config) *otlpresource.Resource {
+	if c == nil {
+		return &otlpresource.Resource{}
+	}
+	attrs := []*otlpcommon.KeyValue{
+		otlpKeyValue("service.name", otlpStringValue(c.serviceName)),
+		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
+		otlpKeyValue("telemetry.sdk.name", otlpStringValue("dd-trace-go")),
+	}
+	if v := c.internalConfig.Env(); v != "" {
+		attrs = append(attrs, otlpKeyValue("deployment.environment", otlpStringValue(v)))
+	}
+	if v := c.internalConfig.Version(); v != "" {
+		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(v)))
+	}
+	return &otlpresource.Resource{Attributes: attrs}
 }
 
 func (p *payloadOTLP) Read(b []byte) (int, error) {
