@@ -1887,9 +1887,10 @@ func optsTestConsumer(opts ...StartSpanOption) {
 }
 
 func BenchmarkConfig(b *testing.B) {
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("scenario_none", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			optsTestConsumer(
 				ServiceName("SomeService"),
 				ResourceName("SomeResource"),
@@ -1904,7 +1905,7 @@ func BenchmarkConfig(b *testing.B) {
 			ResourceName("SomeResource"),
 		)
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			optsTestConsumer(
 				WithStartSpanConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),
@@ -1920,7 +1921,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 		assert.NoError(b, err)
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			tracer.StartSpan("test",
 				ServiceName("SomeService"),
 				ResourceName("SomeResource"),
@@ -1939,7 +1940,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 			ResourceName("SomeResource"),
 		)
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			tracer.StartSpan("test",
 				WithStartSpanConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),

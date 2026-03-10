@@ -1100,7 +1100,7 @@ func BenchmarkDatasetIterator(b *testing.B) {
 	ds := &Dataset{records: records}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for range ds.Records() {
 		}
 	}
@@ -1113,7 +1113,7 @@ func BenchmarkDatasetLoop(b *testing.B) {
 	ds := &Dataset{records: records}
 
 	b.StartTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for range ds.records {
 		}
 	}
