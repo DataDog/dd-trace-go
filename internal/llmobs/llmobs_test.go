@@ -1794,7 +1794,7 @@ func BenchmarkLLMObsStartSpan(b *testing.B) {
 
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, fmt.Sprintf("span-%d", i), llmobs.StartSpanConfig{})
 			span.Finish(llmobs.FinishSpanConfig{})
 		}

@@ -78,7 +78,7 @@ func TestGlobalTracer(t *testing.T) {
 }
 
 func BenchmarkGetGlobalTracerSerial(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tracer := getGlobalTracer()
 		if tracer == nil {
 			b.Fatal("BUG: tracer must not be nil")

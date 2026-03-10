@@ -182,7 +182,7 @@ func BenchmarkContextStackPushPop(b *testing.B) {
 	k := key("bench")
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		getDDContextStack().Push(k, true)
 		getDDContextStack().Pop(k)
 	}
@@ -198,7 +198,7 @@ func BenchmarkContextStackPushOnly(b *testing.B) {
 	k := key("bench")
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		getDDContextStack().Push(k, true)
 	}
 	b.StopTimer()
@@ -216,7 +216,7 @@ func BenchmarkGLSPopFuncSameGoroutine(b *testing.B) {
 	k := key("bench")
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		CtxWithValue(context.Background(), k, true)
 		popFn := GLSPopFunc(k)
 		popFn()
@@ -233,7 +233,7 @@ func BenchmarkGLSPopFuncCrossGoroutine(b *testing.B) {
 	k := key("bench")
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		CtxWithValue(context.Background(), k, true)
 		popFn := GLSPopFunc(k)
 		done := make(chan struct{})
@@ -262,7 +262,7 @@ func BenchmarkContextStackDepthScaling(b *testing.B) {
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				getDDContextStack().Peek(k)
 			}
 		})

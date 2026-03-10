@@ -2266,7 +2266,7 @@ func BenchmarkInjectDatadog(b *testing.B) {
 	}
 	dst := map[string]string{}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tracer.Inject(root.Context(), TextMapCarrier(dst))
 	}
 }
@@ -2293,7 +2293,7 @@ func BenchmarkInjectW3C(b *testing.B) {
 	dst := map[string]string{}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tracer.Inject(root.Context(), TextMapCarrier(dst))
 	}
 }
@@ -2309,7 +2309,7 @@ func BenchmarkExtractDatadog(b *testing.B) {
 								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
 	})
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		propagator.Extract(carrier)
 	}
 }
@@ -2323,7 +2323,7 @@ func BenchmarkExtractW3C(b *testing.B) {
 	})
 	b.ResetTimer()
 	log.SetLevel(log.LevelError)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		propagator.Extract(carrier)
 	}
 }
@@ -2554,7 +2554,7 @@ func BenchmarkComposeTracestate(b *testing.B) {
 	ctx.trace.setPropagatingTag("_dd.p.table", "chair")
 	ctx.isRemote = false
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
 	}
 }

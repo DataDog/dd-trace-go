@@ -18,8 +18,19 @@ const (
 )
 
 type (
+	knownTestsRequestPageInfo struct {
+		PageState string `json:"page_state,omitempty"`
+	}
+
+	knownTestsResponsePageInfo struct {
+		Cursor  string `json:"cursor"`
+		Size    int    `json:"size"`
+		HasNext bool   `json:"has_next"`
+	}
+
 	knownTestsRequest struct {
-		Data knownTestsRequestHeader `json:"data"`
+		Data     knownTestsRequestHeader    `json:"data"`
+		PageInfo *knownTestsRequestPageInfo `json:"page_info,omitempty"`
 	}
 
 	knownTestsRequestHeader struct {
@@ -41,6 +52,7 @@ type (
 			Type       string                 `json:"type"`
 			Attributes KnownTestsResponseData `json:"attributes"`
 		} `json:"data"`
+		PageInfo *knownTestsResponsePageInfo `json:"page_info,omitempty"`
 	}
 
 	KnownTestsResponseData struct {
@@ -67,50 +79,74 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 				Configurations: c.testConfigurations,
 			},
 		},
+		PageInfo: &knownTestsRequestPageInfo{},
 	}
 
-	request := c.getPostRequestConfig(knownTestsURLPath, body)
-	if request.Compressed {
-		telemetry.KnownTestsRequest(telemetry.CompressedRequestCompressedType)
-	} else {
-		telemetry.KnownTestsRequest(telemetry.UncompressedRequestCompressedType)
+	accumulated := KnownTestsResponseData{
+		Tests: make(KnownTestsResponseDataModules),
 	}
 
-	startTime := time.Now()
-	response, err := c.handler.SendRequest(*request)
-	telemetry.KnownTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
+	for {
+		request := c.getPostRequestConfig(knownTestsURLPath, body)
+		if request.Compressed {
+			telemetry.KnownTestsRequest(telemetry.CompressedRequestCompressedType)
+		} else {
+			telemetry.KnownTestsRequest(telemetry.UncompressedRequestCompressedType)
+		}
 
-	if err != nil {
-		telemetry.KnownTestsRequestErrors(telemetry.NetworkErrorType)
-		return nil, fmt.Errorf("sending known tests request: %s", err)
+		startTime := time.Now()
+		response, err := c.handler.SendRequest(*request)
+		telemetry.KnownTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
+
+		if err != nil {
+			telemetry.KnownTestsRequestErrors(telemetry.NetworkErrorType)
+			return nil, fmt.Errorf("sending known tests request: %s", err)
+		}
+
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			telemetry.KnownTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
+		}
+		if response.Compressed {
+			telemetry.KnownTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
+		} else {
+			telemetry.KnownTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
+		}
+
+		var responseObject knownTestsResponse
+		err = response.Unmarshal(&responseObject)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshalling known tests response: %s", err)
+		}
+
+		// Merge page data into accumulator
+		if responseObject.Data.Attributes.Tests != nil {
+			for module, suites := range responseObject.Data.Attributes.Tests {
+				if accumulated.Tests[module] == nil {
+					accumulated.Tests[module] = make(KnownTestsResponseDataSuites)
+				}
+				for suite, tests := range suites {
+					accumulated.Tests[module][suite] = append(accumulated.Tests[module][suite], tests...)
+				}
+			}
+		}
+
+		// Check if there are more pages
+		if responseObject.PageInfo == nil || !responseObject.PageInfo.HasNext {
+			break
+		}
+		body.PageInfo.PageState = responseObject.PageInfo.Cursor
 	}
 
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		telemetry.KnownTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
-	}
-	if response.Compressed {
-		telemetry.KnownTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
-	} else {
-		telemetry.KnownTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
-	}
-
-	var responseObject knownTestsResponse
-	err = response.Unmarshal(&responseObject)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshalling known tests response: %s", err)
-	}
-
+	// Report total test count telemetry
 	testCount := 0
-	if responseObject.Data.Attributes.Tests != nil {
-		for _, suites := range responseObject.Data.Attributes.Tests {
-			if suites == nil {
-				continue
-			}
-			for _, tests := range suites {
-				testCount += len(tests)
-			}
+	for _, suites := range accumulated.Tests {
+		if suites == nil {
+			continue
+		}
+		for _, tests := range suites {
+			testCount += len(tests)
 		}
 	}
 	telemetry.KnownTestsResponseTests(float64(testCount))
-	return &responseObject.Data.Attributes, nil
+	return &accumulated, nil
 }

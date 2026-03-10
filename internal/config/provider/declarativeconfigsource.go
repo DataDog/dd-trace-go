@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package config
+package provider
 
 import (
 	"os"
@@ -15,19 +15,18 @@ import (
 )
 
 const (
-	// File paths are supported on linux only
+	// File paths are supported on linux only.
 	localFilePath   = "/etc/datadog-agent/application_monitoring.yaml"
 	managedFilePath = "/etc/datadog-agent/managed/datadog-agent/stable/application_monitoring.yaml"
 
-	// maxFileSize defines the maximum size in bytes for declarative config files (4KB). This limit ensures predictable memory use and guards against malformed large files.
+	// maxFileSize is the maximum size in bytes for declarative config files (4KB).
 	maxFileSize = 4 * 1024
 )
 
-// declarativeConfigSource represents a source of declarative configuration loaded from a file.
 type declarativeConfigSource struct {
-	filePath    string             // Path to the configuration file.
-	originValue telemetry.Origin   // Origin identifier for telemetry.
-	config      *declarativeConfig // Parsed declarative configuration.
+	filePath    string
+	originValue telemetry.Origin
+	config      *declarativeConfig
 }
 
 func (d *declarativeConfigSource) get(key string) string {
@@ -42,7 +41,6 @@ func (d *declarativeConfigSource) origin() telemetry.Origin {
 	return d.originValue
 }
 
-// newDeclarativeConfigSource initializes a new declarativeConfigSource from the given file.
 func newDeclarativeConfigSource(filePath string, origin telemetry.Origin) *declarativeConfigSource {
 	return &declarativeConfigSource{
 		filePath:    filePath,
@@ -51,13 +49,11 @@ func newDeclarativeConfigSource(filePath string, origin telemetry.Origin) *decla
 	}
 }
 
-// ParseFile reads and parses the config file at the given path.
-// Returns an empty config if the file doesn't exist or is invalid.
 func parseFile(filePath string) *declarativeConfig {
 	info, err := os.Stat(filePath)
 	if err != nil {
-		// It's expected that the declarative config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
+			// It's expected that the declarative config file may not exist; its absence is not an error.
 			log.Warn("Failed to stat declarative config file %q, dropping: %v", filePath, err.Error())
 		}
 		return emptyDeclarativeConfig()
@@ -71,7 +67,6 @@ func parseFile(filePath string) *declarativeConfig {
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		// It's expected that the declarative config file may not exist; its absence is not an error.
 		if !os.IsNotExist(err) {
 			log.Warn("Failed to read declarative config file %q, dropping: %v", filePath, err.Error())
 		}
@@ -81,8 +76,6 @@ func parseFile(filePath string) *declarativeConfig {
 	return fileContentsToConfig(data, filePath)
 }
 
-// fileContentsToConfig parses YAML data into a declarativeConfig struct.
-// Returns an empty config if parsing fails or the data is malformed.
 func fileContentsToConfig(data []byte, fileName string) *declarativeConfig {
 	dc := &declarativeConfig{}
 	err := yaml.Unmarshal(data, dc)
