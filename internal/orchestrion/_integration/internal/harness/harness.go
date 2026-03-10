@@ -58,10 +58,8 @@ func Run(t *testing.T, tc TestCase) {
 		defer cancel()
 	}
 
-	// Listen before Setup so the mock agent's port is bound before any call to
-	// net.FreePort inside Setup. Without this ordering, httptest.NewServer
-	// (called inside Start) can steal the port that FreePort just released,
-	// making the test server and mock agent share the same address.
+	// Listen before Setup so the mock agent's port is bound before any ports
+	// are allocated in Setup.
 	mockAgent.Listen(t)
 
 	t.Log("Running setup")

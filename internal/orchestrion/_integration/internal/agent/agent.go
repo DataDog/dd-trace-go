@@ -76,10 +76,8 @@ func New(t *testing.T) *MockAgent {
 }
 
 // Listen starts the mock agent's HTTP server and registers a cleanup to close
-// it. It must be called before the test's Setup function so that the HTTP
-// server claims its port before any call to net.FreePort, preventing the
-// TOCTOU race where FreePort releases a port that httptest.NewServer then
-// steals, causing the test server and mock agent to share the same address.
+// it. It must be called before the test's Setup function so that the mock
+// agent's port is bound before any ports are allocated in Setup.
 func (m *MockAgent) Listen(t *testing.T) {
 	srv := httptest.NewServer(m)
 	m.srv = srv

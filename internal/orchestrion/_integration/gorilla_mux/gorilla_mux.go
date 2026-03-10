@@ -35,12 +35,13 @@ func (tc *TestCaseSubrouter) Setup(_ context.Context, t *testing.T) {
 	})
 	router = sub
 
+	ln := net.FreeListener(t)
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: router,
 	}
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -80,12 +81,13 @@ func (tc *TestCaseRouterParallel) Setup(_ context.Context, t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	ln := net.FreeListener(t)
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: router,
 	}
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -157,9 +159,10 @@ type TestCase struct {
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
+	ln := net.FreeListener(t)
 	router := mux.NewRouter()
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: router,
 	}
 	router.HandleFunc("/ping", func(w http.ResponseWriter, _ *http.Request) {
@@ -169,7 +172,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 		assert.NoError(t, err)
 	}).Methods("GET")
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
