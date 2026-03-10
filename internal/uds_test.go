@@ -198,6 +198,11 @@ func TestUDSConcurrentConnectionReuse(t *testing.T) {
 	go srv.Serve(ln) //nolint:errcheck
 	defer srv.Close()
 
+	// Ensure the server is accepting connections before starting goroutines.
+	probe, err := net.Dial("unix", socketPath)
+	require.NoError(t, err)
+	_ = probe.Close()
+
 	client := UDSClient(socketPath, 5*time.Second)
 
 	const (
@@ -268,6 +273,11 @@ func TestUDSServerCloseRecovery(t *testing.T) {
 	}
 	go srv.Serve(ln) //nolint:errcheck
 	defer srv.Close()
+
+	// Ensure the server is accepting connections before starting goroutines.
+	probe, err := net.Dial("unix", socketPath)
+	require.NoError(t, err)
+	_ = probe.Close()
 
 	client := UDSClient(socketPath, 5*time.Second)
 
