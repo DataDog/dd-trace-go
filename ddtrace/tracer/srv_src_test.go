@@ -22,14 +22,14 @@ func TestServiceSource(t *testing.T) {
 		require.NoError(t, err)
 		defer tracer.Stop()
 
-		parent := tracer.StartSpan("parent", Tag(keyServiceSource, sharedinternal.ServiceOverride{Name: "my-service", Source: "m"}))
+		parent := tracer.StartSpan("parent", Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "my-service", Source: "m"}))
 		child := tracer.StartSpan("child", ChildOf(parent.Context()))
 		child.Finish()
 		parent.Finish()
 
 		child.mu.RLock()
 		defer child.mu.RUnlock()
-		assert.Equal(t, "m", child.meta[keyServiceSource])
+		assert.Equal(t, "m", child.meta[ext.KeyServiceSource])
 	})
 
 	t.Run("NoExplicitServiceNoSrvSrc", func(t *testing.T) {
@@ -43,7 +43,7 @@ func TestServiceSource(t *testing.T) {
 
 		span.mu.RLock()
 		defer span.mu.RUnlock()
-		_, hasSrvSrc := span.meta[keyServiceSource]
+		_, hasSrvSrc := span.meta[ext.KeyServiceSource]
 		assert.False(t, hasSrvSrc, "_dd.svc_src should not be set when no service is explicitly set")
 	})
 
@@ -53,14 +53,14 @@ func TestServiceSource(t *testing.T) {
 		require.NoError(t, err)
 		defer tracer.Stop()
 
-		parent := tracer.StartSpan("parent", Tag(keyServiceSource, sharedinternal.ServiceOverride{Name: "parent-service", Source: "m"}))
-		child := tracer.StartSpan("child", ChildOf(parent.Context()), Tag(keyServiceSource, sharedinternal.ServiceOverride{Name: "child-service", Source: "m"}))
+		parent := tracer.StartSpan("parent", Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "parent-service", Source: "m"}))
+		child := tracer.StartSpan("child", ChildOf(parent.Context()), Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "child-service", Source: "m"}))
 		child.Finish()
 		parent.Finish()
 
 		child.mu.RLock()
 		defer child.mu.RUnlock()
-		assert.Equal(t, "m", child.meta[keyServiceSource])
+		assert.Equal(t, "m", child.meta[ext.KeyServiceSource])
 	})
 
 	t.Run("ServiceMappingSetsSrvSrc", func(t *testing.T) {
@@ -69,12 +69,12 @@ func TestServiceSource(t *testing.T) {
 		require.NoError(t, err)
 		defer tracer.Stop()
 
-		span := tracer.StartSpan("test.op", Tag(keyServiceSource, sharedinternal.ServiceOverride{Name: "original", Source: "m"}))
+		span := tracer.StartSpan("test.op", Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "original", Source: "m"}))
 		span.Finish()
 
 		span.mu.RLock()
 		defer span.mu.RUnlock()
 		assert.Equal(t, "remapped", span.service)
-		assert.Equal(t, ext.ServiceSourceMapping, span.meta[keyServiceSource])
+		assert.Equal(t, ext.ServiceSourceMapping, span.meta[ext.KeyServiceSource])
 	})
 }

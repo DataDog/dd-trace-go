@@ -426,7 +426,7 @@ func (s *Span) setTagLocked(key string, value any) {
 		if ok {
 			s.integration = integration
 		}
-	case keyServiceSource:
+	case ext.KeyServiceSource:
 		if so, ok := value.(sharedinternal.ServiceOverride); ok {
 			s.service = so.Name
 			s.serviceSource = so.Source
@@ -993,7 +993,7 @@ func (s *Span) enrichServiceSource() {
 	if s.meta == nil {
 		s.meta = make(map[string]string, 1)
 	}
-	s.meta[keyServiceSource] = s.serviceSource
+	s.meta[ext.KeyServiceSource] = s.serviceSource
 }
 
 func (s *Span) finish(finishTime int64) {
@@ -1303,7 +1303,6 @@ const (
 	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
 	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
-	keyServiceSource           = ext.KeyServiceSource
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
