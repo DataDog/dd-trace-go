@@ -189,6 +189,12 @@ type config struct {
 	// httpClient specifies the HTTP client to be used by the agent's transport.
 	httpClient *http.Client
 
+	// agentTransport, if set, is applied as the HTTP client's round-tripper
+	// after the orchestrion override so that test helpers can inject an
+	// in-process transport without triggering real network activity during
+	// tracer startup (e.g. /info discovery, StatsD dial).
+	agentTransport http.RoundTripper
+
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
 	logger Logger
@@ -400,6 +406,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		} else {
 			c.httpClient = internal.DefaultHTTPClient(c.httpClientTimeout, false)
 		}
+	}
+	// Allow test helpers to inject an in-process transport so that tracer
+	// bootstrap (e.g. /info discovery) never touches the real network even
+	// when orchestrion would otherwise override the HTTP client above.
+	if c.agentTransport != nil {
+		c.httpClient = &http.Client{Transport: c.agentTransport}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	globalTags := c.globalTags.get()
@@ -1424,6 +1436,25 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 func withLLMObsTestBaseURL(url string) StartOption {
 	return func(c *config) {
 		c.llmobs.TestBaseURL = url
+	}
+}
+
+// withAgentTransport injects an in-process HTTP round-tripper so that tracer
+// startup (e.g. /info discovery) never dials the real network. It is applied
+// after the orchestrion httpClient override so it takes precedence. For use in
+// test helpers only.
+func withAgentTransport(rt http.RoundTripper) StartOption {
+	return func(c *config) {
+		c.agentTransport = rt
+	}
+}
+
+// withNoOpStatsd installs a no-op StatsD client so that the tracer does not
+// attempt to dial a real DogStatsD socket during startup. For use in test
+// helpers only.
+func withNoOpStatsd() StartOption {
+	return func(c *config) {
+		c.statsdClient = &statsd.NoOpClientDirect{}
 	}
 }
 

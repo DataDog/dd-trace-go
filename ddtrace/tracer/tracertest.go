@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"net/http"
 	"testing"
 
 	"github.com/tinylib/msgp/msgp"
@@ -134,17 +133,20 @@ func bootstrapInspectableTracer(tb testing.TB, opts ...StartOption) (Tracer, age
 
 func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartOption) (Tracer, error) {
 	tb.Helper()
+	// withAgentTransport injects the in-process round-tripper before newTracer
+	// runs so that bootstrap (e.g. /info discovery) never touches the real
+	// network. withNoOpStatsd prevents a real DogStatsD dial during startup.
+	// Both options survive the orchestrion httpClient override because they are
+	// applied after it in finishConfig.
 	o := append([]StartOption{
 		WithAgentAddr(agent.Addr()),
+		withAgentTransport(agent.Transport()),
+		withNoOpStatsd(),
 	}, opts...)
 	tracer, err := newTracer(o...)
 	if err != nil {
 		return nil, err
 	}
-	// Set the in-process transport after newTracer returns. WithHTTPClient
-	// cannot be used because orchestrion forcibly replaces it with a default
-	// client to avoid self-tracing.
-	tracer.config.transport.(*httpTransport).client = &http.Client{Transport: agent.Transport()}
 	tracer.flushHandler = func(done chan<- struct{}) {
 		// This is a stronger flush logic, as it drains `tracer.out` before flushing.
 		// The default weaker flush doesn't allow to be used in tests without
