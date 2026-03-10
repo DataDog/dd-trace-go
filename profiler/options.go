@@ -487,14 +487,11 @@ type executionTraceConfig struct {
 	// Period is the amount of time between traces.
 	Period time.Duration
 	// Limit is the desired upper bound, in bytes, of a collected trace.
-	// Traces may be slightly larger than this limit due to flushing pending
-	// buffers at the end of tracing.
-	//
-	// We attempt to record for a full profiling period. The size limit of
-	// the trace is a better proxy for overhead (it scales with the number
-	// of events recorded) than duration, so we use that to decide when to
-	// stop tracing.
+	// Traces may be slightly larger than this limit.
 	Limit int
+	// MinAge is the minimum age of events retained in the flight recorder
+	// window. If zero, it defaults to the profile period.
+	MinAge time.Duration
 
 	// warned is checked to prevent spamming a log every minute if the trace
 	// config is invalid

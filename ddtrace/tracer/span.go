@@ -19,7 +19,6 @@ import (
 	"math"
 	"reflect"
 	"runtime/pprof"
-	rt "runtime/trace"
 	"strconv"
 	"strings"
 	"time"
@@ -979,23 +978,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 			})
 			s.mu.Unlock()
 		}
-	}
-
-	if s.goExecTraced && rt.IsEnabled() {
-		// Only tag spans as traced if they both started & ended with
-		// execution tracing enabled. This is technically not sufficient
-		// for spans which could straddle the boundary between two
-		// execution traces, but there's really nothing we can do in
-		// those cases since execution tracing tasks aren't recorded in
-		// traces if they started before the trace.
-		s.SetTag("go_execution_traced", "yes")
-	} else if s.goExecTraced {
-		// If the span started with tracing enabled, but tracing wasn't
-		// enabled when the span finished, we still have some data to
-		// show. If tracing wasn't enabled when the span started, we
-		// won't have data in the execution trace to identify it so
-		// there's nothign we can show.
-		s.SetTag("go_execution_traced", "partial")
 	}
 
 	if s.Root() == s {

@@ -13,11 +13,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/fastdelta"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pprofutils"
 )
@@ -178,21 +180,56 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "execution-trace",
 		Filename: "go.trace",
 		Collect: func(p *profiler) ([]byte, error) {
-			p.lastTrace = time.Now()
-			buf := new(bytes.Buffer)
-			outBuf := new(bytes.Buffer)
-			lt := newLimitedTraceCollector(outBuf, int64(p.cfg.traceConfig.Limit))
-			if err := trace.Start(lt); err != nil {
-				return nil, err
-			}
-			traceLogCPUProfileRate(p.cfg.cpuProfileRate)
-			select {
-			case <-p.exit: // Profiling was stopped
-			case <-time.After(p.cfg.period): // The profiling cycle has ended
-			case <-lt.done: // The trace size limit was exceeded
-			}
-			trace.Stop()
+			// We collect traces at the end of the cycle.
+			p.interruptibleSleep(p.cfg.period)
 
+			// TODO: I think the execution tracer, with flight
+			// recording, should always "collect". This method
+			// should always be called because we need to check
+			// whether there's a manually-requested flight recording.
+			// Automatic flight recording logic moves here too.
+
+			// As a special case, we want to trace during the first
+			// profiling cycle since startup activity is generally much
+			// different than regular operation.
+			seenFirstCycle := p.seenFirstCycle
+			p.seenFirstCycle = true
+
+			// Check for a user-requested flight recording first.
+			if ptr := p.pendingFlightRecording.Swap(nil); ptr != nil {
+				log.Info("using flight recording")
+				return *ptr, nil
+			}
+
+			// TODO I feel like AI did this and probably this check should
+			// be earlier. Or not exist at all (like don't call this if
+			// execution tracing is completely disabled)
+			if p.flightRecorder == nil {
+				return nil, errors.New("flight recorder not initialized")
+			}
+
+			// Decide whether we should record an execution trace.
+			// Randomly record a trace with probability (profile period) / (trace period).
+			// Note that if the trace period is equal to or less than the profile period,
+			// we will always record a trace.
+			// We do multiplication here instead of division to defensively guard against
+			// division by 0.
+			shouldTraceRandomly := rand.Float64()*float64(p.cfg.traceConfig.Period) < float64(p.cfg.period)
+			// Also collect if there's a pending user-requested flight recording.
+			hasPendingRecording := p.pendingFlightRecording.Load() != nil
+			shouldTrace := p.cfg.traceConfig.Enabled && (shouldTraceRandomly || !seenFirstCycle || hasPendingRecording)
+			if !shouldTrace {
+				// TODO: sentinel "nevermind" error
+				return nil, nil
+			}
+
+			traceLogCPUProfileRate(p.cfg.cpuProfileRate)
+			outBuf := new(bytes.Buffer)
+			if _, err := p.flightRecorder.WriteTo(outBuf); err != nil {
+				return nil, fmt.Errorf("writing flight recording: %w", err)
+			}
+
+			buf := new(bytes.Buffer)
 			c := p.compressors[executionTrace]
 			c.Reset(buf)
 			_, writeErr := outBuf.WriteTo(c)
@@ -227,37 +264,6 @@ func traceLogCPUProfileRate(cpuProfileRate int) {
 // using offline tools. This is a conservative estimate--we could possibly get
 // away with 10MB and still have a tolerable experience.
 const defaultExecutionTraceSizeLimit = 5 * 1024 * 1024
-
-type limitedTraceCollector struct {
-	w       io.Writer
-	limit   int64
-	written int64
-	// done is closed to signal that the limit has been exceeded
-	done chan struct{}
-}
-
-func newLimitedTraceCollector(w io.Writer, limit int64) *limitedTraceCollector {
-	return &limitedTraceCollector{w: w, limit: limit, done: make(chan struct{})}
-}
-
-// Write calls the underlying writer's Write method, and stops tracing if the
-// limit has been reached.
-func (l *limitedTraceCollector) Write(p []byte) (n int, err error) {
-	n, err = l.w.Write(p)
-	if err != nil {
-		// TODO: still count n against the limit?
-		return
-	}
-	l.written += int64(n)
-	if l.written >= l.limit {
-		select {
-		case <-l.done:
-		default:
-			close(l.done)
-		}
-	}
-	return
-}
 
 func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byte, error) {
 	return func(p *profiler) ([]byte, error) {
@@ -374,6 +380,10 @@ func (p *profiler) runProfile(pt ProfileType) ([]*profile, error) {
 	data, err := t.Collect(p)
 	if err != nil {
 		return nil, err
+	}
+	// TODO: this is a kludge for "we didn't collect an execution trace actually"
+	if data == nil {
+		return nil, nil
 	}
 	end := now()
 	tags := append(p.cfg.tags.Slice(), pt.Tag())
