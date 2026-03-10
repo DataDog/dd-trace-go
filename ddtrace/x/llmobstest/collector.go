@@ -5,9 +5,9 @@
 
 // Package llmobstest provides test infrastructure for LLM Observability integrations.
 //
-// The [Collector] captures spans and metrics sent by the LLMObs transport. It
-// starts its own HTTP server so that LLMObs traffic is kept separate from the
-// APM agent. Wire the collector into the tracer via [Collector.TracerOption]:
+// The [Collector] captures spans and metrics sent by the LLMObs transport via
+// an in-process RoundTripper — no real TCP listener is started. Wire the
+// collector into the tracer via [Collector.TracerOption]:
 //
 //	agent, err := tracertest.StartAgent(t)
 //	require.NoError(t, err)
@@ -36,8 +36,8 @@ import (
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
-//go:linkname withLLMObsTestBaseURL github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.withLLMObsTestBaseURL
-func withLLMObsTestBaseURL(string) tracer.StartOption
+//go:linkname withLLMObsInProcessTransport github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.withLLMObsInProcessTransport
+func withLLMObsInProcessTransport(string, http.RoundTripper) tracer.StartOption
 
 // LLMObsSpan is an alias for the LLMObs span event type.
 type LLMObsSpan = llmobstransport.LLMObsSpanEvent
@@ -45,30 +45,27 @@ type LLMObsSpan = llmobstransport.LLMObsSpanEvent
 // LLMObsMetric is an alias for the LLMObs evaluation metric type.
 type LLMObsMetric = llmobstransport.LLMObsMetric
 
-// Collector captures LLMObs spans and metrics on its own HTTP server.
+// Collector captures LLMObs spans and metrics via an in-process RoundTripper.
 // Use [New] to create one, then include [Collector.TracerOption] in the tracer
 // start options so that the LLMObs transport sends data here.
 //
 // After calling [tracer.Flush], all buffered data is guaranteed to be
 // available for querying — no timeouts or polling are needed.
 type Collector struct {
-	server *httptest.Server
-	mux    *http.ServeMux
+	mux *http.ServeMux
 
 	mu      sync.Mutex
 	spans   []LLMObsSpan
 	metrics []LLMObsMetric
 }
 
-// New creates a Collector that listens on its own HTTP server. The server is
-// closed automatically when the test ends.
+// New creates a Collector that routes LLMObs requests via an in-process
+// RoundTripper — no real TCP listener is started.
 func New(tb testing.TB) *Collector {
 	tb.Helper()
 	c := &Collector{mux: http.NewServeMux()}
 	c.mux.HandleFunc("/api/v2/llmobs", c.handleSpans)
 	c.mux.HandleFunc("/api/intake/llm-obs/v2/eval-metric", c.handleMetrics)
-	c.server = httptest.NewServer(c.mux)
-	tb.Cleanup(c.server.Close)
 	return c
 }
 
@@ -85,10 +82,22 @@ func (c *Collector) HandleFunc(pattern string, handler http.HandlerFunc) {
 	c.mux.HandleFunc(pattern, handler)
 }
 
-// TracerOption returns a [tracer.StartOption] that points the LLMObs transport
-// at this collector's HTTP server. Include it when starting the tracer.
+// TracerOption returns a [tracer.StartOption] that routes the LLMObs transport
+// through this collector's in-process RoundTripper. Include it when starting
+// the tracer.
 func (c *Collector) TracerOption() tracer.StartOption {
-	return withLLMObsTestBaseURL(c.server.URL)
+	return withLLMObsInProcessTransport(
+		"http://llmobstest.invalid",
+		&inProcessRoundTripper{handler: c.mux},
+	)
+}
+
+type inProcessRoundTripper struct{ handler http.Handler }
+
+func (t *inProcessRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	w := httptest.NewRecorder()
+	t.handler.ServeHTTP(w, req)
+	return w.Result(), nil
 }
 
 // FindSpan returns the first collected LLMObs span whose Name equals name, or

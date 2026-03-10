@@ -195,6 +195,11 @@ type config struct {
 	// tracer startup (e.g. /info discovery, StatsD dial).
 	agentTransport http.RoundTripper
 
+	// llmobsHTTPClient overrides c.llmobs.TracerConfig.HTTPClient after finishConfig
+	// builds it (so it is not clobbered by the agentTransport-based c.httpClient).
+	// For test use only (via ddtrace/x/llmobstest).
+	llmobsHTTPClient *http.Client
+
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
 	logger Logger
@@ -520,6 +525,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
 		EVPProxyV2: c.agent.evpProxyV2,
+	}
+	if c.llmobsHTTPClient != nil {
+		c.llmobs.TracerConfig.HTTPClient = c.llmobsHTTPClient
 	}
 
 	return c, nil
@@ -1436,6 +1444,17 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 func withLLMObsTestBaseURL(url string) StartOption {
 	return func(c *config) {
 		c.llmobs.TestBaseURL = url
+	}
+}
+
+// withLLMObsInProcessTransport sets the LLMObs test base URL and injects an
+// in-process RoundTripper so that no real network activity occurs during LLMObs
+// test requests. testBaseURL is used only for URL path construction.
+// Linked with go:linkname from ddtrace/x/llmobstest.
+func withLLMObsInProcessTransport(testBaseURL string, rt http.RoundTripper) StartOption {
+	return func(c *config) {
+		c.llmobs.TestBaseURL = testBaseURL
+		c.llmobsHTTPClient = &http.Client{Transport: rt}
 	}
 }
 
