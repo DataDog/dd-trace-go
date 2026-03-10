@@ -8,6 +8,7 @@ package tracer
 import (
 	"bytes"
 	"errors"
+	"sync/atomic"
 
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -21,7 +22,7 @@ type payloadOTLP struct {
 	scope    *otlpcommon.InstrumentationScope
 
 	spans []*otlptrace.Span
-	count int
+	count uint32 // +checkatomic
 
 	buf []byte
 
@@ -79,7 +80,7 @@ func (p *payloadOTLP) Close() error {
 func (p *payloadOTLP) push(t spanList) (stats payloadStats, err error) {
 	for _, s := range t {
 		p.spans = append(p.spans, convertSpan(s))
-		p.count++
+		atomic.AddUint32(&p.count, 1)
 	}
 	return p.stats(), nil
 }
@@ -95,7 +96,7 @@ func (p *payloadOTLP) reset() {
 
 func (p *payloadOTLP) clear() {
 	p.spans = p.spans[:0]
-	p.count = 0
+	atomic.StoreUint32(&p.count, 0)
 	p.reader.Seek(0, 0)
 }
 
@@ -106,7 +107,7 @@ func (p *payloadOTLP) recordItem() {
 func (p *payloadOTLP) stats() payloadStats {
 	return payloadStats{
 		size:      p.size(),
-		itemCount: p.count,
+		itemCount: p.itemCount(),
 	}
 }
 
@@ -115,7 +116,7 @@ func (p *payloadOTLP) size() int {
 }
 
 func (p *payloadOTLP) itemCount() int {
-	return p.count
+	return int(atomic.LoadUint32(&p.count))
 }
 
 func (p *payloadOTLP) protocol() float64 {
