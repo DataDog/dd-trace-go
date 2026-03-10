@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"errors"
 
-	"github.com/gogo/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
