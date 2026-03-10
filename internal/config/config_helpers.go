@@ -5,7 +5,11 @@
 
 package config
 
-import "github.com/DataDog/dd-trace-go/v2/internal/log"
+import (
+	"strings"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+)
 
 const (
 	// DefaultRateLimit specifies the default rate limit per second for traces.
@@ -33,6 +37,21 @@ func validateRateLimit(rate float64) bool {
 		return false
 	}
 	return true
+}
+
+// parseSpanAttributeSchema parses the DD_TRACE_SPAN_ATTRIBUTE_SCHEMA value.
+// It accepts "v0", "v1" (case-insensitive) and returns the corresponding integer version.
+// An empty string defaults to 0 (v0). Invalid values are rejected.
+func parseSpanAttributeSchema(v string) (int, bool) {
+	switch strings.ToLower(v) {
+	case "", "v0":
+		return 0, true
+	case "v1":
+		return 1, true
+	default:
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, ignoring", v)
+		return 0, false
+	}
 }
 
 func validatePartialFlushMinSpans(minSpans int) bool {
