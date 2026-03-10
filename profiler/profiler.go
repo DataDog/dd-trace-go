@@ -6,16 +6,17 @@
 package profiler
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
+	rttrace "runtime/trace"
 	"slices"
 	"strings"
 	"sync"
@@ -99,6 +100,29 @@ func Stop() {
 	mu.Unlock()
 }
 
+// RequestFlightRecording captures an execution trace flight recording
+// immediately and queues it for upload at the next profile collection period.
+// If called multiple times before the next upload, only the most recent
+// recording is kept.
+//
+// This requires execution tracing to be enabled (DD_PROFILING_EXECUTION_TRACE_ENABLED=true).
+// If no profiler is active or execution tracing is not configured, this is a no-op.
+func RequestFlightRecording() error {
+	mu.Lock()
+	p := activeProfiler
+	mu.Unlock()
+	if p == nil || p.flightRecorder == nil {
+		return nil
+	}
+	var buf bytes.Buffer
+	if _, err := p.flightRecorder.WriteTo(&buf); err != nil {
+		return fmt.Errorf("capturing flight recording: %w", err)
+	}
+	b := buf.Bytes()
+	p.pendingFlightRecording.Store(&b)
+	return nil
+}
+
 // profiler collects and sends preset profiles to the Datadog API at a given frequency
 // using a given configuration.
 type profiler struct {
@@ -113,8 +137,16 @@ type profiler struct {
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
-	// lastTrace is the last time an execution trace was collected
-	lastTrace time.Time
+	// flightRecorder is the active flight recorder for execution tracing.
+	// It is non-nil when execution tracing is enabled.
+	flightRecorder *rttrace.FlightRecorder
+	// TODO document
+	seenFirstCycle bool
+
+	// pendingFlightRecording holds a flight recording requested via
+	// RequestFlightRecording. It is consumed at the next profile upload.
+	// The stored value is []byte; nil means no pending recording.
+	pendingFlightRecording atomic.Pointer[[]byte]
 }
 
 func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
@@ -240,13 +272,18 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		deltas:      make(map[ProfileType]*fastDeltaProfiler),
 		compressors: make(map[ProfileType]compressor),
 	}
-	types := slices.Collect(maps.Keys(cfg.types))
-	// We need to manually add executionTrace to the list of profile types to be
-	// initialized for compression, because it's not part of the cfg.types map.
-	// Instead it gets added dynamically in profiler.collect.
 	if p.cfg.traceConfig.Enabled {
-		types = append(types, executionTrace)
+		minAge := p.cfg.traceConfig.MinAge
+		if minAge == 0 {
+			minAge = p.cfg.period
+		}
+		p.flightRecorder = rttrace.NewFlightRecorder(rttrace.FlightRecorderConfig{
+			MinAge:   minAge,
+			MaxBytes: uint64(p.cfg.traceConfig.Limit),
+		})
+		cfg.addProfileType(executionTrace)
 	}
+	types := slices.Collect(maps.Keys(cfg.types))
 	var pipelineBuilder compressionPipelineBuilder
 	for _, pt := range types {
 		isDelta := p.cfg.deltaProfiles && len(profileTypes[pt].DeltaValues) > 0
@@ -291,6 +328,15 @@ func (p *profiler) run() {
 	}
 	if profileEnabled(BlockProfile) {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
+	}
+	if p.flightRecorder != nil {
+		if err := p.flightRecorder.Start(); err != nil {
+			// A flight recorder may fail to start if another one is already active.
+			// Log a warning and disable execution tracing rather than failing to start.
+			log.Warn("Failed to start execution trace flight recorder: %s. Execution tracing disabled.", err)
+			p.flightRecorder = nil
+			p.cfg.traceConfig.Enabled = false
+		}
 	}
 	startTelemetry(p.cfg)
 	p.wg.Go(func() {
@@ -355,22 +401,6 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 
 		profileTypes := p.enabledProfileTypes()
 
-		// Decide whether we should record an execution trace.
-		// Randomly record a trace with probability (profile period) / (trace period).
-		// Note that if the trace period is equal to or less than the profile period,
-		// we will always record a trace
-		// We do multiplication here instead of division to defensively guard against
-		// division by 0
-		shouldTraceRandomly := rand.Float64()*float64(p.cfg.traceConfig.Period) < float64(p.cfg.period)
-		// As a special case, we want to trace during the first
-		// profiling cycle since startup activity is generally much
-		// different than regular operation
-		firstCycle := bat.seq == 0
-		shouldTrace := p.cfg.traceConfig.Enabled && (shouldTraceRandomly || firstCycle)
-		if shouldTrace {
-			profileTypes = append(profileTypes, executionTrace)
-		}
-
 		for _, t := range profileTypes {
 			if t != CPUProfile {
 				p.pendingProfiles.Add(1)
@@ -390,6 +420,9 @@ func (p *profiler) collect(ticker <-chan time.Time) {
 						tags := append(p.cfg.tags.Slice(), t.Tag())
 						p.cfg.statsd.Count("datadog.profiling.go.collect_error", 1, tags, 1)
 					}
+					return
+				}
+				if profs == nil {
 					return
 				}
 				mu.Lock()
@@ -550,6 +583,9 @@ func (p *profiler) stop() {
 		close(p.exit)
 	})
 	p.wg.Wait()
+	if p.flightRecorder != nil {
+		p.flightRecorder.Stop()
+	}
 	if p.cfg.logStartup {
 		log.Info("Profiling stopped")
 	}

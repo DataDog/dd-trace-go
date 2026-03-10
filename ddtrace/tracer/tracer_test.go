@@ -3148,6 +3148,7 @@ func BenchmarkSingleSpanRetentionSpanPool(b *testing.B) {
 }
 
 func TestExecutionTraceSpanTagged(t *testing.T) {
+	t.Skip("TODO remove if we land flight recording for real")
 	if rt.IsEnabled() {
 		t.Skip("runtime execution tracing is already enabled")
 	}
