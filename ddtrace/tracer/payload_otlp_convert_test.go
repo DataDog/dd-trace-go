@@ -11,9 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
 
 func TestConvertSpan(t *testing.T) {
@@ -205,9 +206,9 @@ func TestConvertSpanLinks_EmptyNil(t *testing.T) {
 }
 
 // keyValuesToMap converts []*otlpcommon.KeyValue into a map for easier assertion.
-// Values are returned as interface{} (string or float64 for double).
-func keyValuesToMap(kvs []*otlpcommon.KeyValue) map[string]interface{} {
-	m := make(map[string]interface{})
+// Values are returned as any (string or float64 for double).
+func keyValuesToMap(kvs []*otlpcommon.KeyValue) map[string]any {
+	m := make(map[string]any)
 	for _, kv := range kvs {
 		if kv == nil || kv.Value == nil {
 			continue

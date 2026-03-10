@@ -6,15 +6,17 @@
 package tracer
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
 
 // -----------------------------------------------------------------------------
 // Span conversion (DD Span → OTLP Span and related types)
 // -----------------------------------------------------------------------------
 
+// +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func convertSpan(s *Span) *otlptrace.Span {
 	return &otlptrace.Span{
 		TraceId:           convertTraceID(s.traceID),
@@ -30,6 +32,7 @@ func convertSpan(s *Span) *otlptrace.Span {
 	}
 }
 
+// +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func convertSpanStatus(s *Span) *otlptrace.Status {
 	status := &otlptrace.Status{
 		Code:    otlptrace.Status_STATUS_CODE_UNSET,
@@ -55,6 +58,7 @@ func convertSpanLinks(links []SpanLink) []*otlptrace.Span_Link {
 	return otlpLinks
 }
 
+// +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func convertEvents(s *Span) []*otlptrace.Span_Event {
 	events := make([]*otlptrace.Span_Event, 0)
 	for _, event := range s.spanEvents {
@@ -92,6 +96,7 @@ func convertSpanKind(spanKind string) otlptrace.Span_SpanKind {
 	}
 }
 
+// +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func getSpanKind(s *Span) string {
 	return s.meta[ext.SpanKind]
 }
@@ -100,6 +105,7 @@ func getSpanKind(s *Span) string {
 // Attribute conversion (DD → OTLP KeyValue / AnyValue)
 // -----------------------------------------------------------------------------
 
+// +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func convertSpanAttributes(s *Span) []*otlpcommon.KeyValue {
 	attributes := convertMapToOTLPAttributesString(s.meta)
 	for key, value := range s.metrics {
