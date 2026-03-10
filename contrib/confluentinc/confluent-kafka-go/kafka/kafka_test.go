@@ -362,7 +362,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"go.delivery.reports": true,
 	}, producerOpts...)
 	require.NoError(t, err)
-	p.tracer.WaitForClusterID()
+	require.Eventually(t, func() bool { return p.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
 
 	delivery := make(chan kafka.Event, 1)
 	err = p.Produce(&kafka.Message{
@@ -388,7 +388,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"enable.auto.offset.store": false,
 	}, consumerOpts...)
 	require.NoError(t, err)
-	c.tracer.WaitForClusterID()
+	require.Eventually(t, func() bool { return c.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
 
 	err = c.Assign([]kafka.TopicPartition{
 		{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},

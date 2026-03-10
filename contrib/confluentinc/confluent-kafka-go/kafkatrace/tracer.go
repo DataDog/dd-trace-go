@@ -29,8 +29,6 @@ type Tracer struct {
 	groupID              string
 	clusterID            string
 	clusterIDMu          sync.RWMutex
-	cancelClusterIDFetch context.CancelFunc
-	clusterIDDone        chan struct{}
 	tagFns               map[string]func(msg Message) any
 	dsmEnabled           bool
 	ckgoVersion          CKGoVersion
@@ -51,38 +49,6 @@ func (tr *Tracer) SetClusterID(id string) {
 	tr.clusterIDMu.Lock()
 	defer tr.clusterIDMu.Unlock()
 	tr.clusterID = id
-}
-
-// FetchClusterIDAsync launches a background goroutine to fetch the cluster ID.
-// The fetch can be cancelled by calling CancelClusterIDFetch.
-func (tr *Tracer) FetchClusterIDAsync(fetchFn func(ctx context.Context) string) {
-	ctx, cancel := context.WithCancel(context.Background())
-	tr.cancelClusterIDFetch = cancel
-	tr.clusterIDDone = make(chan struct{})
-	go func() {
-		defer close(tr.clusterIDDone)
-		if id := fetchFn(ctx); id != "" {
-			tr.SetClusterID(id)
-		}
-	}()
-}
-
-// StopClusterIDFetch cancels any in-flight async cluster ID fetch and waits
-// for the goroutine to finish.
-func (tr *Tracer) StopClusterIDFetch() {
-	if tr.cancelClusterIDFetch != nil {
-		tr.cancelClusterIDFetch()
-	}
-	if tr.clusterIDDone != nil {
-		<-tr.clusterIDDone
-	}
-}
-
-// WaitForClusterID blocks until any in-flight async cluster ID fetch completes.
-func (tr *Tracer) WaitForClusterID() {
-	if tr.clusterIDDone != nil {
-		<-tr.clusterIDDone
-	}
 }
 
 type Option interface {
