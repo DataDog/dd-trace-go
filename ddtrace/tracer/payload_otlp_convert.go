@@ -11,6 +11,10 @@ import (
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
+// -----------------------------------------------------------------------------
+// Span conversion (DD Span → OTLP Span and related types)
+// -----------------------------------------------------------------------------
+
 func convertSpan(s *Span) otlptrace.Span {
 	return otlptrace.Span{
 		TraceId:           convertTraceID(s.traceID),
@@ -96,7 +100,43 @@ func getSpanKind(s *Span) string {
 // Attribute conversion (DD → OTLP KeyValue / AnyValue)
 // -----------------------------------------------------------------------------
 
-// otlpKeyValue returns a KeyValue with the given key and AnyValue.
+func convertSpanAttributes(s *Span) []*otlpcommon.KeyValue {
+	attributes := convertMapToOTLPAttributesString(s.meta)
+	for key, value := range s.metrics {
+		attributes = append(attributes, otlpKeyValue(key, otlpDoubleValue(value)))
+	}
+	return attributes
+}
+
+func convertMapToOTLPAttributesString(ddAttributes map[string]string) []*otlpcommon.KeyValue {
+	out := make([]*otlpcommon.KeyValue, 0, len(ddAttributes))
+	for key, value := range ddAttributes {
+		out = append(out, otlpKeyValue(key, otlpStringValue(value)))
+	}
+	return out
+}
+
+func convertEventAttributes(ddAttributes map[string]*spanEventAttribute) []*otlpcommon.KeyValue {
+	out := make([]*otlpcommon.KeyValue, 0, len(ddAttributes))
+	for key, value := range ddAttributes {
+		switch value.Type {
+		case spanEventAttributeTypeString:
+			out = append(out, otlpKeyValue(key, otlpStringValue(value.StringValue)))
+		case spanEventAttributeTypeBool:
+			out = append(out, otlpKeyValue(key, otlpBoolValue(value.BoolValue)))
+		case spanEventAttributeTypeDouble:
+			out = append(out, otlpKeyValue(key, otlpDoubleValue(value.DoubleValue)))
+		case spanEventAttributeTypeInt:
+			out = append(out, otlpKeyValue(key, otlpIntValue(value.IntValue)))
+		case spanEventAttributeTypeArray:
+			out = append(out, otlpKeyValue(key, otlpArrayValue(value.ArrayValue)))
+		}
+	}
+	return out
+}
+
+// --- AnyValue helpers ---
+
 func otlpKeyValue(key string, value *otlpcommon.AnyValue) *otlpcommon.KeyValue {
 	if value == nil {
 		return nil
@@ -112,27 +152,41 @@ func otlpDoubleValue(d float64) *otlpcommon.AnyValue {
 	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_DoubleValue{DoubleValue: d}}
 }
 
-// TODO: Support other attribute types (bool, int, array)
-func convertEventAttributes(ddAttributes map[string]*spanEventAttribute) []*otlpcommon.KeyValue {
-	out := make([]*otlpcommon.KeyValue, 0, len(ddAttributes))
-	for key, value := range ddAttributes {
-		out = append(out, otlpKeyValue(key, otlpStringValue(value.StringValue)))
-	}
-	return out
+func otlpBoolValue(b bool) *otlpcommon.AnyValue {
+	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_BoolValue{BoolValue: b}}
 }
 
-func convertSpanAttributes(s *Span) []*otlpcommon.KeyValue {
-	attributes := convertMapToOTLPAttributesString(s.meta)
-	for key, value := range s.metrics {
-		attributes = append(attributes, otlpKeyValue(key, otlpDoubleValue(value)))
-	}
-	return attributes
+func otlpIntValue(i int64) *otlpcommon.AnyValue {
+	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_IntValue{IntValue: i}}
 }
 
-func convertMapToOTLPAttributesString(ddAttributes map[string]string) []*otlpcommon.KeyValue {
-	out := make([]*otlpcommon.KeyValue, 0, len(ddAttributes))
-	for key, value := range ddAttributes {
-		out = append(out, otlpKeyValue(key, otlpStringValue(value)))
+func otlpArrayValue(arr *spanEventArrayAttribute) *otlpcommon.AnyValue {
+	if arr == nil || len(arr.Values) == 0 {
+		return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_ArrayValue{ArrayValue: &otlpcommon.ArrayValue{Values: []*otlpcommon.AnyValue{}}}}
 	}
-	return out
+	values := make([]*otlpcommon.AnyValue, 0, len(arr.Values))
+	for _, v := range arr.Values {
+		if av := spanEventArrayAttributeValueToAnyValue(v); av != nil {
+			values = append(values, av)
+		}
+	}
+	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_ArrayValue{ArrayValue: &otlpcommon.ArrayValue{Values: values}}}
+}
+
+func spanEventArrayAttributeValueToAnyValue(v *spanEventArrayAttributeValue) *otlpcommon.AnyValue {
+	if v == nil {
+		return nil
+	}
+	switch v.Type {
+	case spanEventArrayAttributeValueTypeString:
+		return otlpStringValue(v.StringValue)
+	case spanEventArrayAttributeValueTypeBool:
+		return otlpBoolValue(v.BoolValue)
+	case spanEventArrayAttributeValueTypeInt:
+		return otlpIntValue(v.IntValue)
+	case spanEventArrayAttributeValueTypeDouble:
+		return otlpDoubleValue(v.DoubleValue)
+	default:
+		return nil
+	}
 }

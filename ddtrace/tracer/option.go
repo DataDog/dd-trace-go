@@ -468,7 +468,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 
-	if getDDorOtelConfig("traceProtocol") == "2.0" {
+	if getDDorOtelConfig("traceProtocol") == strconv.FormatFloat(traceProtocolOTLP, 'f', 1, 64) {
 		c.traceProtocol = traceProtocolOTLP
 	} else if c.agent.v1ProtocolAvailable {
 		c.traceProtocol = traceProtocolV1
