@@ -13,9 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
 
 // findAttr returns the KeyValue with the given key from the slice, or nil if not found.
