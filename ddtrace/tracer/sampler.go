@@ -202,9 +202,6 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	canIncrease := ps.lastCapped.IsZero() || now.Sub(ps.lastCapped) >= rampUpInterval
 	capApplied := false
 	for key, newRate := range rates {
-		if key == defaultRateKey {
-			continue // handled separately below
-		}
 		oldRate, ok := ps.rates[key]
 		if !ok {
 			oldRate = ps.defaultRate
@@ -212,11 +209,6 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 		rate, applied := cappedRate(oldRate, newRate, canIncrease)
 		capApplied = capApplied || applied
 		rates[key] = rate
-	}
-	if newDefault, ok := rates[defaultRateKey]; ok {
-		rate, applied := cappedRate(ps.defaultRate, newDefault, canIncrease)
-		capApplied = capApplied || applied
-		rates[defaultRateKey] = rate
 	}
 	if canIncrease && capApplied {
 		ps.lastCapped = now
