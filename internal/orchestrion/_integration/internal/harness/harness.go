@@ -7,6 +7,8 @@ package harness
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/orchestrion/runtime/built"
@@ -135,7 +137,10 @@ func traceToMatcher(tr *trace.Trace) *agenttest.SpanMatch {
 			}
 		case "service":
 			if s, ok := v.(string); ok {
-				m = m.Service(s)
+				// On Windows, binary names include a .exe suffix which is stripped for comparison.
+				m = m.Condition(fmt.Sprintf("Service == %q", s), func(sp *agenttest.Span) bool {
+					return strings.TrimSuffix(sp.Service, ".exe") == s
+				})
 			}
 		case "resource":
 			if s, ok := v.(string); ok {

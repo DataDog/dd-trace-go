@@ -95,6 +95,13 @@ func (m *SpanMatch) Tag(key string, value any) *SpanMatch {
 	return m
 }
 
+// Condition adds an arbitrary predicate condition with a human-readable
+// description used in diagnostic output when the condition fails.
+func (m *SpanMatch) Condition(desc string, fn func(*Span) bool) *SpanMatch {
+	m.conditions = append(m.conditions, spanCondition{fn: fn, desc: desc})
+	return m
+}
+
 // ParentOf adds a condition that the span's parent ID must equal the given value.
 func (m *SpanMatch) ParentOf(parentID uint64) *SpanMatch {
 	m.conditions = append(m.conditions, spanCondition{
