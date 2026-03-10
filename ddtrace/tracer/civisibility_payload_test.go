@@ -155,7 +155,7 @@ func benchmarkCiVisibilityPayloadThroughput(count int) func(*testing.B) {
 		reset := func() {
 			p = newCiVisibilityPayload()
 		}
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			reset()
 			for _, event := range events {
 				for p.stats().size < payloadMaxLimit {

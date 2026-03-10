@@ -42,7 +42,7 @@ func BenchmarkAgentTraceWriterAdd(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				writer.add(trace)
 			}
 		})
@@ -60,7 +60,7 @@ func BenchmarkAgentTraceWriterFlush(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		writer.add(trace)
 		writer.flush()
 		writer.wg.Wait()
@@ -82,7 +82,7 @@ func BenchmarkAgentTraceWriterConcurrent(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				var wg sync.WaitGroup
 
 				for range concurrency {
@@ -112,7 +112,7 @@ func BenchmarkAgentTraceWriterStats(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		writer.mu.Lock()
 		stats := writer.payload.stats()
 		writer.mu.Unlock()
