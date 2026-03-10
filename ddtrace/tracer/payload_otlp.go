@@ -80,7 +80,7 @@ func (p *payloadOTLP) Close() error {
 func (p *payloadOTLP) push(t spanList) (stats payloadStats, err error) {
 	for _, s := range t {
 		p.spans = append(p.spans, convertSpan(s))
-		atomic.AddUint32(&p.count, 1)
+		p.recordItem()
 	}
 	return p.stats(), nil
 }
@@ -101,7 +101,7 @@ func (p *payloadOTLP) clear() {
 }
 
 func (p *payloadOTLP) recordItem() {
-	p.count++
+	atomic.AddUint32(&p.count, 1)
 }
 
 func (p *payloadOTLP) stats() payloadStats {
