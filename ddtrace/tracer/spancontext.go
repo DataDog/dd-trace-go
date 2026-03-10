@@ -38,7 +38,7 @@ type traceID struct {
 
 func (t *traceID) HexEncoded() string {
 	if t.hexEncoded == "" {
-		t.cacheHex()
+		t.computeAndCacheHex()
 	}
 	return t.hexEncoded
 }
@@ -90,7 +90,7 @@ func (t *traceID) HasUpper() bool {
 
 func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
 
-func (t *traceID) cacheHex() {
+func (t *traceID) computeAndCacheHex() {
 	t.hexEncoded = hex.EncodeToString(t.value[:])
 }
 
