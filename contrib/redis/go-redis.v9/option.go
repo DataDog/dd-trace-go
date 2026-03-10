@@ -35,7 +35,7 @@ func (fn ClientOptionFn) apply(cfg *clientConfig) {
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
-	cfg.serviceSource = "go-redis"
+	cfg.serviceSource = string(instrumentation.PackageRedisGoRedisV9)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.skipRaw = !options.GetBoolEnv("DD_TRACE_REDIS_RAW_COMMAND", true)

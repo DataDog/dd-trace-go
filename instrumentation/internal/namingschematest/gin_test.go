@@ -46,8 +46,8 @@ var ginTest = harness.TestCase{
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
-		Defaults:        []string{"gin-gonic"},
-		ServiceOverride: []string{"opt.middleware"},
+		Defaults:        []string{string(instrumentation.PackageGin)},
+		ServiceOverride: []string{instrumentation.ServiceSourceMiddleware},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

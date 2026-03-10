@@ -165,12 +165,12 @@ func assertServiceSource(t *testing.T, spans []*mocktracer.Span, wantSources []s
 	require.Len(t, spans, len(wantSources), "the number of spans and number of assertions should be the same")
 	for i := 0; i < len(spans); i++ {
 		want := wantSources[i]
-		got := spans[i].Tag("_dd.svc_src")
+		got := spans[i].Tag(ext.KeyServiceSource)
 		spanName := spans[i].OperationName()
 		if want == "" {
-			assert.Nil(t, got, "expected no _dd.svc_src for span: %s", spanName)
+			assert.Nil(t, got, "expected no service source for span: %s", spanName)
 		} else {
-			assert.Equal(t, want, got, "incorrect _dd.svc_src for span: %s", spanName)
+			assert.Equal(t, want, got, "incorrect service source for span: %s", spanName)
 		}
 	}
 }

@@ -790,7 +790,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 
 	if newSvc, ok := cfg.ServiceMapping(span.service); ok {
 		span.service = newSvc
-		span.serviceSource = "opt.mapping"
+		span.serviceSource = ext.ServiceSourceMapping
 	}
 
 	if ver := cfg.Version(); ver != "" {

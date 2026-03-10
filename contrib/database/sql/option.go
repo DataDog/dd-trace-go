@@ -146,7 +146,7 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
 	cfg.serviceName = defaultServiceName(driverName, rc)
-	cfg.serviceSource = "database/sql"
+	cfg.serviceSource = string(componentName)
 	cfg.spanName = getSpanName(driverName)
 	if rc != nil {
 		// use registered config as the default value for some options

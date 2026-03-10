@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 )
 
@@ -74,6 +75,6 @@ func TestServiceSource(t *testing.T) {
 		span.mu.RLock()
 		defer span.mu.RUnlock()
 		assert.Equal(t, "remapped", span.service)
-		assert.Equal(t, "opt.mapping", span.meta[keyServiceSource])
+		assert.Equal(t, ext.ServiceSourceMapping, span.meta[keyServiceSource])
 	})
 }

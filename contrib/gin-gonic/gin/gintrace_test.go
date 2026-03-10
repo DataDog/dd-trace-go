@@ -654,7 +654,7 @@ func TestServiceName(t *testing.T) {
 		assert.Len(spans, 1)
 		span := spans[0]
 		assert.Equal("gin.router", span.Tag(ext.ServiceName))
-		assert.Equal("gin-gonic", span.Tag("_dd.svc_src"))
+		assert.Equal(string(instrumentation.PackageGin), span.Tag(ext.KeyServiceSource))
 	})
 
 	t.Run("global", func(t *testing.T) {
@@ -687,7 +687,7 @@ func TestServiceName(t *testing.T) {
 		assert.Len(spans, 1)
 		span := spans[0]
 		assert.Equal("global-service", span.Tag(ext.ServiceName))
-		assert.Nil(span.Tag("_dd.svc_src"), "_dd.svc_src should not be set when service matches global service")
+		assert.Nil(span.Tag(ext.KeyServiceSource), "service source should not be set when service matches global service")
 	})
 
 	t.Run("custom", func(t *testing.T) {
@@ -718,7 +718,7 @@ func TestServiceName(t *testing.T) {
 		assert.Len(spans, 1)
 		span := spans[0]
 		assert.Equal("my-service", span.Tag(ext.ServiceName))
-		assert.Equal("opt.middleware", span.Tag("_dd.svc_src"))
+		assert.Equal(instrumentation.ServiceSourceMiddleware, span.Tag(ext.KeyServiceSource))
 	})
 }
 

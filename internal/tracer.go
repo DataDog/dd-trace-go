@@ -19,11 +19,6 @@ func TracerInitialized() bool {
 	return tracerInit.Load()
 }
 
-// KeyServiceSource is the internal span meta key for tracking the origin of a
-// service name override. It is intercepted by the tracer and stored in an
-// internal field rather than written directly to span meta.
-const KeyServiceSource = "_dd.svc_src"
-
 // ServiceOverride bundles a service name with its source for atomic tag
 // handling, avoiding map iteration order issues when both need to be set
 // together during span initialization.

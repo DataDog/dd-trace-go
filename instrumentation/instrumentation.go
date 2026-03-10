@@ -9,6 +9,7 @@ import (
 	"context"
 	"math"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -79,16 +80,22 @@ func (i *Instrumentation) ServiceName(component Component, opCtx OperationContex
 	return n.buildServiceNameV0(opCtx)
 }
 
-// ServiceSourceWithService is the service source value used when the service
-// name is explicitly set via a WithService option.
-const ServiceSourceWithService = "opt.WithService"
+const (
+	// ServiceSourceWithService is the service source value used when the service
+	// name is explicitly set via a WithService option.
+	ServiceSourceWithService = "opt.WithService"
+
+	// ServiceSourceMiddleware is the service source value used when the service
+	// name is set via a middleware parameter (e.g. gin's Middleware(serviceName)).
+	ServiceSourceMiddleware = "opt.middleware"
+)
 
 // ServiceNameWithSource returns a StartSpanOption that sets both the service
 // name and its source. The source tracks the origin of the service name
 // override for _dd.svc_src.
 func ServiceNameWithSource(name string, source string) tracer.StartSpanOption {
 	return func(cfg *tracer.StartSpanConfig) {
-		tracer.Tag(internal.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})(cfg)
+		tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})(cfg)
 	}
 }
 

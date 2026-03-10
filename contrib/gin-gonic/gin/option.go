@@ -31,10 +31,10 @@ type config struct {
 }
 
 func newConfig(serviceName string) *config {
-	serviceSource := "opt.middleware"
+	serviceSource := instrumentation.ServiceSourceMiddleware
 	if serviceName == "" {
 		serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
-		serviceSource = "gin-gonic"
+		serviceSource = string(instrumentation.PackageGin)
 	}
 	cfg := &config{
 		analyticsRate: instr.AnalyticsRate(true),

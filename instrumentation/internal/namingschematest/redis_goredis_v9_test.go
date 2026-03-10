@@ -54,7 +54,7 @@ var redisGoRedisV9 = harness.TestCase{
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
-		Defaults:        []string{"go-redis"},
+		Defaults:        []string{string(instrumentation.PackageRedisGoRedisV9)},
 		ServiceOverride: []string{instrumentation.ServiceSourceWithService},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {

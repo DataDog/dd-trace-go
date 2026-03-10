@@ -61,7 +61,7 @@ func TestClientStatsHandler(t *testing.T) {
 	assert.Equal("grpc", tags[ext.RPCSystem])
 	assert.Equal("/grpc.Fixture/Ping", tags[ext.GRPCFullMethod])
 	assert.Equal(ext.SpanKindClient, tags[ext.SpanKind])
-	assert.Equal(instrumentation.ServiceSourceWithService, tags["_dd.svc_src"])
+	assert.Equal(instrumentation.ServiceSourceWithService, tags[ext.KeyServiceSource])
 }
 
 func newClientStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {

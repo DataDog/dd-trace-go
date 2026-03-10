@@ -87,7 +87,7 @@ func clientDefaults(cfg *config) {
 	cfg.serviceName = newCachedServiceName(func() string {
 		return instr.ServiceName(instrumentation.ComponentClient, nil)
 	})
-	cfg.serviceSource = "grpc"
+	cfg.serviceSource = string(instrumentation.PackageGRPC)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentClient, nil)
 	defaults(cfg)
 }
@@ -96,7 +96,7 @@ func serverDefaults(cfg *config) {
 	cfg.serviceName = newCachedServiceName(func() string {
 		return instr.ServiceName(instrumentation.ComponentServer, nil)
 	})
-	cfg.serviceSource = "grpc"
+	cfg.serviceSource = string(instrumentation.PackageGRPC)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentServer, nil)
 	defaults(cfg)
 }

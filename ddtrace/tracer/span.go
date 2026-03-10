@@ -1303,7 +1303,7 @@ const (
 	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
 	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
-	keyServiceSource           = sharedinternal.KeyServiceSource
+	keyServiceSource           = ext.KeyServiceSource
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().
