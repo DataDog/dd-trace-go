@@ -77,7 +77,7 @@ var databaseSQL_SQLServer = harness.TestCase{
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
-		Defaults:        harness.RepeatString(string(instrumentation.PackageDatabaseSQL), 2),
+		Defaults:        harness.RepeatString(instrumentation.ServiceSourceDriverName, 2),
 		ServiceOverride: []string{instrumentation.ServiceSourceWithService, instrumentation.ServiceSourceWithService},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
@@ -101,7 +101,7 @@ var databaseSQL_Postgres = harness.TestCase{
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
-		Defaults:        harness.RepeatString(string(instrumentation.PackageDatabaseSQL), 2),
+		Defaults:        harness.RepeatString(instrumentation.ServiceSourceDriverName, 2),
 		ServiceOverride: []string{instrumentation.ServiceSourceWithService, instrumentation.ServiceSourceWithService},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
@@ -153,7 +153,7 @@ var databaseSQL_MySQL = harness.TestCase{
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
-		Defaults:        harness.RepeatString(string(instrumentation.PackageDatabaseSQL), 2),
+		Defaults:        harness.RepeatString(instrumentation.ServiceSourceDriverName, 2),
 		ServiceOverride: []string{instrumentation.ServiceSourceWithService, instrumentation.ServiceSourceWithService},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {

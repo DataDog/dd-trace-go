@@ -88,6 +88,10 @@ const (
 	// ServiceSourceMiddleware is the service source value used when the service
 	// name is set via a middleware parameter (e.g. gin's Middleware(serviceName)).
 	ServiceSourceMiddleware = "opt.middleware"
+
+	// ServiceSourceDriverName is the service source value used when the service
+	// name is derived from the driver name (e.g. database/sql Register driverName).
+	ServiceSourceDriverName = "opt.drivername"
 )
 
 // ServiceNameWithSource returns a StartSpanOption that sets both the service
