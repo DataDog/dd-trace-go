@@ -7,17 +7,20 @@ package tracer
 
 import (
 	"bytes"
+	"errors"
 
+	"github.com/gogo/protobuf/proto"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
+// TODO: Handle concurrent reads and writes for this struct. Update methods accordingly.
 type payloadOTLP struct {
 	resource *otlpresource.Resource
 	scope    *otlpcommon.InstrumentationScope
 
-	spans []otlptrace.Span
+	spans []*otlptrace.Span
 	count int
 
 	buf []byte
@@ -29,18 +32,24 @@ func newPayloadOTLP() *payloadOTLP {
 	return &payloadOTLP{
 		resource: &otlpresource.Resource{},
 		scope:    &otlpcommon.InstrumentationScope{},
-		spans:    make([]otlptrace.Span, 0),
+		spans:    make([]*otlptrace.Span, 0),
 		reader:   bytes.NewReader([]byte{}),
 	}
 }
 
 func (p *payloadOTLP) Read(b []byte) (int, error) {
+	// Ensure we encode only once
+	if p.buf == nil {
+		if err := p.encode(); err != nil {
+			return 0, err
+		}
+		p.reader = bytes.NewReader(p.buf)
+	}
 	return p.reader.Read(b)
 }
 
 func (p *payloadOTLP) Write(b []byte) (int, error) {
-	p.buf = append(p.buf, b...)
-	return len(b), nil
+	return 0, errors.New("payloadOTLP does not support direct writes")
 }
 
 func (p *payloadOTLP) Close() error {
@@ -91,4 +100,26 @@ func (p *payloadOTLP) itemCount() int {
 
 func (p *payloadOTLP) protocol() float64 {
 	return traceProtocolOTLP
+}
+
+func (p *payloadOTLP) encode() error {
+	tracesData := &otlptrace.TracesData{
+		ResourceSpans: []*otlptrace.ResourceSpans{
+			{
+				Resource: p.resource, // *otlpresource.Resource
+				ScopeSpans: []*otlptrace.ScopeSpans{
+					{
+						Scope: p.scope, // *otlpcommon.InstrumentationScope
+						Spans: p.spans, // []*tracev1.Span
+					},
+				},
+			},
+		},
+	}
+	b, err := proto.Marshal(tracesData)
+	if err != nil {
+		return err
+	}
+	p.buf = b
+	return nil
 }

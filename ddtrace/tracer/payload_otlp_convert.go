@@ -15,8 +15,8 @@ import (
 // Span conversion (DD Span → OTLP Span and related types)
 // -----------------------------------------------------------------------------
 
-func convertSpan(s *Span) otlptrace.Span {
-	return otlptrace.Span{
+func convertSpan(s *Span) *otlptrace.Span {
+	return &otlptrace.Span{
 		TraceId:           convertTraceID(s.traceID),
 		SpanId:            convertSpanID(s.spanID),
 		Name:              s.resource,
@@ -162,7 +162,7 @@ func otlpIntValue(i int64) *otlpcommon.AnyValue {
 
 func otlpArrayValue(arr *spanEventArrayAttribute) *otlpcommon.AnyValue {
 	if arr == nil || len(arr.Values) == 0 {
-		return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_ArrayValue{ArrayValue: &otlpcommon.ArrayValue{Values: []*otlpcommon.AnyValue{}}}}
+		return &otlpcommon.AnyValue{}
 	}
 	values := make([]*otlpcommon.AnyValue, 0, len(arr.Values))
 	for _, v := range arr.Values {

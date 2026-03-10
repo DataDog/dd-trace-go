@@ -141,14 +141,43 @@ func TestConvertEvents(t *testing.T) {
 
 func TestConvertEventAttributes(t *testing.T) {
 	dd := map[string]*spanEventAttribute{
-		"a": {Type: spanEventAttributeTypeString, StringValue: "x"},
-		"b": {Type: spanEventAttributeTypeString, StringValue: "y"},
+		"str":   {Type: spanEventAttributeTypeString, StringValue: "x"},
+		"bool":  {Type: spanEventAttributeTypeBool, BoolValue: true},
+		"int":   {Type: spanEventAttributeTypeInt, IntValue: -7},
+		"float": {Type: spanEventAttributeTypeDouble, DoubleValue: 3.14},
+		"arr": {
+			Type: spanEventAttributeTypeArray,
+			ArrayValue: &spanEventArrayAttribute{
+				Values: []*spanEventArrayAttributeValue{
+					{Type: spanEventArrayAttributeValueTypeString, StringValue: "elem1"},
+					{Type: spanEventArrayAttributeValueTypeInt, IntValue: 99},
+				},
+			},
+		},
 	}
 	otlp := convertEventAttributes(dd)
-	require.Len(t, otlp, 2)
+	require.Len(t, otlp, 5)
+
 	m := keyValuesToMap(otlp)
-	assert.Equal(t, "x", m["a"])
-	assert.Equal(t, "y", m["b"])
+	assert.Equal(t, "x", m["str"])
+	assert.Equal(t, true, m["bool"])
+	assert.Equal(t, int64(-7), m["int"])
+	assert.Equal(t, 3.14, m["float"])
+
+	// Array: assert outside keyValuesToMap (it doesn't flatten arrays)
+	var arrKV *otlpcommon.KeyValue
+	for _, kv := range otlp {
+		if kv != nil && kv.Key == "arr" {
+			arrKV = kv
+			break
+		}
+	}
+	require.NotNil(t, arrKV)
+	av := arrKV.Value.GetArrayValue()
+	require.NotNil(t, av)
+	require.Len(t, av.Values, 2)
+	assert.Equal(t, "elem1", av.Values[0].GetStringValue())
+	assert.Equal(t, int64(99), av.Values[1].GetIntValue())
 }
 
 func TestConvertEventAttributes_NilEmpty(t *testing.T) {
