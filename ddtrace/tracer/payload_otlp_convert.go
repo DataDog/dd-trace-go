@@ -7,10 +7,35 @@ package tracer
 
 import (
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
+	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
+
+// -----------------------------------------------------------------------------
+// Resource construction
+// -----------------------------------------------------------------------------
+
+// buildResource constructs the OTLP Resource from resolved tracer configuration.
+// If c is nil (e.g. in tests), an empty resource is returned.
+func buildResource(c *config) *otlpresource.Resource {
+	if c == nil {
+		return &otlpresource.Resource{}
+	}
+	attrs := []*otlpcommon.KeyValue{
+		otlpKeyValue("service.name", otlpStringValue(c.serviceName)),
+		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
+		otlpKeyValue("telemetry.sdk.name", otlpStringValue("dd-trace-go")),
+	}
+	if v := c.internalConfig.Env(); v != "" {
+		attrs = append(attrs, otlpKeyValue("deployment.environment", otlpStringValue(v)))
+	}
+	if v := c.internalConfig.Version(); v != "" {
+		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(v)))
+	}
+	return &otlpresource.Resource{Attributes: attrs}
+}
 
 // -----------------------------------------------------------------------------
 // Span conversion (DD Span → OTLP Span and related types)

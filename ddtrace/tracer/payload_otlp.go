@@ -38,25 +38,6 @@ func newPayloadOTLP(c *config) *payloadOTLP {
 	}
 }
 
-// buildResource constructs the OTLP Resource from resolved tracer configuration.
-// If c is nil (e.g. in tests), an empty resource is returned.
-func buildResource(c *config) *otlpresource.Resource {
-	if c == nil {
-		return &otlpresource.Resource{}
-	}
-	attrs := []*otlpcommon.KeyValue{
-		otlpKeyValue("service.name", otlpStringValue(c.serviceName)),
-		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
-		otlpKeyValue("telemetry.sdk.name", otlpStringValue("dd-trace-go")),
-	}
-	if v := c.internalConfig.Env(); v != "" {
-		attrs = append(attrs, otlpKeyValue("deployment.environment", otlpStringValue(v)))
-	}
-	if v := c.internalConfig.Version(); v != "" {
-		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(v)))
-	}
-	return &otlpresource.Resource{Attributes: attrs}
-}
 
 func (p *payloadOTLP) Read(b []byte) (int, error) {
 	// Ensure we encode only once
@@ -97,7 +78,8 @@ func (p *payloadOTLP) reset() {
 func (p *payloadOTLP) clear() {
 	p.spans = p.spans[:0]
 	atomic.StoreUint32(&p.count, 0)
-	p.reader.Seek(0, 0)
+	p.buf = nil
+	p.reader = bytes.NewReader([]byte{})
 }
 
 func (p *payloadOTLP) recordItem() {
