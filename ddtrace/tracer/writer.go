@@ -143,8 +143,11 @@ func (h *agentTraceWriter) flush() {
 				log.Debug("sent traces after %d attempts", attempt+1)
 				h.statsd.Count("datadog.tracer.flush_bytes", int64(stats.size), nil, 1)
 				h.statsd.Count("datadog.tracer.flush_traces", int64(stats.itemCount), nil, 1)
-				if err := h.prioritySampling.readRatesJSON(rc); err != nil {
-					h.statsd.Incr("datadog.tracer.decode_error", nil, 1)
+				// OTLP collectors don't support adaptive sampling
+				if p.protocol() != traceProtocolOTLP {
+					if err := h.prioritySampling.readRatesJSON(rc); err != nil {
+						h.statsd.Incr("datadog.tracer.decode_error", nil, 1)
+					}
 				}
 				return
 			}
