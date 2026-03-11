@@ -15,6 +15,10 @@
 //	// ... start tracer with agent.Addr() / agent.Transport() ...
 //	// ... create spans, flush ...
 //	span := agent.RequireSpan(t, agenttest.With().Operation("http.request"))
+//
+// By design, this API does not expose span slices or iterators. Order-dependent
+// assertions are a common source of test flakiness; any future iterator must
+// randomize its traversal order.
 package agenttest
 
 import (
