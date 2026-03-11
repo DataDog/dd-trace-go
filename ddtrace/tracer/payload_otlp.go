@@ -38,7 +38,6 @@ func newPayloadOTLP(c *config) *payloadOTLP {
 	}
 }
 
-
 func (p *payloadOTLP) Read(b []byte) (int, error) {
 	// Ensure we encode only once
 	if p.buf == nil {
