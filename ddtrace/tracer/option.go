@@ -190,9 +190,12 @@ type config struct {
 	httpClient *http.Client
 
 	// agentTransport, if set, is applied as the HTTP client's round-tripper
-	// after the orchestrion override so that test helpers can inject an
-	// in-process transport without triggering real network activity during
-	// tracer startup (e.g. /info discovery, StatsD dial).
+	// unconditionally after finishConfig builds c.httpClient — including after
+	// the orchestrion override that discards any WithHTTPClient value. This
+	// escape hatch exists specifically because orchestrion replaces c.httpClient
+	// to avoid self-tracing, which would cause test helpers to dial the real
+	// network even when an in-process agent is provided. Only test helpers
+	// (e.g. tracertest) should set this field.
 	agentTransport http.RoundTripper
 
 	// llmobsHTTPClient overrides c.llmobs.TracerConfig.HTTPClient after finishConfig
@@ -415,6 +418,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Allow test helpers to inject an in-process transport so that tracer
 	// bootstrap (e.g. /info discovery) never touches the real network even
 	// when orchestrion would otherwise override the HTTP client above.
+	// We cannot use WithHTTPClient for this because orchestrion unconditionally
+	// replaces c.httpClient to avoid self-tracing. agentTransport is applied
+	// last so it always wins. For testing only — see config.agentTransport.
 	if c.agentTransport != nil {
 		c.httpClient = &http.Client{Transport: c.agentTransport}
 	}
@@ -1448,10 +1454,13 @@ func withLLMObsInProcessTransport(testBaseURL string, rt http.RoundTripper) Star
 	}
 }
 
-// withAgentTransport injects an in-process HTTP round-tripper so that tracer
-// startup (e.g. /info discovery) never dials the real network. It is applied
-// after the orchestrion httpClient override so it takes precedence. For use in
-// test helpers only.
+// withAgentTransport injects an in-process HTTP round-tripper for the agent
+// transport. It exists because WithHTTPClient cannot be used in tests that run
+// under orchestrion: orchestrion unconditionally replaces c.httpClient to
+// prevent self-tracing, which would cause the in-process agent transport to be
+// discarded and leave the tracer dialing the real network. agentTransport is
+// applied after that override in finishConfig so it always takes precedence.
+// For use in test helpers only.
 func withAgentTransport(rt http.RoundTripper) StartOption {
 	return func(c *config) {
 		c.agentTransport = rt
