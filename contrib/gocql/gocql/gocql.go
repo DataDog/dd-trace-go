@@ -395,7 +395,7 @@ func commonStartSpanOptions(p params) []tracer.StartSpanOption {
 	cfg := p.config
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeCassandra),
-		tracer.ServiceName(cfg.serviceName),
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 		tracer.Tag(ext.Component, instrumentation.PackageGoCQL),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemCassandra),

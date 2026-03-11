@@ -74,7 +74,7 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 func (c *Client) startSpan(resourceName string) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMemcached),
-		tracer.ServiceName(c.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(c.cfg.serviceName, c.cfg.serviceSource),
 		tracer.ResourceName(resourceName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
