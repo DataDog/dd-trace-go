@@ -335,7 +335,7 @@ type TextMapCarrier map[string]string
 // File: tracer.go
 
 // Package Functions
-func StartSpanFromPropagatedContext(string, C, ...StartSpanOption) (*Span, error)
+func StartSpanFromPropagatedContext(context.Context, string, C, ...StartSpanOption) (*Span, context.Context)
 func Extract(any) (*SpanContext, error)
 func Flush()
 func Inject(*SpanContext, any) (error)

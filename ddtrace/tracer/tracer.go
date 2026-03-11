@@ -384,19 +384,21 @@ func Inject(ctx *SpanContext, carrier any) error {
 
 // StartSpanFromPropagatedContext starts a new span with the given operation name and set of options.
 // If the carrier contains a valid span context, the new span will be a child of the existing span.
-// If the carrier does not contain a valid span context, an error is returned.
-func StartSpanFromPropagatedContext[C TextMapReader](operationName string, carrier C, opts ...StartSpanOption) (*Span, error) {
+// If the carrier does not contain a valid span context (e.g. an untraced request), a root span is
+// started instead. The returned context contains the new span and should be used for downstream
+// propagation.
+func StartSpanFromPropagatedContext[C TextMapReader](ctx gocontext.Context, operationName string, carrier C, opts ...StartSpanOption) (*Span, gocontext.Context) {
 	tr := getGlobalTracer()
 	spanCtx, err := tr.Extract(carrier)
-	if err != nil {
-		return nil, err
+	if err != nil && log.DebugEnabled() {
+		log.Debug("StartSpanFromPropagatedContext: failed to extract span context: %v", err)
 	}
 	if spanCtx != nil {
-		opts = append(opts, WithStartSpanConfig(&StartSpanConfig{
-			Parent: spanCtx,
-		}))
+		opts = append(opts, func(cfg *StartSpanConfig) { cfg.Parent = spanCtx })
 	}
-	return tr.StartSpan(operationName, opts...), nil
+	opts = append(opts, withContext(ctx))
+	span := tr.StartSpan(operationName, opts...)
+	return span, ContextWithSpan(ctx, span)
 }
 
 // SetUser associates user information to the current trace which the

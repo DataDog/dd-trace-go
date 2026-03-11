@@ -2973,7 +2973,7 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	require.False(t, got, "remote config should be disabled after Stop()")
 }
 
-func TestContinueSpan(t *testing.T) {
+func TestStartSpanFromPropagatedContext(t *testing.T) {
 	tracer, _, _, stop, err := startTestTracer(t)
 	assert.NoError(t, err)
 	defer stop()
@@ -2986,19 +2986,54 @@ func TestContinueSpan(t *testing.T) {
 		err = Inject(root.Context(), carrier)
 		assert.NoError(t, err)
 
-		span, err := StartSpanFromPropagatedContext("child", carrier)
+		ctx := context.Background()
+		span, newCtx := StartSpanFromPropagatedContext(ctx, "child", carrier)
+		assert.Equal(t, root.traceID, span.traceID)
+		assert.Equal(t, root.spanID, span.parentID)
+		ctxSpan, ok := SpanFromContext(newCtx)
+		assert.True(t, ok)
+		assert.Equal(t, span, ctxSpan)
+	})
+	t.Run("no parent", func(t *testing.T) {
+		ctx := context.Background()
+		span, newCtx := StartSpanFromPropagatedContext(ctx, "child", TextMapCarrier(map[string]string{}))
+		assert.NotNil(t, span)
+		ctxSpan, ok := SpanFromContext(newCtx)
+		assert.True(t, ok)
+		assert.Equal(t, span, ctxSpan)
+		assert.Equal(t, uint64(0), span.parentID)
+	})
+	t.Run("span links preservation", func(t *testing.T) {
+		carrier := TextMapCarrier(map[string]string{})
+		err = Inject(root.Context(), carrier)
 		assert.NoError(t, err)
+
+		link := SpanLink{TraceID: 0x1234, SpanID: 0x5678}
+		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-with-links", carrier, WithSpanLinks([]SpanLink{link}))
+		assert.Equal(t, root.spanID, span.parentID)
+		assert.Contains(t, span.spanLinks, link)
+	})
+	t.Run("options merging", func(t *testing.T) {
+		carrier := TextMapCarrier(map[string]string{})
+		err = Inject(root.Context(), carrier)
+		assert.NoError(t, err)
+
+		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-with-tags", carrier, Tag("custom.tag", "hello"))
+		assert.Equal(t, root.spanID, span.parentID)
+		assert.Equal(t, "hello", span.meta["custom.tag"])
+	})
+	t.Run("http headers carrier", func(t *testing.T) {
+		httpCarrier := HTTPHeadersCarrier{}
+		err = Inject(root.Context(), httpCarrier)
+		assert.NoError(t, err)
+
+		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-http", httpCarrier)
 		assert.Equal(t, root.traceID, span.traceID)
 		assert.Equal(t, root.spanID, span.parentID)
 	})
-	t.Run("no parent", func(t *testing.T) {
-		span, err := StartSpanFromPropagatedContext("child", TextMapCarrier(map[string]string{}))
-		assert.ErrorIs(t, err, ErrSpanContextNotFound)
-		assert.Nil(t, span)
-	})
 }
 
-func BenchmarkContinueSpan(b *testing.B) {
+func BenchmarkStartSpanFromPropagatedContext(b *testing.B) {
 	tracer, _, _, stop, err := startTestTracer(b)
 	assert.NoError(b, err)
 	defer stop()
@@ -3012,7 +3047,6 @@ func BenchmarkContinueSpan(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, err := StartSpanFromPropagatedContext("child", carrier)
-		assert.NoError(b, err)
+		_, _ = StartSpanFromPropagatedContext(context.Background(), "child", carrier)
 	}
 }
