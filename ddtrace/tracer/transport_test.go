@@ -514,6 +514,53 @@ func TestDefaultHeaders(t *testing.T) {
 	assert.NoError(err)
 }
 
+// TestOTLPTransportHeaders verifies that when OTLP export is configured:
+//   - Content-Type is "application/x-protobuf" (required by the OTLP HTTP spec)
+//   - Datadog-specific identity headers are not sent to the OTLP endpoint
+func TestOTLPTransportHeaders(t *testing.T) {
+	var (
+		mu              sync.Mutex
+		capturedHeaders http.Header
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/info" {
+			return
+		}
+		mu.Lock()
+		capturedHeaders = r.Header.Clone()
+		mu.Unlock()
+	}))
+	defer srv.Close()
+
+	// OTEL_EXPORTER_OTLP_TRACES_ENDPOINT sets the full traceURL and derives the agentURL,
+	// so the tracer will send both /info probes and trace payloads to the test server.
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", srv.URL+"/v1/traces")
+
+	trc, err := newTracer(WithAgentTimeout(2))
+	require.NoError(t, err)
+	defer trc.Stop()
+
+	p := &safePayload{p: newPayloadOTLP(trc.config)}
+	_, err = p.push(spanList{getTestSpan()})
+	require.NoError(t, err)
+
+	_, err = trc.config.transport.send(p)
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotNil(t, capturedHeaders, "/v1/traces handler was never called")
+
+	// OTLP HTTP/protobuf requires this Content-Type.
+	assert.Equal(t, "application/x-protobuf", capturedHeaders.Get("Content-Type"))
+
+	// Datadog identity headers must not be forwarded to a generic OTLP collector.
+	assert.Empty(t, capturedHeaders.Get("Datadog-Meta-Lang"))
+	assert.Empty(t, capturedHeaders.Get("Datadog-Meta-Lang-Version"))
+	assert.Empty(t, capturedHeaders.Get("Datadog-Meta-Lang-Interpreter"))
+	assert.Empty(t, capturedHeaders.Get("Datadog-Meta-Tracer-Version"))
+}
+
 func TestClientComputedStatsHeader(t *testing.T) {
 	t.Run("header-not-set-when-client-drop-p0s-not-supported", func(t *testing.T) {
 		// When the agent does not support client_drop_p0s,

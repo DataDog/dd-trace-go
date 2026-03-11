@@ -795,6 +795,9 @@ func (c *config) applyTraceProtocol(isOTLP bool, otlpFullTraceURL string) {
 		c.traceProtocol = traceProtocolOTLP
 		// TODO: Once OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc is supported, handle gRPC transport here.
 		if t, ok := c.transport.(*httpTransport); ok {
+			t.headers = map[string]string{
+				"Content-Type": "application/x-protobuf",
+			}
 			if otlpFullTraceURL != "" {
 				// OTEL_EXPORTER_OTLP_TRACES_ENDPOINT provides the full URL including path.
 				t.traceURL = otlpFullTraceURL
