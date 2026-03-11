@@ -56,13 +56,23 @@ func AgentURLFromEnv() *url.URL {
 		}
 	}
 
+	if endpoint, providedOTLPEndpoint := env.Lookup("OTEL_EXPORTER_OTLP_ENDPOINT"); providedOTLPEndpoint {
+		u, err := url.Parse(endpoint)
+		if err != nil {
+			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_ENDPOINT: %s", err.Error())
+		} else {
+			return u
+		}
+	}
+
 	host, providedHost := env.Lookup("DD_AGENT_HOST")
-	port, providedPort := env.Lookup("DD_TRACE_AGENT_PORT")
 	if host == "" {
 		// We treat set but empty the same as unset
 		providedHost = false
 		host = DefaultAgentHostname
 	}
+
+	port, providedPort := env.Lookup("DD_TRACE_AGENT_PORT")
 	if port == "" {
 		// We treat set but empty the same as unset
 		providedPort = false

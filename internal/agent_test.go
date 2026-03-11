@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAgentURLFromEnv(t *testing.T) {
@@ -30,6 +31,56 @@ func TestAgentURLFromEnv(t *testing.T) {
 			assert.Equal(t, tc.want, url.String())
 		})
 	}
+}
+
+func TestAgentURLFromEnvOTLPEndpoint(t *testing.T) {
+	t.Run("sets host and scheme from OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
+		u := AgentURLFromEnv()
+		assert.Equal(t, "http", u.Scheme)
+		assert.Equal(t, "otel-collector:4318", u.Host)
+	})
+
+	t.Run("falls through on invalid OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost%+o:4318")
+		u := AgentURLFromEnv()
+		// Invalid URL cannot be parsed; falls back to the default.
+		assert.Equal(t, "http://localhost:8126", u.String())
+	})
+
+	t.Run("DD_TRACE_AGENT_URL takes priority over OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		t.Setenv("DD_TRACE_AGENT_URL", "https://dd-agent:1234")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
+		u := AgentURLFromEnv()
+		assert.Equal(t, "https", u.Scheme)
+		assert.Equal(t, "dd-agent:1234", u.Host)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT takes priority over DD_AGENT_HOST", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
+		t.Setenv("DD_AGENT_HOST", "dd-agent")
+		u := AgentURLFromEnv()
+		assert.Equal(t, "otel-collector:4318", u.Host)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT takes priority over DD_TRACE_AGENT_PORT", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
+		t.Setenv("DD_TRACE_AGENT_PORT", "9999")
+		u := AgentURLFromEnv()
+		assert.Equal(t, "otel-collector:4318", u.Host)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT takes priority over UDS", func(t *testing.T) {
+		sock := t.TempDir()
+		old := DefaultTraceAgentUDSPath
+		DefaultTraceAgentUDSPath = sock
+		t.Cleanup(func() { DefaultTraceAgentUDSPath = old })
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
+		u := AgentURLFromEnv()
+		require.Equal(t, "http", u.Scheme)
+		assert.Equal(t, "otel-collector:4318", u.Host)
+	})
 }
 
 func TestAgentURLPriorityOrder(t *testing.T) {

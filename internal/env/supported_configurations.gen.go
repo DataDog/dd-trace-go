@@ -246,6 +246,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_EXPORTER_OTLP_METRICS_TIMEOUT":                              {},
 	"OTEL_EXPORTER_OTLP_PROTOCOL":                                     {},
 	"OTEL_EXPORTER_OTLP_TIMEOUT":                                      {},
+	"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT":                             {},
 	"OTEL_LOGS_EXPORTER":                                              {},
 	"OTEL_LOG_LEVEL":                                                  {},
 	"OTEL_METRICS_EXPORTER":                                           {},

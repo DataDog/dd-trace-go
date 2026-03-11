@@ -383,10 +383,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
-	if c.agentURL == nil {
-		c.agentURL = internal.AgentURLFromEnv()
-	}
-	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
+	isOTLP, otlpFullTraceURL := c.resolveAgentURL()
+
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
 			// Make sure we don't create http client traces from inside the tracer by using our http client
@@ -468,16 +466,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
 
-	if getDDorOtelConfig("traceProtocol") == strconv.FormatFloat(traceProtocolOTLP, 'f', 1, 64) {
-		c.traceProtocol = traceProtocolOTLP
-	} else if c.agent.v1ProtocolAvailable {
-		c.traceProtocol = traceProtocolV1
-		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
-		}
-	} else {
-		c.traceProtocol = traceProtocolV04
-	}
+	c.applyTraceProtocol(isOTLP, otlpFullTraceURL)
 
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -748,6 +737,79 @@ func MarkIntegrationImported(integration string) bool {
 	s.imported = true
 	contribIntegrations[integration] = s
 	return true
+}
+
+// resolveAgentURL initialises c.agentURL (if not already set by a start option), captures
+// c.originalAgentURL for logging, and then applies any OTLP-driven adjustments. It must be
+// called before the HTTP client and transport are created. It returns:
+//   - isOTLP: whether the OTLP trace protocol should be used.
+//   - otlpFullTraceURL: the verbatim value of OTEL_EXPORTER_OTLP_TRACES_ENDPOINT when set
+//     (empty otherwise; applyTraceProtocol will then derive the URL from c.agentURL).
+//
+// agentURL / traceURL priority when OTLP is active:
+//  1. OTEL_EXPORTER_OTLP_TRACES_ENDPOINT — provides the full traceURL; agentURL is derived
+//     from its scheme+host. Implies OTLP mode regardless of other settings.
+//  2. OTEL_TRACES_EXPORTER=otlp (or DD_TRACE_AGENT_PROTOCOL_VERSION=2.0) — enables OTLP.
+//     agentURL base comes from OTEL_EXPORTER_OTLP_ENDPOINT (resolved by AgentURLFromEnv),
+//     DD_TRACE_AGENT_URL, or DD_AGENT_HOST/PORT. If none of those were set, the default
+//     Datadog port (8126) is replaced with the OTLP receiver default (4318).
+func (c *config) resolveAgentURL() (isOTLP bool, otlpFullTraceURL string) {
+	if c.agentURL == nil {
+		c.agentURL = internal.AgentURLFromEnv()
+	}
+	c.originalAgentURL = c.agentURL
+
+	isOTLP = getDDorOtelConfig("traceProtocol") == strconv.FormatFloat(traceProtocolOTLP, 'f', 1, 64)
+	if endpoint := env.Get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"); endpoint != "" {
+		isOTLP = true
+		otlpFullTraceURL = endpoint
+		if u, err := url.Parse(endpoint); err == nil {
+			c.agentURL = &url.URL{Scheme: u.Scheme, Host: u.Host}
+		} else {
+			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: %s", err.Error())
+		}
+		return
+	}
+	if isOTLP {
+		// Switch from the default Datadog port to the OTLP default only when no explicit
+		// agent URL configuration is in effect.
+		noExplicitURL := env.Get("DD_TRACE_AGENT_URL") == "" &&
+			env.Get("OTEL_EXPORTER_OTLP_ENDPOINT") == "" &&
+			env.Get("DD_AGENT_HOST") == "" &&
+			env.Get("DD_TRACE_AGENT_PORT") == ""
+		if noExplicitURL && c.agentURL.Scheme != "unix" {
+			c.agentURL = &url.URL{
+				Scheme: "http",
+				Host:   net.JoinHostPort(defaultHostname, defaultOTLPPortHTTP),
+			}
+		}
+	}
+	return
+}
+
+// applyTraceProtocol sets c.traceProtocol and updates the transport's traceURL to match.
+// It must be called after loadAgentFeatures so that c.agent.v1ProtocolAvailable is known.
+// isOTLP and otlpFullTraceURL come from resolveOTLPAgentURL.
+func (c *config) applyTraceProtocol(isOTLP bool, otlpFullTraceURL string) {
+	if isOTLP {
+		c.traceProtocol = traceProtocolOTLP
+		// TODO: Once OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc is supported, handle gRPC transport here.
+		if t, ok := c.transport.(*httpTransport); ok {
+			if otlpFullTraceURL != "" {
+				// OTEL_EXPORTER_OTLP_TRACES_ENDPOINT provides the full URL including path.
+				t.traceURL = otlpFullTraceURL
+			} else {
+				t.traceURL = c.agentURL.String() + otlpTracesAPIPathHTTP
+			}
+		}
+	} else if c.agent.v1ProtocolAvailable {
+		c.traceProtocol = traceProtocolV1
+		if t, ok := c.transport.(*httpTransport); ok {
+			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
+		}
+	} else {
+		c.traceProtocol = traceProtocolV04
+	}
 }
 
 func (c *config) loadContribIntegrations(deps []*debug.Module) {

@@ -33,15 +33,17 @@ const (
 const (
 	defaultHostname          = "localhost"
 	defaultPort              = "8126"
+	defaultOTLPPortHTTP      = "4318"
 	defaultAddress           = defaultHostname + ":" + defaultPort
 	defaultURL               = "http://" + defaultAddress
 	defaultHTTPTimeout       = 10 * time.Second              // defines the current timeout before giving up with the send process
 	traceCountHeader         = "X-Datadog-Trace-Count"       // header containing the number of traces in the payload
 	obfuscationVersionHeader = "Datadog-Obfuscation-Version" // header containing the version of obfuscation used, if any
 
-	tracesAPIPath   = "/v0.4/traces"
-	tracesAPIPathV1 = "/v1.0/traces"
-	statsAPIPath    = "/v0.6/stats"
+	tracesAPIPath         = "/v0.4/traces"
+	tracesAPIPathV1       = "/v1.0/traces"
+	statsAPIPath          = "/v0.6/stats"
+	otlpTracesAPIPathHTTP = "/v1/traces"
 )
 
 // transport is an interface for communicating data to the agent.
