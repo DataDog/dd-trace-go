@@ -2986,13 +2986,13 @@ func TestContinueSpan(t *testing.T) {
 		err = Inject(root.Context(), carrier)
 		assert.NoError(t, err)
 
-		span, err := ContinueSpan("child", carrier)
+		span, err := StartSpanFromPropagatedContext("child", carrier)
 		assert.NoError(t, err)
 		assert.Equal(t, root.traceID, span.traceID)
 		assert.Equal(t, root.spanID, span.parentID)
 	})
 	t.Run("no parent", func(t *testing.T) {
-		span, err := ContinueSpan("child", TextMapCarrier(map[string]string{}))
+		span, err := StartSpanFromPropagatedContext("child", TextMapCarrier(map[string]string{}))
 		assert.ErrorIs(t, err, ErrSpanContextNotFound)
 		assert.Nil(t, span)
 	})
@@ -3012,7 +3012,7 @@ func BenchmarkContinueSpan(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, err := ContinueSpan("child", carrier)
+		_, err := StartSpanFromPropagatedContext("child", carrier)
 		assert.NoError(b, err)
 	}
 }

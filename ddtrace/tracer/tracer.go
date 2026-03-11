@@ -382,10 +382,10 @@ func Inject(ctx *SpanContext, carrier any) error {
 	return getGlobalTracer().Inject(ctx, carrier)
 }
 
-// ContinueSpan starts a new span with the given operation name and set of options.
+// StartSpanFromPropagatedContext starts a new span with the given operation name and set of options.
 // If the carrier contains a valid span context, the new span will be a child of the existing span.
 // If the carrier does not contain a valid span context, an error is returned.
-func ContinueSpan[C TextMapReader](operationName string, carrier C, opts ...StartSpanOption) (*Span, error) {
+func StartSpanFromPropagatedContext[C TextMapReader](operationName string, carrier C, opts ...StartSpanOption) (*Span, error) {
 	tr := getGlobalTracer()
 	spanCtx, err := tr.Extract(carrier)
 	if err != nil {
