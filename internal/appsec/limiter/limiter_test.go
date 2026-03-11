@@ -266,7 +266,7 @@ func BenchmarkLimiter(b *testing.B) {
 			b.StopTimer()
 			b.ResetTimer()
 
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				var startBarrier, stopBarrier sync.WaitGroup
 				// Create a start barrier to synchronize every goroutine's launch and
 				// increase the chances of parallel accesses
