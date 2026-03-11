@@ -394,6 +394,9 @@ func StartSpanFromPropagatedContext[C TextMapReader](ctx gocontext.Context, oper
 		log.Debug("StartSpanFromPropagatedContext: failed to extract span context: %v", err)
 	}
 	if spanCtx != nil {
+		if links := spanCtx.SpanLinks(); len(links) > 0 {
+			opts = append(opts, WithSpanLinks(links))
+		}
 		opts = append(opts, func(cfg *StartSpanConfig) { cfg.Parent = spanCtx })
 	}
 	opts = append(opts, withContext(ctx))
