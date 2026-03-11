@@ -18,21 +18,21 @@ import (
 )
 
 type Tracer struct {
-	PrevSpan             *tracer.Span
-	ctx                  context.Context
-	consumerServiceName  string
-	producerServiceName  string
-	consumerSpanName     string
-	producerSpanName     string
-	analyticsRate        float64
-	bootstrapServers     string
-	groupID              string
-	clusterID            string
-	clusterIDMu          sync.RWMutex
-	tagFns               map[string]func(msg Message) any
-	dsmEnabled           bool
-	ckgoVersion          CKGoVersion
-	librdKafkaVersion    int
+	PrevSpan            *tracer.Span
+	ctx                 context.Context
+	consumerServiceName string
+	producerServiceName string
+	consumerSpanName    string
+	producerSpanName    string
+	analyticsRate       float64
+	bootstrapServers    string
+	groupID             string
+	clusterID           string
+	clusterIDMu         sync.RWMutex
+	tagFns              map[string]func(msg Message) any
+	dsmEnabled          bool
+	ckgoVersion         CKGoVersion
+	librdKafkaVersion   int
 }
 
 func (tr *Tracer) DSMEnabled() bool {

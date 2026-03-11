@@ -42,7 +42,7 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 	}
 	opts = append(opts, WithConfig(conf))
 	wrapped := WrapConsumer(c, opts...)
-	fetchClusterIDAsync(wrapped.tracer, conf)
+	go setTracerClusterID(wrapped.tracer, conf)
 	return wrapped, nil
 }
 
@@ -54,40 +54,36 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 	}
 	opts = append(opts, WithConfig(conf))
 	wrapped := WrapProducer(p, opts...)
-	fetchClusterIDAsync(wrapped.tracer, conf)
+	go setTracerClusterID(wrapped.tracer, conf)
 	return wrapped, nil
 }
 
-// fetchClusterIDAsync launches a goroutine to fetch the Kafka cluster ID.
-func fetchClusterIDAsync(tr *kafkatrace.Tracer, conf *kafka.ConfigMap) {
-	go func() {
-		if id := fetchClusterID(conf); id != "" {
-			tr.SetClusterID(id)
-		}
-	}()
-}
-
-func fetchClusterID(conf *kafka.ConfigMap) string {
+// setTracerClusterID retrieves the Kafka ClusterID via a new AdminClient and
+// sets that on the given tracer.
+func setTracerClusterID(tr *kafkatrace.Tracer, conf *kafka.ConfigMap) {
 	adminConf := &kafka.ConfigMap{}
 	for k, v := range *conf {
+		// Filter config keys that prevent creation of an admin client
 		if !strings.HasPrefix(k, "go.") {
 			(*adminConf)[k] = v
 		}
 	}
+	// Create a new admin client that has the capability to retrieve the cluster ID
 	admin, err := kafka.NewAdminClient(adminConf)
 	if err != nil {
 		instr.Logger().Warn("failed to create admin client for cluster ID: %s", err)
-		return ""
+		return
 	}
 	defer admin.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
 	clusterID, err := admin.ClusterID(ctx)
 	if err != nil {
 		instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
-		return ""
+		return
 	}
-	return clusterID
+	tr.SetClusterID(clusterID)
 }
 
 // A Consumer wraps a kafka.Consumer.
