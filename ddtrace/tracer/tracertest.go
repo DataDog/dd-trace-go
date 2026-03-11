@@ -135,13 +135,13 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 	tb.Helper()
 	// withAgentTransport injects the in-process round-tripper before newTracer
 	// runs so that bootstrap (e.g. /info discovery) never touches the real
-	// network. withNoOpStatsd prevents a real DogStatsD dial during startup.
+	// network. withNoopStats prevents a real DogStatsD dial during startup.
 	// Both options survive the orchestrion httpClient override because they are
 	// applied after it in finishConfig.
 	o := append([]StartOption{
 		WithAgentAddr(agent.Addr()),
 		withAgentTransport(agent.Transport()),
-		withNoOpStatsd(),
+		withNoopStats(),
 	}, opts...)
 	tracer, err := newTracer(o...)
 	if err != nil {

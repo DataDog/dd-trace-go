@@ -1437,16 +1437,6 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 	}
 }
 
-// withLLMObsTestBaseURL configures LLM Observability to send all data to the
-// given base URL, bypassing agent-mode/agentless-mode detection and URL
-// construction. For use in tests only (via ddtrace/x/llmobstest).
-// Linked with go:linkname from ddtrace/x/llmobstest.
-func withLLMObsTestBaseURL(url string) StartOption {
-	return func(c *config) {
-		c.llmobs.TestBaseURL = url
-	}
-}
-
 // withLLMObsInProcessTransport sets the LLMObs test base URL and injects an
 // in-process RoundTripper so that no real network activity occurs during LLMObs
 // test requests. testBaseURL is used only for URL path construction.
@@ -1465,15 +1455,6 @@ func withLLMObsInProcessTransport(testBaseURL string, rt http.RoundTripper) Star
 func withAgentTransport(rt http.RoundTripper) StartOption {
 	return func(c *config) {
 		c.agentTransport = rt
-	}
-}
-
-// withNoOpStatsd installs a no-op StatsD client so that the tracer does not
-// attempt to dial a real DogStatsD socket during startup. For use in test
-// helpers only.
-func withNoOpStatsd() StartOption {
-	return func(c *config) {
-		c.statsdClient = &statsd.NoOpClientDirect{}
 	}
 }
 
