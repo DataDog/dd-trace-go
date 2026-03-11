@@ -255,8 +255,8 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 
 	hooks := provider.Hooks()
-	if len(hooks) != 1 {
-		t.Errorf("expected 1 hook, got %d", len(hooks))
+	if len(hooks) != 2 {
+		t.Errorf("expected 2 hooks (exposure + flag eval metrics), got %d", len(hooks))
 	}
 }
 

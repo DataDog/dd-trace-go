@@ -27,7 +27,7 @@ func BenchmarkBooleanEvaluation(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
 	}
 }
@@ -47,7 +47,7 @@ func BenchmarkStringEvaluation(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = provider.StringEvaluation(ctx, "string-flag", "default", flatCtx)
 	}
 }
@@ -67,7 +67,7 @@ func BenchmarkIntEvaluation(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = provider.IntEvaluation(ctx, "int-flag", 5, flatCtx)
 	}
 }
@@ -87,7 +87,7 @@ func BenchmarkFloatEvaluation(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = provider.FloatEvaluation(ctx, "float-flag", 0.0, flatCtx)
 	}
 }
@@ -107,7 +107,7 @@ func BenchmarkEvaluation(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = provider.ObjectEvaluation(ctx, "json-flag", nil, flatCtx)
 	}
 }
@@ -144,7 +144,7 @@ func BenchmarkEvaluationWithVaryingContextSize(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
 			}
 		})
@@ -204,7 +204,7 @@ func BenchmarkEvaluationWithVaryingFlagCounts(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
 			}
 		})

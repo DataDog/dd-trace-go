@@ -46,6 +46,16 @@ runs:
       shell: bash
       run: go run ./.github/actions/add-codeowners/codeowners.go "${{ inputs.path }}"
 
+    - name: Fill the final_status property
+      shell: bash
+      run: |
+        which xsltproc || sudo apt-get install -y xsltproc
+        find "${{ inputs.path }}" -name '*.xml' | while read -r xml_file; do
+            echo "Fixing $xml_file"
+            tmp_file="$(mktemp)"
+            xsltproc --output "$tmp_file" ".github/actions/dd-ci-upload/add_final_status.xsl" "$xml_file"
+            mv "$tmp_file" "$xml_file"
+        done
     - name: Upload the JUnit files
       shell: bash
       run: |

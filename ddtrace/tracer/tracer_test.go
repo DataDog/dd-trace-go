@@ -39,6 +39,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -117,6 +118,26 @@ loop:
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
+}
+
+// noopRoundTripper is an http.RoundTripper that immediately returns 404 for all
+// requests without performing any network I/O. Used inside synctest bubbles to
+// prevent DNS resolution and TCP connects from violating the bubble boundary.
+type noopRoundTripper struct{}
+
+func (noopRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusNotFound,
+		Body:       io.NopCloser(strings.NewReader("")),
+	}, nil
+}
+
+// withNoopInfoHTTPClient returns a StartOption that provides an HTTP client with
+// a mock transport. This prevents the /info agent-discovery request from doing
+// any DNS resolution or network I/O inside a synctest bubble, while still
+// allowing the tracer to use agentTraceWriter (unlike WithLambdaMode).
+func withNoopInfoHTTPClient() StartOption {
+	return WithHTTPClient(&http.Client{Transport: noopRoundTripper{}})
 }
 
 // setLogWriter sets the io.Writer that any new logTraceWriter will write to and returns a function
@@ -1534,31 +1555,33 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 }
 
 func TestTracerAtomicFlush(t *testing.T) {
-	assert := assert.New(t)
-	tracer, transport, flush, stop, err := startTestTracer(t)
-	assert.Nil(err)
-	defer stop()
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, transport, flush, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
+		assert.Nil(err)
+		defer stop()
 
-	// Make sure we don't flush partial bits of traces
-	root := tracer.newRootSpan("pylons.request", "pylons", "/")
-	span := tracer.newChildSpan("redis.command", root)
-	span1 := tracer.newChildSpan("redis.command.1", span)
-	span2 := tracer.newChildSpan("redis.command.2", span)
-	span.Finish()
-	span1.Finish()
-	span2.Finish()
+		// Make sure we don't flush partial bits of traces
+		root := tracer.newRootSpan("pylons.request", "pylons", "/")
+		span := tracer.newChildSpan("redis.command", root)
+		span1 := tracer.newChildSpan("redis.command.1", span)
+		span2 := tracer.newChildSpan("redis.command.2", span)
+		span.Finish()
+		span1.Finish()
+		span2.Finish()
 
-	flush(-1)
-	time.Sleep(100 * time.Millisecond)
-	traces := transport.Traces()
-	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
+		flush(-1)
+		synctest.Wait() // wait for writer to process tick and find no complete trace
+		traces := transport.Traces()
+		assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
-	root.Finish()
+		root.Finish()
 
-	flush(1)
-	traces = transport.Traces()
-	assert.Len(traces, 1)
-	assert.Len(traces[0], 4, "all spans should show up at once")
+		flush(1)
+		traces = transport.Traces()
+		assert.Len(traces, 1)
+		assert.Len(traces[0], 4, "all spans should show up at once")
+	})
 }
 
 // TestTracerTraceMaxSize tests a bug that was encountered in environments
@@ -1713,32 +1736,23 @@ func TestTracerRace(t *testing.T) {
 // be using forceFlush() to make sure things are really sent to transport.
 // Here, we just wait until things show up, as we would do with a real program.
 func TestWorker(t *testing.T) {
-	tracer, transport, flush, stop, err := startTestTracer(t)
-	assert.Nil(t, err)
-	defer stop()
+	synctest.Test(t, func(t *testing.T) {
+		tracer, transport, flush, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
+		assert.Nil(t, err)
+		defer stop()
 
-	n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
-	for range n {
-		root := tracer.newRootSpan("pylons.request", "pylons", "/")
-		child := tracer.newChildSpan("redis.command", root)
-		child.Finish()
-		root.Finish()
-	}
-
-	flush(-1)
-	timeout := time.After(2 * time.Second * timeMultiplicator)
-loop:
-	for {
-		select {
-		case <-timeout:
-			t.Fatalf("timed out waiting, got %d < %d", transport.Len(), payloadQueueSize)
-		default:
-			if transport.Len() >= payloadQueueSize {
-				break loop
-			}
-			time.Sleep(10 * time.Millisecond)
+		n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
+		for range n {
+			root := tracer.newRootSpan("pylons.request", "pylons", "/")
+			child := tracer.newChildSpan("redis.command", root)
+			child.Finish()
+			root.Finish()
 		}
-	}
+
+		flush(-1)
+		synctest.Wait() // wait for writer to process the tick and flush queued traces
+		assert.GreaterOrEqual(t, transport.Len(), payloadQueueSize)
+	})
 }
 
 func TestPushPayload(t *testing.T) {
@@ -2156,7 +2170,7 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	defer stop()
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		wg := sync.WaitGroup{}
 		for range 100 {
 			wg.Go(func() {
@@ -2219,8 +2233,9 @@ func genBigTraces(b *testing.B) {
 		}
 	}()
 
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for range b.N {
 		for range 10 {
 			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
 			for range 10_000 {
@@ -2258,8 +2273,9 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	assert.Nil(b, err)
 	defer stop()
 
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for range b.N { //nolint:modernize
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span.Finish()
 	}
@@ -2274,7 +2290,7 @@ func BenchmarkStartSpan(b *testing.B) {
 	ctx := ContextWithSpan(context.TODO(), root)
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		s, ok := SpanFromContext(ctx)
 		if !ok {
 			b.Fatal("no span")
@@ -2300,7 +2316,7 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 			ctx := ContextWithSpan(context.TODO(), root)
 			wgready.Done()
 			<-start
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				s, ok := SpanFromContext(ctx)
 				if !ok {
 					b.Error("no span")
@@ -2318,7 +2334,7 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 
 func BenchmarkGenSpanID(b *testing.B) {
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		generateSpanID(0)
 	}
 }
@@ -2634,13 +2650,14 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 	assert.Nil(b, err)
 	defer stop()
 
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		span := tracer.StartSpan("test")
 		span.Finish(StackFrames(64, 0))
 	}
 }
 
 func BenchmarkSingleSpanRetention(b *testing.B) {
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("no-rules", func(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
@@ -2650,7 +2667,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			span := tracer.StartSpan("name_1")
 			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
@@ -2670,7 +2687,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			span := tracer.StartSpan("name_1")
 			for range 50 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
@@ -2694,7 +2711,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			span := tracer.StartSpan("name_1")
 			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
