@@ -111,8 +111,9 @@ func (p *payloadOTLP) stats() payloadStats {
 	}
 }
 
+// size returns -1 because the protobuf encoding is deferred until Read() is called.
 func (p *payloadOTLP) size() int {
-	return 1
+	return -1
 }
 
 func (p *payloadOTLP) itemCount() int {
@@ -127,11 +128,11 @@ func (p *payloadOTLP) encode() error {
 	tracesData := &otlptrace.TracesData{
 		ResourceSpans: []*otlptrace.ResourceSpans{
 			{
-				Resource: p.resource, // *otlpresource.Resource
+				Resource: p.resource,
 				ScopeSpans: []*otlptrace.ScopeSpans{
 					{
-						Scope: p.scope, // *otlpcommon.InstrumentationScope
-						Spans: p.spans, // []*tracev1.Span
+						Scope: p.scope,
+						Spans: p.spans,
 					},
 				},
 			},
