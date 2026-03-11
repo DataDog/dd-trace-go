@@ -391,7 +391,7 @@ func StartSpanFromPropagatedContext[C TextMapReader](ctx gocontext.Context, oper
 	tr := getGlobalTracer()
 	spanCtx, err := tr.Extract(carrier)
 	if err != nil && log.DebugEnabled() {
-		log.Debug("StartSpanFromPropagatedContext: failed to extract span context: %v", err)
+		log.Debug("StartSpanFromPropagatedContext: failed to extract span context: %v", err.Error())
 	}
 	if spanCtx != nil {
 		if links := spanCtx.SpanLinks(); len(links) > 0 {
