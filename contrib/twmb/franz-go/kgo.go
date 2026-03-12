@@ -39,7 +39,7 @@ func NewClient(opts ...kgo.Opt) (*Client, error) {
 // NewClientWithTracing wraps kgo.NewClient with custom tracing options.
 func NewClientWithTracing(kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) (*Client, error) {
 	wrapped := &Client{
-		activeSpans: make([]*tracer.Span, 0),
+		activeSpans: nil,
 	}
 	kgoOpts = append(kgoOpts, kgo.WithHooks(wrapped))
 
