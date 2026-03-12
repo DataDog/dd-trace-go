@@ -39,11 +39,11 @@ func topicName(t *testing.T) string {
 }
 
 func TestMain(m *testing.M) {
-	// _, ok := os.LookupEnv("INTEGRATION")
-	// if !ok {
-	// 	log.Println("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
-	// 	os.Exit(0)
-	// }
+	_, ok := os.LookupEnv("INTEGRATION")
+	if !ok {
+		log.Println("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
+		os.Exit(0)
+	}
 	os.Exit(m.Run())
 }
 
