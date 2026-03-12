@@ -56,15 +56,6 @@ func AgentURLFromEnv() *url.URL {
 		}
 	}
 
-	if endpoint, providedOTLPEndpoint := env.Lookup("OTEL_EXPORTER_OTLP_ENDPOINT"); providedOTLPEndpoint {
-		u, err := url.Parse(endpoint)
-		if err != nil {
-			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_ENDPOINT: %s", err.Error())
-		} else {
-			return u
-		}
-	}
-
 	host, providedHost := env.Lookup("DD_AGENT_HOST")
 	if host == "" {
 		// We treat set but empty the same as unset

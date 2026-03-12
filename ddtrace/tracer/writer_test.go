@@ -573,6 +573,68 @@ func TestAgentTraceWriterProtocol(t *testing.T) {
 		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 }
+
+func TestOTLPTraceEndpoint(t *testing.T) {
+	const defaultAgentTraceURL = "http://localhost:8126" + tracesAPIPath
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp, no endpoint vars", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		// Use OTLP default: localhost:4318/v1/traces.
+		assert.Equal(t, "http://localhost:4318"+otlpTracesAPIPathHTTP, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp + OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		assert.Equal(t, "http://otel-collector:4318"+otlpTracesAPIPathHTTP, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp + OTEL_EXPORTER_OTLP_ENDPOINT with trailing slash", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318/")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		// Trailing slash on the base must not produce a double slash.
+		assert.Equal(t, "http://otel-collector:4318"+otlpTracesAPIPathHTTP, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp + OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://otel-collector:4318/v2/otlptraces")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		assert.Equal(t, "http://otel-collector:4318/v2/otlptraces", cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp + DD_AGENT_HOST uses agent host with OTLP port", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("DD_AGENT_HOST", "my-agent")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		assert.Equal(t, "http://my-agent:4318"+otlpTracesAPIPathHTTP, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT alone does not enable OTLP", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		// Protocol not set to OTLP — traceURL stays at the default v0.4 path.
+		assert.Equal(t, defaultAgentTraceURL, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT alone does not enable OTLP", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://otel-collector:4318/v1/traces")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		// Protocol not set to OTLP — traceURL stays at the default v0.4 path.
+		assert.Equal(t, defaultAgentTraceURL, cfg.transport.endpoint())
+	})
+}
+
 func BenchmarkJsonEncodeSpan(b *testing.B) {
 	s := makeSpan(10)
 	s.metrics["nan"] = math.NaN()
