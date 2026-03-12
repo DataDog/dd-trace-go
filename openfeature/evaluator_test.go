@@ -873,11 +873,6 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				tc := tc
 				name := fmt.Sprintf("case-%d/%s/targeting=%s", i, tc.Flag, tc.TargetingKey)
 				t.Run(name, func(t *testing.T) {
-					f, ok := cfg.Flags[tc.Flag]
-					if !ok {
-						t.Fatalf("flag %q not found in ufc-config.json", tc.Flag)
-					}
-
 					// Build evaluation context: merge attributes + targetingKey.
 					ctx := make(map[string]any, len(tc.Attributes)+1)
 					for k, v := range tc.Attributes {
@@ -885,7 +880,8 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 					}
 					ctx["targetingKey"] = tc.TargetingKey
 
-					result := evaluateFlag(f, tc.DefaultValue, ctx)
+					// A nil flag (not in config) evaluates to DEFAULT.
+					result := evaluateFlag(cfg.Flags[tc.Flag], tc.DefaultValue, ctx)
 
 					// Compare value. JSON numbers unmarshal as float64; normalise for bool flags.
 					gotValue := result.Value

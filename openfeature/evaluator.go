@@ -37,6 +37,9 @@ type evaluationResult struct {
 // evaluateFlag evaluates a feature flag with the given context.
 // It returns the variant value, reason, and any error that occurred.
 func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluationResult {
+	if flag == nil {
+		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
+	}
 	// Check if flag is enabled
 	if !flag.Enabled {
 		return evaluationResult{
