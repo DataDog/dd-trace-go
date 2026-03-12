@@ -49,7 +49,7 @@ func (h *queryHook) BeforeQuery(ctx context.Context, qe *pg.QueryEvent) (context
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.ResourceName(string(query)),
-		tracer.ServiceName(h.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(h.cfg.serviceName, h.cfg.serviceSource),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
 	}

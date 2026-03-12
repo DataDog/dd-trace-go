@@ -13,6 +13,7 @@ import (
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	spanName      string
 	analyticsRate float64
 }
@@ -35,12 +36,14 @@ func defaults(cfg *config) {
 
 func clientDefaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentClient, nil)
+	cfg.serviceSource = string(instrumentation.PackageTwitchTVTwirp)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentClient, nil)
 	defaults(cfg)
 }
 
 func serverDefaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.serviceSource = string(instrumentation.PackageTwitchTVTwirp)
 	// spanName is calculated dynamically since V0 span names are based on the twirp service name.
 	defaults(cfg)
 }
@@ -51,6 +54,7 @@ func serverDefaults(cfg *config) {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

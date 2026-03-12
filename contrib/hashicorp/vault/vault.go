@@ -59,6 +59,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 		o.apply(&conf)
 	}
 	c.Transport = httptrace.WrapRoundTripper(c.Transport,
+		httptrace.WithSpanOptions(instrumentation.ServiceNameWithSource(conf.serviceName, conf.serviceSource)),
 		httptrace.WithAnalyticsRate(conf.analyticsRate),
 		httptrace.WithSpanNamer(func(_ *http.Request) string {
 			return conf.spanName

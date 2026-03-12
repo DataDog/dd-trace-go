@@ -271,7 +271,7 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 
 func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...tracer.StartSpanOption) []tracer.StartSpanOption {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(t.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(t.cfg.serviceName, t.cfg.serviceSource),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.Tag(ext.DBSystem, ext.DBSystemPostgreSQL),
 		tracer.Tag(ext.Component, instrumentation.PackageJackcPGXV5),

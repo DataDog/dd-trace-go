@@ -89,7 +89,7 @@ func (i datadogExtension) Init(ctx context.Context, params *graphql.Params) cont
 	// This span allows us to regroup parse, validate & resolvers under a single service entry span. It is finished once
 	// the execution is done (or after parse or validate have failed).
 	span, ctx := tracer.StartSpanFromContext(ctx, spanServer,
-		tracer.ServiceName(i.config.serviceName),
+		instrumentation.ServiceNameWithSource(i.config.serviceName, i.config.serviceSource),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(ext.Component, instrumentation.PackageGraphQLGoGraphQL),
@@ -118,7 +118,7 @@ func (i datadogExtension) Name() string {
 func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, graphql.ParseFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(i.config.serviceName),
+		instrumentation.ServiceNameWithSource(i.config.serviceName, i.config.serviceSource),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
@@ -145,7 +145,7 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Context, graphql.ValidationFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(i.config.serviceName),
+		instrumentation.ServiceNameWithSource(i.config.serviceName, i.config.serviceSource),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
@@ -176,7 +176,7 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 func (i datadogExtension) ExecutionDidStart(ctx context.Context) (context.Context, graphql.ExecutionFinishFunc) {
 	data, _ := ctx.Value(contextKey{}).(contextData)
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(i.config.serviceName),
+		instrumentation.ServiceNameWithSource(i.config.serviceName, i.config.serviceSource),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlSource, data.query),
@@ -222,7 +222,7 @@ func (i datadogExtension) ResolveFieldDidStart(ctx context.Context, info *graphq
 		operationName = info.FieldName
 	}
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(i.config.serviceName),
+		instrumentation.ServiceNameWithSource(i.config.serviceName, i.config.serviceSource),
 		spanTagKind,
 		spanTagType,
 		tracer.Tag(tagGraphqlField, info.FieldName),

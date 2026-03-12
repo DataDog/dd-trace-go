@@ -76,6 +76,12 @@ func TestNamingSchema(t *testing.T) {
 		graphGophersGraphQLGo,
 		graphqlGo,
 		gorillaMux,
+		valyalaFastHTTP,
+		gormV1Test,
+		uptraceBunTest,
+		jackcPGXV5Test,
+		redisRueidisTest,
+		valkeyGoTest,
 	}
 	for _, tc := range testCases {
 		harness.RunTest(t, tc)

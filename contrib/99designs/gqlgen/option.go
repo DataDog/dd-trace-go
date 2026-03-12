@@ -17,6 +17,7 @@ import (
 
 type config struct {
 	serviceName                       string
+	serviceSource                     string
 	analyticsRate                     float64
 	withoutTraceIntrospectionQuery    bool
 	withoutTraceTrivialResolvedFields bool
@@ -39,6 +40,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.Package99DesignsGQLGen)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.tags = make(map[string]interface{})
 	cfg.errExtensions = instrgraphql.ErrorExtensionsFromEnv()
@@ -63,6 +65,7 @@ func WithAnalyticsRate(rate float64) OptionFn {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

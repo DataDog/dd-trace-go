@@ -8,52 +8,57 @@ package namingschematest
 import (
 	"testing"
 
-	"github.com/globalsign/mgo/bson"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
-	mgotrace "github.com/DataDog/dd-trace-go/contrib/globalsign/mgo/v2"
+	gormtrace "github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-var globalsignMgo = harness.TestCase{
-	Name: instrumentation.PackageGlobalsignMgo,
+var gormV1Test = harness.TestCase{
+	Name: instrumentation.PackageGormIOGormV1,
 	GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-		var opts []mgotrace.DialOption
+		var opts []gormtrace.Option
 		if serviceOverride != "" {
-			opts = append(opts, mgotrace.WithService(serviceOverride))
+			opts = append(opts, gormtrace.WithService(serviceOverride))
 		}
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		session, err := mgotrace.Dial("localhost:27018", opts...)
+		db, err := gormtrace.Open(
+			postgres.New(postgres.Config{
+				DSN: "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable",
+			}),
+			&gorm.Config{},
+			opts...,
+		)
 		require.NoError(t, err)
-		err = session.
-			DB("my_db").
-			C("MyCollection").
-			Insert(bson.D{bson.DocElem{Name: "entity", Value: bson.DocElem{Name: "index", Value: 0}}})
-		require.NoError(t, err)
+
+		var result int
+		db.Raw("SELECT 1").Scan(&result)
 
 		return mt.FinishedSpans()
 	},
 	WantServiceNameV0: harness.ServiceNameAssertions{
-		Defaults:        []string{"mongodb"},
-		DDService:       []string{"mongodb"},
+		Defaults:        []string{"gorm.db"},
+		DDService:       []string{"gorm.db"},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
-		Defaults:        []string{string(instrumentation.PackageGlobalsignMgo)},
+		Defaults:        []string{string(instrumentation.PackageGormIOGormV1)},
 		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
-		assert.Equal(t, "mongodb.query", spans[0].OperationName())
+		assert.Equal(t, "gorm.query", spans[0].OperationName())
 	},
 	AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
-		assert.Equal(t, "mongodb.query", spans[0].OperationName())
+		assert.Equal(t, "gorm.query", spans[0].OperationName())
 	},
 }
