@@ -402,4 +402,3 @@ func TestRegister(_ *testing.T) {
 		unregister("test" + strconv.FormatInt(int64(i), 10))
 	}
 }
-
