@@ -68,7 +68,7 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	assert.Equal(t, float64(1), resp["id"])
 	assert.NotNil(t, resp["result"])
 
-	tracer.Flush()
+	tt.Flush()
 	taskSpan := tt.RequireSpan(t, "mcp.initialize")
 	assert.Equal(t, "mcp.initialize", taskSpan.Name)
 	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
