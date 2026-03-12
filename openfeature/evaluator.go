@@ -37,6 +37,9 @@ type evaluationResult struct {
 // evaluateFlag evaluates a feature flag with the given context.
 // It returns the variant value, reason, and any error that occurred.
 func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluationResult {
+	if flag == nil {
+		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
+	}
 	// Check if flag is enabled
 	if !flag.Enabled {
 		return evaluationResult{
@@ -80,10 +83,24 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 			}
 			metadata[metadataDoLogKey] = doLog
 
+			// Determine reason:
+			//   rules matched           → TARGETING_MATCH
+			//   no rules, shards used   → SPLIT
+			//   no rules, no shards     → STATIC (catch-all; value is same for everyone)
+			var reason of.Reason
+			switch {
+			case len(allocation.Rules) > 0:
+				reason = of.TargetingMatchReason
+			case len(split.Shards) > 0:
+				reason = of.SplitReason
+			default:
+				reason = of.StaticReason
+			}
+
 			return evaluationResult{
 				Value:      variant.Value,
 				VariantKey: variant.Key,
-				Reason:     of.TargetingMatchReason,
+				Reason:     reason,
 				Metadata:   metadata,
 			}
 		}
