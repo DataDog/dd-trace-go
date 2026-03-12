@@ -718,7 +718,7 @@ func TestServiceName(t *testing.T) {
 		assert.Len(spans, 1)
 		span := spans[0]
 		assert.Equal("my-service", span.Tag(ext.ServiceName))
-		assert.Equal(instrumentation.ServiceSourceMiddleware, span.Tag(ext.KeyServiceSource))
+		assert.Equal(serviceSourceGinMiddleware, span.Tag(ext.KeyServiceSource))
 	})
 }
 

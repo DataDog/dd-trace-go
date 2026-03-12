@@ -17,6 +17,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
+// serviceSourceSQLDriver is the service source value used when the service
+// name is derived from the driver name (e.g. database/sql Register driverName).
+const serviceSourceSQLDriver = "opt.sql_driver"
+
 type config struct {
 	serviceName        string
 	serviceSource      string
@@ -146,7 +150,7 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
 	cfg.serviceName = defaultServiceName(driverName, rc)
-	cfg.serviceSource = instrumentation.ServiceSourceDriverName
+	cfg.serviceSource = serviceSourceSQLDriver
 	cfg.spanName = getSpanName(driverName)
 	if rc != nil {
 		// use registered config as the default value for some options
