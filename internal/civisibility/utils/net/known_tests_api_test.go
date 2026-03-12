@@ -18,17 +18,45 @@ import (
 
 func TestKnownTestsApiRequest(t *testing.T) {
 	var c *client
-	expectedResponse := knownTestsResponse{}
-	expectedResponse.Data.Type = settingsRequestType
-	expectedResponse.Data.Attributes.Tests = KnownTestsResponseDataModules{
+	page1Response := knownTestsResponse{}
+	page1Response.Data.Type = settingsRequestType
+	page1Response.Data.Attributes.Tests = KnownTestsResponseDataModules{
 		"MyModule1": KnownTestsResponseDataSuites{
 			"MySuite1": []string{"Test1", "Test2"},
 		},
-		"MyModule2": KnownTestsResponseDataSuites{
-			"MySuite2": []string{"Test3", "Test4"},
-		},
+	}
+	page1Response.PageInfo = &knownTestsResponsePageInfo{
+		Cursor:  "cursor_page2",
+		Size:    2,
+		HasNext: true,
 	}
 
+	page2Response := knownTestsResponse{}
+	page2Response.Data.Type = settingsRequestType
+	page2Response.Data.Attributes.Tests = KnownTestsResponseDataModules{
+		"MyModule1": KnownTestsResponseDataSuites{
+			"MySuite1": []string{"Test3"},
+		},
+		"MyModule2": KnownTestsResponseDataSuites{
+			"MySuite2": []string{"Test4", "Test5"},
+		},
+	}
+	page2Response.PageInfo = &knownTestsResponsePageInfo{
+		Cursor:  "cursor_page3",
+		Size:    3,
+		HasNext: true,
+	}
+
+	page3Response := knownTestsResponse{}
+	page3Response.Data.Type = settingsRequestType
+	page3Response.Data.Attributes.Tests = KnownTestsResponseDataModules{
+		"MyModule2": KnownTestsResponseDataSuites{
+			"MySuite2": []string{"Test6"},
+		},
+	}
+	// Last page: no PageInfo (nil) means no more pages
+
+	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -46,10 +74,26 @@ func TestKnownTestsApiRequest(t *testing.T) {
 			assert.Equal(t, c.repositoryURL, request.Data.Attributes.RepositoryURL)
 			assert.Equal(t, c.serviceName, request.Data.Attributes.Service)
 			assert.Equal(t, c.testConfigurations, request.Data.Attributes.Configurations)
+			assert.NotNil(t, request.PageInfo, "page_info should always be present")
 
 			w.Header().Set(HeaderContentType, ContentTypeJSON)
-			expectedResponse.Data.ID = request.Data.ID
-			json.NewEncoder(w).Encode(expectedResponse)
+			requestCount++
+			var resp knownTestsResponse
+			switch requestCount {
+			case 1:
+				assert.Empty(t, request.PageInfo.PageState, "first request should have empty page_state")
+				resp = page1Response
+			case 2:
+				assert.Equal(t, "cursor_page2", request.PageInfo.PageState)
+				resp = page2Response
+			case 3:
+				assert.Equal(t, "cursor_page3", request.PageInfo.PageState)
+				resp = page3Response
+			default:
+				t.Fatalf("unexpected request count: %d", requestCount)
+			}
+			resp.Data.ID = request.Data.ID
+			json.NewEncoder(w).Encode(resp)
 		}
 	}))
 	defer server.Close()
@@ -62,9 +106,14 @@ func TestKnownTestsApiRequest(t *testing.T) {
 
 	cInterface := NewClient()
 	c = cInterface.(*client)
-	efdData, err := cInterface.GetKnownTests()
+	knownTests, err := cInterface.GetKnownTests()
 	assert.Nil(t, err)
-	assert.Equal(t, expectedResponse.Data.Attributes, *efdData)
+	assert.Equal(t, 3, requestCount, "should have made 3 paginated requests")
+
+	// Verify merged results
+	assert.Len(t, knownTests.Tests, 2, "should have 2 modules")
+	assert.Equal(t, []string{"Test1", "Test2", "Test3"}, knownTests.Tests["MyModule1"]["MySuite1"])
+	assert.Equal(t, []string{"Test4", "Test5", "Test6"}, knownTests.Tests["MyModule2"]["MySuite2"])
 }
 
 func TestKnownTestsApiRequestFailToUnmarshal(t *testing.T) {
