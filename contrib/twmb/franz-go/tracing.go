@@ -70,19 +70,19 @@ func (w *record) GetContext() context.Context {
 	return w.Context
 }
 
-type wHeader struct {
+type header struct {
 	kgo.RecordHeader
 }
 
 func wrapHeader(h kgo.RecordHeader) tracing.Header {
-	return &wHeader{h}
+	return &header{h}
 }
 
-func (w wHeader) GetKey() string {
+func (w header) GetKey() string {
 	return w.Key
 }
 
-func (w wHeader) GetValue() []byte {
+func (w header) GetValue() []byte {
 	return w.Value
 }
 
