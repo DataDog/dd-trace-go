@@ -19,6 +19,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/tinylib/msgp/msgp"
@@ -136,37 +137,62 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 }
 
 func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
-	req, err := http.NewRequest("POST", t.traceURL, p)
+	stats := p.stats()
+	isOTLP := p.protocol() == traceProtocolOTLP
+
+	// When the body size is unknown upfront (payloadOTLP encodes lazily, size() == -1),
+	// buffer the encoded bytes before creating the request. This lets us set an accurate
+	// Content-Length, avoiding chunked transfer encoding. Some OTLP collectors and proxies
+	// require a known Content-Length and will hang indefinitely on chunked requests, which
+	// manifests as "context deadline exceeded while awaiting headers".
+	var reqBody io.Reader = p
+	contentLength := int64(stats.size)
+	if stats.size < 0 {
+		var buf bytes.Buffer
+		if _, err = io.Copy(&buf, p); err != nil {
+			return nil, fmt.Errorf("failed to buffer payload body: %s", err)
+		}
+		contentLength = int64(buf.Len())
+		reqBody = &buf
+		log.Debug("Buffered OTLP payload before send: %d bytes, %d traces, url: %s", contentLength, stats.itemCount, t.traceURL)
+	}
+
+	req, err := http.NewRequest("POST", t.traceURL, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %s", err)
 	}
-	stats := p.stats()
-	req.ContentLength = int64(stats.size)
+	req.ContentLength = contentLength
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
 	}
-	req.Header.Set(traceCountHeader, strconv.Itoa(stats.itemCount))
-	req.Header.Set(headerComputedTopLevel, "t")
-	if t := getGlobalTracer(); t != nil {
-		tc := t.TracerConf()
-		if tc.TracingAsTransport || tc.CanComputeStats {
-			// tracingAsTransport uses this header to disable the trace agent's stats computation
-			// while making canComputeStats() always false to also disable client stats computation.
-			req.Header.Set("Datadog-Client-Computed-Stats", "t")
-		}
-		droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))
-		partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))
-		droppedSpans := int(tracerstats.Count(tracerstats.AgentDroppedP0Spans))
-		if tt, ok := t.(*tracer); ok {
-			if stats := tt.statsd; stats != nil {
-				stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
-					[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
-				stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
+
+	// DD-specific sampling / stats headers are not understood by OTLP collectors.
+	if !isOTLP {
+		req.Header.Set(traceCountHeader, strconv.Itoa(stats.itemCount))
+		req.Header.Set(headerComputedTopLevel, "t")
+		if tr := getGlobalTracer(); tr != nil {
+			tc := tr.TracerConf()
+			if tc.TracingAsTransport || tc.CanComputeStats {
+				// tracingAsTransport uses this header to disable the trace agent's stats computation
+				// while making canComputeStats() always false to also disable client stats computation.
+				req.Header.Set("Datadog-Client-Computed-Stats", "t")
 			}
+			droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))
+			partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))
+			droppedSpans := int(tracerstats.Count(tracerstats.AgentDroppedP0Spans))
+			if tt, ok := tr.(*tracer); ok {
+				if stats := tt.statsd; stats != nil {
+					stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
+						[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
+					stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
+				}
+			}
+			req.Header.Set("Datadog-Client-Dropped-P0-Traces", strconv.Itoa(droppedTraces))
+			req.Header.Set("Datadog-Client-Dropped-P0-Spans", strconv.Itoa(droppedSpans))
 		}
-		req.Header.Set("Datadog-Client-Dropped-P0-Traces", strconv.Itoa(droppedTraces))
-		req.Header.Set("Datadog-Client-Dropped-P0-Spans", strconv.Itoa(droppedSpans))
 	}
+
+	log.Debug("Sending %d traces to %s (Content-Length: %d)", stats.itemCount, t.traceURL, contentLength)
 	response, err := t.client.Do(req)
 	if err != nil {
 		reportAPIErrorsMetric(response, err, tracesAPIPath)

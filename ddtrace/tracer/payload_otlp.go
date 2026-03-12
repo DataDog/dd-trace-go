@@ -14,6 +14,8 @@ import (
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // TODO: Handle concurrent reads and writes for this struct. Update methods accordingly.
@@ -124,5 +126,6 @@ func (p *payloadOTLP) encode() error {
 		return err
 	}
 	p.buf = b
+	log.Debug("OTLP payload encoded: %d spans → %d bytes protobuf", len(p.spans), len(p.buf))
 	return nil
 }

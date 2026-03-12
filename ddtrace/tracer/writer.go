@@ -136,7 +136,11 @@ func (h *agentTraceWriter) flush() {
 		stats := p.stats()
 		var err error
 		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
-			log.Debug("Attempt to send payload: size: %d traces: %d\n", stats.size, stats.itemCount)
+			if stats.size < 0 {
+				log.Debug("Attempt to send payload: size: (encoded on send) traces: %d\n", stats.itemCount)
+			} else {
+				log.Debug("Attempt to send payload: size: %d traces: %d\n", stats.size, stats.itemCount)
+			}
 			var rc io.ReadCloser
 			rc, err = h.config.transport.send(p)
 			if err == nil {

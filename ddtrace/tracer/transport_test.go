@@ -524,6 +524,7 @@ func TestOTLPTransportHeaders(t *testing.T) {
 	)
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/info" {
+			// Return empty 200 so loadAgentFeatures succeeds without a real agent.
 			return
 		}
 		mu.Lock()
@@ -532,9 +533,12 @@ func TestOTLPTransportHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// OTEL_EXPORTER_OTLP_TRACES_ENDPOINT sets the full traceURL and derives the agentURL,
-	// so the tracer will send both /info probes and trace payloads to the test server.
+	// OTEL_TRACES_EXPORTER=otlp activates OTLP mode.
+	// OTEL_EXPORTER_OTLP_TRACES_ENDPOINT sets the full traceURL for the trace payload.
+	// DD_TRACE_AGENT_URL routes the /info probe to the test server instead of a real agent.
+	t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", srv.URL+"/v1/traces")
+	t.Setenv("DD_TRACE_AGENT_URL", srv.URL)
 
 	trc, err := newTracer(WithAgentTimeout(2))
 	require.NoError(t, err)
