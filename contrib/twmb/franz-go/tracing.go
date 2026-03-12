@@ -13,7 +13,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-type wRecord struct {
+type record struct {
 	*kgo.Record
 }
 
@@ -21,18 +21,18 @@ func wrapRecord(r *kgo.Record) tracing.Record {
 	if r == nil {
 		return nil
 	}
-	return &wRecord{r}
+	return &record{r}
 }
 
-func (w *wRecord) GetKey() []byte {
+func (w *record) GetKey() []byte {
 	return w.Key
 }
 
-func (w *wRecord) GetValue() []byte {
+func (w *record) GetValue() []byte {
 	return w.Value
 }
 
-func (w *wRecord) GetHeaders() []tracing.Header {
+func (w *record) GetHeaders() []tracing.Header {
 	hs := make([]tracing.Header, 0, len(w.Headers))
 	for _, h := range w.Headers {
 		hs = append(hs, wrapHeader(h))
@@ -40,7 +40,7 @@ func (w *wRecord) GetHeaders() []tracing.Header {
 	return hs
 }
 
-func (w *wRecord) SetHeaders(headers []tracing.Header) {
+func (w *record) SetHeaders(headers []tracing.Header) {
 	hs := make([]kgo.RecordHeader, 0, len(headers))
 	for _, h := range headers {
 		hs = append(hs, kgo.RecordHeader{
@@ -51,19 +51,19 @@ func (w *wRecord) SetHeaders(headers []tracing.Header) {
 	w.Headers = hs
 }
 
-func (w *wRecord) GetTopic() string {
+func (w *record) GetTopic() string {
 	return w.Topic
 }
 
-func (w *wRecord) GetPartition() int32 {
+func (w *record) GetPartition() int32 {
 	return w.Partition
 }
 
-func (w *wRecord) GetOffset() int64 {
+func (w *record) GetOffset() int64 {
 	return w.Offset
 }
 
-func (w *wRecord) GetContext() context.Context {
+func (w *record) GetContext() context.Context {
 	return w.Context
 }
 
