@@ -13,6 +13,9 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
+// record wraps kgo.Record to implement the tracing.Record interface.
+// This adapter decouples the internal/tracing package from kgo,
+// which is required to avoid cyclic imports when supporting orchestrion.
 type record struct {
 	*kgo.Record
 }
