@@ -15,14 +15,15 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
-	"github.com/DataDog/dd-trace-go/v2/datastreams"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 const (

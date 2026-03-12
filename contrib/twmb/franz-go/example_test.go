@@ -11,6 +11,7 @@ import (
 
 	kgotrace "github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2"
 	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/twmb/franz-go/pkg/kgo"
