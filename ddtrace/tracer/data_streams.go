@@ -7,8 +7,10 @@ package tracer
 
 import (
 	"context"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	idatastreams "github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 )
 
@@ -73,8 +75,9 @@ func TrackKafkaHighWatermarkOffset(cluster string, topic string, partition int32
 }
 
 // TrackDataStreamsTransaction records a manual transaction checkpoint observation
-// for Data Streams Monitoring. Call this each time a transaction with the given
-// transactionID is observed at the named checkpoint in your pipeline.
+// for Data Streams Monitoring. The active span in ctx (if any) is tagged with the
+// transaction ID and checkpoint name for correlation in the Datadog UI.
+// Pass context.Background() if you do not need span tagging.
 //
 // transactionID is an application-defined identifier for the transaction (e.g. a
 // message ID or correlation ID). IDs longer than 255 bytes are silently truncated.
@@ -82,10 +85,30 @@ func TrackKafkaHighWatermarkOffset(cluster string, topic string, partition int32
 // checkpointName is a stable label for the processing stage (e.g. "ingested",
 // "processed", "delivered"). A maximum of 254 unique checkpoint names are supported
 // per processor lifetime; additional names beyond this limit are silently dropped.
-func TrackDataStreamsTransaction(transactionID, checkpointName string) {
-	if t, ok := getGlobalTracer().(dataStreamsContainer); ok {
-		if p := t.GetDataStreamsProcessor(); p != nil {
-			p.TrackTransaction(transactionID, checkpointName)
+func TrackDataStreamsTransaction(ctx context.Context, transactionID, checkpointName string) {
+	TrackDataStreamsTransactionAt(ctx, transactionID, checkpointName, time.Now())
+}
+
+// TrackDataStreamsTransactionAt is like TrackDataStreamsTransaction but records the
+// observation at time t instead of the current time. Use this when the transaction
+// timestamp is already known (e.g. embedded in a message header).
+func TrackDataStreamsTransactionAt(ctx context.Context, transactionID, checkpointName string, t time.Time) {
+	tagActiveSpan(ctx, transactionID, checkpointName)
+	if tr, ok := getGlobalTracer().(dataStreamsContainer); ok {
+		if p := tr.GetDataStreamsProcessor(); p != nil {
+			p.TrackTransactionAt(transactionID, checkpointName, t)
 		}
+	}
+}
+
+// tagActiveSpan sets the DSM transaction tags on the span stored in ctx, if any.
+// If ctx is nil or contains no span, this is a no-op.
+func tagActiveSpan(ctx context.Context, transactionID, checkpointName string) {
+	if ctx == nil {
+		return
+	}
+	if span, ok := SpanFromContext(ctx); ok {
+		span.SetTag(ext.DSMTransactionID, transactionID)
+		span.SetTag(ext.DSMTransactionCheckpoint, checkpointName)
 	}
 }
