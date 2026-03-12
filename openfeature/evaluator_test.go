@@ -653,7 +653,6 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	}
 
 	for _, file := range files {
-		file := file
 		t.Run(filepath.Base(file), func(t *testing.T) {
 			data, err := os.ReadFile(file)
 			if err != nil {
@@ -673,7 +672,6 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				t.Fatalf("parse error: %v", err)
 			}
 			for i, tc := range cases {
-				tc := tc
 				t.Run(fmt.Sprintf("case%d/%s", i, tc.TargetingKey), func(t *testing.T) {
 					ctx := make(map[string]any, len(tc.Attributes)+1)
 					for k, v := range tc.Attributes {
