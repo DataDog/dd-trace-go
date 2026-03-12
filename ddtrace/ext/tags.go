@@ -154,4 +154,10 @@ const (
 
 	// CloudResourceID is the cloud provider resource identifier.
 	CloudResourceID = "cloud.resource_id"
+
+	// DSMTransactionID is the span tag key for a Data Streams transaction identifier.
+	DSMTransactionID = "dsm.transaction.id"
+
+	// DSMTransactionCheckpoint is the span tag key for a Data Streams transaction checkpoint name.
+	DSMTransactionCheckpoint = "dsm.transaction.checkpoint"
 )

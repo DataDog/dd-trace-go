@@ -640,20 +640,33 @@ func (p *Processor) TrackKafkaHighWatermarkOffset(_ string, topic string, partit
 	}
 }
 
-// TrackTransaction records a manual transaction checkpoint observation. Use this to
-// track when a specific transaction ID is seen at a named checkpoint in a data pipeline.
-// transactionID identifies the transaction (e.g. a message ID or correlation ID).
-// checkpointName is a stable label for the processing stage (e.g. "ingested", "processed").
-func (p *Processor) TrackTransaction(transactionID, checkpointName string) {
+// trackTransactionAt is the shared implementation for TrackTransaction and TrackTransactionAt.
+func (p *Processor) trackTransactionAt(transactionID, checkpointName string, t time.Time) {
 	dropped := p.in.push(&processorInput{
 		typ: pointTypeTransaction,
 		transactionEntry: transactionEntry{
 			transactionID:  transactionID,
 			checkpointName: checkpointName,
-			timestamp:      p.time().UnixNano(),
+			timestamp:      t.UnixNano(),
 		},
 	})
 	if dropped {
 		atomic.AddInt64(&p.stats.dropped, 1)
 	}
+}
+
+// TrackTransaction records a manual transaction checkpoint observation. Use this to
+// track when a specific transaction ID is seen at a named checkpoint in a data pipeline.
+// transactionID identifies the transaction (e.g. a message ID or correlation ID).
+// checkpointName is a stable label for the processing stage (e.g. "ingested", "processed").
+func (p *Processor) TrackTransaction(transactionID, checkpointName string) {
+	p.trackTransactionAt(transactionID, checkpointName, p.time())
+}
+
+// TrackTransactionAt records a manual transaction checkpoint observation at the
+// provided time t instead of the current time. Use this when the observation time
+// is already known (e.g. a timestamp embedded in a message header). t is expected
+// to be in UTC.
+func (p *Processor) TrackTransactionAt(transactionID, checkpointName string, t time.Time) {
+	p.trackTransactionAt(transactionID, checkpointName, t)
 }

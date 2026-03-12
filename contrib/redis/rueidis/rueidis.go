@@ -76,8 +76,6 @@ func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, cont
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(cmd.statement),
 		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.Tag(ext.TargetHost, c.host),
-		tracer.Tag(ext.TargetPort, c.port),
 		tracer.Tag(ext.Component, instrumentation.PackageRedisRueidis),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
