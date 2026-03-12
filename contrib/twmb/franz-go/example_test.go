@@ -19,10 +19,8 @@ import (
 func Example() {
 	// Create a traced client with default configuration
 	client, err := kgotrace.NewClient(
-		kgotrace.ClientOptions(
-			kgo.SeedBrokers("localhost:9092"),
-			kgo.ConsumeTopics("my-topic"),
-		),
+		kgo.SeedBrokers("localhost:9092"),
+		kgo.ConsumeTopics("my-topic"),
 	)
 	if err != nil {
 		log.Fatal("Failed to create client:", err)
@@ -48,7 +46,7 @@ func Example() {
 
 func Example_withTracingOptions() {
 	// Create a traced client with custom tracing options
-	client, err := kgotrace.NewClient(
+	client, err := kgotrace.NewClientWithTracing(
 		kgotrace.ClientOptions(
 			kgo.SeedBrokers("localhost:9092"),
 			kgo.ConsumeTopics("my-topic"),
@@ -77,10 +75,8 @@ func Example_withTracingOptions() {
 func Example_manualChildSpan() {
 	// Create a traced client
 	client, err := kgotrace.NewClient(
-		kgotrace.ClientOptions(
-			kgo.SeedBrokers("localhost:9092"),
-			kgo.ConsumeTopics("my-topic"),
-		),
+		kgo.SeedBrokers("localhost:9092"),
+		kgo.ConsumeTopics("my-topic"),
 	)
 	if err != nil {
 		log.Fatal("Failed to create client:", err)

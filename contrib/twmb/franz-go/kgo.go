@@ -31,17 +31,13 @@ func ClientOptions(opts ...kgo.Opt) []kgo.Opt {
 	return opts
 }
 
-// TODO: Implement NewClientWithOptions + NewClient
+// NewClient calls kgo.NewClient with default tracing options.
+func NewClient(opts ...kgo.Opt) (*Client, error) {
+	return NewClientWithTracing(opts)
+}
 
-// NewClient wraps kgo.NewClient and returns a *Client that is a wrapper around
-// the kgo.Client. It also starts a tracer and sets up the hooks to start and
-// finish spans.
-//
-// This function's signature differs from franz-go's kgo.NewClient,
-// which has a variadic list of kgo.Opt, since we already must have a variadic
-// list of tracing options.
-func NewClient(kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) (*Client, error) {
-
+// NewClientWithTracing wraps kgo.NewClient with custom tracing options.
+func NewClientWithTracing(kgoOpts []kgo.Opt, tracingOpts ...tracing.Option) (*Client, error) {
 	wrapped := &Client{
 		activeSpans: make([]*tracer.Span, 0),
 	}

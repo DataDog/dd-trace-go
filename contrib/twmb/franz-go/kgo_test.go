@@ -135,11 +135,11 @@ func TestProduceFunctional(t *testing.T) {
 		producedRecords = &producedRecords{}
 	)
 
-	producerCl, err := NewClient(ClientOptions(
+	producerCl, err := NewClient(
 		kgo.SeedBrokers(seedBrokers...),
 		// Hook so we can capture the produced records
 		kgo.WithHooks(producedRecords),
-	))
+	)
 	require.NoError(t, err)
 	defer producerCl.Close()
 
@@ -198,17 +198,17 @@ func TestProduceConsumeFunctional(t *testing.T) {
 		producedRecords = &producedRecords{}
 	)
 
-	consumerCl, err := NewClient(ClientOptions(
+	consumerCl, err := NewClient(
 		kgo.SeedBrokers(seedBrokers...),
 		kgo.ConsumeTopics(topic),
 		kgo.ConsumerGroup(testGroupID),
-	))
+	)
 	require.NoError(t, err)
 
-	producerCl, err := NewClient(ClientOptions(
+	producerCl, err := NewClient(
 		kgo.SeedBrokers(seedBrokers...),
 		kgo.WithHooks(producedRecords),
-	))
+	)
 	require.NoError(t, err)
 	defer producerCl.Close()
 
@@ -261,10 +261,10 @@ func TestProduceErrorFunctional(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	producerCl, err := NewClient(ClientOptions(
+	producerCl, err := NewClient(
 		kgo.SeedBrokers(seedBrokers...),
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-	))
+	)
 	require.NoError(t, err)
 	defer producerCl.Close()
 
@@ -296,17 +296,17 @@ func TestConsumeSpansFinishedOnNextPoll(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	consumerCl, err := NewClient(ClientOptions(
+	consumerCl, err := NewClient(
 		kgo.SeedBrokers(seedBrokers...),
 		kgo.ConsumeTopics(topic),
 		kgo.ConsumerGroup(testGroupID),
-	))
+	)
 	require.NoError(t, err)
 	defer consumerCl.Close()
 
-	producerCl, err := NewClient(ClientOptions(
+	producerCl, err := NewClient(
 		kgo.SeedBrokers(seedBrokers...),
-	))
+	)
 	require.NoError(t, err)
 	defer producerCl.Close()
 
@@ -355,16 +355,16 @@ func TestConsumeSpansFinishedOnClose(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	consumerCl, err := NewClient(ClientOptions(
+	consumerCl, err := NewClient(
 		kgo.SeedBrokers(seedBrokers...),
 		kgo.ConsumeTopics(topic),
 		kgo.ConsumerGroup(testGroupID),
-	))
+	)
 	require.NoError(t, err)
 
-	producerCl, err := NewClient(ClientOptions(
+	producerCl, err := NewClient(
 		kgo.SeedBrokers(seedBrokers...),
-	))
+	)
 	require.NoError(t, err)
 	defer producerCl.Close()
 
@@ -402,7 +402,7 @@ func TestProduceDSMPathway(t *testing.T) {
 
 	producedRecords := &producedRecords{}
 
-	producerCl, err := NewClient(
+	producerCl, err := NewClientWithTracing(
 		ClientOptions(
 			kgo.SeedBrokers(seedBrokers...),
 			kgo.WithHooks(producedRecords),
@@ -426,7 +426,7 @@ func TestProduceDSMPathway(t *testing.T) {
 	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
 		context.Background(),
 		carrier,
-	))
+	)
 	require.True(t, ok, "pathway not found in kafka message headers")
 
 	// Create expected pathway so we are able to compare the hashes
@@ -447,14 +447,14 @@ func TestConsumeDSMPathway(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	producerCl, err := NewClient(
+	producerCl, err := NewClientWithTracing(
 		ClientOptions(kgo.SeedBrokers(seedBrokers...)),
 		tracing.WithDataStreams(),
 	)
 	require.NoError(t, err)
 	defer producerCl.Close()
 
-	consumerCl, err := NewClient(
+	consumerCl, err := NewClientWithTracing(
 		ClientOptions(
 			kgo.SeedBrokers(seedBrokers...),
 			kgo.ConsumeTopics(topic),
@@ -487,7 +487,7 @@ func TestConsumeDSMPathway(t *testing.T) {
 	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
 		context.Background(),
 		carrier,
-	))
+	)
 	require.True(t, ok, "pathway not found in kafka message headers")
 
 	// Create expected pathway so we are able to compare the hashes: produce checkpoint -> consume checkpoint
