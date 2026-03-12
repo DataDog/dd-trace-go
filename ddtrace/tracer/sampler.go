@@ -225,7 +225,9 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 // guard the span.
 // +checklocksignore — Called during initialization in StartSpan, span not yet shared.
 func (ps *prioritySampler) getRate(spn *Span) float64 {
-	key := serviceEnvKey{service: spn.service, env: spn.env}
+	// .v is used directly: a span with env explicitly set to "" and one with env never
+	// set both map to the same rate-table key (both fall back to the default rate).
+	key := serviceEnvKey{service: spn.service, env: spn.env.v}
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	if rate, ok := ps.rates[key]; ok {

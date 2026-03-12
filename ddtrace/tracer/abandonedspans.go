@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -85,8 +84,8 @@ type abandonedSpanCandidate struct {
 // +checklocksignore — Called while span is locked or during initialization.
 func newAbandonedSpanCandidate(s *Span, finished bool) *abandonedSpanCandidate {
 	var component string
-	if v, ok := s.meta[ext.Component]; ok {
-		component = v
+	if s.component.set {
+		component = s.component.v
 	} else {
 		component = "manual"
 	}

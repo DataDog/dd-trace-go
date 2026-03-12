@@ -549,10 +549,10 @@ func TestPromotedFieldsDualStorage(t *testing.T) {
 		tag   string
 		field func(*Span) string
 	}{
-		{ext.Environment, func(s *Span) string { return s.env }},
-		{ext.Version, func(s *Span) string { return s.version }},
-		{ext.Component, func(s *Span) string { return s.component }},
-		{ext.SpanKind, func(s *Span) string { return s.spanKind }},
+		{ext.Environment, func(s *Span) string { return s.env.v }},
+		{ext.Version, func(s *Span) string { return s.version.v }},
+		{ext.Component, func(s *Span) string { return s.component.v }},
+		{ext.SpanKind, func(s *Span) string { return s.spanKind.v }},
 	} {
 		t.Run(tc.tag, func(t *testing.T) {
 			span := newBasicSpan("op")
