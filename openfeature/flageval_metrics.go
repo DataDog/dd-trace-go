@@ -27,10 +27,11 @@ const (
 
 // Attribute keys (following OTel semconv naming)
 var (
-	attrFlagKey   = attribute.Key("feature_flag.key")
-	attrVariant   = attribute.Key("feature_flag.result.variant")
-	attrReason    = attribute.Key("feature_flag.result.reason")
-	attrErrorType = attribute.Key("error.type")
+	attrFlagKey       = attribute.Key("feature_flag.key")
+	attrVariant       = attribute.Key("feature_flag.result.variant")
+	attrReason        = attribute.Key("feature_flag.result.reason")
+	attrErrorType     = attribute.Key("error.type")
+	attrAllocationKey = attribute.Key("feature_flag.result.allocation_key")
 )
 
 // flagEvalHook implements the OpenFeature Hook interface to track flag evaluation metrics.
@@ -108,6 +109,10 @@ func (m *flagEvalMetrics) record(
 
 	if details.ErrorCode != "" {
 		attrs = append(attrs, attrErrorType.String(errorCodeToTag(details.ErrorCode)))
+	}
+
+	if ak, ok := details.FlagMetadata[metadataAllocationKey].(string); ok && ak != "" {
+		attrs = append(attrs, attrAllocationKey.String(ak))
 	}
 
 	m.counter.Add(ctx, 1, otelmetric.WithAttributes(attrs...))
