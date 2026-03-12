@@ -1,0 +1,35 @@
+[
+  {
+    "flag": "country-targeting",
+    "variationType": "BOOLEAN",
+    "defaultValue": false,
+    "targetingKey": "alice",
+    "attributes": {"country": "US"},
+    "result": {
+      "value": true,
+      "reason": "TARGETING_MATCH"
+    }
+  },
+  {
+    "flag": "country-targeting",
+    "variationType": "BOOLEAN",
+    "defaultValue": false,
+    "targetingKey": "bob",
+    "attributes": {"country": "CA"},
+    "result": {
+      "value": true,
+      "reason": "TARGETING_MATCH"
+    }
+  },
+  {
+    "flag": "country-targeting",
+    "variationType": "BOOLEAN",
+    "defaultValue": false,
+    "targetingKey": "charlie",
+    "attributes": {"country": "UK"},
+    "result": {
+      "value": false,
+      "reason": "DEFAULT"
+    }
+  }
+]

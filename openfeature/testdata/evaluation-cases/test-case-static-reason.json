@@ -1,0 +1,35 @@
+[
+  {
+    "flag": "kill-switch",
+    "variationType": "BOOLEAN",
+    "defaultValue": false,
+    "targetingKey": "alice",
+    "attributes": {},
+    "result": {
+      "value": true,
+      "reason": "STATIC"
+    }
+  },
+  {
+    "flag": "kill-switch",
+    "variationType": "BOOLEAN",
+    "defaultValue": false,
+    "targetingKey": "bob",
+    "attributes": {"country": "US"},
+    "result": {
+      "value": true,
+      "reason": "STATIC"
+    }
+  },
+  {
+    "flag": "kill-switch",
+    "variationType": "BOOLEAN",
+    "defaultValue": false,
+    "targetingKey": "charlie",
+    "attributes": {},
+    "result": {
+      "value": true,
+      "reason": "STATIC"
+    }
+  }
+]

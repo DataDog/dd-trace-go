@@ -1,0 +1,87 @@
+{
+  "createdAt": "2024-01-01T00:00:00Z",
+  "format": "SERVER",
+  "environment": {"name": "Test"},
+  "flags": {
+    "kill-switch": {
+      "key": "kill-switch",
+      "enabled": true,
+      "variationType": "BOOLEAN",
+      "variations": {
+        "on":  {"key": "on",  "value": true},
+        "off": {"key": "off", "value": false}
+      },
+      "allocations": [
+        {
+          "key": "default-allocation",
+          "rules": [],
+          "splits": [{"variationKey": "on", "shards": []}],
+          "doLog": true
+        }
+      ]
+    },
+    "percentage-rollout": {
+      "key": "percentage-rollout",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {
+        "on":  {"key": "on",  "value": "on-value"},
+        "off": {"key": "off", "value": "off-value"}
+      },
+      "allocations": [
+        {
+          "key": "traffic-split",
+          "rules": [],
+          "splits": [
+            {
+              "variationKey": "on",
+              "shards": [
+                {"salt": "rollout-salt", "totalShards": 10000, "ranges": [{"start": 0, "end": 10000}]}
+              ]
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "country-targeting": {
+      "key": "country-targeting",
+      "enabled": true,
+      "variationType": "BOOLEAN",
+      "variations": {
+        "on":  {"key": "on",  "value": true},
+        "off": {"key": "off", "value": false}
+      },
+      "allocations": [
+        {
+          "key": "us-only",
+          "rules": [
+            {
+              "conditions": [
+                {"attribute": "country", "operator": "ONE_OF", "value": ["US", "CA"]}
+              ]
+            }
+          ],
+          "splits": [{"variationKey": "on", "shards": []}],
+          "doLog": true
+        }
+      ]
+    },
+    "disabled-flag": {
+      "key": "disabled-flag",
+      "enabled": false,
+      "variationType": "BOOLEAN",
+      "variations": {
+        "on": {"key": "on", "value": true}
+      },
+      "allocations": [
+        {
+          "key": "default-allocation",
+          "rules": [],
+          "splits": [{"variationKey": "on", "shards": []}],
+          "doLog": true
+        }
+      ]
+    }
+  }
+}

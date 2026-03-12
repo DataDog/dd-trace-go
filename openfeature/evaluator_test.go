@@ -6,6 +6,10 @@
 package openfeature
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -650,6 +654,57 @@ func TestEvaluateFlag(t *testing.T) {
 			expectedReason: of.TargetingMatchReason,
 		},
 		{
+			name: "catch-all allocation (rules=[], shards=[]) returns STATIC",
+			flag: &flag{
+				Key:           "kill-switch",
+				Enabled:       true,
+				VariationType: valueTypeBoolean,
+				Variations: map[string]*variant{
+					"on": {Key: "on", Value: true},
+				},
+				Allocations: []*allocation{
+					{
+						Key:    "default-allocation",
+						Rules:  []*rule{},
+						Splits: []*split{{Shards: []*shard{}, VariationKey: "on"}},
+					},
+				},
+			},
+			defaultValue:   false,
+			context:        map[string]any{"targetingKey": "any-user"},
+			expectedValue:  true,
+			expectedReason: of.StaticReason,
+		},
+		{
+			name: "catch-all allocation (rules=[], shards=[...]) returns SPLIT",
+			flag: &flag{
+				Key:           "rollout",
+				Enabled:       true,
+				VariationType: valueTypeString,
+				Variations: map[string]*variant{
+					"on": {Key: "on", Value: "on-value"},
+				},
+				Allocations: []*allocation{
+					{
+						Key:   "traffic-split",
+						Rules: []*rule{},
+						Splits: []*split{
+							{
+								Shards: []*shard{
+									{Salt: "rollout-salt", TotalShards: 10000, Ranges: []*shardRange{{Start: 0, End: 10000}}},
+								},
+								VariationKey: "on",
+							},
+						},
+					},
+				},
+			},
+			defaultValue:   "default",
+			context:        map[string]any{"targetingKey": "user-1"},
+			expectedValue:  "on-value",
+			expectedReason: of.SplitReason,
+		},
+		{
 			name: "enabled flag with no matching allocation",
 			flag: &flag{
 				Key:           "test-flag",
@@ -759,6 +814,104 @@ func TestValidateVariantType(t *testing.T) {
 			err := validateVariantType(tt.value, tt.expectedType)
 			if (err != nil) != tt.expectError {
 				t.Errorf("expected error=%v, got error=%v", tt.expectError, err)
+			}
+		})
+	}
+}
+
+// testEvalCase mirrors the JSON structure in testdata/evaluation-cases/*.json.
+type testEvalCase struct {
+	Flag         string         `json:"flag"`
+	VariationType string        `json:"variationType"`
+	DefaultValue  any           `json:"defaultValue"`
+	TargetingKey  string        `json:"targetingKey"`
+	Attributes    map[string]any `json:"attributes"`
+	Result        struct {
+		Value  any    `json:"value"`
+		Reason string `json:"reason"`
+	} `json:"result"`
+}
+
+// reasonToOf maps the string reason in JSON fixtures to the OpenFeature Reason constant.
+var reasonToOf = map[string]of.Reason{
+	"STATIC":           of.StaticReason,
+	"TARGETING_MATCH":  of.TargetingMatchReason,
+	"SPLIT":            of.SplitReason,
+	"DEFAULT":          of.DefaultReason,
+	"DISABLED":         of.DisabledReason,
+}
+
+// TestEvaluateFlag_JSONFixtures drives all evaluation-cases JSON fixtures against
+// the Go evaluator, asserting both value and reason. These fixtures serve as
+// the cross-tracer contract for AssignmentReason correctness.
+func TestEvaluateFlag_JSONFixtures(t *testing.T) {
+	// Load the UFC config.
+	configPath := filepath.Join("testdata", "ufc-config.json")
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read ufc-config.json: %v", err)
+	}
+	var cfg universalFlagsConfiguration
+	if err := json.Unmarshal(configData, &cfg); err != nil {
+		t.Fatalf("failed to parse ufc-config.json: %v", err)
+	}
+
+	// Glob all evaluation-cases fixture files.
+	fixtureFiles, err := filepath.Glob(filepath.Join("testdata", "evaluation-cases", "*.json"))
+	if err != nil {
+		t.Fatalf("failed to glob evaluation-cases: %v", err)
+	}
+	if len(fixtureFiles) == 0 {
+		t.Fatal("no evaluation-case fixture files found")
+	}
+
+	for _, fixtureFile := range fixtureFiles {
+		fixtureFile := fixtureFile
+		t.Run(filepath.Base(fixtureFile), func(t *testing.T) {
+			data, err := os.ReadFile(fixtureFile)
+			if err != nil {
+				t.Fatalf("failed to read %s: %v", fixtureFile, err)
+			}
+			var cases []testEvalCase
+			if err := json.Unmarshal(data, &cases); err != nil {
+				t.Fatalf("failed to parse %s: %v", fixtureFile, err)
+			}
+
+			for i, tc := range cases {
+				tc := tc
+				name := fmt.Sprintf("case-%d/%s/targeting=%s", i, tc.Flag, tc.TargetingKey)
+				t.Run(name, func(t *testing.T) {
+					f, ok := cfg.Flags[tc.Flag]
+					if !ok {
+						t.Fatalf("flag %q not found in ufc-config.json", tc.Flag)
+					}
+
+					// Build evaluation context: merge attributes + targetingKey.
+					ctx := make(map[string]any, len(tc.Attributes)+1)
+					for k, v := range tc.Attributes {
+						ctx[k] = v
+					}
+					ctx["targetingKey"] = tc.TargetingKey
+
+					result := evaluateFlag(f, tc.DefaultValue, ctx)
+
+					// Compare value. JSON numbers unmarshal as float64; normalise for bool flags.
+					gotValue := result.Value
+					wantValue := tc.Result.Value
+					// JSON booleans come through as bool already, numbers as float64.
+					// For string/bool flags the types should match directly.
+					if fmt.Sprintf("%v", gotValue) != fmt.Sprintf("%v", wantValue) {
+						t.Errorf("value: got %v (%T), want %v (%T)", gotValue, gotValue, wantValue, wantValue)
+					}
+
+					wantReason, knownReason := reasonToOf[tc.Result.Reason]
+					if !knownReason {
+						t.Fatalf("unknown reason %q in fixture", tc.Result.Reason)
+					}
+					if result.Reason != wantReason {
+						t.Errorf("reason: got %q, want %q", result.Reason, wantReason)
+					}
+				})
 			}
 		})
 	}

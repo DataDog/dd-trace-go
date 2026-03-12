@@ -1,0 +1,13 @@
+[
+  {
+    "flag": "disabled-flag",
+    "variationType": "BOOLEAN",
+    "defaultValue": false,
+    "targetingKey": "alice",
+    "attributes": {},
+    "result": {
+      "value": false,
+      "reason": "DISABLED"
+    }
+  }
+]
