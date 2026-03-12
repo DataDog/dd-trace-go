@@ -803,8 +803,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 // +checklocks:s.mu
 func setPeerService(s *Span, tc TracerConf) {
 	assert.RWMutexLocked(&s.mu)
-	spanKind := s.meta[ext.SpanKind]
-	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
+	isOutboundRequest := s.spanKind == ext.SpanKindClient || s.spanKind == ext.SpanKindProducer
 
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
