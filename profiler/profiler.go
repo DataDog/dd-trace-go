@@ -114,24 +114,13 @@ type profiler struct {
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
-	testHooks testHooks
-
 	// lastTrace is the last time an execution trace was collected
 	lastTrace time.Time
-}
-
-// testHooks are functions that are replaced during testing which would normally
-// depend on accessing runtime state that is not needed/available for the test
-type testHooks struct {
-	lookupProfile func(name string, w io.Writer, debug int) error
 }
 
 func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
 	if testLookupProfile != nil {
 		return testLookupProfile(name, w, debug)
-	}
-	if p.testHooks.lookupProfile != nil {
-		return p.testHooks.lookupProfile(name, w, debug)
 	}
 	prof := pprof.Lookup(name)
 	if prof == nil {
