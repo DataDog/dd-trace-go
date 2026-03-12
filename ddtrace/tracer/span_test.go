@@ -1061,7 +1061,7 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 			tracer.StartSpan("operation").Finish(WithError(errortrace.New("test")))
 		}
 
-		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
+		assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
 
 		assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
 		if !windows {

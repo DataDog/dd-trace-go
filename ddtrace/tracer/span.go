@@ -675,20 +675,12 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 		if cfg.noDebugStack {
 			return
 		}
-		switch err := v.(type) {
-		case xerrors.Formatter:
+		switch v.(type) {
+		case xerrors.Formatter, fmt.Formatter, *errortrace.TracerError:
 			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
-		case fmt.Formatter:
-			// pkg/errors approach
-			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
-		case *errortrace.TracerError:
-			// instrumentation/errortrace approach
-			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
-			s.setMetaLocked(ext.ErrorHandlingStack, err.Format())
-		default:
-			stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-			s.setMetaLocked(ext.ErrorHandlingStack, stack)
 		}
+		handlingStack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+		s.setMetaLocked(ext.ErrorHandlingStack, handlingStack)
 	case nil:
 		// no error
 		s.setErrorFlagLocked(false)
