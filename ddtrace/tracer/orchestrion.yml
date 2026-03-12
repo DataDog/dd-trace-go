@@ -85,7 +85,7 @@ aspects:
               ctx := {{ $req }}.Context()
               {{- else -}}
               ctx := context.TODO()
-              {{- end -}}
+              {{- end }}
             {{ end -}}
 
             {{ $functionName := .Function.Name -}}

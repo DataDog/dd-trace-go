@@ -61,19 +61,15 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	// context.Background() is the explicit "no context" sentinel. It should not
-	// inherit a parent span from GLS: a caller passing context.Background() is
-	// explicitly opting out of context-based trace propagation, so the resulting
-	// span must be a root span regardless of any active GLS span.
-	if ctx == context.Background() {
-		return nil, false
-	}
 	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanKey)
 	if s, ok := v.(*Span); ok {
 		// We may have a nil *Span wrapped in an interface in the GLS context stack,
 		// in which case we need to act as if there was nothing (otherwise we'll
 		// forcefully un-do a [ChildOf] option if one was passed).
-		return s, s != nil
+		if s == nil {
+			return nil, false
+		}
+		return s, true
 	}
 	return nil, false
 }
