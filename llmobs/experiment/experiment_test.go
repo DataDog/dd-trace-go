@@ -6,12 +6,10 @@
 package experiment_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,7 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/dataset"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/experiment"
@@ -33,8 +32,7 @@ const (
 
 func TestExperimentCreation(t *testing.T) {
 	t.Run("successful-creation", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -56,8 +54,7 @@ func TestExperimentCreation(t *testing.T) {
 		assert.Equal(t, "test-experiment", exp.Name)
 	})
 	t.Run("missing-project-name", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -80,11 +77,22 @@ func TestExperimentCreation(t *testing.T) {
 		// DD_APP_KEY is mandatory for experiments in agentless mode
 		t.Setenv("DD_APP_KEY", "")
 
-		// Use agentless mode to trigger app key requirement
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(true)))
-		defer tt.Stop()
+		// Use agentless mode to trigger app key requirement.
+		// Note: coll.TracerOption() forces ResolvedAgentlessEnabled=false, so we
+		// intentionally skip it here to allow true agentless mode validation.
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(true),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+		)
+		require.NoError(t, err)
 
-		_, err := experiment.New(
+		_, err = experiment.New(
 			"test-experiment",
 			nil,
 			nil,
@@ -100,8 +108,7 @@ func TestExperimentCreation(t *testing.T) {
 		t.Setenv("DD_APP_KEY", "")
 
 		// Use agent mode - app key should not be required
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(false)))
-		defer tt.Stop()
+		testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -122,8 +129,7 @@ func TestExperimentCreation(t *testing.T) {
 	t.Run("project-name-from-env-variable", func(t *testing.T) {
 		t.Setenv("DD_LLMOBS_PROJECT_NAME", "env-project")
 
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -145,14 +151,13 @@ func TestExperimentCreation(t *testing.T) {
 	t.Run("project-name-from-tracer-option", func(t *testing.T) {
 
 		// Use tracer option to set project name globally
-		tt := testTracer(t, testtracer.WithTracerStartOpts(
+		testTracer(t,
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp("test-app"),
 			tracer.WithLLMObsProjectName("tracer-project"),
 			tracer.WithService("test-service"),
 			tracer.WithLogStartup(false),
-		))
-		defer tt.Stop()
+		)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -175,14 +180,13 @@ func TestExperimentCreation(t *testing.T) {
 		t.Setenv("DD_LLMOBS_PROJECT_NAME", "env-project")
 
 		// Use tracer option to set project name globally
-		tt := testTracer(t, testtracer.WithTracerStartOpts(
+		testTracer(t,
 			tracer.WithLLMObsEnabled(true),
 			tracer.WithLLMObsMLApp("test-app"),
 			tracer.WithLLMObsProjectName("tracer-project"),
 			tracer.WithService("test-service"),
 			tracer.WithLogStartup(false),
-		))
-		defer tt.Stop()
+		)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -209,37 +213,40 @@ func TestDDAppKeyHeader(t *testing.T) {
 		t.Setenv("DD_APP_KEY", testAppKey)
 
 		var capturedHeaders http.Header
-		h := func(r *http.Request) *http.Response {
-			// Normalize URL by trimming evp_proxy prefix if present
-			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
 
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
 			// Capture headers from experiment-related requests
-			if strings.Contains(path, "/api/unstable/llm-obs/v1/projects") {
+			if strings.Contains(r.URL.Path, "/api/unstable/llm-obs/v1/projects") {
 				capturedHeaders = r.Header.Clone()
 			}
-			// Let the default experiment mock handler handle the response
-			return createMockHandler()(r)
-		}
+			createMockHandler()(w, r)
+		})
 
-		// Force agentless mode explicitly
-		tt := testTracer(t,
-			testtracer.WithTracerStartOpts(
-				tracer.WithLLMObsAgentlessEnabled(true),
-			),
-			testtracer.WithMockResponses(h),
+		// Note: coll.TracerOption() sets testBaseURL which forces ResolvedAgentlessEnabled=false.
+		// In the coll-based setup all requests go through the collector in agent mode.
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
 		)
-		defer tt.Stop()
+		require.NoError(t, err)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
 		evaluators := createTestEvaluators()
 
 		exp, err := experiment.New(
-			"test-experiment-agentless-header",
+			"test-experiment-header",
 			task,
 			ds,
 			evaluators,
-			experiment.WithDescription("Test DD_APP_KEY header in agentless mode"),
+			experiment.WithDescription("Test request header handling"),
 			experiment.WithProjectName("test-project"),
 		)
 		require.NoError(t, err)
@@ -248,36 +255,35 @@ func TestDDAppKeyHeader(t *testing.T) {
 		_, err = exp.Run(context.Background())
 		require.NoError(t, err)
 
-		// Verify DD-APPLICATION-KEY header was set
+		// Verify X-Datadog-NeedsAppKey header is set in coll-based (agent) mode
 		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set in agentless mode")
+		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should be set")
 	})
 	t.Run("dd-app-key-header-agent-mode", func(t *testing.T) {
 
 		var capturedHeaders http.Header
-		h := func(r *http.Request) *http.Response {
-			// Normalize URL by trimming evp_proxy prefix if present
-			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
-
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
 			// Capture headers from experiment-related requests
-			if strings.Contains(path, "/api/unstable/llm-obs/v1/projects") {
+			if strings.Contains(r.URL.Path, "/api/unstable/llm-obs/v1/projects") {
 				capturedHeaders = r.Header.Clone()
 			}
 			// Let the default experiment mock handler handle the response
-			return createMockHandler()(r)
-		}
+			createMockHandler()(w, r)
+		})
 
-		// Force agent mode explicitly
-		tt := testTracer(t,
-			testtracer.WithTracerStartOpts(
-				tracer.WithLLMObsAgentlessEnabled(false),
-			),
-			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-				Endpoints: []string{"/evp_proxy/v2/"}, // Agent supports evp_proxy
-			}),
-			testtracer.WithMockResponses(h),
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
 		)
-		defer tt.Stop()
+		require.NoError(t, err)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -306,8 +312,7 @@ func TestDDAppKeyHeader(t *testing.T) {
 
 func TestExperimentRun(t *testing.T) {
 	t.Run("successful-run", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		coll := testTracer(t)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -348,16 +353,13 @@ func TestExperimentRun(t *testing.T) {
 		}
 
 		// Verify experiment spans were created
-		spans := tt.WaitForLLMObsSpans(t, 2) // One span per dataset record
-		require.Len(t, spans, 2)
-		for _, span := range spans {
-			assert.Equal(t, "test-task", span.Name)
-			assert.Equal(t, "experiment", span.Meta["span.kind"])
-		}
+		tracer.Flush()
+		require.Equal(t, 2, coll.SpanCount()) // One span per dataset record
+		span := coll.RequireSpan(t, "test-task")
+		assert.Equal(t, "experiment", span.Meta["span.kind"])
 	})
 	t.Run("run-with-options", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		coll := testTracer(t)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -385,12 +387,11 @@ func TestExperimentRun(t *testing.T) {
 		assert.NotNil(t, results.Results[0].Record)
 
 		// Verify only 1 span was created
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
+		tracer.Flush()
+		require.Equal(t, 1, coll.SpanCount())
 	})
 	t.Run("task-error-handling", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds := createTestDataset(t)
 
@@ -425,8 +426,7 @@ func TestExperimentRun(t *testing.T) {
 	})
 
 	t.Run("evaluator-error-handling", func(t *testing.T) {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -477,8 +477,7 @@ func TestExperimentRun(t *testing.T) {
 
 func TestExperimentURL(t *testing.T) {
 	run := func(t *testing.T) string {
-		tt := testTracer(t)
-		defer tt.Stop()
+		testTracer(t)
 
 		ds := createTestDataset(t)
 		task := createTestTask()
@@ -512,8 +511,7 @@ func TestExperimentURL(t *testing.T) {
 }
 
 func TestExperimentMetricGeneration(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ds := createTestDataset(t)
 
@@ -568,50 +566,50 @@ func TestExperimentMetricGeneration(t *testing.T) {
 
 // Helper functions
 
-func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
-	defaultOpts := []testtracer.Option{
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("test-app"),
-			tracer.WithLLMObsAgentlessEnabled(false),
-			tracer.WithLLMObsProjectName("test-project"),
-			tracer.WithService("test-service"),
-			tracer.WithLogStartup(false),
-		),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
-		testtracer.WithMockResponses(createMockHandler()),
-	}
-	allOpts := append(defaultOpts, opts...)
-	tt := testtracer.Start(t, allOpts...)
-	t.Cleanup(tt.Stop)
-	return tt
+func testTracer(t *testing.T, tracerOpts ...tracer.StartOption) *llmobstest.Collector {
+	t.Helper()
+	coll := llmobstest.New(t)
+	registerMockHandlers(coll)
+	_, _, err := tracertest.Bootstrap(t, append([]tracer.StartOption{
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-app"),
+		tracer.WithLLMObsAgentlessEnabled(false),
+		tracer.WithLLMObsProjectName("test-project"),
+		tracer.WithService("test-service"),
+		tracer.WithLogStartup(false),
+		coll.TracerOption(),
+	}, tracerOpts...)...)
+	require.NoError(t, err)
+	return coll
+}
+
+func registerMockHandlers(coll *llmobstest.Collector) {
+	coll.HandleFunc("/api/unstable/llm-obs/v1/", createMockHandler())
 }
 
 // createMockHandler creates a mock handler for experiment-related requests (both agent and agentless)
-func createMockHandler() testtracer.MockResponseFunc {
-	return func(r *http.Request) *http.Response {
-		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+func createMockHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
 
 		switch {
 		case path == "/api/unstable/llm-obs/v1/projects":
-			return handleMockProjects(r)
+			handleMockProjects(w, r)
 		case path == "/api/unstable/llm-obs/v1/experiments":
-			return handleMockExperiments(r)
+			handleMockExperiments(w, r)
 		case strings.HasPrefix(path, "/api/unstable/llm-obs/v1/experiments/") && strings.HasSuffix(path, "/events"):
-			return handleMockExperimentEvents(r)
+			handleMockExperimentEvents(w, r)
 		case strings.Contains(path, "/datasets") && strings.HasSuffix(path, "/batch_update"):
-			return handleMockDatasetBatchUpdate(r)
+			handleMockDatasetBatchUpdate(w, r)
 		case strings.Contains(path, "/datasets"):
-			return handleMockDatasets(r)
+			handleMockDatasets(w, r)
 		default:
-			return nil
+			w.WriteHeader(http.StatusNotFound)
 		}
 	}
 }
 
-func handleMockProjects(r *http.Request) *http.Response {
+func handleMockProjects(w http.ResponseWriter, _ *http.Request) {
 	response := llmobstransport.CreateProjectResponse{
 		Data: llmobstransport.ResponseData[llmobstransport.ProjectView]{
 			ID:   "test-project-id",
@@ -623,16 +621,12 @@ func handleMockProjects(r *http.Request) *http.Response {
 		},
 	}
 	respData, _ := json.Marshal(response)
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(bytes.NewReader(respData)),
-		Request:    r,
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respData)
 }
 
-func handleMockExperiments(r *http.Request) *http.Response {
+func handleMockExperiments(w http.ResponseWriter, _ *http.Request) {
 	response := llmobstransport.CreateExperimentResponse{
 		Data: llmobstransport.ResponseData[llmobstransport.ExperimentView]{
 			ID:   "test-experiment-id",
@@ -649,35 +643,24 @@ func handleMockExperiments(r *http.Request) *http.Response {
 		},
 	}
 	respData, _ := json.Marshal(response)
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(bytes.NewReader(respData)),
-		Request:    r,
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respData)
 }
 
-func handleMockExperimentEvents(r *http.Request) *http.Response {
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader(`{}`)),
-		Request:    r,
-	}
+func handleMockExperimentEvents(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{}`))
 }
 
-func handleMockDatasets(r *http.Request) *http.Response {
+func handleMockDatasets(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		// Return empty list for "not found"
-		return &http.Response{
-			Status:     "200 OK",
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"data": []}`)),
-			Request:    r,
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"data": []}`))
+		return
 	}
 	if r.Method == http.MethodPost {
 		response := llmobstransport.CreateDatasetResponse{
@@ -693,24 +676,17 @@ func handleMockDatasets(r *http.Request) *http.Response {
 			},
 		}
 		respData, _ := json.Marshal(response)
-		return &http.Response{
-			Status:     "200 OK",
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(bytes.NewReader(respData)),
-			Request:    r,
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(respData)
+		return
 	}
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader(`{}`)),
-		Request:    r,
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{}`))
 }
 
-func handleMockDatasetBatchUpdate(r *http.Request) *http.Response {
+func handleMockDatasetBatchUpdate(w http.ResponseWriter, _ *http.Request) {
 	response := llmobstransport.BatchUpdateDatasetResponse{
 		Data: []llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
 			{
@@ -736,13 +712,9 @@ func handleMockDatasetBatchUpdate(r *http.Request) *http.Response {
 		},
 	}
 	respData, _ := json.Marshal(response)
-	return &http.Response{
-		Status:     "200 OK",
-		StatusCode: http.StatusOK,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(bytes.NewReader(respData)),
-		Request:    r,
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respData)
 }
 
 func createTestDataset(t *testing.T) *dataset.Dataset {

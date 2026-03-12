@@ -7,7 +7,6 @@ package fiber
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -28,9 +27,10 @@ type TestCase struct {
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.App = fiber.New(fiber.Config{DisableStartupMessage: true})
 	tc.App.Get("/ping", func(c *fiber.Ctx) error { return c.JSON(map[string]any{"message": "pong"}) })
-	tc.addr = fmt.Sprintf("127.0.0.1:%d", net.FreePort(t))
+	ln := net.FreeListener(t)
+	tc.addr = ln.Addr().String()
 
-	go func() { assert.NoError(t, tc.App.Listen(tc.addr)) }()
+	go func() { assert.NoError(t, tc.App.Listener(ln)) }()
 	t.Cleanup(func() {
 		assert.NoError(t, tc.App.ShutdownWithTimeout(10*time.Second))
 	})
@@ -62,16 +62,31 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 			},
 			Children: trace.Traces{
 				{
+					// fasthttp server span (intermediate — fiber uses fasthttp internally)
 					Tags: map[string]any{
 						"name":     "http.request",
 						"resource": "GET /ping",
-						"service":  "fiber",
+						"service":  "fasthttp",
 						"type":     "web",
 					},
 					Meta: map[string]string{
-						"http.url":  "/ping", // This is implemented incorrectly in the fiber.v2 dd-trace-go integration.
-						"component": "gofiber/fiber.v2",
+						"component": "valyala/fasthttp",
 						"span.kind": "server",
+					},
+					Children: trace.Traces{
+						{
+							Tags: map[string]any{
+								"name":     "http.request",
+								"resource": "GET /ping",
+								"service":  "fiber",
+								"type":     "web",
+							},
+							Meta: map[string]string{
+								"http.url":  "/ping", // This is implemented incorrectly in the fiber.v2 dd-trace-go integration.
+								"component": "gofiber/fiber.v2",
+								"span.kind": "server",
+							},
+						},
 					},
 				},
 			},
