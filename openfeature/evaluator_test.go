@@ -8,6 +8,7 @@ package openfeature
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -674,9 +675,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 			for i, tc := range cases {
 				t.Run(fmt.Sprintf("case%d/%s", i, tc.TargetingKey), func(t *testing.T) {
 					ctx := make(map[string]any, len(tc.Attributes)+1)
-					for k, v := range tc.Attributes {
-						ctx[k] = v
-					}
+					maps.Copy(ctx, tc.Attributes)
 					ctx["targetingKey"] = tc.TargetingKey
 
 					result := evaluateFlag(cfg.Flags[tc.Flag], tc.DefaultValue, ctx)
