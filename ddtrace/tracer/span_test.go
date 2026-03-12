@@ -87,7 +87,7 @@ func TestNilSpan(t *testing.T) {
 	// nil span should return a nil context
 	assertions.Nil(ctx)
 	assertions.Equal(TraceIDZero, ctx.TraceID())
-	assertions.Equal([16]byte(emptyTraceID), ctx.TraceIDBytes())
+	assertions.Equal([16]byte{}, ctx.TraceIDBytes())
 	assertions.Equal(uint64(0), ctx.TraceIDLower())
 	assertions.Equal(uint64(0), ctx.SpanID())
 	sp, ok := ctx.SamplingPriority()
