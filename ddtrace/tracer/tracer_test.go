@@ -727,8 +727,8 @@ func TestSamplingDecision(t *testing.T) {
 		// causing spurious failures. Multiplying through by 20 clears the denominator and
 		// yields 7/20 = 0.35 and 13/20 = 0.65 as exact integer bounds.
 		denom := 900 - keptChildren
-		assert.GreaterOrEqual(t, 20*singleSpans, 7*denom)  // singleSpans/denom >= 0.35
-		assert.LessOrEqual(t, 20*singleSpans, 13*denom)    // singleSpans/denom <= 0.65
+		assert.GreaterOrEqual(t, 20*singleSpans, 7*denom) // singleSpans/denom >= 0.35
+		assert.LessOrEqual(t, 20*singleSpans, 13*denom)   // singleSpans/denom <= 0.65
 		assert.InDelta(t, 800, keptTotal, 150)
 		assert.Equal(t, uint32(100-len(keptTraces)), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
