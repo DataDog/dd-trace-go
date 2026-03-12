@@ -131,7 +131,7 @@ func (i datadogExtension) ParseDidStart(ctx context.Context) (context.Context, g
 	if !math.IsNaN(i.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, spanParse, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, spanParse, opts...)
 	return ctx, func(err error) {
 		span.Finish(tracer.WithError(err))
 		if err != nil {
@@ -158,7 +158,7 @@ func (i datadogExtension) ValidationDidStart(ctx context.Context) (context.Conte
 	if !math.IsNaN(i.config.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, i.config.analyticsRate))
 	}
-	span, ctx := tracer.StartSpanFromContext(ctx, spanValidate, opts...)
+	span, _ := tracer.StartSpanFromContext(ctx, spanValidate, opts...)
 	return ctx, func(errs []gqlerrors.FormattedError) {
 		span.Finish(tracer.WithError(toError(errs)))
 		if len(errs) > 0 {
