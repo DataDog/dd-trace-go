@@ -13,8 +13,9 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
-	_ "github.com/DataDog/dd-trace-go/v2/instrumentation" // Blank import to pass TestIntegrationEnabled test
 	kgo "github.com/twmb/franz-go/pkg/kgo"
+
+	_ "github.com/DataDog/dd-trace-go/v2/instrumentation" // Blank import to pass TestIntegrationEnabled test
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
