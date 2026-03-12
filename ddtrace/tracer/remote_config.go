@@ -507,7 +507,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 
 	if internal.BoolEnv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false) {
 		if err := internalffe.SubscribeRC(); err != nil {
-			log.Warn("openfeature: failed to subscribe to Remote Config: %v", err)
+			log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error())
 		}
 	}
 

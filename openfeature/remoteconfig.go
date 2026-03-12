@@ -71,7 +71,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err)
+		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error())
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("failed to unmarshal configuration: %v", err),
@@ -81,7 +81,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Validate the configuration
 	err := validateConfiguration(&config)
 	if err != nil {
-		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err)
+		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error())
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("invalid configuration: %v", err),
