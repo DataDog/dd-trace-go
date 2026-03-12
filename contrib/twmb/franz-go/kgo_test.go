@@ -426,7 +426,7 @@ func TestProduceDSMPathway(t *testing.T) {
 	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
 		context.Background(),
 		carrier,
-	)
+	))
 	require.True(t, ok, "pathway not found in kafka message headers")
 
 	// Create expected pathway so we are able to compare the hashes
@@ -487,7 +487,7 @@ func TestConsumeDSMPathway(t *testing.T) {
 	got, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
 		context.Background(),
 		carrier,
-	)
+	))
 	require.True(t, ok, "pathway not found in kafka message headers")
 
 	// Create expected pathway so we are able to compare the hashes: produce checkpoint -> consume checkpoint
