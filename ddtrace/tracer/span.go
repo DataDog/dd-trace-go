@@ -132,6 +132,18 @@ type Span struct {
 	// +checklocks:mu
 	spanType string `msg:"type"` // protocol associated with the span (i.e. "web", "db", "cache")
 	// +checklocks:mu
+	// env/version/component/spanKind are V1-protocol promoted fields. They are dual-stored:
+	// the struct field is used by the V1 encoder and internal callers to avoid a map lookup;
+	// the meta map copy ensures V0.4 (msgp) encoding and the external stats concentrator
+	// (which reads Meta["span.kind"]) continue to work without modification.
+	env string `msg:"-"` // ext.Environment tag value
+	// +checklocks:mu
+	version string `msg:"-"` // ext.Version tag value
+	// +checklocks:mu
+	component string `msg:"-"` // ext.Component tag value
+	// +checklocks:mu
+	spanKind string `msg:"-"` // ext.SpanKind tag value
+	// +checklocks:mu
 	start int64 `msg:"start"` // span start time expressed in nanoseconds since epoch
 	// +checklocks:mu
 	duration int64 `msg:"duration"` // duration of the span expressed in nanoseconds
@@ -728,22 +740,36 @@ func (s *Span) setMetaLocked(key, v string) {
 // setMetaInit sets a string tag without acquiring the lock and asserting the lock is held.
 // +checklocksignore — Initialization time, span not yet shared.
 func (s *Span) setMetaInit(key, v string) {
-	if s.meta == nil {
-		s.meta = make(map[string]string, 1)
-	}
 	delete(s.metrics, key)
 	switch key {
 	case ext.SpanName:
 		s.name = v
+		return
 	case ext.ServiceName:
 		s.service = v
+		return
 	case ext.ResourceName:
 		s.resource = v
+		return
 	case ext.SpanType:
 		s.spanType = v
-	default:
-		s.meta[key] = v
+		return
+	case ext.Environment:
+		s.env = v
+	case ext.Version:
+		s.version = v
+	case ext.Component:
+		s.component = v
+	case ext.SpanKind:
+		s.spanKind = v
 	}
+	// Promoted fields (env/version/component/spanKind) fall through here so they
+	// remain in meta too. The V0.4 encoder and the external stats concentrator both
+	// read directly from the meta map, so dual-storage is required for correctness.
+	if s.meta == nil {
+		s.meta = make(map[string]string, 1)
+	}
+	s.meta[key] = v
 }
 
 // setMetaStructLocked sets structured metadata. This method assumes the span lock is already held.
