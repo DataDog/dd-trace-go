@@ -82,5 +82,16 @@ jobs:
 
       - name: Upload Coverage
         if: always()
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true
+        uses: ./.github/actions/codecov-upload
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload Coverage to Datadog
+        if: always()
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@9bbbf86d16f7db1b14c5b885e61cf0d96053686a
+        with:
+          api_key: ${{ secrets.DD_CI_API_KEY }}
+          files: coverage.txt
+          format: go-coverprofile

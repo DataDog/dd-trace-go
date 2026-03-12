@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -86,7 +87,7 @@ func TestNilSpan(t *testing.T) {
 	// nil span should return a nil context
 	assertions.Nil(ctx)
 	assertions.Equal(TraceIDZero, ctx.TraceID())
-	assertions.Equal([16]byte(emptyTraceID), ctx.TraceIDBytes())
+	assertions.Equal([16]byte{}, ctx.TraceIDBytes())
 	assertions.Equal(uint64(0), ctx.TraceIDLower())
 	assertions.Equal(uint64(0), ctx.SpanID())
 	sp, ok := ctx.SamplingPriority()
@@ -134,7 +135,7 @@ func BenchmarkAddLink(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		rootSpan.AddLink(link)
 	}
 }
@@ -148,64 +149,68 @@ func TestSpanOperationName(t *testing.T) {
 }
 
 func TestSpanFinish(t *testing.T) {
-	if strings.HasPrefix(runtime.GOOS, "windows") {
-		t.Skip("Windows' sleep is not precise enough for this test.")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		wait := time.Millisecond * 2
+		// Use dummyTransport + nop HTTP client to avoid network I/O inside the synctest bubble.
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
+		tracer, err := newTracer(withTransport(newDummyTransport()), withNoopStats(), withNoopInfoHTTPClient())
+		defer tracer.Stop()
+		assert.NoError(err)
+		span := tracer.newRootSpan("pylons.request", "pylons", "/")
 
-	assert := assert.New(t)
-	wait := time.Millisecond * 2
-	tracer, err := newTracer(withTransport(newDefaultTransport()))
-	defer tracer.Stop()
-	assert.NoError(err)
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-
-	// the finish should set finished and the duration
-	time.Sleep(wait)
-	span.Finish()
-	assert.Greater(span.duration, int64(wait))
-	assert.True(span.finished)
+		// the finish should set finished and the duration
+		time.Sleep(wait) // instant: fake clock advances 2ms
+		span.Finish()
+		assert.GreaterOrEqual(span.duration, int64(wait)) // fake clock is exact, so duration == wait
+		assert.True(span.finished)
+	})
 }
 
 func TestSpanFinishTwice(t *testing.T) {
-	assert := assert.New(t)
-	wait := time.Millisecond * 2
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		wait := time.Millisecond * 2
 
-	tracer, _, _, stop, err := startTestTracer(t)
-	assert.Nil(err)
-	defer stop()
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
+		// withNoopStats prevents the statsd client from doing DNS resolution inside the bubble.
+		tracer, _, _, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
+		assert.Nil(err)
+		defer stop()
 
-	assert.Equal(tracer.traceWriter.(*agentTraceWriter).payload.stats().itemCount, 0)
+		assert.Equal(tracer.traceWriter.(*agentTraceWriter).payload.stats().itemCount, 0)
 
-	// the finish must be idempotent
-	span := tracer.newRootSpan("pylons.request", "pylons", "/")
-	time.Sleep(wait)
-	span.Finish()
-	tracer.awaitPayload(t, 1)
+		// the finish must be idempotent
+		span := tracer.newRootSpan("pylons.request", "pylons", "/")
+		time.Sleep(wait) // instant: fake clock advances 2ms
+		span.Finish()
+		tracer.awaitPayload(t, 1)
 
-	// check that the span does not have any span links serialized
-	// spans don't have span links by default and they are serialized in the meta map
-	// as part of the Finish call
-	_, spanLinksStr := getMeta(span, "_dd.span_links")
-	assert.Zero(spanLinksStr)
+		// check that the span does not have any span links serialized
+		// spans don't have span links by default and they are serialized in the meta map
+		// as part of the Finish call
+		_, spanLinksStr := getMeta(span, "_dd.span_links")
+		assert.Zero(spanLinksStr)
 
-	// manipulate the span
-	span.AddLink(SpanLink{
-		TraceID: span.traceID,
-		SpanID:  span.spanID,
-		Attributes: map[string]string{
-			"manual.keep": "true",
-		},
+		// manipulate the span
+		span.AddLink(SpanLink{
+			TraceID: span.traceID,
+			SpanID:  span.spanID,
+			Attributes: map[string]string{
+				"manual.keep": "true",
+			},
+		})
+
+		previousDuration := span.duration
+		time.Sleep(wait) // instant: fake clock advances 2ms
+		span.Finish()
+
+		assert.Equal(previousDuration, span.duration)
+		_, spanLinksStr = getMeta(span, "_dd.span_links")
+		assert.Zero(spanLinksStr)
+
+		tracer.awaitPayload(t, 1) // this checks that no other span was seen by the tracerWriter
 	})
-
-	previousDuration := span.duration
-	time.Sleep(wait)
-	span.Finish()
-
-	assert.Equal(previousDuration, span.duration)
-	_, spanLinksStr = getMeta(span, "_dd.span_links")
-	assert.Zero(spanLinksStr)
-
-	tracer.awaitPayload(t, 1) // this checks that no other span was seen by the tracerWriter
 }
 
 func TestSpanFinishNilOption(t *testing.T) {
@@ -1112,34 +1117,38 @@ func TestUniqueTagKeys(t *testing.T) {
 
 // Prior to a bug fix, this failed when running `go test -race`
 func TestSpanModifyWhileFlushing(t *testing.T) {
-	tracer, _, _, stop, err := startTestTracer(t)
-	assert.Nil(t, err)
-	defer stop()
+	synctest.Test(t, func(t *testing.T) {
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
+		// withNoopStats prevents the statsd client from doing DNS resolution inside the bubble.
+		tracer, _, _, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
+		assert.Nil(t, err)
+		defer stop()
 
-	done := make(chan struct{})
-	go func() {
-		span := tracer.newRootSpan("pylons.request", "pylons", "/")
-		span.Finish()
-		// It doesn't make much sense to update the span after it's been finished,
-		// but an error in a user's code could lead to this.
-		span.SetOperationName("race_test")
-		span.SetTag("race_test", "true")
-		span.SetTag("race_test2", 133.7)
-		span.SetTag("race_test3", 133.7)
-		span.SetTag(ext.Error, errors.New("t"))
-		span.SetUser("race_test_user_1")
-		done <- struct{}{}
-	}()
+		done := make(chan struct{})
+		go func() {
+			span := tracer.newRootSpan("pylons.request", "pylons", "/")
+			span.Finish()
+			// It doesn't make much sense to update the span after it's been finished,
+			// but an error in a user's code could lead to this.
+			span.SetOperationName("race_test")
+			span.SetTag("race_test", "true")
+			span.SetTag("race_test2", 133.7)
+			span.SetTag("race_test3", 133.7)
+			span.SetTag(ext.Error, errors.New("t"))
+			span.SetUser("race_test_user_1")
+			done <- struct{}{}
+		}()
 
-	for {
-		select {
-		case <-done:
-			return
-		default:
-			tracer.traceWriter.flush()
-			time.Sleep(10 * time.Millisecond)
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				tracer.traceWriter.flush()
+				time.Sleep(10 * time.Millisecond) // instant: fake clock advances 10ms
+			}
 		}
-	}
+	})
 }
 
 func TestSpanSamplingPriority(t *testing.T) {
@@ -1449,28 +1458,33 @@ func TestRootSpanAccessor(t *testing.T) {
 }
 
 func TestSpanStartAndFinishLogs(t *testing.T) {
-	tp := new(log.RecordLogger)
-	tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugMode(true))
-	assert.Nil(t, err)
-	defer stop()
+	synctest.Test(t, func(t *testing.T) {
+		tp := new(log.RecordLogger)
+		// withNoopInfoHTTPClient intercepts the /info agent-discovery request without DNS/TCP.
+		// withNoopStats prevents the statsd client from doing DNS resolution inside the bubble.
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithDebugMode(true), withNoopInfoHTTPClient(), withNoopStats())
+		assert.Nil(t, err)
+		defer stop()
 
-	span := tracer.StartSpan("op")
-	time.Sleep(time.Millisecond * 2)
-	span.Finish()
-	started, finished := false, false
-	for _, l := range tp.Logs() {
-		if !started {
-			started = strings.Contains(l, "DEBUG: Started Span")
+		span := tracer.StartSpan("op")
+		time.Sleep(time.Millisecond * 2) // instant: fake clock advances 2ms
+		span.Finish()
+		synctest.Wait() // wait for tracer goroutines to process the span
+		started, finished := false, false
+		for _, l := range tp.Logs() {
+			if !started {
+				started = strings.Contains(l, "DEBUG: Started Span")
+			}
+			if !finished {
+				finished = strings.Contains(l, "DEBUG: Finished Span")
+			}
+			if started && finished {
+				break
+			}
 		}
-		if !finished {
-			finished = strings.Contains(l, "DEBUG: Finished Span")
-		}
-		if started && finished {
-			break
-		}
-	}
-	require.True(t, started)
-	require.True(t, finished)
+		require.True(t, started)
+		require.True(t, finished)
+	})
 }
 
 func TestSetUserPropagatedUserID(t *testing.T) {
@@ -1539,7 +1553,7 @@ func BenchmarkSetTagMetric(b *testing.B) {
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		k := keys[i%len(keys)]
 		span.SetTag(k, float64(12.34))
 	}
@@ -1550,7 +1564,7 @@ func BenchmarkSetTagString(b *testing.B) {
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		k := string(keys[i%len(keys)])
 		span.SetTag(k, "some text")
 	}
@@ -1562,7 +1576,7 @@ func BenchmarkSetTagStringPtr(b *testing.B) {
 	v := makePointer("some text")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		k := keys[i%len(keys)]
 		span.SetTag(k, v)
 	}
@@ -1573,7 +1587,7 @@ func BenchmarkSetTagStringer(b *testing.B) {
 	keys := strings.Split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", "")
 	value := &stringer{}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		k := keys[i%len(keys)]
 		span.SetTag(k, value)
 	}
@@ -1584,7 +1598,7 @@ func BenchmarkSetTagField(b *testing.B) {
 	keys := []string{ext.ServiceName, ext.ResourceName, ext.SpanType}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		k := keys[i%len(keys)]
 		span.SetTag(k, "some text")
 	}
@@ -1627,7 +1641,7 @@ func BenchmarkSerializeSpanLinksInMeta(b *testing.B) {
 	span.AddLink(SpanLink{TraceID: 0, SpanID: 0, Attributes: attributes})
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		span.serializeSpanLinksInMeta()
 	}
 }

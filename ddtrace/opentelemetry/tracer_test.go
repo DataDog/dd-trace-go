@@ -238,7 +238,7 @@ func BenchmarkOTelApiWithNoTags(b *testing.B) {
 
 	b.ResetTimer()
 	b.Run("otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, sp := tr.Start(context.Background(), testData.op)
 			sp.End()
 		}
@@ -248,7 +248,7 @@ func BenchmarkOTelApiWithNoTags(b *testing.B) {
 	defer tracer.Stop()
 	b.ResetTimer()
 	b.Run("datadog_otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.op)
 			sp.Finish()
 		}
@@ -267,7 +267,7 @@ func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 
 	b.ResetTimer()
 	b.Run("otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, sp := tr.Start(context.Background(), testData.oldOp)
 			sp.SetAttributes(attribute.String(testData.tagKey, testData.tagValue))
 			sp.SetName(testData.newOp)
@@ -279,7 +279,7 @@ func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 	defer tracer.Stop()
 	b.ResetTimer()
 	b.Run("datadog_otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.oldOp)
 			sp.SetTag(testData.tagKey, testData.tagValue)
 			sp.SetOperationName(testData.newOp)
@@ -295,7 +295,7 @@ func BenchmarkOTelConcurrentTracing(b *testing.B) {
 	tr := otel.Tracer("")
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		wg := sync.WaitGroup{}
 		for range 100 {
 			wg.Go(func() {

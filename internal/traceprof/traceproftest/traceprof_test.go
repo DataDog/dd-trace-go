@@ -184,7 +184,7 @@ func BenchmarkEndpointsAndHotspots(b *testing.B) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					app.WorkRequest(b, req)
 				}
 			}()
