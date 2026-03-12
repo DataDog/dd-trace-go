@@ -34,6 +34,8 @@ type startupInfo struct {
 	Env                         string                       `json:"env"`                            // Tracer env
 	Service                     string                       `json:"service"`                        // Tracer Service
 	AgentURL                    string                       `json:"agent_url"`                      // The address of the agent
+	TraceURL                    string                       `json:"trace_url"`                      // The address of the traces endpoint
+	OTLPExportEnabled           bool                         `json:"otlp_export_enabled"`            // Whether OTLP export is enabled
 	AgentError                  string                       `json:"agent_error"`                    // Any error that occurred trying to connect to agent
 	Debug                       bool                         `json:"debug"`                          // Whether debug mode is enabled
 	AnalyticsEnabled            bool                         `json:"analytics_enabled"`              // True if there is a global analytics rate set
@@ -133,6 +135,8 @@ func logStartup(t *tracer) {
 		Env:                         t.config.internalConfig.Env(),
 		Service:                     t.config.serviceName,
 		AgentURL:                    agentURL,
+		TraceURL:                    t.config.transport.endpoint(),
+		OTLPExportEnabled:           t.config.traceProtocol == traceProtocolOTLP,
 		Debug:                       t.config.internalConfig.Debug(),
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
