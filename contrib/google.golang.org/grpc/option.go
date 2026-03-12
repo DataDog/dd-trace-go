@@ -107,7 +107,7 @@ func WithService(name string) OptionFn {
 		cfg.serviceName = newCachedServiceName(func() string {
 			return name
 		})
-		cfg.serviceSource = instrumentation.ServiceSourceWithService
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

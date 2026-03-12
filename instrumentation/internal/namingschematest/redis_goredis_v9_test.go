@@ -55,7 +55,7 @@ var redisGoRedisV9 = harness.TestCase{
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
 		Defaults:        []string{string(instrumentation.PackageRedisGoRedisV9)},
-		ServiceOverride: []string{instrumentation.ServiceSourceWithService},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)

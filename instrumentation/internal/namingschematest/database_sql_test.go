@@ -78,7 +78,7 @@ var databaseSQL_SQLServer = harness.TestCase{
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
 		Defaults:        harness.RepeatString("opt.sql_driver", 2),
-		ServiceOverride: []string{instrumentation.ServiceSourceWithService, instrumentation.ServiceSourceWithService},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
@@ -102,7 +102,7 @@ var databaseSQL_Postgres = harness.TestCase{
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
 		Defaults:        harness.RepeatString("opt.sql_driver", 2),
-		ServiceOverride: []string{instrumentation.ServiceSourceWithService, instrumentation.ServiceSourceWithService},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
@@ -129,8 +129,8 @@ var databaseSQL_PostgresWithRegisterOverride = harness.TestCase{
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
 		// WithService was used during Register, so the source is inherited.
-		Defaults:        []string{instrumentation.ServiceSourceWithService, instrumentation.ServiceSourceWithService},
-		ServiceOverride: []string{instrumentation.ServiceSourceWithService, instrumentation.ServiceSourceWithService},
+		Defaults:        []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
@@ -154,7 +154,7 @@ var databaseSQL_MySQL = harness.TestCase{
 	},
 	WantServiceSource: harness.ServiceSourceAssertions{
 		Defaults:        harness.RepeatString("opt.sql_driver", 2),
-		ServiceOverride: []string{instrumentation.ServiceSourceWithService, instrumentation.ServiceSourceWithService},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)

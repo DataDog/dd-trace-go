@@ -55,7 +55,7 @@ func WithSkipRawCommand(skip bool) ClientOptionFn {
 func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
-		cfg.serviceSource = instrumentation.ServiceSourceWithService
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

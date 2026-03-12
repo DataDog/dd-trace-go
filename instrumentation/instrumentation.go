@@ -81,9 +81,9 @@ func (i *Instrumentation) ServiceName(component Component, opCtx OperationContex
 }
 
 const (
-	// ServiceSourceWithService is the service source value used when the service
+	// ServiceSourceWithServiceOption is the service source value used when the service
 	// name is explicitly set via a WithService option.
-	ServiceSourceWithService = "opt.with_service"
+	ServiceSourceWithServiceOption = "opt.with_service"
 )
 
 // ServiceNameWithSource returns a StartSpanOption that sets both the service

@@ -35,7 +35,7 @@ var (
 		},
 		WantServiceSource: harness.ServiceSourceAssertions{
 			Defaults:        harness.RepeatString(string(instrumentation.PackageGRPC), 4),
-			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithService, 4),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 4),
 		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 4)
@@ -60,7 +60,7 @@ var (
 		},
 		WantServiceSource: harness.ServiceSourceAssertions{
 			Defaults:        harness.RepeatString(string(instrumentation.PackageGRPC), 4),
-			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithService, 4),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 4),
 		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 4)

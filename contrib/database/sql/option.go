@@ -149,14 +149,10 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 		mode = env.Get("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
-	cfg.serviceName = defaultServiceName(driverName, rc)
-	cfg.serviceSource = serviceSourceSQLDriver
+	cfg.serviceName, cfg.serviceSource = defaultServiceNameAndSource(driverName, rc)
 	cfg.spanName = getSpanName(driverName)
 	if rc != nil {
 		// use registered config as the default value for some options
-		if rc.serviceSource != "" {
-			cfg.serviceSource = rc.serviceSource
-		}
 		if math.IsNaN(cfg.analyticsRate) {
 			cfg.analyticsRate = rc.analyticsRate
 		}
@@ -176,16 +172,21 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 	}
 }
 
-func defaultServiceName(driverName string, rc *registerConfig) string {
+func defaultServiceNameAndSource(driverName string, rc *registerConfig) (string, string) {
 	registerService := ""
+	serviceSource := serviceSourceSQLDriver
 	if rc != nil {
 		// if service name was set during Register, we use that value as default.
 		registerService = rc.serviceName
+		if rc.serviceSource != "" {
+			serviceSource = rc.serviceSource
+		}
 	}
-	return instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
+	serviceName := instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
 		"driverName":      driverName,
 		"registerService": registerService,
 	})
+	return serviceName, serviceSource
 }
 
 func getSpanName(driverName string) string {
@@ -204,7 +205,7 @@ func getSpanName(driverName string) string {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
-		cfg.serviceSource = instrumentation.ServiceSourceWithService
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
