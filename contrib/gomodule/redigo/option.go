@@ -9,12 +9,14 @@ import (
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 type dialConfig struct {
 	serviceName    string
 	spanName       string
 	analyticsRate  float64
+	skipRaw        bool
 	connectionType int
 }
 
@@ -40,9 +42,19 @@ func defaults(cfg *dialConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.skipRaw = !options.GetBoolEnv("DD_TRACE_REDIS_RAW_COMMAND", true)
 
 	// Default to withTimeout to maintain backwards compatibility.
 	cfg.connectionType = connectionTypeWithTimeout
+}
+
+// WithSkipRawCommand reports whether to skip setting the "redis.raw_command" tag
+// on instrumenation spans. This may be useful if the Datadog Agent is not
+// set up to obfuscate this value and it could contain sensitive information.
+func WithSkipRawCommand(skip bool) DialOptionFn {
+	return func(cfg *dialConfig) {
+		cfg.skipRaw = skip
+	}
 }
 
 // WithService sets the given service name for the dialled connection.

@@ -41,7 +41,7 @@ type agentTraceWriter struct {
 	mu locking.Mutex
 
 	// payload encodes and buffers traces in msgpack format
-	payload payload
+	payload payload // +checklocks:mu
 
 	// climit limits the number of concurrent outgoing connections
 	climit chan struct{}
@@ -224,6 +224,7 @@ func encodeFloat(p []byte, f float64) []byte {
 	return p
 }
 
+// +checklocksignore — Post-finish: serializes finished span for log transport.
 func (h *logTraceWriter) encodeSpan(s *Span) {
 	var scratch [maxFloatLength]byte
 	h.buf.WriteString(`{"trace_id":"`)

@@ -31,11 +31,9 @@ func TestReportRuntimeMetrics(t *testing.T) {
 	assert.NoError(t, err)
 	defer trc.statsd.Close()
 
-	trc.wg.Add(1)
-	go func() {
-		defer trc.wg.Done()
+	trc.wg.Go(func() {
 		trc.reportRuntimeMetrics(time.Millisecond)
-	}()
+	})
 	assert := assert.New(t)
 	err = tg.Wait(assert, 35, 1*time.Second)
 	trc.Stop()
@@ -76,7 +74,7 @@ func TestEnqueuedTracesHealthMetric(t *testing.T) {
 	assert.Nil(err)
 	defer stop()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		tracer.StartSpan("operation").Finish()
 	}
 	flush(3)
@@ -225,12 +223,10 @@ func TestHealthMetricsRaceCondition(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	for range 5 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			sp := tracer.StartSpan("operation")
 			sp.Finish()
-		}()
+		})
 	}
 	wg.Wait()
 	flush(5)
@@ -284,7 +280,7 @@ func BenchmarkSpansMetrics(b *testing.B) {
 	tracer, _, _, stop, err := startTestTracer(b, withStatsdClient(&tg))
 	assert.Nil(b, err)
 	defer stop()
-	for n := 0; n < b.N; n++ {
+	for n := range b.N {
 		for range n {
 			go tracer.StartSpan("operation").Finish()
 		}

@@ -8,8 +8,9 @@ package pgx
 import (
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const tracerPrefix = "datadog.tracer."

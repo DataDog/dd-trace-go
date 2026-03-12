@@ -20,7 +20,7 @@ import (
 func BenchmarkIter(b *testing.B) {
 	m := NewLockMap(nil)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		m.Iter(func(_ string, _ string) {})
 	}
 }
@@ -30,7 +30,7 @@ func TestLockMapThrash(t *testing.T) {
 	t.Cleanup(cancel)
 	lm := NewLockMap(map[string]string{})
 	wg.Add(6)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		// Readers
 		go func() {
 			defer wg.Done()
@@ -89,11 +89,9 @@ func TestXSyncMapCounterMap(t *testing.T) {
 
 		wg := sync.WaitGroup{}
 		for range 10 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				cm.Inc("key")
-			}()
+			})
 		}
 		wg.Wait()
 
@@ -111,7 +109,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 
 		b.ResetTimer()
 		cm := NewXSyncMapCounterMap()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			// We increment the first key w 75% probability and the rest
 			// increment the rest of the keys.
 			// This is to benchmark the expected case of most spans starting
@@ -134,7 +132,7 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		cm := NewXSyncMapCounterMap()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			cm.Inc("key-" + strconv.Itoa(i))
 		}
 
@@ -150,12 +148,10 @@ func BenchmarkXSyncMapCounterMap(b *testing.B) {
 		cm := NewXSyncMapCounterMap()
 
 		wg := sync.WaitGroup{}
-		for range b.N {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for b.Loop() {
+			wg.Go(func() {
 				cm.Inc("key")
-			}()
+			})
 		}
 		wg.Wait()
 
@@ -170,7 +166,7 @@ func TestToFloat64(t *testing.T) {
 	)
 
 	for i, tt := range [...]struct {
-		value interface{}
+		value any
 		f     float64
 		ok    bool
 	}{

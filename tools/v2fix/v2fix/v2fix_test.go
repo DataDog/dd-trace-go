@@ -7,6 +7,7 @@ package v2fix
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/types"
@@ -18,8 +19,14 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
+var update = flag.Bool("update", false, "update golden files")
+
 type V1Usage struct {
 	ctx context.Context
+}
+
+func (V1Usage) Clone() KnownChange {
+	return &V1Usage{}
 }
 
 func (c V1Usage) Context() context.Context {
@@ -93,6 +100,44 @@ func TestDeprecatedSamplingRules(t *testing.T) {
 	c.Run(testRunner(t, "samplingrules"))
 }
 
+func TestChildOfStartChild(t *testing.T) {
+	c := NewChecker(&ChildOfStartChild{})
+	c.Run(testRunner(t, "childof"))
+}
+
+func TestAppSecLoginEvents(t *testing.T) {
+	c := NewChecker(&AppSecLoginEvents{})
+	c.Run(testRunner(t, "appseclogin"))
+}
+
+func TestDeprecatedWithPrioritySampling(t *testing.T) {
+	c := NewChecker(&DeprecatedWithPrioritySampling{})
+	c.Run(testRunner(t, "withprioritysampling"))
+}
+
+func TestDeprecatedWithHTTPRoundTripper(t *testing.T) {
+	c := NewChecker(&DeprecatedWithHTTPRoundTripper{})
+	c.Run(testRunner(t, "withhttproundtripper"))
+}
+
+// TestFalsePositives verifies that functions with the same names as dd-trace-go v1 functions
+// but from different packages are NOT flagged for migration.
+func TestFalsePositives(t *testing.T) {
+	// Test all function-call based changes against the false positive test file
+	changes := []KnownChange{
+		&WithServiceName{},
+		&TraceIDString{},
+		&WithDogstatsdAddr{},
+		&DeprecatedSamplingRules{},
+	}
+	for _, change := range changes {
+		t.Run(fmt.Sprintf("%T", change), func(t *testing.T) {
+			c := NewChecker(change)
+			c.Run(testRunner(t, "falsepositive"))
+		})
+	}
+}
+
 func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 	t.Helper()
 	cwd, err := os.Getwd()
@@ -101,6 +146,10 @@ func testRunner(t *testing.T, name string) func(*analysis.Analyzer) {
 		return nil
 	}
 	return func(a *analysis.Analyzer) {
+		if *update {
+			runWithSuggestedFixesUpdate(t, path.Join(cwd, "..", "_stage"), a, fmt.Sprintf("./%s", name))
+			return
+		}
 		analysistest.RunWithSuggestedFixes(t, path.Join(cwd, "..", "_stage"), a, fmt.Sprintf("./%s", name))
 	}
 }

@@ -260,6 +260,54 @@ func TestNewClient(t *testing.T) {
 			wantServiceName: "global-service",
 		},
 		{
+			name: "Test Dedicate client Do and Close",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				dc, cancel := client.Dedicate()
+				defer cancel()
+				require.NoError(t, dc.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
+				dc.Close()
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
+				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test Dedicated client DoMulti",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				err := client.Dedicated(func(d valkey.DedicatedClient) error {
+					resp := d.DoMulti(ctx, client.B().Set().Key("test_key").Value("test_value").Build(), client.B().Get().Key("test_key").Build())
+					require.Len(t, resp, 2)
+					return nil
+				})
+				require.NoError(t, err)
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET test_key test_value GET test_key", span.Tag(ext.ValkeyRawCommand))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
+			},
+			wantServiceName: "global-service",
+		},
+		{
 			name: "Test SET command with canceled context and custom error check",
 			opts: []Option{
 				WithErrorCheck(func(err error) bool {

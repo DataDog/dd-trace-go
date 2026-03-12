@@ -21,7 +21,7 @@ func TestConstructorWithSizeCreatesEmptyBitmap(t *testing.T) {
 	}
 
 	// Check each bit (1-indexed) is false.
-	for i := 0; i < lines; i++ {
+	for i := range lines {
 		if bitmap.Get(i + 1) {
 			t.Errorf("expected bit %d to be false", i+1)
 		}
@@ -116,7 +116,7 @@ func TestLargeBitmapBitwiseOperationsHandleCorrectly(t *testing.T) {
 func TestBitwiseNotComplexPatternInvertsCorrectly(t *testing.T) {
 	size := 256 // 256 bytes
 	pattern := make([]byte, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		if i%2 == 0 {
 			pattern[i] = 0xAA
 		} else {
@@ -128,7 +128,7 @@ func TestBitwiseNotComplexPatternInvertsCorrectly(t *testing.T) {
 	invertedBitmap := Not(bitmap, false)
 	totalBits := size * 8
 
-	for i := 0; i < totalBits; i++ {
+	for i := range totalBits {
 		originalBit := bitmap.Get(i + 1)
 		invertedBit := invertedBitmap.Get(i + 1)
 		if originalBit == invertedBit {
@@ -194,7 +194,7 @@ func TestEnumeratorCorrectlyIteratesOverBits(t *testing.T) {
 		bitmap := NewFileBitmapFromBytes(tt.bitmapBytes)
 		var iterated []bool
 		for _, b := range bitmap.data {
-			for bitPos := 0; bitPos < 8; bitPos++ {
+			for bitPos := range 8 {
 				// Extract bit from most significant to least significant.
 				bit := (b & (1 << (7 - bitPos))) != 0
 				iterated = append(iterated, bit)

@@ -16,13 +16,14 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/tinylib/msgp/msgp"
 )
 
 var fixedTime = now()
@@ -31,7 +32,7 @@ var fixedTime = now()
 func newSpanList(n int) spanList {
 	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 	list := make([]*Span, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].start = fixedTime
 	}
@@ -42,9 +43,9 @@ func newSpanList(n int) spanList {
 func newDetailedSpanList(n int) spanList {
 	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
 	list := make([]*Span, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
-		list[i].context.trace.setPropagatingTagLocked(keyDecisionMaker, "1")
+		list[i].context.trace.setPropagatingTag(keyDecisionMaker, "1")
 		list[i].start = fixedTime
 		list[i].service = "golden"
 		list[i].resource = "resource." + itoa[i%5+1]
@@ -66,7 +67,7 @@ func TestPayloadIntegrity(t *testing.T) {
 			assert := assert.New(t)
 			p := newPayload(traceProtocolV04)
 			lists := make(spanLists, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				list := newSpanList(i%5 + 1)
 				lists[i] = list
 				_, _ = p.push(list)
@@ -92,7 +93,7 @@ func TestPayloadV04Decode(t *testing.T) {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
 			assert := assert.New(t)
 			p := newPayload(traceProtocolV04)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				_, _ = p.push(newSpanList(i%5 + 1))
 			}
 			var got spanLists
@@ -121,7 +122,7 @@ func TestPayloadV1Decode(t *testing.T) {
 			p.SetHostname("hostname")
 			p.SetAppVersion("appVersion")
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				_, _ = p.push(newSpanList(i%5 + 1))
 			}
 
@@ -154,7 +155,7 @@ func TestPayloadV1Decode(t *testing.T) {
 				p      = newPayloadV1()
 			)
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				_, _ = p.push(newDetailedSpanList(i%5 + 1))
 			}
 			encoded, err := io.ReadAll(p)
@@ -186,7 +187,7 @@ func TestPayloadV1Decode(t *testing.T) {
 			)
 
 			s := newBasicSpan("span.list")
-			s.context.trace.propagatingTags = map[string]string{"keyDecisionMaker": ""}
+			s.context.trace.replacePropagatingTags(map[string]string{"keyDecisionMaker": ""})
 			p.push([]*Span{s})
 			encoded, err := io.ReadAll(p)
 			assert.NoError(err)
@@ -218,9 +219,9 @@ func TestPayloadV1Decode(t *testing.T) {
 			p.SetHostname("hostname")
 			p.SetAppVersion("appVersion")
 
-			for i := 0; i < n; i++ {
+			for i := range n {
 				sl := newSpanList(i%5 + 1)
-				sl[0].context.trace.setSamplingPriorityLocked(1, samplernames.Manual)
+				sl[0].context.trace.setSamplingPriority(1, samplernames.Manual)
 				_, _ = p.push(sl)
 			}
 
@@ -238,7 +239,50 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Equal(uint32(4), got.chunks[0].samplingMechanism)
 			assert.Equal(int32(1), got.chunks[0].priority)
 		})
+
+		t.Run("with meta_struct", func(t *testing.T) {
+			var (
+				assert = assert.New(t)
+				p      = newPayloadV1()
+			)
+			for i := range n {
+				sl := newSpanList(i%5 + 1)
+				createMetaStructMap(sl)
+				_, _ = p.push(sl)
+			}
+
+			encoded, err := io.ReadAll(p)
+			assert.NoError(err)
+
+			got := newPayloadV1()
+			buf := bytes.NewBuffer(encoded)
+			_, err = buf.WriteTo(got)
+			assert.NoError(err)
+
+			o, err := got.decodeBuffer()
+			assert.NoError(err)
+			assert.Empty(o)
+			meta := got.chunks[0].spans[0].metaStruct
+			assert.Equal(int64(1), meta["key1"])
+			assert.Equal("value2", meta["key2"])
+			assert.Equal([]any{int64(1), int64(2), int64(3)}, meta["key3"])
+			assert.Equal(true, meta["key4"])
+			assert.Equal([]byte("test"), meta["key5"])
+			assert.Equal(map[string]any{"nested-key": "nested-value"}, meta["key6"])
+		})
 	}
+}
+
+func createMetaStructMap(sl spanList) {
+	s := sl[0]
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.setMetaStructLocked("key1", 1)
+	s.setMetaStructLocked("key2", "value2")
+	s.setMetaStructLocked("key3", []int64{1, 2, 3})
+	s.setMetaStructLocked("key4", true)
+	s.setMetaStructLocked("key5", []byte("test"))
+	s.setMetaStructLocked("key6", map[string]any{"nested-key": "nested-value"})
 }
 
 func TestPayloadV1SpanLinkTraceID(t *testing.T) {
@@ -271,6 +315,87 @@ func TestPayloadV1SpanLinkTraceID(t *testing.T) {
 	assert.Equal(uint64(123), link.TraceID)
 	assert.Equal(uint64(456), link.TraceIDHigh)
 	assert.Equal(uint64(789), link.SpanID)
+}
+
+// TestPayloadV1SpanEventArray tests that a span with a span event containing ArrayValue
+// attributes (string, int, float, bool) serializes and deserializes correctly in payload v1.
+// This covers all types supported by encodeSpanEventArrayValues.
+func TestPayloadV1SpanEventArray(t *testing.T) {
+	assert := assert.New(t)
+	p := newPayloadV1()
+
+	span := newBasicSpan("test.span")
+	span.supportsEvents = true
+	span.AddEvent("test.event", WithSpanEventAttributes(map[string]any{
+		"tags":   []string{"first", "second"},
+		"ids":    []int64{10, 20},
+		"scores": []float64{1.5, 2.5},
+		"flags":  []bool{true, false},
+	}))
+	_, err := p.push(spanList{span})
+	assert.NoError(err)
+
+	encoded, err := io.ReadAll(p)
+	assert.NoError(err)
+
+	got := newPayloadV1()
+	buf := bytes.NewBuffer(encoded)
+	_, err = buf.WriteTo(got)
+	assert.NoError(err)
+
+	_, err = got.decodeBuffer()
+	assert.NoError(err)
+
+	require.Len(t, got.chunks, 1)
+	require.Len(t, got.chunks[0].spans, 1)
+	require.Len(t, got.chunks[0].spans[0].spanEvents, 1)
+
+	event := got.chunks[0].spans[0].spanEvents[0]
+	assert.Equal("test.event", event.Name)
+
+	// String array
+	require.NotNil(t, event.Attributes["tags"])
+	tags := event.Attributes["tags"]
+	assert.Equal(spanEventAttributeTypeArray, tags.Type)
+	require.NotNil(t, tags.ArrayValue)
+	require.Len(t, tags.ArrayValue.Values, 2)
+	assert.Equal(spanEventArrayAttributeValueTypeString, tags.ArrayValue.Values[0].Type)
+	assert.Equal("first", tags.ArrayValue.Values[0].StringValue)
+	assert.Equal(spanEventArrayAttributeValueTypeString, tags.ArrayValue.Values[1].Type)
+	assert.Equal("second", tags.ArrayValue.Values[1].StringValue)
+
+	// Int array
+	require.NotNil(t, event.Attributes["ids"])
+	ids := event.Attributes["ids"]
+	assert.Equal(spanEventAttributeTypeArray, ids.Type)
+	require.NotNil(t, ids.ArrayValue)
+	require.Len(t, ids.ArrayValue.Values, 2)
+	assert.Equal(spanEventArrayAttributeValueTypeInt, ids.ArrayValue.Values[0].Type)
+	assert.Equal(int64(10), ids.ArrayValue.Values[0].IntValue)
+	assert.Equal(spanEventArrayAttributeValueTypeInt, ids.ArrayValue.Values[1].Type)
+	assert.Equal(int64(20), ids.ArrayValue.Values[1].IntValue)
+
+	// Float array
+	require.NotNil(t, event.Attributes["scores"])
+	scores := event.Attributes["scores"]
+	assert.Equal(spanEventAttributeTypeArray, scores.Type)
+	require.NotNil(t, scores.ArrayValue)
+	require.Len(t, scores.ArrayValue.Values, 2)
+	assert.Equal(spanEventArrayAttributeValueTypeDouble, scores.ArrayValue.Values[0].Type)
+	assert.Equal(1.5, scores.ArrayValue.Values[0].DoubleValue)
+	assert.Equal(spanEventArrayAttributeValueTypeDouble, scores.ArrayValue.Values[1].Type)
+	assert.Equal(2.5, scores.ArrayValue.Values[1].DoubleValue)
+
+	// Bool array
+	require.NotNil(t, event.Attributes["flags"])
+	flags := event.Attributes["flags"]
+	assert.Equal(spanEventAttributeTypeArray, flags.Type)
+	require.NotNil(t, flags.ArrayValue)
+	require.Len(t, flags.ArrayValue.Values, 2)
+	assert.Equal(spanEventArrayAttributeValueTypeBool, flags.ArrayValue.Values[0].Type)
+	assert.True(flags.ArrayValue.Values[0].BoolValue)
+	assert.Equal(spanEventArrayAttributeValueTypeBool, flags.ArrayValue.Values[1].Type)
+	assert.False(flags.ArrayValue.Values[1].BoolValue)
 }
 
 // TestPayloadV1EmbeddedStreamingStringTable tests that string values on the payload
@@ -344,6 +469,54 @@ func TestEmptyPayloadV1(t *testing.T) {
 	assert.Empty(o)
 }
 
+// TestPayloadV1IncrementalChunkEncoding verifies that pushing N chunks into the
+// same payloadV1 produces a correctly encoded payload where every chunk retains
+// its original span data. Each chunk is encoded exactly once as it is pushed;
+// the shared string table persists across all pushes so duplicate strings are
+// de-duplicated payload-wide.
+func TestPayloadV1IncrementalChunkEncoding(t *testing.T) {
+	type chunkSpec struct {
+		service string
+		name    string
+		tagKey  string
+		tagVal  string
+	}
+	chunks := []chunkSpec{
+		{"svc-a", "op-a", "k", "alpha"},
+		{"svc-b", "op-b", "k", "beta"},  // "k" is a duplicate key → exercises cross-chunk string table
+		{"svc-c", "op-c", "k", "gamma"}, // third chunk to confirm in-place count update
+	}
+
+	p := newPayloadV1()
+	for _, c := range chunks {
+		s := newBasicSpan(c.name)
+		s.service = c.service
+		s.SetTag(c.tagKey, c.tagVal)
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, len(chunks), p.itemCount(), "payload chunk count must equal number of pushes")
+
+	encoded, err := io.ReadAll(p)
+	require.NoError(t, err)
+
+	got := newPayloadV1()
+	_, err = bytes.NewBuffer(encoded).WriteTo(got)
+	require.NoError(t, err)
+	_, err = got.decodeBuffer()
+	require.NoError(t, err)
+
+	require.Len(t, got.chunks, len(chunks), "decoded chunk count must match")
+	for i, c := range chunks {
+		require.Len(t, got.chunks[i].spans, 1, "chunk %d must have 1 span", i)
+		s := got.chunks[i].spans[0]
+		assert.Equal(t, c.service, s.service, "chunk %d: wrong service", i)
+		assert.Equal(t, c.name, s.name, "chunk %d: wrong name", i)
+		assert.Equal(t, c.tagVal, s.meta[c.tagKey], "chunk %d: wrong tag value", i)
+	}
+}
+
 func assertProcessTags(t *testing.T, payload spanLists) {
 	assert := assert.New(t)
 	for i, spanList := range payload {
@@ -374,7 +547,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 		s := newBasicSpan("X")
 		s.meta["key"] = strings.Repeat("X", 10*1024)
 		trace := make(spanList, count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			trace[i] = s
 		}
 		b.ReportAllocs()
@@ -385,7 +558,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 			atomic.StoreUint32(&p.count, 0)
 			p.buf.Reset()
 		}
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			reset()
 			for p.stats().size < payloadMaxLimit {
 				_, _ = p.push(trace)
@@ -400,40 +573,36 @@ func TestPayloadConcurrentAccess(t *testing.T) {
 
 	// Create some test spans
 	spans := make(spanList, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		spans[i] = newBasicSpan("test-span")
 	}
 
 	var wg sync.WaitGroup
 
 	// Start multiple goroutines that perform concurrent operations
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 
 			// Push some spans
-			for j := 0; j < 5; j++ {
+			for range 5 {
 				_, _ = p.push(spans)
 			}
 
 			// Read size and item count concurrently
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				stats := p.stats()
 				_ = stats.size
 				_ = stats.itemCount
 			}
-		}()
+		})
 	}
 
 	// Also perform operations from the main goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 20; i++ {
+	wg.Go(func() {
+		for range 20 {
 			_ = p.stats().size
 		}
-	}()
+	})
 
 	wg.Wait()
 
@@ -459,40 +628,34 @@ func TestPayloadConcurrentReadWrite(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Concurrent writers
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 10; j++ {
+	for range 5 {
+		wg.Go(func() {
+			for range 10 {
 				_, _ = p.push(spans)
 			}
-		}()
+		})
 	}
 
 	// Concurrent readers
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 5 {
+		wg.Go(func() {
 			buf := make([]byte, 1024)
-			for j := 0; j < 10; j++ {
+			for range 10 {
 				p.reset()
 				_, _ = p.Read(buf)
 			}
-		}()
+		})
 	}
 
 	// Concurrent size/count checkers
-	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 20; j++ {
+	for range 3 {
+		wg.Go(func() {
+			for range 20 {
 				stats := p.stats()
 				_ = stats.size
 				_ = stats.itemCount
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -529,7 +692,7 @@ func BenchmarkPayloadPush(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				p := newPayloadV04()
 				_, _ = p.push(spans)
 			}
@@ -564,7 +727,7 @@ func BenchmarkPayloadStats(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				stats := p.stats()
 				_ = stats.size
 				_ = stats.itemCount
@@ -585,23 +748,19 @@ func BenchmarkPayloadConcurrentAccess(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				var wg sync.WaitGroup
 
-				for j := 0; j < concurrency; j++ {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+				for range concurrency {
+					wg.Go(func() {
 						_, _ = p.push(spans)
-					}()
+					})
 				}
 
-				for j := 0; j < concurrency; j++ {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+				for range concurrency {
+					wg.Go(func() {
 						_ = p.stats()
-					}()
+					})
 				}
 
 				wg.Wait()
@@ -615,7 +774,7 @@ func TestMsgsizeAnalysis(t *testing.T) {
 	sizes := []int{1, 5, 10}
 	for _, numSpans := range sizes {
 		spans := make(spanList, numSpans)
-		for i := 0; i < numSpans; i++ {
+		for i := range numSpans {
 			span := newBasicSpan("test")
 			span.meta["data"] = strings.Repeat("x", 1024)
 			spans[i] = span
@@ -623,5 +782,45 @@ func TestMsgsizeAnalysis(t *testing.T) {
 
 		msgsize := spans.Msgsize()
 		t.Logf("%d spans with 1KB each: msgsize=%d bytes", numSpans, msgsize)
+	}
+}
+
+func BenchmarkPayloadVersions(b *testing.B) {
+	sizes := []int{1, 10, 100, 1000}
+	for _, n := range sizes {
+		spans := newSpanList(n)
+		detailedSpans := newDetailedSpanList(n)
+
+		b.Run(fmt.Sprintf("simple_%dspans/v0.4", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV04()
+				_, _ = p.push(spans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("simple_%dspans/v1.0", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV1()
+				_, _ = p.push(spans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("detailed_%dspans/v0.4", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV04()
+				_, _ = p.push(detailedSpans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("detailed_%dspans/v1.0", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				p := newPayloadV1()
+				_, _ = p.push(detailedSpans)
+			}
+		})
 	}
 }

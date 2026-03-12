@@ -9,8 +9,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
 func TestContext(t *testing.T) {

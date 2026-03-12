@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -107,7 +108,7 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		// `s.Meta` without holding the lock. This crashes when the span flushing
 		// code tries to read `s.Meta` without holding the lock.
 		root.AddLink(SpanLink{TraceID: 1, SpanID: 2})
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			root.Finish()
 		}
 	})
@@ -118,7 +119,7 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		defer stop()
 
 		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			root.Finish(NoDebugStack())
 		}
 	})
@@ -130,7 +131,7 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 
 		root, _ := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 		err = errors.New("test error")
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			root.Finish(WithError(err))
 		}
 	})
@@ -144,7 +145,7 @@ func TestIncident37240DoubleFinish(t *testing.T) {
 		defer stop()
 
 		root, _ := StartSpanFromContext(context.Background(), "root")
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			root.Finish(WithError(err))
 			rateRule, _ := getMetric(root, keyRulesSamplerLimiterRate)
 			priority, _ := getMetric(root, keySamplingPriority)
@@ -182,7 +183,7 @@ func testAsyncSpanRace(t *testing.T) {
 	assert.Nil(t, err)
 	defer stop()
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		// The test has 100 iterations because it is not easy to reproduce the race.
 		t.Run("", func(_ *testing.T) {
 			var (
@@ -191,10 +192,8 @@ func testAsyncSpanRace(t *testing.T) {
 			)
 			root, ctx := StartSpanFromContext(context.Background(), "root", Tag(ext.ManualKeep, true))
 			finishes.Add(2)
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < 500; i++ {
+			wg.Go(func() {
+				for range 500 {
 					// Spamming Finish to emulate concurrent Finish calls.
 					root.Finish()
 				}
@@ -209,18 +208,16 @@ func testAsyncSpanRace(t *testing.T) {
 				// the span is pushed to the tracer's t.out channel.
 				close(done)
 
-				for i := 0; i < 500; i++ {
+				for range 500 {
 					for range root.metrics {
 						// this range simulates iterating over the metrics map
 						// as we do when encoding msgpack upon flushing.
 						continue
 					}
 				}
-			}()
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < 500; i++ {
+			})
+			wg.Go(func() {
+				for range 500 {
 					// Spamming Finish to emulate concurrent Finish calls.
 					root.Finish()
 				}
@@ -228,25 +225,23 @@ func testAsyncSpanRace(t *testing.T) {
 				finishes.Done()
 				finishes.Wait()
 
-				for i := 0; i < 500; i++ {
+				for range 500 {
 					for range root.meta {
 						// this range simulates iterating over the meta map
 						// as we do when encoding msgpack upon flushing.
 						continue
 					}
 				}
-			}()
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			})
+			wg.Go(func() {
 				<-done
-				for i := 0; i < 50; i++ {
+				for range 50 {
 					// to trigger the bug, the child should be created after the root was finished,
 					// as its being flushed
 					child, _ := StartSpanFromContext(ctx, "child", Tag(ext.ManualKeep, true))
 					child.Finish()
 				}
-			}()
+			})
 			wg.Wait()
 		})
 	}
@@ -288,7 +283,7 @@ func TestSubmitChunkQueueFull(t *testing.T) {
 	assert.Nil(err)
 	defer tracer.Stop()
 
-	for i := 0; i < payloadQueueSize+1; i++ {
+	for range payloadQueueSize + 1 {
 		c := chunk{spans: make([]*Span, 1)}
 		tracer.submitChunk(&c)
 	}
@@ -309,7 +304,7 @@ func TestPartialFlush(t *testing.T) {
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
 		var children []*Span
-		for i := 0; i < 3; i++ { // create 3 child spans
+		for i := range 3 { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			children = append(children, child)
 			child.Finish()
@@ -351,7 +346,7 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
-		for i := 0; i < 10; i++ { // create 10 child spans to ensure some aren't sampled
+		for i := range 10 { // create 10 child spans to ensure some aren't sampled
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			child.Finish()
 		}
@@ -1107,7 +1102,7 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 
 func BenchmarkBaggageItemPresent(b *testing.B) {
 	ctx := SpanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		ctx.ForeachBaggageItem(func(_, _ string) bool {
 			return true
 		})
@@ -1116,7 +1111,7 @@ func BenchmarkBaggageItemPresent(b *testing.B) {
 
 func BenchmarkBaggageItemEmpty(b *testing.B) {
 	ctx := SpanContext{}
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		ctx.ForeachBaggageItem(func(_, _ string) bool {
 			return true
 		})
@@ -1128,49 +1123,66 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.RemoteRate)
+		tr.mu.Unlock()
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.Unknown)
+		tr.mu.Unlock()
 		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
+		tr.mu.Unlock()
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.AgentRate)
+		tr.mu.Unlock()
 		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
 		tr := trace{
 			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
 		}
+		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
+		tr.mu.Unlock()
 		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
 	})
 }
 
 func TestTraceIDHexEncoded(t *testing.T) {
-	tid := traceID([16]byte{})
-	tid[15] = 5
+	var tid traceID
+	tid.value[15] = 5
+	tid.computeAndCacheHex()
 	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
 }
 
 func TestTraceIDEmpty(t *testing.T) {
-	tid := traceID([16]byte{})
-	tid[15] = 5
-	assert.False(t, tid.Empty())
+	t.Run("empty", func(t *testing.T) {
+		var tid traceID
+		assert.True(t, tid.Empty())
+	})
+	t.Run("not empty", func(t *testing.T) {
+		var tid traceID
+		tid.value[15] = 5
+		assert.False(t, tid.Empty())
+	})
 }
 
 func TestSpanIDHexEncoded(t *testing.T) {
@@ -1246,14 +1258,23 @@ func TestSpanProcessTags(t *testing.T) {
 }
 
 func BenchmarkSpanIDHexEncoded(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		_ = spanIDHexEncoded(32, 16)
 	}
 }
 
 func BenchmarkSpanIDSprintf(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		_ = fmt.Sprintf("%016x", 32)
+	}
+}
+
+func BenchmarkTraceIDHasUpper(b *testing.B) {
+	var tid traceID
+	tid.value[7] = 1
+	b.ResetTimer()
+	for b.Loop() {
+		_ = tid.HasUpper()
 	}
 }
 
@@ -1274,6 +1295,43 @@ func FuzzSpanIDHexEncoded(f *testing.F) {
 		actual := spanIDHexEncoded(v, p)
 		if actual != expected {
 			t.Fatalf("expected %s, got %s", expected, actual)
+		}
+	})
+}
+
+func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
+	b.Run("old GetTracerGitMetadataTags", func(b *testing.B) {
+		b.Setenv(internal.EnvGitMetadataEnabledFlag, "true")
+		internal.RefreshGitMetadataTags()
+		updateTags := func(tags map[string]string, key, value string) {
+			if _, ok := tags[key]; !ok && value != "" {
+				tags[key] = value
+			}
+		}
+		// Emulates old implementation of GetTracerGitMetadataTags
+		old := func() map[string]string {
+			results := make(map[string]string)
+			tags := internal.GetGitMetadataTags()
+			updateTags(results, internal.TraceTagRepositoryURL, tags[internal.TagRepositoryURL])
+			updateTags(results, internal.TraceTagCommitSha, tags[internal.TagCommitSha])
+			updateTags(results, internal.TraceTagGoPath, tags[internal.TagGoPath])
+			return results
+		}
+		var sink map[string]string
+		b.ResetTimer()
+		for b.Loop() {
+			sink = old()
+		}
+		// This is to avoid the compiler optimizing out the map allocation.
+		_ = sink
+	})
+	b.Run("new UpdateTracerGitMetadataTags", func(b *testing.B) {
+		b.Setenv(internal.EnvGitMetadataEnabledFlag, "true")
+		internal.RefreshGitMetadataTags()
+		span := newBasicSpan("span")
+		b.ResetTimer()
+		for b.Loop() {
+			updateTracerGitMetadataTags(span)
 		}
 	})
 }

@@ -116,11 +116,13 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(parts[0]),
-		tracer.Tag("redis.raw_command", raw),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+	}
+	if !p.config.skipRaw {
+		opts = append(opts, tracer.Tag("redis.raw_command", raw))
 	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {
@@ -151,13 +153,15 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.ServiceName(p.config.serviceName),
 		tracer.ResourceName(parts[0]),
-		tracer.Tag("redis.raw_command", raw),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag(ext.ResourceName, raw),
 		tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
+	}
+	if !p.config.skipRaw {
+		opts = append(opts, tracer.Tag("redis.raw_command", raw))
 	}
 	opts = append(opts, ddh.additionalTags...)
 	if !math.IsNaN(p.config.analyticsRate) {

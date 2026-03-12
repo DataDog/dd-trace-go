@@ -10,8 +10,9 @@ import (
 	"log"
 
 	rueidistrace "github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/redis/rueidis"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 // To start tracing Redis, simply create a new client using the library and continue

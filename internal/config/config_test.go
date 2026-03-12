@@ -14,11 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestGet(t *testing.T) {
@@ -71,6 +72,30 @@ func TestGet(t *testing.T) {
 		cfg4 := Get()
 		cfg5 := Get()
 		assert.Same(t, cfg4, cfg5, "With useFreshConfig=false, Get() should cache the same instance")
+	})
+
+	t.Run("GetNew forces new instance", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Get the first instance
+		cfg1 := Get()
+		require.NotNil(t, cfg1)
+
+		// Get should return the same instance
+		cfg2 := Get()
+		require.NotNil(t, cfg2)
+		assert.Same(t, cfg1, cfg2, "Get() should return the same instance")
+
+		// CreateNew should return a new instance
+		cfg3 := CreateNew()
+		require.NotNil(t, cfg3)
+		assert.NotSame(t, cfg2, cfg3, "CreateNew() should return a new instance")
+
+		// Now it should cache the same instance
+		cfg4 := Get()
+		assert.Same(t, cfg3, cfg4, "Get() should return the same instance")
+		assert.NotSame(t, cfg1, cfg4, "Get() should not return the same instance as the first one")
 	})
 
 	t.Run("concurrent access is safe", func(t *testing.T) {
@@ -236,7 +261,7 @@ var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
 // If this fails: call reportTelemetry() in your setter, OR add to settersWithoutTelemetry, OR add to specialCaseSetters.
 func TestAllSettersReportTelemetry(t *testing.T) {
 	// Get all methods on *Config
-	configType := reflect.TypeOf(&Config{})
+	configType := reflect.TypeFor[*Config]()
 
 	for i := 0; i < configType.NumMethod(); i++ {
 		// Capture method
@@ -281,7 +306,7 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 					if len(call.Arguments) > 0 {
 						if configs, ok := call.Arguments[0].([]telemetry.Configuration); ok && len(configs) > 0 {
 							config := configs[0]
-							if config.Origin == testOrigin && config.SeqID > defaultSeqID {
+							if config.Origin == testOrigin {
 								foundTelemetry = true
 								break
 							}
@@ -291,8 +316,8 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 			}
 
 			assert.True(t, foundTelemetry,
-				"%s: no telemetry with origin=%v and seqID > %d. Fix: call reportTelemetry() OR add to settersWithoutTelemetry/specialCaseSetters",
-				methodName, testOrigin, defaultSeqID)
+				"%s: no telemetry with origin=%v. Fix: call configtelemetry.Report() OR add to settersWithoutTelemetry/specialCaseSetters",
+				methodName, testOrigin)
 		})
 	}
 }
@@ -308,7 +333,7 @@ func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemet
 	}
 
 	// Last parameter should be telemetry.Origin
-	originType := reflect.TypeOf((*telemetry.Origin)(nil)).Elem()
+	originType := reflect.TypeFor[telemetry.Origin]()
 	lastParamType := methodType.In(methodType.NumIn() - 1)
 	if lastParamType != originType {
 		t.Fatalf("%s: last param should be telemetry.Origin, got %v. Add to specialCaseSetters if non-standard.",
@@ -334,9 +359,9 @@ func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemet
 
 // getTestValueForType generates appropriate test values based on parameter type.
 // Add support for new types here as setters with new parameter types are added.
-func getTestValueForType(t reflect.Type) interface{} {
+func getTestValueForType(t reflect.Type) any {
 	// Check for specific named types first (before kind checks)
-	if t == reflect.TypeOf(time.Duration(0)) {
+	if t == reflect.TypeFor[time.Duration]() {
 		return 10 * time.Second
 	}
 

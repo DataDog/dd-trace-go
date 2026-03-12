@@ -101,7 +101,7 @@ func TestStartSpan(t *testing.T) {
 			spanContext, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
-				w.Write([]byte(fmt.Sprintf("failed to extract span context: %v", err)))
+				w.Write(fmt.Appendf(nil, "failed to extract span context: %v", err))
 				return
 			}
 
@@ -1794,7 +1794,7 @@ func BenchmarkLLMObsStartSpan(b *testing.B) {
 
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, fmt.Sprintf("span-%d", i), llmobs.StartSpanConfig{})
 			span.Finish(llmobs.FinishSpanConfig{})
 		}

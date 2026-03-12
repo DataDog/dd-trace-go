@@ -12,12 +12,13 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
 
 func TestToolHandlerMiddleware(t *testing.T) {

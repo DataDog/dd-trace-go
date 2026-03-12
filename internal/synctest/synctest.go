@@ -3,8 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-//go:build go1.25
-
 package synctest
 
 import (
@@ -16,4 +14,10 @@ func Test(t *testing.T, f func(t *testing.T)) {
 	synctest.Test(t, func(t *testing.T) {
 		f(t)
 	})
+}
+
+// Wait waits until all goroutines in the current synctest bubble are blocked.
+// It is a re-export of the standard library's synctest.Wait.
+func Wait() {
+	synctest.Wait()
 }

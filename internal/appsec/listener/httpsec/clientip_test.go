@@ -13,8 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
 
 type ipTestCase struct {

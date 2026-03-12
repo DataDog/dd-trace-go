@@ -14,10 +14,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -37,13 +39,20 @@ const customProfileLabelLimit = 10
 var (
 	mu             sync.Mutex
 	activeProfiler *profiler
-	containerID    = internal.ContainerID() // replaced in tests
-	entityID       = internal.EntityID()    // replaced in tests
+	containerID    atomic.Pointer[string]
+	entityID       atomic.Pointer[string]
 
-	// errProfilerStopped is a sentinel for suppressng errors if we are
+	// errProfilerStopped is a sentinel for suppressing errors if we are
 	// about to stop the profiler
 	errProfilerStopped = errors.New("profiler stopped")
 )
+
+func init() {
+	cid := internal.ContainerID()
+	containerID.Store(&cid)
+	eid := internal.EntityID()
+	entityID.Store(&eid)
+}
 
 // Start starts the profiler. If the profiler is already running, it will be
 // stopped and restarted with the given options.
@@ -170,6 +179,10 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	if env.Get("DD_PROFILING_WAIT_PROFILE") != "" {
 		cfg.addProfileType(expGoroutineWaitProfile)
 	}
+	// Unconditionally enable goroutine leak profiling if it's available.
+	if goroutineLeakProfileAvailable() {
+		cfg.addProfileType(goroutineLeakProfile)
+	}
 	// Agentless upload is disabled by default as of v1.30.0, but
 	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
 	if cfg.agentless {
@@ -277,6 +290,22 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	return &p, nil
 }
 
+var goroutineLeakProfileAvailable = sync.OnceValue(func() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, s := range info.Settings {
+		if s.Key != "GOEXPERIMENT" {
+			continue
+		}
+		if strings.Contains(s.Value, "goroutineleakprofile") {
+			return true
+		}
+	}
+	return false
+})
+
 // run runs the profiler.
 func (p *profiler) run() {
 	profileEnabled := func(t ProfileType) bool {
@@ -290,19 +319,15 @@ func (p *profiler) run() {
 		runtime.SetBlockProfileRate(p.cfg.blockRate)
 	}
 	startTelemetry(p.cfg)
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		tick := time.NewTicker(p.cfg.period)
 		defer tick.Stop()
 		p.met.reset(now()) // collect baseline metrics at profiler start
 		p.collect(tick.C)
-	}()
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	})
+	p.wg.Go(func() {
 		p.send()
-	}()
+	})
 }
 
 // collect runs the profile types found in the configuration whenever the ticker receives
@@ -457,6 +482,7 @@ func (p *profiler) enabledProfileTypes() []ProfileType {
 		expGoroutineWaitProfile,
 		MetricsProfile,
 		executionTrace,
+		goroutineLeakProfile,
 	}
 	enabled := []ProfileType{}
 	for _, t := range order {

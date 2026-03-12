@@ -10,8 +10,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
 func TestParseUint64(t *testing.T) {
@@ -80,8 +81,8 @@ func TestParsePropagatableTraceTags(t *testing.T) {
 
 func TestDereference(t *testing.T) {
 	for i, tt := range []struct {
-		value    interface{}
-		expected interface{}
+		value    any
+		expected any
 	}{
 		{makePointer(1), 1},
 		{makePointer(byte(1)), byte(1)},

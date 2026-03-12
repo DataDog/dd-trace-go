@@ -9,10 +9,13 @@ import (
 	"context"
 	"encoding/json"
 
-	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
-	"github.com/DataDog/dd-trace-go/v2/llmobs"
+	"maps"
+
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
+	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
 func telemetrySchema() *jsonschema.Schema {
@@ -61,15 +64,26 @@ func injectToolsListResponse(res *mcp.ListToolsResult) {
 			continue
 		}
 
-		if inputSchema.Type == "" {
-			inputSchema.Type = "object"
-		}
-		if inputSchema.Properties == nil {
-			inputSchema.Properties = map[string]*jsonschema.Schema{}
+		// Create copies of the tool and schema to avoid mutating the registered
+		// schema used for server-side validation in go-sdk v1.3+.
+		schemaCopy := *inputSchema
+		if schemaCopy.Type == "" {
+			schemaCopy.Type = "object"
 		}
 
-		inputSchema.Properties[instrmcp.TelemetryKey] = telemetrySchema()
-		inputSchema.Required = append(inputSchema.Required, instrmcp.TelemetryKey)
+		newProps := make(map[string]*jsonschema.Schema, len(inputSchema.Properties)+1)
+		maps.Copy(newProps, inputSchema.Properties)
+		newProps[instrmcp.TelemetryKey] = telemetrySchema()
+		schemaCopy.Properties = newProps
+
+		newRequired := make([]string, len(inputSchema.Required)+1)
+		copy(newRequired, inputSchema.Required)
+		newRequired[len(inputSchema.Required)] = instrmcp.TelemetryKey
+		schemaCopy.Required = newRequired
+
+		toolCopy := *res.Tools[i]
+		toolCopy.InputSchema = &schemaCopy
+		res.Tools[i] = &toolCopy
 	}
 }
 

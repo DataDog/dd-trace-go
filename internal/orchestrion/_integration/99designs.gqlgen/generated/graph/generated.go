@@ -19,9 +19,10 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/99designs.gqlgen/generated/graph/model"
 	gqlparser "github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/99designs.gqlgen/generated/graph/model"
 )
 
 // region    ************************** generated!.gotpl **************************

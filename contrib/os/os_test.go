@@ -10,6 +10,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	wrapos "github.com/DataDog/dd-trace-go/v2/contrib/os"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
@@ -17,8 +20,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	lfi "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/ossec"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestOpenFile(t *testing.T) {

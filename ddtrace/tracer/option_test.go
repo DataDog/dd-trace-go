@@ -25,6 +25,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -33,8 +36,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func withTransport(t transport) StartOption {
@@ -249,6 +250,20 @@ func TestLoadAgentFeatures(t *testing.T) {
 		assert.True(t, cfg.agent.HasFlag("b"))
 		assert.EqualValues(t, cfg.agent.peerTags, []string{"peer.hostname"})
 		assert.Equal(t, 2, cfg.agent.obfuscationVersion)
+		assert.False(t, cfg.agent.hasTelemetryProxy)
+		assert.True(t, cfg.agent.reachable)
+	})
+
+	t.Run("telemetry_proxy", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte(`{"endpoints":["/v0.6/stats","/telemetry/proxy/"],"client_drop_p0s":true}`))
+		}))
+		defer srv.Close()
+		cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
+		assert.NoError(t, err)
+		assert.True(t, cfg.agent.Stats)
+		assert.True(t, cfg.agent.hasTelemetryProxy)
+		assert.True(t, cfg.agent.reachable)
 	})
 
 	t.Run("default_env", func(t *testing.T) {
@@ -295,7 +310,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 55, len(cfg.integrations))
+		assert.Equal(t, 56, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -1864,9 +1879,10 @@ func optsTestConsumer(opts ...StartSpanOption) {
 }
 
 func BenchmarkConfig(b *testing.B) {
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("scenario_none", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			optsTestConsumer(
 				ServiceName("SomeService"),
 				ResourceName("SomeResource"),
@@ -1881,7 +1897,7 @@ func BenchmarkConfig(b *testing.B) {
 			ResourceName("SomeResource"),
 		)
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			optsTestConsumer(
 				WithStartSpanConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),
@@ -1897,7 +1913,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 		assert.NoError(b, err)
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			tracer.StartSpan("test",
 				ServiceName("SomeService"),
 				ResourceName("SomeResource"),
@@ -1916,7 +1932,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 			ResourceName("SomeResource"),
 		)
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			tracer.StartSpan("test",
 				WithStartSpanConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),

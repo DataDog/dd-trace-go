@@ -10,6 +10,8 @@ import (
 	"io"
 	"math"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -56,7 +58,7 @@ func (s *customSampler) Sample(span *Span) bool {
 // rateSampler samples from a sample rate.
 type rateSampler struct {
 	locking.RWMutex
-	rate float64
+	rate float64 // +checklocks:RWMutex
 }
 
 // NewAllSampler is a short-hand for NewRateSampler(1). It is all-permissive.
@@ -91,6 +93,7 @@ func (r *rateSampler) SetRate(rate float64) {
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.
+// +checklocksignore — Fast path reads r.rate without lock (deliberate); s.traceID is immutable after init.
 func (r *rateSampler) Sample(s *Span) bool {
 	if r.rate == 1 {
 		// fast path
@@ -122,22 +125,64 @@ func formatKnuthSamplingRate(rate float64) string {
 	return strconv.FormatFloat(rate, 'g', 6, 64)
 }
 
+// serviceEnvKey is used as a map key for per-service sampling rates,
+// avoiding string concatenation on every lookup.
+type serviceEnvKey struct {
+	service, env string
+}
+
+// rampUpInterval is the minimum duration between successive 2x rate increases.
+const rampUpInterval = time.Second
+
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.
 type prioritySampler struct {
 	mu          locking.RWMutex
-	rates       map[string]float64
-	defaultRate float64
+	rates       map[serviceEnvKey]float64 // +checklocks:mu
+	defaultRate float64                   // +checklocks:mu
+	lastCapped  time.Time                 // +checklocks:mu
 }
 
 func newPrioritySampler() *prioritySampler {
 	return &prioritySampler{
-		rates:       make(map[string]float64),
+		rates:       make(map[serviceEnvKey]float64),
 		defaultRate: 1.,
 	}
 }
 
+// parseServiceEnvKey parses a "service:XXX,env:YYY" string into a serviceEnvKey.
+// It splits at the first ",env:" after the prefix so that env values containing
+// that token are preserved (e.g. "service:foo,env:bar,env:baz" -> service="foo", env="bar,env:baz").
+// This preserves the original behavior when the key was a string concatenation of "service:" and the env value.
+func parseServiceEnvKey(s string) serviceEnvKey {
+	var k serviceEnvKey
+	if after, ok := strings.CutPrefix(s, "service:"); ok {
+		if before, after0, ok0 := strings.Cut(after, ",env:"); ok0 {
+			k.service = before
+			k.env = after0
+		}
+	}
+	return k
+}
+
+// cappedRate returns a rate that is at most 2x the old rate when increasing.
+// Rate decreases and transitions from zero are applied immediately.
+// When canIncrease is false (cooldown not elapsed), increases are held at oldRate.
+func cappedRate(oldRate, newRate float64, canIncrease bool) (float64, bool) {
+	if newRate <= oldRate || oldRate == 0 {
+		return newRate, false
+	}
+	if !canIncrease {
+		return oldRate, false
+	}
+	return min(oldRate*2, newRate), true
+}
+
 // readRatesJSON will try to read the rates as JSON from the given io.ReadCloser.
+// When a new rate for a service is higher than the current rate, the increase is
+// capped at 2x the current rate (at most once per rampUpInterval). This prevents
+// a spike in sampled traces when the agent restarts and temporarily reports
+// rate=1.0 for all services.
 func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	var payload struct {
 		Rates map[string]float64 `json:"rate_by_service"`
@@ -146,10 +191,29 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 		return err
 	}
 	rc.Close()
-	const defaultRateKey = "service:,env:"
+	var defaultRateKey serviceEnvKey
+	rates := make(map[serviceEnvKey]float64, len(payload.Rates))
+	for k, v := range payload.Rates {
+		rates[parseServiceEnvKey(k)] = v
+	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	ps.rates = payload.Rates
+	now := time.Now()
+	canIncrease := ps.lastCapped.IsZero() || now.Sub(ps.lastCapped) >= rampUpInterval
+	capApplied := false
+	for key, newRate := range rates {
+		oldRate, ok := ps.rates[key]
+		if !ok {
+			oldRate = ps.defaultRate
+		}
+		rate, applied := cappedRate(oldRate, newRate, canIncrease)
+		capApplied = capApplied || applied
+		rates[key] = rate
+	}
+	if canIncrease && capApplied {
+		ps.lastCapped = now
+	}
+	ps.rates = rates
 	if v, ok := ps.rates[defaultRateKey]; ok {
 		ps.defaultRate = v
 		delete(ps.rates, defaultRateKey)
@@ -159,8 +223,9 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 
 // getRate returns the sampling rate to be used for the given span. Callers must
 // guard the span.
+// +checklocksignore — Called during initialization in StartSpan, span not yet shared.
 func (ps *prioritySampler) getRate(spn *Span) float64 {
-	key := "service:" + spn.service + ",env:" + spn.meta[ext.Environment]
+	key := serviceEnvKey{service: spn.service, env: spn.meta[ext.Environment]}
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 	if rate, ok := ps.rates[key]; ok {
@@ -171,6 +236,7 @@ func (ps *prioritySampler) getRate(spn *Span) float64 {
 
 // apply applies sampling priority to the given span. Caller must ensure it is safe
 // to modify the span.
+// +checklocksignore — Called during initialization in StartSpan, span not yet shared.
 func (ps *prioritySampler) apply(spn *Span) {
 	rate := ps.getRate(spn)
 	if sampledByRate(spn.traceID, rate) {

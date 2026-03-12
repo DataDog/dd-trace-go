@@ -48,10 +48,7 @@ var (
 func GetModuleAndSuiteName(pc uintptr) (module string, suite string) {
 	funcValue := runtime.FuncForPC(pc)
 	funcFullName := funcValue.Name()
-	lastSlash := strings.LastIndexByte(funcFullName, '/')
-	if lastSlash < 0 {
-		lastSlash = 0
-	}
+	lastSlash := max(strings.LastIndexByte(funcFullName, '/'), 0)
 	firstDot := strings.IndexByte(funcFullName[lastSlash:], '.') + lastSlash
 	file, _ := funcValue.FileLine(funcValue.Entry())
 	return funcFullName[:firstDot], filepath.Base(file)

@@ -53,6 +53,36 @@ func GLSPopValue(key any) any {
 	return getDDContextStack().Pop(key)
 }
 
+// GLSPopFunc returns a function that pops key from the GLS context stack of the
+// goroutine that called GLSPopFunc. The returned function is safe to call from
+// any goroutine: it compares the current goroutine's GLS contextStack pointer
+// with the one captured at creation time and only pops if they match (i.e.,
+// same goroutine). On a different goroutine the pop is a no-op, preventing
+// accidental corruption of another goroutine's GLS state.
+func GLSPopFunc(key any) func() {
+	if !Enabled() {
+		return glsNoop
+	}
+	pushStack := getDDContextStack()
+	return func() {
+		if gls := getDDGLS(); gls != nil && gls.(*contextStack) == pushStack {
+			pushStack.Pop(key)
+		}
+	}
+}
+
+var glsNoop = func() {}
+
+// GLSStackDepth returns the total number of entries in the current goroutine's
+// GLS context stack. Returns 0 if orchestrion is not enabled. This is intended
+// for use in tests to detect GLS leaks.
+func GLSStackDepth() int {
+	if !Enabled() {
+		return 0
+	}
+	return getDDContextStack().Depth()
+}
+
 var _ context.Context = (*glsContext)(nil)
 
 type glsContext struct {

@@ -6,9 +6,10 @@
 package tracer
 
 import (
+	"github.com/cihub/seelog"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/cihub/seelog"
 )
 
 // This workaround fixes goroutine leaks caused by seelog.

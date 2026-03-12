@@ -450,7 +450,7 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 
 func TestTextMapPropagator(t *testing.T) {
 	bigMap := make(map[string]string)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		bigMap[fmt.Sprintf("someKey%d", i)] = fmt.Sprintf("someValue%d", i)
 	}
 	tests := []struct {
@@ -727,7 +727,7 @@ func TestEnvVars(t *testing.T) {
 					assert.NoError(err)
 					ctx, err := tracer.Extract(test.in)
 					assert.Nil(err)
-					assert.Equal(test.tid, ctx.traceID)
+					assert.Equal(test.tid.value, ctx.traceID.value)
 					assert.Equal(test.sid, ctx.spanID)
 				})
 			}
@@ -1056,7 +1056,7 @@ func TestEnvVars(t *testing.T) {
 					xctx, err := tracer.Extract(headers)
 					require.Nil(t, err)
 
-					assert.Equal(ctx.traceID, xctx.traceID)
+					assert.Equal(ctx.traceID.value, xctx.traceID.value)
 					assert.Equal(ctx.spanID, xctx.spanID)
 					assert.Equal(ctx.baggage, xctx.baggage)
 					assert.Equal(ctx.trace.priority, xctx.trace.priority)
@@ -1255,7 +1255,7 @@ func TestEnvVars(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					assert.Equal(tc.tid, ctx.traceID)
+					assert.Equal(tc.tid.value, ctx.traceID.value)
 					assert.Equal(tc.out[0], ctx.spanID)
 					assert.Equal(tc.origin, ctx.origin)
 					p, ok := ctx.SamplingPriority()
@@ -1365,7 +1365,7 @@ func TestEnvVars(t *testing.T) {
 					defer root.Finish()
 					ctx.origin = tc.origin
 
-					assert.Equal(tc.tid, ctx.traceID)
+					assert.Equal(tc.tid.value, ctx.traceID.value)
 					assert.Equal(tc.sid, ctx.spanID)
 					p, ok := ctx.SamplingPriority()
 					assert.True(ok)
@@ -1597,7 +1597,7 @@ func TestEnvVars(t *testing.T) {
 						"tracestate": "valid_vendor=a:1",
 					}
 					// dd part of the tracestate must not exceed 256 characters
-					for i := 0; i < 32; i++ {
+					for i := range 32 {
 						ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.a%v", i)] = "i"
 					}
 					headers := TextMapCarrier(map[string]string{})
@@ -1821,7 +1821,7 @@ func TestEnvVars(t *testing.T) {
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(s.Context(), headers)
 					assert.NoError(err)
-					assert.Equal(tc.tid, sctx.traceID)
+					assert.Equal(tc.tid.value, sctx.traceID.value)
 					assert.Equal(tc.out[0], sctx.span.parentID)
 					assert.Equal(tc.out[1], sctx.spanID)
 
@@ -1887,7 +1887,7 @@ func TestEnvVars(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					assert.Equal(tc.tid, ctx.traceID)
+					assert.Equal(tc.tid.value, ctx.traceID.value)
 					assert.Equal(tc.out[0], ctx.spanID)
 					p, ok := ctx.SamplingPriority()
 					assert.True(ok)
@@ -1919,7 +1919,7 @@ func TestTraceContextPrecedence(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert := assert.New(t)
-	assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+	assert.Equal(traceIDFrom64Bits(1).value, sctx.traceID.value)
 	assert.Equal(uint64(0x1), sctx.spanID)
 	p, _ := sctx.SamplingPriority()
 	assert.Equal(2, p)
@@ -1983,7 +1983,7 @@ func TestSpanLinks(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				assert.Equal(tt.tid, sctx.traceID)
+				assert.Equal(tt.tid.value, sctx.traceID.value)
 				assert.Len(sctx.spanLinks, 2)
 				assert.Contains(sctx.spanLinks, tt.out[0])
 				assert.Contains(sctx.spanLinks, tt.out[1])
@@ -2007,7 +2007,7 @@ func TestSpanLinks(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+		assert.Equal(traceIDFrom64Bits(1).value, sctx.traceID.value)
 		assert.Len(sctx.spanLinks, 0)
 	})
 }
@@ -2261,12 +2261,12 @@ func BenchmarkInjectDatadog(b *testing.B) {
 	assert.NoError(b, err)
 	root := tracer.StartSpan("test")
 	defer root.Finish()
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		setPropagatingTag(root.Context(), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
 	}
 	dst := map[string]string{}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tracer.Inject(root.Context(), TextMapCarrier(dst))
 	}
 }
@@ -2284,7 +2284,7 @@ func BenchmarkInjectW3C(b *testing.B) {
 	setPropagatingTag(ctx, tracestateHeader,
 		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// _dd.p. prefix is needed for w3c
 		k := fmt.Sprintf("_dd.p.k%d", i)
 		v := fmt.Sprintf("v%d", i)
@@ -2293,7 +2293,7 @@ func BenchmarkInjectW3C(b *testing.B) {
 	dst := map[string]string{}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tracer.Inject(root.Context(), TextMapCarrier(dst))
 	}
 }
@@ -2309,7 +2309,7 @@ func BenchmarkExtractDatadog(b *testing.B) {
 								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
 	})
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		propagator.Extract(carrier)
 	}
 }
@@ -2323,7 +2323,7 @@ func BenchmarkExtractW3C(b *testing.B) {
 	})
 	b.ResetTimer()
 	log.SetLevel(log.LevelError)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		propagator.Extract(carrier)
 	}
 }
@@ -2484,10 +2484,10 @@ func TestPropagatingTagsConcurrency(t *testing.T) {
 	assert.NoError(t, err)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 1_000; i++ {
+	for range 1_000 {
 		root := trc.StartSpan("test")
 		wg.Add(5)
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			go func() {
 				defer wg.Done()
 				trc.Inject(root.Context(), TextMapCarrier(make(map[string]string)))
@@ -2554,7 +2554,7 @@ func BenchmarkComposeTracestate(b *testing.B) {
 	ctx.trace.setPropagatingTag("_dd.p.table", "chair")
 	ctx.isRemote = false
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
 	}
 }
@@ -2741,7 +2741,7 @@ func TestInjectBaggageMaxItems(t *testing.T) {
 	root := tracer.StartSpan("web.request")
 	ctx := root.Context()
 
-	for i := 0; i < baggageMaxItems+2; i++ {
+	for i := range baggageMaxItems + 2 {
 		iString := strconv.Itoa(i)
 		ctx.setBaggageItem("key"+iString, "val"+iString)
 	}
@@ -2933,7 +2933,7 @@ func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 
 	// Verify that trace context is taken from Datadog headers, despite baggage being listed first in propagation style
 	expectedTraceID := traceIDFrom64Bits(12345)
-	assert.Equal(t, expectedTraceID, ctx.traceID)
+	assert.Equal(t, expectedTraceID.value, ctx.traceID.value)
 	assert.Equal(t, uint64(67890), ctx.spanID)
 
 	got := make(map[string]string)

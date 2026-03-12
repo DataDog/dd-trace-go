@@ -13,6 +13,7 @@ import (
 	"github.com/graphql-go/handler"
 
 	ddgraphql "github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 

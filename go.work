@@ -1,4 +1,4 @@
-go 1.24.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
+go 1.25.0 // Go version must match the lowest supported version, not the highest, with format X.Y.
 
 use (
 	.
@@ -56,6 +56,7 @@ use (
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9
 	./contrib/redis/rueidis
+	./contrib/rs/zerolog
 	./contrib/segmentio/kafka-go
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb

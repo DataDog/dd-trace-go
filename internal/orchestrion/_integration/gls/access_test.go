@@ -60,10 +60,10 @@ func TestConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 
 	wg.Add(nbGoRoutines)
-	for i := 0; i < nbGoRoutines; i++ {
+	for range nbGoRoutines {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < nbSets; j++ {
+			for j := range nbSets {
 				set(j)
 				assert.Equal(t, j, get())
 			}
@@ -79,13 +79,13 @@ func BenchmarkGLS(b *testing.B) {
 	}
 
 	b.Run("Set", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			set(i)
 		}
 	})
 
 	b.Run("Get", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			runtime.KeepAlive(get())
 		}
 	})

@@ -8,12 +8,14 @@ package httptrace
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -46,7 +48,7 @@ type config struct {
 	baggageTagKeys                           map[string]struct{} // when allowAllBaggage is false, only tag baggage items whose keys are listed here.
 	resourceRenamingEnabled                  *bool
 	resourceRenamingAlwaysSimplifiedEndpoint bool
-	appsecEnabledMode                        func() bool // first state of Appsec (registered at the start of the application) // TODO: remove and use the real state of appsec
+	appsecEnabledMode                        func() bool // first AppSec enablement mode at startup.
 }
 
 func (c config) String() string {
@@ -67,13 +69,13 @@ func newConfig() config {
 		inferredProxyServicesEnabled:             internal.BoolEnv(envInferredProxyServicesEnabled, false),
 		baggageTagKeys:                           make(map[string]struct{}),
 		resourceRenamingAlwaysSimplifiedEndpoint: internal.BoolEnv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false),
-		appsecEnabledMode:                        sync.OnceValue(appsec.Enabled),
+		appsecEnabledMode:                        sync.OnceValue(appsecEnabledAtStartup),
 	}
 	if v, ok := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
 		if v == "*" {
 			c.allowAllBaggage = true
 		} else {
-			for _, part := range strings.Split(v, ",") {
+			for part := range strings.SplitSeq(v, ",") {
 				key := strings.TrimSpace(part)
 				if key == "" {
 					continue
@@ -92,6 +94,14 @@ func newConfig() config {
 		c.resourceRenamingEnabled = &vv
 	}
 	return c
+}
+
+func appsecEnabledAtStartup() bool {
+	enabled, set, _ := appsecconfig.IsEnabledByEnvironment()
+	if set {
+		return enabled
+	}
+	return appsec.Enabled()
 }
 
 func isServerError(statusCode int) bool {
@@ -123,8 +133,8 @@ func GetErrorCodesFromInput(s string) func(statusCode int) bool {
 	}
 	var codes []int
 	var ranges [][]int
-	vals := strings.Split(s, ",")
-	for _, val := range vals {
+	vals := strings.SplitSeq(s, ",")
+	for val := range vals {
 		// "-" indicates a range of values
 		if strings.Contains(val, "-") {
 			bounds := strings.Split(val, "-")
@@ -153,10 +163,8 @@ func GetErrorCodesFromInput(s string) func(statusCode int) bool {
 		}
 	}
 	return func(statusCode int) bool {
-		for _, c := range codes {
-			if c == statusCode {
-				return true
-			}
+		if slices.Contains(codes, statusCode) {
+			return true
 		}
 		for _, bounds := range ranges {
 			if statusCode >= bounds[0] && statusCode <= bounds[1] {

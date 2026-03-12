@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	chitrace "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/go-chi/chi/v5"

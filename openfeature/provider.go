@@ -12,9 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/open-feature/go-sdk/openfeature"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/open-feature/go-sdk/openfeature"
 )
 
 var _ openfeature.FeatureProvider = (*DatadogProvider)(nil)
@@ -57,6 +58,9 @@ type DatadogProvider struct {
 	// Exposure tracking
 	exposureWriter *exposureWriter
 	exposureHook   *exposureHook
+
+	// Flag evaluation metrics hook (OTel counter via Finally hook)
+	flagEvalHook *flagEvalHook
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -84,12 +88,19 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// Create exposure hook
 	hook := newExposureHook(writer)
 
+	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
+	metrics, err := newFlagEvalMetrics()
+	if err != nil {
+		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error())
+	}
+
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
 		exposureWriter: writer,
 		exposureHook:   hook,
+		flagEvalHook:   newFlagEvalHook(metrics),
 	}
 	p.configChange.L = &p.mu
 	return p
@@ -202,6 +213,10 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		if p.exposureWriter != nil {
 			p.exposureWriter.flush()
 			p.exposureWriter.stop()
+		}
+		// Shut down flag evaluation metrics
+		if p.flagEvalHook != nil && p.flagEvalHook.metrics != nil {
+			_ = p.flagEvalHook.metrics.shutdown(ctx)
 		}
 		done <- err
 	}()
@@ -393,12 +408,16 @@ func (p *DatadogProvider) ObjectEvaluation(
 }
 
 // Hooks returns the hooks for this provider.
-// This includes the exposure tracking hook.
+// This includes the exposure tracking hook and the flag evaluation metrics hook.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
+	var hooks []openfeature.Hook
 	if p.exposureHook != nil {
-		return []openfeature.Hook{p.exposureHook}
+		hooks = append(hooks, p.exposureHook)
 	}
-	return []openfeature.Hook{}
+	if p.flagEvalHook != nil {
+		hooks = append(hooks, p.flagEvalHook)
+	}
+	return hooks
 }
 
 // evaluate is the core evaluation method that all type-specific methods use.

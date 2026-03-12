@@ -9,10 +9,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 // TestCase describes the general contract for tests. Each package in this
@@ -56,6 +57,12 @@ func Run(t *testing.T, tc TestCase) {
 		ctx, cancel = context.WithDeadline(context.Background(), deadline)
 		defer cancel()
 	}
+
+	// Listen before Setup so the mock agent's port is bound before any call to
+	// net.FreePort inside Setup. Without this ordering, httptest.NewServer
+	// (called inside Start) can steal the port that FreePort just released,
+	// making the test server and mock agent share the same address.
+	mockAgent.Listen(t)
 
 	t.Log("Running setup")
 	tc.Setup(ctx, t)

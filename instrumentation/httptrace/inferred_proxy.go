@@ -129,7 +129,7 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 	optsLocal = append(optsLocal,
 		func(cfg *tracer.StartSpanConfig) {
 			if cfg.Tags == nil {
-				cfg.Tags = make(map[string]interface{})
+				cfg.Tags = make(map[string]any)
 			}
 
 			cfg.Parent = parent

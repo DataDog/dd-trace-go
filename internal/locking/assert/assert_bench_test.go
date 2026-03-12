@@ -4,7 +4,6 @@
 // Copyright 2016 Datadog, Inc.
 
 //go:build !deadlock
-// +build !deadlock
 
 package assert
 
@@ -54,7 +53,7 @@ func BenchmarkMutexLocked_GoMutexAsserts(b *testing.B) {
 	defer m.Unlock()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		MutexLocked(m)
 	}
 }
@@ -66,7 +65,7 @@ func BenchmarkMutexLocked_TryLock(b *testing.B) {
 	defer m.Unlock()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tryLockBasedMutexLocked(m)
 	}
 }
@@ -78,7 +77,7 @@ func BenchmarkRWMutexLocked_GoMutexAsserts(b *testing.B) {
 	defer m.Unlock()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		RWMutexLocked(m)
 	}
 }
@@ -90,7 +89,7 @@ func BenchmarkRWMutexLocked_TryLock(b *testing.B) {
 	defer m.Unlock()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tryLockBasedRWMutexLocked(m)
 	}
 }
@@ -102,7 +101,7 @@ func BenchmarkRWMutexRLocked_GoMutexAsserts(b *testing.B) {
 	defer m.RUnlock()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		RWMutexRLocked(m)
 	}
 }

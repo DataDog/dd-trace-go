@@ -13,6 +13,7 @@ package sqlx // import "github.com/DataDog/dd-trace-go/contrib/jmoiron/sqlx/v2"
 
 import (
 	sqltraced "github.com/DataDog/dd-trace-go/contrib/database/sql/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/jmoiron/sqlx"

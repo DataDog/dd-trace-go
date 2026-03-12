@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2/fixturepb"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -974,7 +975,7 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 	b.Run("ok_no_metadata", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			interceptor(ctx, "ignoredRequestValue", methodInfo, doNothingOKGRPCHandler)
 		}
 	})
@@ -982,7 +983,7 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 	b.Run("ok_with_metadata_no_parent", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			interceptor(ctxWithMetadataNoParent, "ignoredRequestValue", methodInfo, doNothingOKGRPCHandler)
 		}
 	})
@@ -990,7 +991,7 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 	b.Run("ok_with_metadata_with_parent", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			interceptor(ctxWithMetadataWithParent, "ignoredRequestValue", methodInfo, doNothingOKGRPCHandler)
 		}
 	})
@@ -999,7 +1000,7 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 	b.Run("ok_no_metadata_with_analytics_rate", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			interceptorWithRate(ctx, "ignoredRequestValue", methodInfo, doNothingOKGRPCHandler)
 		}
 	})
@@ -1007,7 +1008,7 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 	b.Run("error_no_metadata", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			interceptor(ctx, "ignoredRequestValue", methodInfo, doNothingErrorGRPCHandler)
 		}
 	})
@@ -1015,7 +1016,7 @@ func BenchmarkUnaryServerInterceptor(b *testing.B) {
 	b.Run("error_no_metadata_no_stack", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			interceptorNoStack(ctx, "ignoredRequestValue", methodInfo, doNothingErrorGRPCHandler)
 		}
 	})

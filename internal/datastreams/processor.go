@@ -7,6 +7,7 @@ package datastreams
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"math"
 	"net/http"
@@ -30,6 +31,10 @@ import (
 const (
 	bucketDuration     = time.Second * 10
 	defaultServiceName = "unnamed-go-service"
+	// maxTransactionBytesPerBucket caps the Transactions blob per bucket to
+	// prevent unbounded memory growth under high transaction rates.
+	// Records beyond this limit are silently dropped.
+	maxTransactionBytesPerBucket = 1 << 20 // 1 MiB
 )
 
 // use the same gamma and index offset as the Datadog backend, to avoid doing any conversions in
@@ -64,6 +69,7 @@ type bucket struct {
 	latestCommitOffsets        map[partitionConsumerKey]int64
 	latestProduceOffsets       map[partitionKey]int64
 	latestHighWatermarkOffsets map[partitionKey]int64
+	transactions               []byte // packed transaction records; see transactionBytes
 	start                      uint64
 	duration                   uint64
 }
@@ -79,7 +85,7 @@ func newBucket(start, duration uint64) bucket {
 	}
 }
 
-func (b bucket) export(timestampType TimestampType) StatsBucket {
+func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte) StatsBucket {
 	stats := make([]StatsPoint, 0, len(b.points))
 	for _, s := range b.points {
 		pathwayLatency, err := proto.Marshal(s.pathwayLatency.ToProto())
@@ -108,10 +114,12 @@ func (b bucket) export(timestampType TimestampType) StatsBucket {
 		})
 	}
 	exported := StatsBucket{
-		Start:    b.start,
-		Duration: b.duration,
-		Stats:    stats,
-		Backlogs: make([]Backlog, 0, len(b.latestCommitOffsets)+len(b.latestProduceOffsets)+len(b.latestHighWatermarkOffsets)),
+		Start:                    b.start,
+		Duration:                 b.duration,
+		Stats:                    stats,
+		Backlogs:                 make([]Backlog, 0, len(b.latestCommitOffsets)+len(b.latestProduceOffsets)+len(b.latestHighWatermarkOffsets)),
+		Transactions:             b.transactions,
+		TransactionCheckpointIds: checkpointNameMapping,
 	}
 	for key, offset := range b.latestProduceOffsets {
 		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_produce"}, Value: offset})
@@ -130,13 +138,22 @@ type pointType int
 const (
 	pointTypeStats pointType = iota
 	pointTypeKafkaOffset
+	pointTypeTransaction
 )
 
+// transactionEntry records a single transaction checkpoint observation.
+type transactionEntry struct {
+	transactionID  string
+	checkpointName string
+	timestamp      int64 // unix nanoseconds
+}
+
 type processorInput struct {
-	point       statsPoint
-	kafkaOffset kafkaOffset
-	typ         pointType
-	queuePos    int64
+	point            statsPoint
+	kafkaOffset      kafkaOffset
+	transactionEntry transactionEntry
+	typ              pointType
+	queuePos         int64
 }
 
 type processorStats struct {
@@ -180,12 +197,55 @@ type bucketKey struct {
 	btime       int64
 }
 
+// checkpointRegistry maps checkpoint names to compact integer IDs for wire encoding.
+// All access is confined to the processor's run goroutine; no locking needed.
+type checkpointRegistry struct {
+	nameToID    map[string]byte
+	nextID      byte
+	encodedKeys []byte // packed: [id uint8][nameLen uint8][name bytes]...
+}
+
+func newCheckpointRegistry() checkpointRegistry {
+	return checkpointRegistry{
+		nameToID: make(map[string]byte),
+		nextID:   1, // 0 is reserved as the zero-value sentinel; valid IDs start at 1
+	}
+}
+
+// getOrAssign returns the compact ID for the given checkpoint name, registering
+// it if it has not been seen before. Returns (0, false) if the registry is full.
+// Not concurrency-safe; must only be called from the processor's run goroutine.
+func (r *checkpointRegistry) getOrAssign(name string) (byte, bool) {
+	if id, ok := r.nameToID[name]; ok {
+		return id, true
+	}
+	if r.nextID == math.MaxUint8 {
+		log.Warn("datastreams: checkpoint registry full, cannot register new checkpoint name")
+		return 0, false
+	}
+	id := r.nextID
+	r.nextID++
+	r.nameToID[name] = id
+
+	// Append [id][nameLen][name bytes] to the mapping blob.
+	nameBytes := []byte(name)
+	nameLen := len(nameBytes)
+	if nameLen > 255 {
+		nameLen = 255
+		nameBytes = nameBytes[:nameLen]
+	}
+	r.encodedKeys = append(r.encodedKeys, id, byte(nameLen))
+	r.encodedKeys = append(r.encodedKeys, nameBytes...)
+	return id, true
+}
+
 type Processor struct {
 	in                   *fastQueue
 	hashCache            *hashCache
 	inKafka              chan kafkaOffset
 	tsTypeCurrentBuckets map[bucketKey]bucket
 	tsTypeOriginBuckets  map[bucketKey]bucket
+	checkpoints          checkpointRegistry
 	wg                   sync.WaitGroup
 	stopped              uint64
 	stop                 chan struct{} // closing this channel triggers shutdown
@@ -224,6 +284,7 @@ func NewProcessor(statsd internal.StatsdClient, env, service, version string, ag
 		version:              version,
 		transport:            newHTTPTransport(agentURL, httpClient),
 		timeSource:           time.Now,
+		checkpoints:          newCheckpointRegistry(),
 	}
 	return p
 }
@@ -304,7 +365,47 @@ func (p *Processor) processInput(in *processorInput) {
 		p.add(in.point)
 	} else if in.typ == pointTypeKafkaOffset {
 		p.addKafkaOffset(in.kafkaOffset)
+	} else if in.typ == pointTypeTransaction {
+		p.addTransaction(in.transactionEntry)
 	}
+}
+
+// appendTransactionBytes appends a single transaction record to dst and returns
+// the extended slice. The wire format is shared with the Java tracer:
+//
+//	[checkpointId uint8][timestamp int64 big-endian][idLen uint8][id bytes]
+//
+// IDs longer than 255 bytes are truncated.
+func appendTransactionBytes(dst []byte, checkpointID byte, timestamp int64, transactionID string) []byte {
+	idLen := min(len(transactionID), 255)
+	dst = append(dst, checkpointID)
+	dst = binary.BigEndian.AppendUint64(dst, uint64(timestamp))
+	dst = append(dst, byte(idLen))
+	dst = append(dst, transactionID[:idLen]...)
+	return dst
+}
+
+func (p *Processor) addTransaction(e transactionEntry) {
+	log.Debug("datastreams: addTransaction checkpoint=%q txnID=%q ts=%d", e.checkpointName, e.transactionID, e.timestamp)
+	btime := alignTs(e.timestamp, bucketDuration.Nanoseconds())
+	k := bucketKey{serviceName: p.service, btime: btime}
+	b, ok := p.tsTypeCurrentBuckets[k]
+	if !ok {
+		b = newBucket(uint64(btime), uint64(bucketDuration.Nanoseconds()))
+	}
+	checkpointID, ok := p.checkpoints.getOrAssign(e.checkpointName)
+	if !ok {
+		p.tsTypeCurrentBuckets[k] = b
+		return
+	}
+	if len(b.transactions) >= maxTransactionBytesPerBucket {
+		log.Warn("datastreams: transaction buffer full, dropping transaction record")
+		p.tsTypeCurrentBuckets[k] = b
+		return
+	}
+	b.transactions = appendTransactionBytes(b.transactions, checkpointID, e.timestamp, e.transactionID)
+	p.tsTypeCurrentBuckets[k] = b
+	log.Debug("datastreams: bucket now has %d transaction bytes", len(b.transactions))
 }
 
 func (p *Processor) flushInput() {
@@ -349,18 +450,14 @@ func (p *Processor) Start() {
 	}
 	p.stop = make(chan struct{})
 	p.flushRequest = make(chan chan<- struct{})
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		p.reportStats()
-	}()
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	})
+	p.wg.Go(func() {
 		tick := time.NewTicker(bucketDuration)
 		defer tick.Stop()
 		p.run(tick.C)
-	}()
+	})
 }
 
 // Flush triggers a flush and waits for it to complete.
@@ -401,10 +498,15 @@ func (p *Processor) reportStats() {
 	}
 }
 
-func (p *Processor) flushBucket(buckets map[bucketKey]bucket, bucketKey bucketKey, timestampType TimestampType) StatsBucket {
-	bucket := buckets[bucketKey]
-	delete(buckets, bucketKey)
-	return bucket.export(timestampType)
+func (p *Processor) flushBucket(buckets map[bucketKey]bucket, bk bucketKey, timestampType TimestampType) StatsBucket {
+	b := buckets[bk]
+	delete(buckets, bk)
+	var mapping []byte
+	if len(b.transactions) > 0 {
+		log.Debug("datastreams: flushing bucket with %d transaction bytes, %d mapping bytes", len(b.transactions), len(p.checkpoints.encodedKeys))
+		mapping = p.checkpoints.encodedKeys
+	}
+	return b.export(timestampType, mapping)
 }
 
 func (p *Processor) flush(now time.Time) map[string]StatsPayload {
@@ -421,6 +523,9 @@ func (p *Processor) flush(now time.Time) map[string]StatsPayload {
 				TracerVersion: version.Tag,
 				Stats:         make([]StatsBucket, 0, 1),
 				ProcessTags:   processtags.GlobalTags().Slice(),
+				// ProductMask advertises supported products; always set to APM|DSM while
+				// the DSM processor is running.
+				ProductMask: productAPM | productDSM,
 			}
 		}
 		payload.Stats = append(payload.Stats, bucket)
@@ -530,6 +635,24 @@ func (p *Processor) TrackKafkaHighWatermarkOffset(_ string, topic string, partit
 		offsetType: highWatermarkOffset,
 		timestamp:  p.time().UnixNano(),
 	}})
+	if dropped {
+		atomic.AddInt64(&p.stats.dropped, 1)
+	}
+}
+
+// TrackTransaction records a manual transaction checkpoint observation. Use this to
+// track when a specific transaction ID is seen at a named checkpoint in a data pipeline.
+// transactionID identifies the transaction (e.g. a message ID or correlation ID).
+// checkpointName is a stable label for the processing stage (e.g. "ingested", "processed").
+func (p *Processor) TrackTransaction(transactionID, checkpointName string) {
+	dropped := p.in.push(&processorInput{
+		typ: pointTypeTransaction,
+		transactionEntry: transactionEntry{
+			transactionID:  transactionID,
+			checkpointName: checkpointName,
+			timestamp:      p.time().UnixNano(),
+		},
+	})
 	if dropped {
 		atomic.AddInt64(&p.stats.dropped, 1)
 	}

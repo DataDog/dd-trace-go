@@ -14,7 +14,7 @@ import (
 
 var _ driver.Tx = (*tracedTx)(nil)
 
-// tracedTx is a traced version of sql.Tx
+// tracedTx is a traced version of sql.Tx.
 type tracedTx struct {
 	driver.Tx
 	*traceParams
@@ -36,10 +36,14 @@ func startTraceTask(ctx context.Context, name string) (context.Context, func()) 
 		return ctx, noopTaskEnd
 	}
 	ctx, task := trace.NewTask(ctx, name)
-	return instr.WithExecutionTraced(ctx), task.End
+	ctx = instr.WithExecutionTraced(ctx)
+	return ctx, func() {
+		instr.PopExecutionTraced()
+		task.End()
+	}
 }
 
-// Commit sends a span at the end of the transaction
+// Commit sends a span at the end of the transaction.
 func (t *tracedTx) Commit() (err error) {
 	ctx, end := startTraceTask(t.ctx, QueryTypeCommit)
 	defer end()
@@ -50,7 +54,7 @@ func (t *tracedTx) Commit() (err error) {
 	return err
 }
 
-// Rollback sends a span if the connection is aborted
+// Rollback sends a span if the connection is aborted.
 func (t *tracedTx) Rollback() (err error) {
 	ctx, end := startTraceTask(t.ctx, QueryTypeRollback)
 	defer end()

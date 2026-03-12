@@ -53,7 +53,6 @@ variables:
   variables:
     DD_INSTRUMENTATION_TELEMETRY_ENABLED: "true"
     DD_INSTRUMENTATION_TELEMETRY_DEBUG: "true"
-    GOEXPERIMENT: "synctest" # TODO: remove once go1.25 is the minimum supported version
     # Used to build the SUT
     GO_PROF_APP_BUILD_VARIANT: "candidate"
     DD_TRACE_GO_VERSION: "latest"
@@ -90,12 +89,12 @@ variables:
 .go-stable-benchmarks:
   extends: .benchmarks-default
   variables:
-    GO_VERSION: "1.25.0"
+    GO_VERSION: "1.26.0"
 
 .go-oldstable-benchmarks:
   extends: .benchmarks-default
   variables:
-    GO_VERSION: "1.24.6"
+    GO_VERSION: "1.25.7"
 
 #
 # Specific macrobenchmark configurations extending 
@@ -301,7 +300,7 @@ notify-slo-breaches:
       - platform/artifacts-se/
     expire_in: 3 months
   variables:
-    GO_VERSION: "1.25.0" # It needs to be at the latest stable release
+    GO_VERSION: "1.26.0" # It needs to be at the latest stable release
     ARTIFACTS_DIR: "./artifacts-se"
     SERVICE_EXTENSION: "true"
 
@@ -397,7 +396,7 @@ se-no-tracer-no-ext_proc:
       - platform/artifacts-haproxy_spoa/
     expire_in: 3 months
   variables:
-    GO_VERSION: "1.25.0" # It needs to be at the latest stable release
+    GO_VERSION: "1.26.0" # It needs to be at the latest stable release
     ARTIFACTS_DIR: "./artifacts-haproxy_spoa"
     HAPROXY_SPOA: "true"
 

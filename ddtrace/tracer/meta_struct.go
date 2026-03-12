@@ -56,7 +56,7 @@ func (m *metaStructMap) DecodeMsg(de *msgp.Reader) error {
 	}
 
 	*m = make(metaStructMap, header)
-	for i := uint32(0); i < header; i++ {
+	for range header {
 		var key string
 		key, err = de.ReadString()
 		if err != nil {

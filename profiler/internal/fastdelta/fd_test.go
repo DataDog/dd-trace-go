@@ -112,7 +112,7 @@ func BenchmarkDelta(b *testing.B) {
 						b.SetBytes(int64(len(before)))
 						b.ReportAllocs()
 
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							deltaFn := impl.Func()
 							if err := deltaFn(before, io.Discard); err != nil {
 								b.Fatal(err)
@@ -132,7 +132,7 @@ func BenchmarkDelta(b *testing.B) {
 						}
 
 						b.ResetTimer()
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							if err := deltaFn(after, ioutil.Discard); err != nil {
 								b.Fatal(err)
 							}
@@ -196,7 +196,7 @@ func BenchmarkMakeGolden(b *testing.B) {
 			}
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				psink = makeGolden(b, before, after,
 					vt("alloc_objects", "count"), vt("alloc_space", "bytes"))
 			}
@@ -705,7 +705,7 @@ func TestRepeatedHeapProfile(t *testing.T) {
 	}
 	for i := 0; i < iters; i++ {
 		// Create a bunch of new allocations so there's something to diff.
-		for j := 0; j < 200; j++ {
+		for range 200 {
 			left(10)
 		}
 		after := readProfile("heap")
@@ -847,7 +847,7 @@ func TestDuplicateSample(t *testing.T) {
 
 	err = dc.Delta(a, io.Discard)
 	require.NoError(t, err)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		buf := new(bytes.Buffer)
 		err = dc.Delta(a, buf)
 		require.NoError(t, err)

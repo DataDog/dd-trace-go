@@ -19,13 +19,42 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
 )
 
 const defaultRateLimit = internalconfig.DefaultRateLimit
+
+func TestParseServiceEnvKey(t *testing.T) {
+	for _, tt := range []struct {
+		in          string
+		wantService string
+		wantEnv     string
+	}{
+		{"service:web,env:prod", "web", "prod"},
+		{"service:,env:", "", ""},
+		{"service:web,env:", "web", ""},
+		{"service:,env:prod", "", "prod"},
+		// Env value containing ",env:" token — split at first occurrence.
+		{"service:foo,env:bar,env:baz", "foo", "bar,env:baz"},
+		// Malformed: missing prefix.
+		{"web,env:prod", "", ""},
+		// Malformed: missing ,env: separator.
+		{"service:web", "", ""},
+		// Malformed: fields out of order.
+		{"env:prod,service:web", "", ""},
+	} {
+		t.Run(tt.in, func(t *testing.T) {
+			k := parseServiceEnvKey(tt.in)
+			assert.Equal(t, tt.wantService, k.service)
+			assert.Equal(t, tt.wantEnv, k.env)
+		})
+	}
+}
 
 func TestPrioritySampler(t *testing.T) {
 	// create a new span with given service/env
@@ -110,10 +139,8 @@ func TestPrioritySampler(t *testing.T) {
 
 		var wg sync.WaitGroup
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 500; i++ {
+		wg.Go(func() {
+			for range 500 {
 				assert.NoError(ps.readRatesJSON(
 					io.NopCloser(strings.NewReader(
 						`{
@@ -125,16 +152,14 @@ func TestPrioritySampler(t *testing.T) {
 					)),
 				))
 			}
-		}()
+		})
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 500; i++ {
+		wg.Go(func() {
+			for range 500 {
 				ps.getRate(mkSpan("obfuscate.http", "none"))
 				ps.getRate(mkSpan("other.service", "none"))
 			}
-		}()
+		})
 
 		wg.Wait()
 	})
@@ -176,6 +201,64 @@ func TestPrioritySampler(t *testing.T) {
 		rate, _ = getMetric(testSpan1, keySamplingPriorityRate)
 		assert.EqualValues(ext.PriorityAutoReject, priority)
 		assert.EqualValues(0.5, rate)
+	})
+}
+
+func BenchmarkPrioritySamplerGetRate(b *testing.B) {
+	// Old approach: string-concatenation map key (causes 1 alloc per lookup).
+	type oldPrioritySampler struct {
+		mu          locking.RWMutex
+		rates       map[string]float64
+		defaultRate float64
+	}
+	oldGetRate := func(ops *oldPrioritySampler, spn *Span) float64 {
+		// Allocation doesn't escape to the heap.
+		key := "service:" + spn.service + ",env:" + spn.meta[ext.Environment]
+		if rate, ok := ops.rates[key]; ok {
+			return rate
+		}
+		return ops.defaultRate
+	}
+
+	ops := &oldPrioritySampler{
+		rates:       map[string]float64{"service:web,env:prod": 0.5},
+		defaultRate: 1.0,
+	}
+
+	// New approach: struct map key via prioritySampler.getRate().
+	ps := newPrioritySampler()
+	ps.rates[serviceEnvKey{service: "web", env: "prod"}] = 0.5
+
+	spnHit := newSpan("op", "web", "resource", 1, 1, 0)
+	spnHit.meta[ext.Environment] = "prod"
+
+	spnMiss := newSpan("op", "other", "resource", 1, 1, 0)
+	spnMiss.meta[ext.Environment] = "staging"
+
+	b.ResetTimer()
+	b.Run("old/hit", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			_ = oldGetRate(ops, spnHit)
+		}
+	})
+	b.Run("new/hit", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			_ = ps.getRate(spnHit)
+		}
+	})
+	b.Run("old/miss", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			_ = oldGetRate(ops, spnMiss)
+		}
+	})
+	b.Run("new/miss", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			_ = ps.getRate(spnMiss)
+		}
 	})
 }
 
@@ -497,7 +580,7 @@ func TestRulesSampler(t *testing.T) {
 		s.SetTag("hostname", "hn-30")
 		return s
 	}
-	makeFinishedSpan := func(op, svc, resource string, tags map[string]interface{}) *Span {
+	makeFinishedSpan := func(op, svc, resource string, tags map[string]any) *Span {
 		s := newSpan(op, svc, resource, randUint64(), randUint64(), 0)
 		for k, v := range tags {
 			s.SetTag(k, v)
@@ -522,7 +605,7 @@ func TestRulesSampler(t *testing.T) {
 			spanSrv  string
 			spanName string
 			spanRsc  string
-			spanTags map[string]interface{}
+			spanTags map[string]any
 		}{
 			{
 				rules:   `[{"service": "web.non-matching*", "sample_rate": 0}, {"service": "web*", "sample_rate": 1}]`,
@@ -555,17 +638,17 @@ func TestRulesSampler(t *testing.T) {
 				rules:    `[{"resource": "http_*", "tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
 				spanRsc:  "http_rec",
-				spanTags: map[string]interface{}{"host": "COMP-1234"},
+				spanTags: map[string]any{"host": "COMP-1234"},
 			},
 			{
 				rules:    `[{"tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
-				spanTags: map[string]interface{}{"host": "COMP-1234"},
+				spanTags: map[string]any{"host": "COMP-1234"},
 			},
 			{
 				rules:    `[{"tags":{"host":"COMP-*"}, "sample_rate": 1}]`,
 				spanSrv:  "web.service",
-				spanTags: map[string]interface{}{"host": "COMP-1234"},
+				spanTags: map[string]any{"host": "COMP-1234"},
 			},
 		} {
 			t.Run("", func(t *testing.T) {
@@ -682,7 +765,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.NoError(err)
 				rs := newRulesSampler(nil, rules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]any{"hostname": "hn-30"})
 
 				result := rs.SampleSpan(span)
 				assert.True(result)
@@ -806,7 +889,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]any{"hostname": "hn-30",
 					"tag":        20.1,
 					"tier":       209,
 					"shall-pass": true,
@@ -876,7 +959,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.NoError(err)
 				rs := newRulesSampler(nil, rules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]interface{}{"hostname": "hn-30"})
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, tt.resName, map[string]any{"hostname": "hn-30"})
 				result := rs.SampleSpan(span)
 				assert.False(result)
 				assert.NotContains(span.metrics, keySpanSamplingMechanism)
@@ -985,7 +1068,7 @@ func TestRulesSampler(t *testing.T) {
 				assert.NoError(err)
 				rs := newRulesSampler(nil, c.spanRules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
-				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]interface{}{"hostname": "hn-30",
+				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]any{"hostname": "hn-30",
 					"tag": 20.1,
 				})
 				result := rs.SampleSpan(span)
@@ -1410,7 +1493,7 @@ func TestRulesSamplerConcurrency(t *testing.T) {
 	}
 
 	wg := &sync.WaitGroup{}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Add(1)
 		go span(wg)
 	}
@@ -1764,7 +1847,7 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 			// 1. to verify that the glob pattern is correctly converted to a regex
 			// 2. to verify that the rule is correctly marshalled
 
-			rules, _ := unmarshalSamplingRules([]byte(fmt.Sprintf(`[{"service": "%s", "sample_rate": 1.0}]`, tt.pattern)),
+			rules, _ := unmarshalSamplingRules(fmt.Appendf(nil, `[{"service": "%s", "sample_rate": 1.0}]`, tt.pattern),
 				SamplingRuleTrace)
 			rule := rules[0]
 
@@ -1780,7 +1863,7 @@ func TestSamplingRuleMarshallGlob(t *testing.T) {
 
 func BenchmarkGlobMatchSpan(b *testing.B) {
 	var spans []*Span
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		spans = append(spans, newSpan("name.ops.date", "srv.name.ops.date", "", 0, 0, 0))
 	}
 
@@ -1790,7 +1873,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		assert.Nil(b, err)
 		rs := newSingleSpanRulesSampler(rules)
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			for _, span := range spans {
 				rs.apply(span)
 			}
@@ -1803,7 +1886,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		assert.Nil(b, err)
 		rs := newSingleSpanRulesSampler(rules)
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			for _, span := range spans {
 				rs.apply(span)
 			}
@@ -1818,7 +1901,7 @@ func BenchmarkGlobMatchSpan(b *testing.B) {
 		rs := newSingleSpanRulesSampler(rules)
 
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			for _, span := range spans {
 				rs.apply(span)
 			}
@@ -2009,4 +2092,266 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 			assert.False(ok)
 		})
 	}
+}
+
+func TestCappedRate(t *testing.T) {
+	tests := []struct {
+		name        string
+		oldRate     float64
+		newRate     float64
+		canIncrease bool
+		wantRate    float64
+		wantApplied bool
+	}{
+		{
+			name:        "decrease applied immediately",
+			oldRate:     0.8,
+			newRate:     0.2,
+			canIncrease: true,
+			wantRate:    0.2,
+			wantApplied: false,
+		},
+		{
+			name:        "equal rate unchanged",
+			oldRate:     0.5,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: false,
+		},
+		{
+			name:        "increase from zero applied immediately",
+			oldRate:     0,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: false,
+		},
+		{
+			name:        "increase capped at 2x",
+			oldRate:     0.1,
+			newRate:     1.0,
+			canIncrease: true,
+			wantRate:    0.2,
+			wantApplied: true,
+		},
+		{
+			name:        "increase within 2x not capped",
+			oldRate:     0.3,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: true,
+		},
+		{
+			name:        "increase exactly 2x",
+			oldRate:     0.25,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: true,
+		},
+		{
+			name:        "increase blocked during cooldown",
+			oldRate:     0.1,
+			newRate:     1.0,
+			canIncrease: false,
+			wantRate:    0.1,
+			wantApplied: false,
+		},
+		{
+			name:        "decrease during cooldown still applied",
+			oldRate:     0.8,
+			newRate:     0.2,
+			canIncrease: false,
+			wantRate:    0.2,
+			wantApplied: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rate, applied := cappedRate(tt.oldRate, tt.newRate, tt.canIncrease)
+			assert.Equal(t, tt.wantRate, rate)
+			assert.Equal(t, tt.wantApplied, applied)
+		})
+	}
+}
+
+func TestPrioritySamplerRampCooldownNoReset(t *testing.T) {
+	// When a rate increase arrives during cooldown, lastCapped must NOT be
+	// updated. Otherwise each blocked increase would push out the cooldown
+	// window and delay subsequent ramp-up steps indefinitely.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			s := &Span{service: svc, meta: map[string]string{}}
+			if env != "" {
+				s.meta["env"] = env
+			}
+			return s
+		}
+
+		// Set initial low rate.
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.01}}`,
+		))))
+		assert.Equal(0.01, ps.getRate(mkSpan("web", "prod")))
+
+		// Wait for cooldown, apply increase: 0.01 → 0.02.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Before rampUpInterval elapses, send another increase.
+		// Rate should be held at 0.02 (cooldown) and lastCapped should
+		// NOT be reset.
+		time.Sleep(rampUpInterval / 2)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Wait for the remaining half of rampUpInterval from the original
+		// cap. Since lastCapped was NOT reset by the blocked increase,
+		// this should allow the next ramp-up step.
+		time.Sleep(rampUpInterval / 2)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.04, ps.getRate(mkSpan("web", "prod")))
+	})
+}
+
+func TestPrioritySamplerRampUp(t *testing.T) {
+	// When rates increase, each readRatesJSON call caps the increase at 2x
+	// provided at least rampUpInterval has elapsed.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			s := &Span{service: svc, meta: map[string]string{}}
+			if env != "" {
+				s.meta["env"] = env
+			}
+			return s
+		}
+
+		// Set initial low rate (decrease from default 1.0, applied immediately).
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.01}}`,
+		))))
+		assert.Equal(0.01, ps.getRate(mkSpan("web", "prod")))
+
+		// Simulate agent restart: rate jumps to 1.0.
+		// First update: capped at 0.01 * 2 = 0.02.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Second update: capped at 0.02 * 2 = 0.04.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.04, ps.getRate(mkSpan("web", "prod")))
+
+		// Third: 0.08, Fourth: 0.16, Fifth: 0.32, Sixth: 0.64, Seventh: 1.0 (capped at target).
+		for _, expected := range []float64{0.08, 0.16, 0.32, 0.64, 1.0} {
+			time.Sleep(rampUpInterval)
+			assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+				`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+			))))
+			assert.Equal(expected, ps.getRate(mkSpan("web", "prod")))
+		}
+	})
+}
+
+func TestPrioritySamplerRampDown(t *testing.T) {
+	// Rate decreases are applied immediately (no ramp).
+	ps := newPrioritySampler()
+	assert := assert.New(t)
+
+	mkSpan := func(svc, env string) *Span {
+		s := &Span{service: svc, meta: map[string]string{}}
+		if env != "" {
+			s.meta["env"] = env
+		}
+		return s
+	}
+
+	// Set initial rate (decrease from default 1.0).
+	assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+		`{"rate_by_service":{"service:web,env:prod":0.8}}`,
+	))))
+
+	// Decrease: applied immediately.
+	assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+		`{"rate_by_service":{"service:web,env:prod":0.1}}`,
+	))))
+	assert.Equal(0.1, ps.getRate(mkSpan("web", "prod")))
+}
+
+func TestPrioritySamplerRampConverges(t *testing.T) {
+	// After enough update cycles, the rate reaches the target.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			s := &Span{service: svc, meta: map[string]string{}}
+			if env != "" {
+				s.meta["env"] = env
+			}
+			return s
+		}
+
+		// Start at 0.1, target 0.5.
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.1}}`,
+		))))
+		// 0.1 -> 0.2 -> 0.4 -> 0.5 (capped at target)
+		for _, expected := range []float64{0.2, 0.4, 0.5} {
+			time.Sleep(rampUpInterval)
+			assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+				`{"rate_by_service":{"service:web,env:prod":0.5}}`,
+			))))
+			assert.Equal(expected, ps.getRate(mkSpan("web", "prod")))
+		}
+	})
+}
+
+func TestPrioritySamplerRampDefaultRate(t *testing.T) {
+	// The default rate also gets capped on increase.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			s := &Span{service: svc, meta: map[string]string{}}
+			if env != "" {
+				s.meta["env"] = env
+			}
+			return s
+		}
+
+		// Set default rate to 0.1 (decrease from initial 1.0, applied immediately).
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:,env:":0.1}}`,
+		))))
+		assert.Equal(0.1, ps.getRate(mkSpan("unknown-service", "")))
+
+		// Increase default to 1.0: capped at 0.1 * 2 = 0.2.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:,env:":1.0}}`,
+		))))
+		assert.Equal(0.2, ps.getRate(mkSpan("unknown-service", "")))
+	})
 }

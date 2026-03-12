@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	elastictrace "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	elasticsearch "github.com/elastic/go-elasticsearch/v8"

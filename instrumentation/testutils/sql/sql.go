@@ -30,21 +30,30 @@ func Prepare(tableName string) func() {
 		log.Fatal(err)
 	}
 	mysql.Exec(queryDrop)
-	mysql.Exec(queryCreate)
+	_, err = mysql.Exec(queryCreate)
+	if err != nil {
+		log.Fatalf("Failed to create table %s in MySQL: %v", tableName, err)
+	}
 	postgres, err := sql.Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	defer postgres.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
 	postgres.Exec(queryDrop)
-	postgres.Exec(queryCreate)
+	_, err = postgres.Exec(queryCreate)
+	if err != nil {
+		log.Fatalf("Failed to create table %s in Postgres: %v", tableName, err)
+	}
 	mssql, err := sql.Open("sqlserver", "sqlserver://sa:myPassw0rd@localhost:1433?database=master")
 	defer mssql.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
 	mssql.Exec(queryDrop)
-	mssql.Exec(queryCreate)
+	_, err = mssql.Exec(queryCreate)
+	if err != nil {
+		log.Fatalf("Failed to create table %s in SQL Server: %v", tableName, err)
+	}
 	return func() {
 		mysql.Exec(queryDrop)
 		postgres.Exec(queryDrop)
@@ -120,7 +129,9 @@ func testQuery(cfg *Config) func(*testing.T) {
 		cfg.mockTracer.Reset()
 		assert := assert.New(t)
 		rows, err := cfg.DB.Query(query)
-		defer rows.Close()
+		if rows != nil {
+			defer rows.Close()
+		}
 		assert.Nil(err)
 
 		spans := cfg.mockTracer.FinishedSpans()
@@ -310,5 +321,5 @@ type Config struct {
 	DriverName string
 	TableName  string
 	ExpectName string
-	ExpectTags map[string]interface{}
+	ExpectTags map[string]any
 }

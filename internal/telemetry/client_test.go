@@ -150,6 +150,9 @@ func TestClientFlush(t *testing.T) {
 			clientConfig: ClientConfig{
 				HeartbeatInterval: time.Nanosecond,
 			},
+			when: func(c *client) {
+				time.Sleep(time.Nanosecond) // instant: fake clock advances 1ns past heartbeat interval
+			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
 				require.IsType(t, transport.AppHeartbeat{}, payload)
@@ -164,9 +167,7 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.RegisterAppConfig("key", "value", OriginDefault)
 
-				// Make sure the limiter of the heartbeat is triggered
-				time.Sleep(time.Microsecond)
-				runtime.Gosched()
+				time.Sleep(time.Microsecond) // instant: fake clock advances 1µs past heartbeat interval
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -187,9 +188,7 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
 
-				// Make sure the limiter of the heartbeat is triggered
-				time.Sleep(time.Microsecond)
-				runtime.Gosched()
+				time.Sleep(time.Microsecond) // instant: fake clock advances 1µs past heartbeat interval
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -367,9 +366,7 @@ func TestClientFlush(t *testing.T) {
 				c.ProductStarted("test-product")
 				c.MarkIntegrationAsLoaded(Integration{Name: "test-integration", Version: "1.0.0"})
 
-				// Make sure the limiter of the heartbeat is triggered
-				time.Sleep(time.Microsecond)
-				runtime.Gosched()
+				time.Sleep(time.Microsecond) // instant: fake clock advances 1µs past heartbeat interval
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -469,9 +466,7 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.AppStart()
 
-				// Make sure the limiter of the heartbeat is triggered
-				time.Sleep(time.Microsecond)
-				runtime.Gosched()
+				time.Sleep(time.Microsecond) // instant: fake clock advances 1µs past heartbeat interval
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -1038,7 +1033,7 @@ func TestClientFlush(t *testing.T) {
 			name: "distribution-overflow",
 			when: func(c *client) {
 				handler := c.Distribution(NamespaceGeneral, "init_time", nil)
-				for i := 0; i < 1<<16; i++ {
+				for i := range 1 << 16 {
 					handler.Submit(float64(i))
 				}
 			},
@@ -1060,29 +1055,29 @@ func TestClientFlush(t *testing.T) {
 	for _, test := range testcases {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			config := defaultConfig(test.clientConfig)
-			config.AgentURL = "http://localhost:8126"
-			config.DependencyLoader = test.clientConfig.DependencyLoader             // Don't use the default dependency loader
-			config.internalMetricsEnabled = test.clientConfig.internalMetricsEnabled // only enabled internal metrics when explicitly set
-			config.internalMetricsEnabled = false
-			config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
-			c, err := newClient(tracerConfig, config)
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				c.Close()
+			synctest.Test(t, func(t *testing.T) {
+				config := defaultConfig(test.clientConfig)
+				config.AgentURL = "http://localhost:8126"
+				config.DependencyLoader = test.clientConfig.DependencyLoader             // Don't use the default dependency loader
+				config.internalMetricsEnabled = test.clientConfig.internalMetricsEnabled // only enabled internal metrics when explicitly set
+				config.internalMetricsEnabled = false
+				config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+				c, err := newClient(tracerConfig, config)
+				require.NoError(t, err)
+				defer c.Close()
+
+				recordWriter := &internal.RecordWriter{}
+				c.writer = recordWriter
+
+				if test.when != nil {
+					test.when(c)
+				}
+				c.Flush()
+
+				payloads := recordWriter.Payloads()
+				require.LessOrEqual(t, 1, len(payloads))
+				test.expect(t, payloads)
 			})
-
-			recordWriter := &internal.RecordWriter{}
-			c.writer = recordWriter
-
-			if test.when != nil {
-				test.when(c)
-			}
-			c.Flush()
-
-			payloads := recordWriter.Payloads()
-			require.LessOrEqual(t, 1, len(payloads))
-			test.expect(t, payloads)
 		})
 	}
 }
@@ -1314,7 +1309,7 @@ func TestHeartBeatInterval(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		c.Log(NewRecord(LogError, "test"))
 		time.Sleep(1 * time.Second)
 	}
@@ -1392,7 +1387,7 @@ func BenchmarkLogs(b *testing.B) {
 		})
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			c.Log(NewRecord(LogDebug, "this is supposed to be a DEBUG log of representative length with a variable message: "+strconv.Itoa(i%10)))
 		}
 	})
@@ -1408,7 +1403,7 @@ func BenchmarkLogs(b *testing.B) {
 		})
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			c.Log(NewRecord(LogWarn, "this is supposed to be a WARN log of representative length"), WithTags([]string{"key:" + strconv.Itoa(i%10)}))
 		}
 	})
@@ -1424,7 +1419,7 @@ func BenchmarkLogs(b *testing.B) {
 		})
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			c.Log(NewRecord(LogError, "this is supposed to be a ERROR log of representative length"), WithStacktrace())
 		}
 	})
@@ -1522,7 +1517,7 @@ func BenchmarkMetrics(b *testing.B) {
 		})
 
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			f(c, "init_time").Submit(1)
 		}
 	}, func(b *testing.B, f func(Client, string) MetricHandle) {
@@ -1537,7 +1532,7 @@ func BenchmarkMetrics(b *testing.B) {
 
 		b.ResetTimer()
 		handle := f(c, "init_time")
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			handle.Submit(1)
 		}
 	})
@@ -1592,7 +1587,7 @@ func BenchmarkParallelMetrics(b *testing.B) {
 		b.SetParallelism(nbGoroutines)
 
 		handles := make([]MetricHandle, nbGoroutines)
-		for i := 0; i < nbGoroutines; i++ {
+		for i := range nbGoroutines {
 			handles[i] = metric(c, "init_time_"+strconv.Itoa(i))
 		}
 

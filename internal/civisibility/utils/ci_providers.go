@@ -52,8 +52,8 @@ var githubCheckRunIDRegex = regexp.MustCompile(`"k"\s*:\s*"check_run_id"\s*,\s*"
 type diagJobData struct {
 	Job struct {
 		D []struct {
-			K string      `json:"k"`
-			V interface{} `json:"v"`
+			K string `json:"k"`
+			V any    `json:"v"`
 		} `json:"d"`
 	} `json:"job"`
 }
@@ -84,12 +84,14 @@ func getGithubActionsDiagDirs() []string {
 	case "windows":
 		var candidates []string
 		// Only add paths with ProgramFiles if the env var is set (avoid relative paths)
+		//nolint:forbidigo
 		if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
 			candidates = append(candidates,
 				filepath.Join(programFiles, "actions-runner", "cached", "_diag"),
 				filepath.Join(programFiles, "actions-runner", "_diag"),
 			)
 		}
+		//nolint:forbidigo
 		if programFilesX86 := os.Getenv("ProgramFiles(x86)"); programFilesX86 != "" {
 			candidates = append(candidates,
 				filepath.Join(programFilesX86, "actions-runner", "cached", "_diag"),
@@ -135,7 +137,7 @@ func tryExtractJobIDFromDiag(diagDirs []string) (string, bool) {
 		// Find Worker_*.log files
 		files, err := filepath.Glob(filepath.Join(diagDir, "Worker_*.log"))
 		if err != nil {
-			log.Debug("civisibility: error globbing worker logs in %s: %v", diagDir, err)
+			log.Debug("civisibility: error globbing worker logs in %s: %s", diagDir, err.Error())
 			continue
 		}
 
@@ -170,7 +172,7 @@ func tryExtractJobIDFromFile(path string) (string, bool) {
 	// Check file size before reading
 	info, err := os.Stat(path)
 	if err != nil {
-		log.Debug("civisibility: error stating file %s: %v", path, err)
+		log.Debug("civisibility: error stating file %s: %s", path, err.Error())
 		return "", false
 	}
 	if info.Size() > githubMaxDiagFileSize {
@@ -181,7 +183,7 @@ func tryExtractJobIDFromFile(path string) (string, bool) {
 	// Read file content
 	content, err := os.ReadFile(path)
 	if err != nil {
-		log.Debug("civisibility: error reading file %s: %v", path, err)
+		log.Debug("civisibility: error reading file %s: %s", path, err.Error())
 		return "", false
 	}
 
@@ -396,8 +398,8 @@ func normalizeRef(name string) string {
 
 	// Iterate over prefixes and remove them if present
 	for _, prefix := range prefixes {
-		if strings.HasPrefix(name, prefix) {
-			name = strings.TrimPrefix(name, prefix)
+		if after, ok := strings.CutPrefix(name, prefix); ok {
+			name = after
 		}
 	}
 	return name

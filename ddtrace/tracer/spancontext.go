@@ -30,28 +30,40 @@ const TraceIDZero string = "00000000000000000000000000000000"
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
-type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
-
-var emptyTraceID traceID
+// traceID in big endian, i.e. <upper><lower>
+type traceID struct {
+	value      [16]byte
+	hexEncoded string
+}
 
 func (t *traceID) HexEncoded() string {
-	return hex.EncodeToString(t[:])
+	if t.hexEncoded == "" {
+		t.computeAndCacheHex()
+	}
+	return t.hexEncoded
 }
 
 func (t *traceID) Lower() uint64 {
-	return binary.BigEndian.Uint64(t[8:])
+	return binary.BigEndian.Uint64(t.value[8:])
 }
 
 func (t *traceID) Upper() uint64 {
-	return binary.BigEndian.Uint64(t[:8])
+	return binary.BigEndian.Uint64(t.value[:8])
 }
 
 func (t *traceID) SetLower(i uint64) {
-	binary.BigEndian.PutUint64(t[8:], i)
+	binary.BigEndian.PutUint64(t.value[8:], i)
+	t.hexEncoded = ""
 }
 
 func (t *traceID) SetUpper(i uint64) {
-	binary.BigEndian.PutUint64(t[:8], i)
+	binary.BigEndian.PutUint64(t.value[:8], i)
+	t.hexEncoded = ""
+}
+
+func (t *traceID) set(v [16]byte) {
+	t.value = v
+	t.hexEncoded = ""
 }
 
 func (t *traceID) SetUpperFromHex(s string) error {
@@ -64,20 +76,22 @@ func (t *traceID) SetUpperFromHex(s string) error {
 }
 
 func (t *traceID) Empty() bool {
-	return *t == emptyTraceID
+	return t.value == [16]byte{}
 }
 
 func (t *traceID) HasUpper() bool {
-	for _, b := range t[:8] {
-		if b != 0 {
+	for ix := range t.value[:8] {
+		if t.value[ix] != 0 {
 			return true
 		}
 	}
 	return false
 }
 
-func (t *traceID) UpperHex() string {
-	return hex.EncodeToString(t[:8])
+func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
+
+func (t *traceID) computeAndCacheHex() {
+	t.hexEncoded = hex.EncodeToString(t.value[:])
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
@@ -110,16 +124,20 @@ type SpanContext struct {
 	spanID  uint64
 
 	// guards below fields
-	mu      locking.RWMutex
+	mu locking.RWMutex
+	// +checklocks:mu
 	baggage map[string]string
 	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	hasBaggage uint32 // +checkatomic
 	// e.g. "synthetics"
+	// +checklocks:mu
 	origin string
 
 	// links to related spans in separate|external|disconnected traces
+	// +checklocks:mu
 	spanLinks []SpanLink
 	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// +checklocks:mu
 	baggageOnly bool
 }
 
@@ -141,12 +159,12 @@ type spanContextV1Adapter interface {
 // to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
-	sc.traceID = c.TraceIDBytes()
+	sc.traceID.set(c.TraceIDBytes())
 	sc.spanID = c.SpanID()
-	sc.baggage = make(map[string]string)
+	sc.baggage = make(map[string]string) // +checklocksignore - Initialization time, not shared yet.
 	c.ForeachBaggageItem(func(k, v string) bool {
 		sc.hasBaggage = 1 // +checklocksignore - Initialization time, not shared yet.
-		sc.baggage[k] = v
+		sc.baggage[k] = v // +checklocksignore - Initialization time, not shared yet.
 		return true
 	})
 
@@ -174,12 +192,12 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		return &sc
 	}
 
-	sc.origin = ctx.Origin()
+	sc.origin = ctx.Origin() // +checklocksignore - Initialization time, not shared yet.
 	if sc.trace == nil {
 		sc.trace = newTrace()
 	}
-	sc.trace.tags = ctx.Tags()
-	sc.trace.propagatingTags = ctx.PropagatingTags()
+	sc.trace.tags = ctx.Tags()                       // +checklocksignore - Initialization time, not shared yet.
+	sc.trace.propagatingTags = ctx.PropagatingTags() // +checklocksignore - Initialization time, not shared yet.
 	return &sc
 }
 
@@ -188,6 +206,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // baggage and other values from it. This method also pushes the span into the
 // new context's trace and as a result, it should not be called multiple times
 // for the same span.
+// +checklocksignore — Initialization time, context not yet shared.
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	context := &SpanContext{
 		spanID: span.spanID,
@@ -196,10 +215,10 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
-		if !parent.baggageOnly {
+		if !parent.baggageOnly { // +checklocksignore - Read-only after init.
 			context.traceID.SetUpper(parent.traceID.Upper())
 			context.trace = parent.trace
-			context.origin = parent.origin
+			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
@@ -242,7 +261,7 @@ func (c *SpanContext) SpanID() uint64 {
 
 // TraceID implements ddtrace.SpanContext.
 func (c *SpanContext) TraceID() string {
-	if c == nil {
+	if c == nil || c.traceID.Empty() {
 		return TraceIDZero
 	}
 	return c.traceID.HexEncoded()
@@ -251,9 +270,9 @@ func (c *SpanContext) TraceID() string {
 // TraceIDBytes implements ddtrace.SpanContext.
 func (c *SpanContext) TraceIDBytes() [16]byte {
 	if c == nil {
-		return emptyTraceID
+		return [16]byte{}
 	}
-	return c.traceID
+	return c.traceID.value
 }
 
 // TraceIDLower implements ddtrace.SpanContext.
@@ -274,13 +293,14 @@ func (c *SpanContext) TraceIDUpper() uint64 {
 
 // SpanLinks implements ddtrace.SpanContext
 func (c *SpanContext) SpanLinks() []SpanLink {
-	cp := make([]SpanLink, len(c.spanLinks))
-	copy(cp, c.spanLinks)
+	cp := make([]SpanLink, len(c.spanLinks)) // +checklocksignore - Read-only after init.
+	copy(cp, c.spanLinks)                    // +checklocksignore - Read-only after init.
 	return cp
 }
 
 // foreachBaggageItemLocked iterates over baggage items.
 // c.mu must be held for reading.
+// +checklocksread:c.mu
 func (c *SpanContext) foreachBaggageItemLocked(handler func(k, v string) bool) {
 	assert.RWMutexRLocked(&c.mu)
 	for k, v := range c.baggage {
@@ -334,6 +354,7 @@ func (c *SpanContext) SamplingPriority() (p int, ok bool) {
 
 // setBaggageItemLocked sets a baggage item.
 // c.mu must be held for writing.
+// +checklocks:c.mu
 func (c *SpanContext) setBaggageItemLocked(key, val string) {
 	assert.RWMutexLocked(&c.mu)
 	if c.baggage == nil {
@@ -351,6 +372,7 @@ func (c *SpanContext) setBaggageItem(key, val string) {
 
 // baggageItemLocked retrieves a baggage item.
 // c.mu must be held for reading.
+// +checklocksread:c.mu
 func (c *SpanContext) baggageItemLocked(key string) string {
 	assert.RWMutexRLocked(&c.mu)
 	return c.baggage[key]
@@ -358,6 +380,7 @@ func (c *SpanContext) baggageItemLocked(key string) string {
 
 // baggageCountLocked returns the number of baggage items.
 // c.mu must be held for reading.
+// +checklocksread:c.mu
 func (c *SpanContext) baggageCountLocked() int {
 	assert.RWMutexRLocked(&c.mu)
 	return len(c.baggage)
@@ -393,8 +416,10 @@ func (c *SpanContext) safeDebugString() string {
 		c.mu.RUnlock()
 	}
 
+	origin := c.origin           // +checklocksignore - Read-only after init.
+	baggageOnly := c.baggageOnly // +checklocksignore - Read-only after init.
 	return fmt.Sprintf("SpanContext{traceID=%s, spanID=%d, hasBaggage=%t, baggageCount=%d, origin=%q, updated=%t, isRemote=%t, baggageOnly=%t}",
-		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, c.origin, c.updated, c.isRemote, c.baggageOnly)
+		c.TraceID(), c.SpanID(), hasBaggage, baggageCount, origin, c.updated, c.isRemote, baggageOnly)
 }
 
 // samplingDecision is the decision to send a trace to the agent or not.
@@ -417,18 +442,25 @@ type trace struct {
 	// guards below fields
 	mu locking.RWMutex
 	// all the spans that are part of this trace
+	// +checklocks:mu
 	spans []*Span
 	// trace level tags
+	// +checklocks:mu
 	tags map[string]string
 	// trace level tags that will be propagated across service boundaries
+	// +checklocks:mu
 	propagatingTags map[string]string
 	// the number of finished spans
+	// +checklocks:mu
 	finished int
 	// signifies that the span buffer is full
+	// +checklocks:mu
 	full bool
 	// sampling priority
+	// +checklocks:mu
 	priority *float64
 	// specifies if the sampling priority can be altered
+	// +checklocks:mu
 	locked bool
 	// samplingDecision indicates whether to send the trace to the agent.
 	samplingDecision samplingDecision // +checkatomic
@@ -436,6 +468,7 @@ type trace struct {
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
 	// the trace yet.
+	// Write-once during initialization in newSpanContext, read-only afterward.
 	root *Span
 }
 
@@ -454,7 +487,9 @@ func newTrace() *trace {
 	return &trace{spans: make([]*Span, 0, traceStartSize)}
 }
 
+// +checklocksread:t.mu
 func (t *trace) samplingPriorityLocked() (p int, ok bool) {
+	assert.RWMutexRLocked(&t.mu)
 	if t.priority == nil {
 		return 0, false
 	}
@@ -497,15 +532,13 @@ func (t *trace) setTag(key, value string) {
 	t.setTagLocked(key, value)
 }
 
+// +checklocks:t.mu
 func (t *trace) setTagLocked(key, value string) {
+	assert.RWMutexLocked(&t.mu)
 	if t.tags == nil {
 		t.tags = make(map[string]string, 1)
 	}
 	t.tags[key] = value
-}
-
-func samplerToDM(sampler samplernames.SamplerName) string {
-	return "-" + strconv.Itoa(int(sampler))
 }
 
 // setSamplingPriority sets the sampling priority and the decision maker
@@ -513,7 +546,9 @@ func samplerToDM(sampler samplernames.SamplerName) string {
 //
 // The force parameter is used to bypass the locked sampling decision check
 // when setting the sampling priority. This is used to apply a manual keep or drop decision.
+// +checklocks:t.mu
 func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.SamplerName, force bool) bool {
+	assert.RWMutexLocked(&t.mu)
 	if t.locked && !force {
 		return false
 	}
@@ -533,7 +568,7 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		// the decision maker will be different. So we compare the decision makers as well.
 		// Note that once global rate sampling is deprecated, we no longer need to compare
 		// the DMs. Sampling priority is sufficient to distinguish a change in DM.
-		dm := samplerToDM(sampler)
+		dm := sampler.DecisionMaker()
 		updatedDM := !existed || dm != curDM
 		if updatedDM {
 			t.setPropagatingTagLocked(keyDecisionMaker, dm)
@@ -547,7 +582,9 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 	return updatedPriority
 }
 
+// +checklocks:t.mu
 func (t *trace) setSamplingPriorityLocked(p int, sampler samplernames.SamplerName) bool {
+	assert.RWMutexLocked(&t.mu)
 	return t.setSamplingPriorityLockedWithForce(p, sampler, false)
 }
 
@@ -565,6 +602,7 @@ func (t *trace) setLocked(locked bool) {
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
+// +checklocksignore — Reads sp.metrics during initialization; span not yet shared.
 func (t *trace) push(sp *Span) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -593,7 +631,10 @@ func (t *trace) push(sp *Span) {
 
 // setTraceTagsLocked sets all "trace level" tags on the provided span
 // t must already be locked.
+// +checklocksread:t.mu
+// +checklocks:s.mu
 func (t *trace) setTraceTagsLocked(s *Span) {
+	assert.RWMutexRLocked(&t.mu)
 	assert.RWMutexLocked(&s.mu)
 	for k, v := range t.tags {
 		s.setMetaLocked(k, v)
@@ -601,11 +642,23 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	for k, v := range t.propagatingTags {
 		s.setMetaLocked(k, v)
 	}
-	for k, v := range sharedinternal.GetTracerGitMetadataTags() {
-		s.setMetaLocked(k, v)
-	}
+	updateTracerGitMetadataTags(s)
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMetaLocked(keyTraceID128, s.context.traceID.UpperHex())
+	}
+}
+
+// updateTracerGitMetadataTags updates the tracer git metadata tags on the given span.
+// +checklocks:s.mu
+func updateTracerGitMetadataTags(s *Span) {
+	assert.RWMutexLocked(&s.mu)
+	gitMetadataTags := sharedinternal.GetGitMetadataTags()
+	for ix := range sharedinternal.TracerGitMetadataKeys {
+		pair := sharedinternal.TracerGitMetadataKeys[ix]
+		src, dst := pair[0], pair[1]
+		if v := gitMetadataTags[src]; v != "" {
+			s.setMetaLocked(dst, v)
+		}
 	}
 }
 
@@ -616,7 +669,7 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 //
 // Lock ordering: span.mu -> trace.mu. The caller holds s.mu. This function acquires t.mu.
 // Invariant: The caller MUST hold s.mu.
-// TODO: Add checklocks annotation.
+// +checklocksignore — Caller holds s.mu (cross-struct lock; checklocks can't verify through SpanContext.finish indirection).
 func (t *trace) finishedOneLocked(s *Span) {
 	assert.RWMutexLocked(&s.mu)
 
@@ -746,7 +799,10 @@ func (t *trace) finishedOneLocked(s *Span) {
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
 // tags as applicable for the given span.
+// s.mu must be held for writing.
+// +checklocks:s.mu
 func setPeerService(s *Span, tc TracerConf) {
+	assert.RWMutexLocked(&s.mu)
 	spanKind := s.meta[ext.SpanKind]
 	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 
@@ -829,19 +885,27 @@ func deriveAWSPeerService(sm map[string]string) string {
 	return ""
 }
 
+// hasMetaKeyLocked checks if a key exists in the span's meta map.
+// s.mu must be held for reading.
+// +checklocks:s.mu
+func (s *Span) hasMetaKeyLocked(tag string) bool {
+	assert.RWMutexLocked(&s.mu)
+	_, ok := s.meta[tag]
+	return ok
+}
+
 // setPeerServiceFromSource sets peer.service from the sources determined
 // by the tags on the span. It returns the source tag name that it used for
 // the peer.service value, or the empty string if no valid source tag was available.
+// s.mu must be held for writing.
+// +checklocks:s.mu
 func setPeerServiceFromSource(s *Span) string {
-	has := func(tag string) bool {
-		_, ok := s.meta[tag]
-		return ok
-	}
+	assert.RWMutexLocked(&s.mu)
 	var sources []string
 	useTargetHost := true
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
-	case has("aws_service"):
+	case s.hasMetaKeyLocked("aws_service"):
 		sources = []string{
 			"queuename",
 			"topicname",
@@ -854,16 +918,16 @@ func setPeerServiceFromSource(s *Span) string {
 			ext.CassandraContactPoints,
 		}
 		useTargetHost = false
-	case has(ext.DBSystem):
+	case s.hasMetaKeyLocked(ext.DBSystem):
 		sources = []string{
 			ext.DBName,
 			ext.DBInstance,
 		}
-	case has(ext.MessagingSystem):
+	case s.hasMetaKeyLocked(ext.MessagingSystem):
 		sources = []string{
 			ext.KafkaBootstrapServers,
 		}
-	case has(ext.RPCSystem):
+	case s.hasMetaKeyLocked(ext.RPCSystem):
 		sources = []string{
 			ext.RPCService,
 		}

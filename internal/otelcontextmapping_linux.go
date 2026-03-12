@@ -76,9 +76,7 @@ func CreateOtelProcessContextMapping(data []byte) error {
 	addr := uintptr(unsafe.Pointer(&mappingBytes[0]))
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		header := processContextHeader{
 			Version:     1,
 			PayloadSize: uint32(len(data)),
@@ -86,7 +84,7 @@ func CreateOtelProcessContextMapping(data []byte) error {
 		}
 		copy(mappingBytes[headerSize:], data)
 		copy(mappingBytes[:headerSize], unsafe.Slice((*byte)(unsafe.Pointer(&header)), headerSize))
-	}()
+	})
 	wg.Wait()
 	// write the signature last to ensure that once a process validates the signature, it can safely read the whole data
 	copy(mappingBytes, otelContextSignature)

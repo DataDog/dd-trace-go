@@ -228,10 +228,11 @@ func TestParseSymbol(t *testing.T) {
 }
 
 func BenchmarkCaptureStackTrace(b *testing.B) {
+	// b.Loop() makes this benchmark to fail with "B.Loop called with timer stopped" error.
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(fmt.Sprintf("%v", depth), func(b *testing.B) {
 			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
-			for n := 0; n < b.N; n++ {
+			for range b.N {
 				runtime.KeepAlive(recursiveBench(depth, depth, b))
 			}
 		})
@@ -246,7 +247,7 @@ func BenchmarkCaptureWithRedaction(b *testing.B) {
 			b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
 
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				stack := recursiveBenchRedaction(depth, b)
 				runtime.KeepAlive(stack)
 			}
@@ -262,7 +263,7 @@ func BenchmarkStacktraceComparison(b *testing.B) {
 
 	b.Run("SkipAndCapture", func(b *testing.B) {
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			stack := recursiveBenchSkip(depth, b)
 			runtime.KeepAlive(stack)
 		}
@@ -270,7 +271,7 @@ func BenchmarkStacktraceComparison(b *testing.B) {
 
 	b.Run("CaptureWithRedaction", func(b *testing.B) {
 		b.ResetTimer()
-		for n := 0; n < b.N; n++ {
+		for b.Loop() {
 			stack := recursiveBenchRedaction(depth, b)
 			runtime.KeepAlive(stack)
 		}

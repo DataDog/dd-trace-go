@@ -59,10 +59,10 @@ func (SQLQueryRes) IsResultOf(operation) {}
 
 type (
 	GRPCHandlerArgs struct {
-		Msg interface{}
+		Msg any
 	}
 	GRPCHandlerRes struct {
-		Res interface{}
+		Res any
 	}
 )
 
@@ -74,7 +74,7 @@ type (
 		Buf []byte
 	}
 	JSONParserRes struct {
-		Value interface{}
+		Value any
 		Err   error
 	}
 )
@@ -149,7 +149,7 @@ func TestUsage(t *testing.T) {
 			}
 		}
 
-		jsonBodyValueListener := func(called *int, value *interface{}) dyngo.EventListener[operation, HTTPHandlerArgs] {
+		jsonBodyValueListener := func(called *int, value *any) dyngo.EventListener[operation, HTTPHandlerArgs] {
 			return func(op operation, _ HTTPHandlerArgs) {
 				dyngo.On(op, func(op operation, _ JSONParserArgs) {
 					didBodyRead := false
@@ -186,7 +186,7 @@ func TestUsage(t *testing.T) {
 			rawBodyListener := rawBodyListener(&RawBodyCalled, &RawBodyBuf)
 
 			var (
-				JSONBodyParserValue  interface{}
+				JSONBodyParserValue  any
 				JSONBodyParserCalled int
 			)
 			jsonBodyValueListener := jsonBodyValueListener(&JSONBodyParserCalled, &JSONBodyParserValue)
@@ -203,7 +203,7 @@ func TestUsage(t *testing.T) {
 					Headers: http.Header{"header": []string{"value"}}},
 				HTTPHandlerRes{},
 				func(op dyngo.Operation) {
-					runOperation(op, JSONParserArgs{}, JSONParserRes{Value: []interface{}{"a", "json", "array"}}, func(op dyngo.Operation) {
+					runOperation(op, JSONParserArgs{}, JSONParserRes{Value: []any{"a", "json", "array"}}, func(op dyngo.Operation) {
 						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("my ")}, nil)
 						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("raw ")}, nil)
 						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("bo")}, nil)
@@ -223,7 +223,7 @@ func TestUsage(t *testing.T) {
 
 			// The json body value listener has been called
 			require.Equal(t, 1, JSONBodyParserCalled)
-			require.Equal(t, []interface{}{"a", "json", "array"}, JSONBodyParserValue)
+			require.Equal(t, []any{"a", "json", "array"}, JSONBodyParserValue)
 		})
 
 		t.Run("operation-stacking", func(t *testing.T) {
@@ -243,7 +243,7 @@ func TestUsage(t *testing.T) {
 			rawBodyListener := rawBodyListener(&RawBodyCalled, &RawBodyBuf)
 
 			var (
-				JSONBodyParserValue  interface{}
+				JSONBodyParserValue  any
 				JSONBodyParserCalled int
 			)
 			jsonBodyValueListener := jsonBodyValueListener(&JSONBodyParserCalled, &JSONBodyParserValue)
@@ -303,7 +303,7 @@ func TestUsage(t *testing.T) {
 			rawBodyListener := rawBodyListener(&RawBodyCalled, &RawBodyBuf)
 
 			var (
-				JSONBodyParserValue  interface{}
+				JSONBodyParserValue  any
 				JSONBodyParserCalled int
 			)
 			jsonBodyValueListener := jsonBodyValueListener(&JSONBodyParserCalled, &JSONBodyParserValue)
@@ -317,7 +317,7 @@ func TestUsage(t *testing.T) {
 				root,
 				GRPCHandlerArgs{}, GRPCHandlerRes{},
 				func(op dyngo.Operation) {
-					runOperation(op, JSONParserArgs{}, JSONParserRes{Value: []interface{}{"a", "json", "array"}}, func(op dyngo.Operation) {
+					runOperation(op, JSONParserArgs{}, JSONParserRes{Value: []any{"a", "json", "array"}}, func(op dyngo.Operation) {
 						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("my ")}, nil)
 						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("raw ")}, nil)
 						runOperation(op, BodyReadArgs{}, BodyReadRes{Buf: []byte("bo")}, nil)
@@ -377,7 +377,7 @@ func TestUsage(t *testing.T) {
 		startBarrier.Add(1)
 
 		var calls uint32
-		for g := 0; g < nbGoroutines; g++ {
+		for range nbGoroutines {
 			// Start a goroutine that registers its event listeners to root.
 			// This allows to test the thread-safety of the underlying list of listeners.
 			go func() {
@@ -400,7 +400,7 @@ func TestUsage(t *testing.T) {
 		done.Add(nbGoroutines)
 		started.Add(nbGoroutines)
 		startBarrier.Add(1)
-		for g := 0; g < nbGoroutines; g++ {
+		for range nbGoroutines {
 			// Start a goroutine that emits the events with a new operation. This allows to test the thread-safety of
 			// while emitting events.
 			go func() {
@@ -479,7 +479,7 @@ func TestOperationData(t *testing.T) {
 		dyngo.OnData(op, func(data *int) {
 			*data++
 		})
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			dyngo.EmitData(op, &data)
 		}
 		dyngo.FinishOperation(op, MyOperationRes{})
@@ -493,7 +493,7 @@ func TestOperationData(t *testing.T) {
 			op1 := startOperation(MyOperationArgs{}, nil)
 			dyngo.OnData(op1, listener)
 			op2 := startOperation(MyOperation2Args{}, op1)
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				dyngo.EmitData(op2, &data)
 			}
 			dyngo.FinishOperation(op2, MyOperation2Res{})
@@ -507,7 +507,7 @@ func TestOperationData(t *testing.T) {
 			dyngo.OnData(op1, listener)
 			op2 := startOperation(MyOperation2Args{}, op1)
 			dyngo.OnData(op2, listener)
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				dyngo.EmitData(op2, &data)
 			}
 			dyngo.FinishOperation(op2, MyOperation2Res{})
@@ -739,7 +739,7 @@ func BenchmarkEvents(b *testing.B) {
 
 					b.ReportAllocs()
 					b.ResetTimer()
-					for n := 0; n < b.N; n++ {
+					for b.Loop() {
 						startOperation(MyOperationArgs{}, op)
 					}
 				})
@@ -749,7 +749,7 @@ func BenchmarkEvents(b *testing.B) {
 
 					b.ReportAllocs()
 					b.ResetTimer()
-					for n := 0; n < b.N; n++ {
+					for b.Loop() {
 						leafOp := startOperation(MyOperationArgs{}, op)
 						dyngo.FinishOperation(leafOp, MyOperationRes{})
 					}
@@ -764,14 +764,14 @@ func BenchmarkEvents(b *testing.B) {
 
 		b.Run("start event", func(b *testing.B) {
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				dyngo.On(op, func(operation, MyOperationArgs) {})
 			}
 		})
 
 		b.Run("finish event", func(b *testing.B) {
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				dyngo.OnFinish(op, func(operation, MyOperationRes) {})
 			}
 		})
@@ -797,7 +797,7 @@ func BenchmarkGoAssumptions(b *testing.B) {
 			m := map[string]int{}
 			key := "server.request.address.%d"
 			keys := make([]string, 5)
-			for i := 0; i < len(keys); i++ {
+			for i := range keys {
 				key := fmt.Sprintf(key, i)
 				keys[i] = key
 				m[key] = i
@@ -805,7 +805,7 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
+			for n := range b.N {
 				_ = m[keys[n%len(keys)]]
 			}
 		})
@@ -814,40 +814,40 @@ func BenchmarkGoAssumptions(b *testing.B) {
 			i = i % 5
 			switch i {
 			case 0:
-				return reflect.TypeOf(testS0{})
+				return reflect.TypeFor[testS0]()
 			case 1:
-				return reflect.TypeOf(testS1{})
+				return reflect.TypeFor[testS1]()
 			case 2:
-				return reflect.TypeOf(testS2{})
+				return reflect.TypeFor[testS2]()
 			case 3:
-				return reflect.TypeOf(testS3{})
+				return reflect.TypeFor[testS3]()
 			case 4:
-				return reflect.TypeOf(testS4{})
+				return reflect.TypeFor[testS4]()
 			}
 			panic("oops")
 		}
 
 		b.Run("reflect.Type name keys", func(b *testing.B) {
 			m := map[string]int{}
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				m[getType(i).Name()] = i
 			}
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
+			for n := range b.N {
 				var k string
 				switch n % 5 {
 				case 0:
-					k = reflect.TypeOf(testS0{}).Name()
+					k = reflect.TypeFor[testS0]().Name()
 				case 1:
-					k = reflect.TypeOf(testS1{}).Name()
+					k = reflect.TypeFor[testS1]().Name()
 				case 2:
-					k = reflect.TypeOf(testS2{}).Name()
+					k = reflect.TypeFor[testS2]().Name()
 				case 3:
-					k = reflect.TypeOf(testS3{}).Name()
+					k = reflect.TypeFor[testS3]().Name()
 				case 4:
-					k = reflect.TypeOf(testS4{}).Name()
+					k = reflect.TypeFor[testS4]().Name()
 				}
 				_ = m[k]
 			}
@@ -855,25 +855,25 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 		b.Run("reflect.Type keys", func(b *testing.B) {
 			m := map[reflect.Type]int{}
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				m[getType(i)] = i
 			}
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
+			for n := range b.N {
 				var k reflect.Type
 				switch n % 5 {
 				case 0:
-					k = reflect.TypeOf(testS0{})
+					k = reflect.TypeFor[testS0]()
 				case 1:
-					k = reflect.TypeOf(testS1{})
+					k = reflect.TypeFor[testS1]()
 				case 2:
-					k = reflect.TypeOf(testS2{})
+					k = reflect.TypeFor[testS2]()
 				case 3:
-					k = reflect.TypeOf(testS3{})
+					k = reflect.TypeFor[testS3]()
 				case 4:
-					k = reflect.TypeOf(testS4{})
+					k = reflect.TypeFor[testS4]()
 				}
 				_ = m[k]
 			}
@@ -884,26 +884,26 @@ func BenchmarkGoAssumptions(b *testing.B) {
 				pkgPath, name string
 			}
 			m := map[typeDesc]int{}
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				typ := getType(i)
 				m[typeDesc{typ.PkgPath(), typ.Name()}] = i
 			}
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
+			for n := range b.N {
 				var k reflect.Type
 				switch n % 5 {
 				case 0:
-					k = reflect.TypeOf(testS0{})
+					k = reflect.TypeFor[testS0]()
 				case 1:
-					k = reflect.TypeOf(testS1{})
+					k = reflect.TypeFor[testS1]()
 				case 2:
-					k = reflect.TypeOf(testS2{})
+					k = reflect.TypeFor[testS2]()
 				case 3:
-					k = reflect.TypeOf(testS3{})
+					k = reflect.TypeFor[testS3]()
 				case 4:
-					k = reflect.TypeOf(testS4{})
+					k = reflect.TypeFor[testS4]()
 				}
 				_ = m[typeDesc{k.PkgPath(), k.Name()}]
 			}

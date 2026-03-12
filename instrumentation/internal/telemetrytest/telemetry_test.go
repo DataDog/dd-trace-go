@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -25,12 +26,7 @@ type contribPkg struct {
 var InstrumentationImport = "github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 func (p *contribPkg) hasInstrumentationImport() bool {
-	for _, imp := range p.Imports {
-		if imp == InstrumentationImport {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.Imports, InstrumentationImport)
 }
 
 // TestTelemetryEnabled verifies that the expected contrib packages leverage instrumentation telemetry

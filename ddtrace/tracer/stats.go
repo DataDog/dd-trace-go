@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-agent/pkg/trace/stats"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -114,18 +115,14 @@ func (c *concentrator) Start() {
 		return
 	}
 	c.stop = make(chan struct{})
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	c.wg.Go(func() {
 		tick := time.NewTicker(time.Duration(c.bucketSize) * time.Nanosecond)
 		defer tick.Stop()
 		c.runFlusher(tick.C)
-	}()
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
+	})
+	c.wg.Go(func() {
 		c.runIngester()
-	}()
+	})
 }
 
 // runFlusher runs the flushing loop which sends stats to the underlying transport.
@@ -162,6 +159,7 @@ func (c *concentrator) runIngester() {
 	}
 }
 
+// +checklocksignore — Post-finish: reads finished span fields during stats computation.
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
 	resource := s.resource
 	if c.shouldObfuscate() {
@@ -254,7 +252,17 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	for _, csp := range csps {
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
-		if err := c.cfg.transport.sendStats(csp, obfVersion); err != nil {
+		var err error
+		for attempt := 0; attempt <= c.cfg.sendRetries; attempt++ {
+			err = c.cfg.transport.sendStats(csp, obfVersion)
+			if err == nil {
+				break
+			}
+			if attempt < c.cfg.sendRetries {
+				time.Sleep(c.cfg.internalConfig.RetryInterval())
+			}
+		}
+		if err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
 			log.Error("Error sending stats payload: %s", err.Error())
 		}

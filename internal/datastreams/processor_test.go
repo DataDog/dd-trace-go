@@ -7,6 +7,7 @@ package datastreams
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -137,6 +138,7 @@ func TestProcessor(t *testing.T) {
 			},
 			TracerVersion: version.Tag,
 			Lang:          "go",
+			ProductMask:   productAPM | productDSM,
 		}}, got)
 
 	got = sortedPayloads(p.flush(tp2.Add(bucketDuration)))
@@ -200,6 +202,7 @@ func TestProcessor(t *testing.T) {
 			},
 			TracerVersion: version.Tag,
 			Lang:          "go",
+			ProductMask:   productAPM | productDSM,
 		}}, got)
 
 	t.Run("test_service_name_override", func(t *testing.T) {
@@ -264,6 +267,7 @@ func TestProcessor(t *testing.T) {
 				},
 				TracerVersion: version.Tag,
 				Lang:          "go",
+				ProductMask:   productAPM | productDSM,
 			},
 			"service2": {
 				Env:         "env",
@@ -302,6 +306,7 @@ func TestProcessor(t *testing.T) {
 				},
 				TracerVersion: version.Tag,
 				Lang:          "go",
+				ProductMask:   productAPM | productDSM,
 			},
 		}, got)
 	})
@@ -396,6 +401,151 @@ func TestKafkaLag(t *testing.T) {
 	assert.Equal(t, expectedBacklogs, payloads["service"].Stats[0].Backlogs)
 }
 
+func TestTrackTransaction(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	tp := time.Now().Truncate(bucketDuration)
+
+	p.addTransaction(transactionEntry{
+		transactionID:  "tx-1",
+		checkpointName: "ingested",
+		timestamp:      tp.UnixNano(),
+	})
+	p.addTransaction(transactionEntry{
+		transactionID:  "tx-2",
+		checkpointName: "processed",
+		timestamp:      tp.UnixNano(),
+	})
+	p.addTransaction(transactionEntry{
+		transactionID:  "tx-3",
+		checkpointName: "ingested", // same checkpoint as tx-1; should reuse ID 1
+		timestamp:      tp.UnixNano(),
+	})
+
+	payloads := p.flush(tp.Add(bucketDuration * 2))
+
+	// Transactions are keyed by p.service in tsTypeCurrentBuckets; they show
+	// up in the payload for the service bucket.
+	var found *StatsBucket
+	for _, payload := range payloads {
+		for i := range payload.Stats {
+			if len(payload.Stats[i].Transactions) > 0 {
+				found = &payload.Stats[i]
+				break
+			}
+		}
+	}
+	require.NotNil(t, found, "expected a bucket containing Transactions")
+
+	// Verify two distinct checkpoint IDs were registered.
+	assert.NotEmpty(t, found.TransactionCheckpointIds)
+
+	// Verify transaction blob is non-empty and contains three records.
+	// Each record: 1 (checkpointId) + 8 (timestamp) + 1 (idLen) + len(id)
+	// tx-1: 1+8+1+4 = 14 bytes; tx-2: 1+8+1+4 = 14 bytes; tx-3: 1+8+1+4 = 14 bytes
+	assert.Equal(t, 42, len(found.Transactions))
+
+	// First record: checkpointId=1 ("ingested"), transactionID="tx-1"
+	assert.Equal(t, byte(1), found.Transactions[0], "first checkpoint ID should be 1 (ingested)")
+	// Skip timestamp (bytes 1-8)
+	assert.Equal(t, byte(4), found.Transactions[9], "id length should be 4")
+	assert.Equal(t, "tx-1", string(found.Transactions[10:14]))
+
+	// Third record starts at offset 14+14=28: checkpointId=1 again ("ingested")
+	// Layout: [checkpointId=28][timestamp=29..36][idLen=37][id=38..41]
+	assert.Equal(t, byte(1), found.Transactions[28], "third record should reuse checkpoint ID 1")
+	assert.Equal(t, "tx-3", string(found.Transactions[38:42]))
+}
+
+func TestCheckpointRegistry(t *testing.T) {
+	r := newCheckpointRegistry()
+
+	id1, ok1 := r.getOrAssign("alpha")
+	id2, ok2 := r.getOrAssign("beta")
+	id3, ok3 := r.getOrAssign("alpha") // should return same id as id1
+
+	assert.True(t, ok1)
+	assert.True(t, ok2)
+	assert.True(t, ok3)
+	assert.Equal(t, byte(1), id1)
+	assert.Equal(t, byte(2), id2)
+	assert.Equal(t, id1, id3, "same checkpoint name should return same ID")
+
+	// encodedKeys format: [id][nameLen][name bytes] for each unique name
+	// "alpha": [1][5][a,l,p,h,a], "beta": [2][4][b,e,t,a]
+	expected := []byte{1, 5, 'a', 'l', 'p', 'h', 'a', 2, 4, 'b', 'e', 't', 'a'}
+	assert.Equal(t, expected, r.encodedKeys)
+}
+
+func TestCheckpointRegistryOverflow(t *testing.T) {
+	r := newCheckpointRegistry()
+	// Simulate a full registry by setting nextID to the sentinel boundary.
+	r.nextID = math.MaxUint8
+
+	id, ok := r.getOrAssign("overflow")
+	assert.Equal(t, byte(0), id)
+	assert.False(t, ok, "should refuse to assign when registry is full")
+
+	// Confirm the name was not registered.
+	_, existed := r.nameToID["overflow"]
+	assert.False(t, existed, "name must not be added to nameToID when overflow is detected")
+
+	// A previously registered name should still be returned successfully.
+	r.nextID = 1
+	r.nameToID["existing"] = 1
+	id2, ok2 := r.getOrAssign("existing")
+	assert.True(t, ok2)
+	assert.Equal(t, byte(1), id2)
+}
+
+func TestTransactionBytes(t *testing.T) {
+	ts := int64(1700000000000000000)
+	b := appendTransactionBytes(nil, 3, ts, "my-tx")
+	require.Len(t, b, 1+8+1+5)
+
+	assert.Equal(t, byte(3), b[0])
+
+	var gotTS int64
+	gotTS = int64(uint64(b[1])<<56 | uint64(b[2])<<48 | uint64(b[3])<<40 | uint64(b[4])<<32 |
+		uint64(b[5])<<24 | uint64(b[6])<<16 | uint64(b[7])<<8 | uint64(b[8]))
+	assert.Equal(t, ts, gotTS)
+
+	assert.Equal(t, byte(5), b[9])
+	assert.Equal(t, "my-tx", string(b[10:]))
+}
+
+func TestTrackTransactionViaMethod(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	fixedTime := time.Now().Truncate(bucketDuration)
+	p.timeSource = func() time.Time { return fixedTime }
+
+	// Push via the public method which goes through the fast queue.
+	p.TrackTransaction("tx-abc", "delivered")
+
+	// processInput processes it directly without starting the goroutine.
+	in := p.in.pop()
+	require.NotNil(t, in)
+	assert.Equal(t, pointTypeTransaction, in.typ)
+	assert.Equal(t, "tx-abc", in.transactionEntry.transactionID)
+	assert.Equal(t, "delivered", in.transactionEntry.checkpointName)
+	assert.Equal(t, fixedTime.UnixNano(), in.transactionEntry.timestamp)
+
+	p.processInput(in)
+	payloads := p.flush(fixedTime.Add(bucketDuration * 2))
+
+	var found *StatsBucket
+	for _, payload := range payloads {
+		for i := range payload.Stats {
+			if len(payload.Stats[i].Transactions) > 0 {
+				found = &payload.Stats[i]
+				break
+			}
+		}
+	}
+	require.NotNil(t, found)
+	assert.NotEmpty(t, found.Transactions)
+	assert.NotEmpty(t, found.TransactionCheckpointIds)
+}
+
 type noOpTransport struct{}
 
 // RoundTrip does nothing and returns a dummy response.
@@ -412,13 +562,55 @@ func (t *noOpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+func TestTransactionBytesLongID(t *testing.T) {
+	longID := strings.Repeat("x", 300)
+	b := appendTransactionBytes(nil, 1, 0, longID)
+	// Record layout: [checkpointId uint8][timestamp int64][idLen uint8][id bytes]
+	// ID must be capped at 255 bytes.
+	require.Equal(t, byte(255), b[9], "idLen field should be capped at 255")
+	require.Len(t, b, 1+8+1+255, "total record length should reflect the 255-byte cap")
+}
+
+func TestCheckpointRegistryLongName(t *testing.T) {
+	r := newCheckpointRegistry()
+	longName := strings.Repeat("n", 300)
+	id, ok := r.getOrAssign(longName)
+	assert.True(t, ok)
+	assert.Equal(t, byte(1), id)
+	// Encoded layout: [id uint8][nameLen uint8][name bytes].
+	// Name must be truncated to 255 bytes.
+	require.Len(t, r.encodedKeys, 1+1+255)
+	assert.Equal(t, byte(255), r.encodedKeys[1], "nameLen field should be capped at 255")
+}
+
+func TestAddTransactionFullRegistry(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	// Fill the registry to capacity so getOrAssign returns (0, false).
+	p.checkpoints.nextID = math.MaxUint8
+
+	ts := time.Now().Truncate(bucketDuration)
+	p.addTransaction(transactionEntry{
+		transactionID:  "tx-1",
+		checkpointName: "overflow",
+		timestamp:      ts.UnixNano(),
+	})
+
+	// The bucket should exist but carry no transaction bytes.
+	payloads := p.flush(ts.Add(bucketDuration * 2))
+	for _, payload := range payloads {
+		for _, bucket := range payload.Stats {
+			assert.Empty(t, bucket.Transactions, "no transactions should be recorded when the registry is full")
+		}
+	}
+}
+
 func BenchmarkSetCheckpoint(b *testing.B) {
 	client := &http.Client{
 		Transport: &noOpTransport{},
 	}
 	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
 	p.Start()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
 	}
 	p.Stop()
@@ -432,7 +624,7 @@ func BenchmarkSetCheckpointProcessTags(b *testing.B) {
 	}
 	p := NewProcessor(&statsd.NoOpClientDirect{}, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, client)
 	p.Start()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{PayloadSize: 1000}, "type:edge-1", "direction:in", "type:kafka", "topic:topic1", "group:group1")
 	}
 	p.Stop()

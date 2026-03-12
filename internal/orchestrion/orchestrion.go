@@ -10,7 +10,7 @@ package orchestrion
 //orchestrion:enabled
 var enabled = false
 
-// The version of the orchestrion binary used to build the current binray, or
+// The version of the orchestrion binary used to build the current binary, or
 // blank if the current binary was not built using orchestrion.
 //
 //orchestrion:version

@@ -29,9 +29,14 @@ func WithExecutionTraced(ctx context.Context) context.Context {
 }
 
 // WithExecutionNotTraced marks that the context is *not* covered by an
-// execution trace task.  This is intended to prevent child spans (which inherit
+// execution trace task. This is intended to prevent child spans (which inherit
 // information from ctx) from being considered covered by a task, when an
 // integration may create its own child span with its own execution trace task.
+//
+// When orchestrion is enabled, this pushes a value onto the per-goroutine GLS
+// stack (unless the fast path is taken because no prior traced value exists).
+// The caller must call PopExecutionTraced when the scope ends to avoid leaking
+// GLS entries on long-lived goroutines.
 func WithExecutionNotTraced(ctx context.Context) context.Context {
 	if orchestrion.WrapContext(ctx).Value(executionTracedKey{}) == nil {
 		// Fast path: if it wasn't marked before, we don't need to wrap
@@ -41,9 +46,35 @@ func WithExecutionNotTraced(ctx context.Context) context.Context {
 	return orchestrion.CtxWithValue(ctx, executionTracedKey{}, false)
 }
 
+// PopExecutionTraced pops the top executionTracedKey value from the GLS
+// context stack. Must be called to pair with WithExecutionTraced or
+// WithExecutionNotTraced when the associated scope ends.
+func PopExecutionTraced() {
+	orchestrion.GLSPopValue(executionTracedKey{})
+}
+
+// ScopedExecutionNotTraced marks ctx as not covered by an execution trace task
+// and returns a cleanup function that pops the GLS entry. Unlike using
+// WithExecutionNotTraced + PopExecutionTraced separately, the returned cleanup
+// is goroutine-safe: it captures the pushing goroutine's GLS contextStack
+// pointer and only pops if called from the same goroutine. This makes it safe
+// for use with spans that may be finished on a different goroutine than the one
+// that created them.
+func ScopedExecutionNotTraced(ctx context.Context) (context.Context, func()) {
+	newCtx := WithExecutionNotTraced(ctx)
+	if newCtx == ctx {
+		// Fast path: nothing was pushed, no cleanup needed.
+		return ctx, glsNoop
+	}
+	return newCtx, orchestrion.GLSPopFunc(executionTracedKey{})
+}
+
+var glsNoop = func() {}
+
 // IsExecutionTraced returns whether ctx is associated with an execution trace
-// task, as indicated via WithExecutionTraced
+// task, as indicated via WithExecutionTraced.
 func IsExecutionTraced(ctx context.Context) bool {
 	v := orchestrion.WrapContext(ctx).Value(executionTracedKey{})
-	return v != nil && v.(bool)
+	b, ok := v.(bool)
+	return ok && b
 }

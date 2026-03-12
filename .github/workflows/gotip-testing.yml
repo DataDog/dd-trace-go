@@ -1,8 +1,8 @@
 name: Gotip Testing
 
 on:
-  # schedule: # nightly
-  #   - cron: "0 0 * * *"
+  schedule: # nightly
+    - cron: "0 0 * * *"
   workflow_dispatch: { } # manually
 
 env:
@@ -11,9 +11,19 @@ env:
 jobs:
   test-tip:
     runs-on: ubuntu-latest
+    services:
+      datadog-agent:
+        image: datadog/agent-dev:master-py3
+        env:
+          DD_HOSTNAME: "github-actions-worker"
+          DD_APM_ENABLED: true
+          DD_BIND_HOST: "0.0.0.0"
+          DD_API_KEY: "${{ secrets.DD_API_KEY }}"
+          DD_TEST_AGENT_HOST: "localhost"
+          DD_TEST_AGENT_PORT: 9126
     steps:
       - name: Checkout
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.ref }}
           repository: DataDog/dd-trace-go
@@ -30,10 +40,7 @@ jobs:
         run: |-
           ./scripts/install_tools.sh --bin-dir ${{ github.workspace }}/bin
           gotip download
-          gotip get -u -t github.com/DataDog/datadog-agent@main
-          gotip mod tidy
-          find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && gotip mod tidy && popd; done
-      
+
       - name: Run tests
         env:
           DD_APPSEC_WAF_TIMEOUT: 1h
@@ -52,5 +59,7 @@ jobs:
 
       - name: Upload Coverage
         if: always()
-        shell: bash
-        run: bash <(curl -s https://codecov.io/bash) -t ${{ secrets.CODECOV_TOKEN }}
+        continue-on-error: true
+        uses: ./.github/actions/codecov-upload
+        with:
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}

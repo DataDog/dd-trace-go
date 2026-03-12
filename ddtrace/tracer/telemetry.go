@@ -36,6 +36,8 @@ func startTelemetry(c *config) telemetry.Client {
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
+	// Read enabled value and origin atomically to prevent TOCTOU bugs
+	traceEnabled, traceEnabledOrigin := c.enabled.getCurrentAndOrigin()
 	telemetryConfigs := []telemetry.Configuration{
 		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
@@ -58,7 +60,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
-		{Name: "trace_enabled", Value: c.enabled.current, Origin: c.enabled.cfgOrigin},
+		{Name: "trace_enabled", Value: traceEnabled, Origin: traceEnabledOrigin},
 		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
 		c.traceSampleRate.toTelemetry(),
 		c.headerAsTags.toTelemetry(),
@@ -109,7 +111,14 @@ func startTelemetry(c *config) telemetry.Client {
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 	cfg := telemetry.ClientConfig{
 		HTTPClient: c.httpClient,
-		AgentURL:   c.agentURL.String(),
+	}
+	// Only omit the agent URL when the agent was reachable but explicitly does not
+	// expose the telemetry proxy endpoint (e.g. the Datadog Lambda extension).
+	// When the agent was unreachable at startup, we still set the URL so that
+	// telemetry is attempted rather than silently dropped.
+	// When the spans are emitted on stdout it means there is no agent at all in the env.
+	if (!c.agent.reachable || c.agent.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
+		cfg.AgentURL = c.agentURL.String()
 	}
 	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
 		cfg.APIKey = env.Get("DD_API_KEY")

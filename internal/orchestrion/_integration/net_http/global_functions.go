@@ -27,10 +27,11 @@ func (tc *TestCaseGlobalFunctions) Setup(ctx context.Context, t *testing.T) {
 }
 
 func (tc *TestCaseGlobalFunctions) Run(_ context.Context, t *testing.T) {
-	cl := newHttpClient(tc.srv.Addr)
+	cl := newHTTPClient(tc.srv.Addr)
 
 	resp, err := cl.Get("/")
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -38,7 +39,7 @@ type httpClient struct {
 	serverHost string
 }
 
-func newHttpClient(serverHost string) *httpClient {
+func newHTTPClient(serverHost string) *httpClient {
 	return &httpClient{
 		serverHost: serverHost,
 	}

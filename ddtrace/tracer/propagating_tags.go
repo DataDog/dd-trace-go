@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -53,7 +54,9 @@ func (t *trace) setTraceSourcePropagatingTag(key string, value internal.TraceSou
 
 // setPropagatingTagLocked sets the key/value pair as a trace propagating tag.
 // Not safe for concurrent use, setPropagatingTag should be used instead in that case.
+// +checklocks:t.mu
 func (t *trace) setPropagatingTagLocked(key, value string) {
+	assert.RWMutexLocked(&t.mu)
 	if t.propagatingTags == nil {
 		t.propagatingTags = make(map[string]string, 1)
 	}

@@ -216,7 +216,7 @@ func TestConcurrentSetAttributes(_ *testing.T) {
 	defer span.End()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		i := i
 		go func(_ int) {
@@ -238,7 +238,7 @@ func BenchmarkOTelApiWithNoTags(b *testing.B) {
 
 	b.ResetTimer()
 	b.Run("otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, sp := tr.Start(context.Background(), testData.op)
 			sp.End()
 		}
@@ -248,7 +248,7 @@ func BenchmarkOTelApiWithNoTags(b *testing.B) {
 	defer tracer.Stop()
 	b.ResetTimer()
 	b.Run("datadog_otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.op)
 			sp.Finish()
 		}
@@ -267,7 +267,7 @@ func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 
 	b.ResetTimer()
 	b.Run("otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, sp := tr.Start(context.Background(), testData.oldOp)
 			sp.SetAttributes(attribute.String(testData.tagKey, testData.tagValue))
 			sp.SetName(testData.newOp)
@@ -279,7 +279,7 @@ func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 	defer tracer.Stop()
 	b.ResetTimer()
 	b.Run("datadog_otel_api", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.oldOp)
 			sp.SetTag(testData.tagKey, testData.tagValue)
 			sp.SetOperationName(testData.newOp)
@@ -295,23 +295,21 @@ func BenchmarkOTelConcurrentTracing(b *testing.B) {
 	tr := otel.Tracer("")
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		wg := sync.WaitGroup{}
-		for i := 0; i < 100; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range 100 {
+			wg.Go(func() {
 				ctx := context.Background()
 				newCtx, parent := tr.Start(ctx, "parent")
 				parent.SetAttributes(attribute.String("ServiceName", "pylons"),
 					attribute.String("ResourceName", "/"))
 				defer parent.End()
 
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					_, child := tr.Start(newCtx, "child")
 					child.End()
 				}
-			}()
+			})
 		}
 	}
 }

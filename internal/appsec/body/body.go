@@ -13,9 +13,10 @@ import (
 	"mime"
 	"strings"
 
+	"github.com/DataDog/go-libddwaf/v4"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body/json"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/go-libddwaf/v4"
 )
 
 // IsBodySupported checks if the body should be analyzed based on content type

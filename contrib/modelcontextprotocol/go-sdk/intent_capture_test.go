@@ -9,12 +9,13 @@ import (
 	"context"
 	"testing"
 
-	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
 
 func TestIntentCapture(t *testing.T) {

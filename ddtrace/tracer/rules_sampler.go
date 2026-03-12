@@ -17,7 +17,6 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -187,6 +186,7 @@ func (sr *SamplingRule) EqualsFalseNegative(other *SamplingRule) bool {
 }
 
 // match returns true when the span's details match all the expected values in the rule.
+// +checklocksignore — Called from Finish() before s.finish(); span fields read-only at this point.
 func (sr *SamplingRule) match(s *Span) bool {
 	if sr.Service != nil && !sr.Service.MatchString(s.service) {
 		return false
@@ -342,7 +342,7 @@ func SpanSamplingRules(rules ...Rule) []SamplingRule {
 // Its value is the number of spans to sample per second.
 // Spans that matched the rules but exceeded the rate limit are not sampled.
 type traceRulesSampler struct {
-	m          locking.RWMutex
+	mu         locking.RWMutex
 	rules      []SamplingRule // the rules to match spans with
 	globalRate float64        // a rate to apply when no rules match a span
 	limiter    *rateLimiter   // used to limit the volume of spans sampled
@@ -359,8 +359,8 @@ func newTraceRulesSampler(rules []SamplingRule, traceSampleRate, rateLimitPerSec
 }
 
 func (rs *traceRulesSampler) enabled() bool {
-	rs.m.RLock()
-	defer rs.m.RUnlock()
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
 	return len(rs.rules) > 0 || !math.IsNaN(rs.globalRate)
 }
 
@@ -389,8 +389,8 @@ func (rs *traceRulesSampler) setGlobalSampleRate(rate float64) bool {
 		log.Warn("Ignoring trace sample rate %f: value out of range [0,1]", rate)
 		return false
 	}
-	rs.m.Lock()
-	defer rs.m.Unlock()
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
 	if math.IsNaN(rs.globalRate) && math.IsNaN(rate) {
 		// NaN is not considered equal to any number, including itself.
 		// It should be compared with math.IsNaN
@@ -421,9 +421,9 @@ func (rs *traceRulesSampler) sampleGlobalRate(span *Span) bool {
 		return false
 	}
 
-	rs.m.RLock()
+	rs.mu.RLock()
 	rate := rs.globalRate
-	rs.m.RUnlock()
+	rs.mu.RUnlock()
 
 	if math.IsNaN(rate) {
 		return false
@@ -449,9 +449,9 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 	}
 
 	var matched bool
-	rs.m.RLock()
+	rs.mu.RLock()
 	rate := rs.globalRate
-	rs.m.RUnlock()
+	rs.mu.RUnlock()
 	sampler := samplernames.RuleRate
 	for _, rule := range rs.rules {
 		if rule.match(span) {
@@ -477,24 +477,11 @@ func (rs *traceRulesSampler) sampleRules(span *Span) bool {
 }
 
 func (rs *traceRulesSampler) applyRate(span *Span, rate float64, now time.Time, sampler samplernames.SamplerName) {
-	// Use the helper method to apply the rate and execute sampling logic with the lock held
-	span.applyRateWithLock(rate, func() {
-		// Set the Knuth sampling rate tag when trace sampling rules are applied
-		span.setMetaLocked(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
-
-		if !sampledByRate(span.traceID, rate) {
-			span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
-			return
-		}
-
-		sampled, limiterRate := rs.limiter.allowOne(now)
-		if sampled {
-			span.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
-		} else {
-			span.setSamplingPriorityLocked(ext.PriorityUserReject, sampler)
-		}
-		span.setMetricLocked(keyRulesSamplerLimiterRate, limiterRate)
-	})
+	var limiter *rateLimiter
+	if rs != nil {
+		limiter = rs.limiter
+	}
+	span.applyTraceRuleSampling(rate, sampler, limiter, now)
 }
 
 // limit returns the rate limit set in the rules sampler, controlled by DD_TRACE_RATE_LIMIT, and
@@ -547,6 +534,7 @@ func (rs *singleSpanRulesSampler) enabled() bool {
 // apply uses the sampling rules to determine the sampling rate for the
 // provided span. If the rules don't match, then it returns false and the span is not
 // modified.
+// +checklocksignore — Called on finished spans during trace flushing.
 func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 	for _, rule := range rs.rules {
 		if rule.match(span) {
@@ -573,12 +561,18 @@ func (rs *singleSpanRulesSampler) apply(span *Span) bool {
 type rateLimiter struct {
 	limiter *rate.Limiter
 
-	mu          locking.Mutex // guards below fields
-	prevTime    time.Time     // time at which prevAllowed and prevSeen were set
-	allowed     float64       // number of spans allowed in the current period
-	seen        float64       // number of spans seen in the current period
-	prevAllowed float64       // number of spans allowed in the previous period
-	prevSeen    float64       // number of spans seen in the previous period
+	// guards below fields
+	mu locking.Mutex
+	// time at which prevAllowed and prevSeen were set
+	prevTime time.Time // +checklocks:mu
+	// number of spans allowed in the current period
+	allowed float64 // +checklocks:mu
+	// number of spans seen in the current period
+	seen float64 // +checklocks:mu
+	// number of spans allowed in the previous period
+	prevAllowed float64 // +checklocks:mu
+	// number of spans seen in the previous period
+	prevSeen float64 // +checklocks:mu
 }
 
 // allowOne returns the rate limiter's decision to allow the span to be sampled, and the

@@ -10,6 +10,7 @@ import (
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/pattern"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"

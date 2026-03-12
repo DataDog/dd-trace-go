@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/goleak"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
@@ -37,7 +39,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"go.uber.org/goleak"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -118,6 +120,26 @@ loop:
 	}
 }
 
+// noopRoundTripper is an http.RoundTripper that immediately returns 404 for all
+// requests without performing any network I/O. Used inside synctest bubbles to
+// prevent DNS resolution and TCP connects from violating the bubble boundary.
+type noopRoundTripper struct{}
+
+func (noopRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusNotFound,
+		Body:       io.NopCloser(strings.NewReader("")),
+	}, nil
+}
+
+// withNoopInfoHTTPClient returns a StartOption that provides an HTTP client with
+// a mock transport. This prevents the /info agent-discovery request from doing
+// any DNS resolution or network I/O inside a synctest bubble, while still
+// allowing the tracer to use agentTraceWriter (unlike WithLambdaMode).
+func withNoopInfoHTTPClient() StartOption {
+	return WithHTTPClient(&http.Client{Transport: noopRoundTripper{}})
+}
+
 // setLogWriter sets the io.Writer that any new logTraceWriter will write to and returns a function
 // which will return the io.Writer to its original value.
 func setLogWriter(w io.Writer) func() {
@@ -146,10 +168,10 @@ func TestTracerCleanStop(t *testing.T) {
 	n := 5000
 
 	wg.Add(3)
-	for j := 0; j < 3; j++ {
+	for range 3 {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < n; i++ {
+			for range n {
 				span := StartSpan("test.span")
 				child := StartSpan("child.span", ChildOf(span.Context()))
 				time.Sleep(time.Millisecond)
@@ -161,22 +183,18 @@ func TestTracerCleanStop(t *testing.T) {
 	}
 
 	defer setLogWriter(io.Discard)()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < n; i++ {
+	wg.Go(func() {
+		for range n {
 			// Lambda mode is used to avoid the startup cost associated with agent discovery.
 			Start(withTransport(transport), WithLambdaMode(true), withNoopStats())
 			time.Sleep(time.Millisecond)
 			Start(withTransport(transport), WithLambdaMode(true), WithSamplerRate(0.99), withNoopStats())
 			Start(withTransport(transport), WithLambdaMode(true), WithSamplerRate(0.99), withNoopStats())
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < n; i++ {
+	wg.Go(func() {
+		for range n {
 			Stop()
 			Stop()
 			Stop()
@@ -185,7 +203,7 @@ func TestTracerCleanStop(t *testing.T) {
 			Stop()
 			Stop()
 		}
-	}()
+	})
 
 	wg.Wait()
 	Stop()
@@ -601,9 +619,9 @@ func TestSamplingDecision(t *testing.T) {
 		defer stop()
 		tracer.config.serviceName = "test_service"
 		var spans []*Span
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			s := tracer.StartSpan(fmt.Sprintf("name_%d", i))
-			for j := 0; j < 9; j++ {
+			for j := range 9 {
 				child := tracer.newChildSpan(fmt.Sprintf("name_%d_%d", i, j), s)
 				child.Finish()
 				spans = append(spans, child)
@@ -640,9 +658,9 @@ func TestSamplingDecision(t *testing.T) {
 		defer stop()
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			s := tracer.StartSpan("name_1")
-			for i := 0; i < 9; i++ {
+			for range 9 {
 				child := tracer.StartSpan("name_2", ChildOf(s.context))
 				child.Finish()
 				spans = append(spans, child)
@@ -675,9 +693,9 @@ func TestSamplingDecision(t *testing.T) {
 		defer stop()
 		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			s := tracer.StartSpan("name_1")
-			for i := 0; i < 9; i++ {
+			for range 9 {
 				child := tracer.StartSpan("name_2", ChildOf(s.context))
 				child.Finish()
 				spans = append(spans, child)
@@ -1055,7 +1073,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	defer stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &SpanContext{
-		traceID: root.context.TraceIDBytes(),
+		traceID: root.context.traceID,
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}
@@ -1071,7 +1089,7 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	assert.Nil(err)
 	root := newBasicSpan("web.request")
 	spanCtx := &SpanContext{
-		traceID: root.context.TraceIDBytes(),
+		traceID: root.context.traceID,
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}
@@ -1105,7 +1123,7 @@ func TestTracerInjectConcurrency(t *testing.T) {
 	defer span.Finish()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		wg.Add(1)
 		i := i
 		go func(val int) {
@@ -1415,7 +1433,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 
 	count := payloadQueueSize / 3
 
-	for i := 0; i < count; i++ {
+	for range count {
 		span0 := tracer0.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
 		span0.Finish()
 		span1 := tracer1.StartSpan("pylons.request", SpanType("test"), ServiceName("pylons"), ResourceName("/"))
@@ -1521,31 +1539,33 @@ func TestTracerConcurrentMultipleSpans(t *testing.T) {
 }
 
 func TestTracerAtomicFlush(t *testing.T) {
-	assert := assert.New(t)
-	tracer, transport, flush, stop, err := startTestTracer(t)
-	assert.Nil(err)
-	defer stop()
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, transport, flush, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
+		assert.Nil(err)
+		defer stop()
 
-	// Make sure we don't flush partial bits of traces
-	root := tracer.newRootSpan("pylons.request", "pylons", "/")
-	span := tracer.newChildSpan("redis.command", root)
-	span1 := tracer.newChildSpan("redis.command.1", span)
-	span2 := tracer.newChildSpan("redis.command.2", span)
-	span.Finish()
-	span1.Finish()
-	span2.Finish()
+		// Make sure we don't flush partial bits of traces
+		root := tracer.newRootSpan("pylons.request", "pylons", "/")
+		span := tracer.newChildSpan("redis.command", root)
+		span1 := tracer.newChildSpan("redis.command.1", span)
+		span2 := tracer.newChildSpan("redis.command.2", span)
+		span.Finish()
+		span1.Finish()
+		span2.Finish()
 
-	flush(-1)
-	time.Sleep(100 * time.Millisecond)
-	traces := transport.Traces()
-	assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
+		flush(-1)
+		synctest.Wait() // wait for writer to process tick and find no complete trace
+		traces := transport.Traces()
+		assert.Len(traces, 0, "nothing should be flushed now as span2 is not finished yet")
 
-	root.Finish()
+		root.Finish()
 
-	flush(1)
-	traces = transport.Traces()
-	assert.Len(traces, 1)
-	assert.Len(traces[0], 4, "all spans should show up at once")
+		flush(1)
+		traces = transport.Traces()
+		assert.Len(traces, 1)
+		assert.Len(traces[0], 4, "all spans should show up at once")
+	})
 }
 
 // TestTracerTraceMaxSize tests a bug that was encountered in environments
@@ -1576,22 +1596,18 @@ func TestTracerTraceMaxSize(t *testing.T) {
 	spans[4] = StartSpan("span4", ChildOf(spans[0].Context()))
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 5000; i++ {
+	wg.Go(func() {
+		for i := range 5000 {
 			spans[1].SetTag(strconv.Itoa(i), 1)
 			spans[2].SetTag(strconv.Itoa(i), 1)
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		spans[0].Finish()
 		spans[3].Finish()
 		spans[4].Finish()
-	}()
+	})
 
 	wg.Wait()
 }
@@ -1609,7 +1625,7 @@ func TestTracerRace(t *testing.T) {
 
 	// Trying to be quite brutal here, firing lots of concurrent things, finishing in
 	// different orders, and modifying spans after creation.
-	for n := 0; n < total; n++ {
+	for n := range total {
 		i := n // keep local copy
 		odd := (i % 2) != 0
 		go func() {
@@ -1704,32 +1720,23 @@ func TestTracerRace(t *testing.T) {
 // be using forceFlush() to make sure things are really sent to transport.
 // Here, we just wait until things show up, as we would do with a real program.
 func TestWorker(t *testing.T) {
-	tracer, transport, flush, stop, err := startTestTracer(t)
-	assert.Nil(t, err)
-	defer stop()
+	synctest.Test(t, func(t *testing.T) {
+		tracer, transport, flush, stop, err := startTestTracer(t, withNoopInfoHTTPClient(), withNoopStats())
+		assert.Nil(t, err)
+		defer stop()
 
-	n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
-	for i := 0; i < n; i++ {
-		root := tracer.newRootSpan("pylons.request", "pylons", "/")
-		child := tracer.newChildSpan("redis.command", root)
-		child.Finish()
-		root.Finish()
-	}
-
-	flush(-1)
-	timeout := time.After(2 * time.Second * timeMultiplicator)
-loop:
-	for {
-		select {
-		case <-timeout:
-			t.Fatalf("timed out waiting, got %d < %d", transport.Len(), payloadQueueSize)
-		default:
-			if transport.Len() >= payloadQueueSize {
-				break loop
-			}
-			time.Sleep(10 * time.Millisecond)
+		n := payloadQueueSize * 10 // put more traces than the chan size, on purpose
+		for range n {
+			root := tracer.newRootSpan("pylons.request", "pylons", "/")
+			child := tracer.newChildSpan("redis.command", root)
+			child.Finish()
+			root.Finish()
 		}
-	}
+
+		flush(-1)
+		synctest.Wait() // wait for writer to process the tick and flush queued traces
+		assert.GreaterOrEqual(t, transport.Len(), payloadQueueSize)
+	})
 }
 
 func TestPushPayload(t *testing.T) {
@@ -1781,7 +1788,7 @@ func TestPushTrace(t *testing.T) {
 	assert.Equal(&chunk{spans: trace}, t0)
 
 	many := payloadQueueSize * 2
-	for i := 0; i < many; i++ {
+	for i := range many {
 		tracer.pushChunk(&chunk{spans: make([]*Span, i)})
 	}
 	assert.Len(tracer.out, payloadQueueSize)
@@ -2147,19 +2154,17 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 	defer stop()
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		wg := sync.WaitGroup{}
-		for i := 0; i < 100; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range 100 {
+			wg.Go(func() {
 				parent := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 				defer parent.Finish()
 
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					tracer.StartSpan("redis.command", ChildOf(parent.Context())).Finish()
 				}
-			}()
+			})
 		}
 		wg.Wait()
 	}
@@ -2212,11 +2217,12 @@ func genBigTraces(b *testing.B) {
 		}
 	}()
 
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		for i := 0; i < 10; i++ {
+	for range b.N {
+		for range 10 {
 			parent := tracer.StartSpan("pylons.request", ResourceName("/"))
-			for i := 0; i < 10_000; i++ {
+			for range 10_000 {
 				sp := tracer.StartSpan("redis.command", ChildOf(parent.Context()))
 				sp.SetTag("someKey", "some much larger value to create some fun memory usage here")
 				sp.Finish()
@@ -2251,8 +2257,9 @@ func BenchmarkTracerAddSpans(b *testing.B) {
 	assert.Nil(b, err)
 	defer stop()
 
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for range b.N { //nolint:modernize
 		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
 		span.Finish()
 	}
@@ -2267,7 +2274,7 @@ func BenchmarkStartSpan(b *testing.B) {
 	ctx := ContextWithSpan(context.TODO(), root)
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		s, ok := SpanFromContext(ctx)
 		if !ok {
 			b.Fatal("no span")
@@ -2284,7 +2291,7 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 	var wg sync.WaitGroup
 	var wgready sync.WaitGroup
 	start := make(chan struct{})
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Add(1)
 		wgready.Add(1)
 		go func() {
@@ -2293,7 +2300,7 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 			ctx := ContextWithSpan(context.TODO(), root)
 			wgready.Done()
 			<-start
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				s, ok := SpanFromContext(ctx)
 				if !ok {
 					b.Error("no span")
@@ -2311,7 +2318,7 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 
 func BenchmarkGenSpanID(b *testing.B) {
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		generateSpanID(0)
 	}
 }
@@ -2605,13 +2612,13 @@ func TestUserMonitoring(t *testing.T) {
 
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 10000; i++ {
+			for range 10000 {
 				SetUser(root, "test")
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			for i := 0; i < 10000; i++ {
+			for range 10000 {
 				tr.StartSpan("test", ChildOf(root.Context())).Finish()
 			}
 		}()
@@ -2627,13 +2634,14 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 	assert.Nil(b, err)
 	defer stop()
 
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		span := tracer.StartSpan("test")
 		span.Finish(StackFrames(64, 0))
 	}
 }
 
 func BenchmarkSingleSpanRetention(b *testing.B) {
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("no-rules", func(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b)
 		assert.Nil(b, err)
@@ -2643,9 +2651,9 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			span := tracer.StartSpan("name_1")
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
 				child.Finish()
 			}
@@ -2663,13 +2671,13 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			span := tracer.StartSpan("name_1")
-			for i := 0; i < 50; i++ {
+			for range 50 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
 				child.Finish()
 			}
-			for i := 0; i < 50; i++ {
+			for range 50 {
 				child := tracer.StartSpan("name", ChildOf(span.context))
 				child.Finish()
 			}
@@ -2687,9 +2695,9 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 		tracer.prioritySampling.defaultRate = 0
 		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			span := tracer.StartSpan("name_1")
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				child := tracer.StartSpan("name_2", ChildOf(span.context))
 				child.Finish()
 			}
@@ -2837,20 +2845,16 @@ func TestPPROFLabelRootSpanRace(t *testing.T) {
 	defer stop()
 	parent := tracer.StartSpan("parent")
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 1000; i++ {
+	wg.Go(func() {
+		for range 1000 {
 			tracer.StartSpan("child", ChildOf(parent.Context()))
 		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 1000; i++ {
+	})
+	wg.Go(func() {
+		for range 1000 {
 			parent.SetTag(ext.ResourceName, "x")
 		}
-	}()
+	})
 	wg.Wait()
 }
 
@@ -2944,22 +2948,18 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "0.01") // Set aggresive poll interval
 
 	// Goroutine 1: Continuously start the tracer
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+	wg.Go(func() {
+		for range iterations {
 			Start()
 		}
-	}()
+	})
 
 	// Goroutine 2: Continuously stop the tracer
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+	wg.Go(func() {
+		for range iterations {
 			Stop()
 		}
-	}()
+	})
 
 	// Wait for both goroutines to complete
 	wg.Wait()

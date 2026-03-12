@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"net/url"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -101,54 +104,50 @@ type Config struct {
 	featureFlags map[string]struct{}
 	// retryInterval is the interval between agent connection retries. It has no effect if sendRetries is not set
 	retryInterval time.Duration
+	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
+	logsOTelEnabled bool
 }
-
-// HOT PATH NOTE:
-// Some Config accessors may be called on hot paths (e.g., span start/finish, partial flush logic).
-// If benchmarks regress, ensure getters are efficient and do not:
-// - copy whole maps/slices on every call (prefer single-key lookup helpers like ServiceMapping/HasFeature), or
-// - take multiple lock/unlock pairs to read related fields (prefer a combined getter under one RLock, like PartialFlushEnabled()).
-// Also consider avoiding `defer` in getters that are executed per-span in tight loops.
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
 func loadConfig() *Config {
 	cfg := new(Config)
+	p := provider.New()
 
 	// TODO: Use defaults from config json instead of hardcoding them here
-	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
-	cfg.debug = provider.getBool("DD_TRACE_DEBUG", false)
-	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", true)
-	cfg.serviceName = provider.getString("DD_SERVICE", "")
-	cfg.version = provider.getString("DD_VERSION", "")
-	cfg.env = provider.getString("DD_ENV", "")
-	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
-	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
-	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
-	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
-	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
-	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
-	cfg.peerServiceMappings = provider.getMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
-	cfg.debugAbandonedSpans = provider.getBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
-	cfg.partialFlushMinSpans = provider.getIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
-	cfg.partialFlushEnabled = provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
-	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
-	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	cfg.globalSampleRate = provider.getFloat("DD_TRACE_SAMPLE_RATE", 0.0)
-	cfg.ciVisibilityEnabled = provider.getBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
-	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
-	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
-	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
-	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
-	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
-	cfg.retryInterval = provider.getDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
+	cfg.agentURL = p.GetURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
+	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
+	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
+	cfg.serviceName = p.GetString("DD_SERVICE", "")
+	cfg.version = p.GetString("DD_VERSION", "")
+	cfg.env = p.GetString("DD_ENV", "")
+	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil)
+	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
+	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
+	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
+	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
+	cfg.spanAttributeSchemaVersion = p.GetInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
+	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	cfg.peerServiceMappings = p.GetMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
+	cfg.debugAbandonedSpans = p.GetBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+	cfg.spanTimeout = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
+	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
+	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
+	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
+	cfg.dynamicInstrumentationEnabled = p.GetBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
+	cfg.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
+	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
+	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
+	cfg.globalSampleRate = p.GetFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
+	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
+	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
+	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
-	if featuresStr := provider.getString("DD_TRACE_FEATURES", ""); featuresStr != "" {
+	if featuresStr := p.GetString("DD_TRACE_FEATURES", ""); featuresStr != "" {
 		for _, feat := range strings.FieldsFunc(featuresStr, func(r rune) bool {
 			return r == ',' || r == ' '
 		}) {
@@ -170,7 +169,7 @@ func loadConfig() *Config {
 	// If the hostname lookup fails, an error is set and the hostname is not reported
 	// The tracer will fail to start if the hostname lookup fails when it is explicitly configured
 	// to report the hostname.
-	if provider.getBool("DD_TRACE_REPORT_HOSTNAME", false) {
+	if p.GetBool("DD_TRACE_REPORT_HOSTNAME", false) {
 		hostname, err := os.Hostname()
 		if err != nil {
 			log.Warn("unable to look up hostname: %s", err.Error())
@@ -203,6 +202,27 @@ func Get() *Config {
 	return instance
 }
 
+// CreateNew returns a new global configuration instance.
+// This function should be used when we need to create a new configuration instance.
+// It build a new configuration instance and override the existing one
+// loosing any programmatic configuration that would have been applied to the existing instance.
+//
+// It shouldn't be used to get the global configuration instance to manipulate it but
+// should be used when there is a need to reset the global configuration instance.
+//
+// This is useful when we need to create a new configuration instance when a new product is initialized.
+// Each product should have its own configuration instance and apply its own programmatic configuration to it.
+//
+// If a customer starts multiple tracer with different programmatic configuration only the latest one will be used
+// and available globally.
+func CreateNew() *Config {
+	mu.Lock()
+	defer mu.Unlock()
+	instance = loadConfig()
+
+	return instance
+}
+
 func SetUseFreshConfig(use bool) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -219,7 +239,7 @@ func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.debug = enabled
-	reportTelemetry("DD_TRACE_DEBUG", enabled, origin)
+	configtelemetry.Report("DD_TRACE_DEBUG", enabled, origin)
 }
 
 func (c *Config) ProfilerEndpoints() bool {
@@ -232,7 +252,7 @@ func (c *Config) SetProfilerEndpoints(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.profilerEndpoints = enabled
-	reportTelemetry("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", enabled, origin)
 }
 
 func (c *Config) ProfilerHotspotsEnabled() bool {
@@ -245,7 +265,7 @@ func (c *Config) SetProfilerHotspotsEnabled(enabled bool, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.profilerHotspots = enabled
-	reportTelemetry(traceprof.CodeHotspotsEnvVar, enabled, origin)
+	configtelemetry.Report(traceprof.CodeHotspotsEnvVar, enabled, origin)
 }
 func (c *Config) RuntimeMetricsEnabled() bool {
 	c.mu.RLock()
@@ -257,7 +277,7 @@ func (c *Config) SetRuntimeMetricsEnabled(enabled bool, origin telemetry.Origin)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.runtimeMetrics = enabled
-	reportTelemetry("DD_RUNTIME_METRICS_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_RUNTIME_METRICS_ENABLED", enabled, origin)
 }
 
 func (c *Config) RuntimeMetricsV2Enabled() bool {
@@ -270,7 +290,7 @@ func (c *Config) SetRuntimeMetricsV2Enabled(enabled bool, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.runtimeMetricsV2 = enabled
-	reportTelemetry("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
 }
 
 func (c *Config) DataStreamsMonitoringEnabled() bool {
@@ -283,7 +303,7 @@ func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.dataStreamsMonitoringEnabled = enabled
-	reportTelemetry("DD_DATA_STREAMS_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_DATA_STREAMS_ENABLED", enabled, origin)
 }
 
 func (c *Config) LogStartup() bool {
@@ -296,7 +316,7 @@ func (c *Config) SetLogStartup(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.logStartup = enabled
-	reportTelemetry("DD_TRACE_STARTUP_LOGS", enabled, origin)
+	configtelemetry.Report("DD_TRACE_STARTUP_LOGS", enabled, origin)
 }
 
 func (c *Config) LogToStdout() bool {
@@ -335,7 +355,7 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.globalSampleRate = rate
-	reportTelemetry("DD_TRACE_SAMPLE_RATE", rate, origin)
+	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 
 func (c *Config) TraceRateLimitPerSecond() float64 {
@@ -348,7 +368,7 @@ func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.traceRateLimitPerSecond = rate
-	reportTelemetry("DD_TRACE_RATE_LIMIT", rate, origin)
+	configtelemetry.Report("DD_TRACE_RATE_LIMIT", rate, origin)
 }
 
 // PartialFlushEnabled returns the partial flushing configuration under a single read lock.
@@ -364,14 +384,14 @@ func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.partialFlushEnabled = enabled
-	reportTelemetry("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
 }
 
 func (c *Config) SetPartialFlushMinSpans(minSpans int, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.partialFlushMinSpans = minSpans
-	reportTelemetry("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", minSpans, origin)
+	configtelemetry.Report("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", minSpans, origin)
 }
 
 func (c *Config) DebugAbandonedSpans() bool {
@@ -384,7 +404,7 @@ func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.debugAbandonedSpans = enabled
-	reportTelemetry("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
+	configtelemetry.Report("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
 }
 
 func (c *Config) SpanTimeout() time.Duration {
@@ -397,7 +417,7 @@ func (c *Config) SetSpanTimeout(timeout time.Duration, origin telemetry.Origin) 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.spanTimeout = timeout
-	reportTelemetry("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin)
+	configtelemetry.Report("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin)
 }
 
 func (c *Config) DebugStack() bool {
@@ -410,7 +430,7 @@ func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.debugStack = enabled
-	reportTelemetry("DD_TRACE_DEBUG_STACK", enabled, origin)
+	configtelemetry.Report("DD_TRACE_DEBUG_STACK", enabled, origin)
 }
 
 func (c *Config) StatsComputationEnabled() bool {
@@ -423,7 +443,7 @@ func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.statsComputationEnabled = enabled
-	reportTelemetry("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
 }
 
 func (c *Config) LogDirectory() string {
@@ -436,7 +456,7 @@ func (c *Config) SetLogDirectory(directory string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.logDirectory = directory
-	reportTelemetry("DD_TRACE_LOG_DIRECTORY", directory, origin)
+	configtelemetry.Report("DD_TRACE_LOG_DIRECTORY", directory, origin)
 }
 
 func (c *Config) ReportHostname() bool {
@@ -456,7 +476,7 @@ func (c *Config) SetHostname(hostname string, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.hostname = hostname
 	c.reportHostname = true // Explicitly configured hostname should always be reported
-	reportTelemetry("DD_TRACE_SOURCE_HOSTNAME", hostname, origin)
+	configtelemetry.Report("DD_TRACE_SOURCE_HOSTNAME", hostname, origin)
 }
 
 func (c *Config) HostnameLookupError() error {
@@ -475,7 +495,7 @@ func (c *Config) SetVersion(version string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.version = version
-	reportTelemetry("DD_VERSION", version, origin)
+	configtelemetry.Report("DD_VERSION", version, origin)
 }
 
 func (c *Config) Env() string {
@@ -488,7 +508,7 @@ func (c *Config) SetEnv(env string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.env = env
-	reportTelemetry("DD_ENV", env, origin)
+	configtelemetry.Report("DD_ENV", env, origin)
 }
 
 func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
@@ -505,7 +525,7 @@ func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
 	}
 	c.mu.Unlock()
 
-	reportTelemetry("DD_TRACE_FEATURES", strings.Join(all, ","), origin)
+	configtelemetry.Report("DD_TRACE_FEATURES", strings.Join(all, ","), origin)
 }
 
 func (c *Config) FeatureFlags() map[string]struct{} {
@@ -513,9 +533,7 @@ func (c *Config) FeatureFlags() map[string]struct{} {
 	defer c.mu.RUnlock()
 	// Return a copy to prevent external modification
 	result := make(map[string]struct{}, len(c.featureFlags))
-	for k, v := range c.featureFlags {
-		result[k] = v
-	}
+	maps.Copy(result, c.featureFlags)
 	return result
 }
 
@@ -542,9 +560,7 @@ func (c *Config) ServiceMappings() map[string]string {
 		return nil
 	}
 	result := make(map[string]string, len(c.serviceMappings))
-	for k, v := range c.serviceMappings {
-		result[k] = v
-	}
+	maps.Copy(result, c.serviceMappings)
 	return result
 }
 
@@ -574,7 +590,7 @@ func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {
 	}
 	c.mu.Unlock()
 
-	reportTelemetry("DD_SERVICE_MAPPING", strings.Join(all, ","), origin)
+	configtelemetry.Report("DD_SERVICE_MAPPING", strings.Join(all, ","), origin)
 }
 
 func (c *Config) RetryInterval() time.Duration {
@@ -587,7 +603,7 @@ func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origi
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.retryInterval = interval
-	reportTelemetry("DD_TRACE_RETRY_INTERVAL", interval, origin)
+	configtelemetry.Report("DD_TRACE_RETRY_INTERVAL", interval, origin)
 }
 
 func (c *Config) ServiceName() string {
@@ -600,7 +616,7 @@ func (c *Config) SetServiceName(name string, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.serviceName = name
-	reportTelemetry("DD_SERVICE", name, origin)
+	configtelemetry.Report("DD_SERVICE", name, origin)
 }
 
 func (c *Config) CIVisibilityEnabled() bool {
@@ -613,5 +629,18 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.ciVisibilityEnabled = enabled
-	reportTelemetry(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+	configtelemetry.Report(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+func (c *Config) LogsOTelEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.logsOTelEnabled
+}
+
+func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logsOTelEnabled = enabled
+	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
 }

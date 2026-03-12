@@ -12,11 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
@@ -51,11 +52,12 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	resp, err := http.Get("http://" + tc.Addr + "/ping")
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
-	httpUrl := "http://" + tc.Addr + "/ping"
+	httpURL := "http://" + tc.Addr + "/ping"
 	return trace.Traces{
 		{
 			// NB: 1 Top-level spans are from the HTTP Client, which are library-side instrumented.
@@ -66,7 +68,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				"type":     "http",
 			},
 			Meta: map[string]string{
-				"http.url":  httpUrl,
+				"http.url":  httpURL,
 				"component": "net/http",
 				"span.kind": "client",
 			},
@@ -79,7 +81,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"type":     "web",
 					},
 					Meta: map[string]string{
-						"http.url":    httpUrl,
+						"http.url":    httpURL,
 						"http.method": "GET",
 						"component":   "valyala/fasthttp",
 						"span.kind":   "server",

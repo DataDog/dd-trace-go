@@ -77,7 +77,7 @@ func BenchmarkLinearSearch_BulkLookups(b *testing.B) {
 	matcher := newLinearPrefixMatcher(benchmarkPrefixes)
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, testStr := range benchmarkTestStrings {
 			_ = matcher.HasPrefix(testStr)
 		}
@@ -89,7 +89,7 @@ func BenchmarkSegmentTrie_BulkLookups(b *testing.B) {
 	trie.InsertAll(benchmarkPrefixes)
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, testStr := range benchmarkTestStrings {
 			_ = trie.HasPrefix(testStr)
 		}
@@ -104,7 +104,7 @@ func BenchmarkLinearSearch_SingleLookup_EarlyMatch(b *testing.B) {
 	testStr := "cloud.google.com/go/storage/internal"
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = matcher.HasPrefix(testStr)
 	}
 }
@@ -115,7 +115,7 @@ func BenchmarkSegmentTrie_SingleLookup_EarlyMatch(b *testing.B) {
 	testStr := "cloud.google.com/go/storage/internal"
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = trie.HasPrefix(testStr)
 	}
 }
@@ -128,7 +128,7 @@ func BenchmarkLinearSearch_SingleLookup_NoMatch(b *testing.B) {
 	testStr := "example.com/mycompany/internal/service"
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = matcher.HasPrefix(testStr)
 	}
 }
@@ -139,7 +139,7 @@ func BenchmarkSegmentTrie_SingleLookup_NoMatch(b *testing.B) {
 	testStr := "example.com/mycompany/internal/service"
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = trie.HasPrefix(testStr)
 	}
 }
@@ -148,14 +148,14 @@ func BenchmarkSegmentTrie_SingleLookup_NoMatch(b *testing.B) {
 
 func BenchmarkLinearSearch_Construction(b *testing.B) {
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = newLinearPrefixMatcher(benchmarkPrefixes)
 	}
 }
 
 func BenchmarkSegmentTrie_Construction(b *testing.B) {
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		trie := newSegmentPrefixTrie()
 		trie.InsertAll(benchmarkPrefixes)
 	}
@@ -169,7 +169,7 @@ func BenchmarkLinearSearch_LookupAllocations(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = matcher.HasPrefix(testStr)
 	}
 }
@@ -181,7 +181,7 @@ func BenchmarkSegmentTrie_LookupAllocations(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = trie.HasPrefix(testStr)
 	}
 }
@@ -227,7 +227,7 @@ func BenchmarkDataStructureMemoryOverhead(b *testing.B) {
 func BenchmarkCurrentImplementation_isKnownThirdPartyLibrary(b *testing.B) {
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, testStr := range benchmarkTestStrings {
 			_ = isKnownThirdPartyLibrary(testStr)
 		}
@@ -238,7 +238,7 @@ func BenchmarkCurrentImplementation_SingleLookup(b *testing.B) {
 	testStr := "cloud.google.com/go/storage/internal"
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = isKnownThirdPartyLibrary(testStr)
 	}
 }
@@ -247,7 +247,7 @@ func BenchmarkCurrentImplementation_SingleLookup_NoMatch(b *testing.B) {
 	testStr := "example.com/mycompany/internal/service"
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = isKnownThirdPartyLibrary(testStr)
 	}
 }

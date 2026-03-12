@@ -30,8 +30,10 @@
 - [ ] [System-Tests](https://github.com/DataDog/system-tests/) covering this feature have been added and enabled with the va.b.c-dev version tag.
 - [ ] There is a benchmark for any new code, or changes to existing code.
 - [ ] If this interacts with the agent in a new way, a system test has been added.
-- [ ] New code is free of linting errors. You can check this by running `./scripts/lint.sh` locally.
+- [ ] New code is free of linting errors. You can check this by running `make lint` locally.
+- [ ] New code doesn't break existing tests. You can check this by running `make test` locally.
 - [ ] Add an appropriate team label so this PR gets put in the right place for the release notes.
-- [ ] Non-trivial go.mod changes, e.g. adding new modules, are reviewed by @DataDog/dd-trace-go-guild.
+- [ ] All generated files are up to date. You can check this by running `make generate` locally.
+- [ ] Non-trivial go.mod changes, e.g. adding new modules, are reviewed by @DataDog/dd-trace-go-guild. Make sure all nested modules are up to date by running `make fix-modules` locally.
 
 Unsure? Have a question? Request a review!

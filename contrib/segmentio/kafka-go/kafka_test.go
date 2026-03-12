@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2/internal/tracing"
+
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -428,7 +429,7 @@ func BenchmarkReaderStartSpan(b *testing.B) {
 	var result *tracer.Span
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		result = tr.StartConsumeSpan(ctx, wrapMessage(&msg))
 	}
 	benchSpan = result
@@ -453,7 +454,7 @@ func BenchmarkWriterStartSpan(b *testing.B) {
 	var result *tracer.Span
 
 	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		result = tr.StartProduceSpan(ctx, wrapTracingWriter(kw), wrapMessage(&msg))
 	}
 	benchSpan = result
