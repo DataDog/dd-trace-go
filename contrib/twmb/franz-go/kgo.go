@@ -89,6 +89,9 @@ func (c *Client) PollRecords(ctx context.Context, maxPollRecords int) kgo.Fetche
 	return c.Client.PollRecords(ctx, maxPollRecords)
 }
 
+// OnProduceRecordBuffered is a kgo hook called when a produced record is added
+// to the producer's buffer. It starts the produce span and injects it to the
+// record's headers
 func (c *Client) OnProduceRecordBuffered(r *kgo.Record) {
 	wrapped := wrapRecord(r)
 	span := c.tracer.StartProduceSpan(r.Context, wrapped)
@@ -96,6 +99,8 @@ func (c *Client) OnProduceRecordBuffered(r *kgo.Record) {
 	c.tracer.SetProduceDSMCheckpoint(wrapped)
 }
 
+// OnProduceRecordUnbuffered is a kgo hook called when a produced record is
+// removed from the producer's buffer. It finishes the produce span.
 func (c *Client) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
 	span, ok := tracer.SpanFromContext(r.Context)
 	if !ok {
@@ -104,6 +109,8 @@ func (c *Client) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
 	c.tracer.FinishProduceSpan(span, int(r.Partition), r.Offset, err)
 }
 
+// OnFetchRecordUnbuffered is a kgo hook called when a fetched record is
+// removed from the consumer's buffer. It starts the consume span
 func (c *Client) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 	// We shouldn't start a span if the record is not polled, because it
 	// means it was discarded in some way before reaching user code.
