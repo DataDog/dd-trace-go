@@ -28,13 +28,11 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 		return ctx
 	}
-	newCtx := ctx
-
 	propagatedLLMObs := propagatedLLMSpanFromTags(s)
 	if propagatedLLMObs.SpanID == "" || propagatedLLMObs.TraceID == "" {
-		return newCtx
+		return ctx
 	}
-	return illmobs.ContextWithPropagatedLLMSpan(newCtx, propagatedLLMObs)
+	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMObs)
 }
 
 // propagatedLLMSpanFromTags extracts LLMObs propagation information from the trace propagating tags.
@@ -63,10 +61,17 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	if ctx == nil {
 		return nil, false
 	}
+	// context.Background() is the explicit "no context" sentinel. It should not
+	// inherit a parent span from GLS: a caller passing context.Background() is
+	// explicitly opting out of context-based trace propagation, so the resulting
+	// span must be a root span regardless of any active GLS span.
+	if ctx == context.Background() {
+		return nil, false
+	}
 	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanKey)
 	if s, ok := v.(*Span); ok {
 		// We may have a nil *Span wrapped in an interface in the GLS context stack,
-		// in which case we need to act a if there was nothing (for else we'll
+		// in which case we need to act as if there was nothing (otherwise we'll
 		// forcefully un-do a [ChildOf] option if one was passed).
 		return s, s != nil
 	}

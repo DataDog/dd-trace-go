@@ -94,9 +94,17 @@ func (g *glsContext) Value(key any) any {
 		return g.Context.Value(key)
 	}
 
+	// Check the explicit context chain first: an explicitly propagated value
+	// takes priority over goroutine-local storage (GLS). GLS serves as a
+	// fallback for when no value is present in the context chain, enabling
+	// implicit span propagation through un-instrumented call sites.
+	if val := g.Context.Value(key); val != nil {
+		return val
+	}
+
 	if val := getDDContextStack().Peek(key); val != nil {
 		return val
 	}
 
-	return g.Context.Value(key)
+	return nil
 }
