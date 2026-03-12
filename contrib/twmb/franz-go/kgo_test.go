@@ -159,7 +159,6 @@ func TestProduceFunctional(t *testing.T) {
 	assert.Equal(t, "kafka.produce", s0.OperationName())
 	assert.Equal(t, "kafka", s0.Tag(ext.ServiceName))
 	assert.Equal(t, "Produce Topic "+topic, s0.Tag(ext.ResourceName))
-	// assert.Equal(t, 0.1, s0.Tag(ext.EventSampleRate))
 	assert.Equal(t, "queue", s0.Tag(ext.SpanType))
 	assert.Equal(t, float64(0), s0.Tag(ext.MessagingKafkaPartition))
 	assert.Equal(t, "twmb/franz-go", s0.Tag(ext.Component))
