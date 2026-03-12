@@ -777,9 +777,10 @@ func (c *config) applyTraceProtocol() {
 	c.traceProtocol = traceProtocolOTLP
 	// TODO: Once OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc is supported, handle gRPC transport here.
 	if t, ok := c.transport.(*httpTransport); ok {
-		t.headers = map[string]string{
-			"Content-Type": "application/x-protobuf",
-		}
+		// Content-Type is required by the OTLP HTTP/protobuf spec and must always be present.
+		// User-supplied headers from OTEL_EXPORTER_OTLP_HEADERS / OTEL_EXPORTER_OTLP_TRACES_HEADERS
+		// may add to or override other headers, but Content-Type is set last so it cannot be removed.
+		t.headers = parseOTLPHeaders()
 		if tracesEndpoint := env.Get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"); tracesEndpoint != "" {
 			// Full URL including path — use verbatim.
 			t.traceURL = tracesEndpoint
@@ -798,6 +799,45 @@ func (c *config) applyTraceProtocol() {
 			t.traceURL = "http://" + net.JoinHostPort(host, defaultOTLPPortHTTP) + otlpTracesAPIPathHTTP
 		}
 	}
+}
+
+// parseOTLPHeaders builds the header map for OTLP HTTP requests.
+//
+// OTEL_EXPORTER_OTLP_TRACES_HEADERS takes full precedence over the generic
+// OTEL_EXPORTER_OTLP_HEADERS. The two are not merged — if the traces-specific
+// var is set, the generic one is ignored entirely.
+// Content-Type is always set to application/x-protobuf regardless of either var.
+func parseOTLPHeaders() map[string]string {
+	raw := env.Get("OTEL_EXPORTER_OTLP_TRACES_HEADERS")
+	if raw == "" {
+		raw = env.Get("OTEL_EXPORTER_OTLP_HEADERS")
+	}
+	headers := parseKVHeaders(raw)
+	// Content-Type is mandated by the OTLP HTTP/protobuf spec; it must not be overridden.
+	headers["Content-Type"] = "application/x-protobuf"
+	return headers
+}
+
+// parseKVHeaders parses a comma-separated list of key=value header pairs as specified
+// by the OTLP exporter configuration spec. Malformed pairs are logged and skipped.
+func parseKVHeaders(raw string) map[string]string {
+	headers := map[string]string{}
+	if raw == "" {
+		return headers
+	}
+	for _, pair := range strings.Split(raw, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok || strings.TrimSpace(k) == "" {
+			log.Warn("Ignoring malformed OTLP header %q: expected key=value format", pair)
+			continue
+		}
+		headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	return headers
 }
 
 func (c *config) loadContribIntegrations(deps []*debug.Module) {

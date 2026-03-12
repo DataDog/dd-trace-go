@@ -635,6 +635,68 @@ func TestOTLPTraceEndpoint(t *testing.T) {
 	})
 }
 
+func TestOTLPHeaders(t *testing.T) {
+	// otlpHeaders is a helper that returns the transport header map when OTLP is active.
+	otlpHeaders := func(t *testing.T) map[string]string {
+		t.Helper()
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		ht, ok := cfg.transport.(*httpTransport)
+		require.True(t, ok, "expected *httpTransport")
+		return ht.headers
+	}
+
+	t.Run("default: only Content-Type set", func(t *testing.T) {
+		headers := otlpHeaders(t)
+		assert.Equal(t, "application/x-protobuf", headers["Content-Type"])
+		assert.Len(t, headers, 1)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_HEADERS applies custom headers", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=secret,x-tenant-id=42")
+		headers := otlpHeaders(t)
+		assert.Equal(t, "secret", headers["api-key"])
+		assert.Equal(t, "42", headers["x-tenant-id"])
+		assert.Equal(t, "application/x-protobuf", headers["Content-Type"])
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS takes priority over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic,x-from-generic=yes")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=traces-specific")
+		headers := otlpHeaders(t)
+		// Traces-specific value wins and generic headers are NOT merged in.
+		assert.Equal(t, "traces-specific", headers["api-key"])
+		assert.Empty(t, headers["x-from-generic"], "generic headers must not bleed through when traces-specific is set")
+		assert.Equal(t, "application/x-protobuf", headers["Content-Type"])
+	})
+
+	t.Run("Content-Type cannot be overridden", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "Content-Type=text/plain")
+		headers := otlpHeaders(t)
+		assert.Equal(t, "application/x-protobuf", headers["Content-Type"])
+	})
+
+	t.Run("malformed pairs are skipped", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "good-key=good-value,badpair,=empty-key")
+		headers := otlpHeaders(t)
+		assert.Equal(t, "good-value", headers["good-key"])
+		assert.NotContains(t, headers, "badpair")
+		assert.NotContains(t, headers, "")
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_HEADERS not applied when OTLP mode is off", func(t *testing.T) {
+		// Without OTEL_TRACES_EXPORTER=otlp the transport stays in DD mode;
+		// custom OTLP headers must not appear on the DD transport.
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=secret")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		ht, ok := cfg.transport.(*httpTransport)
+		require.True(t, ok)
+		assert.NotEqual(t, "secret", ht.headers["api-key"])
+	})
+}
+
 func BenchmarkJsonEncodeSpan(b *testing.B) {
 	s := makeSpan(10)
 	s.metrics["nan"] = math.NaN()
