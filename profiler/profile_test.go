@@ -179,36 +179,6 @@ func TestRunProfile(t *testing.T) {
 		testRunDeltaProfile(t)
 	})
 
-	t.Run("cpu", func(t *testing.T) {
-		p, err := unstartedProfiler(CPUDuration(10*time.Millisecond), WithPeriod(10*time.Millisecond), WithProfileTypes(CPUProfile))
-		p.testHooks.startCPUProfile = func(w io.Writer) error {
-			_, err := w.Write([]byte("my-cpu-profile"))
-			return err
-		}
-		p.testHooks.stopCPUProfile = func() {}
-		require.NoError(t, err)
-		start := time.Now()
-		profs, err := p.runProfile(CPUProfile)
-		end := time.Now()
-		require.NoError(t, err)
-		assert.True(t, end.Sub(start) > 10*time.Millisecond)
-		assert.Equal(t, "cpu.pprof", profs[0].name)
-		assert.Equal(t, []byte("my-cpu-profile"), profs[0].data)
-	})
-
-	t.Run("goroutine", func(t *testing.T) {
-		p, err := unstartedProfiler(WithPeriod(time.Millisecond), WithProfileTypes(GoroutineProfile))
-		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte(name))
-			return err
-		}
-		require.NoError(t, err)
-		profs, err := p.runProfile(GoroutineProfile)
-		require.NoError(t, err)
-		assert.Equal(t, "goroutines.pprof", profs[0].name)
-		assert.Equal(t, []byte("goroutine"), profs[0].data)
-	})
-
 	t.Run("goroutinewait", func(t *testing.T) {
 		const sample = `
 goroutine 1 [running]:

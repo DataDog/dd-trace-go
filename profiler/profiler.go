@@ -118,24 +118,7 @@ type profiler struct {
 // testHooks are functions that are replaced during testing which would normally
 // depend on accessing runtime state that is not needed/available for the test
 type testHooks struct {
-	startCPUProfile func(w io.Writer) error
-	stopCPUProfile  func()
-	lookupProfile   func(name string, w io.Writer, debug int) error
-}
-
-func (p *profiler) startCPUProfile(w io.Writer) error {
-	if p.testHooks.startCPUProfile != nil {
-		return p.testHooks.startCPUProfile(w)
-	}
-	return pprof.StartCPUProfile(w)
-}
-
-func (p *profiler) stopCPUProfile() {
-	if p.testHooks.startCPUProfile != nil {
-		p.testHooks.stopCPUProfile()
-		return
-	}
-	pprof.StopCPUProfile()
+	lookupProfile func(name string, w io.Writer, debug int) error
 }
 
 func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
