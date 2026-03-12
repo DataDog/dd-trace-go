@@ -54,6 +54,7 @@ func (cs *cachedServiceName) String() string {
 
 type config struct {
 	serviceName         *cachedServiceName
+	serviceSource       string
 	spanName            string
 	nonErrorCodes       map[codes.Code]bool
 	traceStreamCalls    bool
@@ -86,6 +87,7 @@ func clientDefaults(cfg *config) {
 	cfg.serviceName = newCachedServiceName(func() string {
 		return instr.ServiceName(instrumentation.ComponentClient, nil)
 	})
+	cfg.serviceSource = string(instrumentation.PackageGRPC)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentClient, nil)
 	defaults(cfg)
 }
@@ -94,6 +96,7 @@ func serverDefaults(cfg *config) {
 	cfg.serviceName = newCachedServiceName(func() string {
 		return instr.ServiceName(instrumentation.ComponentServer, nil)
 	})
+	cfg.serviceSource = string(instrumentation.PackageGRPC)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentServer, nil)
 	defaults(cfg)
 }
@@ -104,6 +107,7 @@ func WithService(name string) OptionFn {
 		cfg.serviceName = newCachedServiceName(func() string {
 			return name
 		})
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

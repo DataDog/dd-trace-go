@@ -37,6 +37,7 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 			cs.method,
 			"grpc.message",
 			cs.cfg.serviceName.String(),
+			cs.cfg.serviceSource,
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -56,6 +57,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 			cs.method,
 			"grpc.message",
 			cs.cfg.serviceName.String(),
+			cs.cfg.serviceSource,
 			cs.cfg.startSpanOptions()...,
 		)
 		span.SetTag(ext.Component, componentName)
@@ -173,6 +175,7 @@ func doClientRequest(
 		method,
 		cfg.spanName,
 		cfg.serviceName.String(),
+		cfg.serviceSource,
 		cfg.startSpanOptions(
 			tracer.Tag(ext.Component, componentName),
 			tracer.Tag(ext.SpanKind, ext.SpanKindClient))...,
