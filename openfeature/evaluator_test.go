@@ -6,6 +6,10 @@
 package openfeature
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -810,6 +814,67 @@ func TestValidateVariantType(t *testing.T) {
 			err := validateVariantType(tt.value, tt.expectedType)
 			if (err != nil) != tt.expectError {
 				t.Errorf("expected error=%v, got error=%v", tt.expectError, err)
+			}
+		})
+	}
+}
+
+func TestEvaluateFlag_JSONFixtures(t *testing.T) {
+	configData, err := os.ReadFile(filepath.Join("testdata", "ufc-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg universalFlagsConfiguration
+	if err := json.Unmarshal(configData, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := filepath.Glob(filepath.Join("testdata", "evaluation-cases", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no evaluation-case fixture files found")
+	}
+
+	for _, file := range files {
+		file := file
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cases []struct {
+				Flag         string         `json:"flag"`
+				DefaultValue any            `json:"defaultValue"`
+				TargetingKey string         `json:"targetingKey"`
+				Attributes   map[string]any `json:"attributes"`
+				Result       struct {
+					Value  any    `json:"value"`
+					Reason string `json:"reason"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal(data, &cases); err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			for i, tc := range cases {
+				tc := tc
+				t.Run(fmt.Sprintf("case%d/%s", i, tc.TargetingKey), func(t *testing.T) {
+					ctx := make(map[string]any, len(tc.Attributes)+1)
+					for k, v := range tc.Attributes {
+						ctx[k] = v
+					}
+					ctx["targetingKey"] = tc.TargetingKey
+
+					result := evaluateFlag(cfg.Flags[tc.Flag], tc.DefaultValue, ctx)
+
+					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
+						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)
+					}
+					if result.Reason != of.Reason(tc.Result.Reason) {
+						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					}
+				})
 			}
 		})
 	}
