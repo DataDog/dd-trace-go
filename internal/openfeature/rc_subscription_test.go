@@ -145,3 +145,29 @@ func TestForwardingCallbackDeepCopiesBuffer(t *testing.T) {
 	assert.Equal(t, byte('{'), buffered[0], "buffered data should be isolated from original")
 	assert.Equal(t, byte('X'), original[0], "original should be modified")
 }
+
+func TestSubscribeRCAfterTracerRestart(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+	defer remoteconfig.Reset()
+
+	// Simulate first tracer start + subscription
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	require.NoError(t, SubscribeRC())
+
+	// First update arrives, gets buffered
+	forwardingCallback(remoteconfig.ProductUpdate{"path/1": []byte(`v1`)})
+	require.NotNil(t, GetBufferedForTest())
+
+	// Simulate tracer stop + restart (RC client destroyed and recreated)
+	remoteconfig.Stop()
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+
+	// Second SubscribeRC — does it actually re-subscribe on the new client?
+	require.NoError(t, SubscribeRC())
+
+	// Verify: FFE_FLAGS should be registered on the new RC client
+	has, err := remoteconfig.HasProduct(FFEProductName)
+	require.NoError(t, err)
+	assert.True(t, has, "FFE_FLAGS should be subscribed on the new RC client after restart")
+}

@@ -47,7 +47,14 @@ func SubscribeRC() error {
 	defer rcState.Unlock()
 
 	if rcState.subscribed {
-		return nil
+		// Verify the subscription is still live (it won't be after a tracer restart
+		// because remoteconfig.Stop() destroys all subscriptions).
+		if has, _ := remoteconfig.HasProduct(FFEProductName); has {
+			return nil
+		}
+		log.Debug("openfeature: RC subscription for %s was lost (tracer restart?), re-subscribing", FFEProductName)
+		rcState.subscribed = false
+		rcState.callback = nil
 	}
 
 	if has, _ := remoteconfig.HasProduct(FFEProductName); has {
