@@ -16,7 +16,6 @@ import (
 	of "github.com/open-feature/go-sdk/openfeature"
 )
 
-
 func TestEvaluateCondition_IsNull(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -822,10 +821,10 @@ func TestValidateVariantType(t *testing.T) {
 
 // testEvalCase mirrors the JSON structure in testdata/evaluation-cases/*.json.
 type testEvalCase struct {
-	Flag         string         `json:"flag"`
-	VariationType string        `json:"variationType"`
-	DefaultValue  any           `json:"defaultValue"`
-	TargetingKey  string        `json:"targetingKey"`
+	Flag          string         `json:"flag"`
+	VariationType string         `json:"variationType"`
+	DefaultValue  any            `json:"defaultValue"`
+	TargetingKey  string         `json:"targetingKey"`
 	Attributes    map[string]any `json:"attributes"`
 	Result        struct {
 		Value  any    `json:"value"`
