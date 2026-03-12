@@ -32,12 +32,21 @@ type ServiceNameAssertions struct {
 	ServiceOverride []string
 }
 
+// ServiceSourceAssertions holds the expected _dd.svc_src values for each scenario.
+type ServiceSourceAssertions struct {
+	// Defaults is the expected service source when no service override is provided.
+	Defaults []string
+	// ServiceOverride is the expected service source when WithService is used.
+	ServiceOverride []string
+}
+
 type GenSpansFn func(t *testing.T, serviceOverride string) []*mocktracer.Span
 
 type TestCase struct {
 	Name              instrumentation.Package
 	GenSpans          GenSpansFn
 	WantServiceNameV0 ServiceNameAssertions
+	WantServiceSource ServiceSourceAssertions
 	AssertOpV0        AssertSpansFn
 	AssertOpV1        AssertSpansFn
 }
@@ -129,7 +138,41 @@ func RunTest(t *testing.T, tc TestCase) {
 				tc.AssertOpV1(t, spans)
 			})
 		})
+
+		if len(tc.WantServiceSource.Defaults) > 0 || len(tc.WantServiceSource.ServiceOverride) > 0 {
+			t.Run("ServiceSource", func(t *testing.T) {
+				t.Run("defaults", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", "")
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+					instrumentation.ReloadConfig()
+					spans := tc.GenSpans(t, "")
+					assertServiceSource(t, spans, tc.WantServiceSource.Defaults)
+				})
+				t.Run("service_override", func(t *testing.T) {
+					t.Setenv("DD_SERVICE", "")
+					t.Setenv("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", "v0")
+					instrumentation.ReloadConfig()
+					spans := tc.GenSpans(t, TestServiceOverride)
+					assertServiceSource(t, spans, tc.WantServiceSource.ServiceOverride)
+				})
+			})
+		}
 	})
+}
+
+func assertServiceSource(t *testing.T, spans []*mocktracer.Span, wantSources []string) {
+	t.Helper()
+	require.Len(t, spans, len(wantSources), "the number of spans and number of assertions should be the same")
+	for i := 0; i < len(spans); i++ {
+		want := wantSources[i]
+		got := spans[i].Tag(ext.KeyServiceSource)
+		spanName := spans[i].OperationName()
+		if want == "" {
+			assert.Nil(t, got, "expected no service source for span: %s", spanName)
+		} else {
+			assert.Equal(t, want, got, "incorrect service source for span: %s", spanName)
+		}
+	}
 }
 
 func assertServiceNames(t *testing.T, spans []*mocktracer.Span, wantServiceNames []string) {

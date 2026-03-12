@@ -165,6 +165,8 @@ type Span struct {
 	// +checklocks:mu
 	integration string `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
 	// +checklocks:mu
+	serviceSource string `msg:"-"` // tracks the source of service name override; set to "m" when SetTag overrides it post-creation
+	// +checklocks:mu
 	pprofCtxActive context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 
 	// +checklocks:mu
@@ -185,16 +187,18 @@ func (s *Span) Context() *SpanContext {
 }
 
 type inheritedData struct {
-	service  string
-	pprofCtx context.Context
+	service       string
+	serviceSource string
+	pprofCtx      context.Context
 }
 
 func (s *Span) inheritedData() inheritedData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return inheritedData{
-		service:  s.service,
-		pprofCtx: s.pprofCtxActive,
+		service:       s.service,
+		serviceSource: s.serviceSource,
+		pprofCtx:      s.pprofCtxActive,
 	}
 }
 
@@ -421,6 +425,12 @@ func (s *Span) setTagLocked(key string, value any) {
 		integration, ok := value.(string)
 		if ok {
 			s.integration = integration
+		}
+	case ext.KeyServiceSource:
+		if so, ok := value.(sharedinternal.ServiceOverride); ok {
+			s.service = so.Name
+			s.serviceSource = so.Source
+			return
 		}
 	}
 	if v, ok := value.(bool); ok {
@@ -964,6 +974,20 @@ func (s *Span) SetOperationName(operationName string) {
 	s.name = operationName
 }
 
+// enrichServiceSource writes the _dd.svc_src meta tag at finish time.
+// No tag is written when the span's service matches the global DD_SERVICE (no override)
+// or when no source was determined.
+// +checklocks:s.mu
+func (s *Span) enrichServiceSource() {
+	if s.serviceSource == "" || s.service == globalconfig.ServiceName() {
+		return
+	}
+	if s.meta == nil {
+		s.meta = make(map[string]string, 1)
+	}
+	s.meta[ext.KeyServiceSource] = s.serviceSource
+}
+
 func (s *Span) finish(finishTime int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -978,6 +1002,7 @@ func (s *Span) finish(finishTime int64) {
 
 	s.serializeSpanLinksInMeta()
 	s.serializeSpanEvents()
+	s.enrichServiceSource()
 
 	if s.duration == 0 {
 		s.duration = finishTime - s.start
