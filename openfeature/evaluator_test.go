@@ -16,6 +16,7 @@ import (
 	of "github.com/open-feature/go-sdk/openfeature"
 )
 
+
 func TestEvaluateCondition_IsNull(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -832,15 +833,6 @@ type testEvalCase struct {
 	} `json:"result"`
 }
 
-// reasonToOf maps the string reason in JSON fixtures to the OpenFeature Reason constant.
-var reasonToOf = map[string]of.Reason{
-	"STATIC":           of.StaticReason,
-	"TARGETING_MATCH":  of.TargetingMatchReason,
-	"SPLIT":            of.SplitReason,
-	"DEFAULT":          of.DefaultReason,
-	"DISABLED":         of.DisabledReason,
-}
-
 // TestEvaluateFlag_JSONFixtures drives all evaluation-cases JSON fixtures against
 // the Go evaluator, asserting both value and reason. These fixtures serve as
 // the cross-tracer contract for AssignmentReason correctness.
@@ -904,12 +896,8 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						t.Errorf("value: got %v (%T), want %v (%T)", gotValue, gotValue, wantValue, wantValue)
 					}
 
-					wantReason, knownReason := reasonToOf[tc.Result.Reason]
-					if !knownReason {
-						t.Fatalf("unknown reason %q in fixture", tc.Result.Reason)
-					}
-					if result.Reason != wantReason {
-						t.Errorf("reason: got %q, want %q", result.Reason, wantReason)
+					if result.Reason != of.Reason(tc.Result.Reason) {
+						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
 					}
 				})
 			}
