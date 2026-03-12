@@ -113,10 +113,16 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 	internalffe.SetSubscribedForTest(true)
 	internalffe.SetBufferedForTest(remoteconfig.ProductUpdate{"path/fast": data})
 
-	// startWithRemoteConfig should use the fast path.
-	provider, err := startWithRemoteConfig(ProviderConfig{})
+	// Verify SubscribeProvider returns fast path (tracer subscribed)
+	// without touching global remoteconfig state.
+	provider := newDatadogProvider(ProviderConfig{})
+	tracerSubscribed, err := internalffe.SubscribeProvider(provider.rcCallback)
 	require.NoError(t, err)
-	require.NotNil(t, provider)
+	require.True(t, tracerSubscribed, "SubscribeProvider should report tracer subscribed")
+
+	// Attach the provider, which replays the buffered config.
+	attached := attachProvider(provider)
+	require.True(t, attached, "attachProvider should succeed when tracer subscribed")
 
 	cfg := provider.getConfiguration()
 	require.NotNil(t, cfg, "provider should have config from fast path replay")
