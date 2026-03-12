@@ -13,7 +13,9 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
@@ -145,5 +147,57 @@ func TestRegisteredTags(t *testing.T) {
 
 		cfg := registeredDrivers.configs["register-name"]
 		assert.Nil(t, cfg.tags)
+	})
+}
+
+func TestServiceSourceDriverName(t *testing.T) {
+	t.Run("non-empty driver name sets sql_driver source", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		Register("postgres", &mysql.MySQLDriver{})
+		defer unregister("postgres")
+
+		db, err := Open("postgres", "test:test@tcp(127.0.0.1:3306)/test")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+		mt.Reset()
+
+		rows, err := db.QueryContext(context.Background(), "SELECT 1")
+		assert.NoError(t, err)
+		rows.Close()
+
+		spans := mt.FinishedSpans()
+		require.True(t, len(spans) > 0)
+		for _, sp := range spans {
+			assert.Equal(t, "postgres.db", sp.Tag(ext.ServiceName))
+			assert.Equal(t, serviceSourceSQLDriver, sp.Tag(ext.KeyServiceSource))
+		}
+	})
+
+	t.Run("empty driver name still sets sql_driver source", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		Register("", &mysql.MySQLDriver{})
+		defer unregister("")
+
+		db, err := Open("", "test:test@tcp(127.0.0.1:3306)/test")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+		mt.Reset()
+
+		rows, err := db.QueryContext(context.Background(), "SELECT 1")
+		assert.NoError(t, err)
+		rows.Close()
+
+		spans := mt.FinishedSpans()
+		require.True(t, len(spans) > 0)
+		for _, sp := range spans {
+			assert.Equal(t, ".db", sp.Tag(ext.ServiceName))
+			assert.Equal(t, serviceSourceSQLDriver, sp.Tag(ext.KeyServiceSource))
+		}
 	})
 }
