@@ -33,7 +33,7 @@ func init() {
 // Adding bootstrap servers to KafkaConfig would match functionality of other
 // Kafka integrations (e.g., segmentio/kafka-go), but it likely would require hacking the OnBrokerConnect hook.
 
-// KafkaConfig holds information from the kafka config for span tags.
+// KafkaConfig holds information from the Kafka config for span tags.
 type KafkaConfig struct {
 	ConsumerGroupID string
 }

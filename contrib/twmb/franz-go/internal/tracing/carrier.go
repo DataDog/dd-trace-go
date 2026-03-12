@@ -4,7 +4,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
-// KafkaHeadersCarrier implements tracer.TextMapWriter for Kafka headers
+// KafkaHeadersCarrier implements tracer.TextMapWriter for Kafka headers.
 type KafkaHeadersCarrier struct {
 	record Record
 }
@@ -18,7 +18,7 @@ func NewKafkaHeadersCarrier(r Record) *KafkaHeadersCarrier {
 	return &KafkaHeadersCarrier{record: r}
 }
 
-// ForeachKey implements tracer.TextMapReader
+// ForeachKey implements tracer.TextMapReader.
 func (c KafkaHeadersCarrier) ForeachKey(handler func(key, val string) error) error {
 	for _, h := range c.record.GetHeaders() {
 		err := handler(h.GetKey(), string(h.GetValue()))
@@ -29,7 +29,7 @@ func (c KafkaHeadersCarrier) ForeachKey(handler func(key, val string) error) err
 	return nil
 }
 
-// Set implements tracer.TextMapWriter
+// Set implements tracer.TextMapWriter.
 func (c *KafkaHeadersCarrier) Set(key, val string) {
 	headers := c.record.GetHeaders()
 	// If header is already set, overwrite it
@@ -51,7 +51,7 @@ func (c *KafkaHeadersCarrier) Set(key, val string) {
 	}))
 }
 
-// ExtractSpanContext extracts the SpanContext from a Record
+// ExtractSpanContext extracts the SpanContext from a Record.
 func ExtractSpanContext(r Record) (*tracer.SpanContext, error) {
 	return tracer.Extract(NewKafkaHeadersCarrier(r))
 }

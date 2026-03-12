@@ -70,7 +70,7 @@ func (w *record) GetContext() context.Context {
 	return w.Context
 }
 
-// record wraps kgo.Record to implement the tracing.Header interface.
+// header wraps kgo.RecordHeader to implement the tracing.Header interface.
 // This adapter decouples the internal/tracing package from kgo,
 // which is required to avoid cyclic imports when supporting orchestrion.
 type header struct {
