@@ -16,6 +16,7 @@ import (
 
 type routerConfig struct {
 	serviceName   string
+	serviceSource string
 	spanOpts      []tracer.StartSpanOption // additional span options to be applied
 	finishOpts    []tracer.FinishOption    // span finish options to be applied
 	analyticsRate float64
@@ -54,6 +55,7 @@ func defaults(cfg *routerConfig) {
 	cfg.analyticsRate = instr.AnalyticsRate(true)
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.serviceSource = string(instrumentation.PackageGorillaMux)
 	cfg.resourceNamer = defaultResourceNamer
 	cfg.ignoreRequest = func(_ *http.Request) bool { return false }
 }
@@ -70,6 +72,7 @@ func WithIgnoreRequest(f func(*http.Request) bool) RouterOptionFn {
 func WithService(name string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

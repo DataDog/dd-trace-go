@@ -32,6 +32,10 @@ var graphqlGo = harness.TestCase{
 		DDService:       harness.RepeatString(harness.TestDDService, 5),
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 5),
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageGraphQLGoGraphQL), 5),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 5),
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 5)
 		assert.Equal(t, "graphql.parse", spans[0].OperationName())

@@ -20,6 +20,7 @@ func init() {
 type Tracer struct {
 	consumerServiceName string
 	producerServiceName string
+	serviceSource       string
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
@@ -36,6 +37,7 @@ func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 	tr := &Tracer{
 		consumerServiceName: instr.ServiceName(instrumentation.ComponentConsumer, nil),
 		producerServiceName: instr.ServiceName(instrumentation.ComponentProducer, nil),
+		serviceSource:       string(instrumentation.PackageSegmentioKafkaGo),
 		consumerSpanName:    instr.OperationName(instrumentation.ComponentConsumer, nil),
 		producerSpanName:    instr.OperationName(instrumentation.ComponentProducer, nil),
 		analyticsRate:       instr.AnalyticsRate(false),
@@ -60,6 +62,7 @@ func WithService(serviceName string) Option {
 	return OptionFn(func(tr *Tracer) {
 		tr.consumerServiceName = serviceName
 		tr.producerServiceName = serviceName
+		tr.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	})
 }
 

@@ -51,6 +51,7 @@ func BeforeHandle[T any, WT Router](
 	spanOpts := make([]tracer.StartSpanOption, len(cfg.spanOpts))
 	copy(spanOpts, cfg.spanOpts) // spanOpts must be a copy of r.config.spanOpts, locally scoped, to avoid races.
 	spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
+	spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 
 	serveCfg := &httptrace.ServeConfig{
 		Framework: "github.com/julienschmidt/httprouter",

@@ -51,12 +51,13 @@ func New(opts ...RouterOption) *Router {
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := r.config.resourceNamer(r.TreeMux, w, req)
 	route, _ := getRoute(r.TreeMux, w, req)
+	spanOpts := append(r.config.spanOpts, instrumentation.ServiceNameWithSource(r.config.serviceName, r.config.serviceSource))
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
 		Framework: "github.com/dimfeld/httptreemux/v5",
 		Service:   r.config.serviceName,
 		Resource:  resource,
-		SpanOpts:  r.config.spanOpts,
+		SpanOpts:  spanOpts,
 		Route:     route,
 	})
 }
@@ -87,12 +88,13 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 func (r *ContextRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	resource := r.config.resourceNamer(r.TreeMux, w, req)
 	route, _ := getRoute(r.TreeMux, w, req)
+	spanOpts := append(r.config.spanOpts, instrumentation.ServiceNameWithSource(r.config.serviceName, r.config.serviceSource))
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
 		Framework: "github.com/dimfeld/httptreemux/v5",
 		Service:   r.config.serviceName,
 		Resource:  resource,
-		SpanOpts:  r.config.spanOpts,
+		SpanOpts:  spanOpts,
 		Route:     route,
 	})
 }

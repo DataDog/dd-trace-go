@@ -14,6 +14,7 @@ import (
 type config struct {
 	analyticsRate float64
 	serviceName   string
+	serviceSource string
 	spanName      string
 }
 
@@ -33,6 +34,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageHashicorpVaultAPI)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(true)
 }
@@ -56,5 +58,6 @@ func WithAnalyticsRate(rate float64) OptionFn {
 func WithService(name string) OptionFn {
 	return func(c *config) {
 		c.serviceName = name
+		c.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }

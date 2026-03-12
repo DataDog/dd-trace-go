@@ -15,6 +15,7 @@ import (
 type mongoConfig struct {
 	ctx           context.Context
 	serviceName   string
+	serviceSource string
 	spanName      string
 	analyticsRate float64
 }
@@ -22,6 +23,7 @@ type mongoConfig struct {
 func newConfig() *mongoConfig {
 	return &mongoConfig{
 		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
+		serviceSource: string(instrumentation.PackageGlobalsignMgo),
 		spanName:      instr.OperationName(instrumentation.ComponentDefault, nil),
 		ctx:           context.Background(),
 		analyticsRate: instr.AnalyticsRate(false),
@@ -43,6 +45,7 @@ func (fn DialOptionFn) apply(cfg *mongoConfig) {
 func WithService(name string) DialOptionFn {
 	return func(cfg *mongoConfig) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

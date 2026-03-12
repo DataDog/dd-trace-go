@@ -17,6 +17,7 @@ import (
 
 type routerConfig struct {
 	serviceName   string
+	serviceSource string
 	spanOpts      []tracer.StartSpanOption
 	resourceNamer func(*httptreemux.TreeMux, http.ResponseWriter, *http.Request) string
 }
@@ -35,6 +36,7 @@ func (fn RouterOptionFn) apply(cfg *routerConfig) {
 
 func defaults(cfg *routerConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.serviceSource = string(instrumentation.PackageDimfeldHTTPTreeMuxV5)
 	cfg.resourceNamer = defaultResourceNamer
 }
 
@@ -42,6 +44,7 @@ func defaults(cfg *routerConfig) {
 func WithService(name string) RouterOptionFn {
 	return func(cfg *routerConfig) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
