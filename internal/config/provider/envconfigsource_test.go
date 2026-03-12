@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package config
+package provider
 
 import (
 	"testing"
@@ -14,14 +14,14 @@ import (
 )
 
 func TestEnvConfigSource(t *testing.T) {
-	envConfigSource := &envConfigSource{}
+	src := &envConfigSource{}
 	t.Setenv("DD_SERVICE", "value")
-	assert.Equal(t, "value", envConfigSource.get("DD_SERVICE"))
-	assert.Equal(t, telemetry.OriginEnvVar, envConfigSource.origin())
+	assert.Equal(t, "value", src.get("DD_SERVICE"))
+	assert.Equal(t, telemetry.OriginEnvVar, src.origin())
 }
 
 func TestNormalizedEnvConfigSource(t *testing.T) {
-	envConfigSource := &envConfigSource{}
+	src := &envConfigSource{}
 	t.Setenv("DD_SERVICE", "value")
-	assert.Equal(t, "value", envConfigSource.get("service"))
+	assert.Equal(t, "value", src.get("service"))
 }
