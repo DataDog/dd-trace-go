@@ -8,7 +8,6 @@ package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/con
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -41,9 +40,7 @@ func NewConsumer(conf *kafka.ConfigMap, opts ...Option) (*Consumer, error) {
 		return nil, err
 	}
 	opts = append(opts, WithConfig(conf))
-	wrapped := WrapConsumer(c, opts...)
-	go setTracerClusterID(wrapped.tracer, conf)
-	return wrapped, nil
+	return WrapConsumer(c, opts...), nil
 }
 
 // NewProducer calls kafka.NewProducer and wraps the resulting Producer.
@@ -53,44 +50,39 @@ func NewProducer(conf *kafka.ConfigMap, opts ...Option) (*Producer, error) {
 		return nil, err
 	}
 	opts = append(opts, WithConfig(conf))
-	wrapped := WrapProducer(p, opts...)
-	go setTracerClusterID(wrapped.tracer, conf)
-	return wrapped, nil
+	return WrapProducer(p, opts...), nil
 }
 
-// setTracerClusterID retrieves the Kafka ClusterID via a new AdminClient and
-// sets that on the given tracer.
-func setTracerClusterID(tr *kafkatrace.Tracer, conf *kafka.ConfigMap) {
-	adminConf := &kafka.ConfigMap{}
-	for k, v := range *conf {
-		// Filter config keys that prevent creation of an admin client
-		if !strings.HasPrefix(k, "go.") {
-			(*adminConf)[k] = v
+// startClusterIDFetch launches a goroutine to fetch the cluster ID from the
+// given admin client. It returns a stop function that cancels the fetch and
+// waits for the goroutine to exit.
+func startClusterIDFetch(tr *kafkatrace.Tracer, admin *kafka.AdminClient) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer admin.Close()
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		clusterID, err := admin.ClusterID(ctx)
+		if err != nil {
+			instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
+			return
 		}
+		tr.SetClusterID(clusterID)
+	}()
+	return func() {
+		cancel()
+		<-done
 	}
-	// Create a new admin client that has the capability to retrieve the cluster ID
-	admin, err := kafka.NewAdminClient(adminConf)
-	if err != nil {
-		instr.Logger().Warn("failed to create admin client for cluster ID: %s", err)
-		return
-	}
-	defer admin.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	clusterID, err := admin.ClusterID(ctx)
-	if err != nil {
-		instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
-		return
-	}
-	tr.SetClusterID(clusterID)
 }
 
 // A Consumer wraps a kafka.Consumer.
 type Consumer struct {
 	*kafka.Consumer
-	tracer *kafkatrace.Tracer
-	events chan kafka.Event
+	tracer     *kafkatrace.Tracer
+	events     chan kafka.Event
+	closeAsync []func() // async jobs to cancel and wait for on Close
 }
 
 // WrapConsumer wraps a kafka.Consumer so that any consumed events are traced.
@@ -101,12 +93,25 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 	}
 	instr.Logger().Debug("%s: Wrapping Consumer: %#v", pkgPath, wrapped.tracer)
 	wrapped.events = kafkatrace.WrapConsumeEventsChannel(wrapped.tracer, c.Events(), c, wrapEvent)
+
+	// Create an admin client to fetch the cluster ID for data streams monitoring
+	// The retrieval of the cluster ID is async and can be cancelled on Close to avoid blocking shutdown
+	if admin, err := kafka.NewAdminClientFromConsumer(c); err != nil {
+		instr.Logger().Warn("failed to create admin client for cluster ID: %s", err)
+	} else {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(wrapped.tracer, admin))
+	}
+
 	return wrapped
 }
 
 // Close calls the underlying Consumer.Close and if polling is enabled, finishes
 // any remaining span.
 func (c *Consumer) Close() error {
+	// Close any async jobs that might still be running
+	for _, stop := range c.closeAsync {
+		stop()
+	}
 	err := c.Consumer.Close()
 	// we only close the previous span if consuming via the events channel is
 	// not enabled, because otherwise there would be a data race from the
@@ -193,6 +198,7 @@ type Producer struct {
 	tracer         *kafkatrace.Tracer
 	produceChannel chan *kafka.Message
 	events         chan kafka.Event
+	closeAsync     []func() // async jobs to cancel and wait for on Close
 }
 
 // WrapProducer wraps a kafka.Producer so requests are traced.
@@ -206,6 +212,13 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 	wrapped.produceChannel = kafkatrace.WrapProduceChannel(wrapped.tracer, p.ProduceChannel(), wrapMessage)
 	if wrapped.tracer.DSMEnabled() {
 		wrapped.events = kafkatrace.WrapProduceEventsChannel(wrapped.tracer, p.Events(), wrapEvent)
+		// Create an admin client to fetch the cluster ID for data streams monitoring
+		// The retrieval of the cluster ID is async and can be cancelled on Close to avoid blocking shutdown
+		if admin, err := kafka.NewAdminClientFromProducer(p); err != nil {
+			instr.Logger().Warn("failed to create admin client for cluster ID: %s", err)
+		} else {
+			wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(wrapped.tracer, admin))
+		}
 	}
 	return wrapped
 }
@@ -219,6 +232,10 @@ func (p *Producer) Events() chan kafka.Event {
 // Close calls the underlying Producer.Close and also closes the internal
 // wrapping producer channel.
 func (p *Producer) Close() {
+	// Close any async jobs that might still be running
+	for _, stop := range p.closeAsync {
+		stop()
+	}
 	close(p.produceChannel)
 	p.Producer.Close()
 }

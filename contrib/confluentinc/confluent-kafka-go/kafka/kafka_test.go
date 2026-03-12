@@ -158,9 +158,12 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, "127.0.0.1", s1.Tag(ext.KafkaBootstrapServers))
 			assert.Equal(t, "gotest", s1.Tag("messaging.destination.name"))
 
+			clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string)
+			require.True(t, ok, "produce span should have a cluster ID tag")
+			require.NotEmpty(t, clusterID)
+
 			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
-			clusterID := fetchTestClusterID(t)
 			mt := mocktracer.Start()
 			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
 			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
@@ -170,6 +173,38 @@ func TestConsumerFunctional(t *testing.T) {
 			assert.Equal(t, expected.GetHash(), p.GetHash())
 		})
 	}
+}
+
+func TestConsumerFunctionalWithClusterID(t *testing.T) {
+	action := func(c *Consumer) (*kafka.Message, error) {
+		return c.ReadMessage(3000 * time.Millisecond)
+	}
+	spans, msg := produceThenConsume(t, action,
+		[]Option{WithDataStreams()},
+		[]Option{WithDataStreams()},
+	)
+	require.Len(t, spans, 2)
+
+	// Verify cluster ID is set as a span tag on both produce and consume spans.
+	// The cluster ID is auto-fetched from the broker, so we just verify it's
+	// present and consistent across spans.
+	s0 := spans[0] // produce
+	s1 := spans[1] // consume
+	clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string)
+	require.True(t, ok, "produce span should have a cluster ID tag")
+	assert.NotEmpty(t, clusterID)
+	assert.Equal(t, clusterID, s1.Tag(ext.MessagingKafkaClusterID))
+
+	// Verify DSM pathway hash includes kafka_cluster_id in edge tags
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
+	assert.True(t, ok)
+	mt := mocktracer.Start()
+	ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+	expected, _ := datastreams.PathwayFromContext(expectedCtx)
+	mt.Stop()
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
 }
 
 // This tests the deprecated behavior of using cfg.context as the context passed via kafka messages
@@ -330,21 +365,6 @@ func TestProduceError(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.Len(t, spans, 1)
-}
-
-func fetchTestClusterID(t *testing.T) string {
-	t.Helper()
-	admin, err := kafka.NewAdminClient(&kafka.ConfigMap{
-		"bootstrap.servers": "127.0.0.1:9092",
-	})
-	require.NoError(t, err)
-	defer admin.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	clusterID, err := admin.ClusterID(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, clusterID)
-	return clusterID
 }
 
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)
