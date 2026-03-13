@@ -125,7 +125,7 @@ func (c *Pipeliner) execWithContext(ctx context.Context) ([]redis.Cmder, error) 
 	p := c.params
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.ServiceName(p.config.serviceName),
+		instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
 		tracer.ResourceName("redis"),
 		tracer.Tag(ext.TargetHost, p.host),
 		tracer.Tag(ext.TargetPort, p.port),
@@ -197,7 +197,7 @@ func createWrapperFromClient(tc *Client) func(oldProcess func(cmd redis.Cmder) e
 			p := tc.params
 			opts := []tracer.StartSpanOption{
 				tracer.SpanType(ext.SpanTypeRedis),
-				tracer.ServiceName(p.config.serviceName),
+				instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
 				tracer.ResourceName(parts[0]),
 				tracer.Tag(ext.TargetHost, p.host),
 				tracer.Tag(ext.TargetPort, p.port),

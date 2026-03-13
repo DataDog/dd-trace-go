@@ -48,6 +48,10 @@ var tidwallBuntDB = harness.TestCase{
 		DDService:       []string{"buntdb"},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageTidwallBuntDB)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "buntdb.query", spans[0].OperationName())

@@ -10,9 +10,10 @@ import (
 )
 
 type config struct {
-	serviceName  string
-	spanName     string
-	maxQuerySize int
+	serviceName   string
+	serviceSource string
+	spanName      string
+	maxQuerySize  int
 }
 
 // Option describes options for the Mongo integration.
@@ -29,6 +30,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageMongoDriverV2)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.maxQuerySize = -1
 }
@@ -37,6 +39,7 @@ func defaults(cfg *config) {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
