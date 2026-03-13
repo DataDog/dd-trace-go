@@ -14,6 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sqlsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
@@ -329,7 +330,7 @@ func (tp *traceParams) tryTrace(ctx context.Context, qtype QueryType, query stri
 	dbSystem, _ := normalizeDBSystem(tp.driverName)
 	opts := options.Expand(spanOpts, 0, 6+len(tp.cfg.tags)+1)
 	opts = append(opts,
-		tracer.ServiceName(tp.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(tp.cfg.serviceName, tp.cfg.serviceSource),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.StartTime(startTime),
 		tracer.Tag(ext.Component, componentName),

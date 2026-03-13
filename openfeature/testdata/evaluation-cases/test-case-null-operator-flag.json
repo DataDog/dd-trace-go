@@ -1,0 +1,69 @@
+[
+  {
+    "attributes": {
+      "country": "US",
+      "size": 5
+    },
+    "defaultValue": "default-null",
+    "flag": "null-operator-test",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "old"
+    },
+    "targetingKey": "alice",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Canada",
+      "size": 10
+    },
+    "defaultValue": "default-null",
+    "flag": "null-operator-test",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "new"
+    },
+    "targetingKey": "bob",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "size": null
+    },
+    "defaultValue": "default-null",
+    "flag": "null-operator-test",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "old"
+    },
+    "targetingKey": "charlie",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "size": 26
+    },
+    "defaultValue": "default-null",
+    "flag": "null-operator-test",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "new"
+    },
+    "targetingKey": "david",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "UK"
+    },
+    "defaultValue": "default-null",
+    "flag": "null-operator-test",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "old"
+    },
+    "targetingKey": "elize",
+    "variationType": "STRING"
+  }
+]
