@@ -67,7 +67,7 @@ func CreateOtelProcessContextMapping(data []byte) error {
 
 func createOtelProcessContextMapping(data []byte) error {
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
-	otelContextMappingSize := max(minOtelContextMappingSize, len(data)+headerSize)
+	otelContextMappingSize := roundUpToPageSize(max(minOtelContextMappingSize, len(data)+headerSize))
 
 	// Try memfd_create first; fall back to anonymous mapping
 	mappingBytes, memfdErr := tryCreateMemfdMapping(otelContextMappingSize)
@@ -180,6 +180,11 @@ func removeOtelProcessContextMapping() error {
 	existingMappingBytes = nil
 	publisherPID = 0
 	return nil
+}
+
+func roundUpToPageSize(size int) int {
+	pageSize := os.Getpagesize()
+	return (size + pageSize - 1) & ^(pageSize - 1)
 }
 
 func getMonotonicClockTime() (uint64, error) {

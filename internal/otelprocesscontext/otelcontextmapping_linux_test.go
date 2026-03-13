@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"math/rand/v2"
 	"os"
 	"strconv"
 	"strings"
@@ -114,6 +115,21 @@ func TestCreateOtelProcessContextMapping(t *testing.T) {
 	ctx, err := readProcessLevelContext()
 	require.NoError(t, err)
 	require.Equal(t, payload, ctx)
+}
+
+func TestCreateOtelProcessContextMappingLargePayload(t *testing.T) {
+	restoreOtelProcessContextMapping(t)
+
+	headerSize := int(unsafe.Sizeof(processContextHeader{}))
+	largePayload := make([]byte, minOtelContextMappingSize-headerSize+1)
+	rand.NewChaCha8([32]byte([]byte("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"))).Read(largePayload)
+
+	err := CreateOtelProcessContextMapping(largePayload)
+	require.NoError(t, err)
+
+	ctx, err := readProcessLevelContext()
+	require.NoError(t, err)
+	require.Equal(t, largePayload, ctx)
 }
 
 func TestUpdateOtelProcessContextMapping(t *testing.T) {
