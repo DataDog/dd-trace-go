@@ -26,7 +26,8 @@ func buildResource(c *config) *otlpresource.Resource {
 	attrs := []*otlpcommon.KeyValue{
 		otlpKeyValue("service.name", otlpStringValue(c.serviceName)),
 		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
-		otlpKeyValue("telemetry.sdk.name", otlpStringValue("dd-trace-go")),
+		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
+		otlpKeyValue("telemetry.sdk.version", otlpStringValue(c.internalConfig.Version())),
 	}
 	if v := c.internalConfig.Env(); v != "" {
 		attrs = append(attrs, otlpKeyValue("deployment.environment", otlpStringValue(v)))

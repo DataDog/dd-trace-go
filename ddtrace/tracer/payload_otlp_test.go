@@ -73,7 +73,7 @@ func TestPayloadOTLPResourceAttributes(t *testing.T) {
 
 	sdkName := findAttr(attrs, "telemetry.sdk.name")
 	require.NotNil(t, sdkName)
-	assert.Equal(t, "dd-trace-go", sdkName.Value.GetStringValue())
+	assert.Equal(t, "datadog", sdkName.Value.GetStringValue())
 }
 
 func TestPayloadOTLPScope(t *testing.T) {

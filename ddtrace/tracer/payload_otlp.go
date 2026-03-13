@@ -18,6 +18,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+// cachedOTLPResource holds the OTLP Resource built once during OTLP-mode tracer
+// initialization. It is set by initOTLPResource and reused by every newPayloadOTLP
+// call, avoiding redundant proto allocations on each flush.
+var cachedOTLPResource *otlpresource.Resource
+
 // TODO: Handle concurrent reads and writes for this struct. Update methods accordingly.
 type payloadOTLP struct {
 	resource *otlpresource.Resource
@@ -32,8 +37,11 @@ type payloadOTLP struct {
 }
 
 func newPayloadOTLP(c *config) *payloadOTLP {
+	if cachedOTLPResource == nil {
+		cachedOTLPResource = buildResource(c)
+	}
 	return &payloadOTLP{
-		resource: buildResource(c),
+		resource: cachedOTLPResource,
 		scope:    &otlpcommon.InstrumentationScope{Name: "dd-trace-go"},
 		spans:    make([]*otlptrace.Span, 0),
 		reader:   bytes.NewReader([]byte{}),
