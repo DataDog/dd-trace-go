@@ -23,21 +23,20 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 
 	// Subscribe via the internal package, which serializes with tracer subscription
 	// and starts RC only if needed (slow path).
-	tracerSubscribed, err := internalffe.SubscribeProvider(provider.rcCallback)
+	tracerOwnsSubscription, err := internalffe.SubscribeProvider(provider.rcCallback)
 	if err != nil {
 		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider?)", err)
 	}
 
-	if tracerSubscribed {
-		if !attachProvider(provider) {
-			// This shouldn't happen since SubscribeProvider just told us tracer subscribed.
-			return nil, fmt.Errorf("failed to attach to tracer's RC subscription")
-		}
-		log.Debug("openfeature: attached to tracer's RC subscription")
-	} else {
+	if !tracerOwnsSubscription {
 		log.Debug("openfeature: successfully subscribed to Remote Config updates")
+		return provider, nil
 	}
-
+	if !attachProvider(provider) {
+		// This shouldn't happen since SubscribeProvider just told us tracer subscribed.
+		return nil, fmt.Errorf("failed to attach to tracer's RC subscription")
+	}
+	log.Debug("openfeature: attached to tracer's RC subscription")
 	return provider, nil
 }
 

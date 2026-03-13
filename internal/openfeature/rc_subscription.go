@@ -127,7 +127,7 @@ func AttachCallback(cb Callback) bool {
 
 // SubscribeProvider attempts to subscribe a provider callback to RC.
 // It holds the subscription mutex to prevent races with SubscribeRC.
-func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerSubscribed bool, err error) {
+func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerOwnsSubscription bool, err error) {
 	rcState.Lock()
 	defer rcState.Unlock()
 
