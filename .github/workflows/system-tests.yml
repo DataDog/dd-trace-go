@@ -316,7 +316,7 @@ jobs:
           path: artifact.tar.gz
 
   tracer-release:
-    # if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule'
     uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
     secrets:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
