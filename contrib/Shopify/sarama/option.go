@@ -16,6 +16,7 @@ const defaultServiceName = "kafka"
 type config struct {
 	consumerServiceName string
 	producerServiceName string
+	serviceSource       string
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
@@ -26,6 +27,7 @@ type config struct {
 func defaults(cfg *config) {
 	cfg.consumerServiceName = instr.ServiceName(instrumentation.ComponentConsumer, nil)
 	cfg.producerServiceName = instr.ServiceName(instrumentation.ComponentProducer, nil)
+	cfg.serviceSource = string(instrumentation.PackageShopifySarama)
 
 	cfg.consumerSpanName = instr.OperationName(instrumentation.ComponentConsumer, nil)
 	cfg.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
@@ -52,6 +54,7 @@ func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.consumerServiceName = name
 		cfg.producerServiceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

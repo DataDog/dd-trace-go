@@ -56,6 +56,10 @@ var gqlgen = harness.TestCase{
 		DDService:       harness.RepeatString("graphql", 9),
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 9),
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.Package99DesignsGQLGen), 9),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 9),
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 9)
 		assert.Equal(t, "graphql.read", spans[0].OperationName())

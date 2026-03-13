@@ -18,13 +18,14 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 const componentName = "segmentio/kafka.go.v0"
 
 func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(tr.consumerServiceName),
+		instrumentation.ServiceNameWithSource(tr.consumerServiceName, tr.serviceSource),
 		tracer.ResourceName("Consume Topic " + msg.GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.GetPartition()),
@@ -60,7 +61,7 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Messa
 		topic = msg.GetTopic()
 	}
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(tr.producerServiceName),
+		instrumentation.ServiceNameWithSource(tr.producerServiceName, tr.serviceSource),
 		tracer.ResourceName("Produce Topic " + topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, componentName),

@@ -112,6 +112,10 @@ var hashicorpVault = harness.TestCase{
 		DDService:       harness.RepeatString("vault", 2),
 		ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 2),
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageHashicorpVaultAPI), 2),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 2),
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "http.request", spans[0].OperationName())
