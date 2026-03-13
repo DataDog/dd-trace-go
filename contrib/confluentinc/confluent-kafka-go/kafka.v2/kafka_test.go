@@ -170,15 +170,51 @@ func TestConsumerFunctional(t *testing.T) {
 
 			p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
 			assert.True(t, ok)
+			clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string)
+			require.True(t, ok, "produce span should have a cluster ID tag")
+			require.NotEmpty(t, clusterID)
 			mt := mocktracer.Start()
-			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka")
-			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka")
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+			expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
 			expected, _ := datastreams.PathwayFromContext(expectedCtx)
 			mt.Stop()
 			assert.NotEqual(t, expected.GetHash(), 0)
 			assert.Equal(t, expected.GetHash(), p.GetHash())
 		})
 	}
+}
+
+func TestConsumerFunctionalWithClusterID(t *testing.T) {
+	action := func(c *Consumer) (*kafka.Message, error) {
+		return c.ReadMessage(3000 * time.Millisecond)
+	}
+	spans, msg := produceThenConsume(t, action,
+		[]Option{WithDataStreams()},
+		[]Option{WithDataStreams()},
+		false,
+	)
+	require.Len(t, spans, 2)
+
+	// Verify cluster ID is set as a span tag on both produce and consume spans.
+	// The cluster ID is auto-fetched from the broker, so we just verify it's
+	// present and consistent across spans.
+	s0 := spans[0] // produce
+	s1 := spans[1] // consume
+	clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string)
+	require.True(t, ok, "produce span should have a cluster ID tag")
+	assert.NotEmpty(t, clusterID)
+	assert.Equal(t, clusterID, s1.Tag(ext.MessagingKafkaClusterID))
+
+	// Verify DSM pathway hash includes kafka_cluster_id in edge tags
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), NewMessageCarrier(msg)))
+	assert.True(t, ok)
+	mt := mocktracer.Start()
+	ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(ctx, "group:"+testGroupID, "direction:in", "topic:"+testTopic, "type:kafka", "kafka_cluster_id:"+clusterID)
+	expected, _ := datastreams.PathwayFromContext(expectedCtx)
+	mt.Stop()
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
 }
 
 // This tests the deprecated behavior of using cfg.context as the context passed via kafka messages
@@ -361,6 +397,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"go.delivery.reports": true,
 	}, producerOpts...)
 	require.NoError(t, err)
+	require.Eventually(t, func() bool { return p.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
 
 	var delivery chan kafka.Event = nil
 	if !useProducerEventsChannel {
@@ -399,6 +436,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"enable.auto.offset.store": false,
 	}, consumerOpts...)
 	require.NoError(t, err)
+	require.Eventually(t, func() bool { return c.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
 
 	err = c.Assign([]kafka.TopicPartition{
 		{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},
@@ -428,9 +466,12 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 			return m
 		}
 		backlogsMap := toMap(backlogs)
-		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark")
-		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce")
+		clusterID := c.tracer.ClusterID()
+		require.NotEmpty(t, clusterID)
+		clusterTag := "kafka_cluster_id:" + clusterID
+		require.Contains(t, backlogsMap, "consumer_group:"+testGroupID+"partition:0"+"topic:"+testTopic+"type:kafka_commit"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_high_watermark"+clusterTag)
+		require.Contains(t, backlogsMap, "partition:0"+"topic:"+testTopic+"type:kafka_produce"+clusterTag)
 	}
 	return spans, msg2
 }
