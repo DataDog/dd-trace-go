@@ -108,12 +108,37 @@ func TestNewClient(t *testing.T) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
-				assert.Equal(t, "SET GET", span.Tag(ext.ResourceName))
-				assert.Equal(t, "SET test_key test_value GET test_key", span.Tag(ext.ValkeyRawCommand))
-				assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
-				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
-				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
-				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
+				assert.Equal(t, "GET SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, 2, span.Tag(ext.ValkeyPipelineLength))
+				assert.Equal(t, "GET:1 SET:1", span.Tag(ext.ValkeyPipelineCommandCounts))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test DoMultiCache with multiple command types",
+			opts: []Option{
+				WithRawCommand(true),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				// Set up keys first
+				assert.NoError(t, client.Do(ctx, client.B().Set().Key("mc1").Value("v1").Build()).Error())
+				assert.NoError(t, client.Do(ctx, client.B().Hset().Key("mh1").FieldValue().FieldValue("f1", "v1").Build()).Error())
+				resp := client.DoMultiCache(ctx,
+					valkey.CT(client.B().Get().Key("mc1").Cache(), time.Minute),
+					valkey.CT(client.B().Get().Key("mc1").Cache(), time.Minute),
+					valkey.CT(client.B().Hmget().Key("mh1").Field("f1").Cache(), time.Minute),
+				)
+				require.Len(t, resp, 3)
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				// 2 spans for SET+HSET setup, then 1 span for DoMultiCache
+				require.Len(t, spans, 3)
+
+				span := spans[2]
+				assert.Equal(t, "GET HMGET", span.Tag(ext.ResourceName))
+				assert.Equal(t, 3, span.Tag(ext.ValkeyPipelineLength))
+				assert.Equal(t, "GET:2 HMGET:1", span.Tag(ext.ValkeyPipelineCommandCounts))
 				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
@@ -176,7 +201,7 @@ func TestNewClient(t *testing.T) {
 			wantServiceName: "global-service",
 		},
 		{
-			name: "Test multi command should be limited to 5",
+			name: "Test multi command with pipeline tags",
 			opts: []Option{
 				WithRawCommand(true),
 			},
@@ -197,12 +222,9 @@ func TestNewClient(t *testing.T) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
-				assert.Equal(t, "SET GET SET GET SET", span.Tag(ext.ResourceName))
-				assert.Equal(t, "SET k1 v1 GET k1 SET k2 v2 GET k2 SET k3 v3", span.Tag(ext.ValkeyRawCommand))
-				assert.Nil(t, span.Tag(ext.ValkeyClientCacheHit))
-				assert.Nil(t, span.Tag(ext.ValkeyClientCacheTTL))
-				assert.Nil(t, span.Tag(ext.ValkeyClientCachePXAT))
-				assert.Nil(t, span.Tag(ext.ValkeyClientCachePTTL))
+				assert.Equal(t, "GET SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, 6, span.Tag(ext.ValkeyPipelineLength))
+				assert.Equal(t, "GET:3 SET:3", span.Tag(ext.ValkeyPipelineCommandCounts))
 				assert.Equal(t, context.DeadlineExceeded.Error(), span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
@@ -301,8 +323,9 @@ func TestNewClient(t *testing.T) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
-				assert.Equal(t, "SET GET", span.Tag(ext.ResourceName))
-				assert.Equal(t, "SET test_key test_value GET test_key", span.Tag(ext.ValkeyRawCommand))
+				assert.Equal(t, "GET SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, 2, span.Tag(ext.ValkeyPipelineLength))
+				assert.Equal(t, "GET:1 SET:1", span.Tag(ext.ValkeyPipelineCommandCounts))
 				assert.Nil(t, span.Tag(ext.ErrorMsg))
 			},
 			wantServiceName: "global-service",
