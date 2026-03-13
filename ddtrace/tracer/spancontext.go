@@ -806,7 +806,7 @@ func setPeerService(s *Span, tc TracerConf) {
 	// val() is used: only specific non-empty values ("client", "producer") qualify as
 	// outbound requests, so an unset and an explicitly-empty spanKind are both correctly
 	// treated as non-outbound.
-	isOutboundRequest := s.spanKind.val() == ext.SpanKindClient || s.spanKind.val() == ext.SpanKindProducer
+	isOutboundRequest := s.attrs.spanKind.val() == ext.SpanKindClient || s.attrs.spanKind.val() == ext.SpanKindProducer
 
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMetaLocked(keyPeerServiceSource, ext.PeerService)

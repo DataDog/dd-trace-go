@@ -135,6 +135,17 @@ func (t tagValue) val() string { return t.v }
 // mirroring the two-value map lookup idiom.
 func (t tagValue) get() (string, bool) { return t.v, t.set }
 
+// spanAttributes holds the four V1-protocol promoted span fields.
+// Grouping them prevents accidental field-level initialization in struct literals
+// and makes their shared encoding semantics explicit.
+// The zero value of each tagValue means "never set".
+type spanAttributes struct {
+	env       tagValue // ext.Environment
+	version   tagValue // ext.Version
+	component tagValue // ext.Component
+	spanKind  tagValue // ext.SpanKind
+}
+
 // Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
 type Span struct {
@@ -150,18 +161,12 @@ type Span struct {
 	// +checklocks:mu
 	spanType string `msg:"type"` // protocol associated with the span (i.e. "web", "db", "cache")
 	// +checklocks:mu
-	// env/version/component/spanKind are V1-protocol promoted fields stored as tagValue
-	// so callers can distinguish "never set" from "explicitly set to empty".  They are
-	// dual-stored: the struct field is used by the V1 encoder and internal callers to
-	// avoid a map lookup; the meta map copy ensures V0.4 (msgp) encoding and the external
-	// stats concentrator (which reads Meta["span.kind"]) continue to work without change.
-	env tagValue `msg:"-"` // ext.Environment tag value
-	// +checklocks:mu
-	version tagValue `msg:"-"` // ext.Version tag value
-	// +checklocks:mu
-	component tagValue `msg:"-"` // ext.Component tag value
-	// +checklocks:mu
-	spanKind tagValue `msg:"-"` // ext.SpanKind tag value
+	// attrs holds the four V1-protocol promoted fields (env, version, component, spanKind)
+	// as tagValue so callers can distinguish "never set" from "explicitly set to empty".
+	// They are dual-stored: attrs is used by the V1 encoder and internal callers to avoid
+	// a map lookup; the meta map copy ensures V0.4 (msgp) encoding and the external stats
+	// concentrator (which reads Meta["span.kind"]) continue to work without change.
+	attrs spanAttributes `msg:"-"`
 	// +checklocks:mu
 	start int64 `msg:"start"` // span start time expressed in nanoseconds since epoch
 	// +checklocks:mu
@@ -316,7 +321,7 @@ func (s *Span) debugInfo() (name string, spanID, traceID uint64, integration str
 	name = s.name
 	spanID = s.spanID
 	traceID = s.traceID
-	if v, ok := s.component.get(); ok {
+	if v, ok := s.attrs.component.get(); ok {
 		integration = v
 	} else {
 		integration = "manual"
@@ -774,13 +779,13 @@ func (s *Span) setMetaInit(key, v string) {
 		s.spanType = v
 		return
 	case ext.Environment:
-		s.env = tagOf(v)
+		s.attrs.env = tagOf(v)
 	case ext.Version:
-		s.version = tagOf(v)
+		s.attrs.version = tagOf(v)
 	case ext.Component:
-		s.component = tagOf(v)
+		s.attrs.component = tagOf(v)
 	case ext.SpanKind:
-		s.spanKind = tagOf(v)
+		s.attrs.spanKind = tagOf(v)
 	}
 	// Promoted fields (env/version/component/spanKind) fall through here so they
 	// remain in meta too. The V0.4 encoder and the external stats concentrator both
@@ -1257,13 +1262,13 @@ func getMeta(s *Span, key string) (string, bool) {
 	// semantics without a map lookup.
 	switch key {
 	case ext.Environment:
-		return s.env.get()
+		return s.attrs.env.get()
 	case ext.Version:
-		return s.version.get()
+		return s.attrs.version.get()
 	case ext.Component:
-		return s.component.get()
+		return s.attrs.component.get()
 	case ext.SpanKind:
-		return s.spanKind.get()
+		return s.attrs.spanKind.get()
 	}
 	val, ok := s.meta[key]
 	return val, ok
