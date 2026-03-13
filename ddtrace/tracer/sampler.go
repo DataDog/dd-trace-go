@@ -137,10 +137,11 @@ const rampUpInterval = time.Second
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.
 type prioritySampler struct {
-	mu          locking.RWMutex
-	rates       map[serviceEnvKey]float64 // +checklocks:mu
-	defaultRate float64                   // +checklocks:mu
-	lastCapped  time.Time                 // +checklocks:mu
+	mu               locking.RWMutex
+	rates            map[serviceEnvKey]float64 // +checklocks:mu
+	defaultRate      float64                   // +checklocks:mu
+	agentRatesLoaded bool                      // +checklocks:mu
+	lastCapped       time.Time                 // +checklocks:mu
 }
 
 func newPrioritySampler() *prioritySampler {
@@ -198,6 +199,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+	ps.agentRatesLoaded = true
 	now := time.Now()
 	canIncrease := ps.lastCapped.IsZero() || now.Sub(ps.lastCapped) >= rampUpInterval
 	capApplied := false
@@ -252,6 +254,14 @@ func (ps *prioritySampler) apply(spn *Span) {
 		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
 	}
 	spn.SetTag(keySamplingPriorityRate, rate)
-	// Set the Knuth sampling rate tag when sampled by agent rate
-	spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	// Only set the Knuth sampling rate tag when actual agent rates have been
+	// received. The initial default rate (1.0) is a client-side fallback that
+	// does not represent an agent-configured rate, so it must not propagate
+	// as _dd.p.ksr to stay consistent with other tracers.
+	ps.mu.RLock()
+	loaded := ps.agentRatesLoaded
+	ps.mu.RUnlock()
+	if loaded {
+		spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	}
 }
