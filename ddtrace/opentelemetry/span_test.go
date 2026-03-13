@@ -185,6 +185,62 @@ func TestSpanLink(t *testing.T) {
 	assert.Equal(uint32(0x80000001), spanLinks[0].Flags) // sampled and set
 }
 
+func TestSpanAddLink(t *testing.T) {
+	assert := assert.New(t)
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	// Create a span
+	_, span := tr.Start(context.Background(), "span_add_link")
+
+	// Create a link to a remote span
+	traceID, _ := oteltrace.TraceIDFromHex("00000000000001c8000000000000007b")
+	spanID, _ := oteltrace.SpanIDFromHex("000000000000000f")
+	traceStateVal := "dd_origin=ci"
+	traceState, _ := oteltrace.ParseTraceState(traceStateVal)
+	remoteSpanContext := oteltrace.NewSpanContext(
+		oteltrace.SpanContextConfig{
+			TraceID:    traceID,
+			SpanID:     spanID,
+			TraceFlags: oteltrace.FlagsSampled,
+			TraceState: traceState,
+			Remote:     true,
+		},
+	)
+	link := oteltrace.Link{
+		SpanContext: remoteSpanContext,
+		Attributes:  []attribute.KeyValue{attribute.String("link.name", "alpha_transaction")},
+	}
+
+	// Add the link to the span and end the span
+	span.AddLink(link)
+	span.End()
+
+	tracer.Flush()
+	payload, err := waitForPayload(payloads)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	assert.NotNil(payload)
+	assert.Len(payload, 1)    // only one trace
+	assert.Len(payload[0], 1) // only one span
+
+	// Convert the span_links field from type []map[string]interface{} to a struct
+	var spanLinks []tracer.SpanLink
+	spanLinkBytes, _ := json.Marshal(payload[0][0]["span_links"])
+	json.Unmarshal(spanLinkBytes, &spanLinks)
+	assert.Len(spanLinks, 1) // only one span link
+
+	// Ensure the span link has the correct values
+	assert.Equal(uint64(123), spanLinks[0].TraceID)
+	assert.Equal(uint64(456), spanLinks[0].TraceIDHigh)
+	assert.Equal(uint64(15), spanLinks[0].SpanID)
+	assert.Equal(map[string]string{"link.name": "alpha_transaction"}, spanLinks[0].Attributes)
+	assert.Equal(traceStateVal, spanLinks[0].Tracestate)
+	assert.Equal(uint32(0x80000001), spanLinks[0].Flags) // sampled and set
+}
+
 func TestSpanEnd(t *testing.T) {
 	assert := assert.New(t)
 	_, payloads, cleanup := mockTracerProvider(t)
@@ -400,6 +456,40 @@ func attributesContains(attrs map[string]any, key string, val any) bool {
 		}
 	}
 	return false
+}
+
+func TestRecordError(t *testing.T) {
+	assert := assert.New(t)
+	_, _, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	errMsg := "something went wrong"
+	_, sp := tr.Start(context.Background(), "span_record_error")
+
+	// Record the error as an event
+	sp.RecordError(errors.New(errMsg), oteltrace.WithStackTrace(true))
+	sp.End()
+
+	dd := sp.(*span)
+	assert.Len(dd.events, 1)
+	e := dd.events[0]
+	assert.Equal("exception", e.name)
+
+	cfg := tracer.SpanEventConfig{}
+	for _, opt := range e.options {
+		opt(&cfg)
+	}
+
+	// Assert expected attributes exist on the event
+	assert.Len(cfg.Attributes, 3)
+
+	assert.True(attributesContains(cfg.Attributes, "exception.message", errMsg))
+	assert.True(attributesContains(cfg.Attributes, "exception.type", "*errors.errorString"))
+	assert.Contains(cfg.Attributes, "exception.stacktrace")
+
+	// verify status did not change to error since RecordError should not change span status
+	assert.Equal(codes.Unset, dd.statusInfo.code)
 }
 
 func TestSpanContextWithStartOptions(t *testing.T) {
