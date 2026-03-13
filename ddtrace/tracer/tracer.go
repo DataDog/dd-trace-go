@@ -676,8 +676,9 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	}
 
 	var (
-		context       *SpanContext
-		parentService string
+		context             *SpanContext
+		parentService       string
+		parentServiceSource string
 		// The default pprof context is taken from the start options and is
 		// not nil when using StartSpanFromContext()
 		pprofContext = opts.Context
@@ -690,6 +691,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 			// to minimize lock contention on the parent span during child creation.
 			inheritedData := context.span.inheritedData()
 			parentService = inheritedData.service
+			parentServiceSource = inheritedData.serviceSource
 
 			// Inherit the context.Context from parent span if it was propagated
 			// using ChildOf() rather than StartSpanFromContext(), see
@@ -715,13 +717,14 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 	}
 	// span defaults
 	span := &Span{
-		name:        operationName,
-		service:     parentService, // inherit from parent if available
-		resource:    operationName,
-		spanID:      id,
-		traceID:     id,
-		start:       startTime,
-		integration: "manual",
+		name:          operationName,
+		service:       parentService, // inherit from parent if available
+		serviceSource: parentServiceSource,
+		resource:      operationName,
+		spanID:        id,
+		traceID:       id,
+		start:         startTime,
+		integration:   "manual",
 	}
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
@@ -787,6 +790,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 
 	if newSvc, ok := cfg.ServiceMapping(span.service); ok {
 		span.service = newSvc
+		span.serviceSource = ext.ServiceSourceMapping
 	}
 
 	if ver := cfg.Version(); ver != "" {

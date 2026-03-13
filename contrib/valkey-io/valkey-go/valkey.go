@@ -219,8 +219,6 @@ func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, cont
 		tracer.ServiceName(c.cfg.serviceName),
 		tracer.ResourceName(cmd.statement),
 		tracer.SpanType(ext.SpanTypeValkey),
-		tracer.Tag(ext.TargetHost, c.host),
-		tracer.Tag(ext.TargetPort, c.port),
 		tracer.Tag(ext.Component, instrumentation.PackageValkeyIoValkeyGo),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
