@@ -119,11 +119,21 @@ func (s *Span) spanEventsAsJSONString() string {
 
 // tagValue holds a tag string and a flag indicating whether it was explicitly set.
 // The zero value represents an absent tag; an explicit SetTag with an empty string
-// is represented as {v: "", set: true}.
+// is represented as tagOf(""), and an absent value is tagValue{}.
 type tagValue struct {
 	v   string
 	set bool
 }
+
+// tagOf returns a tagValue that is marked as explicitly set.
+func tagOf(v string) tagValue { return tagValue{v: v, set: true} }
+
+// val returns the string value, ignoring whether it was set.
+func (t tagValue) val() string { return t.v }
+
+// get returns the string value and whether it was explicitly set,
+// mirroring the two-value map lookup idiom.
+func (t tagValue) get() (string, bool) { return t.v, t.set }
 
 // Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
@@ -306,8 +316,8 @@ func (s *Span) debugInfo() (name string, spanID, traceID uint64, integration str
 	name = s.name
 	spanID = s.spanID
 	traceID = s.traceID
-	if s.component.set {
-		integration = s.component.v
+	if v, ok := s.component.get(); ok {
+		integration = v
 	} else {
 		integration = "manual"
 	}
@@ -764,13 +774,13 @@ func (s *Span) setMetaInit(key, v string) {
 		s.spanType = v
 		return
 	case ext.Environment:
-		s.env = tagValue{v: v, set: true}
+		s.env = tagOf(v)
 	case ext.Version:
-		s.version = tagValue{v: v, set: true}
+		s.version = tagOf(v)
 	case ext.Component:
-		s.component = tagValue{v: v, set: true}
+		s.component = tagOf(v)
 	case ext.SpanKind:
-		s.spanKind = tagValue{v: v, set: true}
+		s.spanKind = tagOf(v)
 	}
 	// Promoted fields (env/version/component/spanKind) fall through here so they
 	// remain in meta too. The V0.4 encoder and the external stats concentrator both
@@ -1247,13 +1257,13 @@ func getMeta(s *Span, key string) (string, bool) {
 	// semantics without a map lookup.
 	switch key {
 	case ext.Environment:
-		return s.env.v, s.env.set
+		return s.env.get()
 	case ext.Version:
-		return s.version.v, s.version.set
+		return s.version.get()
 	case ext.Component:
-		return s.component.v, s.component.set
+		return s.component.get()
 	case ext.SpanKind:
-		return s.spanKind.v, s.spanKind.set
+		return s.spanKind.get()
 	}
 	val, ok := s.meta[key]
 	return val, ok

@@ -803,10 +803,10 @@ func (t *trace) finishedOneLocked(s *Span) {
 // +checklocks:s.mu
 func setPeerService(s *Span, tc TracerConf) {
 	assert.RWMutexLocked(&s.mu)
-	// .v is used directly: only specific non-empty values ("client", "producer") qualify
-	// as outbound requests, so an unset and an explicitly-empty spanKind are both
-	// correctly treated as non-outbound.
-	isOutboundRequest := s.spanKind.v == ext.SpanKindClient || s.spanKind.v == ext.SpanKindProducer
+	// val() is used: only specific non-empty values ("client", "producer") qualify as
+	// outbound requests, so an unset and an explicitly-empty spanKind are both correctly
+	// treated as non-outbound.
+	isOutboundRequest := s.spanKind.val() == ext.SpanKindClient || s.spanKind.val() == ext.SpanKindProducer
 
 	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
 		s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
