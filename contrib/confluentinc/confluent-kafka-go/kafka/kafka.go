@@ -94,12 +94,14 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 	instr.Logger().Debug("%s: Wrapping Consumer: %#v", pkgPath, wrapped.tracer)
 	wrapped.events = kafkatrace.WrapConsumeEventsChannel(wrapped.tracer, c.Events(), c, wrapEvent)
 
-	// Create an admin client to fetch the cluster ID for data streams monitoring
-	// The retrieval of the cluster ID is async and can be cancelled on Close to avoid blocking shutdown
-	if admin, err := kafka.NewAdminClientFromConsumer(c); err != nil {
-		instr.Logger().Warn("failed to create admin client for cluster ID: %s", err)
-	} else {
-		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(wrapped.tracer, admin))
+	if wrapped.tracer.DSMEnabled() {
+		// Create an admin client to fetch the cluster ID for data streams monitoring
+		// The retrieval of the cluster ID is async and can be cancelled on Close to avoid blocking shutdown
+		if admin, err := kafka.NewAdminClientFromConsumer(c); err != nil {
+			instr.Logger().Warn("failed to create admin client for cluster ID: %s", err)
+		} else {
+			wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(wrapped.tracer, admin))
+		}
 	}
 
 	return wrapped
