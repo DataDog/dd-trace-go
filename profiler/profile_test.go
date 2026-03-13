@@ -21,8 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testRunDeltaProfile(t *testing.T) {
-	t.Helper()
+func TestDeltaProfile(t *testing.T) {
 	var (
 		deltaPeriod = DefaultPeriod
 		timeA       = time.Now().Truncate(time.Minute)
@@ -109,48 +108,44 @@ main;bar 0 0 8 16
 		},
 	}
 
+	deltaProfiler := func(t *testing.T, prof1, prof2 []byte, pt ProfileType, delta bool) (out1 []byte, out2 []byte) {
+		p := [][]byte{prof1, prof2}
+		testLookupProfile = func(name string, w io.Writer, debug int) error {
+			data := p[0]
+			if len(p) > 1 {
+				p = p[1:]
+			}
+			_, err := w.Write(data)
+			return err
+		}
+		t.Cleanup(func() { testLookupProfile = nil })
+		attachment := pt.Filename()
+		if delta {
+			attachment = "delta-" + attachment
+		}
+		backend := startTestProfiler(t, 2, WithProfileTypes(pt), WithPeriod(10*time.Millisecond), WithDeltaProfiles(delta))
+		out1 = backend.ReceiveProfile(t).attachments[attachment]
+		out2 = backend.ReceiveProfile(t).attachments[attachment]
+		return
+	}
+
 	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	for _, test := range tests {
 		for _, profType := range test.Types {
-			// deltaProfiler returns an unstarted profiler that is fed prof1
-			// followed by prof2 when calling runProfile().
-			deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
-				returnProfs := [][]byte{prof1, prof2}
-				opts = append(opts, WithPeriod(5*time.Millisecond), WithProfileTypes(HeapProfile, MutexProfile, BlockProfile))
-				p, err := unstartedProfiler(opts...)
-				p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
-					_, err := w.Write(returnProfs[0])
-					returnProfs = returnProfs[1:]
-					return err
-				}
-				require.NoError(t, err)
-				return p, func() {}
-			}
-
 			t.Run(profType.String(), func(t *testing.T) {
 				t.Run("enabled", func(t *testing.T) {
 					prof1 := test.Prof1.Protobuf()
 					prof2 := test.Prof2.Protobuf()
-					p, cleanup := deltaProfiler(prof1, prof2)
-					defer cleanup()
-					// first run, should produce the current profile twice (a bit
-					// awkward, but makes sense since we try to add delta profiles as an
-					// additional profile type to ease the transition)
-					profs, err := p.runProfile(profType)
-					require.NoError(t, err)
-					require.Equal(t, 1, len(profs))
-					require.Equal(t, "delta-"+profType.Filename(), profs[0].name)
-					requirePprofEqual(t, prof1, profs[0].data)
+					out1, out2 := deltaProfiler(t, prof1, prof2, profType, true)
+					// First profile is the same since there is no basis for delta
+					requirePprofEqual(t, prof1, out1)
 
-					// second run, should produce p1 profile and delta profile
-					profs, err = p.runProfile(profType)
-					require.NoError(t, err)
-					require.Equal(t, 1, len(profs))
-					require.Equal(t, "delta-"+profType.Filename(), profs[0].name)
-					require.Equal(t, test.WantDelta.String(), protobufToText(profs[0].data))
+					// Compare the text rather than protobuf for the delta,
+					// and we'll separately check the timestamp below
+					require.Equal(t, test.WantDelta.String(), protobufToText(out2))
 
 					// check delta prof details like timestamps and duration
-					deltaProf, err := pprofile.ParseData(profs[0].data)
+					deltaProf, err := pprofile.ParseData(out2)
 					require.NoError(t, err)
 					require.Equal(t, test.Prof2.Time.UnixNano(), deltaProf.TimeNanos)
 					require.Equal(t, deltaPeriod.Nanoseconds(), deltaProf.DurationNanos)
@@ -159,12 +154,9 @@ main;bar 0 0 8 16
 				t.Run("disabled", func(t *testing.T) {
 					prof1 := test.Prof1.Protobuf()
 					prof2 := test.Prof2.Protobuf()
-					p, cleanup := deltaProfiler(prof1, prof2, WithDeltaProfiles(false))
-					defer cleanup()
-
-					profs, err := p.runProfile(profType)
-					require.NoError(t, err)
-					require.Equal(t, 1, len(profs))
+					out1, out2 := deltaProfiler(t, prof1, prof2, profType, false)
+					requirePprofEqual(t, prof1, out1)
+					requirePprofEqual(t, prof2, out2)
 				})
 			})
 		}
@@ -173,11 +165,6 @@ main;bar 0 0 8 16
 
 func TestRunProfile(t *testing.T) {
 	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
-	// TODO(felixge): These tests are directly calling the internal runProfile()
-	// function which is brittle. We should refactor them to use the public API.
-	t.Run("delta", func(t *testing.T) {
-		testRunDeltaProfile(t)
-	})
 
 	t.Run("goroutinewait", func(t *testing.T) {
 		const sample = `

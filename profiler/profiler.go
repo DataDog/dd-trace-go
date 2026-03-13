@@ -45,6 +45,11 @@ var (
 	// errProfilerStopped is a sentinel for suppressing errors if we are
 	// about to stop the profiler
 	errProfilerStopped = errors.New("profiler stopped")
+
+	// testLookupProfile is a global hook for testing that replaces the
+	// pprof.Lookup-based profile collection. Set it before calling Start
+	// and restore it to nil after calling Stop.
+	testLookupProfile func(name string, w io.Writer, debug int) error
 )
 
 func init() {
@@ -122,6 +127,9 @@ type testHooks struct {
 }
 
 func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
+	if testLookupProfile != nil {
+		return testLookupProfile(name, w, debug)
+	}
 	if p.testHooks.lookupProfile != nil {
 		return p.testHooks.lookupProfile(name, w, debug)
 	}
