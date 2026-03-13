@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -117,34 +118,14 @@ func (s *Span) spanEventsAsJSONString() string {
 	return string(events)
 }
 
-// tagValue holds a tag string and a flag indicating whether it was explicitly set.
-// The zero value represents an absent tag; an explicit SetTag with an empty string
-// is represented as tagOf(""), and an absent value is tagValue{}.
-type tagValue struct {
-	v   string
-	set bool
-}
+// tagValue is a package-level alias for tinternal.TagValue.
+type tagValue = tinternal.TagValue
 
 // tagOf returns a tagValue that is marked as explicitly set.
-func tagOf(v string) tagValue { return tagValue{v: v, set: true} }
+func tagOf(v string) tagValue { return tinternal.TagOf(v) }
 
-// val returns the string value, ignoring whether it was set.
-func (t tagValue) val() string { return t.v }
-
-// get returns the string value and whether it was explicitly set,
-// mirroring the two-value map lookup idiom.
-func (t tagValue) get() (string, bool) { return t.v, t.set }
-
-// spanAttributes holds the four V1-protocol promoted span fields.
-// Grouping them prevents accidental field-level initialization in struct literals
-// and makes their shared encoding semantics explicit.
-// The zero value of each tagValue means "never set".
-type spanAttributes struct {
-	env       tagValue // ext.Environment
-	version   tagValue // ext.Version
-	component tagValue // ext.Component
-	spanKind  tagValue // ext.SpanKind
-}
+// spanAttributes is a package-level alias for tinternal.SpanAttributes.
+type spanAttributes = tinternal.SpanAttributes
 
 // Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
@@ -321,7 +302,7 @@ func (s *Span) debugInfo() (name string, spanID, traceID uint64, integration str
 	name = s.name
 	spanID = s.spanID
 	traceID = s.traceID
-	if v, ok := s.attrs.component.get(); ok {
+	if v, ok := s.attrs.Component.Get(); ok {
 		integration = v
 	} else {
 		integration = "manual"
@@ -779,13 +760,13 @@ func (s *Span) setMetaInit(key, v string) {
 		s.spanType = v
 		return
 	case ext.Environment:
-		s.attrs.env = tagOf(v)
+		s.attrs.Env = tagOf(v)
 	case ext.Version:
-		s.attrs.version = tagOf(v)
+		s.attrs.Version = tagOf(v)
 	case ext.Component:
-		s.attrs.component = tagOf(v)
+		s.attrs.Component = tagOf(v)
 	case ext.SpanKind:
-		s.attrs.spanKind = tagOf(v)
+		s.attrs.SpanKind = tagOf(v)
 	}
 	// Promoted fields (env/version/component/spanKind) fall through here so they
 	// remain in meta too. The V0.4 encoder and the external stats concentrator both
@@ -1258,17 +1239,17 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 func getMeta(s *Span, key string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	// Fast path for promoted fields: tagValue.set gives the correct "was it set?"
+	// Fast path for promoted fields: TagValue.Set gives the correct "was it set?"
 	// semantics without a map lookup.
 	switch key {
 	case ext.Environment:
-		return s.attrs.env.get()
+		return s.attrs.Env.Get()
 	case ext.Version:
-		return s.attrs.version.get()
+		return s.attrs.Version.Get()
 	case ext.Component:
-		return s.attrs.component.get()
+		return s.attrs.Component.Get()
 	case ext.SpanKind:
-		return s.attrs.spanKind.get()
+		return s.attrs.SpanKind.Get()
 	}
 	val, ok := s.meta[key]
 	return val, ok

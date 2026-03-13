@@ -1978,7 +1978,7 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		assert.Equal("4.5.6", sp.attrs.version.val())
+		assert.Equal("4.5.6", sp.attrs.Version.Val())
 		assert.Equal("4.5.6", sp.meta[ext.Version]) // dual-stored
 	})
 	t.Run("service", func(t *testing.T) {
@@ -1989,7 +1989,7 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		assert.Equal(tagValue{}, sp.attrs.version)
+		assert.Equal(tagValue{}, sp.attrs.Version)
 		assert.Empty(sp.meta[ext.Version]) // dual-stored
 	})
 	t.Run("universal", func(t *testing.T) {
@@ -1999,7 +1999,7 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		assert.Equal("4.5.6", sp.attrs.version.val())
+		assert.Equal("4.5.6", sp.attrs.Version.Val())
 		assert.Equal("4.5.6", sp.meta[ext.Version]) // dual-stored
 	})
 	t.Run("service/universal", func(t *testing.T) {
@@ -2010,7 +2010,7 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		assert.Equal("1.2.3", sp.attrs.version.val())
+		assert.Equal("1.2.3", sp.attrs.Version.Val())
 		assert.Equal("1.2.3", sp.meta[ext.Version]) // dual-stored
 	})
 	t.Run("universal/service", func(t *testing.T) {
@@ -2021,7 +2021,7 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		assert.Equal(tagValue{}, sp.attrs.version)
+		assert.Equal(tagValue{}, sp.attrs.Version)
 		assert.Empty(sp.meta[ext.Version]) // dual-stored
 	})
 }
@@ -2034,7 +2034,7 @@ func TestEnvironment(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		assert.Equal("test", sp.attrs.env.val())
+		assert.Equal("test", sp.attrs.Env.Val())
 		assert.Equal("test", sp.meta[ext.Environment]) // dual-stored
 	})
 
@@ -2045,7 +2045,7 @@ func TestEnvironment(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		assert.Equal(tagValue{}, sp.attrs.env)
+		assert.Equal(tagValue{}, sp.attrs.Env)
 		assert.Empty(sp.meta[ext.Environment]) // dual-stored
 	})
 }
