@@ -52,7 +52,7 @@ func getContextFromMapping(fields []string) []byte {
 	if header.Version != 2 {
 		return nil
 	}
-	if header.PublishedAtNs == 0 {
+	if header.MonotonicPublishedAtNs == 0 {
 		return nil
 	}
 
@@ -116,16 +116,6 @@ func TestCreateOtelProcessContextMapping(t *testing.T) {
 	require.Equal(t, payload, ctx)
 }
 
-func TestCreateOtelProcessContextMappingRejectsOversizedPayload(t *testing.T) {
-	restoreOtelProcessContextMapping(t)
-
-	headerSize := int(unsafe.Sizeof(processContextHeader{}))
-	oversizedPayload := make([]byte, otelContextMappingSize-headerSize+1)
-
-	err := CreateOtelProcessContextMapping(oversizedPayload)
-	require.ErrorIs(t, err, ErrPayloadTooLarge)
-}
-
 func TestUpdateOtelProcessContextMapping(t *testing.T) {
 	restoreOtelProcessContextMapping(t)
 
@@ -163,7 +153,7 @@ func TestUpdateOtelProcessContextMappingRejectsOversizedPayload(t *testing.T) {
 	require.NoError(t, err)
 
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
-	oversizedPayload := make([]byte, otelContextMappingSize-headerSize+1)
+	oversizedPayload := make([]byte, minOtelContextMappingSize-headerSize+1)
 
 	err = CreateOtelProcessContextMapping(oversizedPayload)
 	require.ErrorIs(t, err, ErrPayloadTooLarge)
@@ -176,13 +166,13 @@ func TestUpdateOtelProcessContextMappingChangesTimestamp(t *testing.T) {
 	require.NoError(t, err)
 
 	header := (*processContextHeader)(unsafe.Pointer(&existingMappingBytes[0]))
-	initialTimestamp := atomic.LoadUint64(&header.PublishedAtNs)
+	initialTimestamp := atomic.LoadUint64(&header.MonotonicPublishedAtNs)
 	require.NotZero(t, initialTimestamp)
 
 	err = CreateOtelProcessContextMapping([]byte("updated"))
 	require.NoError(t, err)
 
-	newTimestamp := atomic.LoadUint64(&header.PublishedAtNs)
+	newTimestamp := atomic.LoadUint64(&header.MonotonicPublishedAtNs)
 	require.NotZero(t, newTimestamp)
 	require.NotEqual(t, newTimestamp, initialTimestamp)
 }

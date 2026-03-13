@@ -12,9 +12,7 @@ import (
 	"fmt"
 	"os"
 	"structs"
-	"sync"
 	"sync/atomic"
-	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -28,19 +26,19 @@ const (
 )
 
 var (
-	otelContextMappingSize = 2 * os.Getpagesize()
+	minOtelContextMappingSize = 2 * os.Getpagesize()
 
 	existingMappingBytes []byte
 	publisherPID         int
 )
 
 type processContextHeader struct {
-	_             structs.HostLayout
-	Signature     [8]byte
-	Version       uint32
-	PayloadSize   uint32
-	PublishedAtNs uint64
-	PayloadAddr   uint64
+	_                      structs.HostLayout
+	Signature              [8]byte
+	Version                uint32
+	PayloadSize            uint32
+	MonotonicPublishedAtNs uint64
+	PayloadAddr            uint64
 }
 
 var tryCreateMemfdMapping = func(size int) ([]byte, error) {
@@ -69,9 +67,7 @@ func CreateOtelProcessContextMapping(data []byte) error {
 
 func createOtelProcessContextMapping(data []byte) error {
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
-	if len(data)+headerSize > otelContextMappingSize {
-		return ErrPayloadTooLarge
-	}
+	otelContextMappingSize := max(minOtelContextMappingSize, len(data)+headerSize)
 
 	// Try memfd_create first; fall back to anonymous mapping
 	mappingBytes, memfdErr := tryCreateMemfdMapping(otelContextMappingSize)
@@ -95,20 +91,21 @@ func createOtelProcessContextMapping(data []byte) error {
 	}
 	addr := uintptr(unsafe.Pointer(&mappingBytes[0]))
 
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		header := processContextHeader{
-			Version:       2,
-			PayloadSize:   uint32(len(data)),
-			PublishedAtNs: uint64(time.Now().UnixNano()),
-			PayloadAddr:   uint64(addr) + uint64(headerSize),
-		}
-		copy(mappingBytes[headerSize:], data)
-		copy(mappingBytes[:headerSize], unsafe.Slice((*byte)(unsafe.Pointer(&header)), headerSize))
-	})
-	wg.Wait()
-	// write the signature last to ensure that once a process validates the signature, it can safely read the whole data
-	copy(mappingBytes, otelContextSignature)
+	header := (*processContextHeader)(unsafe.Pointer(&mappingBytes[0]))
+	copy(header.Signature[:], otelContextSignature)
+	header.Version = 2
+	header.PayloadSize = uint32(len(data))
+	header.PayloadAddr = uint64(addr) + uint64(headerSize)
+	copy(mappingBytes[headerSize:], data)
+
+	monotonicPublishedAtNs, err := getMonotonicClockTime()
+	if err != nil {
+		_ = unix.Munmap(mappingBytes)
+		return fmt.Errorf("failed to get monotonic clock time: %w", err)
+	}
+
+	// Write MonotonicPublishedAtNs atomically last to signal that the mapping is ready to be read.
+	atomic.StoreUint64(&header.MonotonicPublishedAtNs, monotonicPublishedAtNs)
 
 	prctlErr := setAnonymousMappingName(mappingBytes, otelContextSignature)
 
@@ -131,31 +128,40 @@ var setAnonymousMappingName = func(mappingBytes []byte, name string) error {
 		unix.PR_SET_VMA,
 		uintptr(unix.PR_SET_VMA_ANON_NAME),
 		uintptr(unsafe.Pointer(&mappingBytes[0])),
-		uintptr(otelContextMappingSize),
+		uintptr(len(mappingBytes)),
 		uintptr(unsafe.Pointer(&nameNullTerminated[0])), // null-terminated string
 	)
 }
 
 func updateOtelProcessContextMapping(data []byte) error {
 	headerSize := int(unsafe.Sizeof(processContextHeader{}))
-	if len(data)+headerSize > otelContextMappingSize {
+	if len(data)+headerSize > len(existingMappingBytes) {
 		return ErrPayloadTooLarge
 	}
 
 	header := (*processContextHeader)(unsafe.Pointer(&existingMappingBytes[0]))
-	oldPublishedAtNs := header.PublishedAtNs
-	// Memory barrier to ensure that the header is updated before the data is written
-	atomic.StoreUint64(&header.PublishedAtNs, 0)
+	oldPublishedAtNs := header.MonotonicPublishedAtNs
+	// Set MonotonicPublishedAtNs to 0 to signal that the mapping is being updated and is no longer valid.
+	atomic.StoreUint64(&header.MonotonicPublishedAtNs, 0)
+	// Memory barrier to ensure that following writes are not reordered before the MonotonicPublishedAtNs write.
+	memoryBarrier()
 
 	copy(existingMappingBytes[headerSize:], data)
 	header.PayloadSize = uint32(len(data))
 	// Payload address is the same as the previous mapping
 
-	newPublishedAtNs := oldPublishedAtNs
-	for newPublishedAtNs == oldPublishedAtNs {
-		newPublishedAtNs = uint64(time.Now().UnixNano())
+	newPublishedAtNs, err := getMonotonicClockTime()
+	if err != nil {
+		return fmt.Errorf("failed to get monotonic clock time: %w", err)
 	}
-	atomic.StoreUint64(&header.PublishedAtNs, newPublishedAtNs)
+
+	// Ensure that the new published at time is different from the old one
+	if newPublishedAtNs == oldPublishedAtNs {
+		newPublishedAtNs = oldPublishedAtNs + 1
+	}
+
+	// Write MonotonicPublishedAtNs atomically last to signal that the mapping is ready to be read.
+	atomic.StoreUint64(&header.MonotonicPublishedAtNs, newPublishedAtNs)
 	_ = setAnonymousMappingName(existingMappingBytes, otelContextSignature)
 	return nil
 }
@@ -174,4 +180,19 @@ func removeOtelProcessContextMapping() error {
 	existingMappingBytes = nil
 	publisherPID = 0
 	return nil
+}
+
+func getMonotonicClockTime() (uint64, error) {
+	var now unix.Timespec
+	err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &now)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get clock time: %w", err)
+	}
+	return uint64(now.Nano()), nil
+}
+
+func memoryBarrier() {
+	// On ARM64, atomic add will compile as LDADDAL which will act as a full memory barrier.
+	var fence uint64
+	atomic.AddUint64(&fence, 0)
 }
