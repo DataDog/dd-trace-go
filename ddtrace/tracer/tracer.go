@@ -540,20 +540,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		if interval <= 0 {
 			interval = defaultAgentInfoPollInterval
 		}
-		t.wg.Go(func() {
-			// polls the agent /info endpoint at the given interval until the
-			// tracer stops. It delegates each refresh to refreshAgentFeatures.
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					t.refreshAgentFeatures()
-				case <-t.stop:
-					return
-				}
-			}
-		})
+		t.wg.Go(func() { t.pollAgentInfo(interval) })
 	}
 
 	return t, nil
@@ -564,7 +551,16 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 // components at startup (transport URL, statsd address, obfuscator config, etc.)
 // are preserved from the current snapshot so a poll can never change them.
 func (t *tracer) refreshAgentFeatures() {
-	newFeatures, err := fetchAgentFeatures(t.config.agentURL, t.config.httpClient)
+	ctx, cancel := gocontext.WithCancel(gocontext.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-t.stop:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	newFeatures, err := fetchAgentFeatures(ctx, t.config.agentURL, t.config.httpClient)
 	if err != nil {
 		if !errors.Is(err, errAgentFeaturesNotSupported) {
 			log.Debug("agent info poll failed: %s", err.Error())
@@ -588,6 +584,21 @@ func (t *tracer) refreshAgentFeatures() {
 		f.hasTelemetryProxy = current.hasTelemetryProxy
 		return f
 	})
+}
+
+// pollAgentInfo polls the agent /info endpoint at the given interval until the
+// tracer stops. It delegates each refresh to refreshAgentFeatures.
+func (t *tracer) pollAgentInfo(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			t.refreshAgentFeatures()
+		case <-t.stop:
+			return
+		}
+	}
 }
 
 // Flush flushes any buffered traces. Flush is in effect only if a tracer

@@ -152,7 +152,7 @@ type config struct {
 	agent atomicAgentFeatures
 
 	// agentInfoPollInterval overrides the default polling interval for /info.
-	// A zero value uses the default (defaultAgentInfoPollInterval constant in tracer.go).
+	// A zero value uses defaultAgentInfoPollInterval.
 	agentInfoPollInterval time.Duration
 
 	// integrations reports if the user has instrumented a Datadog integration and
@@ -471,8 +471,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
-	c.agent.store(loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient))
-	if c.agent.load().v1ProtocolAvailable {
+	af := loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
+	c.agent.store(af)
+	if af.v1ProtocolAvailable {
 		c.traceProtocol = traceProtocolV1
 		if t, ok := c.transport.(*httpTransport); ok {
 			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
@@ -489,7 +490,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if c.statsdClient == nil {
 		// configure statsd client
-		addr := resolveDogstatsdAddr(c)
+		addr := resolveDogstatsdAddr(c.dogstatsdAddr, af)
 		globalconfig.SetDogstatsdAddr(addr)
 		c.dogstatsdAddr = addr
 	}
@@ -513,7 +514,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		Site:       env.Get("DD_SITE"),
 	}
 	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
-		EVPProxyV2: c.agent.load().evpProxyV2,
+		EVPProxyV2: af.evpProxyV2,
 	}
 
 	return c, nil
@@ -546,14 +547,13 @@ func apmTracingDisabled(c *config) {
 // address and the agent-reported port. If the agent reports a port, it will be used
 // instead of the user-defined address' port. UDS paths are honored regardless of the
 // agent-reported port.
-func resolveDogstatsdAddr(c *config) string {
-	addr := c.dogstatsdAddr
+func resolveDogstatsdAddr(addr string, af agentFeatures) string {
 	if addr == "" {
 		// no config defined address; use host and port from env vars
 		// or default to localhost:8125 if not set
 		addr = defaultDogstatsdAddr()
 	}
-	agentport := c.agent.load().StatsdPort
+	agentport := af.StatsdPort
 	if agentport == 0 {
 		// the agent didn't report a port; use the already resolved address as
 		// features are loaded from the trace-agent, which might be not running
@@ -718,9 +718,14 @@ var errAgentFeaturesNotSupported = errors.New("agent does not support /info")
 // fails or the response cannot be decoded; the caller should retain the
 // previous snapshot in that case. A 404 response returns
 // errAgentFeaturesNotSupported so callers can distinguish it from a real
-// network failure.
-func fetchAgentFeatures(agentURL *url.URL, httpClient *http.Client) (agentFeatures, error) {
-	resp, err := httpClient.Get(agentURL.JoinPath("info").String())
+// network failure. The request is bound to ctx so callers can cancel it on
+// shutdown.
+func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http.Client) (agentFeatures, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agentURL.JoinPath("info").String(), nil)
+	if err != nil {
+		return agentFeatures{}, fmt.Errorf("creating /info request: %w", err)
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return agentFeatures{}, fmt.Errorf("loading features: %w", err)
 	}
@@ -789,7 +794,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		// there is no agent; all features off
 		return agentFeatures{}
 	}
-	features, err := fetchAgentFeatures(agentURL, httpClient)
+	features, err := fetchAgentFeatures(context.Background(), agentURL, httpClient)
 	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
 		log.Error("%s", err.Error())
 	}
