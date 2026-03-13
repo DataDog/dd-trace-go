@@ -340,7 +340,7 @@ jobs:
       - system-tests-docker-images
       - tracer-release
     runs-on: ubuntu-latest
-    if: success() || failure()
+    if: '!cancelled()'
     steps:
       - name: Success
         if: |
