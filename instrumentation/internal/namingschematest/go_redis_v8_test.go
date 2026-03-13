@@ -41,6 +41,10 @@ var goRedisV8Test = harness.TestCase{
 		DDService:       []string{"redis.client"},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageGoRedisV8)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "redis.command", spans[0].OperationName())

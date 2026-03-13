@@ -59,7 +59,7 @@ func (t *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	method := req.Method
 	resource := t.config.resourceNamer(url, method)
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(t.config.serviceName),
+		instrumentation.ServiceNameWithSource(t.config.serviceName, t.config.serviceSource),
 		tracer.SpanType(ext.SpanTypeElasticSearch),
 		tracer.ResourceName(resource),
 		tracer.Tag("elasticsearch.method", method),

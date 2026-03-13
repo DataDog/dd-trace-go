@@ -21,6 +21,7 @@ const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 
 type config struct {
 	serviceName       string
+	serviceSource     string
 	analyticsRate     float64
 	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
@@ -48,6 +49,7 @@ type IgnoreRequestFunc func(c echo.Context) bool
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.serviceSource = string(instrumentation.PackageLabstackEchoV4)
 	cfg.analyticsRate = math.NaN()
 	if fn := httptrace.GetErrorCodesFromInput(env.Get(envServerErrorStatuses)); fn != nil {
 		cfg.isStatusError = fn
@@ -69,6 +71,7 @@ func defaults(cfg *config) {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
