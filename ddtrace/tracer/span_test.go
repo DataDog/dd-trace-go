@@ -427,7 +427,7 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("web.request", span.name)
 
 	span.SetTag("component", "tracer")
-	assert.Equal("tracer", span.attrs.Component.Val())
+	assert.Equal("tracer", span.attrs.Val(attrComponent))
 	assert.Equal("tracer", span.meta[ext.Component]) // dual-stored
 
 	span.SetTag("tagInt", 1234)
@@ -549,10 +549,10 @@ func TestPromotedFieldsDualStorage(t *testing.T) {
 		tag   string
 		field func(*Span) string
 	}{
-		{ext.Environment, func(s *Span) string { return s.attrs.Env.Val() }},
-		{ext.Version, func(s *Span) string { return s.attrs.Version.Val() }},
-		{ext.Component, func(s *Span) string { return s.attrs.Component.Val() }},
-		{ext.SpanKind, func(s *Span) string { return s.attrs.SpanKind.Val() }},
+		{ext.Environment, func(s *Span) string { return s.attrs.Val(attrEnv) }},
+		{ext.Version, func(s *Span) string { return s.attrs.Val(attrVersion) }},
+		{ext.Component, func(s *Span) string { return s.attrs.Val(attrComponent) }},
+		{ext.SpanKind, func(s *Span) string { return s.attrs.Val(attrSpanKind) }},
 	} {
 		t.Run(tc.tag, func(t *testing.T) {
 			span := newBasicSpan("op")

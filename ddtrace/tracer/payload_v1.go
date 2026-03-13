@@ -562,10 +562,10 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 
 		// val() is used: an absent key and an empty value are both encoded as an
 		// empty string, so the "was it set?" distinction is irrelevant for wire encoding.
-		p.buf = encodeField(p.buf, fullSetBitmap, 13, span.attrs.Env.Val(), st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 14, span.attrs.Version.Val(), st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 15, span.attrs.Component.Val(), st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 16, getSpanKindValue(span.attrs.SpanKind.Val()), st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 13, span.attrs.Val(attrEnv), st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 14, span.attrs.Val(attrVersion), st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 15, span.attrs.Val(attrComponent), st)
+		p.buf = encodeField(p.buf, fullSetBitmap, 16, getSpanKindValue(span.attrs.Val(attrSpanKind)), st)
 	}
 	return true, nil
 }

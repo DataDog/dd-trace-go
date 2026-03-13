@@ -118,14 +118,15 @@ func (s *Span) spanEventsAsJSONString() string {
 	return string(events)
 }
 
-// tagValue is a package-level alias for tinternal.TagValue.
-type tagValue = tinternal.TagValue
-
-// tagOf returns a tagValue that is marked as explicitly set.
-func tagOf(v string) tagValue { return tinternal.TagOf(v) }
-
 // spanAttributes is a package-level alias for tinternal.SpanAttributes.
 type spanAttributes = tinternal.SpanAttributes
+
+const (
+	attrEnv       = tinternal.AttrEnv
+	attrVersion   = tinternal.AttrVersion
+	attrComponent = tinternal.AttrComponent
+	attrSpanKind  = tinternal.AttrSpanKind
+)
 
 // Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
@@ -302,7 +303,7 @@ func (s *Span) debugInfo() (name string, spanID, traceID uint64, integration str
 	name = s.name
 	spanID = s.spanID
 	traceID = s.traceID
-	if v, ok := s.attrs.Component.Get(); ok {
+	if v, ok := s.attrs.Get(attrComponent); ok {
 		integration = v
 	} else {
 		integration = "manual"
@@ -760,13 +761,13 @@ func (s *Span) setMetaInit(key, v string) {
 		s.spanType = v
 		return
 	case ext.Environment:
-		s.attrs.Env = tagOf(v)
+		s.attrs.Set(attrEnv, v)
 	case ext.Version:
-		s.attrs.Version = tagOf(v)
+		s.attrs.Set(attrVersion, v)
 	case ext.Component:
-		s.attrs.Component = tagOf(v)
+		s.attrs.Set(attrComponent, v)
 	case ext.SpanKind:
-		s.attrs.SpanKind = tagOf(v)
+		s.attrs.Set(attrSpanKind, v)
 	}
 	// Promoted fields (env/version/component/spanKind) fall through here so they
 	// remain in meta too. The V0.4 encoder and the external stats concentrator both
@@ -1243,13 +1244,13 @@ func getMeta(s *Span, key string) (string, bool) {
 	// semantics without a map lookup.
 	switch key {
 	case ext.Environment:
-		return s.attrs.Env.Get()
+		return s.attrs.Get(attrEnv)
 	case ext.Version:
-		return s.attrs.Version.Get()
+		return s.attrs.Get(attrVersion)
 	case ext.Component:
-		return s.attrs.Component.Get()
+		return s.attrs.Get(attrComponent)
 	case ext.SpanKind:
-		return s.attrs.SpanKind.Get()
+		return s.attrs.Get(attrSpanKind)
 	}
 	val, ok := s.meta[key]
 	return val, ok
