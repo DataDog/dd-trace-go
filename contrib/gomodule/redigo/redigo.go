@@ -152,7 +152,7 @@ func DialURLContext(ctx context.Context, rawurl string, options ...interface{}) 
 func newChildSpan(ctx context.Context, p *params) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.ServiceName(p.config.serviceName),
+		instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),

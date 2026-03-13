@@ -14,6 +14,7 @@ import (
 
 type dialConfig struct {
 	serviceName    string
+	serviceSource  string
 	spanName       string
 	analyticsRate  float64
 	skipRaw        bool
@@ -40,6 +41,7 @@ func (fn DialOptionFn) apply(cfg *dialConfig) {
 
 func defaults(cfg *dialConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageRedigo)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.skipRaw = !options.GetBoolEnv("DD_TRACE_REDIS_RAW_COMMAND", true)
@@ -61,6 +63,7 @@ func WithSkipRawCommand(skip bool) DialOptionFn {
 func WithService(name string) DialOptionFn {
 	return func(cfg *dialConfig) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

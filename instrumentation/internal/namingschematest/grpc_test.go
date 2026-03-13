@@ -33,6 +33,10 @@ var (
 			DDService:       harness.RepeatString(harness.TestDDService, 4),
 			ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 4),
 		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        harness.RepeatString(string(instrumentation.PackageGRPC), 4),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 4),
+		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 4)
 			for i := 0; i < 4; i++ {
@@ -53,6 +57,10 @@ var (
 			Defaults:        harness.RepeatString("grpc.client", 4),
 			DDService:       harness.RepeatString("grpc.client", 4),
 			ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 4),
+		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        harness.RepeatString(string(instrumentation.PackageGRPC), 4),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 4),
 		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 4)

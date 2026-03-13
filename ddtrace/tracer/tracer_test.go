@@ -646,7 +646,7 @@ func TestSamplingDecision(t *testing.T) {
 			}
 		}
 		assert.Equal(t, 50, singleSpans)
-		assert.InDelta(t, 0.8, float64(keptSpans)/float64(len(spans)), 0.19)
+		assert.InDelta(t, 800, keptSpans, 190)
 		assert.Equal(t, uint32(100-len(keptTraces)), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 
@@ -681,7 +681,7 @@ func TestSamplingDecision(t *testing.T) {
 			}
 		}
 		assert.Equal(t, 1000, keptSpans+singleSpans)
-		assert.InDelta(t, 0.8, float64(keptSpans)/float64(1000), 0.15)
+		assert.InDelta(t, 800, keptSpans, 150)
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 
@@ -720,8 +720,16 @@ func TestSamplingDecision(t *testing.T) {
 				}
 			}
 		}
-		assert.InDelta(t, 0.5, float64(singleSpans)/(float64(900-keptChildren)), 0.15)
-		assert.InDelta(t, 0.8, float64(keptTotal)/1000, 0.15)
+		// Assert singleSpans/denom ≈ 0.5 ± 0.15, i.e. the ratio falls in [0.35, 0.65].
+		// Rewritten as integer inequalities to avoid IEEE 754 precision issues: when the
+		// ratio lands exactly on the boundary (e.g. 35/100 = 0.35), float64 division can
+		// produce a value like 0.35000000000000003 that exceeds the tolerance by a ULP,
+		// causing spurious failures. Multiplying through by 20 clears the denominator and
+		// yields 7/20 = 0.35 and 13/20 = 0.65 as exact integer bounds.
+		denom := 900 - keptChildren
+		assert.GreaterOrEqual(t, 20*singleSpans, 7*denom) // singleSpans/denom >= 0.35
+		assert.LessOrEqual(t, 20*singleSpans, 13*denom)   // singleSpans/denom <= 0.65
+		assert.InDelta(t, 800, keptTotal, 150)
 		assert.Equal(t, uint32(100-len(keptTraces)), tracerstats.Count(tracerstats.DroppedP0Traces))
 	})
 }
@@ -1073,7 +1081,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	defer stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &SpanContext{
-		traceID: root.context.TraceIDBytes(),
+		traceID: root.context.traceID,
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}
@@ -1089,7 +1097,7 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	assert.Nil(err)
 	root := newBasicSpan("web.request")
 	spanCtx := &SpanContext{
-		traceID: root.context.TraceIDBytes(),
+		traceID: root.context.traceID,
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}
@@ -1367,7 +1375,23 @@ func TestTracerPrioritySampler(t *testing.T) {
 
 	tr.awaitPayload(t, 1)
 	flush(-1)
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the priority sampler to update its rates from the agent response.
+	// flush() sends the payload in a goroutine that reads the rate_by_service
+	// response asynchronously, so we must poll rather than use a fixed sleep.
+	timeout := time.After(time.Second * timeMultiplicator)
+	for {
+		rate := tr.prioritySampling.getDefaultRate()
+		// Expected default rate to be 0.1 after reading the agent response.
+		if rate == 0.1 {
+			break
+		}
+		select {
+		case <-timeout:
+			t.Fatal("timed out waiting for priority sampler rates to update")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 
 	for i, tt := range []struct {
 		service, env string

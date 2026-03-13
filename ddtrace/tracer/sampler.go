@@ -11,6 +11,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -130,6 +131,9 @@ type serviceEnvKey struct {
 	service, env string
 }
 
+// rampUpInterval is the minimum duration between successive 2x rate increases.
+const rampUpInterval = time.Second
+
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.
 type prioritySampler struct {
@@ -137,6 +141,7 @@ type prioritySampler struct {
 	rates            map[serviceEnvKey]float64 // +checklocks:mu
 	defaultRate      float64                   // +checklocks:mu
 	agentRatesLoaded bool                      // +checklocks:mu
+	lastCapped       time.Time                 // +checklocks:mu
 }
 
 func newPrioritySampler() *prioritySampler {
@@ -161,7 +166,24 @@ func parseServiceEnvKey(s string) serviceEnvKey {
 	return k
 }
 
+// cappedRate returns a rate that is at most 2x the old rate when increasing.
+// Rate decreases and transitions from zero are applied immediately.
+// When canIncrease is false (cooldown not elapsed), increases are held at oldRate.
+func cappedRate(oldRate, newRate float64, canIncrease bool) (float64, bool) {
+	if newRate <= oldRate || oldRate == 0 {
+		return newRate, false
+	}
+	if !canIncrease {
+		return oldRate, false
+	}
+	return min(oldRate*2, newRate), true
+}
+
 // readRatesJSON will try to read the rates as JSON from the given io.ReadCloser.
+// When a new rate for a service is higher than the current rate, the increase is
+// capped at 2x the current rate (at most once per rampUpInterval). This prevents
+// a spike in sampled traces when the agent restarts and temporarily reports
+// rate=1.0 for all services.
 func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	var payload struct {
 		Rates map[string]float64 `json:"rate_by_service"`
@@ -178,6 +200,21 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 	ps.agentRatesLoaded = true
+	now := time.Now()
+	canIncrease := ps.lastCapped.IsZero() || now.Sub(ps.lastCapped) >= rampUpInterval
+	capApplied := false
+	for key, newRate := range rates {
+		oldRate, ok := ps.rates[key]
+		if !ok {
+			oldRate = ps.defaultRate
+		}
+		rate, applied := cappedRate(oldRate, newRate, canIncrease)
+		capApplied = capApplied || applied
+		rates[key] = rate
+	}
+	if canIncrease && capApplied {
+		ps.lastCapped = now
+	}
 	ps.rates = rates
 	if v, ok := ps.rates[defaultRateKey]; ok {
 		ps.defaultRate = v
@@ -196,6 +233,13 @@ func (ps *prioritySampler) getRate(spn *Span) float64 {
 	if rate, ok := ps.rates[key]; ok {
 		return rate
 	}
+	return ps.defaultRate
+}
+
+// getDefaultRate returns the default sampling rate.
+func (ps *prioritySampler) getDefaultRate() float64 {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 	return ps.defaultRate
 }
 

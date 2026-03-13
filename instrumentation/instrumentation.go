@@ -9,6 +9,7 @@ import (
 	"context"
 	"math"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -77,6 +78,21 @@ func (i *Instrumentation) ServiceName(component Component, opCtx OperationContex
 		return cfg.DDService
 	}
 	return n.buildServiceNameV0(opCtx)
+}
+
+const (
+	// ServiceSourceWithServiceOption is the service source value used when the service
+	// name is explicitly set via a WithService option.
+	ServiceSourceWithServiceOption = "opt.with_service"
+)
+
+// ServiceNameWithSource returns a StartSpanOption that sets both the service
+// name and its source. The source tracks the origin of the service name
+// override for _dd.svc_src.
+func ServiceNameWithSource(name string, source string) tracer.StartSpanOption {
+	return func(cfg *tracer.StartSpanConfig) {
+		tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})(cfg)
+	}
 }
 
 // OperationName returns the operation name to be set for the given instrumentation component.

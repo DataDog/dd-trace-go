@@ -114,7 +114,7 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 	p := ddh.params
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.ServiceName(p.config.serviceName),
+		instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
 		tracer.ResourceName(parts[0]),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag(ext.Component, componentName),
@@ -151,7 +151,7 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 	p := ddh.params
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeRedis),
-		tracer.ServiceName(p.config.serviceName),
+		instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
 		tracer.ResourceName(parts[0]),
 		tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		tracer.Tag(ext.ResourceName, raw),

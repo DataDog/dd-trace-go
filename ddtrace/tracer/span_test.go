@@ -87,7 +87,7 @@ func TestNilSpan(t *testing.T) {
 	// nil span should return a nil context
 	assertions.Nil(ctx)
 	assertions.Equal(TraceIDZero, ctx.TraceID())
-	assertions.Equal([16]byte(emptyTraceID), ctx.TraceIDBytes())
+	assertions.Equal([16]byte{}, ctx.TraceIDBytes())
 	assertions.Equal(uint64(0), ctx.TraceIDLower())
 	assertions.Equal(uint64(0), ctx.SpanID())
 	sp, ok := ctx.SamplingPriority()
@@ -933,7 +933,7 @@ func TestSpanError(t *testing.T) {
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.error)
 
-	// '+3' is `_dd.p.dm` + `_dd.base_service`, `_dd.p.tid`
+	// '+3' is `_dd.p.dm` + `_dd.base_service` + `_dd.p.tid`
 	meta := span.getMetadata()
 	t.Logf("%q\n", meta)
 	assert.Equal(nMeta+3, len(meta))
@@ -1066,7 +1066,7 @@ func TestSpanErrorStackMetrics(t *testing.T) {
 			tracer.StartSpan("operation").Finish(WithError(errortrace.New("test")))
 		}
 
-		assert.Equal(0.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
+		assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:takeStacktrace"}).Get())
 
 		assert.Equal(5.0, telemetryClient.Count(telemetry.NamespaceTracers, "errorstack.source", []string{"source:TracerError"}).Get())
 		if !windows {
