@@ -1,0 +1,43 @@
+[
+  {
+    "attributes": {
+      "country": "US",
+      "email": "alice@mycompany.com"
+    },
+    "defaultValue": "default_value",
+    "flag": "empty_flag",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default_value"
+    },
+    "targetingKey": "alice",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Canada",
+      "email": "bob@example.com"
+    },
+    "defaultValue": "default_value",
+    "flag": "empty_flag",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default_value"
+    },
+    "targetingKey": "bob",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "age": 50
+    },
+    "defaultValue": "default_value",
+    "flag": "empty_flag",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default_value"
+    },
+    "targetingKey": "charlie",
+    "variationType": "STRING"
+  }
+]

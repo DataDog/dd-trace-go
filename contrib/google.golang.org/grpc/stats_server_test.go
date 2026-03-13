@@ -14,6 +14,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
@@ -56,6 +57,7 @@ func TestServerStatsHandler(t *testing.T) {
 	assert.Equal("grpc", tags[ext.RPCSystem])
 	assert.Equal("/grpc.Fixture/Ping", tags[ext.GRPCFullMethod])
 	assert.Equal(ext.SpanKindServer, tags[ext.SpanKind])
+	assert.Equal(instrumentation.ServiceSourceWithServiceOption, tags[ext.KeyServiceSource])
 }
 
 func newServerStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {

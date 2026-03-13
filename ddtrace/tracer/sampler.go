@@ -234,6 +234,13 @@ func (ps *prioritySampler) getRate(spn *Span) float64 {
 	return ps.defaultRate
 }
 
+// getDefaultRate returns the default sampling rate.
+func (ps *prioritySampler) getDefaultRate() float64 {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	return ps.defaultRate
+}
+
 // apply applies sampling priority to the given span. Caller must ensure it is safe
 // to modify the span.
 // +checklocksignore — Called during initialization in StartSpan, span not yet shared.
