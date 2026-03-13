@@ -77,13 +77,20 @@ aspects:
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
             {{- $req := .Function.ArgumentOfType "*net/http.Request" -}}
             {{- if eq $ctx "" -}}
-              {{- $ctx = "ctx" -}}
               {{- $impl := .Function.ArgumentThatImplements "context.Context" -}}
               {{- if ne $impl "" -}}
+                {{- if eq $impl "ctx" -}}
+                  {{- $ctx = "__dd_span_ctx" -}}
+              var __dd_span_ctx context.Context = ctx
+                {{- else -}}
+                  {{- $ctx = "ctx" -}}
               var ctx context.Context = {{ $impl }}
+                {{- end -}}
               {{- else if ne $req "" -}}
+                {{- $ctx = "ctx" -}}
               ctx := {{ $req }}.Context()
               {{- else -}}
+                {{- $ctx = "ctx" -}}
               ctx := context.TODO()
               {{- end }}
             {{ end -}}
