@@ -553,6 +553,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 func (t *tracer) refreshAgentFeatures() {
 	ctx, cancel := gocontext.WithCancel(gocontext.Background())
 	defer cancel()
+	// Goroutine lifetime bounded by defer cancel() above; no wg tracking needed.
 	go func() {
 		select {
 		case <-t.stop:
@@ -572,6 +573,9 @@ func (t *tracer) refreshAgentFeatures() {
 	// loop in case a concurrent store races this write. fn must be a pure
 	// transform — work on a local copy f so retries start fresh.
 	t.config.agent.update(func(current agentFeatures) agentFeatures {
+		// f is a shallow copy of newFeatures. Reference-typed fields (map, slice)
+		// must be overwritten from current or cloned below to avoid shared mutable
+		// backing storage across CAS retries.
 		f := newFeatures
 		f.v1ProtocolAvailable = current.v1ProtocolAvailable
 		f.StatsdPort = current.StatsdPort

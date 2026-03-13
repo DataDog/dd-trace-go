@@ -732,6 +732,7 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		// agent is older than 7.28.0; /info not available
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck // best-effort drain for connection reuse
 		return agentFeatures{}, errAgentFeaturesNotSupported
 	}
 	if resp.StatusCode != http.StatusOK {
