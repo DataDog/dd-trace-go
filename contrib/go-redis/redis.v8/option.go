@@ -16,6 +16,7 @@ const defaultServiceName = "redis.client"
 
 type clientConfig struct {
 	serviceName   string
+	serviceSource string
 	spanName      string
 	analyticsRate float64
 	skipRaw       bool
@@ -36,6 +37,7 @@ func (fn ClientOptionFn) apply(cfg *clientConfig) {
 
 func defaults(cfg *clientConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageGoRedisV8)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.skipRaw = !options.GetBoolEnv("DD_TRACE_REDIS_RAW_COMMAND", true)
@@ -55,6 +57,7 @@ func WithSkipRawCommand(skip bool) ClientOptionFn {
 func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

@@ -56,6 +56,10 @@ var elasticV6 = harness.TestCase{
 		DDService:       []string{"elastic.client"},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageGoElasticSearchV6)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())
