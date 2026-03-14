@@ -9,6 +9,7 @@ import "github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 type config struct {
 	serviceName     string
+	serviceSource   string
 	publishSpanName string
 	receiveSpanName string
 	measured        bool
@@ -22,6 +23,7 @@ type Option interface {
 func (tr *Tracer) defaultConfig() *config {
 	return &config{
 		serviceName:     tr.instr.ServiceName(instrumentation.ComponentConsumer, nil),
+		serviceSource:   string(tr.component),
 		publishSpanName: tr.instr.OperationName(instrumentation.ComponentProducer, nil),
 		receiveSpanName: tr.instr.OperationName(instrumentation.ComponentConsumer, nil),
 		measured:        false,
@@ -39,6 +41,7 @@ func (fn OptionFn) apply(cfg *config) {
 func WithService(serviceName string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = serviceName
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
