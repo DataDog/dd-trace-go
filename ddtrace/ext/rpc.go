@@ -24,6 +24,8 @@ const (
 	RPCSystemGRPC = "grpc"
 	// RPCSystemTwirp identifies Twirp.
 	RPCSystemTwirp = "twirp"
+	// RPCSystemConnectRPC identifies Connect RPC.
+	RPCSystemConnectRPC = "connect_rpc"
 )
 
 // gRPC specific tags.
