@@ -1,0 +1,59 @@
+name: 'Read Go Versions'
+description: >
+  Parses go-versions.yml at the repository root and exposes the stable and
+  oldstable Go versions as step outputs. Uses only grep and sed — no yq or
+  external tool installation required.
+
+outputs:
+  stable:
+    description: 'Stable Go minor version (e.g. "1.26")'
+    value: ${{ steps.parse.outputs.stable }}
+  oldstable:
+    description: 'Old-stable Go minor version (e.g. "1.25")'
+    value: ${{ steps.parse.outputs.oldstable }}
+  stable_patch:
+    description: 'Stable Go patch version (e.g. "1.26.0")'
+    value: ${{ steps.parse.outputs.stable_patch }}
+  oldstable_patch:
+    description: 'Old-stable Go patch version (e.g. "1.25.7")'
+    value: ${{ steps.parse.outputs.oldstable_patch }}
+  matrix:
+    description: 'JSON array of minor versions ordered [oldstable, stable] for use in strategy.matrix'
+    value: ${{ steps.parse.outputs.matrix }}
+
+runs:
+  using: composite
+  steps:
+    - name: Parse go-versions.yml
+      id: parse
+      shell: bash
+      run: |
+        file="${GITHUB_WORKSPACE}/go-versions.yml"
+        if [[ ! -f "$file" ]]; then
+          echo "ERROR: go-versions.yml not found at ${file}" >&2
+          exit 1
+        fi
+
+        stable=$(grep '^stable:' "$file" | sed 's/.*"\(.*\)".*/\1/')
+        oldstable=$(grep '^oldstable:' "$file" | sed 's/.*"\(.*\)".*/\1/')
+        stable_patch=$(grep '^stable_patch:' "$file" | sed 's/.*"\(.*\)".*/\1/')
+        oldstable_patch=$(grep '^oldstable_patch:' "$file" | sed 's/.*"\(.*\)".*/\1/')
+
+        if [[ -z "$stable" || -z "$oldstable" || -z "$stable_patch" || -z "$oldstable_patch" ]]; then
+          echo "ERROR: Failed to parse one or more keys from go-versions.yml" >&2
+          echo "  stable='${stable}' oldstable='${oldstable}' stable_patch='${stable_patch}' oldstable_patch='${oldstable_patch}'" >&2
+          exit 1
+        fi
+
+        matrix="[\"${oldstable}\",\"${stable}\"]"
+
+        echo "stable=${stable}"           >> "$GITHUB_OUTPUT"
+        echo "oldstable=${oldstable}"     >> "$GITHUB_OUTPUT"
+        echo "stable_patch=${stable_patch}"           >> "$GITHUB_OUTPUT"
+        echo "oldstable_patch=${oldstable_patch}"     >> "$GITHUB_OUTPUT"
+        echo "matrix=${matrix}"           >> "$GITHUB_OUTPUT"
+
+        echo "Go versions loaded from go-versions.yml:"
+        echo "  stable=${stable}  oldstable=${oldstable}"
+        echo "  stable_patch=${stable_patch}  oldstable_patch=${oldstable_patch}"
+        echo "  matrix=${matrix}"

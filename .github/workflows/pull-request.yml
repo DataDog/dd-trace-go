@@ -8,6 +8,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  go-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      stable: ${{ steps.versions.outputs.stable }}
+      oldstable: ${{ steps.versions.outputs.oldstable }}
+      matrix: ${{ steps.versions.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Read Go versions
+        id: versions
+        uses: ./.github/actions/go-versions
+
   warm-repo-cache:
     runs-on: ubuntu-latest
     steps:
@@ -23,10 +38,11 @@ jobs:
   unit-integration-tests:
     name: PR Unit and Integration Tests
     needs:
+      - go-versions
       - warm-repo-cache
     strategy:
       matrix:
-        go-version: [ "1.25", "1.26" ]
+        go-version: ${{ fromJSON(needs.go-versions.outputs.matrix) }}
       fail-fast: false
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
@@ -34,11 +50,12 @@ jobs:
     secrets: inherit
   multios-unit-tests:
     needs:
+      - go-versions
       - warm-repo-cache
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
-        go-version: [ "1.25", "1.26" ]
+        go-version: ${{ fromJSON(needs.go-versions.outputs.matrix) }}
       fail-fast: false
     uses: ./.github/workflows/multios-unit-tests.yml
     with:
