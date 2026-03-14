@@ -458,7 +458,7 @@ func minInts(a, b int) int {
 	return b
 }
 
-func TestTraceProtocol(t *testing.T) {
+func TestAgentTraceWriterProtocol(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("v1.0, no endpoint", func(t *testing.T) {
@@ -520,6 +520,34 @@ func TestTraceProtocol(t *testing.T) {
 		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 
+	t.Run("otlp", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolOTLP, h.payload.protocol())
+	})
+
+	t.Run("DD overrides OTEL", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
+
+		// Create a mock agent endpoint to mimic having a v1 trace endpoint
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
+		}))
+		defer srv.Close()
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		)
+
+		require.NoError(t, err)
+		h := newAgentTraceWriter(cfg, nil, nil)
+		assert.Equal(traceProtocolV1, h.payload.protocol())
+	})
+
 	t.Run("invalid, no endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "random")
 		cfg, err := newTestConfig()
@@ -545,6 +573,130 @@ func TestTraceProtocol(t *testing.T) {
 		assert.Equal(traceProtocolV1, h.payload.protocol())
 	})
 }
+
+func TestOTLPTraceEndpoint(t *testing.T) {
+	const defaultAgentTraceURL = "http://localhost:8126" + tracesAPIPath
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp, no endpoint vars", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		// Use OTLP default: localhost:4318/v1/traces.
+		assert.Equal(t, "http://localhost:4318"+otlpTracesAPIPathHTTP, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp + OTEL_EXPORTER_OTLP_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		assert.Equal(t, "http://otel-collector:4318"+otlpTracesAPIPathHTTP, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp + OTEL_EXPORTER_OTLP_ENDPOINT with trailing slash", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318/")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		// Trailing slash on the base must not produce a double slash.
+		assert.Equal(t, "http://otel-collector:4318"+otlpTracesAPIPathHTTP, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp + OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://otel-collector:4318/v2/otlptraces")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		assert.Equal(t, "http://otel-collector:4318/v2/otlptraces", cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp + DD_AGENT_HOST uses agent host with OTLP port", func(t *testing.T) {
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("DD_AGENT_HOST", "my-agent")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		assert.Equal(t, "http://my-agent:4318"+otlpTracesAPIPathHTTP, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT alone does not enable OTLP", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4318")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		// Protocol not set to OTLP — traceURL stays at the default v0.4 path.
+		assert.Equal(t, defaultAgentTraceURL, cfg.transport.endpoint())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT alone does not enable OTLP", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://otel-collector:4318/v1/traces")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		// Protocol not set to OTLP — traceURL stays at the default v0.4 path.
+		assert.Equal(t, defaultAgentTraceURL, cfg.transport.endpoint())
+	})
+}
+
+func TestOTLPHeaders(t *testing.T) {
+	// otlpHeaders is a helper that returns the transport header map when OTLP is active.
+	otlpHeaders := func(t *testing.T) map[string]string {
+		t.Helper()
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		ht, ok := cfg.transport.(*httpTransport)
+		require.True(t, ok, "expected *httpTransport")
+		return ht.headers
+	}
+
+	t.Run("default: only Content-Type set", func(t *testing.T) {
+		headers := otlpHeaders(t)
+		assert.Equal(t, "application/x-protobuf", headers["Content-Type"])
+		assert.Len(t, headers, 1)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_HEADERS applies custom headers", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=secret,x-tenant-id=42")
+		headers := otlpHeaders(t)
+		assert.Equal(t, "secret", headers["api-key"])
+		assert.Equal(t, "42", headers["x-tenant-id"])
+		assert.Equal(t, "application/x-protobuf", headers["Content-Type"])
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS takes priority over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic,x-from-generic=yes")
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=traces-specific")
+		headers := otlpHeaders(t)
+		// Traces-specific value wins and generic headers are NOT merged in.
+		assert.Equal(t, "traces-specific", headers["api-key"])
+		assert.Empty(t, headers["x-from-generic"], "generic headers must not bleed through when traces-specific is set")
+		assert.Equal(t, "application/x-protobuf", headers["Content-Type"])
+	})
+
+	t.Run("Content-Type cannot be overridden", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "Content-Type=text/plain")
+		headers := otlpHeaders(t)
+		assert.Equal(t, "application/x-protobuf", headers["Content-Type"])
+	})
+
+	t.Run("malformed pairs are skipped", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "good-key=good-value,badpair,=empty-key")
+		headers := otlpHeaders(t)
+		assert.Equal(t, "good-value", headers["good-key"])
+		assert.NotContains(t, headers, "badpair")
+		assert.NotContains(t, headers, "")
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_HEADERS not applied when OTLP mode is off", func(t *testing.T) {
+		// Without OTEL_TRACES_EXPORTER=otlp the transport stays in DD mode;
+		// custom OTLP headers must not appear on the DD transport.
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=secret")
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		ht, ok := cfg.transport.(*httpTransport)
+		require.True(t, ok)
+		assert.NotEqual(t, "secret", ht.headers["api-key"])
+	})
+}
+
 func BenchmarkJsonEncodeSpan(b *testing.B) {
 	s := makeSpan(10)
 	s.metrics["nan"] = math.NaN()

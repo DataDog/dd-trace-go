@@ -1666,6 +1666,20 @@
         "default": "10000"
       }
     ],
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_TRACES_HEADERS": [
+      {
+        "implementation": "B",
+        "type": "map",
+        "default": null
+      }
+    ],
     "OTEL_LOGS_EXPORTER": [
       {
         "implementation": "A",

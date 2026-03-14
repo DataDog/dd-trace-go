@@ -47,7 +47,8 @@ type payload interface {
 	payloadReader
 }
 
-// newPayload returns a ready to use payload.
+// newPayload returns a ready to use payload for V04 or V1 protocols.
+// For OTLP, use agentTraceWriter.newPayload() which has access to config.
 func newPayload(protocol float64) payload {
 	if protocol == traceProtocolV1 {
 		return &safePayload{

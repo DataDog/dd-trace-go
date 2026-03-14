@@ -57,12 +57,13 @@ func AgentURLFromEnv() *url.URL {
 	}
 
 	host, providedHost := env.Lookup("DD_AGENT_HOST")
-	port, providedPort := env.Lookup("DD_TRACE_AGENT_PORT")
 	if host == "" {
 		// We treat set but empty the same as unset
 		providedHost = false
 		host = DefaultAgentHostname
 	}
+
+	port, providedPort := env.Lookup("DD_TRACE_AGENT_PORT")
 	if port == "" {
 		// We treat set but empty the same as unset
 		providedPort = false

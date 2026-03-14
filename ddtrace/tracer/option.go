@@ -133,8 +133,9 @@ var (
 
 // Supported trace protocols.
 const (
-	traceProtocolV04 = 0.4 // v0.4 (default)
-	traceProtocolV1  = 1.0 // v1.0
+	traceProtocolV04  = 0.4 // v0.4 (default)
+	traceProtocolV1   = 1.0 // v1.0
+	traceProtocolOTLP = 2.0 // represents the OTLP protocol
 )
 
 // config holds the tracer configuration.
@@ -382,10 +383,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
-	if c.agentURL == nil {
-		c.agentURL = internal.AgentURLFromEnv()
-	}
-	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
+	c.resolveAgentURL()
+
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
 			// Make sure we don't create http client traces from inside the tracer by using our http client
@@ -466,14 +465,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
 	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
-	if c.agent.v1ProtocolAvailable {
-		c.traceProtocol = traceProtocolV1
-		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
-		}
-	} else {
-		c.traceProtocol = traceProtocolV04
-	}
+
+	c.applyTraceProtocol()
 
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -744,6 +737,107 @@ func MarkIntegrationImported(integration string) bool {
 	s.imported = true
 	contribIntegrations[integration] = s
 	return true
+}
+
+// resolveAgentURL initialises c.agentURL (if not already set by a start option) from the
+// standard DD environment variables, and captures c.originalAgentURL for logging.
+// It must be called before the HTTP client and transport are created.
+// OTLP endpoint env vars do not affect agentURL; they are handled in applyTraceProtocol.
+func (c *config) resolveAgentURL() {
+	if c.agentURL == nil {
+		c.agentURL = internal.AgentURLFromEnv()
+	}
+	c.originalAgentURL = c.agentURL
+}
+
+// applyTraceProtocol sets c.traceProtocol and updates the transport's traceURL to match.
+// It must be called after loadAgentFeatures so that c.agent.v1ProtocolAvailable is known.
+//
+// traceURL priority when OTLP is active:
+//  1. OTEL_EXPORTER_OTLP_TRACES_ENDPOINT — full traceURL (path included).
+//  2. OTEL_EXPORTER_OTLP_ENDPOINT — base URL; /v1/traces path is appended for http.
+//  3. Otherwise — c.agentURL is used as the base
+//
+// Note: none of these affect c.agentURL, which is resolved solely from DD configurations.
+func (c *config) applyTraceProtocol() {
+	isOTLP := getDDorOtelConfig("traceProtocol") == strconv.FormatFloat(traceProtocolOTLP, 'f', 1, 64)
+
+	if !isOTLP {
+		if c.agent.v1ProtocolAvailable {
+			c.traceProtocol = traceProtocolV1
+			if t, ok := c.transport.(*httpTransport); ok {
+				t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
+			}
+		} else {
+			c.traceProtocol = traceProtocolV04
+		}
+		return
+	}
+
+	c.traceProtocol = traceProtocolOTLP
+	// TODO: Once OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc is supported, handle gRPC transport here.
+	if t, ok := c.transport.(*httpTransport); ok {
+		// Content-Type is required by the OTLP HTTP/protobuf spec and must always be present.
+		// User-supplied headers from OTEL_EXPORTER_OTLP_HEADERS / OTEL_EXPORTER_OTLP_TRACES_HEADERS
+		// may add to or override other headers, but Content-Type is set last so it cannot be removed.
+		t.headers = parseOTLPHeaders()
+		if tracesEndpoint := env.Get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"); tracesEndpoint != "" {
+			// Full URL including path — use verbatim.
+			t.traceURL = tracesEndpoint
+		} else if baseEndpoint := env.Get("OTEL_EXPORTER_OTLP_ENDPOINT"); baseEndpoint != "" {
+			// Base URL only — append the OTLP traces path.
+			t.traceURL = strings.TrimRight(baseEndpoint, "/") + otlpTracesAPIPathHTTP
+		} else {
+			// No explicit OTLP endpoint configured. Use the agent host (from DD_AGENT_HOST
+			// or the default) with the standard OTLP HTTP receiver port.
+			host := defaultHostname
+			if c.agentURL.Scheme != "unix" {
+				if h, _, err := net.SplitHostPort(c.agentURL.Host); err == nil && h != "" {
+					host = h
+				}
+			}
+			t.traceURL = "http://" + net.JoinHostPort(host, defaultOTLPPortHTTP) + otlpTracesAPIPathHTTP
+		}
+	}
+}
+
+// parseOTLPHeaders builds the header map for OTLP HTTP requests.
+//
+// OTEL_EXPORTER_OTLP_TRACES_HEADERS takes full precedence over the generic
+// OTEL_EXPORTER_OTLP_HEADERS. The two are not merged — if the traces-specific
+// var is set, the generic one is ignored entirely.
+// Content-Type is always set to application/x-protobuf regardless of either var.
+func parseOTLPHeaders() map[string]string {
+	raw := env.Get("OTEL_EXPORTER_OTLP_TRACES_HEADERS")
+	if raw == "" {
+		raw = env.Get("OTEL_EXPORTER_OTLP_HEADERS")
+	}
+	headers := parseKVHeaders(raw)
+	// Content-Type is mandated by the OTLP HTTP/protobuf spec; it must not be overridden.
+	headers["Content-Type"] = "application/x-protobuf"
+	return headers
+}
+
+// parseKVHeaders parses a comma-separated list of key=value header pairs as specified
+// by the OTLP exporter configuration spec. Malformed pairs are logged and skipped.
+func parseKVHeaders(raw string) map[string]string {
+	headers := map[string]string{}
+	if raw == "" {
+		return headers
+	}
+	for _, pair := range strings.Split(raw, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok || strings.TrimSpace(k) == "" {
+			log.Warn("Ignoring malformed OTLP header %q: expected key=value format", pair)
+			continue
+		}
+		headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	return headers
 }
 
 func (c *config) loadContribIntegrations(deps []*debug.Module) {
