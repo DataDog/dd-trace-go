@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"runtime/pprof"
 	"runtime/trace"
 	"time"
 
@@ -107,7 +108,7 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 
-			if err := p.startCPUProfile(&outBuf); err != nil {
+			if err := pprof.StartCPUProfile(&outBuf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
@@ -116,7 +117,7 @@ var profileTypes = map[ProfileType]profileType{
 			// properly record all of our profile processing work for
 			// the other profile types
 			p.pendingProfiles.Wait()
-			p.stopCPUProfile()
+			pprof.StopCPUProfile()
 
 			c := p.compressors[CPUProfile]
 			c.Reset(&buf)
