@@ -342,6 +342,7 @@ func Inject(*SpanContext, any) (error)
 func SetUser(*Span, string, ...UserMonitoringOption)
 func Start(...StartOption) (error)
 func StartSpan(string, ...StartSpanOption) (*Span)
+func StartSpanFromPropagatedContext(gocontext.Context, string, C, ...StartSpanOption) (*Span, gocontext.Context)
 func Stop()
 
 // Types
