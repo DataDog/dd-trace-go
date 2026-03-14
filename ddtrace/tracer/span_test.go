@@ -427,7 +427,8 @@ func TestSpanSetTag(t *testing.T) {
 	assert.Equal("web.request", span.name)
 
 	span.SetTag("component", "tracer")
-	assert.Equal("tracer", span.meta["component"])
+	assert.Equal("tracer", span.attrs.Val(attrComponent))
+	assert.Equal("tracer", span.meta[ext.Component]) // dual-stored
 
 	span.SetTag("tagInt", 1234)
 	assert.Equal(float64(1234), span.metrics["tagInt"])
@@ -534,6 +535,37 @@ func TestSpanTagsStartSpan(t *testing.T) {
 	assert.Equal("value", tags["tag"])
 	assert.Equal("service", tags[ext.ServiceName])
 	assert.Equal("operation-name", tags[ext.SpanName])
+}
+
+// TestPromotedFieldsDualStorage verifies that setting any of the four V1-promoted
+// tags (env, version, component, span.kind) via SetTag stores the value in both
+// the dedicated struct field and the meta map.  The struct field is the fast path
+// used by the V1 encoder; the meta entry is required by the V0.4 (msgp) encoder
+// and the external stats concentrator.
+func TestPromotedFieldsDualStorage(t *testing.T) {
+	assert := assert.New(t)
+
+	for _, tc := range []struct {
+		tag   string
+		field func(*Span) string
+	}{
+		{ext.Environment, func(s *Span) string { return s.attrs.Val(attrEnv) }},
+		{ext.Version, func(s *Span) string { return s.attrs.Val(attrVersion) }},
+		{ext.Component, func(s *Span) string { return s.attrs.Val(attrComponent) }},
+		{ext.SpanKind, func(s *Span) string { return s.attrs.Val(attrSpanKind) }},
+	} {
+		t.Run(tc.tag, func(t *testing.T) {
+			span := newBasicSpan("op")
+			span.SetTag(tc.tag, "value")
+			assert.Equal("value", tc.field(span), "struct field must be set")
+			assert.Equal("value", span.meta[tc.tag], "meta map must be set (dual-storage)")
+
+			// Overwrite: both sides should track the update.
+			span.SetTag(tc.tag, "updated")
+			assert.Equal("updated", tc.field(span))
+			assert.Equal("updated", span.meta[tc.tag])
+		})
+	}
 }
 
 type testMsgpStruct struct {

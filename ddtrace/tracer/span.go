@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -117,6 +118,16 @@ func (s *Span) spanEventsAsJSONString() string {
 	return string(events)
 }
 
+// spanAttributes is a package-level alias for tinternal.SpanAttributes.
+type spanAttributes = tinternal.SpanAttributes
+
+const (
+	attrEnv       = tinternal.AttrEnv
+	attrVersion   = tinternal.AttrVersion
+	attrComponent = tinternal.AttrComponent
+	attrSpanKind  = tinternal.AttrSpanKind
+)
+
 // Span represents a computation. Callers must call Finish when a Span is
 // complete to ensure it's submitted.
 type Span struct {
@@ -131,6 +142,13 @@ type Span struct {
 	resource string `msg:"resource"` // resource name (i.e. "/user?id=123", "SELECT * FROM users")
 	// +checklocks:mu
 	spanType string `msg:"type"` // protocol associated with the span (i.e. "web", "db", "cache")
+	// +checklocks:mu
+	// attrs holds the four V1-protocol promoted fields (env, version, component, spanKind)
+	// as tagValue so callers can distinguish "never set" from "explicitly set to empty".
+	// They are dual-stored: attrs is used by the V1 encoder and internal callers to avoid
+	// a map lookup; the meta map copy ensures V0.4 (msgp) encoding and the external stats
+	// concentrator (which reads Meta["span.kind"]) continue to work without change.
+	attrs spanAttributes `msg:"-"`
 	// +checklocks:mu
 	start int64 `msg:"start"` // span start time expressed in nanoseconds since epoch
 	// +checklocks:mu
@@ -289,7 +307,7 @@ func (s *Span) debugInfo() (name string, spanID, traceID uint64, integration str
 	name = s.name
 	spanID = s.spanID
 	traceID = s.traceID
-	if v, ok := s.meta[ext.Component]; ok {
+	if v, ok := s.attrs.Get(attrComponent); ok {
 		integration = v
 	} else {
 		integration = "manual"
@@ -738,22 +756,36 @@ func (s *Span) setMetaLocked(key, v string) {
 // setMetaInit sets a string tag without acquiring the lock and asserting the lock is held.
 // +checklocksignore — Initialization time, span not yet shared.
 func (s *Span) setMetaInit(key, v string) {
-	if s.meta == nil {
-		s.meta = make(map[string]string, 1)
-	}
 	delete(s.metrics, key)
 	switch key {
 	case ext.SpanName:
 		s.name = v
+		return
 	case ext.ServiceName:
 		s.service = v
+		return
 	case ext.ResourceName:
 		s.resource = v
+		return
 	case ext.SpanType:
 		s.spanType = v
-	default:
-		s.meta[key] = v
+		return
+	case ext.Environment:
+		s.attrs.Set(attrEnv, v)
+	case ext.Version:
+		s.attrs.Set(attrVersion, v)
+	case ext.Component:
+		s.attrs.Set(attrComponent, v)
+	case ext.SpanKind:
+		s.attrs.Set(attrSpanKind, v)
 	}
+	// Promoted fields (env/version/component/spanKind) fall through here so they
+	// remain in meta too. The V0.4 encoder and the external stats concentrator both
+	// read directly from the meta map, so dual-storage is required for correctness.
+	if s.meta == nil {
+		s.meta = make(map[string]string, 1)
+	}
+	s.meta[key] = v
 }
 
 // setMetaStructLocked sets structured metadata. This method assumes the span lock is already held.
@@ -1233,6 +1265,18 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 func getMeta(s *Span, key string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	// Fast path for promoted fields: TagValue.Set gives the correct "was it set?"
+	// semantics without a map lookup.
+	switch key {
+	case ext.Environment:
+		return s.attrs.Get(attrEnv)
+	case ext.Version:
+		return s.attrs.Get(attrVersion)
+	case ext.Component:
+		return s.attrs.Get(attrComponent)
+	case ext.SpanKind:
+		return s.attrs.Get(attrSpanKind)
+	}
 	val, ok := s.meta[key]
 	return val, ok
 }

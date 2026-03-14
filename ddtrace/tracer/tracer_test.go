@@ -1986,8 +1986,8 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		v := sp.meta[ext.Version]
-		assert.Equal("4.5.6", v)
+		assert.Equal("4.5.6", sp.attrs.Val(attrVersion))
+		assert.Equal("4.5.6", sp.meta[ext.Version]) // dual-stored
 	})
 	t.Run("service", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithServiceVersion("4.5.6"),
@@ -1997,8 +1997,10 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		_, ok := sp.meta[ext.Version]
+		v, ok := sp.attrs.Get(attrVersion)
+		assert.Equal("", v)
 		assert.False(ok)
+		assert.Empty(sp.meta[ext.Version]) // dual-stored
 	})
 	t.Run("universal", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithService("servenv"), WithUniversalVersion("4.5.6"))
@@ -2007,9 +2009,8 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		v, ok := sp.meta[ext.Version]
-		assert.True(ok)
-		assert.Equal("4.5.6", v)
+		assert.Equal("4.5.6", sp.attrs.Val(attrVersion))
+		assert.Equal("4.5.6", sp.meta[ext.Version]) // dual-stored
 	})
 	t.Run("service/universal", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithServiceVersion("4.5.6"),
@@ -2019,9 +2020,8 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		v, ok := sp.meta[ext.Version]
-		assert.True(ok)
-		assert.Equal("1.2.3", v)
+		assert.Equal("1.2.3", sp.attrs.Val(attrVersion))
+		assert.Equal("1.2.3", sp.meta[ext.Version]) // dual-stored
 	})
 	t.Run("universal/service", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithUniversalVersion("1.2.3"),
@@ -2031,8 +2031,10 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		_, ok := sp.meta[ext.Version]
+		v, ok := sp.attrs.Get(attrVersion)
+		assert.Equal("", v)
 		assert.False(ok)
+		assert.Empty(sp.meta[ext.Version]) // dual-stored
 	})
 }
 
@@ -2044,8 +2046,8 @@ func TestEnvironment(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		v := sp.meta[ext.Environment]
-		assert.Equal("test", v)
+		assert.Equal("test", sp.attrs.Val(attrEnv))
+		assert.Equal("test", sp.meta[ext.Environment]) // dual-stored
 	})
 
 	t.Run("unset", func(t *testing.T) {
@@ -2055,8 +2057,10 @@ func TestEnvironment(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		_, ok := sp.meta[ext.Environment]
+		v, ok := sp.attrs.Get(attrEnv)
+		assert.Equal("", v)
 		assert.False(ok)
+		assert.Empty(sp.meta[ext.Environment]) // dual-stored
 	})
 }
 
