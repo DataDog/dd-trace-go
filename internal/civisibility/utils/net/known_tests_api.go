@@ -6,10 +6,14 @@
 package net
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -64,6 +68,23 @@ type (
 )
 
 func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
+	if utils.IsManifestModeEnabled() {
+		if cacheFile, ok := utils.CacheHTTPFile("known_tests.json"); ok {
+			if raw, err := os.ReadFile(cacheFile); err == nil {
+				var cachedResponse knownTestsResponse
+				if err := json.Unmarshal(raw, &cachedResponse); err == nil {
+					return &cachedResponse.Data.Attributes, nil
+				} else {
+					log.Debug("civisibility.known_tests: invalid known tests cache file %s: %s", cacheFile, err.Error())
+				}
+			} else {
+				log.Debug("civisibility.known_tests: cannot read known tests cache file %s: %s", cacheFile, err.Error())
+			}
+		}
+		// Compatible with Bazel offline mode: missing or invalid cache means empty known tests response.
+		return &KnownTestsResponseData{Tests: KnownTestsResponseDataModules{}}, nil
+	}
+
 	if c.repositoryURL == "" || c.commitSha == "" {
 		return nil, fmt.Errorf("civisibility.GetKnownTests: repository URL and commit SHA are required")
 	}

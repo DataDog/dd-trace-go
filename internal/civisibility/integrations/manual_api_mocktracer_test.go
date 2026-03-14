@@ -6,9 +6,12 @@
 package integrations
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -79,6 +83,91 @@ func commonAssertions(assert *assert.Assertions, sessionSpan *mocktracer.Span) {
 	assert.Contains(spanTags, constants.RuntimeName)
 	assert.Contains(spanTags, constants.GitRepositoryURL)
 	assert.Contains(spanTags, constants.GitCommitSHA)
+}
+
+func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
+
+	utils.ResetCITags()
+	utils.ResetCIMetrics()
+	utils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(func() {
+		utils.ResetCITags()
+		utils.ResetCIMetrics()
+		utils.ResetTestOptimizationModeForTesting()
+	})
+
+	now := time.Now()
+	session := createDDTestSession(now)
+	session.Close(0)
+
+	finishedSpans := mockTracer.FinishedSpans()
+	assert.NotEmpty(finishedSpans)
+	spanTags := finishedSpans[0].Tags()
+
+	for key := range spanTags {
+		assert.False(strings.HasPrefix(key, "ci."), "unexpected ci tag key %q", key)
+		assert.False(strings.HasPrefix(key, "git."), "unexpected git tag key %q", key)
+		assert.False(strings.HasPrefix(key, "os."), "unexpected os tag key %q", key)
+		assert.False(strings.HasPrefix(key, "runtime."), "unexpected runtime tag key %q", key)
+		assert.NotEqual(constants.CIEnvVars, key, "unexpected env vars tag")
+	}
+
+	assert.Contains(spanTags, constants.TestCommand)
+	assert.Contains(spanTags, constants.Origin)
+}
+
+func TestPayloadFilesModeUsesAvailableWorkspaceMetadataForWorkingDirectory(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	workspaceDir := t.TempDir()
+	subDir := filepath.Join(workspaceDir, "pkg")
+	assert.NoError(os.MkdirAll(subDir, 0o755))
+	t.Chdir(subDir)
+
+	envDataPath := filepath.Join(t.TempDir(), "env.json")
+	envData := map[string]string{
+		constants.CIWorkspacePath:  workspaceDir,
+		constants.GitRepositoryURL: "https://github.com/acme/repo.git",
+	}
+	rawEnvData, err := json.Marshal(envData)
+	assert.NoError(err)
+	assert.NoError(os.WriteFile(envDataPath, rawEnvData, 0o644))
+
+	t.Setenv(constants.CIVisibilityPayloadsInFiles, "true")
+	t.Setenv(constants.CIVisibilityUndeclaredOutputsDir, t.TempDir())
+	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, envDataPath)
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_WORKSPACE", workspaceDir)
+	t.Setenv("GITHUB_REPOSITORY", "acme/repo")
+	t.Setenv("GITHUB_SERVER_URL", "https://github.com")
+	t.Setenv("GITHUB_SHA", "commit-sha")
+
+	utils.ResetCITags()
+	utils.ResetCIMetrics()
+	utils.ResetTestOptimizationModeForTesting()
+	t.Cleanup(func() {
+		utils.ResetCITags()
+		utils.ResetCIMetrics()
+		utils.ResetTestOptimizationModeForTesting()
+	})
+
+	now := time.Now()
+	session := CreateTestSession(
+		WithTestSessionCommand("my-command"),
+		WithTestSessionFramework("my-testing-framework", "framework-version"),
+		WithTestSessionStartTime(now),
+	)
+	assert.Equal("pkg", session.WorkingDirectory())
+	assert.Equal("https://github.com/acme/repo.git", utils.GetCITags()[constants.GitRepositoryURL])
+	assert.Equal(workspaceDir, utils.GetCITags()[constants.CIWorkspacePath])
+
+	session.Close(0)
 }
 
 func TestTestSession(t *testing.T) {
