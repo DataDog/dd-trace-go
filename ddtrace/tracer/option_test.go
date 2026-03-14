@@ -50,6 +50,14 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	}
 }
 
+// withAgentRemoteConfig simulates an agent that supports remote configuration.
+// Use in tests that need RC to be started but don't have a real agent running.
+func withAgentRemoteConfig() StartOption {
+	return func(c *config) {
+		c.agent.hasRemoteConfig = true
+	}
+}
+
 // testStatsd asserts that the given statsd.Client can successfully send metrics
 // to a UDP listener located at addr.
 func testStatsd(t *testing.T, cfg *config, addr string) {
