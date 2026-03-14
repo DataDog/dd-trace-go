@@ -35,3 +35,27 @@ func TestProcessTags(t *testing.T) {
 		assert.Empty(t, p.Slice())
 	})
 }
+
+func TestIsValidTagValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "empty string", value: "", want: false},
+		{name: "forward slash", value: "/", want: false},
+		{name: "backslash", value: "\\", want: false},
+		{name: "bin", value: "bin", want: false},
+		{name: "dot", value: ".", want: true},
+		{name: "valid app name", value: "myapp", want: true},
+		{name: "valid usr", value: "usr", want: true},
+		{name: "valid workspace", value: "workspace", want: true},
+		{name: "valid hyphenated name", value: "my-service", want: true},
+		{name: "valid dotted name", value: "app.test", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isValidTagValue(tt.value))
+		})
+	}
+}
