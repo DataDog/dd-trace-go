@@ -15,6 +15,7 @@ import (
 type config struct {
 	rawCommand  bool
 	serviceName string
+	dbInstance  string
 	errCheck    func(err error) bool
 }
 
@@ -44,6 +45,13 @@ func WithRawCommand(rawCommand bool) Option {
 func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+	}
+}
+
+// WithDBInstance sets the given database instance name.
+func WithDBInstance(instance string) Option {
+	return func(cfg *config) {
+		cfg.dbInstance = instance
 	}
 }
 
