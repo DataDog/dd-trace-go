@@ -7,10 +7,13 @@ package aws
 
 import (
 	"math"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	analyticsRate float64
 	errCheck      func(err error) bool
 }
@@ -29,6 +32,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func defaults(cfg *config) {
 	cfg.analyticsRate = instr.AnalyticsRate(false)
+	cfg.serviceSource = string(instrumentation.PackageAWSSDKGo)
 }
 
 // WithService sets the given service name for the dialled connection.
@@ -37,6 +41,7 @@ func defaults(cfg *config) {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

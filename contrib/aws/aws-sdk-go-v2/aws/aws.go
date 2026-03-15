@@ -97,7 +97,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeHTTP),
-			tracer.ServiceName(serviceName(mw.cfg, serviceID)),
+			serviceNameWithSource(mw.cfg, serviceID),
 			tracer.ResourceName(fmt.Sprintf("%s.%s", serviceID, operation)),
 			tracer.Tag(ext.AWSRegionLegacy, region),
 			tracer.Tag(ext.AWSRegion, region),
@@ -429,13 +429,16 @@ func spanName(awsService, awsOperation string) string {
 	})
 }
 
-func serviceName(cfg *config, awsService string) string {
+func serviceNameWithSource(cfg *config, awsService string) tracer.StartSpanOption {
 	if cfg.serviceName != "" {
-		return cfg.serviceName
+		return instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource)
 	}
-	return instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
-		ext.AWSService: awsService,
-	})
+	return instrumentation.ServiceNameWithSource(
+		instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
+			ext.AWSService: awsService,
+		}),
+		string(instrumentation.PackageAWSSDKGoV2),
+	)
 }
 
 func coalesceNameOrArnResource(name *string, arnVal *string) string {

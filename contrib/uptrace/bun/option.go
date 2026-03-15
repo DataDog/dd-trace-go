@@ -8,7 +8,8 @@ package bun
 import "github.com/DataDog/dd-trace-go/v2/instrumentation"
 
 type config struct {
-	serviceName string
+	serviceName   string
+	serviceSource string
 }
 
 // Option represents an option that can be used to create or wrap a client.
@@ -16,11 +17,13 @@ type Option func(*config)
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageUptraceBun)
 }
 
 // WithService sets the given service name for the client.
 func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }

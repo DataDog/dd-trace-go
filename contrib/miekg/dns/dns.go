@@ -117,7 +117,7 @@ func (c *Client) ExchangeContext(ctx context.Context, m *dns.Msg, addr string) (
 
 func startSpan(ctx context.Context, opcode int) (*tracer.Span, context.Context) {
 	return tracer.StartSpanFromContext(ctx, "dns.request",
-		tracer.ServiceName("dns"),
+		instrumentation.ServiceNameWithSource("dns", string(instrumentation.PackageMiekgDNS)),
 		tracer.ResourceName(dns.OpcodeToString[opcode]),
 		tracer.SpanType(ext.SpanTypeDNS),
 		tracer.Tag(ext.Component, instrumentation.PackageMiekgDNS))

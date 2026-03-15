@@ -143,7 +143,7 @@ func before(db *gorm.DB, operationName string, cfg *config) {
 		return
 	}
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(cfg.serviceName),
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 		tracer.SpanType(ext.SpanTypeSQL),
 		tracer.Tag(ext.Component, instrumentation.PackageGormIOGormV1),
 	}

@@ -47,7 +47,7 @@ func wrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 			return
 		}
 		spanOpts := []tracer.StartSpanOption{
-			tracer.ServiceName(cfg.serviceName),
+			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 		}
 		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
 		fcc := &HTTPHeadersCarrier{
