@@ -227,4 +227,3 @@ func TestNoTracerServiceName(t *testing.T) {
 			len(offending), strings.Join(offending, "\n  "))
 	}
 }
-
