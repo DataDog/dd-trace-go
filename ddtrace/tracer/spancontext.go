@@ -482,6 +482,35 @@ var (
 	traceMaxSize   = internalconfig.TraceMaxSize
 )
 
+// samplingPriorityCache holds pre-allocated pointers for the four standard
+// sampling priority values defined in ddtrace/ext/priority.go:
+//
+//	index 0 → -1 (ext.PriorityUserReject)
+//	index 1 →  0 (ext.PriorityAutoReject)
+//	index 2 →  1 (ext.PriorityAutoKeep)
+//	index 3 →  2 (ext.PriorityUserKeep)
+//
+// Caching these avoids a heap allocation on every call to
+// setSamplingPriorityLockedWithForce, which is on the hot path.
+var samplingPriorityCache = func() [4]*float64 {
+	var c [4]*float64
+	for i := range c {
+		v := float64(i - 1) // -1, 0, 1, 2
+		c[i] = &v
+	}
+	return c
+}()
+
+// samplingPriorityPtr returns a *float64 for p without allocating for the
+// standard priority values (ext.PriorityUserReject through ext.PriorityUserKeep).
+func samplingPriorityPtr(p int) *float64 {
+	if p >= -1 && p <= 2 {
+		return samplingPriorityCache[p+1]
+	}
+	v := float64(p)
+	return &v
+}
+
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
 func newTrace() *trace {
@@ -552,9 +581,7 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 	old := t.priority.Load()
 	updatedPriority := old == nil || *old != float64(p)
 
-	newP := new(float64)
-	*newP = float64(p)
-	t.priority.Store(newP)
+	t.priority.Store(samplingPriorityPtr(p))
 	curDM, existed := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
