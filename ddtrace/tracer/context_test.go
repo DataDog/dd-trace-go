@@ -150,7 +150,8 @@ func Test128(t *testing.T) {
 	defer stop()
 
 	t.Run("disable 128 bit trace ids", func(t *testing.T) {
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+		defer func(v bool) { traceID128BitEnabled = v }(traceID128BitEnabled)
+		traceID128BitEnabled = false
 		span, _ := StartSpanFromContext(context.Background(), "http.request")
 		assert.NotZero(t, span.Context().TraceID())
 		w3cCtx := span.Context()
