@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	cloud.google.com/go/pubsub v1.37.0
+	connectrpc.com/connect v1.19.1
 	github.com/99designs/gqlgen v0.17.83
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.6.0-dev.1
@@ -14,6 +15,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.6.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/connectrpc/connect-go/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.6.0-dev.1
@@ -358,6 +360,8 @@ replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../../con
 replace github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2 => ../../../contrib/bradfitz/gomemcache
 
 replace github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 => ../../../contrib/cloud.google.com/go/pubsub.v1
+
+replace github.com/DataDog/dd-trace-go/contrib/connectrpc/connect-go/v2 => ../../../contrib/connectrpc/connect-go
 
 replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 => ../../../contrib/confluentinc/confluent-kafka-go/kafka.v2
 
