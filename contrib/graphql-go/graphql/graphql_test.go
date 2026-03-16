@@ -221,6 +221,67 @@ func Test(t *testing.T) {
 	})
 }
 
+// TestSpanHierarchy is a regression test ensuring parse, validate, and execute
+// spans are siblings under the server span, not nested inside each other.
+// This would break if StartSpanFromContext context was propagated back through
+// the graphql-go extension interface, which causes each stage to become a child
+// of the previous stage rather than a child of the server span.
+func TestSpanHierarchy(t *testing.T) {
+	rootQuery := graphql.NewObject(graphql.ObjectConfig{
+		Name: "Query",
+		Fields: graphql.Fields{
+			"hello": {
+				Type: graphql.String,
+				Resolve: func(_ graphql.ResolveParams) (any, error) {
+					return "Hello, world!", nil
+				},
+			},
+		},
+	})
+	schema, err := NewSchema(graphql.SchemaConfig{Query: rootQuery}, WithService("test-graphql-service"))
+	require.NoError(t, err)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	resp := graphql.Do(graphql.Params{
+		Schema:        schema,
+		RequestString: `{ hello }`,
+	})
+	require.Empty(t, resp.Errors)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 5) // parse, validate, execute, resolve, server
+
+	// Find spans by operation name
+	spansByOp := make(map[string]*mocktracer.Span)
+	for _, s := range spans {
+		spansByOp[s.OperationName()] = s
+	}
+
+	serverSpan := spansByOp["graphql.server"]
+	parseSpan := spansByOp["graphql.parse"]
+	validateSpan := spansByOp["graphql.validate"]
+	executeSpan := spansByOp["graphql.execute"]
+	resolveSpan := spansByOp["graphql.resolve"]
+
+	require.NotNil(t, serverSpan, "missing graphql.server span")
+	require.NotNil(t, parseSpan, "missing graphql.parse span")
+	require.NotNil(t, validateSpan, "missing graphql.validate span")
+	require.NotNil(t, executeSpan, "missing graphql.execute span")
+	require.NotNil(t, resolveSpan, "missing graphql.resolve span")
+
+	serverID := serverSpan.SpanID()
+
+	// parse, validate, and execute must all be direct children of server
+	assert.Equal(t, serverID, parseSpan.ParentID(), "graphql.parse should be a direct child of graphql.server")
+	assert.Equal(t, serverID, validateSpan.ParentID(), "graphql.validate should be a direct child of graphql.server")
+	assert.Equal(t, serverID, executeSpan.ParentID(), "graphql.execute should be a direct child of graphql.server")
+
+	// resolve must be a child of execute
+	assert.Equal(t, executeSpan.SpanID(), resolveSpan.ParentID(), "graphql.resolve should be a direct child of graphql.execute")
+}
+
 func TestErrorsAsSpanEvents(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
