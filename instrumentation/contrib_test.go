@@ -155,11 +155,6 @@ func TestNoTracerServiceName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Files that are allowed to call tracer.ServiceName directly.
-	allowList := map[string]bool{
-		filepath.Join("instrumentation", "httptrace", "before_handle.go"): true,
-	}
-
 	var offending []string
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -200,11 +195,6 @@ func TestNoTracerServiceName(t *testing.T) {
 			return nil
 		}
 
-		relPath, _ := filepath.Rel(root, path)
-		if allowList[relPath] {
-			return nil
-		}
-
 		// Walk the AST looking for tracer.ServiceName calls
 		ast.Inspect(node, func(n ast.Node) bool {
 			sel, ok := n.(*ast.SelectorExpr)
@@ -237,3 +227,4 @@ func TestNoTracerServiceName(t *testing.T) {
 			len(offending), strings.Join(offending, "\n  "))
 	}
 }
+

@@ -13,7 +13,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
@@ -80,12 +79,12 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if resource == "" {
 		resource = r.Method + " " + route
 	}
-	so := make([]tracer.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+2)
+	so := make([]tracer.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+1)
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
-	so = append(so, instrumentation.ServiceNameWithSource(mux.cfg.ServiceName, mux.cfg.ServiceSource))
 	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
 		Service:       mux.cfg.ServiceName,
+		ServiceSource: mux.cfg.ServiceSource,
 		Framework:     "net/http",
 		Resource:      resource,
 		SpanOpts:      so,

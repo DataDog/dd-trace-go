@@ -13,7 +13,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
@@ -52,12 +51,12 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 			if r := cfg.ResourceNamer(req); r != "" {
 				resc = r
 			}
-			so := make([]tracer.StartSpanOption, len(cfg.SpanOpts), len(cfg.SpanOpts)+2)
+			so := make([]tracer.StartSpanOption, len(cfg.SpanOpts), len(cfg.SpanOpts)+1)
 			copy(so, cfg.SpanOpts)
 			so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.HeaderTags))
-			so = append(so, instrumentation.ServiceNameWithSource(service, serviceSource))
 			TraceAndServe(h, w, req, &httptrace.ServeConfig{
 				Service:       service,
+				ServiceSource: serviceSource,
 				Framework:     "net/http",
 				Resource:      resc,
 				FinishOpts:    cfg.FinishOpts,
