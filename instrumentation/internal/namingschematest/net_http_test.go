@@ -16,8 +16,10 @@ import (
 	httptrace "github.com/DataDog/dd-trace-go/contrib/net/http/v2"
 	"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2/harness"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
 var (
@@ -102,51 +104,6 @@ var (
 		},
 	}
 
-	netHTTPServerWrapHandlerWithService = harness.TestCase{
-		Name: instrumentation.PackageNetHTTP + "_server_wrap_handler_with_service",
-		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-
-			mux := http.NewServeMux()
-			var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte("OK\n"))
-			})
-			// Pass service name directly to WrapHandler to test opt.wrap_handler source.
-			// The serviceOverride parameter is ignored here because WrapHandler's service
-			// parameter takes precedence over WithService when non-empty.
-			svc := "my-service"
-			if serviceOverride != "" {
-				svc = serviceOverride
-			}
-			h = httptrace.WrapHandler(h, svc, "/200")
-			mux.Handle("/200", h)
-
-			r := httptest.NewRequest("GET", "http://localhost/200", nil)
-			w := httptest.NewRecorder()
-			mux.ServeHTTP(w, r)
-
-			return mt.FinishedSpans()
-		},
-		WantServiceNameV0: harness.ServiceNameAssertions{
-			Defaults:        []string{"my-service"},
-			DDService:       []string{"my-service"},
-			ServiceOverride: []string{harness.TestServiceOverride},
-		},
-		WantServiceSource: harness.ServiceSourceAssertions{
-			Defaults:        []string{"opt.wrap_handler"},
-			ServiceOverride: []string{"opt.wrap_handler"},
-		},
-		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
-			require.Len(t, spans, 1)
-			assert.Equal(t, "http.request", spans[0].OperationName())
-		},
-		AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
-			require.Len(t, spans, 1)
-			assert.Equal(t, "http.server.request", spans[0].OperationName())
-		},
-	}
-
 	netHTTPClient = harness.TestCase{
 		Name: instrumentation.PackageNetHTTP + "_client",
 		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
@@ -190,3 +147,31 @@ var (
 		},
 	}
 )
+
+// TestWrapHandlerServiceSource tests that WrapHandler with a non-empty service
+// parameter sets the service source to "opt.wrap_handler". This doesn't fit the
+// harness pattern because WrapHandler's service parameter takes precedence over
+// DD_SERVICE and WithService.
+func TestWrapHandlerServiceSource(t *testing.T) {
+	if _, ok := env.Lookup("INTEGRATION"); !ok {
+		t.Skip("🚧 Skipping integration test (INTEGRATION environment variable is not set)")
+	}
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	mux := http.NewServeMux()
+	var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("OK\n"))
+	})
+	h = httptrace.WrapHandler(h, "my-service", "/200")
+	mux.Handle("/200", h)
+
+	r := httptest.NewRequest("GET", "http://localhost/200", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "my-service", spans[0].Tag(ext.ServiceName))
+	assert.Equal(t, "opt.wrap_handler", spans[0].Tag(ext.KeyServiceSource))
+}
