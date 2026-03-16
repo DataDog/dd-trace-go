@@ -5,13 +5,20 @@
 
 package config
 
-import "github.com/DataDog/dd-trace-go/v2/internal/log"
+import (
+	"net"
+	"net/url"
+	"os"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+)
 
 const (
 	// DefaultRateLimit specifies the default rate limit per second for traces.
 	// TODO: Maybe delete this. We will have defaults in supported_configuration.json anyway.
 	DefaultRateLimit = 100.0
-	// traceMaxSize is the maximum number of spans we keep in memory for a
+	// TraceMaxSize is the maximum number of spans we keep in memory for a
 	// single trace. This is to avoid memory leaks. If more spans than this
 	// are added to a trace, then the trace is dropped and the spans are
 	// discarded. Adding additional spans after a trace is dropped does
@@ -45,4 +52,50 @@ func validatePartialFlushMinSpans(minSpans int) bool {
 		return false
 	}
 	return true
+}
+
+// resolveAgentURL computes the final agent URL from the three env-var strings
+// read through the provider. The priority mirrors internal.AgentURLFromEnv:
+//  1. DD_TRACE_AGENT_URL (if non-empty and valid)
+//  2. DD_AGENT_HOST / DD_TRACE_AGENT_PORT (if either is non-empty)
+//  3. DefaultTraceAgentUDSPath (if the socket file exists)
+//  4. http://localhost:8126
+func resolveAgentURL(agentURLStr, host, port string) *url.URL {
+	if agentURLStr != "" {
+		u, err := url.Parse(agentURLStr)
+		if err != nil {
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
+		} else {
+			switch u.Scheme {
+			case "unix", "http", "https":
+				return u
+			default:
+				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURLStr)
+			}
+		}
+	}
+
+	providedHost := host != ""
+	providedPort := port != ""
+	if host == "" {
+		host = internal.DefaultAgentHostname
+	}
+	if port == "" {
+		port = internal.DefaultTraceAgentPort
+	}
+	httpURL := &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(host, port),
+	}
+	if providedHost || providedPort {
+		return httpURL
+	}
+
+	if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err == nil {
+		return &url.URL{
+			Scheme: "unix",
+			Path:   internal.DefaultTraceAgentUDSPath,
+		}
+	}
+	return httpURL
 }

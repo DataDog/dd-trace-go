@@ -167,12 +167,6 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler RateSampler
 
-	// agentURL is the agent URL that receives traces from the tracer.
-	agentURL *url.URL
-
-	// originalAgentURL is the agent URL that receives traces from the tracer and does not get changed.
-	originalAgentURL *url.URL
-
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
 	globalTags dynamicConfig[map[string]any]
@@ -382,21 +376,17 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
-	if c.agentURL == nil {
-		c.agentURL = internal.AgentURLFromEnv()
-	}
-	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
+	agentURL := c.internalConfig.AgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
 			// Make sure we don't create http client traces from inside the tracer by using our http client
 			// TODO(eliott.bouhana): remove once dd:no-span is implemented
 			log.Debug("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
 		}
-		if c.agentURL.Scheme == "unix" {
+		if agentURL != nil && agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
-			c.httpClient = internal.UDSClient(c.agentURL.Path, cmp.Or(c.httpClientTimeout, defaultHTTPTimeout))
-			c.agentURL = internal.UnixDataSocketURL(c.agentURL.Path)
+			c.httpClient = internal.UDSClient(agentURL.Path, cmp.Or(c.httpClientTimeout, defaultHTTPTimeout))
 		} else {
 			c.httpClient = internal.DefaultHTTPClient(c.httpClientTimeout, false)
 		}
@@ -430,7 +420,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
+		c.transport = newHTTPTransport(c.internalConfig.EffectiveAgentURL().String(), c.httpClient)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -465,11 +455,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
-	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
+	effectiveURL := c.internalConfig.EffectiveAgentURL()
+	c.agent = loadAgentFeatures(agentDisabled, effectiveURL, c.httpClient)
 	if c.agent.v1ProtocolAvailable {
 		c.traceProtocol = traceProtocolV1
 		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
+			t.traceURL = fmt.Sprintf("%s%s", effectiveURL.String(), tracesAPIPathV1)
 		}
 	} else {
 		c.traceProtocol = traceProtocolV04
@@ -500,7 +491,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		Env:        c.internalConfig.Env(),
 		Service:    c.serviceName,
 		Version:    c.internalConfig.Version(),
-		AgentURL:   c.agentURL,
+		AgentURL:   c.internalConfig.EffectiveAgentURL(),
 		APIKey:     env.Get("DD_API_KEY"),
 		APPKey:     env.Get("DD_APP_KEY"),
 		HTTPClient: c.httpClient,
@@ -918,10 +909,10 @@ func WithGlobalServiceName(enabled bool) StartOption {
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
 	return func(c *config) {
-		c.agentURL = &url.URL{
+		c.internalConfig.SetAgentURL(&url.URL{
 			Scheme: "http",
 			Host:   addr,
-		}
+		}, telemetry.OriginCode)
 	}
 }
 
@@ -946,12 +937,15 @@ func WithAgentURL(agentURL string) StartOption {
 		}
 		switch u.Scheme {
 		case "http", "https":
-			c.agentURL = &url.URL{
+			c.internalConfig.SetAgentURL(&url.URL{
 				Scheme: u.Scheme,
 				Host:   u.Host,
-			}
+			}, telemetry.OriginCode)
 		case "unix":
-			c.agentURL = internal.UnixDataSocketURL(u.Path)
+			c.internalConfig.SetAgentURL(&url.URL{
+				Scheme: "unix",
+				Path:   u.Path,
+			}, telemetry.OriginCode)
 		default:
 			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
 		}
@@ -1051,10 +1045,10 @@ func WithHTTPClient(client *http.Client) StartOption {
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
 	return func(c *config) {
-		c.agentURL = &url.URL{
+		c.internalConfig.SetAgentURL(&url.URL{
 			Scheme: "unix",
 			Path:   socketPath,
-		}
+		}, telemetry.OriginCode)
 	}
 }
 

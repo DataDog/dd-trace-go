@@ -146,10 +146,13 @@ func (p *Provider) GetFloatWithValidator(key string, def float64, validate func(
 	})
 }
 
-func (p *Provider) GetURL(key string, def *url.URL) *url.URL {
+func (p *Provider) GetURLWithValidator(key string, def *url.URL, validate func(*url.URL) bool) *url.URL {
 	return get(p, key, def, func(v string) (*url.URL, bool) {
 		u, err := url.Parse(v)
-		return u, err == nil
+		if err == nil && validate(u) {
+			return u, true
+		}
+		return nil, false
 	})
 }
 

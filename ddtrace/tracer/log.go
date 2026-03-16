@@ -116,10 +116,11 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
-	// Determine the agent URL to use in the logs
+	// Determine the agent URL to use in the logs.
+	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).
 	var agentURL string
-	if t.config.originalAgentURL != nil && t.config.originalAgentURL.Scheme == "unix" {
-		agentURL = t.config.originalAgentURL.String()
+	if srcURL := t.config.internalConfig.AgentURL(); srcURL != nil && srcURL.Scheme == "unix" {
+		agentURL = srcURL.String()
 	} else {
 		agentURL = t.config.transport.endpoint()
 	}
