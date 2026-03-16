@@ -10,9 +10,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
@@ -57,7 +57,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
 	opts[1] = tracer.Tag(ext.Component, "net/http")
 	if cfg.Service != "" {
-		opts = append(opts, instrumentation.ServiceNameWithSource(cfg.Service, cfg.ServiceSource))
+		opts = append(opts, tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: cfg.Service, Source: cfg.ServiceSource}))
 	}
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))
