@@ -18,14 +18,14 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Configure AWS Credentials via OIDC (Build-Stable)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
         with:
           role-to-assume: arn:aws:iam::486234852809:role/dd-trace-go-github-actions
           role-session-name: dd-trace-go-lambda-${{ github.run_id }}
           aws-region: us-east-1
 
       - name: Configure AWS Credentials for Serverless Sandbox
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
         with:
           role-to-assume: arn:aws:iam::425362996713:role/gha-dd-trace-lambda-integration-test
           role-session-name: dd-trace-go-lambda-${{ github.run_id }}
