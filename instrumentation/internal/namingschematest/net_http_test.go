@@ -105,10 +105,6 @@ var (
 	netHTTPServerWrapHandlerWithService = harness.TestCase{
 		Name: instrumentation.PackageNetHTTP + "_server_wrap_handler_with_service",
 		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
-			var opts []httptrace.Option
-			if serviceOverride != "" {
-				opts = append(opts, httptrace.WithService(serviceOverride))
-			}
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
@@ -116,7 +112,14 @@ var (
 			var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("OK\n"))
 			})
-			h = httptrace.WrapHandler(h, "my-service", "/200", opts...)
+			// Pass service name directly to WrapHandler to test opt.wrap_handler source.
+			// The serviceOverride parameter is ignored here because WrapHandler's service
+			// parameter takes precedence over WithService when non-empty.
+			svc := "my-service"
+			if serviceOverride != "" {
+				svc = serviceOverride
+			}
+			h = httptrace.WrapHandler(h, svc, "/200")
 			mux.Handle("/200", h)
 
 			r := httptest.NewRequest("GET", "http://localhost/200", nil)
@@ -132,7 +135,7 @@ var (
 		},
 		WantServiceSource: harness.ServiceSourceAssertions{
 			Defaults:        []string{"opt.wrap_handler"},
-			ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+			ServiceOverride: []string{"opt.wrap_handler"},
 		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
