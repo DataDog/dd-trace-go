@@ -57,6 +57,7 @@ func TestNamingSchema(t *testing.T) {
 		redigoTest,
 		netHTTPServerServeMux,
 		netHTTPServerWrapHandler,
+		netHTTPServerWrapHandlerWithService,
 		netHTTPClient,
 		gomemcache,
 		gcpPubsub,

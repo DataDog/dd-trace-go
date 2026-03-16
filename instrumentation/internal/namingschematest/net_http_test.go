@@ -46,6 +46,10 @@ var (
 			DDService:       []string{harness.TestDDService},
 			ServiceOverride: []string{harness.TestServiceOverride},
 		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        []string{string(instrumentation.PackageNetHTTP)},
+			ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
 			assert.Equal(t, "http.request", spans[0].OperationName())
@@ -83,6 +87,52 @@ var (
 			Defaults:        []string{"http.router"},
 			DDService:       []string{harness.TestDDService},
 			ServiceOverride: []string{harness.TestServiceOverride},
+		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        []string{string(instrumentation.PackageNetHTTP)},
+			ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+		},
+		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
+			require.Len(t, spans, 1)
+			assert.Equal(t, "http.request", spans[0].OperationName())
+		},
+		AssertOpV1: func(t *testing.T, spans []*mocktracer.Span) {
+			require.Len(t, spans, 1)
+			assert.Equal(t, "http.server.request", spans[0].OperationName())
+		},
+	}
+
+	netHTTPServerWrapHandlerWithService = harness.TestCase{
+		Name: instrumentation.PackageNetHTTP + "_server_wrap_handler_with_service",
+		GenSpans: func(t *testing.T, serviceOverride string) []*mocktracer.Span {
+			var opts []httptrace.Option
+			if serviceOverride != "" {
+				opts = append(opts, httptrace.WithService(serviceOverride))
+			}
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			mux := http.NewServeMux()
+			var h http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte("OK\n"))
+			})
+			h = httptrace.WrapHandler(h, "my-service", "/200", opts...)
+			mux.Handle("/200", h)
+
+			r := httptest.NewRequest("GET", "http://localhost/200", nil)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+
+			return mt.FinishedSpans()
+		},
+		WantServiceNameV0: harness.ServiceNameAssertions{
+			Defaults:        []string{"my-service"},
+			DDService:       []string{"my-service"},
+			ServiceOverride: []string{harness.TestServiceOverride},
+		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        []string{"opt.wrap_handler"},
+			ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
@@ -122,6 +172,10 @@ var (
 			Defaults:        []string{""},
 			DDService:       []string{""},
 			ServiceOverride: []string{harness.TestServiceOverride},
+		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        []string{""},
+			ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
 		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 1)
