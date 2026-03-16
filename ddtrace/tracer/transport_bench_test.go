@@ -51,7 +51,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				payload.reset()
 				rc, err := transport.send(payload)
 				if err == nil {
@@ -77,7 +77,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				var wg sync.WaitGroup
 
 				for range concurrency {

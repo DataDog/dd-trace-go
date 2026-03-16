@@ -14,6 +14,7 @@ import (
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	spanName      string
 	spanOpts      []tracer.StartSpanOption
 	isStatusError func(int) bool
@@ -36,6 +37,7 @@ func (fn OptionFn) apply(cfg *config) {
 func newConfig() *config {
 	return &config{
 		serviceName:   instr.ServiceName(instrumentation.ComponentServer, nil),
+		serviceSource: string(instrumentation.PackageValyalaFastHTTP),
 		spanName:      instr.OperationName(instrumentation.ComponentServer, nil),
 		isStatusError: defaultIsServerError,
 		resourceNamer: defaultResourceNamer,
@@ -47,6 +49,7 @@ func newConfig() *config {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

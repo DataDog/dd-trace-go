@@ -31,7 +31,7 @@ func BenchmarkKV(b *testing.B) {
 			kv := client.KV()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				err = testFunc(kv)
 				if err != nil {
 					b.FailNow()
@@ -61,7 +61,7 @@ func BenchmarkTracedKV(b *testing.B) {
 			kv := client.KV()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				testFunc(kv)
 			}
 		})

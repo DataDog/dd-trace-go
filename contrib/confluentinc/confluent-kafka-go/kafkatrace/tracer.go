@@ -21,6 +21,7 @@ type Tracer struct {
 	ctx                 context.Context
 	consumerServiceName string
 	producerServiceName string
+	serviceSource       string
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
@@ -62,6 +63,11 @@ func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVers
 
 	tr.consumerServiceName = instr.ServiceName(instrumentation.ComponentConsumer, nil)
 	tr.producerServiceName = instr.ServiceName(instrumentation.ComponentProducer, nil)
+	if ckgoVersion == CKGoVersion2 {
+		tr.serviceSource = string(instrumentation.PackageConfluentKafkaGoV2)
+	} else {
+		tr.serviceSource = string(instrumentation.PackageConfluentKafkaGo)
+	}
 	tr.consumerSpanName = instr.OperationName(instrumentation.ComponentConsumer, nil)
 	tr.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
 
@@ -88,6 +94,7 @@ func WithService(serviceName string) OptionFn {
 	return func(cfg *Tracer) {
 		cfg.consumerServiceName = serviceName
 		cfg.producerServiceName = serviceName
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

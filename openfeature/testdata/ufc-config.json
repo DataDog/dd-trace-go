@@ -1,0 +1,3353 @@
+{
+  "createdAt": "2024-04-17T19:40:53.716Z",
+  "format": "SERVER",
+  "environment": {
+    "name": "Test"
+  },
+  "flags": {
+    "empty_flag": {
+      "key": "empty_flag",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {},
+      "allocations": []
+    },
+    "disabled_flag": {
+      "key": "disabled_flag",
+      "enabled": false,
+      "variationType": "INTEGER",
+      "variations": {},
+      "allocations": []
+    },
+    "no_allocations_flag": {
+      "key": "no_allocations_flag",
+      "enabled": true,
+      "variationType": "JSON",
+      "variations": {
+        "control": {
+          "key": "control",
+          "value": {
+            "variant": "control"
+          }
+        },
+        "treatment": {
+          "key": "treatment",
+          "value": {
+            "variant": "treatment"
+          }
+        }
+      },
+      "allocations": []
+    },
+    "numeric_flag": {
+      "key": "numeric_flag",
+      "enabled": true,
+      "variationType": "NUMERIC",
+      "variations": {
+        "e": {
+          "key": "e",
+          "value": 2.7182818
+        },
+        "pi": {
+          "key": "pi",
+          "value": 3.1415926
+        }
+      },
+      "allocations": [
+        {
+          "key": "rollout",
+          "splits": [
+            {
+              "variationKey": "pi",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "regex-flag": {
+      "key": "regex-flag",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {
+        "partial-example": {
+          "key": "partial-example",
+          "value": "partial-example"
+        },
+        "test": {
+          "key": "test",
+          "value": "test"
+        }
+      },
+      "allocations": [
+        {
+          "key": "partial-example",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "email",
+                  "operator": "MATCHES",
+                  "value": "@example\\.com"
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "partial-example",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "test",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "email",
+                  "operator": "MATCHES",
+                  "value": ".*@test\\.com"
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "test",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "numeric-one-of": {
+      "key": "numeric-one-of",
+      "enabled": true,
+      "variationType": "INTEGER",
+      "variations": {
+        "1": {
+          "key": "1",
+          "value": 1
+        },
+        "2": {
+          "key": "2",
+          "value": 2
+        },
+        "3": {
+          "key": "3",
+          "value": 3
+        }
+      },
+      "allocations": [
+        {
+          "key": "1-for-1",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "number",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "1"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "1",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "2-for-123456789",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "number",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "123456789"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "2",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "3-for-not-2",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "number",
+                  "operator": "NOT_ONE_OF",
+                  "value": [
+                    "2"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "3",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "boolean-one-of-matches": {
+      "key": "boolean-one-of-matches",
+      "enabled": true,
+      "variationType": "INTEGER",
+      "variations": {
+        "1": {
+          "key": "1",
+          "value": 1
+        },
+        "2": {
+          "key": "2",
+          "value": 2
+        },
+        "3": {
+          "key": "3",
+          "value": 3
+        },
+        "4": {
+          "key": "4",
+          "value": 4
+        },
+        "5": {
+          "key": "5",
+          "value": 5
+        }
+      },
+      "allocations": [
+        {
+          "key": "1-for-one-of",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "one_of_flag",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "1",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "2-for-matches",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "matches_flag",
+                  "operator": "MATCHES",
+                  "value": "true"
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "2",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "3-for-not-one-of",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "not_one_of_flag",
+                  "operator": "NOT_ONE_OF",
+                  "value": [
+                    "false"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "3",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "4-for-not-matches",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "not_matches_flag",
+                  "operator": "NOT_MATCHES",
+                  "value": "false"
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "4",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "5-for-matches-null",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "null_flag",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "null"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "5",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "empty_string_flag": {
+      "key": "empty_string_flag",
+      "enabled": true,
+      "comment": "Testing the empty string as a variation value",
+      "variationType": "STRING",
+      "variations": {
+        "empty_string": {
+          "key": "empty_string",
+          "value": ""
+        },
+        "non_empty": {
+          "key": "non_empty",
+          "value": "non_empty"
+        }
+      },
+      "allocations": [
+        {
+          "key": "allocation-empty",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "country",
+                  "operator": "MATCHES",
+                  "value": "US"
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "empty_string",
+              "shards": [
+                {
+                  "salt": "allocation-empty-shards",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test",
+          "rules": [],
+          "splits": [
+            {
+              "variationKey": "non_empty",
+              "shards": [
+                {
+                  "salt": "allocation-empty-shards",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "kill-switch": {
+      "key": "kill-switch",
+      "enabled": true,
+      "variationType": "BOOLEAN",
+      "variations": {
+        "on": {
+          "key": "on",
+          "value": true
+        },
+        "off": {
+          "key": "off",
+          "value": false
+        }
+      },
+      "allocations": [
+        {
+          "key": "on-for-NA",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "country",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "US",
+                    "Canada",
+                    "Mexico"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "on",
+              "shards": [
+                {
+                  "salt": "some-salt",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "on-for-age-50+",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "age",
+                  "operator": "GTE",
+                  "value": 50
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "on",
+              "shards": [
+                {
+                  "salt": "some-salt",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "off-for-all",
+          "rules": [],
+          "splits": [
+            {
+              "variationKey": "off",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "comparator-operator-test": {
+      "key": "comparator-operator-test",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {
+        "small": {
+          "key": "small",
+          "value": "small"
+        },
+        "medium": {
+          "key": "medium",
+          "value": "medium"
+        },
+        "large": {
+          "key": "large",
+          "value": "large"
+        }
+      },
+      "allocations": [
+        {
+          "key": "small-size",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "size",
+                  "operator": "LT",
+                  "value": 10
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "small",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "medum-size",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "size",
+                  "operator": "GTE",
+                  "value": 10
+                },
+                {
+                  "attribute": "size",
+                  "operator": "LTE",
+                  "value": 20
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "medium",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "large-size",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "size",
+                  "operator": "GT",
+                  "value": 25
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "large",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "start-and-end-date-test": {
+      "key": "start-and-end-date-test",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {
+        "old": {
+          "key": "old",
+          "value": "old"
+        },
+        "current": {
+          "key": "current",
+          "value": "current"
+        },
+        "new": {
+          "key": "new",
+          "value": "new"
+        }
+      },
+      "allocations": [
+        {
+          "key": "old-versions",
+          "splits": [
+            {
+              "variationKey": "old",
+              "shards": []
+            }
+          ],
+          "endAt": "2002-10-31T09:00:00.594Z",
+          "doLog": true
+        },
+        {
+          "key": "future-versions",
+          "splits": [
+            {
+              "variationKey": "new",
+              "shards": []
+            }
+          ],
+          "startAt": "2052-10-31T09:00:00.594Z",
+          "doLog": true
+        },
+        {
+          "key": "current-versions",
+          "splits": [
+            {
+              "variationKey": "current",
+              "shards": []
+            }
+          ],
+          "startAt": "2022-10-31T09:00:00.594Z",
+          "endAt": "2050-10-31T09:00:00.594Z",
+          "doLog": true
+        }
+      ]
+    },
+    "null-operator-test": {
+      "key": "null-operator-test",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {
+        "old": {
+          "key": "old",
+          "value": "old"
+        },
+        "new": {
+          "key": "new",
+          "value": "new"
+        }
+      },
+      "allocations": [
+        {
+          "key": "null-operator",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "size",
+                  "operator": "IS_NULL",
+                  "value": true
+                }
+              ]
+            },
+            {
+              "conditions": [
+                {
+                  "attribute": "size",
+                  "operator": "LT",
+                  "value": 10
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "old",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "not-null-operator",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "size",
+                  "operator": "IS_NULL",
+                  "value": false
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "new",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "new-user-onboarding": {
+      "key": "new-user-onboarding",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {
+        "control": {
+          "key": "control",
+          "value": "control"
+        },
+        "red": {
+          "key": "red",
+          "value": "red"
+        },
+        "blue": {
+          "key": "blue",
+          "value": "blue"
+        },
+        "green": {
+          "key": "green",
+          "value": "green"
+        },
+        "yellow": {
+          "key": "yellow",
+          "value": "yellow"
+        },
+        "purple": {
+          "key": "purple",
+          "value": "purple"
+        }
+      },
+      "allocations": [
+        {
+          "key": "id rule",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "id",
+                  "operator": "MATCHES",
+                  "value": "zach"
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "purple",
+              "shards": []
+            }
+          ],
+          "doLog": false
+        },
+        {
+          "key": "internal users",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "email",
+                  "operator": "MATCHES",
+                  "value": "@mycompany.com"
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "green",
+              "shards": []
+            }
+          ],
+          "doLog": false
+        },
+        {
+          "key": "experiment",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "country",
+                  "operator": "NOT_ONE_OF",
+                  "value": [
+                    "US",
+                    "Canada",
+                    "Mexico"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "control",
+              "shards": [
+                {
+                  "salt": "traffic-new-user-onboarding-experiment",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 6000
+                    }
+                  ]
+                },
+                {
+                  "salt": "split-new-user-onboarding-experiment",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 5000
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "variationKey": "red",
+              "shards": [
+                {
+                  "salt": "traffic-new-user-onboarding-experiment",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 6000
+                    }
+                  ]
+                },
+                {
+                  "salt": "split-new-user-onboarding-experiment",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 5000,
+                      "end": 8000
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "variationKey": "yellow",
+              "shards": [
+                {
+                  "salt": "traffic-new-user-onboarding-experiment",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 6000
+                    }
+                  ]
+                },
+                {
+                  "salt": "split-new-user-onboarding-experiment",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 8000,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "rollout",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "country",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "US",
+                    "Canada",
+                    "Mexico"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "blue",
+              "shards": [
+                {
+                  "salt": "split-new-user-onboarding-rollout",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 8000
+                    }
+                  ]
+                }
+              ],
+              "extraLogging": {
+                "allocationvalue_type": "rollout",
+                "owner": "hippo"
+              }
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "integer-flag": {
+      "key": "integer-flag",
+      "enabled": true,
+      "variationType": "INTEGER",
+      "variations": {
+        "one": {
+          "key": "one",
+          "value": 1
+        },
+        "two": {
+          "key": "two",
+          "value": 2
+        },
+        "three": {
+          "key": "three",
+          "value": 3
+        }
+      },
+      "allocations": [
+        {
+          "key": "targeted allocation",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "country",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "US",
+                    "Canada",
+                    "Mexico"
+                  ]
+                }
+              ]
+            },
+            {
+              "conditions": [
+                {
+                  "attribute": "email",
+                  "operator": "MATCHES",
+                  "value": ".*@example.com"
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "three",
+              "shards": [
+                {
+                  "salt": "full-range-salt",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "50/50 split",
+          "rules": [],
+          "splits": [
+            {
+              "variationKey": "one",
+              "shards": [
+                {
+                  "salt": "split-numeric-flag-some-allocation",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 5000
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "variationKey": "two",
+              "shards": [
+                {
+                  "salt": "split-numeric-flag-some-allocation",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 5000,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "json-config-flag": {
+      "key": "json-config-flag",
+      "enabled": true,
+      "variationType": "JSON",
+      "variations": {
+        "one": {
+          "key": "one",
+          "value": {
+            "integer": 1,
+            "string": "one",
+            "float": 1.0
+          }
+        },
+        "two": {
+          "key": "two",
+          "value": {
+            "integer": 2,
+            "string": "two",
+            "float": 2.0
+          }
+        },
+        "empty": {
+          "key": "empty",
+          "value": {}
+        }
+      },
+      "allocations": [
+        {
+          "key": "Optionally Force Empty",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "Force Empty",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "empty",
+              "shards": [
+                {
+                  "salt": "full-range-salt",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "50/50 split",
+          "rules": [],
+          "splits": [
+            {
+              "variationKey": "one",
+              "shards": [
+                {
+                  "salt": "traffic-json-flag",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 10000
+                    }
+                  ]
+                },
+                {
+                  "salt": "split-json-flag",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 5000
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "variationKey": "two",
+              "shards": [
+                {
+                  "salt": "traffic-json-flag",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 10000
+                    }
+                  ]
+                },
+                {
+                  "salt": "split-json-flag",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 5000,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "special-characters": {
+      "key": "special-characters",
+      "enabled": true,
+      "variationType": "JSON",
+      "variations": {
+        "de": {
+          "key": "de",
+          "value": {
+            "a": "kümmert",
+            "b": "schön"
+          }
+        },
+        "ua": {
+          "key": "ua",
+          "value": {
+            "a": "піклуватися",
+            "b": "любов"
+          }
+        },
+        "zh": {
+          "key": "zh",
+          "value": {
+            "a": "照顾",
+            "b": "漂亮"
+          }
+        },
+        "emoji": {
+          "key": "emoji",
+          "value": {
+            "a": "🤗",
+            "b": "🌸"
+          }
+        }
+      },
+      "allocations": [
+        {
+          "key": "allocation-test",
+          "splits": [
+            {
+              "variationKey": "de",
+              "shards": [
+                {
+                  "salt": "split-json-flag",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 0,
+                      "end": 2500
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "variationKey": "ua",
+              "shards": [
+                {
+                  "salt": "split-json-flag",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 2500,
+                      "end": 5000
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "variationKey": "zh",
+              "shards": [
+                {
+                  "salt": "split-json-flag",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 5000,
+                      "end": 7500
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "variationKey": "emoji",
+              "shards": [
+                {
+                  "salt": "split-json-flag",
+                  "totalShards": 10000,
+                  "ranges": [
+                    {
+                      "start": 7500,
+                      "end": 10000
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-default",
+          "splits": [
+            {
+              "variationKey": "de",
+              "shards": []
+            }
+          ],
+          "doLog": false
+        }
+      ]
+    },
+    "string_flag_with_special_characters": {
+      "key": "string_flag_with_special_characters",
+      "enabled": true,
+      "comment": "Testing the string with special characters and spaces",
+      "variationType": "STRING",
+      "variations": {
+        "string_with_spaces": {
+          "key": "string_with_spaces",
+          "value": " a b c d e f "
+        },
+        "string_with_only_one_space": {
+          "key": "string_with_only_one_space",
+          "value": " "
+        },
+        "string_with_only_multiple_spaces": {
+          "key": "string_with_only_multiple_spaces",
+          "value": "       "
+        },
+        "string_with_dots": {
+          "key": "string_with_dots",
+          "value": ".a.b.c.d.e.f."
+        },
+        "string_with_only_one_dot": {
+          "key": "string_with_only_one_dot",
+          "value": "."
+        },
+        "string_with_only_multiple_dots": {
+          "key": "string_with_only_multiple_dots",
+          "value": "......."
+        },
+        "string_with_comas": {
+          "key": "string_with_comas",
+          "value": ",a,b,c,d,e,f,"
+        },
+        "string_with_only_one_coma": {
+          "key": "string_with_only_one_coma",
+          "value": ","
+        },
+        "string_with_only_multiple_comas": {
+          "key": "string_with_only_multiple_comas",
+          "value": ",,,,,,,"
+        },
+        "string_with_colons": {
+          "key": "string_with_colons",
+          "value": ":a:b:c:d:e:f:"
+        },
+        "string_with_only_one_colon": {
+          "key": "string_with_only_one_colon",
+          "value": ":"
+        },
+        "string_with_only_multiple_colons": {
+          "key": "string_with_only_multiple_colons",
+          "value": ":::::::"
+        },
+        "string_with_semicolons": {
+          "key": "string_with_semicolons",
+          "value": ";a;b;c;d;e;f;"
+        },
+        "string_with_only_one_semicolon": {
+          "key": "string_with_only_one_semicolon",
+          "value": ";"
+        },
+        "string_with_only_multiple_semicolons": {
+          "key": "string_with_only_multiple_semicolons",
+          "value": ";;;;;;;"
+        },
+        "string_with_slashes": {
+          "key": "string_with_slashes",
+          "value": "/a/b/c/d/e/f/"
+        },
+        "string_with_only_one_slash": {
+          "key": "string_with_only_one_slash",
+          "value": "/"
+        },
+        "string_with_only_multiple_slashes": {
+          "key": "string_with_only_multiple_slashes",
+          "value": "///////"
+        },
+        "string_with_dashes": {
+          "key": "string_with_dashes",
+          "value": "-a-b-c-d-e-f-"
+        },
+        "string_with_only_one_dash": {
+          "key": "string_with_only_one_dash",
+          "value": "-"
+        },
+        "string_with_only_multiple_dashes": {
+          "key": "string_with_only_multiple_dashes",
+          "value": "-------"
+        },
+        "string_with_underscores": {
+          "key": "string_with_underscores",
+          "value": "_a_b_c_d_e_f_"
+        },
+        "string_with_only_one_underscore": {
+          "key": "string_with_only_one_underscore",
+          "value": "_"
+        },
+        "string_with_only_multiple_underscores": {
+          "key": "string_with_only_multiple_underscores",
+          "value": "_______"
+        },
+        "string_with_plus_signs": {
+          "key": "string_with_plus_signs",
+          "value": "+a+b+c+d+e+f+"
+        },
+        "string_with_only_one_plus_sign": {
+          "key": "string_with_only_one_plus_sign",
+          "value": "+"
+        },
+        "string_with_only_multiple_plus_signs": {
+          "key": "string_with_only_multiple_plus_signs",
+          "value": "+++++++"
+        },
+        "string_with_equal_signs": {
+          "key": "string_with_equal_signs",
+          "value": "=a=b=c=d=e=f="
+        },
+        "string_with_only_one_equal_sign": {
+          "key": "string_with_only_one_equal_sign",
+          "value": "="
+        },
+        "string_with_only_multiple_equal_signs": {
+          "key": "string_with_only_multiple_equal_signs",
+          "value": "======="
+        },
+        "string_with_dollar_signs": {
+          "key": "string_with_dollar_signs",
+          "value": "$a$b$c$d$e$f$"
+        },
+        "string_with_only_one_dollar_sign": {
+          "key": "string_with_only_one_dollar_sign",
+          "value": "$"
+        },
+        "string_with_only_multiple_dollar_signs": {
+          "key": "string_with_only_multiple_dollar_signs",
+          "value": "$$$$$$$"
+        },
+        "string_with_at_signs": {
+          "key": "string_with_at_signs",
+          "value": "@a@b@c@d@e@f@"
+        },
+        "string_with_only_one_at_sign": {
+          "key": "string_with_only_one_at_sign",
+          "value": "@"
+        },
+        "string_with_only_multiple_at_signs": {
+          "key": "string_with_only_multiple_at_signs",
+          "value": "@@@@@@@"
+        },
+        "string_with_amp_signs": {
+          "key": "string_with_amp_signs",
+          "value": "&a&b&c&d&e&f&"
+        },
+        "string_with_only_one_amp_sign": {
+          "key": "string_with_only_one_amp_sign",
+          "value": "&"
+        },
+        "string_with_only_multiple_amp_signs": {
+          "key": "string_with_only_multiple_amp_signs",
+          "value": "&&&&&&&"
+        },
+        "string_with_hash_signs": {
+          "key": "string_with_hash_signs",
+          "value": "#a#b#c#d#e#f#"
+        },
+        "string_with_only_one_hash_sign": {
+          "key": "string_with_only_one_hash_sign",
+          "value": "#"
+        },
+        "string_with_only_multiple_hash_signs": {
+          "key": "string_with_only_multiple_hash_signs",
+          "value": "#######"
+        },
+        "string_with_percentage_signs": {
+          "key": "string_with_percentage_signs",
+          "value": "%a%b%c%d%e%f%"
+        },
+        "string_with_only_one_percentage_sign": {
+          "key": "string_with_only_one_percentage_sign",
+          "value": "%"
+        },
+        "string_with_only_multiple_percentage_signs": {
+          "key": "string_with_only_multiple_percentage_signs",
+          "value": "%%%%%%%"
+        },
+        "string_with_tilde_signs": {
+          "key": "string_with_tilde_signs",
+          "value": "~a~b~c~d~e~f~"
+        },
+        "string_with_only_one_tilde_sign": {
+          "key": "string_with_only_one_tilde_sign",
+          "value": "~"
+        },
+        "string_with_only_multiple_tilde_signs": {
+          "key": "string_with_only_multiple_tilde_signs",
+          "value": "~~~~~~~"
+        },
+        "string_with_asterix_signs": {
+          "key": "string_with_asterix_signs",
+          "value": "*a*b*c*d*e*f*"
+        },
+        "string_with_only_one_asterix_sign": {
+          "key": "string_with_only_one_asterix_sign",
+          "value": "*"
+        },
+        "string_with_only_multiple_asterix_signs": {
+          "key": "string_with_only_multiple_asterix_signs",
+          "value": "*******"
+        },
+        "string_with_single_quotes": {
+          "key": "string_with_single_quotes",
+          "value": "'a'b'c'd'e'f'"
+        },
+        "string_with_only_one_single_quote": {
+          "key": "string_with_only_one_single_quote",
+          "value": "'"
+        },
+        "string_with_only_multiple_single_quotes": {
+          "key": "string_with_only_multiple_single_quotes",
+          "value": "'''''''"
+        },
+        "string_with_question_marks": {
+          "key": "string_with_question_marks",
+          "value": "?a?b?c?d?e?f?"
+        },
+        "string_with_only_one_question_mark": {
+          "key": "string_with_only_one_question_mark",
+          "value": "?"
+        },
+        "string_with_only_multiple_question_marks": {
+          "key": "string_with_only_multiple_question_marks",
+          "value": "???????"
+        },
+        "string_with_exclamation_marks": {
+          "key": "string_with_exclamation_marks",
+          "value": "!a!b!c!d!e!f!"
+        },
+        "string_with_only_one_exclamation_mark": {
+          "key": "string_with_only_one_exclamation_mark",
+          "value": "!"
+        },
+        "string_with_only_multiple_exclamation_marks": {
+          "key": "string_with_only_multiple_exclamation_marks",
+          "value": "!!!!!!!"
+        },
+        "string_with_opening_parentheses": {
+          "key": "string_with_opening_parentheses",
+          "value": "(a(b(c(d(e(f("
+        },
+        "string_with_only_one_opening_parenthese": {
+          "key": "string_with_only_one_opening_parenthese",
+          "value": "("
+        },
+        "string_with_only_multiple_opening_parentheses": {
+          "key": "string_with_only_multiple_opening_parentheses",
+          "value": "((((((("
+        },
+        "string_with_closing_parentheses": {
+          "key": "string_with_closing_parentheses",
+          "value": ")a)b)c)d)e)f)"
+        },
+        "string_with_only_one_closing_parenthese": {
+          "key": "string_with_only_one_closing_parenthese",
+          "value": ")"
+        },
+        "string_with_only_multiple_closing_parentheses": {
+          "key": "string_with_only_multiple_closing_parentheses",
+          "value": ")))))))"
+        }
+      },
+      "allocations": [
+        {
+          "key": "allocation-test-string_with_spaces",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_spaces",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_spaces",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_space",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_space",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_space",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_spaces",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_spaces",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_spaces",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_dots",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_dots",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_dots",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_dot",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_dot",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_dot",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_dots",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_dots",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_dots",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_comas",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_comas",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_comas",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_coma",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_coma",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_coma",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_comas",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_comas",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_comas",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_colons",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_colons",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_colons",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_colon",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_colon",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_colon",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_colons",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_colons",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_colons",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_semicolons",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_semicolons",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_semicolons",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_semicolon",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_semicolon",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_semicolon",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_semicolons",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_semicolons",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_semicolons",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_slashes",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_slashes",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_slashes",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_slash",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_slash",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_slash",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_slashes",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_slashes",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_slashes",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_dashes",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_dashes",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_dashes",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_dash",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_dash",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_dash",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_dashes",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_dashes",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_dashes",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_underscores",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_underscores",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_underscores",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_underscore",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_underscore",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_underscore",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_underscores",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_underscores",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_underscores",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_plus_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_plus_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_plus_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_plus_sign",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_plus_sign",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_plus_sign",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_plus_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_plus_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_plus_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_equal_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_equal_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_equal_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_equal_sign",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_equal_sign",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_equal_sign",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_equal_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_equal_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_equal_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_dollar_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_dollar_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_dollar_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_dollar_sign",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_dollar_sign",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_dollar_sign",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_dollar_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_dollar_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_dollar_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_at_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_at_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_at_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_at_sign",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_at_sign",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_at_sign",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_at_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_at_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_at_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_amp_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_amp_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_amp_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_amp_sign",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_amp_sign",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_amp_sign",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_amp_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_amp_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_amp_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_hash_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_hash_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_hash_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_hash_sign",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_hash_sign",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_hash_sign",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_hash_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_hash_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_hash_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_percentage_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_percentage_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_percentage_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_percentage_sign",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_percentage_sign",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_percentage_sign",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_percentage_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_percentage_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_percentage_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_tilde_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_tilde_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_tilde_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_tilde_sign",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_tilde_sign",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_tilde_sign",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_tilde_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_tilde_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_tilde_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_asterix_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_asterix_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_asterix_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_asterix_sign",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_asterix_sign",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_asterix_sign",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_asterix_signs",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_asterix_signs",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_asterix_signs",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_single_quotes",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_single_quotes",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_single_quotes",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_single_quote",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_single_quote",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_single_quote",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_single_quotes",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_single_quotes",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_single_quotes",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_question_marks",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_question_marks",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_question_marks",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_question_mark",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_question_mark",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_question_mark",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_question_marks",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_question_marks",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_question_marks",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_exclamation_marks",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_exclamation_marks",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_exclamation_marks",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_exclamation_mark",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_exclamation_mark",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_exclamation_mark",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_exclamation_marks",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_exclamation_marks",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_exclamation_marks",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_opening_parentheses",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_opening_parentheses",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_opening_parentheses",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_opening_parenthese",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_opening_parenthese",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_opening_parenthese",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_opening_parentheses",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_opening_parentheses",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_opening_parentheses",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_closing_parentheses",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_closing_parentheses",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_closing_parentheses",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_one_closing_parenthese",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_one_closing_parenthese",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_one_closing_parenthese",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "allocation-test-string_with_only_multiple_closing_parentheses",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "string_with_only_multiple_closing_parentheses",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "string_with_only_multiple_closing_parentheses",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "boolean-false-assignment": {
+      "key": "boolean-false-assignment",
+      "enabled": true,
+      "variationType": "BOOLEAN",
+      "variations": {
+        "false-variation": {
+          "key": "false-variation",
+          "value": false
+        },
+        "true-variation": {
+          "key": "true-variation",
+          "value": true
+        }
+      },
+      "allocations": [
+        {
+          "key": "disable-feature",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "should_disable_feature",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "true"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "false-variation",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "enable-feature",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "should_disable_feature",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "false"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "true-variation",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ],
+      "totalShards": 10000
+    },
+    "empty-string-variation": {
+      "key": "empty-string-variation",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {
+        "empty-content": {
+          "key": "empty-content",
+          "value": ""
+        },
+        "detailed-content": {
+          "key": "detailed-content",
+          "value": "detailed_content"
+        }
+      },
+      "allocations": [
+        {
+          "key": "minimal-content",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "content_type",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "minimal"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "empty-content",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "full-content",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "content_type",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "full"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "detailed-content",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ],
+      "totalShards": 10000
+    },
+    "falsy-value-assignments": {
+      "key": "falsy-value-assignments",
+      "enabled": true,
+      "variationType": "INTEGER",
+      "variations": {
+        "zero-limit": {
+          "key": "zero-limit",
+          "value": 0
+        },
+        "premium-limit": {
+          "key": "premium-limit",
+          "value": 100
+        }
+      },
+      "allocations": [
+        {
+          "key": "free-tier-limit",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "plan_tier",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "free"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "zero-limit",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        },
+        {
+          "key": "premium-tier-limit",
+          "rules": [
+            {
+              "conditions": [
+                {
+                  "attribute": "plan_tier",
+                  "operator": "ONE_OF",
+                  "value": [
+                    "premium"
+                  ]
+                }
+              ]
+            }
+          ],
+          "splits": [
+            {
+              "variationKey": "premium-limit",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ],
+      "totalShards": 10000
+    },
+    "empty-targeting-key-flag": {
+      "key": "empty-targeting-key-flag",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {
+        "on": {
+          "key": "on",
+          "value": "on-value"
+        },
+        "off": {
+          "key": "off",
+          "value": "off-value"
+        }
+      },
+      "allocations": [
+        {
+          "key": "default-allocation",
+          "rules": [],
+          "splits": [
+            {
+              "variationKey": "on",
+              "shards": []
+            }
+          ],
+          "doLog": true
+        }
+      ]
+    },
+    "microsecond-date-test": {
+      "key": "microsecond-date-test",
+      "enabled": true,
+      "variationType": "STRING",
+      "variations": {
+        "expired": {
+          "key": "expired",
+          "value": "expired"
+        },
+        "active": {
+          "key": "active",
+          "value": "active"
+        },
+        "future": {
+          "key": "future",
+          "value": "future"
+        }
+      },
+      "allocations": [
+        {
+          "key": "expired-allocation",
+          "splits": [
+            {
+              "variationKey": "expired",
+              "shards": []
+            }
+          ],
+          "endAt": "2002-10-31T09:00:00.594321Z",
+          "doLog": true
+        },
+        {
+          "key": "future-allocation",
+          "splits": [
+            {
+              "variationKey": "future",
+              "shards": []
+            }
+          ],
+          "startAt": "2052-10-31T09:00:00.123456Z",
+          "doLog": true
+        },
+        {
+          "key": "active-allocation",
+          "splits": [
+            {
+              "variationKey": "active",
+              "shards": []
+            }
+          ],
+          "startAt": "2022-10-31T09:00:00.235982Z",
+          "endAt": "2050-10-31T09:00:00.987654Z",
+          "doLog": true
+        }
+      ]
+    }
+  }
+}

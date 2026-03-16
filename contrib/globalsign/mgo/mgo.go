@@ -78,7 +78,7 @@ type Session struct {
 func newChildSpanFromContext(cfg *mongoConfig, tags map[string]string) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeMongoDB),
-		tracer.ServiceName(cfg.serviceName),
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 		tracer.ResourceName(cfg.spanName),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.DBSystem, ext.DBSystemMongoDB),

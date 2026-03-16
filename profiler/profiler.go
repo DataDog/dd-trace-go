@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"slices"
 	"strings"
@@ -44,6 +45,11 @@ var (
 	// errProfilerStopped is a sentinel for suppressing errors if we are
 	// about to stop the profiler
 	errProfilerStopped = errors.New("profiler stopped")
+
+	// testLookupProfile is a global hook for testing that replaces the
+	// pprof.Lookup-based profile collection. Set it before calling Start
+	// and restore it to nil after calling Stop.
+	testLookupProfile func(name string, w io.Writer, debug int) error
 )
 
 func init() {
@@ -108,38 +114,13 @@ type profiler struct {
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
-	testHooks testHooks
-
 	// lastTrace is the last time an execution trace was collected
 	lastTrace time.Time
 }
 
-// testHooks are functions that are replaced during testing which would normally
-// depend on accessing runtime state that is not needed/available for the test
-type testHooks struct {
-	startCPUProfile func(w io.Writer) error
-	stopCPUProfile  func()
-	lookupProfile   func(name string, w io.Writer, debug int) error
-}
-
-func (p *profiler) startCPUProfile(w io.Writer) error {
-	if p.testHooks.startCPUProfile != nil {
-		return p.testHooks.startCPUProfile(w)
-	}
-	return pprof.StartCPUProfile(w)
-}
-
-func (p *profiler) stopCPUProfile() {
-	if p.testHooks.startCPUProfile != nil {
-		p.testHooks.stopCPUProfile()
-		return
-	}
-	pprof.StopCPUProfile()
-}
-
 func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
-	if p.testHooks.lookupProfile != nil {
-		return p.testHooks.lookupProfile(name, w, debug)
+	if testLookupProfile != nil {
+		return testLookupProfile(name, w, debug)
 	}
 	prof := pprof.Lookup(name)
 	if prof == nil {
@@ -177,6 +158,10 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	// TODO(fg) remove this after making expGoroutineWaitProfile public.
 	if env.Get("DD_PROFILING_WAIT_PROFILE") != "" {
 		cfg.addProfileType(expGoroutineWaitProfile)
+	}
+	// Unconditionally enable goroutine leak profiling if it's available.
+	if goroutineLeakProfileAvailable() {
+		cfg.addProfileType(goroutineLeakProfile)
 	}
 	// Agentless upload is disabled by default as of v1.30.0, but
 	// DD_PROFILING_AGENTLESS can be set to enable it for testing and debugging.
@@ -284,6 +269,22 @@ func newProfiler(opts ...Option) (*profiler, error) {
 	p.uploadFunc = p.upload
 	return &p, nil
 }
+
+var goroutineLeakProfileAvailable = sync.OnceValue(func() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, s := range info.Settings {
+		if s.Key != "GOEXPERIMENT" {
+			continue
+		}
+		if strings.Contains(s.Value, "goroutineleakprofile") {
+			return true
+		}
+	}
+	return false
+})
 
 // run runs the profiler.
 func (p *profiler) run() {
@@ -461,6 +462,7 @@ func (p *profiler) enabledProfileTypes() []ProfileType {
 		expGoroutineWaitProfile,
 		MetricsProfile,
 		executionTrace,
+		goroutineLeakProfile,
 	}
 	enabled := []ProfileType{}
 	for _, t := range order {

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package config
+package provider
 
 import (
 	"fmt"
@@ -137,7 +137,7 @@ func mapEnabled(ot string) (string, error) {
 	return "", fmt.Errorf("the following configuration is not supported: OTEL_TRACES_EXPORTER=%v", ot)
 }
 
-// mapSampleRate maps OTEL_TRACES_SAMPLER to DD_TRACE_SAMPLE_RATE
+// otelTraceIDRatio returns the value of OTEL_TRACES_SAMPLER_ARG if set, otherwise "1.0"
 func otelTraceIDRatio() string {
 	if v := env.Get("OTEL_TRACES_SAMPLER_ARG"); v != "" {
 		return v
@@ -185,7 +185,6 @@ func mapDDTags(ot string) (string, error) {
 	internal.ForEachStringTag(ot, internal.OtelTagsDelimeter, func(key, val string) {
 		// replace otel delimiter with dd delimiter and normalize tag names
 		if ddkey, ok := ddTagsMapping[key]; ok {
-			// map reserved otel tag names to dd tag names
 			ddTags = append([]string{ddkey + internal.DDTagsDelimiter + val}, ddTags...)
 		} else {
 			ddTags = append(ddTags, key+internal.DDTagsDelimiter+val)

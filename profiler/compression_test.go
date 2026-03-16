@@ -176,7 +176,7 @@ func BenchmarkRecompression(b *testing.B) {
 			data := compressData(b, inputdata, in.inAlg)
 			b.ResetTimer()
 			var pipelineBuilder compressionPipelineBuilder
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				encoder, err := pipelineBuilder.getZstdEncoder(in.outLevel)
 				if err != nil {
 					b.Fatal(err)
@@ -206,7 +206,7 @@ func BenchmarkRecompression(b *testing.B) {
 			// recompress serially
 			data := compressData(b, inputdata, in.inAlg)
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				buf := new(bytes.Buffer)
 				gr, err := kgzip.NewReader(bytes.NewReader(data))
 				if err != nil {
@@ -232,7 +232,7 @@ func BenchmarkRecompression(b *testing.B) {
 	for _, level := range []zstd.EncoderLevel{zstd.SpeedDefault, zstd.SpeedBetterCompression, zstd.SpeedBestCompression} {
 		b.Run(fmt.Sprintf("no-compression-zstd-%s", level), func(b *testing.B) {
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				zw, err := zstd.NewWriter(io.Discard, zstd.WithEncoderLevel(level))
 				if err != nil {
 					b.Fatal(err)

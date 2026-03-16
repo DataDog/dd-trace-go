@@ -107,6 +107,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		route, _ = match.Route.GetPathTemplate()
 	}
 	spanopts = append(spanopts, instrhttptrace.HeaderTagsFromRequest(req, r.config.headerTags))
+	spanopts = append(spanopts, instrumentation.ServiceNameWithSource(r.config.serviceName, r.config.serviceSource))
 	resource := r.config.resourceNamer(r, req)
 	httptrace.TraceAndServe(r.Router, w, req, &httptrace.ServeConfig{
 		Framework:     "github.com/gorilla/mux",

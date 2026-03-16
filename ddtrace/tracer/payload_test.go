@@ -558,7 +558,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 			atomic.StoreUint32(&p.count, 0)
 			p.buf.Reset()
 		}
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			reset()
 			for p.stats().size < payloadMaxLimit {
 				_, _ = p.push(trace)
@@ -692,7 +692,7 @@ func BenchmarkPayloadPush(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				p := newPayloadV04()
 				_, _ = p.push(spans)
 			}
@@ -727,7 +727,7 @@ func BenchmarkPayloadStats(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				stats := p.stats()
 				_ = stats.size
 				_ = stats.itemCount
@@ -748,7 +748,7 @@ func BenchmarkPayloadConcurrentAccess(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				var wg sync.WaitGroup
 
 				for range concurrency {

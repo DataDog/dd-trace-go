@@ -10,6 +10,7 @@ import (
 	_ "embed" // embed is used to embed the blocked-template.json and blocked-template.html files
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"unsafe"
 
@@ -184,9 +185,12 @@ func newBlockHandler(status int, template string, securityResponseID string) htt
 
 func newBlockRequestHandler(status int, ct string, payload []byte, securityResponseID string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		responseBody := renderSecurityResponsePayload(payload, securityResponseID)
 		w.Header().Set("Content-Type", ct)
+		// Explicitly setting Content-Length so that header collection can see it.
+		w.Header().Set("Content-Length", strconv.Itoa(len(responseBody)))
 		w.WriteHeader(status)
-		w.Write(renderSecurityResponsePayload(payload, securityResponseID))
+		w.Write(responseBody)
 	})
 }
 
