@@ -170,7 +170,7 @@ func logStartup(t *tracer) {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.internalConfig.LogToStdout() {
-		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.traceProtocol); err != nil {
+		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.internalConfig.TraceProtocol()); err != nil {
 			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}

@@ -251,9 +251,6 @@ type config struct {
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
 
-	// traceProtocol specifies the trace protocol to use.
-	traceProtocol float64
-
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
 }
@@ -457,13 +454,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
 	effectiveURL := c.internalConfig.AgentURL()
 	c.agent = loadAgentFeatures(agentDisabled, effectiveURL, c.httpClient)
-	if c.agent.v1ProtocolAvailable {
-		c.traceProtocol = traceProtocolV1
+	if !c.agent.v1ProtocolAvailable && c.internalConfig.TraceProtocol() == traceProtocolV1 {
+		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
+	}
+	if c.internalConfig.TraceProtocol() == traceProtocolV1 {
 		if t, ok := c.transport.(*httpTransport); ok {
 			t.traceURL = fmt.Sprintf("%s%s", effectiveURL.String(), tracesAPIPathV1)
 		}
-	} else {
-		c.traceProtocol = traceProtocolV04
 	}
 
 	info, ok := debug.ReadBuildInfo()
@@ -707,11 +704,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		case "/evp_proxy/v2/":
 			features.evpProxyV2 = true
 		case "/v1.0/traces":
-			// Set the trace protocol to use.
-			// If DD_TRACE_AGENT_PROTOCOL_VERSION set to v1.0, then enable v1 trace protocol.
-			if s, _ := env.Lookup("DD_TRACE_AGENT_PROTOCOL_VERSION"); s == "1.0" {
-				features.v1ProtocolAvailable = true
-			}
+			features.v1ProtocolAvailable = true
 		case "/telemetry/proxy/":
 			features.hasTelemetryProxy = true
 		}

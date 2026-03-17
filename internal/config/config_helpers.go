@@ -54,6 +54,17 @@ func validatePartialFlushMinSpans(minSpans int) bool {
 	return true
 }
 
+func validateTraceProtocolVersion(v string) bool {
+	return v == "0.4" || v == "1.0"
+}
+
+func resolveTraceProtocol(v string) float64 {
+	if v == "1.0" {
+		return 1.0
+	}
+	return 0.4
+}
+
 // resolveAgentURL computes the final agent URL from the three env-var strings
 // read through the provider. The priority mirrors internal.AgentURLFromEnv:
 //  1. DD_TRACE_AGENT_URL (if non-empty and valid)

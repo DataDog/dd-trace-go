@@ -81,6 +81,15 @@ func (p *Provider) GetString(key string, def string) string {
 	})
 }
 
+func (p *Provider) GetStringWithValidator(key string, def string, validate func(string) bool) string {
+	return get(p, key, def, func(v string) (string, bool) {
+		if validate != nil && !validate(v) {
+			return "", false
+		}
+		return v, true
+	})
+}
+
 func (p *Provider) GetBool(key string, def bool) bool {
 	return get(p, key, def, func(v string) (bool, bool) {
 		boolVal, err := strconv.ParseBool(v)

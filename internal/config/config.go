@@ -107,6 +107,10 @@ type Config struct {
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
 	logsOTelEnabled bool
+	// traceProtocol is the trace protocol version to use (e.g. TraceProtocolV04 or TraceProtocolV1).
+	// Initialized from DD_TRACE_AGENT_PROTOCOL_VERSION, may be downgraded by the tracer
+	// if the agent doesn't support the requested version.
+	traceProtocol float64
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -150,6 +154,7 @@ func loadConfig() *Config {
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4", validateTraceProtocolVersion))
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -682,4 +687,17 @@ func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.logsOTelEnabled = enabled
 	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
+}
+
+func (c *Config) TraceProtocol() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceProtocol
+}
+
+func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.traceProtocol = v
+	configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", v, origin)
 }
