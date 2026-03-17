@@ -24,9 +24,7 @@ import (
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -101,8 +99,6 @@ func TestTracesAgentIntegration(t *testing.T) {
 }
 
 func TestResolveAgentAddr(t *testing.T) {
-	c := new(config)
-	c.internalConfig = internalconfig.CreateNew()
 	for _, tt := range []struct {
 		inOpt            StartOption
 		envHost, envPort string
@@ -124,10 +120,12 @@ func TestResolveAgentAddr(t *testing.T) {
 			if tt.envPort != "" {
 				t.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 			}
-			c.internalConfig.SetAgentURL(internal.AgentURLFromEnv(), telemetry.OriginEnvVar)
+			var opts []StartOption
 			if tt.inOpt != nil {
-				tt.inOpt(c)
+				opts = append(opts, tt.inOpt)
 			}
+			c, err := newTestConfig(opts...)
+			require.NoError(t, err)
 			assert.Equal(t, tt.out, c.internalConfig.RawAgentURL())
 		})
 	}
@@ -138,7 +136,8 @@ func TestResolveAgentAddr(t *testing.T) {
 		require.NoError(t, err)
 		internal.DefaultTraceAgentUDSPath = d // Choose a file we know will exist
 		defer func() { internal.DefaultTraceAgentUDSPath = old }()
-		c.internalConfig.SetAgentURL(internal.AgentURLFromEnv(), telemetry.OriginEnvVar)
+		c, err := newTestConfig()
+		require.NoError(t, err)
 		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.internalConfig.RawAgentURL())
 	})
 }
