@@ -73,6 +73,18 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 			Children: trace.Traces{
 				{
 					Tags: map[string]any{
+						"name":     "graphql.field",
+						"service":  "graphql",
+						"resource": "TopLevel.nested",
+					},
+					Meta: map[string]string{
+						"component":              "99designs/gqlgen",
+						"graphql.operation.type": "query",
+						"graphql.field":          "nested",
+					},
+				},
+				{
+					Tags: map[string]any{
 						"name":     "graphql.read",
 						"service":  "graphql",
 						"resource": "graphql.read",
@@ -111,20 +123,6 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"component":              "99designs/gqlgen",
 						"graphql.operation.type": "query",
 						"graphql.field":          "topLevel",
-					},
-					Children: trace.Traces{
-						{
-							Tags: map[string]any{
-								"name":     "graphql.field",
-								"service":  "graphql",
-								"resource": "TopLevel.nested",
-							},
-							Meta: map[string]string{
-								"component":              "99designs/gqlgen",
-								"graphql.operation.type": "query",
-								"graphql.field":          "nested",
-							},
-						},
 					},
 				},
 			},
