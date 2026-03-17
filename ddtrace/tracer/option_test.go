@@ -202,13 +202,13 @@ func TestLoadAgentFeatures(t *testing.T) {
 		t.Run("disabled", func(t *testing.T) {
 			cfg, err := newTestConfig(WithLambdaMode(true), WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.Zero(t, cfg.agent)
+			assert.Zero(t, cfg.agent.load())
 		})
 
 		t.Run("unreachable", func(t *testing.T) {
 			cfg, err := newTestConfig(WithAgentAddr("127.0.0.1:0"))
 			assert.NoError(t, err)
-			assert.Zero(t, cfg.agent)
+			assert.Zero(t, cfg.agent.load())
 		})
 
 		t.Run("StatusNotFound", func(t *testing.T) {
@@ -218,7 +218,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 			defer srv.Close()
 			cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 			require.NoError(t, err)
-			assert.Zero(t, cfg.agent)
+			assert.Zero(t, cfg.agent.load())
 		})
 
 		t.Run("error", func(t *testing.T) {
@@ -228,7 +228,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 			defer srv.Close()
 			cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 			require.NoError(t, err)
-			assert.Zero(t, cfg.agent)
+			assert.Zero(t, cfg.agent.load())
 		})
 	})
 
@@ -239,19 +239,20 @@ func TestLoadAgentFeatures(t *testing.T) {
 		defer srv.Close()
 		cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 		assert.NoError(t, err)
-		assert.True(t, cfg.agent.DropP0s)
-		assert.Equal(t, cfg.agent.StatsdPort, 8999)
-		assert.EqualValues(t, cfg.agent.featureFlags, map[string]struct{}{
+		a := cfg.agent.load()
+		assert.True(t, a.DropP0s)
+		assert.Equal(t, a.StatsdPort, 8999)
+		assert.EqualValues(t, a.featureFlags, map[string]struct{}{
 			"a": {},
 			"b": {},
 		})
-		assert.True(t, cfg.agent.Stats)
-		assert.True(t, cfg.agent.HasFlag("a"))
-		assert.True(t, cfg.agent.HasFlag("b"))
-		assert.EqualValues(t, cfg.agent.peerTags, []string{"peer.hostname"})
-		assert.Equal(t, 2, cfg.agent.obfuscationVersion)
-		assert.False(t, cfg.agent.hasTelemetryProxy)
-		assert.True(t, cfg.agent.reachable)
+		assert.True(t, a.Stats)
+		assert.True(t, a.HasFlag("a"))
+		assert.True(t, a.HasFlag("b"))
+		assert.EqualValues(t, a.peerTags, []string{"peer.hostname"})
+		assert.Equal(t, 2, a.obfuscationVersion)
+		assert.False(t, a.hasTelemetryProxy)
+		assert.True(t, a.reachable)
 	})
 
 	t.Run("telemetry_proxy", func(t *testing.T) {
@@ -261,9 +262,10 @@ func TestLoadAgentFeatures(t *testing.T) {
 		defer srv.Close()
 		cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 		assert.NoError(t, err)
-		assert.True(t, cfg.agent.Stats)
-		assert.True(t, cfg.agent.hasTelemetryProxy)
-		assert.True(t, cfg.agent.reachable)
+		a := cfg.agent.load()
+		assert.True(t, a.Stats)
+		assert.True(t, a.hasTelemetryProxy)
+		assert.True(t, a.reachable)
 	})
 
 	t.Run("default_env", func(t *testing.T) {
@@ -273,7 +275,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 		defer srv.Close()
 		cfg, err := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 		assert.NoError(t, err)
-		assert.Equal(t, "prod", cfg.agent.defaultEnv)
+		assert.Equal(t, "prod", cfg.agent.load().defaultEnv)
 	})
 
 	t.Run("discovery", func(t *testing.T) {
@@ -284,9 +286,10 @@ func TestLoadAgentFeatures(t *testing.T) {
 		defer srv.Close()
 		cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 		assert.NoError(t, err)
-		assert.True(t, cfg.agent.DropP0s)
-		assert.True(t, cfg.agent.Stats)
-		assert.Equal(t, 8999, cfg.agent.StatsdPort)
+		a := cfg.agent.load()
+		assert.True(t, a.DropP0s)
+		assert.True(t, a.Stats)
+		assert.Equal(t, 8999, a.StatsdPort)
 	})
 }
 
