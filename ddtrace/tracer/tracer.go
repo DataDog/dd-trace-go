@@ -561,7 +561,7 @@ func (t *tracer) refreshAgentFeatures() {
 		case <-ctx.Done():
 		}
 	}()
-	newFeatures, err := fetchAgentFeatures(ctx, t.config.agentURL, t.config.httpClient)
+	newFeatures, err := fetchAgentFeatures(ctx, t.config.internalConfig.AgentURL(), t.config.httpClient)
 	if err != nil {
 		if !errors.Is(err, errAgentFeaturesNotSupported) {
 			log.Debug("agent info poll failed: %s", err.Error())
