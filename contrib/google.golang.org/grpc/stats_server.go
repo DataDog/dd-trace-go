@@ -42,6 +42,7 @@ func (h *serverStatsHandler) TagRPC(ctx context.Context, rti *stats.RPCTagInfo) 
 		rti.FullMethodName,
 		h.cfg.spanName,
 		h.cfg.serviceName.String(),
+		h.cfg.serviceSource,
 		spanOpts...,
 	)
 	return ctx

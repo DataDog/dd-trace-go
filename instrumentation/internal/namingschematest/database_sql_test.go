@@ -76,6 +76,10 @@ var databaseSQL_SQLServer = harness.TestCase{
 		DDService:       []string{"sqlserver.db", "sqlserver.db"},
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString("opt.sql_driver", 2),
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "sqlserver.query", spans[0].OperationName())
@@ -95,6 +99,10 @@ var databaseSQL_Postgres = harness.TestCase{
 		Defaults:        []string{"postgres.db", "postgres.db"},
 		DDService:       []string{"postgres.db", "postgres.db"},
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString("opt.sql_driver", 2),
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
@@ -119,6 +127,11 @@ var databaseSQL_PostgresWithRegisterOverride = harness.TestCase{
 		DDService:       []string{"register-override", "register-override"},
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		// WithService was used during Register, so the source is inherited.
+		Defaults:        []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "postgres.query", spans[0].OperationName())
@@ -138,6 +151,10 @@ var databaseSQL_MySQL = harness.TestCase{
 		Defaults:        []string{"mysql.db", "mysql.db"},
 		DDService:       []string{"mysql.db", "mysql.db"},
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
+	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString("opt.sql_driver", 2),
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption, instrumentation.ServiceSourceWithServiceOption},
 	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)

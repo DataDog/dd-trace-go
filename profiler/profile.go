@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"runtime/pprof"
 	"runtime/trace"
 	"time"
 
@@ -56,6 +57,11 @@ const (
 	// This is private, as this trace requires special explicit configuration and
 	// shouldn't just be added to WithProfileTypes
 	executionTrace
+
+	// goroutineLeakProfile is the Go 1.26 experimental goroutine leak
+	// profile, which contains tracebacks of goroutines permanently blocked
+	// in synchronization
+	goroutineLeakProfile
 )
 
 // profileType holds the implementation details of a ProfileType.
@@ -102,7 +108,7 @@ var profileTypes = map[ProfileType]profileType{
 				runtime.SetCPUProfileRate(p.cfg.cpuProfileRate)
 			}
 
-			if err := p.startCPUProfile(&outBuf); err != nil {
+			if err := pprof.StartCPUProfile(&outBuf); err != nil {
 				return nil, err
 			}
 			p.interruptibleSleep(p.cfg.cpuDuration)
@@ -111,7 +117,7 @@ var profileTypes = map[ProfileType]profileType{
 			// properly record all of our profile processing work for
 			// the other profile types
 			p.pendingProfiles.Wait()
-			p.stopCPUProfile()
+			pprof.StopCPUProfile()
 
 			c := p.compressors[CPUProfile]
 			c.Reset(&buf)
@@ -224,6 +230,11 @@ var profileTypes = map[ProfileType]profileType{
 			closeErr := c.Close()
 			return buf.Bytes(), cmp.Or(writeErr, closeErr)
 		},
+	},
+	goroutineLeakProfile: {
+		Name:     "goroutine-leak",
+		Filename: "goroutineleak.pprof",
+		Collect:  collectGenericProfile("goroutineleak", goroutineLeakProfile),
 	},
 }
 

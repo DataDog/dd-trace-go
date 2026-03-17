@@ -1,0 +1,93 @@
+[
+  {
+    "attributes": {
+      "number": 1
+    },
+    "defaultValue": 0,
+    "flag": "numeric-one-of",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": 1
+    },
+    "targetingKey": "alice",
+    "variationType": "INTEGER"
+  },
+  {
+    "attributes": {
+      "number": 2
+    },
+    "defaultValue": 0,
+    "flag": "numeric-one-of",
+    "result": {
+      "reason": "DEFAULT",
+      "value": 0
+    },
+    "targetingKey": "bob",
+    "variationType": "INTEGER"
+  },
+  {
+    "attributes": {
+      "number": 3
+    },
+    "defaultValue": 0,
+    "flag": "numeric-one-of",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": 3
+    },
+    "targetingKey": "charlie",
+    "variationType": "INTEGER"
+  },
+  {
+    "attributes": {
+      "number": 4
+    },
+    "defaultValue": 0,
+    "flag": "numeric-one-of",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": 3
+    },
+    "targetingKey": "derek",
+    "variationType": "INTEGER"
+  },
+  {
+    "attributes": {
+      "number": "1"
+    },
+    "defaultValue": 0,
+    "flag": "numeric-one-of",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": 1
+    },
+    "targetingKey": "erica",
+    "variationType": "INTEGER"
+  },
+  {
+    "attributes": {
+      "number": 1
+    },
+    "defaultValue": 0,
+    "flag": "numeric-one-of",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": 1
+    },
+    "targetingKey": "frank",
+    "variationType": "INTEGER"
+  },
+  {
+    "attributes": {
+      "number": 123456789
+    },
+    "defaultValue": 0,
+    "flag": "numeric-one-of",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": 2
+    },
+    "targetingKey": "george",
+    "variationType": "INTEGER"
+  }
+]
