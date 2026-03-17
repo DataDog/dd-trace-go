@@ -379,17 +379,17 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
-	agentURL := c.internalConfig.RawAgentURL()
+	rawAgentURL := c.internalConfig.RawAgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
 			// Make sure we don't create http client traces from inside the tracer by using our http client
 			// TODO(eliott.bouhana): remove once dd:no-span is implemented
 			log.Debug("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
 		}
-		if agentURL != nil && agentURL.Scheme == "unix" {
+		if rawAgentURL != nil && rawAgentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
-			c.httpClient = internal.UDSClient(agentURL.Path, cmp.Or(c.httpClientTimeout, defaultHTTPTimeout))
+			c.httpClient = internal.UDSClient(rawAgentURL.Path, cmp.Or(c.httpClientTimeout, defaultHTTPTimeout))
 		} else {
 			c.httpClient = internal.DefaultHTTPClient(c.httpClientTimeout, false)
 		}
@@ -458,15 +458,15 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
-	effectiveURL := c.internalConfig.AgentURL()
-	af := loadAgentFeatures(agentDisabled, effectiveURL, c.httpClient)
+	agentURL := c.internalConfig.AgentURL()
+	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
 	if !af.v1ProtocolAvailable && c.internalConfig.TraceProtocol() == traceProtocolV1 {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 	}
 	if c.internalConfig.TraceProtocol() == traceProtocolV1 {
 		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = fmt.Sprintf("%s%s", effectiveURL.String(), tracesAPIPathV1)
+			t.traceURL = fmt.Sprintf("%s%s", agentURL.String(), tracesAPIPathV1)
 		}
 	}
 
