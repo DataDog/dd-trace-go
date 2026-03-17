@@ -24,10 +24,10 @@ func TestWithParallelSubTests(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range []string{"Sub1", "Sub2", "Sub3"} {
-		name := name
-		t.Run(name, func(t *testing.T) {
+		localName := name
+		t.Run(localName, func(t *testing.T) {
 			t.Parallel()
-			t.Logf("Parallel sub test %s", name)
+			t.Logf("Parallel sub test %s", localName)
 		})
 	}
 }
