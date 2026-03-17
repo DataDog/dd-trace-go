@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	instrumentationhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
@@ -110,7 +111,7 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.AnalyticsRate))
 	}
 	if cfg.ServiceName != "" {
-		opts = append(opts, tracer.ServiceName(cfg.ServiceName))
+		opts = append(opts, instrumentation.ServiceNameWithSource(cfg.ServiceName, cfg.ServiceSource))
 	}
 	if port, err := strconv.Atoi(url.Port()); err == nil {
 		opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, port))

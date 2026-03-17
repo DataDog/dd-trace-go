@@ -165,6 +165,8 @@ type Span struct {
 	// +checklocks:mu
 	integration string `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
 	// +checklocks:mu
+	serviceSource string `msg:"-"` // tracks the source of service name override; set to "m" when SetTag overrides it post-creation
+	// +checklocks:mu
 	pprofCtxActive context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 
 	// +checklocks:mu
@@ -185,16 +187,18 @@ func (s *Span) Context() *SpanContext {
 }
 
 type inheritedData struct {
-	service  string
-	pprofCtx context.Context
+	service       string
+	serviceSource string
+	pprofCtx      context.Context
 }
 
 func (s *Span) inheritedData() inheritedData {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return inheritedData{
-		service:  s.service,
-		pprofCtx: s.pprofCtxActive,
+		service:       s.service,
+		serviceSource: s.serviceSource,
+		pprofCtx:      s.pprofCtxActive,
 	}
 }
 
@@ -421,6 +425,12 @@ func (s *Span) setTagLocked(key string, value any) {
 		integration, ok := value.(string)
 		if ok {
 			s.integration = integration
+		}
+	case ext.KeyServiceSource:
+		if so, ok := value.(sharedinternal.ServiceOverride); ok {
+			s.service = so.Name
+			s.serviceSource = so.Source
+			return
 		}
 	}
 	if v, ok := value.(bool); ok {
@@ -675,20 +685,12 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 		if cfg.noDebugStack {
 			return
 		}
-		switch err := v.(type) {
-		case xerrors.Formatter:
+		switch v.(type) {
+		case xerrors.Formatter, fmt.Formatter, *errortrace.TracerError:
 			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
-		case fmt.Formatter:
-			// pkg/errors approach
-			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
-		case *errortrace.TracerError:
-			// instrumentation/errortrace approach
-			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
-			s.setMetaLocked(ext.ErrorHandlingStack, err.Format())
-		default:
-			stack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
-			s.setMetaLocked(ext.ErrorHandlingStack, stack)
 		}
+		handlingStack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
+		s.setMetaLocked(ext.ErrorHandlingStack, handlingStack)
 	case nil:
 		// no error
 		s.setErrorFlagLocked(false)
@@ -737,7 +739,7 @@ func (s *Span) setMetaLocked(key, v string) {
 // +checklocksignore — Initialization time, span not yet shared.
 func (s *Span) setMetaInit(key, v string) {
 	if s.meta == nil {
-		s.meta = make(map[string]string, 1)
+		s.meta = initMeta()
 	}
 	delete(s.metrics, key)
 	switch key {
@@ -972,6 +974,20 @@ func (s *Span) SetOperationName(operationName string) {
 	s.name = operationName
 }
 
+// enrichServiceSource writes the _dd.svc_src meta tag at finish time.
+// No tag is written when the span's service matches the global DD_SERVICE (no override)
+// or when no source was determined.
+// +checklocks:s.mu
+func (s *Span) enrichServiceSource() {
+	if s.serviceSource == "" || s.service == globalconfig.ServiceName() {
+		return
+	}
+	if s.meta == nil {
+		s.meta = make(map[string]string, 1)
+	}
+	s.meta[ext.KeyServiceSource] = s.serviceSource
+}
+
 func (s *Span) finish(finishTime int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -986,6 +1002,7 @@ func (s *Span) finish(finishTime int64) {
 
 	s.serializeSpanLinksInMeta()
 	s.serializeSpanEvents()
+	s.enrichServiceSource()
 
 	if s.duration == 0 {
 		s.duration = finishTime - s.start
@@ -1210,6 +1227,19 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
+}
+
+// initMeta pre-allocates the meta map with headroom.
+// expectedEntries should be the count of tags known at construction time.
+// The 4/3 factor (≈ inverse of the standard 0.75 load factor) provides
+// ~33% slack so small overestimates don't trigger an immediate rehash.
+func initMeta() map[string]string {
+	// Unconditionally set meta tags: env, version, component, span.kind, language
+	const (
+		expectedEntries = 5
+		loadFactor      = 4 / 3
+	)
+	return make(map[string]string, expectedEntries*loadFactor)
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname

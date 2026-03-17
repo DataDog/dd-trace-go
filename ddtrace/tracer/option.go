@@ -645,7 +645,6 @@ type agentFeatures struct {
 	evpProxyV2 bool
 
 	// v1ProtocolAvailable reports whether the trace-agent and tracer are configured to use the v1 protocol.
-	// Starting from tracer version v2.7.0, this value is true by default.
 	v1ProtocolAvailable bool
 
 	// hasTelemetryProxy reports whether the trace-agent exposes the /telemetry/proxy/ endpoint.
@@ -718,9 +717,8 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 			features.evpProxyV2 = true
 		case "/v1.0/traces":
 			// Set the trace protocol to use.
-			// If DD_TRACE_AGENT_PROTOCOL_VERSION is not set (not customized) or is already
-			// set to v1.0, then enable v1 trace protocol.
-			if s, ok := env.Lookup("DD_TRACE_AGENT_PROTOCOL_VERSION"); !ok || s == "1.0" {
+			// If DD_TRACE_AGENT_PROTOCOL_VERSION set to v1.0, then enable v1 trace protocol.
+			if s, _ := env.Lookup("DD_TRACE_AGENT_PROTOCOL_VERSION"); s == "1.0" {
 				features.v1ProtocolAvailable = true
 			}
 		case "/telemetry/proxy/":

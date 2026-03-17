@@ -58,6 +58,10 @@ var olivereElasticV5 = harness.TestCase{
 		DDService:       []string{"elastic.client"},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageOlivereElasticV5)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "elasticsearch.query", spans[0].OperationName())

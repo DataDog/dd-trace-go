@@ -18,3 +18,11 @@ func SetTracerInitialized(val bool) {
 func TracerInitialized() bool {
 	return tracerInit.Load()
 }
+
+// ServiceOverride bundles a service name with its source for atomic tag
+// handling, avoiding map iteration order issues when both need to be set
+// together during span initialization.
+type ServiceOverride struct {
+	Name   string
+	Source string
+}

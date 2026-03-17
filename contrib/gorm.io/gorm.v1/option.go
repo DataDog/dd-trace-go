@@ -8,11 +8,14 @@ package gorm
 import (
 	"math"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+
 	"gorm.io/gorm"
 )
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	analyticsRate float64
 	dsn           string
 	errCheck      func(err error) bool
@@ -34,6 +37,7 @@ func (fn OptionFn) apply(cfg *config) {
 func newConfigWithDefaults() *config {
 	cfg := new(config)
 	cfg.serviceName = "gorm.db"
+	cfg.serviceSource = string(instrumentation.PackageGormIOGormV1)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.errCheck = func(error) bool { return true }
 	cfg.tagFns = make(map[string]func(db *gorm.DB) interface{})
@@ -45,6 +49,7 @@ func newConfigWithDefaults() *config {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

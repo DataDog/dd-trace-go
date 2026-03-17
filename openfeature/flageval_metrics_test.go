@@ -76,8 +76,9 @@ func getAttr(dp metricdata.DataPoint[int64], key attribute.Key) string {
 }
 
 // makeDetails constructs an InterfaceEvaluationDetails for testing record().
-func makeDetails(variant string, reason of.Reason, errorCode of.ErrorCode) of.InterfaceEvaluationDetails {
-	return of.InterfaceEvaluationDetails{
+// An optional FlagMetadata map can be provided as the last argument.
+func makeDetails(variant string, reason of.Reason, errorCode of.ErrorCode, metadata ...of.FlagMetadata) of.InterfaceEvaluationDetails {
+	d := of.InterfaceEvaluationDetails{
 		EvaluationDetails: of.EvaluationDetails{
 			ResolutionDetail: of.ResolutionDetail{
 				Variant:   variant,
@@ -86,22 +87,48 @@ func makeDetails(variant string, reason of.Reason, errorCode of.ErrorCode) of.In
 			},
 		},
 	}
+	if len(metadata) > 0 {
+		d.FlagMetadata = metadata[0]
+	}
+	return d
 }
 
 func TestRecord(t *testing.T) {
 	tests := []struct {
-		name        string
-		flagKey     string
-		details     of.InterfaceEvaluationDetails
-		wantValue   int64
-		wantReason  string
-		wantVariant string
-		wantError   string // empty means no error.type attribute expected
+		name           string
+		flagKey        string
+		details        of.InterfaceEvaluationDetails
+		wantValue      int64
+		wantReason     string
+		wantVariant    string
+		wantError      string // empty means no error.type attribute expected
+		wantAllocation string // empty means no allocation_key attribute expected
 	}{
 		{
 			name:        "success with targeting match",
 			flagKey:     "my-flag",
 			details:     makeDetails("variant-a", of.TargetingMatchReason, ""),
+			wantValue:   1,
+			wantReason:  "targeting_match",
+			wantVariant: "variant-a",
+		},
+		{
+			name:    "success with allocation key",
+			flagKey: "my-flag",
+			details: makeDetails("variant-a", of.TargetingMatchReason, "", of.FlagMetadata{
+				metadataAllocationKey: "default-allocation",
+			}),
+			wantValue:      1,
+			wantReason:     "targeting_match",
+			wantVariant:    "variant-a",
+			wantAllocation: "default-allocation",
+		},
+		{
+			name:    "empty allocation key omitted",
+			flagKey: "my-flag",
+			details: makeDetails("variant-a", of.TargetingMatchReason, "", of.FlagMetadata{
+				metadataAllocationKey: "",
+			}),
 			wantValue:   1,
 			wantReason:  "targeting_match",
 			wantVariant: "variant-a",
@@ -165,6 +192,15 @@ func TestRecord(t *testing.T) {
 			} else {
 				if got := getAttr(dp, attrErrorType); got != tc.wantError {
 					t.Errorf("error.type: got %q, want %q", got, tc.wantError)
+				}
+			}
+			if tc.wantAllocation == "" {
+				if _, ok := dp.Attributes.Value(attrAllocationKey); ok {
+					t.Error("expected no allocation_key attribute")
+				}
+			} else {
+				if got := getAttr(dp, attrAllocationKey); got != tc.wantAllocation {
+					t.Errorf("allocation_key: got %q, want %q", got, tc.wantAllocation)
 				}
 			}
 		})
@@ -298,6 +334,9 @@ func TestIntegrationEvaluate(t *testing.T) {
 		if _, ok := dp.Attributes.Value(attrErrorType); ok {
 			t.Error("expected no error.type attribute on successful evaluation")
 		}
+		if got := getAttr(dp, attrAllocationKey); got != "allocation1" {
+			t.Errorf("allocation_key: got %q, want %q", got, "allocation1")
+		}
 	})
 
 	t.Run("flag not found records error metric via hook", func(t *testing.T) {
@@ -337,6 +376,9 @@ func TestIntegrationEvaluate(t *testing.T) {
 		}
 		if got := getAttr(dp, attrErrorType); got != "flag_not_found" {
 			t.Errorf("error.type: got %q, want %q", got, "flag_not_found")
+		}
+		if _, ok := dp.Attributes.Value(attrAllocationKey); ok {
+			t.Error("expected no allocation_key attribute on flag_not_found error")
 		}
 	})
 

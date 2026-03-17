@@ -112,7 +112,7 @@ func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		p := ddh.params
 		startOpts := make([]tracer.StartSpanOption, 0, 1+len(ddh.additionalTags)+1) // serviceName + ddh.additionalTags + analyticsRate
-		startOpts = append(startOpts, tracer.ServiceName(p.config.serviceName))
+		startOpts = append(startOpts, instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource))
 		startOpts = append(startOpts, ddh.additionalTags...)
 		if !math.IsNaN(p.config.analyticsRate) {
 			startOpts = append(startOpts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
@@ -137,7 +137,7 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 		p := ddh.params
 		startOpts := make([]tracer.StartSpanOption, 0, 3+1+len(ddh.additionalTags)+1) // 3 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 		startOpts = append(startOpts,
-			tracer.ServiceName(p.config.serviceName),
+			instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
 			tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
 			tracer.Tag("redis.args_length", strconv.Itoa(length)),
 		)
@@ -166,7 +166,7 @@ func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redi
 		p := ddh.params
 		startOpts := make([]tracer.StartSpanOption, 0, 3+1+len(ddh.additionalTags)+1) // 3 options below + redis.raw_command + ddh.additionalTags + analyticsRate
 		startOpts = append(startOpts,
-			tracer.ServiceName(p.config.serviceName),
+			instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
 			tracer.ResourceName("redis.pipeline"),
 			tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
 		)

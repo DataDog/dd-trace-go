@@ -13,6 +13,7 @@ import (
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	spanName      string
 	analyticsRate float64
 	maxQuerySize  int
@@ -32,6 +33,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageMongoDriver)
 	cfg.spanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.maxQuerySize = -1
@@ -41,6 +43,7 @@ func defaults(cfg *config) {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

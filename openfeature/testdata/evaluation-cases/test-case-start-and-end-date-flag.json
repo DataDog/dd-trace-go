@@ -1,0 +1,43 @@
+[
+  {
+    "attributes": {
+      "country": "US",
+      "version": "1.15.0"
+    },
+    "defaultValue": "unknown",
+    "flag": "start-and-end-date-test",
+    "result": {
+      "reason": "STATIC",
+      "value": "current"
+    },
+    "targetingKey": "alice",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Canada",
+      "version": "0.20.1"
+    },
+    "defaultValue": "unknown",
+    "flag": "start-and-end-date-test",
+    "result": {
+      "reason": "STATIC",
+      "value": "current"
+    },
+    "targetingKey": "bob",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "version": "2.1.13"
+    },
+    "defaultValue": "unknown",
+    "flag": "start-and-end-date-test",
+    "result": {
+      "reason": "STATIC",
+      "value": "current"
+    },
+    "targetingKey": "charlie",
+    "variationType": "STRING"
+  }
+]

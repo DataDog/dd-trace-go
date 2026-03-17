@@ -21,6 +21,7 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
@@ -2091,4 +2092,266 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 			assert.False(ok)
 		})
 	}
+}
+
+func TestCappedRate(t *testing.T) {
+	tests := []struct {
+		name        string
+		oldRate     float64
+		newRate     float64
+		canIncrease bool
+		wantRate    float64
+		wantApplied bool
+	}{
+		{
+			name:        "decrease applied immediately",
+			oldRate:     0.8,
+			newRate:     0.2,
+			canIncrease: true,
+			wantRate:    0.2,
+			wantApplied: false,
+		},
+		{
+			name:        "equal rate unchanged",
+			oldRate:     0.5,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: false,
+		},
+		{
+			name:        "increase from zero applied immediately",
+			oldRate:     0,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: false,
+		},
+		{
+			name:        "increase capped at 2x",
+			oldRate:     0.1,
+			newRate:     1.0,
+			canIncrease: true,
+			wantRate:    0.2,
+			wantApplied: true,
+		},
+		{
+			name:        "increase within 2x not capped",
+			oldRate:     0.3,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: true,
+		},
+		{
+			name:        "increase exactly 2x",
+			oldRate:     0.25,
+			newRate:     0.5,
+			canIncrease: true,
+			wantRate:    0.5,
+			wantApplied: true,
+		},
+		{
+			name:        "increase blocked during cooldown",
+			oldRate:     0.1,
+			newRate:     1.0,
+			canIncrease: false,
+			wantRate:    0.1,
+			wantApplied: false,
+		},
+		{
+			name:        "decrease during cooldown still applied",
+			oldRate:     0.8,
+			newRate:     0.2,
+			canIncrease: false,
+			wantRate:    0.2,
+			wantApplied: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rate, applied := cappedRate(tt.oldRate, tt.newRate, tt.canIncrease)
+			assert.Equal(t, tt.wantRate, rate)
+			assert.Equal(t, tt.wantApplied, applied)
+		})
+	}
+}
+
+func TestPrioritySamplerRampCooldownNoReset(t *testing.T) {
+	// When a rate increase arrives during cooldown, lastCapped must NOT be
+	// updated. Otherwise each blocked increase would push out the cooldown
+	// window and delay subsequent ramp-up steps indefinitely.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			s := &Span{service: svc, meta: map[string]string{}}
+			if env != "" {
+				s.meta["env"] = env
+			}
+			return s
+		}
+
+		// Set initial low rate.
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.01}}`,
+		))))
+		assert.Equal(0.01, ps.getRate(mkSpan("web", "prod")))
+
+		// Wait for cooldown, apply increase: 0.01 → 0.02.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Before rampUpInterval elapses, send another increase.
+		// Rate should be held at 0.02 (cooldown) and lastCapped should
+		// NOT be reset.
+		time.Sleep(rampUpInterval / 2)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Wait for the remaining half of rampUpInterval from the original
+		// cap. Since lastCapped was NOT reset by the blocked increase,
+		// this should allow the next ramp-up step.
+		time.Sleep(rampUpInterval / 2)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.04, ps.getRate(mkSpan("web", "prod")))
+	})
+}
+
+func TestPrioritySamplerRampUp(t *testing.T) {
+	// When rates increase, each readRatesJSON call caps the increase at 2x
+	// provided at least rampUpInterval has elapsed.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			s := &Span{service: svc, meta: map[string]string{}}
+			if env != "" {
+				s.meta["env"] = env
+			}
+			return s
+		}
+
+		// Set initial low rate (decrease from default 1.0, applied immediately).
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.01}}`,
+		))))
+		assert.Equal(0.01, ps.getRate(mkSpan("web", "prod")))
+
+		// Simulate agent restart: rate jumps to 1.0.
+		// First update: capped at 0.01 * 2 = 0.02.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.02, ps.getRate(mkSpan("web", "prod")))
+
+		// Second update: capped at 0.02 * 2 = 0.04.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+		))))
+		assert.Equal(0.04, ps.getRate(mkSpan("web", "prod")))
+
+		// Third: 0.08, Fourth: 0.16, Fifth: 0.32, Sixth: 0.64, Seventh: 1.0 (capped at target).
+		for _, expected := range []float64{0.08, 0.16, 0.32, 0.64, 1.0} {
+			time.Sleep(rampUpInterval)
+			assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+				`{"rate_by_service":{"service:web,env:prod":1.0}}`,
+			))))
+			assert.Equal(expected, ps.getRate(mkSpan("web", "prod")))
+		}
+	})
+}
+
+func TestPrioritySamplerRampDown(t *testing.T) {
+	// Rate decreases are applied immediately (no ramp).
+	ps := newPrioritySampler()
+	assert := assert.New(t)
+
+	mkSpan := func(svc, env string) *Span {
+		s := &Span{service: svc, meta: map[string]string{}}
+		if env != "" {
+			s.meta["env"] = env
+		}
+		return s
+	}
+
+	// Set initial rate (decrease from default 1.0).
+	assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+		`{"rate_by_service":{"service:web,env:prod":0.8}}`,
+	))))
+
+	// Decrease: applied immediately.
+	assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+		`{"rate_by_service":{"service:web,env:prod":0.1}}`,
+	))))
+	assert.Equal(0.1, ps.getRate(mkSpan("web", "prod")))
+}
+
+func TestPrioritySamplerRampConverges(t *testing.T) {
+	// After enough update cycles, the rate reaches the target.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			s := &Span{service: svc, meta: map[string]string{}}
+			if env != "" {
+				s.meta["env"] = env
+			}
+			return s
+		}
+
+		// Start at 0.1, target 0.5.
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:web,env:prod":0.1}}`,
+		))))
+		// 0.1 -> 0.2 -> 0.4 -> 0.5 (capped at target)
+		for _, expected := range []float64{0.2, 0.4, 0.5} {
+			time.Sleep(rampUpInterval)
+			assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+				`{"rate_by_service":{"service:web,env:prod":0.5}}`,
+			))))
+			assert.Equal(expected, ps.getRate(mkSpan("web", "prod")))
+		}
+	})
+}
+
+func TestPrioritySamplerRampDefaultRate(t *testing.T) {
+	// The default rate also gets capped on increase.
+	synctest.Test(t, func(t *testing.T) {
+		ps := newPrioritySampler()
+		assert := assert.New(t)
+
+		mkSpan := func(svc, env string) *Span {
+			s := &Span{service: svc, meta: map[string]string{}}
+			if env != "" {
+				s.meta["env"] = env
+			}
+			return s
+		}
+
+		// Set default rate to 0.1 (decrease from initial 1.0, applied immediately).
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:,env:":0.1}}`,
+		))))
+		assert.Equal(0.1, ps.getRate(mkSpan("unknown-service", "")))
+
+		// Increase default to 1.0: capped at 0.1 * 2 = 0.2.
+		time.Sleep(rampUpInterval)
+		assert.NoError(ps.readRatesJSON(io.NopCloser(strings.NewReader(
+			`{"rate_by_service":{"service:,env:":1.0}}`,
+		))))
+		assert.Equal(0.2, ps.getRate(mkSpan("unknown-service", "")))
+	})
 }

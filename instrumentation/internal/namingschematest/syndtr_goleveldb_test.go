@@ -46,6 +46,10 @@ var syndtrGoLevelDB = harness.TestCase{
 		DDService:       []string{"leveldb"},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageSyndtrGoLevelDB)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "leveldb.query", spans[0].OperationName())

@@ -1,0 +1,344 @@
+[
+  {
+    "attributes": {
+      "country": "US",
+      "email": "alice@mycompany.com"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "green"
+    },
+    "targetingKey": "alice",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Canada",
+      "email": "bob@example.com"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default"
+    },
+    "targetingKey": "bob",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "age": 50
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default"
+    },
+    "targetingKey": "charlie",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "age": 25,
+      "country": "Mexico",
+      "email": "test@test.com"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "blue"
+    },
+    "targetingKey": "debra",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "age": 25,
+      "country": "Mexico",
+      "email": "test@test.com"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "purple"
+    },
+    "targetingKey": "zach",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "age": 25,
+      "country": "Mexico",
+      "email": "test@test.com",
+      "id": "override-id"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "blue"
+    },
+    "targetingKey": "zach",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "age": 25,
+      "country": "Mexico",
+      "email": "test@test.com"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default"
+    },
+    "targetingKey": "Zach",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {},
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default"
+    },
+    "targetingKey": "1",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Mexico"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "blue"
+    },
+    "targetingKey": "2",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "age": 33,
+      "country": "UK"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "control"
+    },
+    "targetingKey": "3",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Germany"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "red"
+    },
+    "targetingKey": "4",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Germany"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "yellow"
+    },
+    "targetingKey": "5",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Germany"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "yellow"
+    },
+    "targetingKey": "6",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "US"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "blue"
+    },
+    "targetingKey": "7",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Italy"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "red"
+    },
+    "targetingKey": "8",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "email": "email@email.com"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default"
+    },
+    "targetingKey": "9",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {},
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default"
+    },
+    "targetingKey": "10",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {},
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default"
+    },
+    "targetingKey": "11",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "US"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "blue"
+    },
+    "targetingKey": "12",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Canada"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "blue"
+    },
+    "targetingKey": "13",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {},
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default"
+    },
+    "targetingKey": "14",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Denmark"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "yellow"
+    },
+    "targetingKey": "15",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "Norway"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "control"
+    },
+    "targetingKey": "16",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "UK"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "control"
+    },
+    "targetingKey": "17",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "UK"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "DEFAULT",
+      "value": "default"
+    },
+    "targetingKey": "18",
+    "variationType": "STRING"
+  },
+  {
+    "attributes": {
+      "country": "UK"
+    },
+    "defaultValue": "default",
+    "flag": "new-user-onboarding",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": "red"
+    },
+    "targetingKey": "19",
+    "variationType": "STRING"
+  }
+]

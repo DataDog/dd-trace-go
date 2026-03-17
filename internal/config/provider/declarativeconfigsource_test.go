@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package config
+package provider
 
 import (
 	"bytes"
@@ -26,7 +26,6 @@ apm_configuration_default:
 `
 )
 
-// testLogger implements a mock Logger that captures output
 type testLogger struct {
 	buf bytes.Buffer
 }
@@ -43,7 +42,6 @@ func (l *testLogger) Reset() {
 	l.buf.Reset()
 }
 
-// Helper function to check if declarativeConfig is empty
 func isEmptyDeclarativeConfig(dc *declarativeConfig) bool {
 	return dc.ID == telemetry.EmptyID && len(dc.Config) == 0
 }
@@ -151,6 +149,7 @@ DD_KEY_1: value_1
 	})
 
 	t.Run("malformed YAML - duplicate keys", func(t *testing.T) {
+		// yaml.v3 treats duplicate keys as an error.
 		data := `
 config_id: 67890
 apm_configuration_default:
@@ -158,7 +157,7 @@ apm_configuration_default:
     DD_KEY_1: value_2
 `
 		dc := fileContentsToConfig([]byte(data), "test.yml")
-		assert.True(t, isEmptyDeclarativeConfig(dc)) // yaml.v3 treats duplicate keys as an error
+		assert.True(t, isEmptyDeclarativeConfig(dc))
 	})
 
 	t.Run("malformed YAML - unclosed quotes", func(t *testing.T) {
@@ -226,10 +225,9 @@ func TestParseFile(t *testing.T) {
 
 	t.Run("file with no read permissions", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
-			t.Skip("File permission restrictions don't work reliably on Windows - the OS often grants read access to file owners regardless of permission bits")
+			t.Skip("File permission restrictions don't work reliably on Windows")
 		}
 
-		// On Unix-like systems, create file with no read permissions
 		err := os.WriteFile("test_declarative_noperm.yml", []byte(validYaml), 0000)
 		assert.NoError(t, err)
 		defer os.Remove("test_declarative_noperm.yml")
@@ -261,11 +259,10 @@ func TestFileSizeLimits(t *testing.T) {
 		defer os.Remove("test_declarative_small.yml")
 
 		dc := parseFile("test_declarative_small.yml")
-		assert.False(t, isEmptyDeclarativeConfig(dc)) // file parsing succeeded
+		assert.False(t, isEmptyDeclarativeConfig(dc))
 	})
 
 	t.Run("over limit", func(t *testing.T) {
-		// Build a valid declarative configuration file that surpasses maxFileSize
 		header := `"config_id": 67890
 		"apm_configuration_default":
 		`
@@ -280,12 +277,11 @@ func TestFileSizeLimits(t *testing.T) {
 		defer os.Remove("test_declarative_large.yml")
 
 		dc := parseFile("test_declarative_large.yml")
-		assert.True(t, isEmptyDeclarativeConfig(dc)) // file parsing failed due to size
+		assert.True(t, isEmptyDeclarativeConfig(dc))
 	})
 }
 
 func TestParseFileLogging(t *testing.T) {
-	// Capture log output
 	tl := &testLogger{}
 	defer log.UseLogger(tl)()
 
@@ -298,7 +294,6 @@ func TestParseFileLogging(t *testing.T) {
 		dc := parseFile("test_nonexistent_declarative.yml")
 		assert.NotNil(t, dc)
 		assert.Empty(t, dc.Config)
-		// Should not log warnings for non-existent files
 		assert.NotContains(t, tl.String(), "Failed to stat")
 	})
 
@@ -345,7 +340,6 @@ func TestDeclarativeConfigSource(t *testing.T) {
 		defer os.Remove("test_source_normalize.yml")
 
 		source := newDeclarativeConfigSource("test_source_normalize.yml", telemetry.OriginLocalStableConfig)
-		// Should normalize "key_1" to "DD_KEY_1"
 		assert.Equal(t, "value_1", source.get("key_1"))
 	})
 

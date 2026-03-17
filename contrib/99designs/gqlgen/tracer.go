@@ -184,7 +184,7 @@ func (t *gqlTracer) createRootSpan(ctx context.Context, opCtx *graphql.Operation
 	opts = append(opts,
 		tracer.SpanType(ext.SpanTypeGraphQL),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
-		tracer.ServiceName(t.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(t.cfg.serviceName, t.cfg.serviceSource),
 		tracer.Tag(ext.Component, componentName),
 		tracer.ResourceName(opCtx.RawQuery),
 		tracer.StartTime(opCtx.Stats.OperationStart),
