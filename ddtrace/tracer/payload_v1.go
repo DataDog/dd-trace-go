@@ -514,6 +514,7 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 	p.buf = msgp.AppendUint32(p.buf, uint32(fieldID))         // msgp key
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(spans))) // number of spans
 
+	var scratch []byte
 	for _, span := range spans {
 		if span == nil {
 			continue
@@ -546,14 +547,15 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			p.buf = msgp.AppendFloat64(p.buf, v)
 		}
 		for k, v := range span.metaStruct {
-			msg, err := msgp.AppendIntf(nil, v)
+			var err error
+			scratch, err = msgp.AppendIntf(scratch[:0], v)
 			if err != nil {
 				log.Error("failed to serialize meta_struct value for key %s: %v", k, err.Error())
 				continue
 			}
 			p.buf = st.serialize(k, p.buf)
 			p.buf = msgp.AppendUint32(p.buf, uint32(BytesValueType))
-			p.buf = msgp.AppendBytes(p.buf, msg)
+			p.buf = msgp.AppendBytes(p.buf, scratch)
 		}
 
 		p.buf = encodeField(p.buf, fullSetBitmap, 10, span.spanType, st)
