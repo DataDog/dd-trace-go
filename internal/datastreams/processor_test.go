@@ -7,6 +7,7 @@ package datastreams
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -454,6 +455,38 @@ func TestTrackTransaction(t *testing.T) {
 	// Layout: [checkpointId=28][timestamp=29..36][idLen=37][id=38..41]
 	assert.Equal(t, byte(1), found.Transactions[28], "third record should reuse checkpoint ID 1")
 	assert.Equal(t, "tx-3", string(found.Transactions[38:42]))
+}
+
+// TestTrackTransactionHighVolume ensures that transaction records are never
+// dropped regardless of volume. Previously a 1 MiB cap caused the majority of
+// records to be silently dropped at high throughput (e.g. 25k TPS).
+func TestTrackTransactionHighVolume(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	tp := time.Now().Truncate(bucketDuration)
+
+	const count = 30_000
+	for i := range count {
+		p.addTransaction(transactionEntry{
+			transactionID:  fmt.Sprintf("tx-%d", i),
+			checkpointName: "ingested",
+			timestamp:      tp.UnixNano(),
+		})
+	}
+
+	payloads := p.flush(tp.Add(bucketDuration * 2))
+
+	var totalBytes int
+	for _, payload := range payloads {
+		for _, bucket := range payload.Stats {
+			totalBytes += len(bucket.Transactions)
+		}
+	}
+
+	// Each record: 1 (checkpointId) + 8 (timestamp) + 1 (idLen) + len("tx-N")
+	// IDs range from "tx-0" (4 bytes) to "tx-29999" (8 bytes); minimum per record is 14 bytes.
+	minExpected := count * 14 // conservative lower bound using shortest possible ID
+	assert.GreaterOrEqual(t, totalBytes, minExpected,
+		"all %d transaction records should be present; got %d bytes, want at least %d", count, totalBytes, minExpected)
 }
 
 func TestCheckpointRegistry(t *testing.T) {
