@@ -50,11 +50,24 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	}
 }
 
-// withAgentRemoteConfig simulates an agent that supports remote configuration.
-// Use in tests that need RC to be started but don't have a real agent running.
-func withAgentRemoteConfig() StartOption {
+// withAgentRemoteConfig creates a mock agent server that reports remote config support.
+// Use in tests that need RC to start but don't have a real agent running.
+// The server is automatically closed when the test ends.
+func withAgentRemoteConfig(t testing.TB) StartOption {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/info":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"endpoints":["/v0.7/config"]}`)
+		default:
+			// RC polling: return empty object (handled gracefully by updateState)
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
 	return func(c *config) {
-		c.agent.hasRemoteConfig = true
+		c.agentURL = u
 	}
 }
 
