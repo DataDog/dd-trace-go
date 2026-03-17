@@ -265,7 +265,7 @@ func Start(opts ...StartOption) error {
 
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
-	cfg.AgentURL = t.config.internalConfig.EffectiveAgentURL().String()
+	cfg.AgentURL = t.config.internalConfig.AgentURL().String()
 	cfg.AppVersion = t.config.internalConfig.Version()
 	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
@@ -447,7 +447,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.serviceName, c.internalConfig.Version(), c.internalConfig.EffectiveAgentURL(), c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.serviceName, c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {

@@ -376,7 +376,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
-	agentURL := c.internalConfig.AgentURL()
+	agentURL := c.internalConfig.RawAgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
 			// Make sure we don't create http client traces from inside the tracer by using our http client
@@ -420,7 +420,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.internalConfig.EffectiveAgentURL().String(), c.httpClient)
+		c.transport = newHTTPTransport(c.internalConfig.AgentURL().String(), c.httpClient)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -455,7 +455,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
-	effectiveURL := c.internalConfig.EffectiveAgentURL()
+	effectiveURL := c.internalConfig.AgentURL()
 	c.agent = loadAgentFeatures(agentDisabled, effectiveURL, c.httpClient)
 	if c.agent.v1ProtocolAvailable {
 		c.traceProtocol = traceProtocolV1
@@ -491,7 +491,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		Env:        c.internalConfig.Env(),
 		Service:    c.serviceName,
 		Version:    c.internalConfig.Version(),
-		AgentURL:   c.internalConfig.EffectiveAgentURL(),
+		AgentURL:   c.internalConfig.AgentURL(),
 		APIKey:     env.Get("DD_API_KEY"),
 		APPKey:     env.Get("DD_APP_KEY"),
 		HTTPClient: c.httpClient,

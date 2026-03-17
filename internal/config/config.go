@@ -235,8 +235,10 @@ func SetUseFreshConfig(use bool) {
 	useFreshConfig = use
 }
 
-// AgentURL returns a copy of the resolved trace agent URL.
-func (c *Config) AgentURL() *url.URL {
+// RawAgentURL returns a copy of the configured trace agent URL before any
+// transport-level rewriting (e.g. unix → http://UDS_...). Use AgentURL()
+// for the URL suitable for HTTP requests.
+func (c *Config) RawAgentURL() *url.URL {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.agentURL == nil {
@@ -255,11 +257,11 @@ func (c *Config) SetAgentURL(u *url.URL, origin telemetry.Origin) {
 	}
 }
 
-// EffectiveAgentURL returns the URL to use for HTTP requests to the agent.
+// AgentURL returns the URL to use for HTTP requests to the agent.
 // For unix-scheme URLs this rewrites to the http://UDS_... form; otherwise
-// it returns a copy of the source URL.
-func (c *Config) EffectiveAgentURL() *url.URL {
-	u := c.AgentURL()
+// it returns a copy of the configured URL.
+func (c *Config) AgentURL() *url.URL {
+	u := c.RawAgentURL()
 	if u != nil && u.Scheme == "unix" {
 		return internal.UnixDataSocketURL(u.Path)
 	}

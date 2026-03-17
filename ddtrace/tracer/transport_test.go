@@ -128,7 +128,7 @@ func TestResolveAgentAddr(t *testing.T) {
 			if tt.inOpt != nil {
 				tt.inOpt(c)
 			}
-			assert.Equal(t, tt.out, c.internalConfig.AgentURL())
+			assert.Equal(t, tt.out, c.internalConfig.RawAgentURL())
 		})
 	}
 
@@ -139,7 +139,7 @@ func TestResolveAgentAddr(t *testing.T) {
 		internal.DefaultTraceAgentUDSPath = d // Choose a file we know will exist
 		defer func() { internal.DefaultTraceAgentUDSPath = old }()
 		c.internalConfig.SetAgentURL(internal.AgentURLFromEnv(), telemetry.OriginEnvVar)
-		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.internalConfig.AgentURL())
+		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.internalConfig.RawAgentURL())
 	})
 }
 
