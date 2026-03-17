@@ -24,6 +24,7 @@ import (
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
 	"github.com/stretchr/testify/assert"
@@ -120,12 +121,13 @@ func TestResolveAgentAddr(t *testing.T) {
 			if tt.envPort != "" {
 				t.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 			}
-			var opts []StartOption
+			// Use CreateNew directly to test URL resolution without triggering
+			// loadAgentFeatures, which would make real HTTP calls to the configured URL.
+			c := new(config)
+			c.internalConfig = internalconfig.CreateNew()
 			if tt.inOpt != nil {
-				opts = append(opts, tt.inOpt)
+				tt.inOpt(c)
 			}
-			c, err := newTestConfig(opts...)
-			require.NoError(t, err)
 			assert.Equal(t, tt.out, c.internalConfig.RawAgentURL())
 		})
 	}
@@ -136,8 +138,8 @@ func TestResolveAgentAddr(t *testing.T) {
 		require.NoError(t, err)
 		internal.DefaultTraceAgentUDSPath = d // Choose a file we know will exist
 		defer func() { internal.DefaultTraceAgentUDSPath = old }()
-		c, err := newTestConfig()
-		require.NoError(t, err)
+		c := new(config)
+		c.internalConfig = internalconfig.CreateNew()
 		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.internalConfig.RawAgentURL())
 	})
 }
