@@ -10,8 +10,9 @@ updates:
       - "/"
       - "/.github/actions/*"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
     groups:
-      gh-actions-packages:
+      github-actions:
         patterns:
           - "*"
+    open-pull-requests-limit: 10
