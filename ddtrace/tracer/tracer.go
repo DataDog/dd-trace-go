@@ -273,7 +273,7 @@ func Start(opts ...StartOption) error {
 	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
 	cfg.ServiceName = t.config.serviceName
-	if t.config.agent.hasRemoteConfig {
+	if t.config.agent.load().hasRemoteConfig {
 		if err := t.startRemoteConfig(cfg); err != nil {
 			log.Warn("Remote config startup error: %s", err.Error())
 		}
