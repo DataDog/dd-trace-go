@@ -86,6 +86,12 @@ const (
 	ServiceSourceWithServiceOption = "opt.with_service"
 )
 
+// ServiceOverride bundles a service name with its source for use with
+// span.SetTag(ext.KeyServiceSource, instrumentation.ServiceOverride{...}).
+// This should be used instead of span.SetTag(ext.ServiceName, ...) to preserve
+// the service source information.
+type ServiceOverride = internal.ServiceOverride
+
 // ServiceNameWithSource returns a StartSpanOption that sets both the service
 // name and its source. The source tracks the origin of the service name
 // override for _dd.svc_src.

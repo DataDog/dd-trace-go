@@ -165,7 +165,7 @@ type Span struct {
 	// +checklocks:mu
 	integration string `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
 	// +checklocks:mu
-	serviceSource string `msg:"-"` // tracks the source of service name override; set to "m" when SetTag overrides it post-creation
+	serviceSource string `msg:"-"` // tracks the source of service name override; set to serviceSourceManual when SetTag overrides it
 	// +checklocks:mu
 	pprofCtxActive context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 
@@ -747,6 +747,7 @@ func (s *Span) setMetaInit(key, v string) {
 		s.name = v
 	case ext.ServiceName:
 		s.service = v
+		s.serviceSource = serviceSourceManual
 	case ext.ResourceName:
 		s.resource = v
 	case ext.SpanType:
@@ -1308,6 +1309,9 @@ const (
 	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
 	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
+
+	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
+	serviceSourceManual = "m"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

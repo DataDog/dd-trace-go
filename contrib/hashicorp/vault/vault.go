@@ -65,7 +65,7 @@ func WrapHTTPClient(c *http.Client, opts ...Option) *http.Client {
 			return conf.spanName
 		}),
 		httptrace.WithBefore(func(r *http.Request, s *tracer.Span) {
-			s.SetTag(ext.ServiceName, conf.serviceName)
+			s.SetTag(ext.KeyServiceSource, instrumentation.ServiceOverride{Name: conf.serviceName, Source: conf.serviceSource})
 			s.SetTag(ext.HTTPURL, r.URL.Path)
 			s.SetTag(ext.HTTPMethod, r.Method)
 			s.SetTag(ext.ResourceName, r.Method+" "+r.URL.Path)
