@@ -25,6 +25,10 @@ func KafkaTestCase(pkg instrumentation.Package, genSpans GenSpansFn) TestCase {
 			DDService:       []string{"kafka", TestDDService},
 			ServiceOverride: []string{TestServiceOverride, TestServiceOverride},
 		},
+		WantServiceSource: ServiceSourceAssertions{
+			Defaults:        RepeatString(string(pkg), 2),
+			ServiceOverride: RepeatString(instrumentation.ServiceSourceWithServiceOption, 2),
+		},
 		AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 			require.Len(t, spans, 2)
 			assert.Equal(t, "kafka.produce", spans[0].OperationName())

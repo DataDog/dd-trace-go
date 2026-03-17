@@ -73,7 +73,7 @@ type command struct {
 
 func (c *client) startSpan(ctx context.Context, cmd command) (*tracer.Span, context.Context) {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(c.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(c.cfg.serviceName, c.cfg.serviceSource),
 		tracer.ResourceName(cmd.statement),
 		tracer.SpanType(ext.SpanTypeRedis),
 		tracer.Tag(ext.Component, instrumentation.PackageRedisRueidis),

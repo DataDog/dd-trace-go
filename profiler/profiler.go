@@ -45,6 +45,11 @@ var (
 	// errProfilerStopped is a sentinel for suppressing errors if we are
 	// about to stop the profiler
 	errProfilerStopped = errors.New("profiler stopped")
+
+	// testLookupProfile is a global hook for testing that replaces the
+	// pprof.Lookup-based profile collection. Set it before calling Start
+	// and restore it to nil after calling Stop.
+	testLookupProfile func(name string, w io.Writer, debug int) error
 )
 
 func init() {
@@ -109,38 +114,13 @@ type profiler struct {
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
-	testHooks testHooks
-
 	// lastTrace is the last time an execution trace was collected
 	lastTrace time.Time
 }
 
-// testHooks are functions that are replaced during testing which would normally
-// depend on accessing runtime state that is not needed/available for the test
-type testHooks struct {
-	startCPUProfile func(w io.Writer) error
-	stopCPUProfile  func()
-	lookupProfile   func(name string, w io.Writer, debug int) error
-}
-
-func (p *profiler) startCPUProfile(w io.Writer) error {
-	if p.testHooks.startCPUProfile != nil {
-		return p.testHooks.startCPUProfile(w)
-	}
-	return pprof.StartCPUProfile(w)
-}
-
-func (p *profiler) stopCPUProfile() {
-	if p.testHooks.startCPUProfile != nil {
-		p.testHooks.stopCPUProfile()
-		return
-	}
-	pprof.StopCPUProfile()
-}
-
 func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
-	if p.testHooks.lookupProfile != nil {
-		return p.testHooks.lookupProfile(name, w, debug)
+	if testLookupProfile != nil {
+		return testLookupProfile(name, w, debug)
 	}
 	prof := pprof.Lookup(name)
 	if prof == nil {

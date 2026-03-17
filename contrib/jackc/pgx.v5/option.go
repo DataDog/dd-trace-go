@@ -11,6 +11,7 @@ import (
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	traceQuery    bool
 	traceBatch    bool
 	traceCopyFrom bool
@@ -25,6 +26,7 @@ type config struct {
 func defaultConfig() *config {
 	return &config{
 		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
+		serviceSource: string(instrumentation.PackageJackcPGXV5),
 		traceQuery:    true,
 		traceBatch:    true,
 		traceCopyFrom: true,
@@ -55,6 +57,7 @@ type Option func(*config)
 func WithService(name string) Option {
 	return func(c *config) {
 		c.serviceName = name
+		c.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
