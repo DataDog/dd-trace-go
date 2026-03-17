@@ -459,6 +459,7 @@ type trace struct {
 	// sampling priority — accessed atomically to allow lock-free reads
 	// from the span creation hot path (SamplingPriority).
 	// Writes still happen under mu (because they also touch propagatingTags).
+	// +checkatomic
 	priority atomic.Pointer[float64]
 	// specifies if the sampling priority can be altered
 	// +checklocks:mu
@@ -520,7 +521,7 @@ func newTrace() *trace {
 // samplingPriority returns the sampling priority of the trace, if set.
 // This is safe to call without holding t.mu because priority is an atomic pointer.
 func (t *trace) samplingPriority() (p int, ok bool) {
-	priority := t.priority.Load()
+	priority := t.priority.Load() // +checklocksignore
 	if priority == nil {
 		return 0, false
 	}
@@ -578,10 +579,10 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		return false
 	}
 
-	old := t.priority.Load()
+	old := t.priority.Load() // +checklocksignore
 	updatedPriority := old == nil || *old != float64(p)
 
-	t.priority.Store(samplingPriorityPtr(p))
+	t.priority.Store(samplingPriorityPtr(p)) // +checklocksignore
 	curDM, existed := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
