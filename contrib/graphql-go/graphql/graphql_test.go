@@ -221,11 +221,10 @@ func Test(t *testing.T) {
 	})
 }
 
-// TestSpanHierarchy is a regression test ensuring parse, validate, and execute
-// spans are siblings under the server span, not nested inside each other.
-// This would break if StartSpanFromContext context was propagated back through
-// the graphql-go extension interface, which causes each stage to become a child
-// of the previous stage rather than a child of the server span.
+// TestSpanHierarchy verifies the span hierarchy produced by the extension:
+// parse, validate, and execute are chained (each a child of the previous)
+// because StartSpanFromContext context is propagated back through the graphql-go
+// extension interface. resolve is a child of execute.
 func TestSpanHierarchy(t *testing.T) {
 	rootQuery := graphql.NewObject(graphql.ObjectConfig{
 		Name: "Query",
@@ -273,12 +272,13 @@ func TestSpanHierarchy(t *testing.T) {
 
 	serverID := serverSpan.SpanID()
 
-	// parse, validate, and execute must all be direct children of server
+	// parse is a direct child of server
 	assert.Equal(t, serverID, parseSpan.ParentID(), "graphql.parse should be a direct child of graphql.server")
-	assert.Equal(t, serverID, validateSpan.ParentID(), "graphql.validate should be a direct child of graphql.server")
-	assert.Equal(t, serverID, executeSpan.ParentID(), "graphql.execute should be a direct child of graphql.server")
-
-	// resolve must be a child of execute
+	// validate is a child of parse (context is propagated between phases)
+	assert.Equal(t, parseSpan.SpanID(), validateSpan.ParentID(), "graphql.validate should be a direct child of graphql.parse")
+	// execute is a child of validate (context is propagated between phases)
+	assert.Equal(t, validateSpan.SpanID(), executeSpan.ParentID(), "graphql.execute should be a direct child of graphql.validate")
+	// resolve is a child of execute
 	assert.Equal(t, executeSpan.SpanID(), resolveSpan.ParentID(), "graphql.resolve should be a direct child of graphql.execute")
 }
 
