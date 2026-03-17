@@ -691,8 +691,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			c := tracer.config
 			// Source URL is unix, effective URL is rewritten for HTTP transport
-			assert.Equal(t, &url.URL{Scheme: "unix", Path: "/var/run/datadog/apm.socket"}, c.internalConfig.RawAgentURL())
-			assert.Equal(t, &url.URL{Scheme: "http", Host: "UDS__var_run_datadog_apm.socket"}, c.internalConfig.AgentURL())
+			agentURL = c.internalConfig.RawAgentURL()
+			assert.Equal(t, &url.URL{Scheme: "unix", Path: "/var/run/datadog/apm.socket"}, agentURL)
+			assert.Equal(t, &url.URL{Scheme: "http", Host: "UDS__var_run_datadog_apm.socket"}, agentURL)
 		})
 
 		t.Run("code-override-full-URL-error", func(t *testing.T) {
