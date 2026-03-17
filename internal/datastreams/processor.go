@@ -31,10 +31,6 @@ import (
 const (
 	bucketDuration     = time.Second * 10
 	defaultServiceName = "unnamed-go-service"
-	// maxTransactionBytesPerBucket caps the Transactions blob per bucket to
-	// prevent unbounded memory growth under high transaction rates.
-	// Records beyond this limit are silently dropped.
-	maxTransactionBytesPerBucket = 1 << 20 // 1 MiB
 )
 
 // use the same gamma and index offset as the Datadog backend, to avoid doing any conversions in
@@ -395,11 +391,6 @@ func (p *Processor) addTransaction(e transactionEntry) {
 	}
 	checkpointID, ok := p.checkpoints.getOrAssign(e.checkpointName)
 	if !ok {
-		p.tsTypeCurrentBuckets[k] = b
-		return
-	}
-	if len(b.transactions) >= maxTransactionBytesPerBucket {
-		log.Warn("datastreams: transaction buffer full, dropping transaction record")
 		p.tsTypeCurrentBuckets[k] = b
 		return
 	}
