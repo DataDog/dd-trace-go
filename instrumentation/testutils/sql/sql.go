@@ -246,7 +246,6 @@ func testExec(cfg *Config) func(*testing.T) {
 		query := fmt.Sprintf("INSERT INTO %s(name) VALUES('New York')", cfg.TableName)
 
 		parent, ctx := tracer.StartSpanFromContext(context.Background(), "test.parent",
-			tracer.ServiceName("test"),
 			tracer.ResourceName("parent"),
 		)
 

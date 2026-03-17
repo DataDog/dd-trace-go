@@ -727,7 +727,7 @@ func TestEnvVars(t *testing.T) {
 					assert.NoError(err)
 					ctx, err := tracer.Extract(test.in)
 					assert.Nil(err)
-					assert.Equal(test.tid, ctx.traceID)
+					assert.Equal(test.tid.value, ctx.traceID.value)
 					assert.Equal(test.sid, ctx.spanID)
 				})
 			}
@@ -1056,7 +1056,7 @@ func TestEnvVars(t *testing.T) {
 					xctx, err := tracer.Extract(headers)
 					require.Nil(t, err)
 
-					assert.Equal(ctx.traceID, xctx.traceID)
+					assert.Equal(ctx.traceID.value, xctx.traceID.value)
 					assert.Equal(ctx.spanID, xctx.spanID)
 					assert.Equal(ctx.baggage, xctx.baggage)
 					assert.Equal(ctx.trace.priority, xctx.trace.priority)
@@ -1255,7 +1255,7 @@ func TestEnvVars(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					assert.Equal(tc.tid, ctx.traceID)
+					assert.Equal(tc.tid.value, ctx.traceID.value)
 					assert.Equal(tc.out[0], ctx.spanID)
 					assert.Equal(tc.origin, ctx.origin)
 					p, ok := ctx.SamplingPriority()
@@ -1365,7 +1365,7 @@ func TestEnvVars(t *testing.T) {
 					defer root.Finish()
 					ctx.origin = tc.origin
 
-					assert.Equal(tc.tid, ctx.traceID)
+					assert.Equal(tc.tid.value, ctx.traceID.value)
 					assert.Equal(tc.sid, ctx.spanID)
 					p, ok := ctx.SamplingPriority()
 					assert.True(ok)
@@ -1821,7 +1821,7 @@ func TestEnvVars(t *testing.T) {
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(s.Context(), headers)
 					assert.NoError(err)
-					assert.Equal(tc.tid, sctx.traceID)
+					assert.Equal(tc.tid.value, sctx.traceID.value)
 					assert.Equal(tc.out[0], sctx.span.parentID)
 					assert.Equal(tc.out[1], sctx.spanID)
 
@@ -1887,7 +1887,7 @@ func TestEnvVars(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					assert.Equal(tc.tid, ctx.traceID)
+					assert.Equal(tc.tid.value, ctx.traceID.value)
 					assert.Equal(tc.out[0], ctx.spanID)
 					p, ok := ctx.SamplingPriority()
 					assert.True(ok)
@@ -1919,7 +1919,7 @@ func TestTraceContextPrecedence(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert := assert.New(t)
-	assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+	assert.Equal(traceIDFrom64Bits(1).value, sctx.traceID.value)
 	assert.Equal(uint64(0x1), sctx.spanID)
 	p, _ := sctx.SamplingPriority()
 	assert.Equal(2, p)
@@ -1983,7 +1983,7 @@ func TestSpanLinks(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				assert.Equal(tt.tid, sctx.traceID)
+				assert.Equal(tt.tid.value, sctx.traceID.value)
 				assert.Len(sctx.spanLinks, 2)
 				assert.Contains(sctx.spanLinks, tt.out[0])
 				assert.Contains(sctx.spanLinks, tt.out[1])
@@ -2007,7 +2007,7 @@ func TestSpanLinks(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+		assert.Equal(traceIDFrom64Bits(1).value, sctx.traceID.value)
 		assert.Len(sctx.spanLinks, 0)
 	})
 }
@@ -2933,7 +2933,7 @@ func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 
 	// Verify that trace context is taken from Datadog headers, despite baggage being listed first in propagation style
 	expectedTraceID := traceIDFrom64Bits(12345)
-	assert.Equal(t, expectedTraceID, ctx.traceID)
+	assert.Equal(t, expectedTraceID.value, ctx.traceID.value)
 	assert.Equal(t, uint64(67890), ctx.spanID)
 
 	got := make(map[string]string)

@@ -546,6 +546,41 @@ func TestTrackTransactionViaMethod(t *testing.T) {
 	assert.NotEmpty(t, found.TransactionCheckpointIds)
 }
 
+// TestTrackTransactionAtUsesProvidedTime verifies that TrackTransactionAt stores the
+// caller-supplied timestamp rather than the processor's clock.
+func TestTrackTransactionAtUsesProvidedTime(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	// Set the processor clock to a different time to confirm it is not used.
+	processorTime := time.Now().Truncate(bucketDuration)
+	p.timeSource = func() time.Time { return processorTime }
+
+	customTime := processorTime.Add(-5 * time.Minute)
+	p.TrackTransactionAt("tx-custom", "ingested", customTime)
+
+	in := p.in.pop()
+	require.NotNil(t, in)
+	assert.Equal(t, pointTypeTransaction, in.typ)
+	assert.Equal(t, "tx-custom", in.transactionEntry.transactionID)
+	assert.Equal(t, "ingested", in.transactionEntry.checkpointName)
+	// The stored timestamp must match the caller-supplied time, not the processor clock.
+	assert.Equal(t, customTime.UnixNano(), in.transactionEntry.timestamp)
+
+	p.processInput(in)
+	payloads := p.flush(customTime.Add(bucketDuration * 2))
+
+	var found *StatsBucket
+	for _, payload := range payloads {
+		for i := range payload.Stats {
+			if len(payload.Stats[i].Transactions) > 0 {
+				found = &payload.Stats[i]
+				break
+			}
+		}
+	}
+	require.NotNil(t, found, "expected a bucket containing transactions for the custom timestamp")
+	assert.NotEmpty(t, found.Transactions)
+}
+
 type noOpTransport struct{}
 
 // RoundTrip does nothing and returns a dummy response.

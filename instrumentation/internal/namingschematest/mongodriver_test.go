@@ -52,6 +52,10 @@ var mongoDriverTest = harness.TestCase{
 		DDService:       []string{"mongo"},
 		ServiceOverride: []string{harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        []string{string(instrumentation.PackageMongoDriver)},
+		ServiceOverride: []string{instrumentation.ServiceSourceWithServiceOption},
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "mongodb.query", spans[0].OperationName())

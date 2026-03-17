@@ -60,7 +60,7 @@ func WrapClient(c HTTPClient, opts ...Option) HTTPClient {
 func (wc *wrappedClient) Do(req *http.Request) (*http.Response, error) {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.SpanTypeHTTP),
-		tracer.ServiceName(wc.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(wc.cfg.serviceName, wc.cfg.serviceSource),
 		tracer.Tag(ext.HTTPMethod, req.Method),
 		tracer.Tag(ext.HTTPURL, req.URL.Path),
 		tracer.Tag(ext.Component, component),
@@ -130,7 +130,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		spanOpts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
-			tracer.ServiceName(cfg.serviceName),
+			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 			tracer.Tag(ext.HTTPMethod, r.Method),
 			tracer.Tag(ext.HTTPURL, r.URL.Path),
 			tracer.Tag(ext.Component, component),
@@ -191,7 +191,7 @@ func requestReceivedHook(cfg *config) func(context.Context) (context.Context, er
 	return func(ctx context.Context) (context.Context, error) {
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
-			tracer.ServiceName(cfg.serviceName),
+			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 			tracer.Measured(),
 			tracer.Tag(ext.Component, component),
 			tracer.Tag(ext.RPCSystem, ext.RPCSystemTwirp),

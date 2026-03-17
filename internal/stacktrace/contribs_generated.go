@@ -611,6 +611,8 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/sasha-s/go-deadlock",
 		"github.com/sean-/seed",
 		"github.com/secure-systems-lab/go-securesystemslib",
+		"github.com/segmentio/asm",
+		"github.com/segmentio/encoding",
 		"github.com/segmentio/kafka-go",
 		"github.com/sergi/go-diff",
 		"github.com/serialx/hashring",

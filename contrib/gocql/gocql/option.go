@@ -16,6 +16,7 @@ import (
 
 type config struct {
 	serviceName, resourceName            string
+	serviceSource                        string
 	querySpanName, batchSpanName         string
 	noDebugStack                         bool
 	analyticsRate                        float64
@@ -44,6 +45,7 @@ func defaultConfig() *config {
 		traceConnect: true,
 	}
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageGoCQL)
 	cfg.querySpanName = instr.OperationName(instrumentation.ComponentDefault, nil)
 	cfg.batchSpanName = instr.OperationName(instrumentation.ComponentDefault, instrumentation.OperationContext{
 		"operationType": "batch",
@@ -64,6 +66,7 @@ func defaultConfig() *config {
 func WithService(name string) WrapOptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

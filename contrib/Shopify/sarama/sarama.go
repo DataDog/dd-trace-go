@@ -60,7 +60,7 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		for msg := range msgs {
 			// create the next span from the message
 			opts := []tracer.StartSpanOption{
-				tracer.ServiceName(cfg.consumerServiceName),
+				instrumentation.ServiceNameWithSource(cfg.consumerServiceName, cfg.serviceSource),
 				tracer.ResourceName("Consume Topic " + msg.Topic),
 				tracer.SpanType(ext.SpanTypeMessageConsumer),
 				tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
@@ -295,7 +295,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 func startProducerSpan(cfg *config, version sarama.KafkaVersion, msg *sarama.ProducerMessage) *tracer.Span {
 	carrier := NewProducerMessageCarrier(msg)
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(cfg.producerServiceName),
+		instrumentation.ServiceNameWithSource(cfg.producerServiceName, cfg.serviceSource),
 		tracer.ResourceName("Produce Topic " + msg.Topic),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, instrumentation.PackageShopifySarama),

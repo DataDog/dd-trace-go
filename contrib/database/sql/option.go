@@ -17,8 +17,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 )
 
+// serviceSourceSQLDriver is the service source value used when the service
+// name is derived from the driver name (e.g. database/sql Register driverName).
+const serviceSourceSQLDriver = "opt.sql_driver"
+
 type config struct {
 	serviceName        string
+	serviceSource      string
 	spanName           string
 	analyticsRate      float64
 	dsn                string
@@ -144,7 +149,7 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 		mode = env.Get("DD_TRACE_SQL_COMMENT_INJECTION_MODE")
 	}
 	cfg.dbmPropagationMode = tracer.DBMPropagationMode(mode)
-	cfg.serviceName = defaultServiceName(driverName, rc)
+	cfg.serviceName, cfg.serviceSource = defaultServiceNameAndSource(driverName, rc)
 	cfg.spanName = getSpanName(driverName)
 	if rc != nil {
 		// use registered config as the default value for some options
@@ -167,16 +172,21 @@ func defaults(cfg *config, driverName string, rc *registerConfig) {
 	}
 }
 
-func defaultServiceName(driverName string, rc *registerConfig) string {
+func defaultServiceNameAndSource(driverName string, rc *registerConfig) (string, string) {
 	registerService := ""
+	serviceSource := serviceSourceSQLDriver
 	if rc != nil {
 		// if service name was set during Register, we use that value as default.
 		registerService = rc.serviceName
+		if rc.serviceSource != "" {
+			serviceSource = rc.serviceSource
+		}
 	}
-	return instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
+	serviceName := instr.ServiceName(instrumentation.ComponentDefault, instrumentation.OperationContext{
 		"driverName":      driverName,
 		"registerService": registerService,
 	})
+	return serviceName, serviceSource
 }
 
 func getSpanName(driverName string) string {
@@ -195,6 +205,7 @@ func getSpanName(driverName string) string {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 
