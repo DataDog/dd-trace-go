@@ -96,6 +96,10 @@ func WithDataStreams() Option {
 	})
 }
 
+func (tr *Tracer) DSMEnabled() bool {
+	return tr.dataStreamsEnabled
+}
+
 func (tr *Tracer) ClusterID() string {
 	tr.clusterIDMu.RLock()
 	defer tr.clusterIDMu.RUnlock()

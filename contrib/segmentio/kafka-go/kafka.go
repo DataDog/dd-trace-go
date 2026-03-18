@@ -7,7 +7,6 @@ package kafka // import "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-
 
 import (
 	"context"
-	"net"
 	"strings"
 	"time"
 
@@ -22,8 +21,9 @@ import (
 // A Reader wraps a kafka.Reader.
 type Reader struct {
 	*kafka.Reader
-	tracer *tracing.Tracer
-	prev   *tracer.Span
+	tracer     *tracing.Tracer
+	prev       *tracer.Span
+	closeAsync []func() // async jobs to cancel and wait for on Close
 }
 
 // NewReader calls kafka.NewReader and wraps the resulting Consumer.
@@ -45,21 +45,20 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 		cfg.ConsumerGroupID = c.Config().GroupID
 	}
 	wrapped.tracer = tracing.NewTracer(cfg, opts...)
-	if brokers != nil {
-		go func() {
-			id := fetchClusterID(context.Background(), brokers)
-			if id != "" {
-				wrapped.tracer.SetClusterID(id)
-			}
-		}()
-	}
 	tracing.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.tracer)
+	if brokers == nil || !wrapped.tracer.DSMEnabled() {
+		return wrapped
+	}
+	wrapped.closeAsync = append(wrapped.closeAsync, startFetchClusterID(wrapped.tracer, cfg.BootstrapServers))
 	return wrapped
 }
 
 // Close calls the underlying Reader.Close and if polling is enabled, finishes
 // any remaining span.
 func (r *Reader) Close() error {
+	for _, stop := range r.closeAsync {
+		stop()
+	}
 	err := r.Reader.Close()
 	if r.prev != nil {
 		r.prev.Finish()
@@ -103,7 +102,8 @@ func (r *Reader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 // Writer wraps a kafka.Writer with tracing config data
 type KafkaWriter struct {
 	*kafka.Writer
-	tracer *tracing.Tracer
+	tracer     *tracing.Tracer
+	closeAsync []func() // async jobs to cancel and wait for on Close
 }
 
 // NewWriter calls kafka.NewWriter and wraps the resulting Producer.
@@ -117,45 +117,48 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 		Writer: w,
 	}
 	cfg := tracing.KafkaConfig{}
-	addrs := parseAddrs(w.Addr)
-	if w.Addr.String() != "" {
+	addrSet := w.Addr.String() != ""
+	if addrSet {
 		cfg.BootstrapServers = w.Addr.String()
 	}
 	writer.tracer = tracing.NewTracer(cfg, opts...)
-	if len(addrs) > 0 {
-		go func() {
-			id := fetchClusterID(context.Background(), addrs)
-			if id != "" {
-				writer.tracer.SetClusterID(id)
-			}
-		}()
-	}
 	tracing.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer)
+	if !addrSet || !writer.tracer.DSMEnabled() {
+		return writer
+	}
+	writer.closeAsync = append(writer.closeAsync, startFetchClusterID(writer.tracer, cfg.BootstrapServers))
 	return writer
 }
 
-func fetchClusterID(ctx context.Context, addrs []string) string {
-	if len(addrs) == 0 {
-		return ""
+func startFetchClusterID(tr *tracing.Tracer, bootstrapServers string) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		client := &kafka.Client{Addr: kafka.TCP(bootstrapServers)}
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		resp, err := client.Metadata(ctx, &kafka.MetadataRequest{})
+		if err != nil {
+			if ctx.Err() == context.Canceled {
+				return
+			}
+			tracing.Logger().Warn("contrib/segmentio/kafka-go: failed to fetch Kafka cluster ID: %s", err)
+			return
+		}
+		tr.SetClusterID(resp.ClusterID)
+	}()
+	return func() {
+		cancel()
+		<-done
 	}
-	client := &kafka.Client{Addr: kafka.TCP(addrs...)}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	resp, err := client.Metadata(ctx, &kafka.MetadataRequest{})
-	if err != nil {
-		tracing.Logger().Warn("contrib/segmentio/kafka-go: failed to fetch Kafka cluster ID: %s", err)
-		return ""
-	}
-	return resp.ClusterID
-}
-
-// parseAddrs extracts individual host:port strings from a net.Addr (which may be a multi-address).
-func parseAddrs(addr net.Addr) []string {
-	return strings.Split(addr.String(), ",")
 }
 
 // Close calls the underlying Writer.Close.
 func (w *KafkaWriter) Close() error {
+	for _, stop := range w.closeAsync {
+		stop()
+	}
 	return w.Writer.Close()
 }
 
