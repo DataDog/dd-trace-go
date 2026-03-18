@@ -118,6 +118,9 @@ func AttachCallback(cb Callback) bool {
 
 	if rcState.buffered != nil {
 		log.Debug("openfeature: replaying buffered RC config to provider")
+		// Apply statuses are intentionally discarded: the RC client already received
+		// ApplyStateAcknowledged from forwardingCallback when this update was buffered.
+		// This call only initializes the provider's in-memory state.
 		cb(rcState.buffered)
 		rcState.buffered = nil
 	}
