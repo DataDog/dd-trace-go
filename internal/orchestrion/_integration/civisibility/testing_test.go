@@ -20,6 +20,18 @@ func TestWithSubTests(t *testing.T) {
 	})
 }
 
+func TestWithParallelSubTests(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"Sub1", "Sub2", "Sub3"} {
+		localName := name
+		t.Run(localName, func(t *testing.T) {
+			t.Parallel()
+			t.Logf("Parallel sub test %s", localName)
+		})
+	}
+}
+
 func TestFail(t *testing.T) {
 	t.Fail()
 }

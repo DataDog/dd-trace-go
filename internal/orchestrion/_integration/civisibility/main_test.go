@@ -54,7 +54,7 @@ func TestMain(m *testing.M) {
 		CheckEventsByResourceName("testing_test.go", 1)
 
 	// test events
-	testEvents := events.CheckEventsByType("test", 10)
+	testEvents := events.CheckEventsByType("test", 14)
 	normalTests := testEvents.
 		CheckEventsByResourceName("testing_test.go.TestNormal", 1).
 		CheckEventsByTagAndValue("test.status", "pass", 1)
@@ -93,6 +93,18 @@ func TestMain(m *testing.M) {
 	testWithSubtestsChild2 := testEvents.
 		CheckEventsByResourceName("testing_test.go.TestWithSubTests/Sub2", 1).
 		CheckEventsByTagAndValue("test.status", "pass", 1)
+	testWithParallelSubtests := testEvents.
+		CheckEventsByResourceName("testing_test.go.TestWithParallelSubTests", 1).
+		CheckEventsByTagAndValue("test.status", "pass", 1)
+	testWithParallelSubtestsChild1 := testEvents.
+		CheckEventsByResourceName("testing_test.go.TestWithParallelSubTests/Sub1", 1).
+		CheckEventsByTagAndValue("test.status", "pass", 1)
+	testWithParallelSubtestsChild2 := testEvents.
+		CheckEventsByResourceName("testing_test.go.TestWithParallelSubTests/Sub2", 1).
+		CheckEventsByTagAndValue("test.status", "pass", 1)
+	testWithParallelSubtestsChild3 := testEvents.
+		CheckEventsByResourceName("testing_test.go.TestWithParallelSubTests/Sub3", 1).
+		CheckEventsByTagAndValue("test.status", "pass", 1)
 
 	// remaining must be 0
 	testEvents.
@@ -106,7 +118,11 @@ func TestMain(m *testing.M) {
 			skipNowTests,
 			testWithSubtests,
 			testWithSubtestsChild1,
-			testWithSubtestsChild2).
+			testWithSubtestsChild2,
+			testWithParallelSubtests,
+			testWithParallelSubtestsChild1,
+			testWithParallelSubtestsChild2,
+			testWithParallelSubtestsChild3).
 		HasCount(0)
 
 	// All previous checks will cause panic if they fail so we can safely exit with 0 here
