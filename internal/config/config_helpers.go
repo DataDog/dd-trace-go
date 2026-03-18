@@ -86,27 +86,36 @@ func resolveAgentURL(agentURLStr, host, port string) *url.URL {
 		}
 	}
 
-	providedHost := host != ""
-	providedPort := port != ""
+	httpURL := buildHTTPURL(host, port)
+	// If either the host or port is set, return the HTTP URL, else try to detect the UDS URL
+	if host != "" || port != "" {
+		return httpURL
+	}
+	if u := detectUDSURL(); u != nil {
+		return u
+	}
+	return httpURL
+}
+
+func buildHTTPURL(host, port string) *url.URL {
 	if host == "" {
 		host = internal.DefaultAgentHostname
 	}
 	if port == "" {
 		port = internal.DefaultTraceAgentPort
 	}
-	httpURL := &url.URL{
+	return &url.URL{
 		Scheme: "http",
 		Host:   net.JoinHostPort(host, port),
 	}
-	if providedHost || providedPort {
-		return httpURL
-	}
+}
 
-	if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err == nil {
-		return &url.URL{
-			Scheme: "unix",
-			Path:   internal.DefaultTraceAgentUDSPath,
-		}
+func detectUDSURL() *url.URL {
+	if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err != nil {
+		return nil
 	}
-	return httpURL
+	return &url.URL{
+		Scheme: "unix",
+		Path:   internal.DefaultTraceAgentUDSPath,
+	}
 }
