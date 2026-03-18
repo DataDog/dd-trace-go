@@ -135,7 +135,7 @@ func startFetchClusterID(tr *tracing.Tracer, bootstrapServers string) func() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		client := &kafka.Client{Addr: kafka.TCP(bootstrapServers)}
+		client := &kafka.Client{Addr: kafka.TCP(strings.Split(bootstrapServers, ",")...)}
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		resp, err := client.Metadata(ctx, &kafka.MetadataRequest{})
