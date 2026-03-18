@@ -444,10 +444,11 @@ func (p *Processor) run(tick <-chan time.Time) {
 			p.processInput(s)
 			if p.earlyFlush {
 				p.earlyFlush = false
-				// Flush older buckets immediately, matching Java tracer behavior when the
-				// transaction buffer size limit is reached. The current (overflowing) bucket
-				// will be flushed on the next scheduled tick.
-				p.sendToAgent(p.flush(p.time()))
+				// The current bucket has exceeded maxTransactionBucketSize. Force-flush it
+				// immediately by advancing the cutoff time by one full bucket duration, which
+				// makes the current bucket appear "old enough" to flush. This prevents the
+				// payload from growing beyond the agent's ~10MB request body limit.
+				p.sendToAgent(p.flush(p.time().Add(bucketDuration)))
 			}
 		}
 	}
