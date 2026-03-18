@@ -464,7 +464,7 @@ func TestTraceProtocol(t *testing.T) {
 	t.Run("v1.0, no endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 
-		// Create a mock agent endpoint to mimic having a v1 trace endpoint
+		// Create a mock agent endpoint to mimic having no v1 trace endpoint
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
