@@ -74,15 +74,15 @@ func resolveTraceProtocol(v string) float64 {
 func resolveAgentURL(agentURLStr, host, port string) *url.URL {
 	if agentURLStr != "" {
 		u, err := url.Parse(agentURLStr)
-		if err != nil {
-			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
-		} else {
+		if err == nil {
 			switch u.Scheme {
 			case "unix", "http", "https":
 				return u
 			default:
 				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURLStr)
 			}
+		} else {
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
 		}
 	}
 
