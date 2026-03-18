@@ -117,13 +117,13 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 		Writer: w,
 	}
 	cfg := tracing.KafkaConfig{}
-	addrSet := w.Addr.String() != ""
-	if addrSet {
-		cfg.BootstrapServers = w.Addr.String()
+	addr := w.Addr.String()
+	if addr != "" {
+		cfg.BootstrapServers = addr
 	}
 	writer.tracer = tracing.NewTracer(cfg, opts...)
 	tracing.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer)
-	if !addrSet || !writer.tracer.DSMEnabled() {
+	if addr == "" || !writer.tracer.DSMEnabled() {
 		return writer
 	}
 	writer.closeAsync = append(writer.closeAsync, startFetchClusterID(writer.tracer, cfg.BootstrapServers))
