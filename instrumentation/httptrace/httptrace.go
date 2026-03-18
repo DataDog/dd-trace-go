@@ -214,15 +214,47 @@ func URLFromRequest(r *http.Request, queryString bool) string {
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
 	if queryString && r.URL.RawQuery != "" {
 		query := r.URL.RawQuery
-		if cfg.queryStringRegexp != nil {
+		if cfg.queryStringAllowlist != nil {
+			// When an allowlist is configured, only keep the specified parameter keys.
+			// This avoids running the expensive obfuscation regex entirely.
+			query = filterQueryStringByAllowlist(query, cfg.queryStringAllowlist)
+		} else if cfg.queryStringRegexp != nil {
 			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
 		}
-		url = strings.Join([]string{url, query}, "?")
+		if query != "" {
+			url = strings.Join([]string{url, query}, "?")
+		}
 	}
 	if frag := r.URL.EscapedFragment(); frag != "" {
 		url = strings.Join([]string{url, frag}, "#")
 	}
 	return url
+}
+
+// filterQueryStringByAllowlist parses a raw query string and returns only the key=value
+// pairs whose keys are in the allowlist. It operates on the raw string (splitting on & and =)
+// to avoid unnecessary allocations from net/url.ParseQuery.
+func filterQueryStringByAllowlist(rawQuery string, allowlist map[string]struct{}) string {
+	var b strings.Builder
+	for rawQuery != "" {
+		var pair string
+		if i := strings.IndexByte(rawQuery, '&'); i >= 0 {
+			pair, rawQuery = rawQuery[:i], rawQuery[i+1:]
+		} else {
+			pair, rawQuery = rawQuery, ""
+		}
+		key := pair
+		if i := strings.IndexByte(pair, '='); i >= 0 {
+			key = pair[:i]
+		}
+		if _, ok := allowlist[key]; ok {
+			if b.Len() > 0 {
+				b.WriteByte('&')
+			}
+			b.WriteString(pair)
+		}
+	}
+	return b.String()
 }
 
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags

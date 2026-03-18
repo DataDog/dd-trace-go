@@ -354,6 +354,102 @@ func TestURLTag(t *testing.T) {
 	}
 }
 
+func TestURLTagWithAllowlist(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	type testCase struct {
+		name        string
+		allowlist   []string
+		query       string
+		expectedURL string
+	}
+	for _, tc := range []testCase{
+		{
+			name:        "keep single param",
+			allowlist:   []string{"p1"},
+			query:       "p1=a&p2=b&p3=c",
+			expectedURL: "http://example.com?p1=a",
+		},
+		{
+			name:        "keep multiple params",
+			allowlist:   []string{"p1", "p3"},
+			query:       "p1=a&p2=b&p3=c&p4=d",
+			expectedURL: "http://example.com?p1=a&p3=c",
+		},
+		{
+			name:        "no matching params",
+			allowlist:   []string{"x"},
+			query:       "p1=a&p2=b",
+			expectedURL: "http://example.com",
+		},
+		{
+			name:        "all params match",
+			allowlist:   []string{"p1", "p2"},
+			query:       "p1=a&p2=b",
+			expectedURL: "http://example.com?p1=a&p2=b",
+		},
+		{
+			name:        "empty query string",
+			allowlist:   []string{"p1"},
+			query:       "",
+			expectedURL: "http://example.com",
+		},
+		{
+			name:        "preserves url-encoded values",
+			allowlist:   []string{"q"},
+			query:       "q=hello%20world&secret=abc",
+			expectedURL: "http://example.com?q=hello%20world",
+		},
+		{
+			name:        "param with no value",
+			allowlist:   []string{"flag"},
+			query:       "flag&other=1",
+			expectedURL: "http://example.com?flag",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			allowlist := make(map[string]struct{})
+			for _, k := range tc.allowlist {
+				allowlist[k] = struct{}{}
+			}
+			cfg = oldCfg
+			cfg.queryStringAllowlist = allowlist
+			cfg.queryString = true
+
+			r := http.Request{
+				URL:  &url.URL{RawQuery: tc.query},
+				Host: "example.com",
+			}
+			got := URLFromRequest(&r, true)
+			require.Equal(t, tc.expectedURL, got)
+		})
+	}
+}
+
+func TestFilterQueryStringByAllowlist(t *testing.T) {
+	allowlist := map[string]struct{}{"p1": {}, "p3": {}}
+
+	tests := []struct {
+		name     string
+		raw      string
+		expected string
+	}{
+		{"basic", "p1=a&p2=b&p3=c", "p1=a&p3=c"},
+		{"empty", "", ""},
+		{"no match", "x=1&y=2", ""},
+		{"all match", "p1=a&p3=c", "p1=a&p3=c"},
+		{"trailing ampersand", "p1=a&p2=b&", "p1=a"},
+		{"no value", "p1&p2=b&p3", "p1&p3"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := filterQueryStringByAllowlist(tc.raw, allowlist)
+			assert.Equal(t, tc.expected, got)
+		})
+	}
+}
+
 func BenchmarkStartRequestSpan(b *testing.B) {
 	b.ReportAllocs()
 	r, err := http.NewRequest("GET", "http://example.com", nil)
