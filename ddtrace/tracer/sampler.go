@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
@@ -227,9 +228,17 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 // guard the span.
 // +checklocksignore — Called during initialization in StartSpan, span not yet shared.
 func (ps *prioritySampler) getRate(spn *Span) float64 {
-	key := serviceEnvKey{service: spn.service, env: spn.meta[ext.Environment]}
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
+	return ps.getRateLocked(spn)
+}
+
+// getRateLocked returns the sampling rate for the given span.
+// Caller must hold ps.mu (at least RLock).
+// +checklocksignore — Called during initialization in StartSpan, span not yet shared.
+func (ps *prioritySampler) getRateLocked(spn *Span) float64 {
+	assert.RWMutexRLocked(&ps.mu)
+	key := serviceEnvKey{service: spn.service, env: spn.meta[ext.Environment]}
 	if rate, ok := ps.rates[key]; ok {
 		return rate
 	}
@@ -247,7 +256,10 @@ func (ps *prioritySampler) getDefaultRate() float64 {
 // to modify the span.
 // +checklocksignore — Called during initialization in StartSpan, span not yet shared.
 func (ps *prioritySampler) apply(spn *Span) {
-	rate := ps.getRate(spn)
+	ps.mu.RLock()
+	rate := ps.getRateLocked(spn)
+	loaded := ps.agentRatesLoaded
+	ps.mu.RUnlock()
 	if sampledByRate(spn.traceID, rate) {
 		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
 	} else {
@@ -258,9 +270,6 @@ func (ps *prioritySampler) apply(spn *Span) {
 	// received. The initial default rate (1.0) is a client-side fallback that
 	// does not represent an agent-configured rate, so it must not propagate
 	// as _dd.p.ksr to stay consistent with other tracers.
-	ps.mu.RLock()
-	loaded := ps.agentRatesLoaded
-	ps.mu.RUnlock()
 	if loaded {
 		spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
 	}
