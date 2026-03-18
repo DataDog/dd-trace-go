@@ -6,11 +6,10 @@
 package tracing
 
 import (
-	"context"
 	"math"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/kafkaclusterid"
 )
 
 var instr *instrumentation.Instrumentation
@@ -27,7 +26,8 @@ type Tracer struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	kafkaCfg            KafkaConfig
-	clusterIDFetcher kafkaclusterid.Fetcher
+	clusterID           string
+	clusterIDMu         sync.RWMutex
 }
 
 // Option describes options for the Kafka integration.
@@ -97,23 +97,15 @@ func WithDataStreams() Option {
 }
 
 func (tr *Tracer) ClusterID() string {
-	return tr.clusterIDFetcher.ID()
+	tr.clusterIDMu.RLock()
+	defer tr.clusterIDMu.RUnlock()
+	return tr.clusterID
 }
 
 func (tr *Tracer) SetClusterID(id string) {
-	tr.clusterIDFetcher.SetID(id)
-}
-
-func (tr *Tracer) FetchClusterIDAsync(fetchFn func(ctx context.Context) string) {
-	tr.clusterIDFetcher.FetchAsync(fetchFn)
-}
-
-func (tr *Tracer) WaitForClusterID() {
-	tr.clusterIDFetcher.Wait()
-}
-
-func (tr *Tracer) StopClusterIDFetch() {
-	tr.clusterIDFetcher.Stop()
+	tr.clusterIDMu.Lock()
+	defer tr.clusterIDMu.Unlock()
+	tr.clusterID = id
 }
 
 func Logger() instrumentation.Logger {

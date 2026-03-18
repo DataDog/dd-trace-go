@@ -15,7 +15,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	_ "github.com/DataDog/dd-trace-go/v2/instrumentation" // Blank import to pass TestIntegrationEnabled test
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/kafkaclusterid"
 
 	"github.com/segmentio/kafka-go"
 )
@@ -47,9 +46,12 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 	}
 	wrapped.tracer = tracing.NewTracer(cfg, opts...)
 	if brokers != nil {
-		wrapped.tracer.FetchClusterIDAsync(func(ctx context.Context) string {
-			return fetchClusterID(ctx, brokers)
-		})
+		go func() {
+			id := fetchClusterID(context.Background(), brokers)
+			if id != "" {
+				wrapped.tracer.SetClusterID(id)
+			}
+		}()
 	}
 	tracing.Logger().Debug("contrib/segmentio/kafka-go/kafka: Wrapping Reader: %#v", wrapped.tracer)
 	return wrapped
@@ -58,7 +60,6 @@ func WrapReader(c *kafka.Reader, opts ...Option) *Reader {
 // Close calls the underlying Reader.Close and if polling is enabled, finishes
 // any remaining span.
 func (r *Reader) Close() error {
-	r.tracer.StopClusterIDFetch()
 	err := r.Reader.Close()
 	if r.prev != nil {
 		r.prev.Finish()
@@ -122,9 +123,12 @@ func WrapWriter(w *kafka.Writer, opts ...Option) *KafkaWriter {
 	}
 	writer.tracer = tracing.NewTracer(cfg, opts...)
 	if len(addrs) > 0 {
-		writer.tracer.FetchClusterIDAsync(func(ctx context.Context) string {
-			return fetchClusterID(ctx, addrs)
-		})
+		go func() {
+			id := fetchClusterID(context.Background(), addrs)
+			if id != "" {
+				writer.tracer.SetClusterID(id)
+			}
+		}()
 	}
 	tracing.Logger().Debug("contrib/segmentio/kafka-go: Wrapping Writer: %#v", writer.tracer)
 	return writer
@@ -134,13 +138,6 @@ func fetchClusterID(ctx context.Context, addrs []string) string {
 	if len(addrs) == 0 {
 		return ""
 	}
-	key := kafkaclusterid.NormalizeBootstrapServersList(addrs)
-	if key == "" {
-		return ""
-	}
-	if v, ok := kafkaclusterid.GetCachedID(key); ok {
-		return v
-	}
 	client := &kafka.Client{Addr: kafka.TCP(addrs...)}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -148,9 +145,6 @@ func fetchClusterID(ctx context.Context, addrs []string) string {
 	if err != nil {
 		tracing.Logger().Warn("contrib/segmentio/kafka-go: failed to fetch Kafka cluster ID: %s", err)
 		return ""
-	}
-	if resp.ClusterID != "" {
-		kafkaclusterid.SetCachedID(key, resp.ClusterID)
 	}
 	return resp.ClusterID
 }
@@ -162,7 +156,6 @@ func parseAddrs(addr net.Addr) []string {
 
 // Close calls the underlying Writer.Close.
 func (w *KafkaWriter) Close() error {
-	w.tracer.StopClusterIDFetch()
 	return w.Writer.Close()
 }
 
