@@ -66,6 +66,9 @@ func startClusterIDFetch(tr *kafkatrace.Tracer, admin *kafka.AdminClient) func()
 		defer cancel()
 		clusterID, err := admin.ClusterID(ctx)
 		if err != nil {
+			if ctx.Err() == context.Canceled {
+				return
+			}
 			instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
 			return
 		}
