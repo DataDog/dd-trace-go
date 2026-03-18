@@ -472,7 +472,9 @@ func TestTraceProtocol(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		cfg, err := newTestConfig()
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
