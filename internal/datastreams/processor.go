@@ -31,6 +31,11 @@ import (
 const (
 	bucketDuration     = time.Second * 10
 	defaultServiceName = "unnamed-go-service"
+
+	// maxTransactionBucketSize is the soft size limit for transaction bytes in a single bucket.
+	// When exceeded, an early flush is triggered for older buckets, matching Java tracer behavior.
+	// At ~20 bytes per transaction, 512KB accommodates ~26k transactions/sec.
+	maxTransactionBucketSize = 1024 * 512
 )
 
 // use the same gamma and index offset as the Datadog backend, to avoid doing any conversions in
@@ -253,6 +258,9 @@ type Processor struct {
 	primaryTag           string
 	service              string
 	version              string
+	// earlyFlush is set by addTransaction when the transaction buffer for a bucket exceeds
+	// maxTransactionBucketSize. Only accessed from the run goroutine; no locking needed.
+	earlyFlush bool
 	// used for tests
 	timeSource func() time.Time
 }
@@ -397,6 +405,11 @@ func (p *Processor) addTransaction(e transactionEntry) {
 	b.transactions = appendTransactionBytes(b.transactions, checkpointID, e.timestamp, e.transactionID)
 	p.tsTypeCurrentBuckets[k] = b
 	log.Debug("datastreams: bucket now has %d transaction bytes", len(b.transactions))
+	if len(b.transactions) >= maxTransactionBucketSize {
+		// Transaction buffer has grown large; trigger an early flush of older buckets,
+		// matching the Java tracer's behavior (DefaultDataStreamsMonitoring.java:444).
+		p.earlyFlush = true
+	}
 }
 
 func (p *Processor) flushInput() {
@@ -429,6 +442,13 @@ func (p *Processor) run(tick <-chan time.Time) {
 				continue
 			}
 			p.processInput(s)
+			if p.earlyFlush {
+				p.earlyFlush = false
+				// Flush older buckets immediately, matching Java tracer behavior when the
+				// transaction buffer size limit is reached. The current (overflowing) bucket
+				// will be flushed on the next scheduled tick.
+				p.sendToAgent(p.flush(p.time()))
+			}
 		}
 	}
 }
