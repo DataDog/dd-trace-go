@@ -24,6 +24,17 @@ const (
 	// discarded. Adding additional spans after a trace is dropped does
 	// nothing.
 	TraceMaxSize = int(1e5)
+
+	// Trace protocol versions (agent wire format).
+	TraceProtocolV04              = 0.4 // default
+	TraceProtocolV1               = 1.0
+	TraceProtocolVersionStringV04 = "0.4"
+	TraceProtocolVersionStringV1  = "1.0"
+
+	// Agent URL schemes supported by DD_TRACE_AGENT_URL.
+	URLSchemeUnix  = "unix"
+	URLSchemeHTTP  = "http"
+	URLSchemeHTTPS = "https"
 )
 
 func validateSampleRate(rate float64) bool {
@@ -55,14 +66,14 @@ func validatePartialFlushMinSpans(minSpans int) bool {
 }
 
 func validateTraceProtocolVersion(v string) bool {
-	return v == "0.4" || v == "1.0"
+	return v == TraceProtocolVersionStringV04 || v == TraceProtocolVersionStringV1
 }
 
 func resolveTraceProtocol(v string) float64 {
-	if v == "1.0" {
-		return 1.0
+	if v == TraceProtocolVersionStringV1 {
+		return TraceProtocolV1
 	}
-	return 0.4
+	return TraceProtocolV04
 }
 
 // resolveAgentURL computes the final agent URL from the three env-var strings
@@ -76,10 +87,10 @@ func resolveAgentURL(agentURLStr, host, port string) *url.URL {
 		u, err := url.Parse(agentURLStr)
 		if err == nil {
 			switch u.Scheme {
-			case "unix", "http", "https":
+			case URLSchemeUnix, URLSchemeHTTP, URLSchemeHTTPS:
 				return u
 			default:
-				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURLStr)
+				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: %s, %s, %s.", u.Scheme, agentURLStr, URLSchemeHTTP, URLSchemeHTTPS, URLSchemeUnix)
 			}
 		} else {
 			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
@@ -105,7 +116,7 @@ func buildHTTPURL(host, port string) *url.URL {
 		port = internal.DefaultTraceAgentPort
 	}
 	return &url.URL{
-		Scheme: "http",
+		Scheme: URLSchemeHTTP,
 		Host:   net.JoinHostPort(host, port),
 	}
 }
@@ -115,7 +126,7 @@ func detectUDSURL() *url.URL {
 		return nil
 	}
 	return &url.URL{
-		Scheme: "unix",
+		Scheme: URLSchemeUnix,
 		Path:   internal.DefaultTraceAgentUDSPath,
 	}
 }
