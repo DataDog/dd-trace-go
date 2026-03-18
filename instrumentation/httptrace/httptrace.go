@@ -237,16 +237,15 @@ func URLFromRequest(r *http.Request, queryString bool) string {
 func filterQueryStringByAllowlist(rawQuery string, allowlist map[string]struct{}) string {
 	var b strings.Builder
 	for rawQuery != "" {
+		// Split on "&" to isolate each key=value pair.
 		var pair string
-		if i := strings.IndexByte(rawQuery, '&'); i >= 0 {
-			pair, rawQuery = rawQuery[:i], rawQuery[i+1:]
+		if before, after, found := strings.Cut(rawQuery, "&"); found {
+			pair, rawQuery = before, after
 		} else {
 			pair, rawQuery = rawQuery, ""
 		}
-		key := pair
-		if i := strings.IndexByte(pair, '='); i >= 0 {
-			key = pair[:i]
-		}
+		// Extract the key portion before "=" (or the whole pair if there's no value).
+		key, _, _ := strings.Cut(pair, "=")
 		if _, ok := allowlist[key]; ok {
 			if b.Len() > 0 {
 				b.WriteByte('&')
