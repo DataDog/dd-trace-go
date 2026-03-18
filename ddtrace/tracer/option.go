@@ -134,8 +134,8 @@ var (
 
 // Supported trace protocols.
 const (
-	traceProtocolV04 = 0.4 // v0.4 (default)
-	traceProtocolV1  = 1.0 // v1.0
+	traceProtocolV04 = internalconfig.TraceProtocolV04
+	traceProtocolV1  = internalconfig.TraceProtocolV1
 )
 
 // config holds the tracer configuration.
@@ -457,7 +457,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	agentURL := c.internalConfig.AgentURL()
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
-	if !af.v1ProtocolAvailable && c.internalConfig.TraceProtocol() == traceProtocolV1 {
+	// If the agent doesn't support the v1 protocol, downgrade to v0.4
+	if !af.v1ProtocolAvailable {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 	}
 	if c.internalConfig.TraceProtocol() == traceProtocolV1 {
