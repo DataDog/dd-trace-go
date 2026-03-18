@@ -121,7 +121,7 @@ analyze-benchmark-results:
 # Config Registry CI Jobs
 validate_supported_configurations_v2_local_file:
   stage: config-validation
-  image: registry.ddbuild.io/ci/libdatadog-build/packaging:82290795
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:100425777
   tags: ["runner:apm-k8s-tweaked-metal"]
   rules:
     - when: on_success
@@ -132,7 +132,7 @@ validate_supported_configurations_v2_local_file:
 
 update_central_configurations_version_range_v2:
   stage: config-validation
-  image: registry.ddbuild.io/ci/libdatadog-build/packaging:82290795
+  image: registry.ddbuild.io/ci/libdatadog-build/packaging:100425777
   tags: ["runner:apm-k8s-tweaked-metal"]
   extends: .update_central_configurations_version_range_v2
   variables:

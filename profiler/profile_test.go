@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pprofutils"
 
 	pprofile "github.com/google/pprof/profile"
@@ -21,8 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testRunDeltaProfile(t *testing.T) {
-	t.Helper()
+func TestDeltaProfile(t *testing.T) {
 	var (
 		deltaPeriod = DefaultPeriod
 		timeA       = time.Now().Truncate(time.Minute)
@@ -109,48 +109,44 @@ main;bar 0 0 8 16
 		},
 	}
 
+	deltaProfiler := func(t *testing.T, prof1, prof2 []byte, pt ProfileType, delta bool) (out1 []byte, out2 []byte) {
+		p := [][]byte{prof1, prof2}
+		testLookupProfile = func(name string, w io.Writer, debug int) error {
+			data := p[0]
+			if len(p) > 1 {
+				p = p[1:]
+			}
+			_, err := w.Write(data)
+			return err
+		}
+		t.Cleanup(func() { testLookupProfile = nil })
+		attachment := pt.Filename()
+		if delta {
+			attachment = "delta-" + attachment
+		}
+		backend := startTestProfiler(t, 2, WithProfileTypes(pt), WithPeriod(10*time.Millisecond), WithDeltaProfiles(delta))
+		out1 = backend.ReceiveProfile(t).attachments[attachment]
+		out2 = backend.ReceiveProfile(t).attachments[attachment]
+		return
+	}
+
 	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
 	for _, test := range tests {
 		for _, profType := range test.Types {
-			// deltaProfiler returns an unstarted profiler that is fed prof1
-			// followed by prof2 when calling runProfile().
-			deltaProfiler := func(prof1, prof2 []byte, opts ...Option) (*profiler, func()) {
-				returnProfs := [][]byte{prof1, prof2}
-				opts = append(opts, WithPeriod(5*time.Millisecond), WithProfileTypes(HeapProfile, MutexProfile, BlockProfile))
-				p, err := unstartedProfiler(opts...)
-				p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
-					_, err := w.Write(returnProfs[0])
-					returnProfs = returnProfs[1:]
-					return err
-				}
-				require.NoError(t, err)
-				return p, func() {}
-			}
-
 			t.Run(profType.String(), func(t *testing.T) {
 				t.Run("enabled", func(t *testing.T) {
 					prof1 := test.Prof1.Protobuf()
 					prof2 := test.Prof2.Protobuf()
-					p, cleanup := deltaProfiler(prof1, prof2)
-					defer cleanup()
-					// first run, should produce the current profile twice (a bit
-					// awkward, but makes sense since we try to add delta profiles as an
-					// additional profile type to ease the transition)
-					profs, err := p.runProfile(profType)
-					require.NoError(t, err)
-					require.Equal(t, 1, len(profs))
-					require.Equal(t, "delta-"+profType.Filename(), profs[0].name)
-					requirePprofEqual(t, prof1, profs[0].data)
+					out1, out2 := deltaProfiler(t, prof1, prof2, profType, true)
+					// First profile is the same since there is no basis for delta
+					requirePprofEqual(t, prof1, out1)
 
-					// second run, should produce p1 profile and delta profile
-					profs, err = p.runProfile(profType)
-					require.NoError(t, err)
-					require.Equal(t, 1, len(profs))
-					require.Equal(t, "delta-"+profType.Filename(), profs[0].name)
-					require.Equal(t, test.WantDelta.String(), protobufToText(profs[0].data))
+					// Compare the text rather than protobuf for the delta,
+					// and we'll separately check the timestamp below
+					require.Equal(t, test.WantDelta.String(), protobufToText(out2))
 
 					// check delta prof details like timestamps and duration
-					deltaProf, err := pprofile.ParseData(profs[0].data)
+					deltaProf, err := pprofile.ParseData(out2)
 					require.NoError(t, err)
 					require.Equal(t, test.Prof2.Time.UnixNano(), deltaProf.TimeNanos)
 					require.Equal(t, deltaPeriod.Nanoseconds(), deltaProf.DurationNanos)
@@ -159,58 +155,17 @@ main;bar 0 0 8 16
 				t.Run("disabled", func(t *testing.T) {
 					prof1 := test.Prof1.Protobuf()
 					prof2 := test.Prof2.Protobuf()
-					p, cleanup := deltaProfiler(prof1, prof2, WithDeltaProfiles(false))
-					defer cleanup()
-
-					profs, err := p.runProfile(profType)
-					require.NoError(t, err)
-					require.Equal(t, 1, len(profs))
+					out1, out2 := deltaProfiler(t, prof1, prof2, profType, false)
+					requirePprofEqual(t, prof1, out1)
+					requirePprofEqual(t, prof2, out2)
 				})
 			})
 		}
 	}
 }
 
-func TestRunProfile(t *testing.T) {
-	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
-	// TODO(felixge): These tests are directly calling the internal runProfile()
-	// function which is brittle. We should refactor them to use the public API.
-	t.Run("delta", func(t *testing.T) {
-		testRunDeltaProfile(t)
-	})
-
-	t.Run("cpu", func(t *testing.T) {
-		p, err := unstartedProfiler(CPUDuration(10*time.Millisecond), WithPeriod(10*time.Millisecond), WithProfileTypes(CPUProfile))
-		p.testHooks.startCPUProfile = func(w io.Writer) error {
-			_, err := w.Write([]byte("my-cpu-profile"))
-			return err
-		}
-		p.testHooks.stopCPUProfile = func() {}
-		require.NoError(t, err)
-		start := time.Now()
-		profs, err := p.runProfile(CPUProfile)
-		end := time.Now()
-		require.NoError(t, err)
-		assert.True(t, end.Sub(start) > 10*time.Millisecond)
-		assert.Equal(t, "cpu.pprof", profs[0].name)
-		assert.Equal(t, []byte("my-cpu-profile"), profs[0].data)
-	})
-
-	t.Run("goroutine", func(t *testing.T) {
-		p, err := unstartedProfiler(WithPeriod(time.Millisecond), WithProfileTypes(GoroutineProfile))
-		p.testHooks.lookupProfile = func(name string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte(name))
-			return err
-		}
-		require.NoError(t, err)
-		profs, err := p.runProfile(GoroutineProfile)
-		require.NoError(t, err)
-		assert.Equal(t, "goroutines.pprof", profs[0].name)
-		assert.Equal(t, []byte("goroutine"), profs[0].data)
-	})
-
-	t.Run("goroutinewait", func(t *testing.T) {
-		const sample = `
+func TestGoroutineWait(t *testing.T) {
+	const sample = `
 goroutine 1 [running]:
 main.main()
 	/example/main.go:152 +0x3d2
@@ -232,100 +187,111 @@ main.main()
 ...additional frames elided...
 `
 
-		p, err := unstartedProfiler(WithPeriod(10*time.Millisecond), WithProfileTypes(expGoroutineWaitProfile))
-		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte(sample))
-			return err
+	testLookupProfile = func(_ string, w io.Writer, _ int) error {
+		_, err := w.Write([]byte(sample))
+		return err
+	}
+	t.Cleanup(func() { testLookupProfile = nil })
+
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "true")
+	// Use gzip compression since the Google pprof package doesn't understand zstd
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "legacy")
+	backend := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond))
+
+	// pro tip: enable line below to inspect the pprof output using cli tools
+	// os.WriteFile(prof.name, prof.data, 0644)
+
+	requireFunctions := func(t *testing.T, s *pprofile.Sample, want []string) {
+		t.Helper()
+		var got []string
+		for _, loc := range s.Location {
+			got = append(got, loc.Line[0].Function.Name)
 		}
+		require.Equal(t, want, got)
+	}
 
-		require.NoError(t, err)
-		profs, err := p.runProfile(expGoroutineWaitProfile)
-		require.NoError(t, err)
-		require.Equal(t, "goroutineswait.pprof", profs[0].name)
-
-		// pro tip: enable line below to inspect the pprof output using cli tools
-		// os.WriteFile(prof.name, prof.data, 0644)
-
-		requireFunctions := func(t *testing.T, s *pprofile.Sample, want []string) {
-			t.Helper()
-			var got []string
-			for _, loc := range s.Location {
-				got = append(got, loc.Line[0].Function.Name)
-			}
-			require.Equal(t, want, got)
-		}
-
-		pp, err := pprofile.Parse(bytes.NewReader(profs[0].data))
-		require.NoError(t, err)
-		// timestamp
-		require.NotEqual(t, int64(0), pp.TimeNanos)
-		// 1 sample type
-		require.Equal(t, 1, len(pp.SampleType))
-		// 3 valid samples, 1 invalid sample (added as comment)
-		require.Equal(t, 3, len(pp.Sample))
-		require.Equal(t, 1, len(pp.Comments))
-		// Wait duration
-		require.Equal(t, []int64{time.Minute.Nanoseconds()}, pp.Sample[1].Value)
-		// Labels
-		require.Equal(t, []string{"running"}, pp.Sample[0].Label["state"])
-		require.Equal(t, []string{"false"}, pp.Sample[0].Label["lockedm"])
-		require.Equal(t, []int64{3}, pp.Sample[1].NumLabel["goid"])
-		require.Equal(t, []string{"id"}, pp.Sample[1].NumUnit["goid"])
-		// Virtual frame for "frames elided" goroutine
-		requireFunctions(t, pp.Sample[2], []string{
-			"main.stackDump",
-			"main.main",
-			"...additional frames elided...",
-		})
-		// Virtual frame go "created by" frame
-		requireFunctions(t, pp.Sample[1], []string{
-			"time.Sleep",
-			"main.indirectShortSleepLoop2",
-		})
+	pp, err := pprofile.Parse(bytes.NewReader(backend.ReceiveProfile(t).attachments["goroutineswait.pprof"]))
+	require.NoError(t, err)
+	// timestamp
+	require.NotEqual(t, int64(0), pp.TimeNanos)
+	// 1 sample type
+	require.Equal(t, 1, len(pp.SampleType))
+	// 3 valid samples, 1 invalid sample (added as comment)
+	require.Equal(t, 3, len(pp.Sample))
+	require.Equal(t, 1, len(pp.Comments))
+	// Wait duration
+	require.Equal(t, []int64{time.Minute.Nanoseconds()}, pp.Sample[1].Value)
+	// Labels
+	require.Equal(t, []string{"running"}, pp.Sample[0].Label["state"])
+	require.Equal(t, []string{"false"}, pp.Sample[0].Label["lockedm"])
+	require.Equal(t, []int64{3}, pp.Sample[1].NumLabel["goid"])
+	require.Equal(t, []string{"id"}, pp.Sample[1].NumUnit["goid"])
+	// Virtual frame for "frames elided" goroutine
+	requireFunctions(t, pp.Sample[2], []string{
+		"main.stackDump",
+		"main.main",
+		"...additional frames elided...",
 	})
+	// Virtual frame go "created by" frame
+	requireFunctions(t, pp.Sample[1], []string{
+		"time.Sleep",
+		"main.indirectShortSleepLoop2",
+	})
+}
 
-	t.Run("goroutineswaitLimit", func(t *testing.T) {
-		// spawGoroutines spawns n goroutines, waits for them to start executing,
-		// and then returns a func to stop them. For more details about `executing`
-		// see:
-		// https://github.com/DataDog/dd-trace-go/pull/942#discussion_r656924335
-		spawnGoroutines := func(n int) func() {
-			executing := make(chan struct{})
-			stopping := make(chan struct{})
+func TestGoroutineWaitLimit(t *testing.T) {
+	// spawGoroutines spawns n goroutines, waits for them to start executing,
+	// and then returns a func to stop them. For more details about `executing`
+	// see:
+	// https://github.com/DataDog/dd-trace-go/pull/942#discussion_r656924335
+	spawnGoroutines := func(n int) func() {
+		executing := make(chan struct{})
+		stopping := make(chan struct{})
+		for range n {
+			go func() {
+				executing <- struct{}{}
+				stopping <- struct{}{}
+			}()
+			<-executing
+		}
+		return func() {
 			for range n {
-				go func() {
-					executing <- struct{}{}
-					stopping <- struct{}{}
-				}()
-				<-executing
-			}
-			return func() {
-				for range n {
-					<-stopping
-				}
+				<-stopping
 			}
 		}
+	}
 
-		goroutines := 100
-		limit := 10
+	goroutines := 100
+	limit := 10
 
-		stop := spawnGoroutines(goroutines)
-		defer stop()
-		t.Setenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
+	stop := spawnGoroutines(goroutines)
+	defer stop()
 
-		p, err := unstartedProfiler(WithProfileTypes(expGoroutineWaitProfile))
-		p.testHooks.lookupProfile = func(_ string, w io.Writer, _ int) error {
-			_, err := w.Write([]byte(""))
-			return err
+	rl := &log.RecordLogger{}
+	defer log.UseLogger(rl)()
+
+	t.Setenv("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES", strconv.Itoa(limit))
+	t.Setenv("DD_PROFILING_WAIT_PROFILE", "true")
+	backend := startTestProfiler(t, 1, WithPeriod(10*time.Millisecond))
+	// Wait for two profiles so we can be sure we would have logged the error from the first one
+	assert.NotContains(t, backend.ReceiveProfile(t).attachments, "goroutineswait.pprof")
+	assert.NotContains(t, backend.ReceiveProfile(t).attachments, "goroutineswait.pprof")
+
+	log.Flush()
+	logs := rl.Logs()
+	for _, l := range logs {
+		_, after, found := strings.Cut(l, "skipping goroutines wait profile: ")
+		if !found {
+			continue
 		}
-		require.NoError(t, err)
-		_, err = p.runProfile(expGoroutineWaitProfile)
 		var errRoutines, errLimit int
-		msg := "skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d"
-		fmt.Sscanf(err.Error(), msg, &errRoutines, &errLimit)
+		msg := "%d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d"
+		fmt.Sscanf(after, msg, &errRoutines, &errLimit)
 		require.GreaterOrEqual(t, errRoutines, goroutines)
 		require.Equal(t, limit, errLimit)
-	})
+		return
+	}
+	t.Errorf("did not see expected error log, got %s", logs)
 }
 
 func Test_goroutineDebug2ToPprof_CrashSafety(t *testing.T) {

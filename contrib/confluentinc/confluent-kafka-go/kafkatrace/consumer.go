@@ -10,6 +10,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 func WrapConsumeEventsChannel[E any, TE Event](tr *Tracer, in chan E, consumer Consumer, translateFn func(E) TE) chan E {
@@ -52,7 +53,7 @@ func WrapConsumeEventsChannel[E any, TE Event](tr *Tracer, in chan E, consumer C
 
 func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(tr.consumerServiceName),
+		instrumentation.ServiceNameWithSource(tr.consumerServiceName, tr.serviceSource),
 		tracer.ResourceName("Consume Topic " + msg.GetTopicPartition().GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageConsumer),
 		tracer.Tag(ext.MessagingKafkaPartition, msg.GetTopicPartition().GetPartition()),

@@ -739,7 +739,7 @@ func (s *Span) setMetaLocked(key, v string) {
 // +checklocksignore — Initialization time, span not yet shared.
 func (s *Span) setMetaInit(key, v string) {
 	if s.meta == nil {
-		s.meta = make(map[string]string, 1)
+		s.meta = initMeta()
 	}
 	delete(s.metrics, key)
 	switch key {
@@ -1227,6 +1227,19 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
+}
+
+// initMeta pre-allocates the meta map with headroom.
+// expectedEntries should be the count of tags known at construction time.
+// The 4/3 factor (≈ inverse of the standard 0.75 load factor) provides
+// ~33% slack so small overestimates don't trigger an immediate rehash.
+func initMeta() map[string]string {
+	// Unconditionally set meta tags: env, version, component, span.kind, language
+	const (
+		expectedEntries = 5
+		loadFactor      = 4 / 3
+	)
+	return make(map[string]string, expectedEntries*loadFactor)
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname

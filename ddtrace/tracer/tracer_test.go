@@ -2312,32 +2312,18 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 	assert.NoError(b, err)
 	defer stop()
 
-	var wg sync.WaitGroup
-	var wgready sync.WaitGroup
-	start := make(chan struct{})
-	for range 10 {
-		wg.Add(1)
-		wgready.Add(1)
-		go func() {
-			defer wg.Done()
-			root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
-			ctx := ContextWithSpan(context.TODO(), root)
-			wgready.Done()
-			<-start
-			for b.Loop() {
-				s, ok := SpanFromContext(ctx)
-				if !ok {
-					b.Error("no span")
-					return
-				}
-				StartSpan("op", ChildOf(s.Context()))
+	b.RunParallel(func(p *testing.PB) {
+		root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+		ctx := ContextWithSpan(context.TODO(), root)
+		for p.Next() {
+			s, ok := SpanFromContext(ctx)
+			if !ok {
+				b.Error("no span")
+				return
 			}
-		}()
-	}
-	wgready.Wait()
-	b.ResetTimer()
-	close(start)
-	wg.Wait()
+			StartSpan("op", ChildOf(s.Context()))
+		}
+	})
 }
 
 func BenchmarkGenSpanID(b *testing.B) {
@@ -2363,8 +2349,10 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		return tracer, transport, nil, nil, err
 	}
 	// These settings are always enabled on the trace-agent.
-	tracer.config.agent.Stats = true
-	tracer.config.agent.DropP0s = true
+	af := tracer.config.agent.load()
+	af.Stats = true
+	af.DropP0s = true
+	tracer.config.agent.store(af)
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		tracer.reportHealthMetrics()
