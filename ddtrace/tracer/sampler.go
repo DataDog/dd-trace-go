@@ -135,15 +135,14 @@ type serviceEnvKey struct {
 const rampUpInterval = time.Second
 
 // defaultSampler is the fallback sampling strategy used when no user-defined
-// trace sampling rules match. In agent mode this is the prioritySampler
-// (per-service rates back-propagated from the agent); in OTLP export mode
-// this is the otelParentBasedAlwaysOnSampler (parentbased_always_on).
+// trace sampling rules match. In "Datadog" mode this is the prioritySampler;
+// in OTLP export mode this is the otelParentBasedAlwaysOnSampler.
 type defaultSampler interface {
-	apply(spn *Span)
+	apply(s *Span)
 }
 
-// otelParentBasedAlwaysOnSampler implements parentbased_always_on: it honores propagated sampling decisions from parents, else keeps every span
-// at rate 1.0. )
+// otelParentBasedAlwaysOnSampler implements parentbased_always_on: it honors
+// propagated sampling decisions from parents, else keeps every span at rate 1.0.
 type otelParentBasedAlwaysOnSampler struct{}
 
 func newOtelParentBasedAlwaysOnSampler() *otelParentBasedAlwaysOnSampler {

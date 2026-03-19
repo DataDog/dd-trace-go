@@ -136,8 +136,7 @@ type tracer struct {
 
 	logDroppedTraces *time.Ticker
 
-	// defaultSampler is the fallback sampler used when no user-defined
-	// trace sampling rules match a span.
+	// defaultSampler is the fallback sampler.
 	defaultSampler defaultSampler
 
 	// pid of the process
