@@ -7,10 +7,13 @@ package aws
 
 import (
 	"math"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	analyticsRate float64
 	errCheck      func(err error) bool
 }
@@ -37,6 +40,7 @@ func defaults(cfg *config) {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

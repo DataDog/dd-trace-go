@@ -2312,32 +2312,18 @@ func BenchmarkStartSpanConcurrent(b *testing.B) {
 	assert.NoError(b, err)
 	defer stop()
 
-	var wg sync.WaitGroup
-	var wgready sync.WaitGroup
-	start := make(chan struct{})
-	for range 10 {
-		wg.Add(1)
-		wgready.Add(1)
-		go func() {
-			defer wg.Done()
-			root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
-			ctx := ContextWithSpan(context.TODO(), root)
-			wgready.Done()
-			<-start
-			for b.Loop() {
-				s, ok := SpanFromContext(ctx)
-				if !ok {
-					b.Error("no span")
-					return
-				}
-				StartSpan("op", ChildOf(s.Context()))
+	b.RunParallel(func(p *testing.PB) {
+		root := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+		ctx := ContextWithSpan(context.TODO(), root)
+		for p.Next() {
+			s, ok := SpanFromContext(ctx)
+			if !ok {
+				b.Error("no span")
+				return
 			}
-		}()
-	}
-	wgready.Wait()
-	b.ResetTimer()
-	close(start)
-	wg.Wait()
+			StartSpan("op", ChildOf(s.Context()))
+		}
+	})
 }
 
 func BenchmarkGenSpanID(b *testing.B) {
@@ -2363,8 +2349,10 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		return tracer, transport, nil, nil, err
 	}
 	// These settings are always enabled on the trace-agent.
-	tracer.config.agent.Stats = true
-	tracer.config.agent.DropP0s = true
+	af := tracer.config.agent.load()
+	af.Stats = true
+	af.DropP0s = true
+	tracer.config.agent.store(af)
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		tracer.reportHealthMetrics()
@@ -2944,7 +2932,10 @@ func TestTracerTwiceStartRuntimeMetrics(t *testing.T) {
 
 // TestTracerTwiceStartRemoteConfig tests how RC behaves during tracer restarts.
 func TestTracerTwiceStartRemoteConfig(t *testing.T) {
-	err := Start()
+	rcOpt := withAgentRemoteConfig(t)
+	defer Stop()
+
+	err := Start(rcOpt)
 	require.NoError(t, err)
 	err = remoteconfig.RegisterProduct("testing")
 	require.NoError(t, err)
@@ -2954,7 +2945,7 @@ func TestTracerTwiceStartRemoteConfig(t *testing.T) {
 	require.True(t, got)
 	require.NoError(t, err)
 
-	err = Start()
+	err = Start(rcOpt)
 	require.NoError(t, err)
 	got, err = remoteconfig.HasProduct("testing")
 	require.False(t, got)
@@ -2970,11 +2961,13 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	var wg sync.WaitGroup
 
 	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "0.01") // Set aggresive poll interval
+	rcOpt := withAgentRemoteConfig(t)                          // create mock server once, reuse in loop
+	defer Stop()
 
 	// Goroutine 1: Continuously start the tracer
 	wg.Go(func() {
 		for range iterations {
-			Start()
+			Start(rcOpt)
 		}
 	})
 
@@ -2992,7 +2985,7 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	Stop()
 
 	// Now verify that starting the tracer enables remote config
-	err := Start()
+	err := Start(rcOpt)
 	require.NoError(t, err)
 
 	// Register a remote config product

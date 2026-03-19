@@ -53,11 +53,12 @@ func BeforeHandle[T any, WT Router](
 	spanOpts = append(spanOpts, httptrace.HeaderTagsFromRequest(req, cfg.headerTags))
 
 	serveCfg := &httptrace.ServeConfig{
-		Framework: "github.com/julienschmidt/httprouter",
-		Service:   cfg.serviceName,
-		Resource:  resource,
-		SpanOpts:  spanOpts,
-		Route:     route,
+		Framework:     "github.com/julienschmidt/httprouter",
+		Service:       cfg.serviceName,
+		ServiceSource: cfg.serviceSource,
+		Resource:      resource,
+		SpanOpts:      spanOpts,
+		Route:         route,
 	}
 	return httptrace.BeforeHandle(serveCfg, w, req)
 }

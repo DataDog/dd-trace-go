@@ -83,6 +83,10 @@ var (
 			assert.Equal(t, "aws.sqs.request", spans[2].OperationName())
 			assert.Equal(t, "aws.sns.request", spans[3].OperationName())
 		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        harness.RepeatString(string(instrumentation.PackageAWSSDKGo), 4),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 4),
+		},
 	}
 
 	awsSDKV1Messaging = harness.TestCase{
@@ -143,6 +147,10 @@ var (
 			Defaults:        []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
 			DDService:       []string{"aws.sqs", "aws.sqs", "aws.sqs", "aws.sns", "aws.sns"},
 			ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 5),
+		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        harness.RepeatString(string(instrumentation.PackageAWSSDKGo), 5),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 5),
 		},
 	}
 )

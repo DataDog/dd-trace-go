@@ -12,6 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 )
 
@@ -22,6 +23,9 @@ type ServeConfig struct {
 	// Service specifies the service name to use. If left blank, the global service name
 	// will be inherited.
 	Service string
+	// ServiceSource specifies the origin of the service name (e.g. "opt.wrap_handler", "opt.with_service")
+	// and is used to populate the _dd.svc_src tag for service name precedence decisions.
+	ServiceSource string
 	// Resource optionally specifies the resource name for this request.
 	Resource string
 	// QueryParams should be true in order to append the URL query values to the  "http.url" tag.
@@ -53,7 +57,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	opts[0] = tracer.Tag(ext.SpanKind, ext.SpanKindServer)
 	opts[1] = tracer.Tag(ext.Component, "net/http")
 	if cfg.Service != "" {
-		opts = append(opts, tracer.ServiceName(cfg.Service))
+		opts = append(opts, tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: cfg.Service, Source: cfg.ServiceSource}))
 	}
 	if cfg.Resource != "" {
 		opts = append(opts, tracer.ResourceName(cfg.Resource))

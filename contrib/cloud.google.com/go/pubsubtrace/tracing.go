@@ -66,7 +66,7 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 	}
 	if cfg.serviceName != "" {
-		spanOpts = append(spanOpts, tracer.ServiceName(cfg.serviceName))
+		spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 	}
 	if cfg.measured {
 		spanOpts = append(spanOpts, tracer.Measured())
@@ -116,7 +116,7 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 			tracer.ChildOf(parentSpanCtx),
 		}
 		if cfg.serviceName != "" {
-			opts = append(opts, tracer.ServiceName(cfg.serviceName))
+			opts = append(opts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 		}
 		if cfg.measured {
 			opts = append(opts, tracer.Measured())
