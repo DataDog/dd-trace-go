@@ -136,8 +136,9 @@ type tracer struct {
 
 	logDroppedTraces *time.Ticker
 
-	// prioritySampling holds an instance of the priority sampler.
-	prioritySampling *prioritySampler
+	// defaultSampler is the fallback sampler used when no user-defined
+	// trace sampling rules match a span.
+	defaultSampler defaultSampler
 
 	// pid of the process
 	pid int
@@ -407,7 +408,6 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	if err != nil {
 		return nil, err
 	}
-	sampler := newPrioritySampler()
 	statsd, err := newStatsdClient(c)
 	if err != nil {
 		log.Error("Runtime and health metrics disabled: %s", err.Error())
@@ -420,12 +420,18 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		}
 	}()
 	var writer traceWriter
+	var dfltSampler defaultSampler
 	if c.internalConfig.CIVisibilityEnabled() {
 		writer = newCiVisibilityTraceWriter(c)
 	} else if c.internalConfig.LogToStdout() {
 		writer = newLogTraceWriter(c, statsd)
+	} else if c.otlpExportMode {
+		dfltSampler = newOtelParentBasedAlwaysOnSampler()
+		writer = newOTLPTraceWriter(c)
 	} else {
-		writer = newAgentTraceWriter(c, sampler, statsd)
+		ps := newPrioritySampler()
+		dfltSampler = ps
+		writer = newAgentTraceWriter(c, ps, statsd)
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
@@ -469,7 +475,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    rulesSampler,
-		prioritySampling: sampler,
+		defaultSampler:   dfltSampler,
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
@@ -1137,7 +1143,7 @@ func (t *tracer) sample(span *Span) {
 	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
-	t.prioritySampling.apply(span)
+	t.defaultSampler.apply(span)
 }
 
 // +checklocksignore — Initialization time, called from spanStart before span is shared.
