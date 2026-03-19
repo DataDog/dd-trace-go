@@ -2349,8 +2349,10 @@ func startTestTracer(t testing.TB, opts ...StartOption) (trc *tracer, transport 
 		return tracer, transport, nil, nil, err
 	}
 	// These settings are always enabled on the trace-agent.
-	tracer.config.agent.Stats = true
-	tracer.config.agent.DropP0s = true
+	af := tracer.config.agent.load()
+	af.Stats = true
+	af.DropP0s = true
+	tracer.config.agent.store(af)
 	setGlobalTracer(tracer)
 	flushFunc := func(n int) {
 		tracer.reportHealthMetrics()
@@ -2930,7 +2932,10 @@ func TestTracerTwiceStartRuntimeMetrics(t *testing.T) {
 
 // TestTracerTwiceStartRemoteConfig tests how RC behaves during tracer restarts.
 func TestTracerTwiceStartRemoteConfig(t *testing.T) {
-	err := Start()
+	rcOpt := withAgentRemoteConfig(t)
+	defer Stop()
+
+	err := Start(rcOpt)
 	require.NoError(t, err)
 	err = remoteconfig.RegisterProduct("testing")
 	require.NoError(t, err)
@@ -2940,7 +2945,7 @@ func TestTracerTwiceStartRemoteConfig(t *testing.T) {
 	require.True(t, got)
 	require.NoError(t, err)
 
-	err = Start()
+	err = Start(rcOpt)
 	require.NoError(t, err)
 	got, err = remoteconfig.HasProduct("testing")
 	require.False(t, got)
@@ -2956,11 +2961,13 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	var wg sync.WaitGroup
 
 	t.Setenv("DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS", "0.01") // Set aggresive poll interval
+	rcOpt := withAgentRemoteConfig(t)                          // create mock server once, reuse in loop
+	defer Stop()
 
 	// Goroutine 1: Continuously start the tracer
 	wg.Go(func() {
 		for range iterations {
-			Start()
+			Start(rcOpt)
 		}
 	})
 
@@ -2978,7 +2985,7 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	Stop()
 
 	// Now verify that starting the tracer enables remote config
-	err := Start()
+	err := Start(rcOpt)
 	require.NoError(t, err)
 
 	// Register a remote config product
