@@ -67,7 +67,7 @@ func withAgentRemoteConfig(t testing.TB) StartOption {
 	t.Cleanup(srv.Close)
 	u, _ := url.Parse(srv.URL)
 	return func(c *config) {
-		c.agentURL = u
+		c.internalConfig.SetAgentURL(u, internalconfig.OriginCode)
 	}
 }
 
