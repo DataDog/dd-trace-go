@@ -270,7 +270,8 @@ func (ps *prioritySampler) apply(spn *Span) {
 	// received. The initial default rate (1.0) is a client-side fallback that
 	// does not represent an agent-configured rate, so it must not propagate
 	// as _dd.p.ksr to stay consistent with other tracers.
-	if loaded {
-		spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	if !loaded {
+		return
 	}
+	spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
 }
