@@ -419,7 +419,8 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		}
 	}()
 	var writer traceWriter
-	var dfltSampler defaultSampler
+	ps := newPrioritySampler()
+	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
 		writer = newCiVisibilityTraceWriter(c)
 	} else if c.internalConfig.LogToStdout() {
@@ -428,8 +429,6 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 	} else {
-		ps := newPrioritySampler()
-		dfltSampler = ps
 		writer = newAgentTraceWriter(c, ps, statsd)
 	}
 	traces, spans, err := samplingRulesFromEnv()
