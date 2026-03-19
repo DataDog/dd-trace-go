@@ -533,8 +533,8 @@ func apmTracingDisabled(c *config) {
 }
 
 // resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
-// address and the agent-reported port. If the agent reports a port, it will be used
-// instead of the user-defined address' port. UDS paths are honored regardless of the
+// address and the agent-reported port. If the agent reports a port, it is used unless
+// the user explicitly set DD_DOGSTATSD_PORT. UDS paths are honored regardless of the
 // agent-reported port.
 func resolveDogstatsdAddr(addr string, af agentFeatures) string {
 	if addr == "" {
@@ -546,6 +546,10 @@ func resolveDogstatsdAddr(addr string, af agentFeatures) string {
 	if agentport == 0 {
 		// the agent didn't report a port; use the already resolved address as
 		// features are loaded from the trace-agent, which might be not running
+		return addr
+	}
+	if env.Get("DD_DOGSTATSD_PORT") != "" {
+		// user explicitly configured the port via env var; keep that value
 		return addr
 	}
 	// the agent reported a port
@@ -563,8 +567,7 @@ func resolveDogstatsdAddr(addr string, af agentFeatures) string {
 		// no host was provided; use the default hostname
 		host = defaultHostname
 	}
-	// use agent-reported address if it differs from the user-defined TCP-based protocol URI
-	// we have a valid host:port address; replace the port because the agent knows better
+	// use agent-reported port when no explicit DD_DOGSTATSD_PORT was provided.
 	addr = net.JoinHostPort(host, strconv.Itoa(agentport))
 	return addr
 }
@@ -1163,7 +1166,8 @@ func WithRuntimeMetrics() StartOption {
 // attempts to determine the address of the statsd service according to the following rules:
 //  1. Look for /var/run/datadog/dsd.socket and use it if present. IF NOT, continue to #2.
 //  2. The host is determined by DD_AGENT_HOST, and defaults to "localhost"
-//  3. The port is retrieved from the agent. If not present, it is determined by DD_DOGSTATSD_PORT, and defaults to 8125
+//  3. If DD_DOGSTATSD_PORT is set, use it. Otherwise the port is retrieved from the agent.
+//     If the agent does not provide one, it defaults to 8125.
 //
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddr(addr string) StartOption {
