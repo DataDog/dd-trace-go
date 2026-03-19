@@ -7,7 +7,7 @@ package tracing
 
 import (
 	"math"
-	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -26,8 +26,7 @@ type Tracer struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	kafkaCfg            KafkaConfig
-	clusterID           string
-	clusterIDMu         sync.RWMutex
+	clusterID           atomic.Value // +checkatomic
 }
 
 // Option describes options for the Kafka integration.
@@ -101,15 +100,12 @@ func (tr *Tracer) DSMEnabled() bool {
 }
 
 func (tr *Tracer) ClusterID() string {
-	tr.clusterIDMu.RLock()
-	defer tr.clusterIDMu.RUnlock()
-	return tr.clusterID
+	v, _ := tr.clusterID.Load().(string)
+	return v
 }
 
 func (tr *Tracer) SetClusterID(id string) {
-	tr.clusterIDMu.Lock()
-	defer tr.clusterIDMu.Unlock()
-	tr.clusterID = id
+	tr.clusterID.Store(id)
 }
 
 func Logger() instrumentation.Logger {
