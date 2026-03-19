@@ -615,7 +615,9 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 	return nil
 }
 
-// instrumentTestingParallel helper function to instrument the Parallel method of a `*testing.T` instance
+// instrumentTestingParallel forwards Parallel to the original wrapped test when
+// the current *testing.T is a Datadog-managed clone. It returns true when the
+// caller must skip the local stdlib Parallel implementation.
 //
 //go:linkname instrumentTestingParallel
 func instrumentTestingParallel(t *testing.T) bool {
