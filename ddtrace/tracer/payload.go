@@ -51,7 +51,7 @@ type payload interface {
 func newPayload(protocol float64) payload {
 	if protocol == traceProtocolV1 {
 		return &safePayload{
-			p: newPayloadV1(),
+			p: getPayloadV1(),
 		}
 	}
 	return &safePayload{
