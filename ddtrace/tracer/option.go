@@ -658,6 +658,10 @@ type agentFeatures struct {
 	// Notably, the Datadog Lambda extension does not expose this endpoint.
 	hasTelemetryProxy bool
 
+	// hasRemoteConfig reports whether the trace-agent has remote configuration
+	// enabled, as indicated by the presence of /v0.7/config in its endpoints.
+	hasRemoteConfig bool
+
 	// reachable reports whether the trace-agent was reachable at startup and
 	// responded successfully to the /info endpoint. When false, the agent may
 	// simply be unreachable due to a transient startup issue, so the telemetry
@@ -776,6 +780,8 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 			}
 		case "/telemetry/proxy/":
 			features.hasTelemetryProxy = true
+		case "/v0.7/config":
+			features.hasRemoteConfig = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))

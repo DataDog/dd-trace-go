@@ -463,7 +463,18 @@ func TestTraceProtocol(t *testing.T) {
 
 	t.Run("v1.0, no endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
-		cfg, err := newTestConfig()
+
+		// Create a mock agent endpoint to mimic having no v1 trace endpoint
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"config": {"statsd_port": 8125}}`))
+		}))
+		defer srv.Close()
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
@@ -783,13 +794,13 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 	}{
 		{
 			name:        "v0.4-protocol",
-			newPayload:  func() payload { return newPayloadV04() },
+			newPayload:  func() payload { return newPayload(traceProtocolV04) },
 			description: "v0.4 encodes eagerly, size is accurate immediately",
 			size:        1934,
 		},
 		{
 			name:        "v1-protocol",
-			newPayload:  func() payload { return newPayloadV1() },
+			newPayload:  func() payload { return newPayload(traceProtocolV1) },
 			description: "v1 now encodes eagerly, size is accurate immediately",
 			size:        821,
 		},
@@ -836,6 +847,36 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			assert.Equal(int64(1), flushTraces, "should report 1 trace flushed")
 		})
 	}
+}
+
+// TestAgentWriterV1FlushPayloadRecycling is a regression test for the panic:
+//
+//	interface conversion: tracer.payload is *tracer.safePayload, not *tracer.payloadV1
+//
+// The panic occurred in the flush goroutine's deferred cleanup when it tried to
+// return the payloadV1 to its pool via p.(*payloadV1), but newPayload() always
+// wraps the inner payload in a *safePayload. The fix unwraps: p.(*safePayload).p.(*payloadV1).
+func TestAgentWriterV1FlushPayloadRecycling(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+	cfg, err := newTestConfig(
+		withStatsdClient(&tg),
+		func(c *config) {
+			c.traceProtocol = traceProtocolV1
+			c.transport = &simpleTransport{}
+		},
+	)
+	require.NoError(t, err)
+
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+
+	// newPayload() always returns *safePayload — asserting p.(*payloadV1) directly panics.
+	require.IsType(t, &safePayload{}, writer.payload,
+		"payload must be *safePayload to cover the regression path")
+
+	writer.add([]*Span{makeSpan(1)})
+	// Must not panic: "interface conversion: tracer.payload is *tracer.safePayload, not *tracer.payloadV1"
+	writer.flush()
+	writer.wg.Wait()
 }
 
 // TestPayloadSizeConsistency validates that size reporting is consistent
