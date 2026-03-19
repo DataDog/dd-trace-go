@@ -8,7 +8,7 @@ package sarama
 import (
 	"context"
 	"math"
-	"sync"
+	"sync/atomic"
 
 	"github.com/Shopify/sarama"
 
@@ -25,22 +25,18 @@ type config struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	groupID             string
-	clusterID           string
-	clusterIDMu         sync.RWMutex
+	clusterID           atomic.Value // +checkatomic
 	brokerAddrs         []string
 	saramaConfig        *sarama.Config
 }
 
 func (cfg *config) ClusterID() string {
-	cfg.clusterIDMu.RLock()
-	defer cfg.clusterIDMu.RUnlock()
-	return cfg.clusterID
+	v, _ := cfg.clusterID.Load().(string)
+	return v
 }
 
 func (cfg *config) SetClusterID(id string) {
-	cfg.clusterIDMu.Lock()
-	defer cfg.clusterIDMu.Unlock()
-	cfg.clusterID = id
+	cfg.clusterID.Store(id)
 }
 
 func defaults(cfg *config) {
