@@ -307,9 +307,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	if v := c.internalConfig.ServiceName(); v != "" {
-		globalconfig.SetServiceName(v)
-	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := env.Get("DD_TRACE_HEADER_TAGS"); v != "" {
 		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
@@ -417,6 +414,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 			// In this case, don't set a global service name so the contribs continue using their defaults.
 			c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), internalconfig.OriginDefault)
 		}
+	} else {
+		globalconfig.SetServiceName(c.internalConfig.ServiceName())
 	}
 	if c.transport == nil {
 		c.transport = newHTTPTransport(c.internalConfig.AgentURL().String(), c.httpClient)
