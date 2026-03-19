@@ -258,7 +258,7 @@ func (ps *prioritySampler) getDefaultRate() float64 {
 func (ps *prioritySampler) apply(spn *Span) {
 	ps.mu.RLock()
 	rate := ps.getRateLocked(spn)
-	loaded := ps.agentRatesLoaded
+	fromAgent := ps.agentRatesLoaded
 	ps.mu.RUnlock()
 	if sampledByRate(spn.traceID, rate) {
 		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
