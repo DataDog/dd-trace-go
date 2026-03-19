@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"sync/atomic"
 
 	"github.com/tinylib/msgp/msgp"
@@ -103,6 +104,19 @@ type payloadV1 struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
+
+	// chunkAttr is a reusable map for per-push chunk attributes,
+	// avoiding a new map allocation on each push.
+	chunkAttr map[string]anyValue
+
+	// staticEncoded tracks whether static fields (2–10) and the array32
+	// placeholder have been written to buf for this payload cycle.
+	staticEncoded bool
+
+	// processTagsCached holds the cached anyValue for process tags,
+	// avoiding repeated boxing of the string into any.
+	processTagsCached anyValue
+	processTagsStr    string
 }
 
 // newPayloadV1 returns a ready to use payloadV1.
@@ -110,9 +124,25 @@ func newPayloadV1() *payloadV1 {
 	return &payloadV1{
 		attributes: make(map[string]anyValue),
 		chunks:     make([]traceChunk, 0),
-		readOff:    0,
-		writeOff:   0,
+		header:     make([]byte, 0, 8),
+		chunkAttr:  make(map[string]anyValue),
 	}
+}
+
+var payloadV1Pool = sync.Pool{
+	New: func() any {
+		return newPayloadV1()
+	},
+}
+
+func getPayloadV1() *payloadV1 {
+	p := payloadV1Pool.Get().(*payloadV1)
+	p.clear()
+	return p
+}
+
+func putPayloadV1(p *payloadV1) {
+	payloadV1Pool.Put(p)
 }
 
 // push pushes a new item (a traceChunk) into the payload.
@@ -128,7 +158,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 	// For now, we blindly set the origin, priority, and attributes values for the chunk
 	// In the future, attributes should hold values that are shared across all chunks in the payload
 	origin, priority, sm, traceID := "", 0, uint32(0), [16]byte{}
-	attr := make(map[string]anyValue)
+	clear(p.chunkAttr)
 	for _, span := range t {
 		if span == nil {
 			continue
@@ -140,8 +170,8 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 
 		// If we haven't seen the service yet, we set it blindly assuming that all the spans created by
 		// a service must share the same value.
-		if _, ok := attr["service"]; !ok {
-			attr["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
+		if _, ok := p.chunkAttr["service"]; !ok {
+			p.chunkAttr["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
 		}
 
 		binary.BigEndian.PutUint64(traceID[:8], span.Context().traceID.Upper())
@@ -176,7 +206,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		origin:            origin,
 		traceID:           traceID[:],
 		samplingMechanism: uint32(sm),
-		attributes:        attr,
+		attributes:        p.chunkAttr,
 	}
 
 	// Append process tags to the payload attributes
@@ -190,8 +220,17 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 
 	// First push: encode static fields (2–10) once and write the array32
 	// placeholder for field 11. Subsequent pushes only append new chunk bytes.
-	if p.st == nil {
-		p.st = newStringTable()
+	if !p.staticEncoded {
+		p.staticEncoded = true
+		if p.st == nil {
+			p.st = newStringTable()
+		} else {
+			p.st.reset()
+		}
+		// Pre-size buffer based on estimated span encoding size.
+		if estimatedSize := len(t) * 300; estimatedSize > cap(p.buf) {
+			p.buf = make([]byte, 0, estimatedSize)
+		}
 		p.buf = encodeField(p.buf, p.bm, 2, p.containerID, p.st)
 		p.buf = encodeField(p.buf, p.bm, 3, p.languageName, p.st)
 		p.buf = encodeField(p.buf, p.bm, 4, p.languageVersion, p.st)
@@ -255,9 +294,10 @@ func (p *payloadV1) clear() {
 	p.bm = 0
 	p.buf = p.buf[:0]
 	p.reader = nil
-	p.header = nil
+	// header is pre-allocated; keep backing array, reset length for sentinel check.
+	p.header = p.header[:0]
 	p.readOff = 0
-	p.st = nil
+	p.staticEncoded = false
 	p.staticBufLen = 0
 	p.chunksCountOff = 0
 	p.chunks = p.chunks[:0]
@@ -290,9 +330,7 @@ func (p *payloadV1) protocol() float64 {
 }
 
 func (p *payloadV1) updateHeader() {
-	if len(p.header) == 0 {
-		p.header = make([]byte, 8)
-	}
+	p.header = p.header[:cap(p.header)]
 	n := atomic.LoadUint32(&p.fields)
 	switch {
 	case n <= 15:
@@ -318,10 +356,14 @@ func (p *payloadV1) setProcessTags() {
 	if pTags == "" {
 		return
 	}
-	p.attributes[keyProcessTags] = anyValue{
-		valueType: StringValueType,
-		value:     pTags,
+	if p.processTagsStr != pTags {
+		p.processTagsCached = anyValue{
+			valueType: StringValueType,
+			value:     pTags,
+		}
+		p.processTagsStr = pTags
 	}
+	p.attributes[keyProcessTags] = p.processTagsCached
 }
 
 func (p *payloadV1) Close() error {
@@ -353,11 +395,8 @@ func (p *payloadV1) Read(b []byte) (n int, err error) {
 }
 
 func (p *payloadV1) update() {
-	if len(p.header) == 0 {
-		p.header = make([]byte, 8)
-	}
 	p.updateHeader()
-	if p.st != nil {
+	if p.staticEncoded {
 		// Incremental encoding: p.buf has already been populated by push().
 		return
 	}
@@ -783,7 +822,6 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 	}
 	p.buf = o
 	atomic.StoreUint32(&p.fields, numFields)
-	p.header = make([]byte, 8)
 	p.updateHeader()
 
 	st := newStringTable()
@@ -976,11 +1014,22 @@ type stringTable struct {
 }
 
 func newStringTable() *stringTable {
-	return &stringTable{
-		strings:   []stringValue{""},
-		indices:   map[stringValue]index{"": 0},
+	st := &stringTable{
+		strings:   make([]stringValue, 1, 64),
+		indices:   make(map[stringValue]index, 64),
 		nextIndex: 1,
 	}
+	st.strings[0] = ""
+	st.indices[""] = 0
+	return st
+}
+
+func (st *stringTable) reset() {
+	clear(st.indices)
+	st.indices[""] = 0
+	st.strings = st.strings[:1]
+	st.strings[0] = ""
+	st.nextIndex = 1
 }
 
 // Adds a string to the string table if it does not already exist.
