@@ -558,7 +558,7 @@ func benchmarkPayloadThroughput(count int) func(*testing.B) {
 			atomic.StoreUint32(&p.count, 0)
 			p.buf.Reset()
 		}
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			reset()
 			for p.stats().size < payloadMaxLimit {
 				_, _ = p.push(trace)
@@ -692,7 +692,7 @@ func BenchmarkPayloadPush(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				p := newPayloadV04()
 				_, _ = p.push(spans)
 			}
@@ -727,7 +727,7 @@ func BenchmarkPayloadStats(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				stats := p.stats()
 				_ = stats.size
 				_ = stats.itemCount
@@ -748,7 +748,7 @@ func BenchmarkPayloadConcurrentAccess(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				var wg sync.WaitGroup
 
 				for range concurrency {
@@ -802,8 +802,9 @@ func BenchmarkPayloadVersions(b *testing.B) {
 		b.Run(fmt.Sprintf("simple_%dspans/v1.0", n), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				p := newPayloadV1()
+				p := getPayloadV1()
 				_, _ = p.push(spans)
+				putPayloadV1(p)
 			}
 		})
 
@@ -818,8 +819,21 @@ func BenchmarkPayloadVersions(b *testing.B) {
 		b.Run(fmt.Sprintf("detailed_%dspans/v1.0", n), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				p := newPayloadV1()
+				p := getPayloadV1()
 				_, _ = p.push(detailedSpans)
+				putPayloadV1(p)
+			}
+		})
+
+		b.Run(fmt.Sprintf("metastruct_%dspans/v1.0", n), func(b *testing.B) {
+			metaStructSpans := newSpanList(n)
+			createMetaStructMap(metaStructSpans)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p := newPayloadV1()
+				_, _ = p.push(metaStructSpans)
 			}
 		})
 	}

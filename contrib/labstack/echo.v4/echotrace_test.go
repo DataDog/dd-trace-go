@@ -733,7 +733,7 @@ func BenchmarkEchoWithTracing(b *testing.B) {
 	w := httptest.NewRecorder()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mux.ServeHTTP(w, r)
 	}
 }

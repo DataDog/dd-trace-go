@@ -18,7 +18,7 @@ func BenchmarkParseSymbol(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, tc := range testCases {
 			_ = parseSymbol(tc)
 		}

@@ -18,14 +18,14 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Configure AWS Credentials via OIDC (Build-Stable)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
         with:
           role-to-assume: arn:aws:iam::486234852809:role/dd-trace-go-github-actions
           role-session-name: dd-trace-go-lambda-${{ github.run_id }}
           aws-region: us-east-1
 
       - name: Configure AWS Credentials for Serverless Sandbox
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v6.0.0
         with:
           role-to-assume: arn:aws:iam::425362996713:role/gha-dd-trace-lambda-integration-test
           role-session-name: dd-trace-go-lambda-${{ github.run_id }}
@@ -33,7 +33,7 @@ jobs:
           role-chaining: true
 
       - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version: '1.26'
 

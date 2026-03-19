@@ -28,6 +28,27 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+// findSetHeader searches for a header by key name in a slice of HeaderValueOption,
+// returning (value, true) if found, or ("", false) if not found. This is
+// order-independent since http.Header iteration is non-deterministic.
+func findSetHeader(headers []*v3.HeaderValueOption, key string) (string, bool) {
+	for _, h := range headers {
+		if h.GetHeader().Key == key {
+			return string(h.GetHeader().RawValue), true
+		}
+	}
+	return "", false
+}
+
+// requireSetHeader asserts that a header with the given key exists in headers
+// and that its value equals the expected value.
+func requireSetHeader(t *testing.T, headers []*v3.HeaderValueOption, key, expectedValue string) {
+	t.Helper()
+	val, ok := findSetHeader(headers, key)
+	require.True(t, ok, "expected header %q to be present in SetHeaders", key)
+	require.Equal(t, expectedValue, val, "unexpected value for header %q", key)
+}
+
 func TestAppSec(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/user_rules.json")
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "10ms")
@@ -98,8 +119,7 @@ func TestAppSec(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
 
 		err = stream.CloseSend()
@@ -130,8 +150,7 @@ func TestAppSec(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
 
 		err = stream.CloseSend()
@@ -162,8 +181,7 @@ func TestAppSec(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
 
 		err = stream.CloseSend()
@@ -223,8 +241,7 @@ func TestAppSec(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
 
 		err = stream.CloseSend()
@@ -392,8 +409,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
 
 		err = stream.CloseSend()
@@ -425,9 +441,8 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code) // 418 because of the rule file
-		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 1)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 2)
+		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
 
 		err = stream.CloseSend()
@@ -478,9 +493,8 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(418), res.GetImmediateResponse().GetStatus().Code) // 418 because of the rule file
-		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 1)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		require.Len(t, res.GetImmediateResponse().GetHeaders().SetHeaders, 2)
+		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
 
 		err = stream.CloseSend()
@@ -545,8 +559,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
 
 		err = stream.CloseSend()
@@ -615,8 +628,7 @@ func TestAppSecBodyParsingEnabled(t *testing.T) {
 		require.IsType(t, &envoyextproc.ProcessingResponse_ImmediateResponse{}, res.GetResponse())
 		require.Equal(t, uint32(0), res.GetImmediateResponse().GetGrpcStatus().Status)
 		require.Equal(t, envoytypes.StatusCode(403), res.GetImmediateResponse().GetStatus().Code)
-		require.Equal(t, "Content-Type", res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().Key)
-		require.Equal(t, "application/json", string(res.GetImmediateResponse().GetHeaders().SetHeaders[0].GetHeader().RawValue))
+		requireSetHeader(t, res.GetImmediateResponse().GetHeaders().SetHeaders, "Content-Type", "application/json")
 		require.NoError(t, err)
 
 		err = stream.CloseSend()

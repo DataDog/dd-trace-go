@@ -42,7 +42,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
-			tracer.ServiceName(cfg.serviceName),
+			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 			tracer.Tag(ext.HTTPMethod, c.Method()),
 			tracer.Tag(ext.HTTPURL, string(c.Request().URI().PathOriginal())),
 			tracer.Measured(),

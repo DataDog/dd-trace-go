@@ -6,6 +6,11 @@
 package openfeature
 
 import (
+	"encoding/json"
+	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -579,140 +584,6 @@ func TestEvaluateAllocation(t *testing.T) {
 	}
 }
 
-func TestEvaluateFlag(t *testing.T) {
-	tests := []struct {
-		name           string
-		flag           *flag
-		defaultValue   any
-		context        map[string]any
-		expectedValue  any
-		expectedReason of.Reason
-	}{
-		{
-			name: "disabled flag returns default",
-			flag: &flag{
-				Key:           "test-flag",
-				Enabled:       false,
-				VariationType: valueTypeBoolean,
-			},
-			defaultValue:   false,
-			context:        map[string]any{},
-			expectedValue:  false,
-			expectedReason: of.DisabledReason,
-		},
-		{
-			name: "enabled flag with matching allocation",
-			flag: &flag{
-				Key:           "test-flag",
-				Enabled:       true,
-				VariationType: valueTypeBoolean,
-				Variations: map[string]*variant{
-					"on":  {Key: "on", Value: true},
-					"off": {Key: "off", Value: false},
-				},
-				Allocations: []*allocation{
-					{
-						Key: "allocation1",
-						Rules: []*rule{
-							{
-								Conditions: []*condition{
-									{
-										Operator:  operatorOneOf,
-										Attribute: "country",
-										Value:     []string{"US"},
-									},
-								},
-							},
-						},
-						Splits: []*split{
-							{
-								Shards: []*shard{
-									{
-										Salt: "test",
-										Ranges: []*shardRange{
-											{Start: 0, End: 8192},
-										},
-										TotalShards: 8192,
-									},
-								},
-								VariationKey: "on",
-							},
-						},
-					},
-				},
-			},
-			defaultValue: false,
-			context: map[string]any{
-				"country":      "US",
-				"targetingKey": "user-123",
-			},
-			expectedValue:  true,
-			expectedReason: of.TargetingMatchReason,
-		},
-		{
-			name: "enabled flag with no matching allocation",
-			flag: &flag{
-				Key:           "test-flag",
-				Enabled:       true,
-				VariationType: valueTypeBoolean,
-				Variations: map[string]*variant{
-					"on":  {Key: "on", Value: true},
-					"off": {Key: "off", Value: false},
-				},
-				Allocations: []*allocation{
-					{
-						Key: "allocation1",
-						Rules: []*rule{
-							{
-								Conditions: []*condition{
-									{
-										Operator:  operatorOneOf,
-										Attribute: "country",
-										Value:     []string{"CA"},
-									},
-								},
-							},
-						},
-						Splits: []*split{
-							{
-								Shards: []*shard{
-									{
-										Salt: "test",
-										Ranges: []*shardRange{
-											{Start: 0, End: 8192},
-										},
-										TotalShards: 8192,
-									},
-								},
-								VariationKey: "on",
-							},
-						},
-					},
-				},
-			},
-			defaultValue: false,
-			context: map[string]any{
-				"country":      "US",
-				"targetingKey": "user-123",
-			},
-			expectedValue:  false,
-			expectedReason: of.DefaultReason,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := evaluateFlag(tt.flag, tt.defaultValue, tt.context)
-			if result.Value != tt.expectedValue {
-				t.Errorf("expected value=%v, got value=%v", tt.expectedValue, result.Value)
-			}
-			if result.Reason != tt.expectedReason {
-				t.Errorf("expected reason=%s, got reason=%s", tt.expectedReason, result.Reason)
-			}
-		})
-	}
-}
-
 func TestComputeShardIndex(t *testing.T) {
 	// Test consistency: same input should always produce same output
 	key1 := computeShardIndex("salt1", "user-123", 8192)
@@ -759,6 +630,63 @@ func TestValidateVariantType(t *testing.T) {
 			err := validateVariantType(tt.value, tt.expectedType)
 			if (err != nil) != tt.expectError {
 				t.Errorf("expected error=%v, got error=%v", tt.expectError, err)
+			}
+		})
+	}
+}
+
+func TestEvaluateFlag_JSONFixtures(t *testing.T) {
+	configData, err := os.ReadFile(filepath.Join("testdata", "ufc-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg universalFlagsConfiguration
+	if err := json.Unmarshal(configData, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := filepath.Glob(filepath.Join("testdata", "evaluation-cases", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no evaluation-case fixture files found")
+	}
+
+	for _, file := range files {
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cases []struct {
+				Flag         string         `json:"flag"`
+				DefaultValue any            `json:"defaultValue"`
+				TargetingKey string         `json:"targetingKey"`
+				Attributes   map[string]any `json:"attributes"`
+				Result       struct {
+					Value  any    `json:"value"`
+					Reason string `json:"reason"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal(data, &cases); err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			for i, tc := range cases {
+				t.Run(fmt.Sprintf("case%d/%s", i, tc.TargetingKey), func(t *testing.T) {
+					ctx := make(map[string]any, len(tc.Attributes)+1)
+					maps.Copy(ctx, tc.Attributes)
+					ctx["targetingKey"] = tc.TargetingKey
+
+					result := evaluateFlag(cfg.Flags[tc.Flag], tc.DefaultValue, ctx)
+
+					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
+						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)
+					}
+					if result.Reason != of.Reason(tc.Result.Reason) {
+						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					}
+				})
 			}
 		})
 	}

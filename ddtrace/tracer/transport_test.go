@@ -16,7 +16,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 
@@ -595,4 +598,69 @@ func TestClientComputedStatsHeader(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal("t", headerValue, "Datadog-Client-Computed-Stats header should be set to 't' when both conditions are met")
 	})
+}
+
+// TestConcurrentTraceFlushOverUDS verifies that multiple goroutines can send trace
+// payloads concurrently through the HTTP transport backed by a real UDS socket without
+// errors. This exercises the connection pool fix (MaxIdleConnsPerHost=100) under
+// realistic end-to-end conditions rather than just asserting config values.
+func TestConcurrentTraceFlushOverUDS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping concurrent UDS transport test in short mode")
+	}
+
+	dir, err := os.MkdirTemp("", "uds-transport-test")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	socketPath := filepath.Join(dir, "traces.socket")
+	ln, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	var received atomic.Int64
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			received.Add(1)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"rate_by_service":{}}`)) //nolint:errcheck
+		}),
+	}
+	go srv.Serve(ln) //nolint:errcheck
+	defer srv.Close()
+
+	udsURL := internal.UnixDataSocketURL(socketPath).String()
+	client := internal.UDSClient(socketPath, 5*time.Second)
+	transport := newHTTPTransport(udsURL, client)
+
+	const numGoroutines = 20
+
+	start := make(chan struct{})
+	errs := make([]error, numGoroutines)
+	var wg sync.WaitGroup
+
+	for i := range numGoroutines {
+		wg.Go(func() {
+			<-start
+			p, encErr := encode(getTestTrace(1, 1))
+			if encErr != nil {
+				errs[i] = encErr
+				return
+			}
+			body, sendErr := transport.send(p)
+			if sendErr != nil {
+				errs[i] = sendErr
+				return
+			}
+			body.Close()
+		})
+	}
+
+	close(start)
+	wg.Wait()
+
+	for i, e := range errs {
+		assert.NoError(t, e, "goroutine %d send failed", i)
+	}
+	assert.Equal(t, int64(numGoroutines), received.Load(),
+		"server should have received all %d trace payloads", numGoroutines)
 }

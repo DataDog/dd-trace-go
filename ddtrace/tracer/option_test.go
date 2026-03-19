@@ -50,6 +50,27 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	}
 }
 
+// withAgentRemoteConfig creates a mock agent server that reports remote config support.
+// Use in tests that need RC to start but don't have a real agent running.
+// The server is automatically closed when the test ends.
+func withAgentRemoteConfig(t testing.TB) StartOption {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/info":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"endpoints":["/v0.7/config"]}`)
+		default:
+			// RC polling: return empty object (handled gracefully by updateState)
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	return func(c *config) {
+		c.agentURL = u
+	}
+}
+
 // testStatsd asserts that the given statsd.Client can successfully send metrics
 // to a UDP listener located at addr.
 func testStatsd(t *testing.T, cfg *config, addr string) {
@@ -202,13 +223,13 @@ func TestLoadAgentFeatures(t *testing.T) {
 		t.Run("disabled", func(t *testing.T) {
 			cfg, err := newTestConfig(WithLambdaMode(true), WithAgentTimeout(2))
 			assert.NoError(t, err)
-			assert.Zero(t, cfg.agent)
+			assert.Zero(t, cfg.agent.load())
 		})
 
 		t.Run("unreachable", func(t *testing.T) {
 			cfg, err := newTestConfig(WithAgentAddr("127.0.0.1:0"))
 			assert.NoError(t, err)
-			assert.Zero(t, cfg.agent)
+			assert.Zero(t, cfg.agent.load())
 		})
 
 		t.Run("StatusNotFound", func(t *testing.T) {
@@ -218,7 +239,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 			defer srv.Close()
 			cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 			require.NoError(t, err)
-			assert.Zero(t, cfg.agent)
+			assert.Zero(t, cfg.agent.load())
 		})
 
 		t.Run("error", func(t *testing.T) {
@@ -228,7 +249,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 			defer srv.Close()
 			cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 			require.NoError(t, err)
-			assert.Zero(t, cfg.agent)
+			assert.Zero(t, cfg.agent.load())
 		})
 	})
 
@@ -239,19 +260,20 @@ func TestLoadAgentFeatures(t *testing.T) {
 		defer srv.Close()
 		cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 		assert.NoError(t, err)
-		assert.True(t, cfg.agent.DropP0s)
-		assert.Equal(t, cfg.agent.StatsdPort, 8999)
-		assert.EqualValues(t, cfg.agent.featureFlags, map[string]struct{}{
+		a := cfg.agent.load()
+		assert.True(t, a.DropP0s)
+		assert.Equal(t, a.StatsdPort, 8999)
+		assert.EqualValues(t, a.featureFlags, map[string]struct{}{
 			"a": {},
 			"b": {},
 		})
-		assert.True(t, cfg.agent.Stats)
-		assert.True(t, cfg.agent.HasFlag("a"))
-		assert.True(t, cfg.agent.HasFlag("b"))
-		assert.EqualValues(t, cfg.agent.peerTags, []string{"peer.hostname"})
-		assert.Equal(t, 2, cfg.agent.obfuscationVersion)
-		assert.False(t, cfg.agent.hasTelemetryProxy)
-		assert.True(t, cfg.agent.reachable)
+		assert.True(t, a.Stats)
+		assert.True(t, a.HasFlag("a"))
+		assert.True(t, a.HasFlag("b"))
+		assert.EqualValues(t, a.peerTags, []string{"peer.hostname"})
+		assert.Equal(t, 2, a.obfuscationVersion)
+		assert.False(t, a.hasTelemetryProxy)
+		assert.True(t, a.reachable)
 	})
 
 	t.Run("telemetry_proxy", func(t *testing.T) {
@@ -261,9 +283,10 @@ func TestLoadAgentFeatures(t *testing.T) {
 		defer srv.Close()
 		cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 		assert.NoError(t, err)
-		assert.True(t, cfg.agent.Stats)
-		assert.True(t, cfg.agent.hasTelemetryProxy)
-		assert.True(t, cfg.agent.reachable)
+		a := cfg.agent.load()
+		assert.True(t, a.Stats)
+		assert.True(t, a.hasTelemetryProxy)
+		assert.True(t, a.reachable)
 	})
 
 	t.Run("default_env", func(t *testing.T) {
@@ -273,7 +296,7 @@ func TestLoadAgentFeatures(t *testing.T) {
 		defer srv.Close()
 		cfg, err := newConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 		assert.NoError(t, err)
-		assert.Equal(t, "prod", cfg.agent.defaultEnv)
+		assert.Equal(t, "prod", cfg.agent.load().defaultEnv)
 	})
 
 	t.Run("discovery", func(t *testing.T) {
@@ -284,9 +307,10 @@ func TestLoadAgentFeatures(t *testing.T) {
 		defer srv.Close()
 		cfg, err := newTestConfig(WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")), WithAgentTimeout(2))
 		assert.NoError(t, err)
-		assert.True(t, cfg.agent.DropP0s)
-		assert.True(t, cfg.agent.Stats)
-		assert.Equal(t, 8999, cfg.agent.StatsdPort)
+		a := cfg.agent.load()
+		assert.True(t, a.DropP0s)
+		assert.True(t, a.Stats)
+		assert.Equal(t, 8999, a.StatsdPort)
 	})
 }
 
@@ -1879,9 +1903,10 @@ func optsTestConsumer(opts ...StartSpanOption) {
 }
 
 func BenchmarkConfig(b *testing.B) {
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("scenario_none", func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			optsTestConsumer(
 				ServiceName("SomeService"),
 				ResourceName("SomeResource"),
@@ -1896,7 +1921,7 @@ func BenchmarkConfig(b *testing.B) {
 			ResourceName("SomeResource"),
 		)
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			optsTestConsumer(
 				WithStartSpanConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),
@@ -1912,7 +1937,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 		assert.NoError(b, err)
 		b.ReportAllocs()
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			tracer.StartSpan("test",
 				ServiceName("SomeService"),
 				ResourceName("SomeResource"),
@@ -1931,7 +1956,7 @@ func BenchmarkStartSpanConfig(b *testing.B) {
 			ResourceName("SomeResource"),
 		)
 		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
+		for range b.N {
 			tracer.StartSpan("test",
 				WithStartSpanConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),

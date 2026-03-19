@@ -61,7 +61,7 @@ func compressionStrategy(pt ProfileType, isDelta bool, config string) (compressi
 // uncompressed.
 func inputCompression(pt ProfileType, isDelta bool) compression {
 	switch pt {
-	case CPUProfile, GoroutineProfile:
+	case CPUProfile, GoroutineProfile, goroutineLeakProfile:
 		return gzip1Compression
 	case HeapProfile, BlockProfile, MutexProfile:
 		if isDelta {

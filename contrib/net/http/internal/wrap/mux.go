@@ -83,8 +83,9 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
 	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
-		Framework:     "net/http",
 		Service:       mux.cfg.ServiceName,
+		ServiceSource: mux.cfg.ServiceSource,
+		Framework:     "net/http",
 		Resource:      resource,
 		SpanOpts:      so,
 		Route:         route,
