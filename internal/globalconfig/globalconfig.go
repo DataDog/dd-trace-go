@@ -18,20 +18,23 @@ import (
 	"github.com/google/uuid"
 )
 
-var cfg = &config{
-	analyticsRate: math.NaN(),
-	runtimeID:     uuid.New().String(),
-	headersAsTags: internal.NewLockMap(map[string]string{}),
-}
+var cfg = newConfig()
 
-func init() {
-	// Internal env var for session ID propagation to child processes.
-	rootID := os.Getenv("_DD_ROOT_GO_SESSION_ID") //nolint:forbidigo
-	if rootID == "" {
-		rootID = cfg.runtimeID
+func newConfig() *config {
+	runtimeID := uuid.New().String()
+	rootSessionID := env.Get("_DD_ROOT_GO_SESSION_ID")
+	if rootSessionID == "" {
+		rootSessionID = runtimeID
 	}
-	cfg.rootSessionID = rootID
-	os.Setenv("_DD_ROOT_GO_SESSION_ID", rootID) //nolint:forbidigo
+	// Set in the process environment so child processes spawned via os/exec
+	// with default env inheritance (cmd.Env == nil) automatically receive it.
+	os.Setenv("_DD_ROOT_GO_SESSION_ID", rootSessionID) //nolint:forbidigo
+	return &config{
+		analyticsRate: math.NaN(),
+		runtimeID:     runtimeID,
+		rootSessionID: rootSessionID,
+		headersAsTags: internal.NewLockMap(map[string]string{}),
+	}
 }
 
 type config struct {
