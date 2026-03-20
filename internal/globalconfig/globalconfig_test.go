@@ -6,9 +6,14 @@
 package globalconfig
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHeaderTag(t *testing.T) {
@@ -20,9 +25,43 @@ func TestHeaderTag(t *testing.T) {
 }
 
 func TestRootSessionID_DefaultsToRuntimeID(t *testing.T) {
-	// When DD_ROOT_GO_SESSION_ID is not set, rootSessionID should equal runtimeID
 	assert.Equal(t, cfg.runtimeID, cfg.rootSessionID)
 	assert.Equal(t, RuntimeID(), RootSessionID())
+}
+
+// TestRootSessionID_InheritedFromEnv verifies that a child process inherits
+// DD_ROOT_GO_SESSION_ID. Since init() runs at package load, we re-exec the
+// test binary as a subprocess with the env var set.
+func TestRootSessionID_InheritedFromEnv(t *testing.T) {
+	if os.Getenv("DD_TEST_SUBPROCESS") == "1" {
+		// We are the child — print session IDs as JSON to stderr
+		// (stdout has test framework output mixed in).
+		out, _ := json.Marshal(map[string]string{
+			"root_session_id": RootSessionID(),
+			"runtime_id":      RuntimeID(),
+		})
+		os.Stderr.Write(out)
+		return
+	}
+
+	parentRootID := "inherited-root-session-id-12345"
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRootSessionID_InheritedFromEnv$", "-test.v")
+	cmd.Env = append(os.Environ(),
+		"DD_ROOT_GO_SESSION_ID="+parentRootID,
+		"DD_TEST_SUBPROCESS=1",
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	require.NoError(t, err, "subprocess failed")
+
+	var result map[string]string
+	require.NoError(t, json.Unmarshal(stderr.Bytes(), &result))
+
+	assert.Equal(t, parentRootID, result["root_session_id"],
+		"child should inherit DD_ROOT_GO_SESSION_ID from parent")
+	assert.NotEqual(t, parentRootID, result["runtime_id"],
+		"child should have its own runtime_id")
 }
 
 // Assert that APIs to access cfg.statsTags protect against pollution from external changes
