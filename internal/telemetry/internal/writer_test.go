@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
@@ -328,7 +329,18 @@ func TestPreBakeRequest_SessionHeaders(t *testing.T) {
 
 	baked := preBakeRequest(body, endpoint)
 
-	assert.NotEmpty(t, baked.Header.Get("DD-Session-ID"), "DD-Session-ID header should always be present")
+	// DD-Session-ID must always be present and equal the runtime ID
+	assert.Equal(t, globalconfig.RuntimeID(), baked.Header.Get("DD-Session-ID"),
+		"DD-Session-ID should equal RuntimeID")
+
+	// DD-Root-Session-ID should only be present when rootSessionID != sessionID
+	if globalconfig.RootSessionID() == globalconfig.RuntimeID() {
+		assert.Empty(t, baked.Header.Get("DD-Root-Session-ID"),
+			"DD-Root-Session-ID should be absent when rootSessionID == runtimeID")
+	} else {
+		assert.Equal(t, globalconfig.RootSessionID(), baked.Header.Get("DD-Root-Session-ID"),
+			"DD-Root-Session-ID should equal RootSessionID when inherited from parent")
+	}
 }
 
 func TestWriter_Flush_SessionHeaders(t *testing.T) {
@@ -365,5 +377,14 @@ func TestWriter_Flush_SessionHeaders(t *testing.T) {
 	_, err = writer.Flush(&payload)
 	require.NoError(t, err)
 
-	assert.NotEmpty(t, receivedHeaders.Get("DD-Session-ID"), "DD-Session-ID should be present on telemetry requests")
+	assert.Equal(t, globalconfig.RuntimeID(), receivedHeaders.Get("DD-Session-ID"),
+		"DD-Session-ID should equal RuntimeID")
+
+	if globalconfig.RootSessionID() == globalconfig.RuntimeID() {
+		assert.Empty(t, receivedHeaders.Get("DD-Root-Session-ID"),
+			"DD-Root-Session-ID should be absent when rootSessionID == runtimeID")
+	} else {
+		assert.Equal(t, globalconfig.RootSessionID(), receivedHeaders.Get("DD-Root-Session-ID"),
+			"DD-Root-Session-ID should equal RootSessionID when inherited from parent")
+	}
 }
