@@ -44,7 +44,7 @@ func getRootSessionID(runtimeID string) string {
 	}
 	// Set in the process environment so child processes spawned via os/exec
 	// with default env inheritance (cmd.Env == nil) automatically receive it.
-	os.Setenv(rootSessionIDEnvVar, id) //nolint:forbidigo
+	os.Setenv(rootSessionIDEnvVar, id)
 	return id
 }
 
