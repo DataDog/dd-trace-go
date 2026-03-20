@@ -29,6 +29,42 @@ func TestRootSessionID_DefaultsToRuntimeID(t *testing.T) {
 	assert.Equal(t, RuntimeID(), RootSessionID())
 }
 
+func TestRootSessionID_SetInProcessEnv(t *testing.T) {
+	// init() should set DD_ROOT_GO_SESSION_ID in os.Environ so that child
+	// processes spawned with default env inheritance receive it automatically.
+	val := os.Getenv("DD_ROOT_GO_SESSION_ID")
+	assert.Equal(t, RootSessionID(), val)
+}
+
+// TestRootSessionID_AutoPropagatedToChild verifies that a child process
+// spawned with default env (cmd.Env == nil) automatically inherits
+// DD_ROOT_GO_SESSION_ID without any explicit injection.
+func TestRootSessionID_AutoPropagatedToChild(t *testing.T) {
+	if os.Getenv("DD_TEST_SUBPROCESS") == "1" {
+		out, _ := json.Marshal(map[string]string{
+			"root_session_id": RootSessionID(),
+			"runtime_id":      RuntimeID(),
+		})
+		os.Stderr.Write(out)
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRootSessionID_AutoPropagatedToChild$", "-test.v")
+	cmd.Env = append(os.Environ(), "DD_TEST_SUBPROCESS=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	require.NoError(t, err, "subprocess failed")
+
+	var result map[string]string
+	require.NoError(t, json.Unmarshal(stderr.Bytes(), &result))
+
+	assert.Equal(t, RootSessionID(), result["root_session_id"],
+		"child should inherit root session ID from parent's os.Environ automatically")
+	assert.NotEqual(t, RootSessionID(), result["runtime_id"],
+		"child should have its own runtime_id")
+}
+
 // TestRootSessionID_InheritedFromEnv verifies that a child process inherits
 // DD_ROOT_GO_SESSION_ID. Since init() runs at package load, we re-exec the
 // test binary as a subprocess with the env var set.

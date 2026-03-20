@@ -9,6 +9,7 @@ package globalconfig
 
 import (
 	"math"
+	"os"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -24,11 +25,14 @@ var cfg = &config{
 }
 
 func init() {
-	rootID := env.Get("DD_ROOT_GO_SESSION_ID")
+	rootID := os.Getenv("DD_ROOT_GO_SESSION_ID")
 	if rootID == "" {
 		rootID = cfg.runtimeID
 	}
 	cfg.rootSessionID = rootID
+	// Set in the process environment so child processes spawned via os/exec
+	// with default env inheritance (cmd.Env == nil) automatically receive it.
+	os.Setenv("DD_ROOT_GO_SESSION_ID", rootID)
 }
 
 type config struct {
