@@ -268,7 +268,7 @@ func Start(opts ...StartOption) error {
 
 	// Start AppSec with remote configuration
 	cfg := remoteconfig.DefaultClientConfig()
-	cfg.AgentURL = t.config.agentURL.String()
+	cfg.AgentURL = t.config.internalConfig.AgentURL().String()
 	cfg.AppVersion = t.config.internalConfig.Version()
 	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
@@ -452,7 +452,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.serviceName, c.internalConfig.Version(), c.agentURL, c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.serviceName, c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {
@@ -563,7 +563,7 @@ func (t *tracer) refreshAgentFeatures() {
 		case <-ctx.Done():
 		}
 	}()
-	newFeatures, err := fetchAgentFeatures(ctx, t.config.agentURL, t.config.httpClient)
+	newFeatures, err := fetchAgentFeatures(ctx, t.config.internalConfig.AgentURL(), t.config.httpClient)
 	if err != nil {
 		if !errors.Is(err, errAgentFeaturesNotSupported) {
 			log.Debug("agent info poll failed: %s", err.Error())

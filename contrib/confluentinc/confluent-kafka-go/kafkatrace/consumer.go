@@ -67,6 +67,9 @@ func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
 	if tr.bootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.bootstrapServers))
 	}
+	if tr.ClusterID() != "" {
+		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, tr.ClusterID()))
+	}
 	if tr.tagFns != nil {
 		for key, tagFn := range tr.tagFns {
 			opts = append(opts, tracer.Tag(key, tagFn(msg)))

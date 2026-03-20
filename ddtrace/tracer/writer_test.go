@@ -861,7 +861,7 @@ func TestAgentWriterV1FlushPayloadRecycling(t *testing.T) {
 	cfg, err := newTestConfig(
 		withStatsdClient(&tg),
 		func(c *config) {
-			c.traceProtocol = traceProtocolV1
+			c.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
 			c.transport = &simpleTransport{}
 		},
 	)
