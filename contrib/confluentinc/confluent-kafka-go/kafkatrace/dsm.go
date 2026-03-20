@@ -18,7 +18,7 @@ func (tr *Tracer) TrackCommitOffsets(offsets []TopicPartition, err error) {
 		return
 	}
 	for _, tp := range offsets {
-		tracer.TrackKafkaCommitOffset(tr.groupID, tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
+		tracer.TrackKafkaCommitOffsetWithCluster(tr.ClusterID(), tr.groupID, tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
 	}
 }
 
@@ -28,7 +28,7 @@ func (tr *Tracer) TrackHighWatermarkOffset(offsets []TopicPartition, consumer Co
 	}
 	for _, tp := range offsets {
 		if _, high, err := consumer.GetWatermarkOffsets(tp.GetTopic(), tp.GetPartition()); err == nil {
-			tracer.TrackKafkaHighWatermarkOffset("", tp.GetTopic(), tp.GetPartition(), high)
+			tracer.TrackKafkaHighWatermarkOffset(tr.ClusterID(), tp.GetTopic(), tp.GetPartition(), high)
 		}
 	}
 }
@@ -39,7 +39,7 @@ func (tr *Tracer) TrackProduceOffsets(msg Message) {
 		return
 	}
 	tp := msg.GetTopicPartition()
-	tracer.TrackKafkaProduceOffset(tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
+	tracer.TrackKafkaProduceOffsetWithCluster(tr.ClusterID(), tp.GetTopic(), tp.GetPartition(), tp.GetOffset())
 }
 
 func (tr *Tracer) SetConsumeCheckpoint(msg Message) {
@@ -49,6 +49,9 @@ func (tr *Tracer) SetConsumeCheckpoint(msg Message) {
 	edges := []string{"direction:in", "topic:" + msg.GetTopicPartition().GetTopic(), "type:kafka"}
 	if tr.groupID != "" {
 		edges = append(edges, "group:"+tr.groupID)
+	}
+	if tr.ClusterID() != "" {
+		edges = append(edges, "kafka_cluster_id:"+tr.ClusterID())
 	}
 	carrier := NewMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
@@ -67,6 +70,9 @@ func (tr *Tracer) SetProduceCheckpoint(msg Message) {
 		return
 	}
 	edges := []string{"direction:out", "topic:" + msg.GetTopicPartition().GetTopic(), "type:kafka"}
+	if tr.ClusterID() != "" {
+		edges = append(edges, "kafka_cluster_id:"+tr.ClusterID())
+	}
 	carrier := NewMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		datastreams.ExtractFromBase64Carrier(context.Background(), carrier),
