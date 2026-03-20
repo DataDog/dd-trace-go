@@ -10,9 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 )
 
 func TestInjectSessionEnv_NilEnv(t *testing.T) {
@@ -45,7 +46,7 @@ func TestInjectSessionEnv_ChildInheritsRootSessionID(t *testing.T) {
 	require.NoError(t, err)
 
 	var found bool
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.HasPrefix(line, "DD_ROOT_GO_SESSION_ID=") {
 			assert.Equal(t, "DD_ROOT_GO_SESSION_ID="+globalconfig.RootSessionID(), line)
 			found = true
