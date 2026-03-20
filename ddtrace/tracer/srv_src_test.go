@@ -15,6 +15,28 @@ import (
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 )
 
+func BenchmarkServiceOverrideTag(b *testing.B) {
+	tracer, err := newTracer()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer tracer.Stop()
+
+	b.Run("KeyServiceSource_ServiceOverride", func(b *testing.B) {
+		for b.Loop() {
+			span := tracer.StartSpan("test.op", Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "my-service", Source: serviceSourceManual}))
+			span.Finish()
+		}
+	})
+
+	b.Run("ServiceName_Tag", func(b *testing.B) {
+		for b.Loop() {
+			span := tracer.StartSpan("test.op", Tag(ext.ServiceName, "my-service"))
+			span.Finish()
+		}
+	})
+}
+
 func TestServiceSource(t *testing.T) {
 	t.Run("SetTagServiceName", func(t *testing.T) {
 		// Setting ext.ServiceName via SetTag should set _dd.svc_src to serviceSourceManual.
