@@ -5,7 +5,7 @@ variables:
   INDEX_FILE: index.txt
 
 .common: &common
-  tags: [ "arch:amd64", "size:large" ]
+  tags: [ "arch:amd64" ]
 
 copy_to_s3:
   <<: *common
