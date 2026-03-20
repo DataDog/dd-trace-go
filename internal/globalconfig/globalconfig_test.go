@@ -30,7 +30,7 @@ func TestRootSessionID_DefaultsToRuntimeID(t *testing.T) {
 }
 
 func TestRootSessionID_SetInProcessEnv(t *testing.T) {
-	val := os.Getenv("_DD_ROOT_GO_SESSION_ID")
+	val := os.Getenv(rootSessionIDEnvVar)
 	assert.Equal(t, RootSessionID(), val)
 }
 
@@ -73,7 +73,7 @@ func TestRootSessionID_InheritedFromEnv(t *testing.T) {
 	parentRootID := "inherited-root-session-id-12345"
 	cmd := exec.Command(os.Args[0], "-test.run=^TestRootSessionID_InheritedFromEnv$", "-test.v")
 	cmd.Env = append(os.Environ(),
-		"_DD_ROOT_GO_SESSION_ID="+parentRootID,
+		rootSessionIDEnvVar+"="+parentRootID,
 		"DD_TEST_SUBPROCESS=1",
 	)
 	var stderr bytes.Buffer
@@ -85,7 +85,7 @@ func TestRootSessionID_InheritedFromEnv(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stderr.Bytes(), &result))
 
 	assert.Equal(t, parentRootID, result["root_session_id"],
-		"child should inherit _DD_ROOT_GO_SESSION_ID from parent")
+		"child should inherit root session ID from parent env")
 	assert.NotEqual(t, parentRootID, result["runtime_id"],
 		"child should have its own runtime_id")
 }

@@ -18,17 +18,21 @@ import (
 	"github.com/google/uuid"
 )
 
+// rootSessionIDEnvVar is the internal env var used to propagate the root
+// session ID to child processes spawned via os/exec.
+const rootSessionIDEnvVar = "_DD_ROOT_GO_SESSION_ID"
+
 var cfg = newConfig()
 
 func newConfig() *config {
 	runtimeID := uuid.New().String()
-	rootSessionID := env.Get("_DD_ROOT_GO_SESSION_ID")
+	rootSessionID := env.Get(rootSessionIDEnvVar)
 	if rootSessionID == "" {
 		rootSessionID = runtimeID
 	}
 	// Set in the process environment so child processes spawned via os/exec
 	// with default env inheritance (cmd.Env == nil) automatically receive it.
-	os.Setenv("_DD_ROOT_GO_SESSION_ID", rootSessionID) //nolint:forbidigo
+	os.Setenv(rootSessionIDEnvVar, rootSessionID) //nolint:forbidigo
 	return &config{
 		analyticsRate: math.NaN(),
 		runtimeID:     runtimeID,
@@ -122,7 +126,7 @@ func RuntimeID() string {
 
 // RootSessionID returns the root session ID for this process tree.
 // For root processes this equals RuntimeID; for child processes it's
-// inherited from the parent via _DD_ROOT_GO_SESSION_ID.
+// inherited from the parent via the rootSessionIDEnvVar environment variable.
 func RootSessionID() string {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
