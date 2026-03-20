@@ -6,7 +6,9 @@
 package kafkatrace
 
 import (
+	"fmt"
 	"math"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -63,4 +65,35 @@ func TestAnalyticsSettings(t *testing.T) {
 		tr := NewKafkaTracer(testInstr, 0, 0, WithAnalyticsRate(0.2))
 		assert.Equal(t, 0.2, tr.analyticsRate)
 	})
+}
+
+func TestClusterIDConcurrency(t *testing.T) {
+	tr := NewKafkaTracer(testInstr, 0, 0)
+
+	const numReaders = 10
+	const numIterations = 1000
+
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		for range numIterations {
+			tr.SetClusterID(fmt.Sprintf("cluster-%d", 0))
+		}
+	})
+
+	for range numReaders {
+		wg.Go(func() {
+			for range numIterations {
+				id := tr.ClusterID()
+				// The ID should either be empty (not yet set) or a valid cluster ID
+				if id != "" {
+					assert.Contains(t, id, "cluster-")
+				}
+			}
+		})
+	}
+
+	wg.Wait()
+
+	assert.NotEmpty(t, tr.ClusterID())
 }

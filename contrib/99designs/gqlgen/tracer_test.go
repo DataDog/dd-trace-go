@@ -269,6 +269,73 @@ func TestChildSpans(t *testing.T) {
 	assert.Zero(root.Tag(ext.ErrorMsg))
 }
 
+// TestSpanHierarchy verifies the parent-child relationships between spans
+// using a nested query, matching the orchestrion integration test expectations.
+// Phase spans (read, parse, validate) and the top-level field span are direct
+// children of root. The nested field span is a child of its parent field span.
+func TestSpanHierarchy(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	_, c := internaltestserver.New(t, NewTracer())
+	var resp struct {
+		TopLevel struct {
+			Nested string
+		}
+	}
+	err := c.Post(`
+		query TestQuery($topLevelId: String!, $nestedId: String!) {
+			topLevel(id: $topLevelId) {
+				nested(id: $nestedId)
+			}
+		}
+	`, &resp,
+		client.Var("topLevelId", "top"),
+		client.Var("nestedId", "nested"),
+		client.Operation("TestQuery"),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "top/nested", resp.TopLevel.Nested)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 6) // read, parse, validate, field(Query.topLevel), field(TopLevel.nested), query
+
+	// Index spans by resource name (unique for each span in this query).
+	spansByRes := make(map[string]*mocktracer.Span)
+	var rootSpan *mocktracer.Span
+	for _, s := range spans {
+		if s.ParentID() == 0 {
+			rootSpan = s
+		}
+		resName, _ := s.Tag(ext.ResourceName).(string)
+		spansByRes[resName] = s
+	}
+
+	readSpan := spansByRes[readOp]
+	parseSpan := spansByRes[parsingOp]
+	validateSpan := spansByRes[validationOp]
+	topLevelSpan := spansByRes["Query.topLevel"]
+	nestedSpan := spansByRes["TopLevel.nested"]
+
+	require.NotNil(t, rootSpan, "missing root span")
+	require.NotNil(t, readSpan, "missing graphql.read span")
+	require.NotNil(t, parseSpan, "missing graphql.parse span")
+	require.NotNil(t, validateSpan, "missing graphql.validate span")
+	require.NotNil(t, topLevelSpan, "missing Query.topLevel span")
+	require.NotNil(t, nestedSpan, "missing TopLevel.nested span")
+
+	rootID := rootSpan.SpanID()
+
+	// Phase spans are direct children of root.
+	assert.Equal(t, rootID, readSpan.ParentID(), "graphql.read should be a direct child of graphql.query")
+	assert.Equal(t, rootID, parseSpan.ParentID(), "graphql.parse should be a direct child of graphql.query")
+	assert.Equal(t, rootID, validateSpan.ParentID(), "graphql.validate should be a direct child of graphql.query")
+	// Top-level field is a direct child of root.
+	assert.Equal(t, rootID, topLevelSpan.ParentID(), "Query.topLevel should be a direct child of graphql.query")
+	// Nested field is a child of the top-level field, not root.
+	assert.Equal(t, topLevelSpan.SpanID(), nestedSpan.ParentID(), "TopLevel.nested should be a child of Query.topLevel")
+}
+
 func newTestClient(t *testing.T, h *testserver.TestServer, tracer graphql.HandlerExtension) *client.Client {
 	t.Helper()
 	h.AddTransport(transport.POST{})
