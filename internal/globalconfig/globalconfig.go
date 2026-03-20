@@ -26,19 +26,26 @@ var cfg = newConfig()
 
 func newConfig() *config {
 	runtimeID := uuid.New().String()
-	rootSessionID := env.Get(rootSessionIDEnvVar)
-	if rootSessionID == "" {
-		rootSessionID = runtimeID
-	}
-	// Set in the process environment so child processes spawned via os/exec
-	// with default env inheritance (cmd.Env == nil) automatically receive it.
-	os.Setenv(rootSessionIDEnvVar, rootSessionID) //nolint:forbidigo
 	return &config{
 		analyticsRate: math.NaN(),
 		runtimeID:     runtimeID,
-		rootSessionID: rootSessionID,
+		rootSessionID: getRootSessionID(runtimeID),
 		headersAsTags: internal.NewLockMap(map[string]string{}),
 	}
+}
+
+// getRootSessionID reads the root session ID from the environment, falling
+// back to the given runtimeID if unset, and writes it back so child
+// processes inherit it automatically.
+func getRootSessionID(runtimeID string) string {
+	id := env.Get(rootSessionIDEnvVar)
+	if id == "" {
+		id = runtimeID
+	}
+	// Set in the process environment so child processes spawned via os/exec
+	// with default env inheritance (cmd.Env == nil) automatically receive it.
+	os.Setenv(rootSessionIDEnvVar, id) //nolint:forbidigo
+	return id
 }
 
 type config struct {
