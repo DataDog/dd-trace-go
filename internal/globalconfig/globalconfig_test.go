@@ -30,15 +30,10 @@ func TestRootSessionID_DefaultsToRuntimeID(t *testing.T) {
 }
 
 func TestRootSessionID_SetInProcessEnv(t *testing.T) {
-	// init() should set DD_ROOT_GO_SESSION_ID in os.Environ so that child
-	// processes spawned with default env inheritance receive it automatically.
-	val := os.Getenv("DD_ROOT_GO_SESSION_ID")
+	val := os.Getenv("_DD_ROOT_GO_SESSION_ID")
 	assert.Equal(t, RootSessionID(), val)
 }
 
-// TestRootSessionID_AutoPropagatedToChild verifies that a child process
-// spawned with default env (cmd.Env == nil) automatically inherits
-// DD_ROOT_GO_SESSION_ID without any explicit injection.
 func TestRootSessionID_AutoPropagatedToChild(t *testing.T) {
 	if os.Getenv("DD_TEST_SUBPROCESS") == "1" {
 		out, _ := json.Marshal(map[string]string{
@@ -65,13 +60,8 @@ func TestRootSessionID_AutoPropagatedToChild(t *testing.T) {
 		"child should have its own runtime_id")
 }
 
-// TestRootSessionID_InheritedFromEnv verifies that a child process inherits
-// DD_ROOT_GO_SESSION_ID. Since init() runs at package load, we re-exec the
-// test binary as a subprocess with the env var set.
 func TestRootSessionID_InheritedFromEnv(t *testing.T) {
 	if os.Getenv("DD_TEST_SUBPROCESS") == "1" {
-		// We are the child — print session IDs as JSON to stderr
-		// (stdout has test framework output mixed in).
 		out, _ := json.Marshal(map[string]string{
 			"root_session_id": RootSessionID(),
 			"runtime_id":      RuntimeID(),
@@ -83,7 +73,7 @@ func TestRootSessionID_InheritedFromEnv(t *testing.T) {
 	parentRootID := "inherited-root-session-id-12345"
 	cmd := exec.Command(os.Args[0], "-test.run=^TestRootSessionID_InheritedFromEnv$", "-test.v")
 	cmd.Env = append(os.Environ(),
-		"DD_ROOT_GO_SESSION_ID="+parentRootID,
+		"_DD_ROOT_GO_SESSION_ID="+parentRootID,
 		"DD_TEST_SUBPROCESS=1",
 	)
 	var stderr bytes.Buffer
@@ -95,7 +85,7 @@ func TestRootSessionID_InheritedFromEnv(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stderr.Bytes(), &result))
 
 	assert.Equal(t, parentRootID, result["root_session_id"],
-		"child should inherit DD_ROOT_GO_SESSION_ID from parent")
+		"child should inherit _DD_ROOT_GO_SESSION_ID from parent")
 	assert.NotEqual(t, parentRootID, result["runtime_id"],
 		"child should have its own runtime_id")
 }

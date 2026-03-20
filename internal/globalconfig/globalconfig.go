@@ -25,16 +25,13 @@ var cfg = &config{
 }
 
 func init() {
-	// DD_ROOT_GO_SESSION_ID is an internal propagation env var (not user-facing
-	// config), so we read/write it via os directly instead of internal/env.
-	rootID := os.Getenv("DD_ROOT_GO_SESSION_ID") //nolint:forbidigo
+	// Internal env var for session ID propagation to child processes.
+	rootID := os.Getenv("_DD_ROOT_GO_SESSION_ID") //nolint:forbidigo
 	if rootID == "" {
 		rootID = cfg.runtimeID
 	}
 	cfg.rootSessionID = rootID
-	// Set in the process environment so child processes spawned via os/exec
-	// with default env inheritance (cmd.Env == nil) automatically receive it.
-	os.Setenv("DD_ROOT_GO_SESSION_ID", rootID) //nolint:forbidigo
+	os.Setenv("_DD_ROOT_GO_SESSION_ID", rootID) //nolint:forbidigo
 }
 
 type config struct {
@@ -122,7 +119,7 @@ func RuntimeID() string {
 
 // RootSessionID returns the root session ID for this process tree.
 // For root processes this equals RuntimeID; for child processes it's
-// inherited from the parent via DD_ROOT_GO_SESSION_ID.
+// inherited from the parent via _DD_ROOT_GO_SESSION_ID.
 func RootSessionID() string {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
