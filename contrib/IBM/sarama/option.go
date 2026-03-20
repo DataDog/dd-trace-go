@@ -157,8 +157,7 @@ func startClusterIDFetch(cfg *config) func() {
 	}
 }
 
-// fetchClusterID connects to the first available broker and fetches the cluster
-// ID via a metadata request (version 4+, which includes the ClusterID field).
+// fetchClusterID connects to the first available broker and fetches the cluster ID.
 func fetchClusterID(ctx context.Context, saramaConfig *sarama.Config, addrs []string) string {
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()

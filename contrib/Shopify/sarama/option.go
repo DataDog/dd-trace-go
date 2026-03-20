@@ -114,8 +114,6 @@ func WithAnalyticsRate(rate float64) OptionFn {
 // WithBrokers provides broker addresses for automatic Kafka cluster ID
 // detection for Data Streams Monitoring. The cluster ID is fetched
 // asynchronously in the background when the producer or consumer is wrapped.
-//
-// Deprecated: use IBM/sarama instead.
 func WithBrokers(addrs []string) OptionFn {
 	return func(cfg *config) {
 		cfg.brokerAddrs = addrs
@@ -142,8 +140,7 @@ func startClusterIDFetch(cfg *config) func() {
 	}
 }
 
-// fetchClusterID connects to the first available broker and fetches the cluster
-// ID via a metadata request (version 4+, which includes the ClusterID field).
+// fetchClusterID connects to the first available broker and fetches the cluster ID.
 func fetchClusterID(ctx context.Context, saramaConfig *sarama.Config, addrs []string) string {
 	if saramaConfig == nil {
 		saramaConfig = sarama.NewConfig()

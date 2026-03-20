@@ -31,7 +31,16 @@ func init() {
 
 type partitionConsumer struct {
 	sarama.PartitionConsumer
-	messages chan *sarama.ConsumerMessage
+	messages   chan *sarama.ConsumerMessage
+	closeAsync []func()
+}
+
+// Close shuts down the partition consumer and cancels any in-flight async jobs.
+func (pc *partitionConsumer) Close() error {
+	for _, stop := range pc.closeAsync {
+		stop()
+	}
+	return pc.PartitionConsumer.Close()
 }
 
 // Messages returns the read channel for the messages that are returned by
@@ -104,12 +113,18 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		}
 		close(wrapped.messages)
 	}()
+	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
+		return wrapped
+	}
+	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	return wrapped
 }
 
 type consumer struct {
 	sarama.Consumer
-	opts []Option
+	opts       []Option
+	cfg        *config
+	closeAsync []func()
 }
 
 // ConsumePartition invokes Consumer.ConsumePartition and wraps the resulting
@@ -122,14 +137,33 @@ func (c *consumer) ConsumePartition(topic string, partition int32, offset int64)
 	return WrapPartitionConsumer(pc, c.opts...), nil
 }
 
+// Close shuts down the consumer and cancels any in-flight async jobs.
+func (c *consumer) Close() error {
+	for _, stop := range c.closeAsync {
+		stop()
+	}
+	return c.Consumer.Close()
+}
+
 // WrapConsumer wraps a sarama.Consumer wrapping any PartitionConsumer created
 // via Consumer.ConsumePartition.
 // Deprecated: use `IBM/sarama` instead.
 func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
-	return &consumer{
+	cfg := new(config)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt.apply(cfg)
+	}
+	wrapped := &consumer{
 		Consumer: c,
 		opts:     opts,
+		cfg:      cfg,
 	}
+	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
+		return wrapped
+	}
+	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
+	return wrapped
 }
 
 type syncProducer struct {

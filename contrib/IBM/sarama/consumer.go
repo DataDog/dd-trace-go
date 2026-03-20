@@ -18,6 +18,15 @@ import (
 type partitionConsumer struct {
 	sarama.PartitionConsumer
 	dispatcher dispatcher
+	closeAsync []func()
+}
+
+// Close shuts down the partition consumer and cancels any in-flight async jobs.
+func (pc *partitionConsumer) Close() error {
+	for _, stop := range pc.closeAsync {
+		stop()
+	}
+	return pc.PartitionConsumer.Close()
 }
 
 // Messages returns the read channel for the messages that are returned by
@@ -43,12 +52,17 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		PartitionConsumer: pc,
 		dispatcher:        d,
 	}
+	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
+		return wrapped
+	}
+	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	return wrapped
 }
 
 type consumer struct {
 	sarama.Consumer
-	opts []Option
+	opts       []Option
+	closeAsync []func()
 }
 
 // ConsumePartition invokes Consumer.ConsumePartition and wraps the resulting
@@ -61,13 +75,31 @@ func (c *consumer) ConsumePartition(topic string, partition int32, offset int64)
 	return WrapPartitionConsumer(pc, c.opts...), nil
 }
 
+// Close shuts down the consumer and cancels any in-flight async jobs.
+func (c *consumer) Close() error {
+	for _, stop := range c.closeAsync {
+		stop()
+	}
+	return c.Consumer.Close()
+}
+
 // WrapConsumer wraps a sarama.Consumer wrapping any PartitionConsumer created
 // via Consumer.ConsumePartition.
 func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
-	return &consumer{
+	cfg := new(config)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt.apply(cfg)
+	}
+	wrapped := &consumer{
 		Consumer: c,
 		opts:     opts,
 	}
+	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
+		return wrapped
+	}
+	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
+	return wrapped
 }
 
 func setConsumeCheckpoint(enabled bool, groupID string, clusterID string, msg *sarama.ConsumerMessage) {
