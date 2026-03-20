@@ -135,6 +135,8 @@ const (
 	// APMTracingMulticonfig is the capability to handle cascading configs for the
 	// APMTracing product.
 	APMTracingMulticonfig
+	// FFEFlagEvaluation represents the capability for feature flag evaluation via OpenFeature
+	FFEFlagEvaluation
 )
 
 // ErrClientNotStarted is returned when the remote config client is not started.

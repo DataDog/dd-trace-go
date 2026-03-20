@@ -16,6 +16,7 @@ const defaultServiceName = "graphql.server"
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	analyticsRate float64
 	errExtensions []string
 }
@@ -34,6 +35,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceSource = string(instrumentation.PackageGraphQLGoGraphQL)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.errExtensions = instrgraphql.ErrorExtensionsFromEnv()
 }
@@ -65,6 +67,7 @@ func WithAnalyticsRate(rate float64) OptionFn {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

@@ -45,7 +45,7 @@ func (w *wrappedDispatcher) Run() {
 	for msg := range msgs {
 		// create the next span from the message
 		opts := []tracer.StartSpanOption{
-			tracer.ServiceName(w.cfg.consumerServiceName),
+			instrumentation.ServiceNameWithSource(w.cfg.consumerServiceName, w.cfg.serviceSource),
 			tracer.ResourceName("Consume Topic " + msg.Topic),
 			tracer.SpanType(ext.SpanTypeMessageConsumer),
 			tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),

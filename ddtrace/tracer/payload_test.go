@@ -802,8 +802,9 @@ func BenchmarkPayloadVersions(b *testing.B) {
 		b.Run(fmt.Sprintf("simple_%dspans/v1.0", n), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				p := newPayloadV1()
+				p := getPayloadV1()
 				_, _ = p.push(spans)
+				putPayloadV1(p)
 			}
 		})
 
@@ -818,8 +819,21 @@ func BenchmarkPayloadVersions(b *testing.B) {
 		b.Run(fmt.Sprintf("detailed_%dspans/v1.0", n), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				p := newPayloadV1()
+				p := getPayloadV1()
 				_, _ = p.push(detailedSpans)
+				putPayloadV1(p)
+			}
+		})
+
+		b.Run(fmt.Sprintf("metastruct_%dspans/v1.0", n), func(b *testing.B) {
+			metaStructSpans := newSpanList(n)
+			createMetaStructMap(metaStructSpans)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p := newPayloadV1()
+				_, _ = p.push(metaStructSpans)
 			}
 		})
 	}

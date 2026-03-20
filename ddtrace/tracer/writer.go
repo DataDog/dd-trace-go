@@ -99,7 +99,7 @@ func (h *agentTraceWriter) stop() {
 
 // newPayload returns a new payload based on the trace protocol.
 func (h *agentTraceWriter) newPayload() payload {
-	return newPayload(h.config.traceProtocol)
+	return newPayload(h.config.internalConfig.TraceProtocol())
 }
 
 // flush will push any currently buffered traces to the server.
@@ -123,8 +123,12 @@ func (h *agentTraceWriter) flush() {
 			// may still be kept by faulty transport implementations or the
 			// standard library. See dd-trace-go#976
 			h.statsd.Count("datadog.tracer.queue.enqueued.traces", int64(atomic.SwapUint32(&h.tracesQueued, 0)), nil, 1)
-			p.clear()
-
+			if p.protocol() == traceProtocolV1 {
+				sp := p.(*safePayload)
+				putPayloadV1(sp.p.(*payloadV1))
+			} else {
+				p.clear()
+			}
 			<-h.climit
 			h.statsd.Timing("datadog.tracer.flush_duration", time.Since(start), nil, 1)
 			h.wg.Done()
