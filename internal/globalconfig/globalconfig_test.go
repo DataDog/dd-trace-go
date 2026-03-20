@@ -25,11 +25,6 @@ func TestRootSessionID_DefaultsToRuntimeID(t *testing.T) {
 	assert.Equal(t, RuntimeID(), RootSessionID())
 }
 
-func TestParentSessionID_EmptyByDefault(t *testing.T) {
-	// When DD_PARENT_GO_SESSION_ID is not set, parentSessionID should be empty
-	assert.Empty(t, ParentSessionID())
-}
-
 // Assert that APIs to access cfg.statsTags protect against pollution from external changes
 func TestStatsTags(t *testing.T) {
 	array := [6]string{"aaa", "bbb", "ccc"}

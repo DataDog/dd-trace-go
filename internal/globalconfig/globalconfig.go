@@ -29,19 +29,17 @@ func init() {
 		rootID = cfg.runtimeID
 	}
 	cfg.rootSessionID = rootID
-	cfg.parentSessionID = env.Get("DD_PARENT_GO_SESSION_ID")
 }
 
 type config struct {
-	mu              sync.RWMutex
-	analyticsRate   float64
-	serviceName     string
-	runtimeID       string
-	rootSessionID   string
-	parentSessionID string
-	headersAsTags   *internal.LockMap
-	dogstatsdAddr   string
-	statsTags       []string
+	mu            sync.RWMutex
+	analyticsRate float64
+	serviceName   string
+	runtimeID     string
+	rootSessionID string
+	headersAsTags *internal.LockMap
+	dogstatsdAddr string
+	statsTags     []string
 }
 
 // AnalyticsRate returns the sampling rate at which events should be marked. It uses
@@ -123,14 +121,6 @@ func RootSessionID() string {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	return cfg.rootSessionID
-}
-
-// ParentSessionID returns the parent's runtime ID if this process was
-// spawned by another traced process, or empty string for root processes.
-func ParentSessionID() string {
-	cfg.mu.RLock()
-	defer cfg.mu.RUnlock()
-	return cfg.parentSessionID
 }
 
 // HeaderTagMap returns the mappings of headers to their tag values

@@ -86,7 +86,6 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_LOGGING_RATE":                                                 {},
 	"DD_LOGS_OTEL_ENABLED":                                            {},
 	"DD_METRICS_OTEL_ENABLED":                                         {},
-	"DD_PARENT_GO_SESSION_ID":                                         {},
 	"DD_PIPELINE_EXECUTION_ID":                                        {},
 	"DD_PROFILING_AGENTLESS":                                          {},
 	"DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED":                   {},

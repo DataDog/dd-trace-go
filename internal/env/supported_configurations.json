@@ -546,13 +546,6 @@
         "default": "false"
       }
     ],
-    "DD_PARENT_GO_SESSION_ID": [
-      {
-        "implementation": "A",
-        "type": "string",
-        "default": null
-      }
-    ],
     "DD_PIPELINE_EXECUTION_ID": [
       {
         "implementation": "A",
