@@ -81,10 +81,21 @@ aspects:
               {{- if ne $impl "" -}}
                 {{- if eq $impl "ctx" -}}
                   {{- $ctx = "__dd_span_ctx" -}}
-              var __dd_span_ctx context.Context = ctx
+              var __dd_span_ctx context.Context
+              if ctx != nil {
+                __dd_span_ctx = ctx
+              } else {
+                __dd_span_ctx = context.TODO()
+              }
                 {{- else -}}
                   {{- $ctx = "ctx" -}}
-              var ctx context.Context = {{ $impl }}
+              __dd_ctxImpl := {{ $impl }}
+              var ctx context.Context
+              if __dd_ctxImpl != nil {
+                ctx = __dd_ctxImpl
+              } else {
+                ctx = context.TODO()
+              }
                 {{- end -}}
               {{- else if ne $req "" -}}
                 {{- $ctx = "ctx" -}}
