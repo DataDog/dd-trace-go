@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
@@ -106,6 +107,10 @@ type Config struct {
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
 	logsOTelEnabled bool
+	// traceProtocol is the trace protocol version to use (e.g. TraceProtocolV04 or TraceProtocolV1).
+	// Initialized from DD_TRACE_AGENT_PROTOCOL_VERSION, may be downgraded by the tracer
+	// if the agent doesn't support the requested version.
+	traceProtocol float64
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -114,8 +119,13 @@ func loadConfig() *Config {
 	cfg := new(Config)
 	p := provider.New()
 
-	// TODO: Use defaults from config json instead of hardcoding them here
-	cfg.agentURL = p.GetURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
+	// Resolve agent URL from DD_TRACE_AGENT_URL, DD_AGENT_HOST, DD_TRACE_AGENT_PORT.
+	// All three are read through the provider so telemetry is reported for each.
+	agentURLStr := p.GetString("DD_TRACE_AGENT_URL", "")
+	agentHost := p.GetString("DD_AGENT_HOST", "")
+	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
+	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = p.GetString("DD_SERVICE", "")
@@ -144,6 +154,7 @@ func loadConfig() *Config {
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4", validateTraceProtocolVersion))
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -227,6 +238,39 @@ func SetUseFreshConfig(use bool) {
 	mu.Lock()
 	defer mu.Unlock()
 	useFreshConfig = use
+}
+
+// RawAgentURL returns a copy of the configured trace agent URL before any
+// transport-level rewriting (e.g. unix → http://UDS_...). Use AgentURL()
+// for the URL suitable for HTTP requests.
+func (c *Config) RawAgentURL() *url.URL {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.agentURL == nil {
+		return nil
+	}
+	u := *c.agentURL
+	return &u
+}
+
+func (c *Config) SetAgentURL(u *url.URL, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.agentURL = u
+	if u != nil {
+		configtelemetry.Report("DD_TRACE_AGENT_URL", u.String(), origin)
+	}
+}
+
+// AgentURL returns the URL to use for HTTP requests to the agent.
+// For unix-scheme URLs this rewrites to the http://UDS_... form; otherwise
+// it returns a copy of the configured URL.
+func (c *Config) AgentURL() *url.URL {
+	u := c.RawAgentURL()
+	if u != nil && u.Scheme == "unix" {
+		return internal.UnixDataSocketURL(u.Path)
+	}
+	return u
 }
 
 func (c *Config) Debug() bool {
@@ -643,4 +687,17 @@ func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.logsOTelEnabled = enabled
 	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
+}
+
+func (c *Config) TraceProtocol() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceProtocol
+}
+
+func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.traceProtocol = v
+	configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", v, origin)
 }

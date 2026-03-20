@@ -202,6 +202,66 @@ func TestPrioritySampler(t *testing.T) {
 		assert.EqualValues(ext.PriorityAutoReject, priority)
 		assert.EqualValues(0.5, rate)
 	})
+
+	t.Run("ksr-not-set-without-agent-rates", func(t *testing.T) {
+		// When no agent rates have been received, the priority sampler uses
+		// its initial default rate (1.0). This is a client-side fallback and
+		// should NOT propagate as _dd.p.ksr to stay consistent with other
+		// Datadog tracers.
+		assert := assert.New(t)
+		ps := newPrioritySampler()
+		spn := newBasicSpan("http.request")
+		spn.service = "my-service"
+		spn.traceID = 1
+
+		ps.apply(spn)
+		_, ok := getMeta(spn, keyKnuthSamplingRate)
+		assert.False(ok, "_dd.p.ksr must not be set when no agent rates have been received")
+
+		// Sampling priority and rate metric should still be set normally
+		priority, _ := getMetric(spn, keySamplingPriority)
+		assert.EqualValues(ext.PriorityAutoKeep, priority)
+		rate, _ := getMetric(spn, keySamplingPriorityRate)
+		assert.EqualValues(1.0, rate)
+	})
+
+	t.Run("ksr-set-after-agent-rates-received", func(t *testing.T) {
+		// After agent rates are received via readRatesJSON, apply should
+		// set _dd.p.ksr — even when the span falls through to the default
+		// rate provided by the agent.
+		assert := assert.New(t)
+		ps := newPrioritySampler()
+		assert.NoError(ps.readRatesJSON(
+			io.NopCloser(strings.NewReader(
+				`{
+					"rate_by_service":{
+						"service:,env:":0.8,
+						"service:obfuscate.http,env:":0.5
+					}
+				}`,
+			)),
+		))
+
+		// Span matching a per-service rate
+		spn1 := newBasicSpan("http.request")
+		spn1.service = "obfuscate.http"
+		spn1.traceID = 1
+
+		ps.apply(spn1)
+		ksr, ok := getMeta(spn1, keyKnuthSamplingRate)
+		assert.True(ok, "_dd.p.ksr must be set when agent rates have been received (per-service)")
+		assert.Equal("0.5", ksr)
+
+		// Span falling through to agent-provided default rate
+		spn2 := newBasicSpan("http.request")
+		spn2.service = "unknown-service"
+		spn2.traceID = 1
+
+		ps.apply(spn2)
+		ksr, ok = getMeta(spn2, keyKnuthSamplingRate)
+		assert.True(ok, "_dd.p.ksr must be set when agent rates have been received (default)")
+		assert.Equal("0.8", ksr)
+	})
 }
 
 func BenchmarkPrioritySamplerGetRate(b *testing.B) {
