@@ -144,7 +144,10 @@ func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request 
 		clonedEndpoint.Header = make(http.Header, 11)
 	}
 
-	for key, val := range map[string]string{
+	sessionID := globalconfig.RuntimeID()
+	rootSessionID := globalconfig.RootSessionID()
+
+	headers := map[string]string{
 		"Content-Type":               "application/json",
 		"DD-Telemetry-API-Version":   body.APIVersion,
 		"DD-Client-Library-Language": body.Application.LanguageName,
@@ -156,9 +159,16 @@ func preBakeRequest(body *transport.Body, endpoint *http.Request) *http.Request 
 		"DD-Agent-Install-Time":      globalconfig.InstrumentationInstallTime(),
 		"Datadog-Container-ID":       internal.ContainerID(),
 		"Datadog-Entity-ID":          internal.EntityID(),
+		"DD-Session-ID":              sessionID,
 		// TODO: add support for Cloud provider/resource-type/resource-id headers in another PR and package
 		// Described here: https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/cf17b41a30fbf31d54e2cfbfc983875d58b02fe1/GeneratedDocumentation/ApiDocs/v2/overview.md#setting-the-serverless-telemetry-headers
-	} {
+	}
+
+	if rootSessionID != sessionID {
+		headers["DD-Root-Session-ID"] = rootSessionID
+	}
+
+	for key, val := range headers {
 		if val == "" {
 			continue
 		}

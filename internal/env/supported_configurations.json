@@ -546,6 +546,13 @@
         "default": "false"
       }
     ],
+    "DD_PARENT_GO_SESSION_ID": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_PIPELINE_EXECUTION_ID": [
       {
         "implementation": "A",
@@ -698,6 +705,13 @@
         "implementation": "A",
         "type": "string",
         "default": ":8080"
+      }
+    ],
+    "DD_ROOT_GO_SESSION_ID": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_RUNTIME_METRICS_ENABLED": [

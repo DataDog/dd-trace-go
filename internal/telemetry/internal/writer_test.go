@@ -312,3 +312,58 @@ func TestWriterParallel(t *testing.T) {
 	assert.EqualValues(t, numRequests*2, marshalJSONCalled.Load())
 	assert.EqualValues(t, numRequests*2, payloadReceived.Load())
 }
+
+func TestPreBakeRequest_SessionHeaders(t *testing.T) {
+	body := &transport.Body{
+		APIVersion: "v2",
+		RuntimeID:  "test-runtime-id",
+		Application: transport.Application{
+			LanguageName:  "go",
+			TracerVersion: "1.0.0",
+		},
+	}
+
+	endpoint, err := http.NewRequest(http.MethodPost, "http://localhost/telemetry", nil)
+	require.NoError(t, err)
+
+	baked := preBakeRequest(body, endpoint)
+
+	assert.NotEmpty(t, baked.Header.Get("DD-Session-ID"), "DD-Session-ID header should always be present")
+}
+
+func TestWriter_Flush_SessionHeaders(t *testing.T) {
+	config := WriterConfig{
+		TracerConfig: TracerConfig{
+			Service: "test-service",
+			Env:     "test-env",
+			Version: "1.0.0",
+		},
+	}
+
+	payload := testPayload{
+		RequestTypeValue: "test",
+		marshalJSON: func() ([]byte, error) {
+			return []byte(`{"request_type":"test"}`), nil
+		},
+	}
+
+	var receivedHeaders http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeaders = r.Header.Clone()
+		io.ReadAll(r.Body)
+		r.Body.Close()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+
+	config.Endpoints = append(config.Endpoints, req)
+	writer, _ := NewWriter(config)
+
+	_, err = writer.Flush(&payload)
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, receivedHeaders.Get("DD-Session-ID"), "DD-Session-ID should be present on telemetry requests")
+}
