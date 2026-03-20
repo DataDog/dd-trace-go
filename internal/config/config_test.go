@@ -6,6 +6,7 @@
 package config
 
 import (
+	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -363,6 +364,9 @@ func getTestValueForType(t reflect.Type) any {
 	// Check for specific named types first (before kind checks)
 	if t == reflect.TypeFor[time.Duration]() {
 		return 10 * time.Second
+	}
+	if t == reflect.TypeFor[*url.URL]() {
+		return &url.URL{Scheme: "http", Host: "test-agent:8126"}
 	}
 
 	// Then check by kind

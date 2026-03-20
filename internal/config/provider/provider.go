@@ -8,7 +8,6 @@
 package provider
 
 import (
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -82,6 +81,15 @@ func (p *Provider) GetString(key string, def string) string {
 	})
 }
 
+func (p *Provider) GetStringWithValidator(key string, def string, validate func(string) bool) string {
+	return get(p, key, def, func(v string) (string, bool) {
+		if validate != nil && !validate(v) {
+			return "", false
+		}
+		return v, true
+	})
+}
+
 func (p *Provider) GetBool(key string, def bool) bool {
 	return get(p, key, def, func(v string) (bool, bool) {
 		boolVal, err := strconv.ParseBool(v)
@@ -143,13 +151,6 @@ func (p *Provider) GetFloatWithValidator(key string, def float64, validate func(
 			return floatVal, true
 		}
 		return 0, false
-	})
-}
-
-func (p *Provider) GetURL(key string, def *url.URL) *url.URL {
-	return get(p, key, def, func(v string) (*url.URL, bool) {
-		u, err := url.Parse(v)
-		return u, err == nil
 	})
 }
 

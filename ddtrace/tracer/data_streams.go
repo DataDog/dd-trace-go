@@ -47,9 +47,14 @@ func SetDataStreamsCheckpointWithParams(ctx context.Context, params options.Chec
 // TrackKafkaCommitOffset should be used in the consumer, to track when it acks offset.
 // if used together with TrackKafkaProduceOffset it can generate a Kafka lag in seconds metric.
 func TrackKafkaCommitOffset(group, topic string, partition int32, offset int64) {
+	TrackKafkaCommitOffsetWithCluster("", group, topic, partition, offset)
+}
+
+// TrackKafkaCommitOffsetWithCluster is like TrackKafkaCommitOffset but also associates the offset with a Kafka cluster ID.
+func TrackKafkaCommitOffsetWithCluster(cluster, group, topic string, partition int32, offset int64) {
 	if t, ok := getGlobalTracer().(dataStreamsContainer); ok {
 		if p := t.GetDataStreamsProcessor(); p != nil {
-			p.TrackKafkaCommitOffset(group, topic, partition, offset)
+			p.TrackKafkaCommitOffsetWithCluster(cluster, group, topic, partition, offset)
 		}
 	}
 }
@@ -57,9 +62,14 @@ func TrackKafkaCommitOffset(group, topic string, partition int32, offset int64) 
 // TrackKafkaProduceOffset should be used in the producer, to track when it produces a message.
 // if used together with TrackKafkaCommitOffset it can generate a Kafka lag in seconds metric.
 func TrackKafkaProduceOffset(topic string, partition int32, offset int64) {
+	TrackKafkaProduceOffsetWithCluster("", topic, partition, offset)
+}
+
+// TrackKafkaProduceOffsetWithCluster is like TrackKafkaProduceOffset but also associates the offset with a Kafka cluster ID.
+func TrackKafkaProduceOffsetWithCluster(cluster string, topic string, partition int32, offset int64) {
 	if t, ok := getGlobalTracer().(dataStreamsContainer); ok {
 		if p := t.GetDataStreamsProcessor(); p != nil {
-			p.TrackKafkaProduceOffset(topic, partition, offset)
+			p.TrackKafkaProduceOffsetWithCluster(cluster, topic, partition, offset)
 		}
 	}
 }
