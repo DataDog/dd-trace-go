@@ -424,6 +424,35 @@ func TestExperimentRun(t *testing.T) {
 		}
 	})
 
+	t.Run("task-error-propagated-to-span", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		ds := createTestDataset(t)
+		taskErr := errors.New("task failed")
+		task := experiment.NewTask("failing-task", func(ctx context.Context, rec dataset.Record, experimentCfg map[string]any) (any, error) {
+			return nil, taskErr
+		})
+
+		exp, err := experiment.New(
+			"test-experiment-span-error",
+			task,
+			ds,
+			nil,
+			experiment.WithProjectName("test-project"),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background(), experiment.WithAbortOnError(false))
+		require.NoError(t, err)
+
+		spans := tt.WaitForLLMObsSpans(t, 2)
+		require.Len(t, spans, 2)
+		for _, span := range spans {
+			assert.Equal(t, "error", span.Status, "span status should be 'error' when task fails")
+		}
+	})
+
 	t.Run("evaluator-error-handling", func(t *testing.T) {
 		tt := testTracer(t)
 		defer tt.Stop()

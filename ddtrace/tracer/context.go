@@ -28,13 +28,11 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 		return ctx
 	}
-	newCtx := ctx
-
 	propagatedLLMObs := propagatedLLMSpanFromTags(s)
 	if propagatedLLMObs.SpanID == "" || propagatedLLMObs.TraceID == "" {
-		return newCtx
+		return ctx
 	}
-	return illmobs.ContextWithPropagatedLLMSpan(newCtx, propagatedLLMObs)
+	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMObs)
 }
 
 // propagatedLLMSpanFromTags extracts LLMObs propagation information from the trace propagating tags.
@@ -66,9 +64,12 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanKey)
 	if s, ok := v.(*Span); ok {
 		// We may have a nil *Span wrapped in an interface in the GLS context stack,
-		// in which case we need to act a if there was nothing (for else we'll
+		// in which case we need to act as if there was nothing (otherwise we'll
 		// forcefully un-do a [ChildOf] option if one was passed).
-		return s, s != nil
+		if s == nil {
+			return nil, false
+		}
+		return s, true
 	}
 	return nil, false
 }

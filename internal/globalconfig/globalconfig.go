@@ -9,6 +9,7 @@ package globalconfig
 
 import (
 	"math"
+	"os"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -17,10 +18,27 @@ import (
 	"github.com/google/uuid"
 )
 
-var cfg = &config{
-	analyticsRate: math.NaN(),
-	runtimeID:     uuid.New().String(),
-	headersAsTags: internal.NewLockMap(map[string]string{}),
+const rootSessionIDEnvVar = "_DD_ROOT_GO_SESSION_ID"
+
+var cfg = newConfig()
+
+func newConfig() *config {
+	runtimeID := uuid.New().String()
+	return &config{
+		analyticsRate: math.NaN(),
+		runtimeID:     runtimeID,
+		rootSessionID: getRootSessionID(runtimeID),
+		headersAsTags: internal.NewLockMap(map[string]string{}),
+	}
+}
+
+func getRootSessionID(runtimeID string) string {
+	id := env.Get(rootSessionIDEnvVar)
+	if id == "" {
+		id = runtimeID
+	}
+	os.Setenv(rootSessionIDEnvVar, id) // propagate to child processes
+	return id
 }
 
 type config struct {
@@ -28,6 +46,7 @@ type config struct {
 	analyticsRate float64
 	serviceName   string
 	runtimeID     string
+	rootSessionID string
 	headersAsTags *internal.LockMap
 	dogstatsdAddr string
 	statsTags     []string
@@ -103,6 +122,13 @@ func RuntimeID() string {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 	return cfg.runtimeID
+}
+
+// RootSessionID returns the root session ID for this process tree.
+func RootSessionID() string {
+	cfg.mu.RLock()
+	defer cfg.mu.RUnlock()
+	return cfg.rootSessionID
 }
 
 // HeaderTagMap returns the mappings of headers to their tag values

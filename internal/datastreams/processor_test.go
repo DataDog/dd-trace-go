@@ -546,6 +546,36 @@ func TestTrackTransactionViaMethod(t *testing.T) {
 	assert.NotEmpty(t, found.TransactionCheckpointIds)
 }
 
+func TestKafkaLagWithCluster(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	tp1 := time.Now()
+	p.addKafkaOffset(kafkaOffset{offset: 1, topic: "topic1", partition: 1, group: "group1", offsetType: commitOffset, cluster: "cluster-1"})
+	p.addKafkaOffset(kafkaOffset{offset: 10, topic: "topic2", partition: 1, group: "group1", offsetType: commitOffset, cluster: "cluster-1"})
+	p.addKafkaOffset(kafkaOffset{offset: 5, topic: "topic1", partition: 1, offsetType: produceOffset, cluster: "cluster-1"})
+	p.addKafkaOffset(kafkaOffset{offset: 15, topic: "topic1", partition: 1, offsetType: produceOffset, cluster: "cluster-1"})
+	p.addKafkaOffset(kafkaOffset{offset: 20, topic: "topic1", partition: 1, offsetType: highWatermarkOffset, cluster: "cluster-1"})
+	payloads := sortedPayloads(p.flush(tp1.Add(bucketDuration * 2)))
+	expectedBacklogs := []Backlog{
+		{
+			Tags:  []string{"consumer_group:group1", "partition:1", "topic:topic1", "type:kafka_commit", "kafka_cluster_id:cluster-1"},
+			Value: 1,
+		},
+		{
+			Tags:  []string{"consumer_group:group1", "partition:1", "topic:topic2", "type:kafka_commit", "kafka_cluster_id:cluster-1"},
+			Value: 10,
+		},
+		{
+			Tags:  []string{"partition:1", "topic:topic1", "type:kafka_high_watermark", "kafka_cluster_id:cluster-1"},
+			Value: 20,
+		},
+		{
+			Tags:  []string{"partition:1", "topic:topic1", "type:kafka_produce", "kafka_cluster_id:cluster-1"},
+			Value: 15,
+		},
+	}
+	assert.Equal(t, expectedBacklogs, payloads["service"].Stats[0].Backlogs)
+}
+
 // TestTrackTransactionAtUsesProvidedTime verifies that TrackTransactionAt stores the
 // caller-supplied timestamp rather than the processor's clock.
 func TestTrackTransactionAtUsesProvidedTime(t *testing.T) {
