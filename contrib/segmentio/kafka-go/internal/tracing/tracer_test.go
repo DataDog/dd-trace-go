@@ -6,7 +6,9 @@
 package tracing
 
 import (
+	"fmt"
 	"math"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
@@ -52,4 +54,35 @@ func TestTracerAnalyticsSettings(t *testing.T) {
 		WithDataStreams().apply(tr)
 		assert.True(t, tr.dataStreamsEnabled)
 	})
+}
+
+func TestClusterIDConcurrency(t *testing.T) {
+	tr := NewTracer(KafkaConfig{})
+
+	const numReaders = 10
+	const numIterations = 1000
+
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		for range numIterations {
+			tr.SetClusterID(fmt.Sprintf("cluster-%d", 0))
+		}
+	})
+
+	for range numReaders {
+		wg.Go(func() {
+			for range numIterations {
+				id := tr.ClusterID()
+				// The ID should either be empty (not yet set) or a valid cluster ID
+				if id != "" {
+					assert.Contains(t, id, "cluster-")
+				}
+			}
+		})
+	}
+
+	wg.Wait()
+
+	assert.NotEmpty(t, tr.ClusterID())
 }
