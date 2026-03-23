@@ -561,8 +561,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
-			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-port: agent not available", func(t *testing.T) {
@@ -585,8 +585,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
-			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-all: agent not available", func(t *testing.T) {
@@ -611,8 +611,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "10.1.0.12:8125", c.dogstatsdAddr)
-			assert.Equal(t, "10.1.0.12:8125", globalconfig.DogstatsdAddr())
+			assert.Equal(t, "10.1.0.12:4002", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("option: agent not available", func(t *testing.T) {
