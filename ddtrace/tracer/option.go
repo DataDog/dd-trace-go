@@ -259,6 +259,9 @@ type config struct {
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
+
+	// temporary field to represent otlp export mode; always false for now
+	otlpExportMode bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.

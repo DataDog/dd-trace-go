@@ -158,6 +158,6 @@ services:
       - "9092:9092"
       - "9093:9093"
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack:4.14.0
     ports:
       - "4566:4566"
