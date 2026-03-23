@@ -1022,7 +1022,7 @@ func TestDefaultHTTPClient(t *testing.T) {
 	})
 }
 
-func Test_resolveDogstatsdAddr(t *testing.T) {
+func TestResolveDogstatsdAddr(t *testing.T) {
 	socketFile, err := os.CreateTemp("", "dsd.socket")
 	require.NoError(t, err)
 	require.NoError(t, socketFile.Close())
