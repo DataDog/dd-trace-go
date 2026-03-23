@@ -539,7 +539,7 @@ func (p *Processor) reportStats() {
 		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", atomic.SwapInt64(&p.stats.dropped, 0), nil, 1)
 		if dt := atomic.SwapInt64(&p.stats.droppedTransactions, 0); dt > 0 {
 			p.statsd.Count("datadog.datastreams.processor.dropped_transactions", dt, nil, 1)
-			log.Warn("datastreams: dropped %d transactions this period — throughput exceeds pipeline capacity (%d bytes/period)", dt, maxTransactionBytesPerPeriod)
+			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt)
 		}
 	}
 }
