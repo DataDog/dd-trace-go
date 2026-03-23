@@ -36,6 +36,14 @@ const (
 	// When exceeded, an early flush is triggered for older buckets, matching Java tracer behavior.
 	// At ~20 bytes per transaction, 512KB accommodates ~26k transactions/sec.
 	maxTransactionBucketSize = 1024 * 512
+
+	// maxTransactionBytesPerPeriod is the maximum total transaction bytes the processor
+	// will accept per bucket period (10s). Once exceeded, new transactions are dropped
+	// and a warning is logged. This prevents overwhelming the downstream pipeline
+	// (agent → data-pipeline-edge → Kafka) which cannot sustain arbitrarily high
+	// throughput. At 46 bytes per UUID-length transaction ID, this allows ~5,000
+	// transactions/sec. Shorter IDs allow proportionally higher throughput.
+	maxTransactionBytesPerPeriod = 2_300_000
 )
 
 // use the same gamma and index offset as the Datadog backend, to avoid doing any conversions in
@@ -158,11 +166,12 @@ type processorInput struct {
 }
 
 type processorStats struct {
-	payloadsIn      int64
-	flushedPayloads int64
-	flushedBuckets  int64
-	flushErrors     int64
-	dropped         int64
+	payloadsIn          int64
+	flushedPayloads     int64
+	flushedBuckets      int64
+	flushErrors         int64
+	dropped             int64
+	droppedTransactions int64
 }
 
 type partitionKey struct {
@@ -261,6 +270,11 @@ type Processor struct {
 	// earlyFlush is set by addTransaction when the transaction buffer for a bucket exceeds
 	// maxTransactionBucketSize. Only accessed from the run goroutine; no locking needed.
 	earlyFlush bool
+	// txnBytesThisPeriod tracks the total transaction bytes accepted in the current
+	// bucket period (across early flushes). Reset when the period rolls over.
+	// Only accessed from the run goroutine; no locking needed.
+	txnBytesThisPeriod int64
+	txnPeriodStart     int64 // btime of the current period
 	// used for tests
 	timeSource func() time.Time
 }
@@ -392,6 +406,20 @@ func appendTransactionBytes(dst []byte, checkpointID byte, timestamp int64, tran
 func (p *Processor) addTransaction(e transactionEntry) {
 	log.Debug("datastreams: addTransaction checkpoint=%q txnID=%q ts=%d", e.checkpointName, e.transactionID, e.timestamp)
 	btime := alignTs(e.timestamp, bucketDuration.Nanoseconds())
+
+	// Reset the per-period budget when we roll into a new bucket period.
+	if btime != p.txnPeriodStart {
+		p.txnBytesThisPeriod = 0
+		p.txnPeriodStart = btime
+	}
+
+	// Estimate the record size before appending: 1 (checkpointID) + 8 (timestamp) + 1 (idLen) + len(id).
+	recordSize := int64(10 + min(len(e.transactionID), 255))
+	if p.txnBytesThisPeriod+recordSize > maxTransactionBytesPerPeriod {
+		atomic.AddInt64(&p.stats.droppedTransactions, 1)
+		return
+	}
+
 	k := bucketKey{serviceName: p.service, btime: btime}
 	b, ok := p.tsTypeCurrentBuckets[k]
 	if !ok {
@@ -403,8 +431,9 @@ func (p *Processor) addTransaction(e transactionEntry) {
 		return
 	}
 	b.transactions = appendTransactionBytes(b.transactions, checkpointID, e.timestamp, e.transactionID)
+	p.txnBytesThisPeriod += recordSize
 	p.tsTypeCurrentBuckets[k] = b
-	log.Debug("datastreams: bucket now has %d transaction bytes", len(b.transactions))
+	log.Debug("datastreams: bucket now has %d transaction bytes (period total: %d)", len(b.transactions), p.txnBytesThisPeriod)
 	if len(b.transactions) >= maxTransactionBucketSize {
 		// Transaction buffer has grown large; trigger an early flush of older buckets,
 		// matching the Java tracer's behavior (DefaultDataStreamsMonitoring.java:444).
@@ -507,6 +536,10 @@ func (p *Processor) reportStats() {
 		p.statsd.Count("datadog.datastreams.processor.flushed_buckets", atomic.SwapInt64(&p.stats.flushedBuckets, 0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.flush_errors", atomic.SwapInt64(&p.stats.flushErrors, 0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", atomic.SwapInt64(&p.stats.dropped, 0), nil, 1)
+		if dt := atomic.SwapInt64(&p.stats.droppedTransactions, 0); dt > 0 {
+			p.statsd.Count("datadog.datastreams.processor.dropped_transactions", dt, nil, 1)
+			log.Warn("datastreams: dropped %d transactions this period — throughput exceeds pipeline capacity (%d bytes/period)", dt, maxTransactionBytesPerPeriod)
+		}
 	}
 }
 

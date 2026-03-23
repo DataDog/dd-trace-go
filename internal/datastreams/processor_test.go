@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -670,6 +671,64 @@ func TestAddTransactionFullRegistry(t *testing.T) {
 			assert.Empty(t, bucket.Transactions, "no transactions should be recorded when the registry is full")
 		}
 	}
+}
+
+func TestTransactionBytesPerPeriodLimit(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	tp := time.Now().Truncate(bucketDuration)
+
+	// Use UUID-length IDs (36 bytes) so each record is exactly 46 bytes.
+	// The budget is maxTransactionBytesPerPeriod = 2,300,000 bytes.
+	// 2,300,000 / 46 = 50,000 records fit within budget.
+	const recordSize = 46
+	maxRecords := int(maxTransactionBytesPerPeriod / recordSize)
+	totalAttempted := maxRecords + 5000
+
+	for i := range totalAttempted {
+		id := fmt.Sprintf("xxxxxxxx-xxxx-xxxx-xxxx-%012d", i) // 36-byte UUID-shaped ID
+		p.addTransaction(transactionEntry{
+			transactionID:  id,
+			checkpointName: "ingested",
+			timestamp:      tp.UnixNano(),
+		})
+	}
+
+	// Verify the dropped count matches the overshoot.
+	droppedCount := atomic.LoadInt64(&p.stats.droppedTransactions)
+	assert.Equal(t, int64(totalAttempted-maxRecords), droppedCount,
+		"expected %d dropped transactions", totalAttempted-maxRecords)
+
+	// Verify the period budget is at capacity.
+	assert.LessOrEqual(t, p.txnBytesThisPeriod, int64(maxTransactionBytesPerPeriod),
+		"period bytes should not exceed the budget")
+}
+
+func TestTransactionBytesPerPeriodResetsOnNewPeriod(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	tp := time.Now().Truncate(bucketDuration)
+
+	// Fill most of the budget in period 1.
+	for i := range 40_000 {
+		id := fmt.Sprintf("xxxxxxxx-xxxx-xxxx-xxxx-%012d", i)
+		p.addTransaction(transactionEntry{
+			transactionID:  id,
+			checkpointName: "ingested",
+			timestamp:      tp.UnixNano(),
+		})
+	}
+	assert.Greater(t, p.txnBytesThisPeriod, int64(0))
+
+	// Move to the next bucket period — budget should reset.
+	tp2 := tp.Add(bucketDuration)
+	p.addTransaction(transactionEntry{
+		transactionID:  "first-in-new-period",
+		checkpointName: "ingested",
+		timestamp:      tp2.UnixNano(),
+	})
+
+	expectedSize := int64(10 + len("first-in-new-period"))
+	assert.Equal(t, expectedSize, p.txnBytesThisPeriod,
+		"budget should reset when the bucket period rolls over")
 }
 
 func BenchmarkSetCheckpoint(b *testing.B) {
