@@ -33,8 +33,8 @@ const (
 	defaultServiceName = "unnamed-go-service"
 
 	// maxTransactionBucketSize is the soft size limit for transaction bytes in a single bucket.
-	// When exceeded, an early flush is triggered for older buckets, matching Java tracer behavior.
-	// At ~20 bytes per transaction, 512KB accommodates ~26k transactions/sec.
+	// When exceeded, an early flush is triggered to keep individual payloads small.
+	// Record size varies by transaction ID length (e.g. 46 bytes for UUID-length IDs).
 	maxTransactionBucketSize = 1024 * 512
 
 	// maxTransactionBytesPerPeriod is the maximum total transaction bytes the processor
@@ -471,14 +471,15 @@ func (p *Processor) run(tick <-chan time.Time) {
 				continue
 			}
 			p.processInput(s)
-			if p.earlyFlush {
-				p.earlyFlush = false
-				// The current bucket has exceeded maxTransactionBucketSize. Force-flush it
-				// immediately by advancing the cutoff time by one full bucket duration, which
-				// makes the current bucket appear "old enough" to flush. This prevents the
-				// payload from growing beyond the agent's ~10MB request body limit.
-				p.sendToAgent(p.flush(p.time().Add(bucketDuration)))
+			if !p.earlyFlush {
+				continue
 			}
+			p.earlyFlush = false
+			// The current bucket has exceeded maxTransactionBucketSize. Force-flush it
+			// immediately by advancing the cutoff time by one full bucket duration, which
+			// makes the current bucket appear "old enough" to flush. This prevents the
+			// payload from growing beyond the agent's ~10MB request body limit.
+			p.sendToAgent(p.flush(p.time().Add(bucketDuration)))
 		}
 	}
 }
