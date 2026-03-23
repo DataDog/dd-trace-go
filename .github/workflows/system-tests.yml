@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@main
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
         with:
           datadog_api_key: ${{ secrets.DD_API_KEY }}
 
@@ -295,7 +295,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@main
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
         with:
           datadog_api_key: ${{ secrets.DD_API_KEY }}
 
