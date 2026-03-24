@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.7.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
 	github.com/stretchr/testify v1.11.1
 	github.com/valyala/fasthttp v1.58.0
 )

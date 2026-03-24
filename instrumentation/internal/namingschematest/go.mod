@@ -39,7 +39,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.6.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.9.0-dev
 	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.0.0-00010101000000-000000000000
@@ -52,8 +52,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.0.0-00010101000000-000000000000
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.7.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.55.5
