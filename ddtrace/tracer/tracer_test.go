@@ -407,10 +407,9 @@ func TestTracerStartSpan(t *testing.T) {
 func TestSamplingDecision(t *testing.T) {
 
 	t.Run("sampled", func(t *testing.T) {
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		testPrioritySampler(tracer).defaultRate = 1
-		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
@@ -427,10 +426,9 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("dropped_sent", func(t *testing.T) {
 		// Even if DropP0s is enabled, spans should always be kept unless
 		// client-side stats are also enabled.
-		tracer, _, _, stop, err := startTestTracer(t, WithStatsComputation(false))
+		tracer, _, _, stop, err := startTestTracer(t, WithStatsComputation(false), WithService("test_service"))
 		assert.Nil(t, err)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
@@ -445,10 +443,9 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("dropped_stats", func(t *testing.T) {
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.Finish()
@@ -463,10 +460,9 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("events_sampled", func(t *testing.T) {
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.SetTag(ext.EventSampleRate, 1)
@@ -482,11 +478,10 @@ func TestSamplingDecision(t *testing.T) {
 	})
 
 	t.Run("client_dropped", func(t *testing.T) {
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		tracer.config.sampler = NewRateSampler(0)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		span := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(span.context))
 		child.SetTag(ext.EventSampleRate, 1)
@@ -510,12 +505,11 @@ func TestSamplingDecision(t *testing.T) {
 		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		// Stats are enabled, rules are available. Trace sample rate equals 0.
 		// Span sample rate equals 1. The trace should be dropped. One single span is extracted.
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		parent := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
@@ -535,11 +529,10 @@ func TestSamplingDecision(t *testing.T) {
 		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		// Stats are disabled, rules are available. Trace sample rate equals 0.
 		// Span sample rate equals 1. The trace should be dropped. One span has single span tags set.
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		tracer.config.sampler = NewRateSampler(0)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		parent := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
@@ -559,11 +552,10 @@ func TestSamplingDecision(t *testing.T) {
 		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "match","name":"nothing", "sample_rate": 1.0, "max_per_second": 15.0}]`)
 		// Rules are available, but match nothing. Trace sample rate equals 0.
 		// The trace should be dropped. No single spans extracted.
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		tracer.config.sampler = NewRateSampler(0)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		parent := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
@@ -583,11 +575,10 @@ func TestSamplingDecision(t *testing.T) {
 		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*", "sample_rate": 1.0}]`)
 		// Rules are available. Trace sample rate equals 1. Span sample rate equals 1.
 		// The trace should be kept. No single spans extracted.
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		tracer.config.sampler = NewRateSampler(1)
 		testPrioritySampler(tracer).defaultRate = 1
-		tracer.config.serviceName = "test_service"
 		parent := tracer.StartSpan("name_1")
 		child := tracer.StartSpan("name_2", ChildOf(parent.context))
 		child.Finish()
@@ -608,7 +599,7 @@ func TestSamplingDecision(t *testing.T) {
 		t.Setenv("DD_SPAN_SAMPLING_RULES",
 			`[{"service": "test_*","name":"name_*", "sample_rate": 1.0,"max_per_second":50}]`)
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		// Don't allow the rate limiter to reset while the test is running.
 		current := time.Now()
@@ -617,7 +608,6 @@ func TestSamplingDecision(t *testing.T) {
 			nowTime = func() time.Time { return time.Now() }
 		}()
 		defer stop()
-		tracer.config.serviceName = "test_service"
 		var spans []*Span
 		for i := range 100 {
 			s := tracer.StartSpan(fmt.Sprintf("name_%d", i))
@@ -653,10 +643,9 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("single_spans_without_max_per_second:rate_1.0", func(t *testing.T) {
 		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"name_*", "sample_rate": 1.0}]`)
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
 		for range 100 {
 			s := tracer.StartSpan("name_1")
@@ -688,10 +677,9 @@ func TestSamplingDecision(t *testing.T) {
 	t.Run("single_spans_without_max_per_second:rate_0.5", func(t *testing.T) {
 		t.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"name_2", "sample_rate": 0.5}]`)
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0.8")
-		tracer, _, _, stop, err := startTestTracer(t)
+		tracer, _, _, stop, err := startTestTracer(t, WithService("test_service"))
 		assert.Nil(t, err)
 		defer stop()
-		tracer.config.serviceName = "test_service"
 		spans := []*Span{}
 		for range 100 {
 			s := tracer.StartSpan("name_1")
@@ -2685,13 +2673,12 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 func BenchmarkSingleSpanRetention(b *testing.B) {
 	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("no-rules", func(b *testing.B) {
-		tracer, _, _, stop, err := startTestTracer(b)
+		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"))
 		assert.Nil(b, err)
 		defer stop()
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
 		for range b.N {
 			span := tracer.StartSpan("name_1")
@@ -2705,13 +2692,12 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 
 	b.Run("with-rules/match-half", func(b *testing.B) {
 		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
-		tracer, _, _, stop, err := startTestTracer(b)
+		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"))
 		assert.Nil(b, err)
 		defer stop()
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
 		for range b.N {
 			span := tracer.StartSpan("name_1")
@@ -2729,13 +2715,12 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 
 	b.Run("with-rules/match-all", func(b *testing.B) {
 		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
-		tracer, _, _, stop, err := startTestTracer(b)
+		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"))
 		assert.Nil(b, err)
 		defer stop()
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
 		tracer.config.sampler = NewRateSampler(0)
 		testPrioritySampler(tracer).defaultRate = 0
-		tracer.config.serviceName = "test_service"
 		b.ResetTimer()
 		for range b.N {
 			span := tracer.StartSpan("name_1")
@@ -2860,13 +2845,12 @@ func TestEmptyChunksNotSent(t *testing.T) {
 	assert := assert.New(t)
 
 	// Use the same setup as the working "dropped_stats" test but add stats computation
-	tracer, transport, _, stop, err := startTestTracer(t, WithStatsComputation(true))
+	tracer, transport, _, stop, err := startTestTracer(t, WithStatsComputation(true), WithService("test_service"))
 	assert.NoError(err)
 	defer stop()
 
 	tracer.config.internalConfig.SetStatsComputationEnabled(true, internalconfig.OriginCode)
 	testPrioritySampler(tracer).defaultRate = 0
-	tracer.config.serviceName = "test_service"
 
 	span := tracer.StartSpan("name_1")
 	child := tracer.StartSpan("name_2", ChildOf(span.Context()))

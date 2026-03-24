@@ -275,7 +275,7 @@ func Start(opts ...StartOption) error {
 	cfg.AppVersion = t.config.internalConfig.Version()
 	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
-	cfg.ServiceName = t.config.serviceName
+	cfg.ServiceName = t.config.internalConfig.ServiceName()
 	if t.config.agent.load().hasRemoteConfig {
 		if err := t.startRemoteConfig(cfg); err != nil {
 			log.Warn("Remote config startup error: %s", err.Error())
@@ -328,7 +328,7 @@ func storeConfig(c *config) {
 		Language:           "go",
 		Version:            version.Tag,
 		Hostname:           c.internalConfig.Hostname(),
-		ServiceName:        c.serviceName,
+		ServiceName:        c.internalConfig.ServiceName(),
 		ServiceEnvironment: c.internalConfig.Env(),
 		ServiceVersion:     c.internalConfig.Version(),
 		ProcessTags:        processtags.GlobalTags().String(),
@@ -447,7 +447,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.serviceName, c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {
@@ -853,7 +853,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	span := spanStart(operationName, options...)
 	if span.service == "" {
-		span.service = t.config.serviceName
+		span.service = t.config.internalConfig.ServiceName()
 	}
 
 	cfg := t.config.internalConfig
@@ -872,7 +872,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 
 	if ver := cfg.Version(); ver != "" {
-		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
+		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.internalConfig.ServiceName()) {
 			span.setMetaInit(ext.Version, ver)
 		}
 	}
@@ -1068,7 +1068,7 @@ func (t *tracer) TracerConf() TracerConf {
 		PeerServiceMapping:   t.config.internalConfig.PeerServiceMapping,
 		EnvTag:               t.config.internalConfig.Env(),
 		VersionTag:           t.config.internalConfig.Version(),
-		ServiceTag:           t.config.serviceName,
+		ServiceTag:           t.config.internalConfig.ServiceName(),
 		TracingAsTransport:   t.config.tracingAsTransport,
 		isLambdaFunction:     t.config.internalConfig.IsLambdaFunction(),
 	}
