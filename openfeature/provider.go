@@ -486,7 +486,7 @@ func toResolutionError(err error) openfeature.ResolutionError {
 	case errors.Is(err, errParseError):
 		return openfeature.NewParseErrorResolutionError(errMsg)
 	case errors.Is(err, errNoConfiguration):
-		return openfeature.NewGeneralResolutionError(errMsg)
+		return openfeature.NewProviderNotReadyResolutionError(errMsg)
 	default:
 		return openfeature.NewGeneralResolutionError(errMsg)
 	}

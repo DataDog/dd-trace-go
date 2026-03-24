@@ -262,6 +262,7 @@ func TestRecordAllErrorTypes(t *testing.T) {
 		{of.TypeMismatchCode, "type_mismatch"},
 		{of.ParseErrorCode, "parse_error"},
 		{of.GeneralCode, "general"},
+		{of.ProviderNotReadyCode, "provider_not_ready"},
 	}
 
 	for _, tc := range errorCases {
@@ -283,6 +284,25 @@ func TestRecordAllErrorTypes(t *testing.T) {
 		if !errorTypes[tc.expected] {
 			t.Errorf("expected error type %q in data points", tc.expected)
 		}
+	}
+}
+
+func TestRecordUnknownReasonFallback(t *testing.T) {
+	m, reader := setupTestMetrics(t)
+	ctx := context.Background()
+
+	// Record with empty reason - should fall back to "unknown"
+	m.record(ctx, "test-flag", makeDetails("variant-a", "", ""))
+
+	rm := collectMetrics(t, reader)
+	dps := findCounter(t, rm)
+
+	if len(dps) != 1 {
+		t.Fatalf("expected 1 data point, got %d", len(dps))
+	}
+
+	if got := getAttr(dps[0], attrReason); got != "unknown" {
+		t.Errorf("reason: got %q, want %q", got, "unknown")
 	}
 }
 
@@ -428,4 +448,10 @@ func TestIntegrationEvaluate(t *testing.T) {
 			t.Errorf("error.type: got %q, want %q", got, "type_mismatch")
 		}
 	})
+
+	// Note: Testing "no config loaded" via the full OpenFeature client is not straightforward
+	// because the provider's Init() waits for configuration. When using SetNamedProvider
+	// without waiting, the SDK handles evaluations without calling our provider.
+	// The provider_not_ready error code is tested in TestRecordAllErrorTypes which verifies
+	// that metrics are correctly recorded with error.type=provider_not_ready.
 }
