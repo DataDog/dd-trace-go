@@ -38,19 +38,21 @@ func startTelemetry(c *config) telemetry.Client {
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
 	// Read enabled value and origin atomically to prevent TOCTOU bugs
 	traceEnabled, traceEnabledOrigin := c.enabled.getCurrentAndOrigin()
+	// Hoist to local var so both fields come from the same atomic snapshot.
+	a := c.agent.load()
 	telemetryConfigs := []telemetry.Configuration{
-		{Name: "agent_feature_drop_p0s", Value: c.agent.DropP0s},
+		{Name: "agent_feature_drop_p0s", Value: a.DropP0s},
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
-		{Name: "dogstatsd_port", Value: c.agent.StatsdPort},
+		{Name: "dogstatsd_port", Value: a.StatsdPort},
 		{Name: "lambda_mode", Value: c.internalConfig.LogToStdout()},
 		{Name: "send_retries", Value: c.sendRetries},
 		{Name: "retry_interval", Value: c.internalConfig.RetryInterval()},
 		{Name: "trace_startup_logs_enabled", Value: c.internalConfig.LogStartup()},
-		{Name: "service", Value: c.serviceName},
+		{Name: "service", Value: c.internalConfig.ServiceName()},
 		{Name: "universal_version", Value: c.universalVersion},
 		{Name: "env", Value: c.internalConfig.Env()},
 		{Name: "version", Value: c.internalConfig.Version()},
-		{Name: "trace_agent_url", Value: c.agentURL.String()},
+		{Name: "trace_agent_url", Value: c.internalConfig.AgentURL().String()},
 		{Name: "agent_hostname", Value: c.internalConfig.Hostname()},
 		{Name: "runtime_metrics_v2_enabled", Value: c.internalConfig.RuntimeMetricsV2Enabled()},
 		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
@@ -117,13 +119,13 @@ func startTelemetry(c *config) telemetry.Client {
 	// When the agent was unreachable at startup, we still set the URL so that
 	// telemetry is attempted rather than silently dropped.
 	// When the spans are emitted on stdout it means there is no agent at all in the env.
-	if (!c.agent.reachable || c.agent.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
-		cfg.AgentURL = c.agentURL.String()
+	if (!a.reachable || a.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
+		cfg.AgentURL = c.internalConfig.AgentURL().String()
 	}
 	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
 		cfg.APIKey = env.Get("DD_API_KEY")
 	}
-	client, err := telemetry.NewClient(c.serviceName, c.internalConfig.Env(), c.internalConfig.Version(), cfg)
+	client, err := telemetry.NewClient(c.internalConfig.ServiceName(), c.internalConfig.Env(), c.internalConfig.Version(), cfg)
 	if err != nil {
 		log.Debug("tracer: failed to create telemetry client: %s", err.Error())
 		return nil

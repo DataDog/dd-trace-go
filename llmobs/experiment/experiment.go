@@ -315,7 +315,7 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 	)
 
 	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, illmobs.StartSpanConfig{})
-	defer span.Finish(illmobs.FinishSpanConfig{Error: err})
+	defer func() { span.Finish(illmobs.FinishSpanConfig{Error: err}) }()
 
 	tags := make(map[string]string)
 	maps.Copy(tags, e.cfg.tags)

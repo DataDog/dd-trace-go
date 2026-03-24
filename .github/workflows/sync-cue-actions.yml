@@ -1,0 +1,46 @@
+name: Sync CUE Action Pins
+
+on:
+  push:
+    branches:
+      - "dependabot/**"
+    paths:
+      - ".github/workflows/test-apps.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  sync-cue:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+
+      - name: Sync action SHAs to CUE template
+        run: |
+          cd .github/workflows || exit 1
+          actions=("actions/checkout" "actions/setup-go" "datadog/agent-github-action")
+          for action in "${actions[@]}"; do
+            sha=$(grep -m1 "uses: ${action}@" test-apps.yml \
+              | grep -oE '@[a-f0-9]{40}' | cut -c2-)
+            if [[ -z "${sha}" ]]; then
+              echo "WARNING: ${action} not found in test-apps.yml"
+              continue
+            fi
+            # Replace everything between @ and closing " in CUE string
+            sed -i -E "s|${action}@[^\"]+|${action}@${sha}|g" test-apps.cue
+            echo "Synced ${action} -> ${sha:0:12}..."
+          done
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/test-apps.cue
+          if git diff --cached --quiet; then
+            echo "No CUE changes needed"
+          else
+            git commit -m "ci(cue): sync action SHAs from Dependabot update"
+            git push
+          fi

@@ -133,12 +133,12 @@ jobs: {
                 steps: [
                     {
                         name: "Checkout Code",
-                        uses: "actions/checkout@v3",
+                        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
                         with: {ref: "${{ inputs.ref || github.ref }}"},
                     },
                     {
                         name: "Start Agent",
-                        uses: "datadog/agent-github-action@v1.3",
+                        uses: "datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a",
                         with: {
                             api_key: "${{ secrets['\(env.key)'] }}",
                             datadog_site: "\(env.site)",
@@ -146,7 +146,7 @@ jobs: {
                     },
                     {
                         name: "Setup Go"
-                        uses: "actions/setup-go@v3",
+                        uses: "actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417",
                         with: {
                             "go-version": "stable",
                             "check-latest": true,

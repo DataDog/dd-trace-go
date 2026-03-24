@@ -218,7 +218,7 @@ func TestShouldObfuscate(t *testing.T) {
 	} {
 		t.Run(params.name, func(t *testing.T) {
 			cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
-			cfg.agent = agentFeatures{obfuscationVersion: params.agentVersion}
+			cfg.agent.store(agentFeatures{obfuscationVersion: params.agentVersion})
 			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 			tracerObfuscationVersion = params.tracerVersion
@@ -239,7 +239,9 @@ func TestObfuscation(t *testing.T) {
 	}
 	tsp := newDummyTransport()
 	cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
-	cfg.agent.obfuscationVersion = 2
+	af := cfg.agent.load()
+	af.obfuscationVersion = 2
+	cfg.agent.store(af)
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 	defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 	tracerObfuscationVersion = 2
@@ -290,21 +292,25 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 			c.transport = newDummyTransport()
 		})
 		assert.NoError(err)
-		cfg.agent.defaultEnv = "agent-prod"
+		af := cfg.agent.load()
+		af.defaultEnv = "agent-prod"
+		cfg.agent.store(af)
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("agent-prod", c.aggregationKey.Env)
 	})
 
 	t.Run("prefers-tracer-env-over-agent-default", func(t *testing.T) {
 		cfg := newTestConfigWithTransportAndEnv(t, newDummyTransport(), "tracer-staging")
-		cfg.agent.defaultEnv = "agent-prod"
+		af := cfg.agent.load()
+		af.defaultEnv = "agent-prod"
+		cfg.agent.store(af)
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("tracer-staging", c.aggregationKey.Env)
 	})
 
 	t.Run("falls-back-to-unknown-env-when-both-empty", func(t *testing.T) {
 		cfg := newTestConfigWithTransport(t, newDummyTransport())
-		cfg.agent = agentFeatures{}
+		cfg.agent.store(agentFeatures{})
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("unknown-env", c.aggregationKey.Env)
 	})
@@ -342,6 +348,60 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	group := actualStats[0].Stats[0].Stats[0]
 	assert.Equal(t, uniqueMethod, group.GetHTTPMethod())
 	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
+}
+
+func TestStatsIncludeServiceSource(t *testing.T) {
+	bucketSize := int64(500_000)
+	s := Span{
+		name:          "http.request",
+		service:       "custom-service",
+		serviceSource: "m",
+		start:         time.Now().UnixNano(),
+		duration:      int64(time.Millisecond),
+		metrics:       map[string]float64{keyMeasured: 1},
+		meta: map[string]string{
+			ext.KeyServiceSource: "m",
+		},
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- ss
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Equal(t, "m", group.GetServiceSource())
+}
+
+func TestStatsServiceSourceNotSetWhenEmpty(t *testing.T) {
+	bucketSize := int64(500_000)
+	s := Span{
+		name:     "http.request",
+		service:  "my-service",
+		start:    time.Now().UnixNano(),
+		duration: int64(time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- ss
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Empty(t, group.GetServiceSource())
 }
 
 // failingStatsTransport is a transport whose sendStats fails a configurable

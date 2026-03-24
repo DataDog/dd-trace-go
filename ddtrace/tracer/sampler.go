@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
@@ -134,13 +135,35 @@ type serviceEnvKey struct {
 // rampUpInterval is the minimum duration between successive 2x rate increases.
 const rampUpInterval = time.Second
 
+// defaultSampler is the fallback sampling strategy used when no user-defined
+// trace sampling rules match. In "Datadog" mode this is the prioritySampler;
+// in OTLP export mode this is the otelParentBasedAlwaysOnSampler.
+type defaultSampler interface {
+	apply(s *Span)
+}
+
+// otelParentBasedAlwaysOnSampler implements parentbased_always_on: it honors
+// propagated sampling decisions from parents, else keeps every span at rate 1.0.
+type otelParentBasedAlwaysOnSampler struct{}
+
+func newOtelParentBasedAlwaysOnSampler() *otelParentBasedAlwaysOnSampler {
+	return &otelParentBasedAlwaysOnSampler{}
+}
+
+// +checklocksignore — Called during initialization in StartSpan, span not yet shared.
+func (s *otelParentBasedAlwaysOnSampler) apply(spn *Span) {
+	spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
+	spn.SetTag(keySamplingPriorityRate, 1.0)
+}
+
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.
 type prioritySampler struct {
-	mu          locking.RWMutex
-	rates       map[serviceEnvKey]float64 // +checklocks:mu
-	defaultRate float64                   // +checklocks:mu
-	lastCapped  time.Time                 // +checklocks:mu
+	mu               locking.RWMutex
+	rates            map[serviceEnvKey]float64 // +checklocks:mu
+	defaultRate      float64                   // +checklocks:mu
+	agentRatesLoaded bool                      // +checklocks:mu
+	lastCapped       time.Time                 // +checklocks:mu
 }
 
 func newPrioritySampler() *prioritySampler {
@@ -198,6 +221,7 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+	ps.agentRatesLoaded = true
 	now := time.Now()
 	canIncrease := ps.lastCapped.IsZero() || now.Sub(ps.lastCapped) >= rampUpInterval
 	capApplied := false
@@ -225,9 +249,17 @@ func (ps *prioritySampler) readRatesJSON(rc io.ReadCloser) error {
 // guard the span.
 // +checklocksignore — Called during initialization in StartSpan, span not yet shared.
 func (ps *prioritySampler) getRate(spn *Span) float64 {
-	key := serviceEnvKey{service: spn.service, env: spn.meta[ext.Environment]}
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
+	return ps.getRateLocked(spn)
+}
+
+// getRateLocked returns the sampling rate for the given span.
+// Caller must hold ps.mu (at least RLock).
+// +checklocksignore — Called during initialization in StartSpan, span not yet shared.
+func (ps *prioritySampler) getRateLocked(spn *Span) float64 {
+	assert.RWMutexRLocked(&ps.mu)
+	key := serviceEnvKey{service: spn.service, env: spn.meta[ext.Environment]}
 	if rate, ok := ps.rates[key]; ok {
 		return rate
 	}
@@ -245,13 +277,21 @@ func (ps *prioritySampler) getDefaultRate() float64 {
 // to modify the span.
 // +checklocksignore — Called during initialization in StartSpan, span not yet shared.
 func (ps *prioritySampler) apply(spn *Span) {
-	rate := ps.getRate(spn)
+	ps.mu.RLock()
+	rate := ps.getRateLocked(spn)
+	fromAgent := ps.agentRatesLoaded
+	ps.mu.RUnlock()
 	if sampledByRate(spn.traceID, rate) {
 		spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.AgentRate)
 	} else {
 		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
 	}
 	spn.SetTag(keySamplingPriorityRate, rate)
-	// Set the Knuth sampling rate tag when sampled by agent rate
-	spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	// Only set the Knuth sampling rate tag when actual agent rates have been
+	// received. The initial default rate (1.0) is a client-side fallback that
+	// does not represent an agent-configured rate, so it must not propagate
+	// as _dd.p.ksr to stay consistent with other tracers.
+	if fromAgent {
+		spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+	}
 }

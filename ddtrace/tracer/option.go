@@ -23,6 +23,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/mod/semver"
@@ -133,8 +134,8 @@ var (
 
 // Supported trace protocols.
 const (
-	traceProtocolV04 = 0.4 // v0.4 (default)
-	traceProtocolV1  = 1.0 // v1.0
+	traceProtocolV04 = internalconfig.TraceProtocolV04
+	traceProtocolV1  = internalconfig.TraceProtocolV1
 )
 
 // config holds the tracer configuration.
@@ -146,8 +147,13 @@ type config struct {
 	appsecStartOptions []appsecconfig.StartOption
 
 	// agent holds the capabilities of the agent and determines some
-	// of the behaviour of the tracer.
-	agent agentFeatures
+	// of the behaviour of the tracer. It is updated atomically so that
+	// periodic polling can refresh it without locking the hot path.
+	agent atomicAgentFeatures
+
+	// agentInfoPollInterval overrides the default polling interval for /info.
+	// A zero value uses defaultAgentInfoPollInterval.
+	agentInfoPollInterval time.Duration
 
 	// integrations reports if the user has instrumented a Datadog integration and
 	// if they have a version of the library available to integrate.
@@ -157,21 +163,12 @@ type config struct {
 	// failure.
 	sendRetries int
 
-	// serviceName specifies the name of this application.
-	serviceName string
-
 	// universalVersion, reports whether span service name and config service name
 	// should match to set application version tag. False by default
 	universalVersion bool
 
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler RateSampler
-
-	// agentURL is the agent URL that receives traces from the tracer.
-	agentURL *url.URL
-
-	// originalAgentURL is the agent URL that receives traces from the tracer and does not get changed.
-	originalAgentURL *url.URL
 
 	// globalTags holds a set of tags that will be automatically applied to
 	// all spans.
@@ -257,11 +254,11 @@ type config struct {
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
 
-	// traceProtocol specifies the trace protocol to use.
-	traceProtocol float64
-
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
+
+	// temporary field to represent otlp export mode; always false for now
+	otlpExportMode bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -312,10 +309,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		if err := c.internalConfig.HostnameLookupError(); err != nil {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
-	}
-	if v := getDDorOtelConfig("service"); v != "" {
-		c.serviceName = v
-		globalconfig.SetServiceName(v)
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := env.Get("DD_TRACE_HEADER_TAGS"); v != "" {
@@ -382,21 +375,17 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
-	if c.agentURL == nil {
-		c.agentURL = internal.AgentURLFromEnv()
-	}
-	c.originalAgentURL = c.agentURL // Preserve the original agent URL for logging
+	rawAgentURL := c.internalConfig.RawAgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
 			// Make sure we don't create http client traces from inside the tracer by using our http client
 			// TODO(eliott.bouhana): remove once dd:no-span is implemented
 			log.Debug("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
 		}
-		if c.agentURL.Scheme == "unix" {
+		if rawAgentURL != nil && rawAgentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
-			c.httpClient = internal.UDSClient(c.agentURL.Path, cmp.Or(c.httpClientTimeout, defaultHTTPTimeout))
-			c.agentURL = internal.UnixDataSocketURL(c.agentURL.Path)
+			c.httpClient = internal.UDSClient(rawAgentURL.Path, cmp.Or(c.httpClientTimeout, defaultHTTPTimeout))
 		} else {
 			c.httpClient = internal.DefaultHTTPClient(c.httpClientTimeout, false)
 		}
@@ -417,20 +406,22 @@ func newConfig(opts ...StartOption) (*config, error) {
 			}
 		}
 	}
-	if c.serviceName == "" {
+	if c.internalConfig.ServiceName() == "" {
 		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
-				c.serviceName = s
+				c.internalConfig.SetServiceName(s, c.globalTags.Origin())
 				globalconfig.SetServiceName(s)
 			}
 		} else {
 			// There is not an explicit service set, default to binary name.
 			// In this case, don't set a global service name so the contribs continue using their defaults.
-			c.serviceName = filepath.Base(os.Args[0])
+			c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), internalconfig.OriginDefault)
 		}
+	} else {
+		globalconfig.SetServiceName(c.internalConfig.ServiceName())
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.agentURL.String(), c.httpClient)
+		c.transport = newHTTPTransport(c.internalConfig.AgentURL().String(), c.httpClient)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -465,14 +456,17 @@ func newConfig(opts ...StartOption) (*config, error) {
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
 	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
-	c.agent = loadAgentFeatures(agentDisabled, c.agentURL, c.httpClient)
-	if c.agent.v1ProtocolAvailable {
-		c.traceProtocol = traceProtocolV1
+	agentURL := c.internalConfig.AgentURL()
+	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
+	c.agent.store(af)
+	// If the agent doesn't support the v1 protocol, downgrade to v0.4
+	if !af.v1ProtocolAvailable {
+		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
+	}
+	if c.internalConfig.TraceProtocol() == traceProtocolV1 {
 		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = fmt.Sprintf("%s%s", c.agentURL.String(), tracesAPIPathV1)
+			t.traceURL = fmt.Sprintf("%s%s", agentURL.String(), tracesAPIPathV1)
 		}
-	} else {
-		c.traceProtocol = traceProtocolV04
 	}
 
 	info, ok := debug.ReadBuildInfo()
@@ -483,7 +477,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if c.statsdClient == nil {
 		// configure statsd client
-		addr := resolveDogstatsdAddr(c)
+		addr := resolveDogstatsdAddr(c.dogstatsdAddr, af)
 		globalconfig.SetDogstatsdAddr(addr)
 		c.dogstatsdAddr = addr
 	}
@@ -498,16 +492,16 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
 		DDTags:     c.globalTags.get(),
 		Env:        c.internalConfig.Env(),
-		Service:    c.serviceName,
+		Service:    c.internalConfig.ServiceName(),
 		Version:    c.internalConfig.Version(),
-		AgentURL:   c.agentURL,
+		AgentURL:   c.internalConfig.AgentURL(),
 		APIKey:     env.Get("DD_API_KEY"),
 		APPKey:     env.Get("DD_APP_KEY"),
 		HTTPClient: c.httpClient,
 		Site:       env.Get("DD_SITE"),
 	}
 	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
-		EVPProxyV2: c.agent.evpProxyV2,
+		EVPProxyV2: af.evpProxyV2,
 	}
 
 	return c, nil
@@ -540,14 +534,13 @@ func apmTracingDisabled(c *config) {
 // address and the agent-reported port. If the agent reports a port, it will be used
 // instead of the user-defined address' port. UDS paths are honored regardless of the
 // agent-reported port.
-func resolveDogstatsdAddr(c *config) string {
-	addr := c.dogstatsdAddr
+func resolveDogstatsdAddr(addr string, af agentFeatures) string {
 	if addr == "" {
 		// no config defined address; use host and port from env vars
 		// or default to localhost:8125 if not set
 		addr = defaultDogstatsdAddr()
 	}
-	agentport := c.agent.StatsdPort
+	agentport := af.StatsdPort
 	if agentport == 0 {
 		// the agent didn't report a port; use the already resolved address as
 		// features are loaded from the trace-agent, which might be not running
@@ -645,13 +638,16 @@ type agentFeatures struct {
 	evpProxyV2 bool
 
 	// v1ProtocolAvailable reports whether the trace-agent and tracer are configured to use the v1 protocol.
-	// Starting from tracer version v2.7.0, this value is true by default.
 	v1ProtocolAvailable bool
 
 	// hasTelemetryProxy reports whether the trace-agent exposes the /telemetry/proxy/ endpoint.
 	// This is only true when the agent has telemetry forwarding enabled (the default).
 	// Notably, the Datadog Lambda extension does not expose this endpoint.
 	hasTelemetryProxy bool
+
+	// hasRemoteConfig reports whether the trace-agent has remote configuration
+	// enabled, as indicated by the presence of /v0.7/config in its endpoints.
+	hasRemoteConfig bool
 
 	// reachable reports whether the trace-agent was reachable at startup and
 	// responded successfully to the /info endpoint. When false, the agent may
@@ -666,23 +662,72 @@ func (a *agentFeatures) HasFlag(feat string) bool {
 	return ok
 }
 
-// loadAgentFeatures queries the trace-agent for its capabilities and updates
-// the tracer's behaviour.
-func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) (features agentFeatures) {
-	if agentDisabled {
-		// there is no agent; all features off
-		return
+// atomicAgentFeatures wraps agentFeatures in an atomic pointer for lock-free
+// reads on the hot path. All fields update atomically as a single consistent
+// snapshot from one /info response.
+type atomicAgentFeatures struct {
+	val atomic.Pointer[agentFeatures]
+}
+
+func (a *atomicAgentFeatures) load() agentFeatures {
+	if p := a.val.Load(); p != nil {
+		return *p
 	}
-	resp, err := httpClient.Get(fmt.Sprintf("%s/info", agentURL))
+	return agentFeatures{}
+}
+
+func (a *atomicAgentFeatures) store(f agentFeatures) {
+	a.val.Store(&f)
+}
+
+// update atomically reads the current snapshot, calls fn with it, and stores
+// the result. fn may be called more than once if a concurrent store races the
+// CAS; it must therefore be a pure transform with no observable side-effects.
+func (a *atomicAgentFeatures) update(fn func(agentFeatures) agentFeatures) {
+	for {
+		old := a.val.Load()
+		var cur agentFeatures
+		if old != nil {
+			cur = *old
+		}
+		next := fn(cur)
+		if a.val.CompareAndSwap(old, &next) {
+			return
+		}
+	}
+}
+
+// errAgentFeaturesNotSupported is returned by fetchAgentFeatures when the
+// agent does not expose the /info endpoint (pre-7.28.0 agents). Callers
+// should treat this as "no capabilities known" at startup, or "keep the
+// previous snapshot" during a poll.
+var errAgentFeaturesNotSupported = errors.New("agent does not support /info")
+
+// fetchAgentFeatures queries the trace-agent's /info endpoint and parses the
+// response into an agentFeatures value. It returns an error if the request
+// fails or the response cannot be decoded; the caller should retain the
+// previous snapshot in that case. A 404 response returns
+// errAgentFeaturesNotSupported so callers can distinguish it from a real
+// network failure. The request is bound to ctx so callers can cancel it on
+// shutdown.
+func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http.Client) (agentFeatures, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agentURL.JoinPath("info").String(), nil)
 	if err != nil {
-		log.Error("Loading features: %s", err.Error())
-		return
+		return agentFeatures{}, fmt.Errorf("creating /info request: %w", err)
 	}
-	if resp.StatusCode == http.StatusNotFound {
-		// agent is older than 7.28.0, features not discoverable
-		return
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return agentFeatures{}, fmt.Errorf("loading features: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		// agent is older than 7.28.0; /info not available
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck // best-effort drain for connection reuse
+		return agentFeatures{}, errAgentFeaturesNotSupported
+	}
+	if resp.StatusCode != http.StatusOK {
+		return agentFeatures{}, fmt.Errorf("unexpected /info status: %d", resp.StatusCode)
+	}
 	type infoResponse struct {
 		Endpoints          []string `json:"endpoints"`
 		ClientDropP0s      bool     `json:"client_drop_p0s"`
@@ -696,13 +741,11 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 			DefaultEnv string `json:"default_env"`
 		} `json:"config"`
 	}
-
 	var info infoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		log.Error("Decoding features: %s", err.Error())
-		return
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
+		return agentFeatures{}, fmt.Errorf("decoding features: %w", err)
 	}
-
+	var features agentFeatures
 	features.DropP0s = info.ClientDropP0s
 	features.StatsdPort = info.Config.StatsdPort
 	features.defaultEnv = info.Config.DefaultEnv
@@ -717,14 +760,11 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		case "/evp_proxy/v2/":
 			features.evpProxyV2 = true
 		case "/v1.0/traces":
-			// Set the trace protocol to use.
-			// If DD_TRACE_AGENT_PROTOCOL_VERSION is not set (not customized) or is already
-			// set to v1.0, then enable v1 trace protocol.
-			if s, ok := env.Lookup("DD_TRACE_AGENT_PROTOCOL_VERSION"); !ok || s == "1.0" {
-				features.v1ProtocolAvailable = true
-			}
+			features.v1ProtocolAvailable = true
 		case "/telemetry/proxy/":
 			features.hasTelemetryProxy = true
+		case "/v0.7/config":
+			features.hasRemoteConfig = true
 		}
 	}
 	features.featureFlags = make(map[string]struct{}, len(info.FeatureFlags))
@@ -732,7 +772,28 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 		features.featureFlags[flag] = struct{}{}
 	}
 	features.reachable = true
+	return features, nil
+}
+
+// loadAgentFeatures queries the trace-agent for its capabilities at startup and
+// stores the result. It handles the agentDisabled case and logs errors.
+func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.Client) agentFeatures {
+	if agentDisabled {
+		// there is no agent; all features off
+		return agentFeatures{}
+	}
+	features, err := fetchAgentFeatures(context.Background(), agentURL, httpClient)
+	if err != nil && !errors.Is(err, errAgentFeaturesNotSupported) {
+		log.Error("%s", err.Error())
+	}
 	return features
+}
+
+// agentEnabled reports whether the tracer should communicate with the agent.
+// The agent is considered disabled in serverless (LogToStdout), when the
+// tracer itself is disabled, or in CI visibility agentless mode.
+func (c *config) agentEnabled() bool {
+	return !c.internalConfig.LogToStdout() && c.enabled.get() && !c.ciVisibilityAgentless
 }
 
 // MarkIntegrationImported labels the given integration as imported
@@ -772,7 +833,8 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 // - Trace Agent exposes 'stats' endpoint
 // - Stats Computation is enabled on the tracer (or has 'discovery' FF)
 func (c *config) canComputeStats() bool {
-	return c.agent.Stats && c.agent.DropP0s && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
+	a := c.agent.load()
+	return a.Stats && a.DropP0s && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
 }
 
 // canDropP0s determines whether P0 spans can be dropped.
@@ -787,11 +849,11 @@ func statsTags(c *config) []string {
 		"lang:go",
 		"lang_version:" + runtime.Version(),
 	}
-	if c.internalConfig.Env() != "" {
-		tags = append(tags, "env:"+c.internalConfig.Env())
+	if v := c.internalConfig.Env(); v != "" {
+		tags = append(tags, "env:"+v)
 	}
-	if hostname := c.internalConfig.Hostname(); hostname != "" {
-		tags = append(tags, "host:"+hostname)
+	if v := c.internalConfig.Hostname(); v != "" {
+		tags = append(tags, "host:"+v)
 	}
 	for k, v := range c.globalTags.get() {
 		if vstr, ok := v.(string); ok {
@@ -800,8 +862,8 @@ func statsTags(c *config) []string {
 	}
 	globalconfig.SetStatsTags(tags)
 	tags = append(tags, "tracer_version:"+version.Tag)
-	if c.serviceName != "" {
-		tags = append(tags, "service:"+c.serviceName)
+	if v := c.internalConfig.ServiceName(); v != "" {
+		tags = append(tags, "service:"+v)
 	}
 	return tags
 }
@@ -903,8 +965,8 @@ func WithPropagator(p Propagator) StartOption {
 // WithService sets the default service name for the program.
 func WithService(name string) StartOption {
 	return func(c *config) {
-		c.serviceName = name
-		globalconfig.SetServiceName(c.serviceName)
+		c.internalConfig.SetServiceName(name, internalconfig.OriginCode)
+		globalconfig.SetServiceName(name)
 	}
 }
 
@@ -920,10 +982,10 @@ func WithGlobalServiceName(enabled bool) StartOption {
 // localhost:8126. It should contain both host and port.
 func WithAgentAddr(addr string) StartOption {
 	return func(c *config) {
-		c.agentURL = &url.URL{
+		c.internalConfig.SetAgentURL(&url.URL{
 			Scheme: "http",
 			Host:   addr,
-		}
+		}, telemetry.OriginCode)
 	}
 }
 
@@ -948,12 +1010,15 @@ func WithAgentURL(agentURL string) StartOption {
 		}
 		switch u.Scheme {
 		case "http", "https":
-			c.agentURL = &url.URL{
+			c.internalConfig.SetAgentURL(&url.URL{
 				Scheme: u.Scheme,
 				Host:   u.Host,
-			}
+			}, telemetry.OriginCode)
 		case "unix":
-			c.agentURL = internal.UnixDataSocketURL(u.Path)
+			c.internalConfig.SetAgentURL(&url.URL{
+				Scheme: "unix",
+				Path:   u.Path,
+			}, telemetry.OriginCode)
 		default:
 			log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: http, https, unix.", u.Scheme, agentURL)
 		}
@@ -1053,10 +1118,10 @@ func WithHTTPClient(client *http.Client) StartOption {
 // WithUDS configures the HTTP client to dial the Datadog Agent via the specified Unix Domain Socket path.
 func WithUDS(socketPath string) StartOption {
 	return func(c *config) {
-		c.agentURL = &url.URL{
+		c.internalConfig.SetAgentURL(&url.URL{
 			Scheme: "unix",
 			Path:   socketPath,
-		}
+		}, telemetry.OriginCode)
 	}
 }
 

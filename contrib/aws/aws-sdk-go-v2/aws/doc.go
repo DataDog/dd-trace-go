@@ -46,7 +46,6 @@
 //		// Create a root span.
 //		span, ctx := tracer.StartSpanFromContext(context.Background(), "parent.request",
 //			tracer.SpanType(ext.SpanTypeWeb),
-//			tracer.ServiceName("web"),
 //			tracer.ResourceName("/upload"),
 //		)
 //		defer span.Finish()

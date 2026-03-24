@@ -31,10 +31,19 @@ import (
 const (
 	bucketDuration     = time.Second * 10
 	defaultServiceName = "unnamed-go-service"
-	// maxTransactionBytesPerBucket caps the Transactions blob per bucket to
-	// prevent unbounded memory growth under high transaction rates.
-	// Records beyond this limit are silently dropped.
-	maxTransactionBytesPerBucket = 1 << 20 // 1 MiB
+
+	// maxTransactionBucketSize is the soft size limit for transaction bytes in a single bucket.
+	// When exceeded, an early flush is triggered to keep individual payloads small.
+	// Record size varies by transaction ID length (e.g. 46 bytes for UUID-length IDs).
+	maxTransactionBucketSize = 1024 * 512
+
+	// maxTransactionBytesPerPeriod is the maximum total transaction bytes the processor
+	// will accept per bucket period (10s). Once exceeded, new transactions are dropped
+	// and a warning is logged. This prevents overwhelming the downstream pipeline
+	// (agent → data-pipeline-edge → Kafka) which cannot sustain arbitrarily high
+	// throughput. At 46 bytes per UUID-length transaction ID, this allows ~5,000
+	// transactions/sec. Shorter IDs allow proportionally higher throughput.
+	maxTransactionBytesPerPeriod = 2_300_000
 )
 
 // use the same gamma and index offset as the Datadog backend, to avoid doing any conversions in
@@ -122,13 +131,25 @@ func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte
 		TransactionCheckpointIds: checkpointNameMapping,
 	}
 	for key, offset := range b.latestProduceOffsets {
-		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_produce"}, Value: offset})
+		tags := []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_produce"}
+		if key.cluster != "" {
+			tags = append(tags, fmt.Sprintf("kafka_cluster_id:%s", key.cluster))
+		}
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
 	for key, offset := range b.latestCommitOffsets {
-		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("consumer_group:%s", key.group), fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_commit"}, Value: offset})
+		tags := []string{fmt.Sprintf("consumer_group:%s", key.group), fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_commit"}
+		if key.cluster != "" {
+			tags = append(tags, fmt.Sprintf("kafka_cluster_id:%s", key.cluster))
+		}
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
 	for key, offset := range b.latestHighWatermarkOffsets {
-		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_high_watermark"}, Value: offset})
+		tags := []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_high_watermark"}
+		if key.cluster != "" {
+			tags = append(tags, fmt.Sprintf("kafka_cluster_id:%s", key.cluster))
+		}
+		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
 	return exported
 }
@@ -157,22 +178,25 @@ type processorInput struct {
 }
 
 type processorStats struct {
-	payloadsIn      int64
-	flushedPayloads int64
-	flushedBuckets  int64
-	flushErrors     int64
-	dropped         int64
+	payloadsIn          int64
+	flushedPayloads     int64
+	flushedBuckets      int64
+	flushErrors         int64
+	dropped             int64
+	droppedTransactions int64
 }
 
 type partitionKey struct {
 	partition int32
 	topic     string
+	cluster   string
 }
 
 type partitionConsumerKey struct {
 	partition int32
 	topic     string
 	group     string
+	cluster   string
 }
 
 type offsetType int
@@ -190,6 +214,7 @@ type kafkaOffset struct {
 	partition  int32
 	offsetType offsetType
 	timestamp  int64
+	cluster    string
 }
 
 type bucketKey struct {
@@ -257,6 +282,14 @@ type Processor struct {
 	primaryTag           string
 	service              string
 	version              string
+	// earlyFlush is set by addTransaction when the transaction buffer for a bucket exceeds
+	// maxTransactionBucketSize. Only accessed from the run goroutine; no locking needed.
+	earlyFlush bool
+	// txnBytesThisPeriod tracks the total transaction bytes accepted in the current
+	// bucket period (across early flushes). Reset when the period rolls over.
+	// Only accessed from the run goroutine; no locking needed.
+	txnBytesThisPeriod int64
+	txnPeriodStart     int64 // btime of the current period
 	// used for tests
 	timeSource func() time.Time
 }
@@ -342,6 +375,7 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 		b.latestProduceOffsets[partitionKey{
 			partition: o.partition,
 			topic:     o.topic,
+			cluster:   o.cluster,
 		}] = o.offset
 		return
 	}
@@ -349,6 +383,7 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 		b.latestHighWatermarkOffsets[partitionKey{
 			partition: o.partition,
 			topic:     o.topic,
+			cluster:   o.cluster,
 		}] = o.offset
 		return
 	}
@@ -356,6 +391,7 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 		partition: o.partition,
 		group:     o.group,
 		topic:     o.topic,
+		cluster:   o.cluster,
 	}] = o.offset
 }
 
@@ -388,6 +424,20 @@ func appendTransactionBytes(dst []byte, checkpointID byte, timestamp int64, tran
 func (p *Processor) addTransaction(e transactionEntry) {
 	log.Debug("datastreams: addTransaction checkpoint=%q txnID=%q ts=%d", e.checkpointName, e.transactionID, e.timestamp)
 	btime := alignTs(e.timestamp, bucketDuration.Nanoseconds())
+
+	// Reset the per-period budget when we roll into a new bucket period.
+	if btime != p.txnPeriodStart {
+		p.txnBytesThisPeriod = 0
+		p.txnPeriodStart = btime
+	}
+
+	// Estimate the record size before appending: 1 (checkpointID) + 8 (timestamp) + 1 (idLen) + len(id).
+	recordSize := int64(10 + min(len(e.transactionID), 255))
+	if p.txnBytesThisPeriod+recordSize > maxTransactionBytesPerPeriod {
+		atomic.AddInt64(&p.stats.droppedTransactions, 1)
+		return
+	}
+
 	k := bucketKey{serviceName: p.service, btime: btime}
 	b, ok := p.tsTypeCurrentBuckets[k]
 	if !ok {
@@ -398,14 +448,15 @@ func (p *Processor) addTransaction(e transactionEntry) {
 		p.tsTypeCurrentBuckets[k] = b
 		return
 	}
-	if len(b.transactions) >= maxTransactionBytesPerBucket {
-		log.Warn("datastreams: transaction buffer full, dropping transaction record")
-		p.tsTypeCurrentBuckets[k] = b
-		return
-	}
 	b.transactions = appendTransactionBytes(b.transactions, checkpointID, e.timestamp, e.transactionID)
+	p.txnBytesThisPeriod += recordSize
 	p.tsTypeCurrentBuckets[k] = b
-	log.Debug("datastreams: bucket now has %d transaction bytes", len(b.transactions))
+	log.Debug("datastreams: bucket now has %d transaction bytes (period total: %d)", len(b.transactions), p.txnBytesThisPeriod)
+	if len(b.transactions) >= maxTransactionBucketSize {
+		// Transaction buffer has grown large; trigger an early flush of older buckets,
+		// matching the Java tracer's behavior (DefaultDataStreamsMonitoring.java:444).
+		p.earlyFlush = true
+	}
 }
 
 func (p *Processor) flushInput() {
@@ -438,6 +489,15 @@ func (p *Processor) run(tick <-chan time.Time) {
 				continue
 			}
 			p.processInput(s)
+			if !p.earlyFlush {
+				continue
+			}
+			p.earlyFlush = false
+			// The current bucket has exceeded maxTransactionBucketSize. Force-flush it
+			// immediately by advancing the cutoff time by one full bucket duration, which
+			// makes the current bucket appear "old enough" to flush. This prevents the
+			// payload from growing beyond the agent's ~10MB request body limit.
+			p.sendToAgent(p.flush(p.time().Add(bucketDuration)))
 		}
 	}
 }
@@ -495,6 +555,10 @@ func (p *Processor) reportStats() {
 		p.statsd.Count("datadog.datastreams.processor.flushed_buckets", atomic.SwapInt64(&p.stats.flushedBuckets, 0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.flush_errors", atomic.SwapInt64(&p.stats.flushErrors, 0), nil, 1)
 		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", atomic.SwapInt64(&p.stats.dropped, 0), nil, 1)
+		if dt := atomic.SwapInt64(&p.stats.droppedTransactions, 0); dt > 0 {
+			p.statsd.Count("datadog.datastreams.processor.dropped_transactions", dt, nil, 1)
+			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt)
+		}
 	}
 }
 
@@ -600,25 +664,35 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 }
 
 func (p *Processor) TrackKafkaCommitOffset(group string, topic string, partition int32, offset int64) {
+	p.TrackKafkaCommitOffsetWithCluster("", group, topic, partition, offset)
+}
+
+func (p *Processor) TrackKafkaCommitOffsetWithCluster(cluster string, group string, topic string, partition int32, offset int64) {
 	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		group:      group,
 		topic:      topic,
 		partition:  partition,
 		offsetType: commitOffset,
-		timestamp:  p.time().UnixNano()}})
+		timestamp:  p.time().UnixNano(),
+		cluster:    cluster}})
 	if dropped {
 		atomic.AddInt64(&p.stats.dropped, 1)
 	}
 }
 
 func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offset int64) {
+	p.TrackKafkaProduceOffsetWithCluster("", topic, partition, offset)
+}
+
+func (p *Processor) TrackKafkaProduceOffsetWithCluster(cluster string, topic string, partition int32, offset int64) {
 	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		topic:      topic,
 		partition:  partition,
 		offsetType: produceOffset,
 		timestamp:  p.time().UnixNano(),
+		cluster:    cluster,
 	}})
 	if dropped {
 		atomic.AddInt64(&p.stats.dropped, 1)
@@ -626,14 +700,14 @@ func (p *Processor) TrackKafkaProduceOffset(topic string, partition int32, offse
 }
 
 // TrackKafkaHighWatermarkOffset should be used in the consumer, to track the high watermark offsets of each partition.
-// The first argument is the Kafka cluster ID, and will be used later.
-func (p *Processor) TrackKafkaHighWatermarkOffset(_ string, topic string, partition int32, offset int64) {
+func (p *Processor) TrackKafkaHighWatermarkOffset(cluster string, topic string, partition int32, offset int64) {
 	dropped := p.in.push(&processorInput{typ: pointTypeKafkaOffset, kafkaOffset: kafkaOffset{
 		offset:     offset,
 		topic:      topic,
 		partition:  partition,
 		offsetType: highWatermarkOffset,
 		timestamp:  p.time().UnixNano(),
+		cluster:    cluster,
 	}})
 	if dropped {
 		atomic.AddInt64(&p.stats.dropped, 1)

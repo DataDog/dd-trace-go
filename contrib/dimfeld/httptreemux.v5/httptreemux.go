@@ -43,7 +43,6 @@ func New(opts ...RouterOption) *Router {
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
-	cfg.spanOpts = append(cfg.spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 	instr.Logger().Debug("contrib/dimfeld/httptreemux.v5: Configuring Router: %#v", cfg)
 	return &Router{httptreemux.New(), cfg}
 }
@@ -54,11 +53,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	route, _ := getRoute(r.TreeMux, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
-		Framework: "github.com/dimfeld/httptreemux/v5",
-		Service:   r.config.serviceName,
-		Resource:  resource,
-		SpanOpts:  r.config.spanOpts,
-		Route:     route,
+		Framework:     "github.com/dimfeld/httptreemux/v5",
+		Service:       r.config.serviceName,
+		ServiceSource: r.config.serviceSource,
+		Resource:      resource,
+		SpanOpts:      r.config.spanOpts,
+		Route:         route,
 	})
 }
 
@@ -80,7 +80,6 @@ func NewWithContext(opts ...RouterOption) *ContextRouter {
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Measured())
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.Component, componentName))
-	cfg.spanOpts = append(cfg.spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 	instr.Logger().Debug("contrib/dimfeld/httptreemux.v5: Configuring ContextRouter: %#v", cfg)
 	return &ContextRouter{httptreemux.NewContextMux(), cfg}
 }
@@ -91,11 +90,12 @@ func (r *ContextRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	route, _ := getRoute(r.TreeMux, w, req)
 	// pass r.TreeMux to avoid a circular reference panic on calling r.ServeHTTP
 	httptrace.TraceAndServe(r.TreeMux, w, req, &httptrace.ServeConfig{
-		Framework: "github.com/dimfeld/httptreemux/v5",
-		Service:   r.config.serviceName,
-		Resource:  resource,
-		SpanOpts:  r.config.spanOpts,
-		Route:     route,
+		Framework:     "github.com/dimfeld/httptreemux/v5",
+		Service:       r.config.serviceName,
+		ServiceSource: r.config.serviceSource,
+		Resource:      resource,
+		SpanOpts:      r.config.spanOpts,
+		Route:         route,
 	})
 }
 

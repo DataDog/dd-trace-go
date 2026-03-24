@@ -88,7 +88,7 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	assert.NoError(err)
 	cfg.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
 	cfg.httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
-	cfg.agentURL = parsedURL
+	cfg.internalConfig.SetAgentURL(parsedURL, internalconfig.OriginCode)
 
 	// Set CI Visibility environment variables for the test
 	if agentless {
