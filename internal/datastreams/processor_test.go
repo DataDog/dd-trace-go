@@ -7,11 +7,13 @@ package datastreams
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -207,7 +209,9 @@ func TestProcessor(t *testing.T) {
 
 	t.Run("test_service_name_override", func(t *testing.T) {
 		p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
-		tp := time.Now().Truncate(bucketDuration)
+		// Use a fixed time so the test is deterministic regardless of wall-clock speed.
+		tp := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC).Truncate(bucketDuration)
+		p.timeSource = func() time.Time { return tp }
 		p.add(statsPoint{
 			serviceName:    "service1",
 			edgeTags:       []string{"type:edge-1"},
@@ -237,7 +241,7 @@ func TestProcessor(t *testing.T) {
 				ProcessTags: processtags.GlobalTags().Slice(),
 				Stats: []StatsBucket{
 					{
-						Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
+						Start:    uint64(tp.Add(-10 * time.Second).UnixNano()),
 						Duration: uint64(bucketDuration.Nanoseconds()),
 						Stats: []StatsPoint{{
 							EdgeTags:       []string{"type:edge-1"},
@@ -251,7 +255,7 @@ func TestProcessor(t *testing.T) {
 						Backlogs: []Backlog{},
 					},
 					{
-						Start:    uint64(tp1.UnixNano()),
+						Start:    uint64(tp.UnixNano()),
 						Duration: uint64(bucketDuration.Nanoseconds()),
 						Stats: []StatsPoint{{
 							EdgeTags:       []string{"type:edge-1"},
@@ -276,7 +280,7 @@ func TestProcessor(t *testing.T) {
 				ProcessTags: processtags.GlobalTags().Slice(),
 				Stats: []StatsBucket{
 					{
-						Start:    uint64(tp1.Add(-10 * time.Second).UnixNano()),
+						Start:    uint64(tp.Add(-10 * time.Second).UnixNano()),
 						Duration: uint64(bucketDuration.Nanoseconds()),
 						Stats: []StatsPoint{{
 							EdgeTags:       []string{"type:edge-1"},
@@ -290,7 +294,7 @@ func TestProcessor(t *testing.T) {
 						Backlogs: []Backlog{},
 					},
 					{
-						Start:    uint64(tp1.UnixNano()),
+						Start:    uint64(tp.UnixNano()),
 						Duration: uint64(bucketDuration.Nanoseconds()),
 						Stats: []StatsPoint{{
 							EdgeTags:       []string{"type:edge-1"},
@@ -454,6 +458,38 @@ func TestTrackTransaction(t *testing.T) {
 	// Layout: [checkpointId=28][timestamp=29..36][idLen=37][id=38..41]
 	assert.Equal(t, byte(1), found.Transactions[28], "third record should reuse checkpoint ID 1")
 	assert.Equal(t, "tx-3", string(found.Transactions[38:42]))
+}
+
+// TestTrackTransactionHighVolume ensures that transaction records are never
+// dropped regardless of volume. Previously a 1 MiB cap caused the majority of
+// records to be silently dropped at high throughput (e.g. 25k TPS).
+func TestTrackTransactionHighVolume(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	tp := time.Now().Truncate(bucketDuration)
+
+	const count = 30_000
+	for i := range count {
+		p.addTransaction(transactionEntry{
+			transactionID:  fmt.Sprintf("tx-%d", i),
+			checkpointName: "ingested",
+			timestamp:      tp.UnixNano(),
+		})
+	}
+
+	payloads := p.flush(tp.Add(bucketDuration * 2))
+
+	var totalBytes int
+	for _, payload := range payloads {
+		for _, bucket := range payload.Stats {
+			totalBytes += len(bucket.Transactions)
+		}
+	}
+
+	// Each record: 1 (checkpointId) + 8 (timestamp) + 1 (idLen) + len("tx-N")
+	// IDs range from "tx-0" (4 bytes) to "tx-29999" (8 bytes); minimum per record is 14 bytes.
+	minExpected := count * 14 // conservative lower bound using shortest possible ID
+	assert.GreaterOrEqual(t, totalBytes, minExpected,
+		"all %d transaction records should be present; got %d bytes, want at least %d", count, totalBytes, minExpected)
 }
 
 func TestCheckpointRegistry(t *testing.T) {
@@ -667,6 +703,64 @@ func TestAddTransactionFullRegistry(t *testing.T) {
 			assert.Empty(t, bucket.Transactions, "no transactions should be recorded when the registry is full")
 		}
 	}
+}
+
+func TestTransactionBytesPerPeriodLimit(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	tp := time.Now().Truncate(bucketDuration)
+
+	// Use UUID-length IDs (36 bytes) so each record is exactly 46 bytes.
+	// The budget is maxTransactionBytesPerPeriod = 2,300,000 bytes.
+	// 2,300,000 / 46 = 50,000 records fit within budget.
+	const recordSize = 46
+	maxRecords := int(maxTransactionBytesPerPeriod / recordSize)
+	totalAttempted := maxRecords + 5000
+
+	for i := range totalAttempted {
+		id := fmt.Sprintf("xxxxxxxx-xxxx-xxxx-xxxx-%012d", i) // 36-byte UUID-shaped ID
+		p.addTransaction(transactionEntry{
+			transactionID:  id,
+			checkpointName: "ingested",
+			timestamp:      tp.UnixNano(),
+		})
+	}
+
+	// Verify the dropped count matches the overshoot.
+	droppedCount := atomic.LoadInt64(&p.stats.droppedTransactions)
+	assert.Equal(t, int64(totalAttempted-maxRecords), droppedCount,
+		"expected %d dropped transactions", totalAttempted-maxRecords)
+
+	// Verify the period budget is at capacity.
+	assert.LessOrEqual(t, p.txnBytesThisPeriod, int64(maxTransactionBytesPerPeriod),
+		"period bytes should not exceed the budget")
+}
+
+func TestTransactionBytesPerPeriodResetsOnNewPeriod(t *testing.T) {
+	p := NewProcessor(nil, "env", "service", "v1", &url.URL{Scheme: "http", Host: "agent-address"}, nil)
+	tp := time.Now().Truncate(bucketDuration)
+
+	// Fill most of the budget in period 1.
+	for i := range 40_000 {
+		id := fmt.Sprintf("xxxxxxxx-xxxx-xxxx-xxxx-%012d", i)
+		p.addTransaction(transactionEntry{
+			transactionID:  id,
+			checkpointName: "ingested",
+			timestamp:      tp.UnixNano(),
+		})
+	}
+	assert.Greater(t, p.txnBytesThisPeriod, int64(0))
+
+	// Move to the next bucket period — budget should reset.
+	tp2 := tp.Add(bucketDuration)
+	p.addTransaction(transactionEntry{
+		transactionID:  "first-in-new-period",
+		checkpointName: "ingested",
+		timestamp:      tp2.UnixNano(),
+	})
+
+	expectedSize := int64(10 + len("first-in-new-period"))
+	assert.Equal(t, expectedSize, p.txnBytesThisPeriod,
+		"budget should reset when the bucket period rolls over")
 }
 
 func BenchmarkSetCheckpoint(b *testing.B) {

@@ -405,7 +405,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(err)
 		assert.Equal(float64(1), c.sampler.Rate())
-		assert.Regexp(`tracer\.test(\.exe)?`, c.serviceName)
+		assert.Regexp(`tracer\.test(\.exe)?`, c.internalConfig.ServiceName())
 		assert.Equal(&url.URL{Scheme: "http", Host: "localhost:8126"}, c.internalConfig.RawAgentURL())
 		assert.Equal("localhost:8125", c.dogstatsdAddr)
 		assert.Nil(nil, c.httpClient)
@@ -1106,7 +1106,7 @@ func TestServiceName(t *testing.T) {
 			WithService("api-intake"),
 		)
 		assert.NoError(err)
-		assert.Equal("api-intake", c.serviceName)
+		assert.Equal("api-intake", c.internalConfig.ServiceName())
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
@@ -1117,7 +1117,7 @@ func TestServiceName(t *testing.T) {
 		c, err := newTestConfig()
 
 		assert.NoError(err)
-		assert.Equal("api-intake", c.serviceName)
+		assert.Equal("api-intake", c.internalConfig.ServiceName())
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
@@ -1130,7 +1130,7 @@ func TestServiceName(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(err)
 
-		assert.Equal("api-intake", c.serviceName)
+		assert.Equal("api-intake", c.internalConfig.ServiceName())
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
@@ -1139,7 +1139,7 @@ func TestServiceName(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithGlobalTag("service", "api-intake"))
 		assert.NoError(err)
-		assert.Equal("api-intake", c.serviceName)
+		assert.Equal("api-intake", c.internalConfig.ServiceName())
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
@@ -1152,7 +1152,7 @@ func TestServiceName(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(err)
 
-		assert.Equal("api-intake", c.serviceName)
+		assert.Equal("api-intake", c.internalConfig.ServiceName())
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
@@ -1163,7 +1163,7 @@ func TestServiceName(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(err)
 
-		assert.Equal("api-intake", c.serviceName)
+		assert.Equal("api-intake", c.internalConfig.ServiceName())
 		assert.Equal("api-intake", globalconfig.ServiceName())
 	})
 
@@ -1175,47 +1175,47 @@ func TestServiceName(t *testing.T) {
 		globalconfig.SetServiceName("")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.Equal(c.serviceName, filepath.Base(os.Args[0]))
+		assert.Equal(c.internalConfig.ServiceName(), filepath.Base(os.Args[0]))
 		assert.Equal("", globalconfig.ServiceName())
 
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=testService6")
 		globalconfig.SetServiceName("")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal(c.serviceName, "testService6")
+		assert.Equal(c.internalConfig.ServiceName(), "testService6")
 		assert.Equal("testService6", globalconfig.ServiceName())
 
 		t.Setenv("DD_TAGS", "service:testService")
 		globalconfig.SetServiceName("")
 		c, err = newTestConfig()
 		assert.NoError(err)
-		assert.Equal(c.serviceName, "testService")
+		assert.Equal(c.internalConfig.ServiceName(), "testService")
 		assert.Equal("testService", globalconfig.ServiceName())
 
 		globalconfig.SetServiceName("")
 		c, err = newTestConfig(WithGlobalTag("service", "testService2"))
 		assert.NoError(err)
-		assert.Equal(c.serviceName, "testService2")
+		assert.Equal(c.internalConfig.ServiceName(), "testService2")
 		assert.Equal("testService2", globalconfig.ServiceName())
 
 		t.Setenv("OTEL_SERVICE_NAME", "testService3")
 		globalconfig.SetServiceName("")
 		c, err = newTestConfig(WithGlobalTag("service", "testService2"))
 		assert.NoError(err)
-		assert.Equal(c.serviceName, "testService3")
+		assert.Equal(c.internalConfig.ServiceName(), "testService3")
 		assert.Equal("testService3", globalconfig.ServiceName())
 
 		t.Setenv("DD_SERVICE", "testService4")
 		globalconfig.SetServiceName("")
 		c, err = newTestConfig(WithGlobalTag("service", "testService2"), WithService("testService4"))
 		assert.NoError(err)
-		assert.Equal(c.serviceName, "testService4")
+		assert.Equal(c.internalConfig.ServiceName(), "testService4")
 		assert.Equal("testService4", globalconfig.ServiceName())
 
 		globalconfig.SetServiceName("")
 		c, err = newTestConfig(WithGlobalTag("service", "testService2"), WithService("testService5"))
 		assert.NoError(err)
-		assert.Equal(c.serviceName, "testService5")
+		assert.Equal(c.internalConfig.ServiceName(), "testService5")
 		assert.Equal("testService5", globalconfig.ServiceName())
 	})
 }

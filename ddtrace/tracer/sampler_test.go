@@ -264,6 +264,111 @@ func TestPrioritySampler(t *testing.T) {
 	})
 }
 
+func TestOtelParentBasedAlwaysOnSampler(t *testing.T) {
+	t.Run("no parent keeps at rate 1.0", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		assert.NoError(err)
+		defer tracer.Stop()
+		for _, id := range []uint64{0, 1, math.MaxUint64 / 2, math.MaxUint64} {
+			span := newBasicSpan("web.request")
+			span.traceID = id
+			tracer.sample(span)
+			priority, ok := span.context.SamplingPriority()
+			assert.True(ok, "traceID=%d should have sampling priority set", id)
+			assert.EqualValues(ext.PriorityAutoKeep, priority, "traceID=%d should be kept", id)
+			rate, ok := getMetric(span, keySamplingPriorityRate)
+			assert.True(ok, "traceID=%d should have rate tag", id)
+			assert.EqualValues(1.0, rate, "traceID=%d should have rate 1.0", id)
+		}
+	})
+
+	t.Run("inherits parent keep", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.context.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Unknown)
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityAutoKeep, priority)
+	})
+
+	t.Run("inherits parent drop", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.context.setSamplingPriority(ext.PriorityAutoReject, samplernames.Unknown)
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityAutoReject, priority)
+	})
+
+	t.Run("DD_TRACE_SAMPLE_RATE takes precedence", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_SAMPLE_RATE", "0")
+		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.traceID = 1
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityUserReject, priority,
+			"DD_TRACE_SAMPLE_RATE=0 should reject even in OTLP mode")
+	})
+
+	t.Run("DD_TRACE_SAMPLING_RULES takes precedence", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_SAMPLING_RULES",
+			`[{"service":"drop-me","sample_rate":0}]`)
+		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.service = "drop-me"
+		span.traceID = 1
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityUserReject, priority,
+			"DD_TRACE_SAMPLING_RULES should reject matching spans even in OTLP mode")
+	})
+
+	t.Run("DD_TRACE_SAMPLING_RULES non-matching falls through to always_on", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("DD_TRACE_SAMPLING_RULES",
+			`[{"service":"other-service","sample_rate":0}]`)
+		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		assert.NoError(err)
+		defer tracer.Stop()
+		span := newBasicSpan("http.request")
+		span.service = "my-service"
+		span.traceID = 1
+		tracer.sample(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityAutoKeep, priority,
+			"non-matching rules should fall through to OTLP always_on sampler")
+	})
+
+	t.Run("satisfies defaultSampler interface", func(t *testing.T) {
+		assert := assert.New(t)
+		var ds defaultSampler = newOtelParentBasedAlwaysOnSampler()
+		span := newBasicSpan("test.op")
+		ds.apply(span)
+		priority, ok := span.context.SamplingPriority()
+		assert.True(ok)
+		assert.EqualValues(ext.PriorityAutoKeep, priority)
+	})
+}
+
 func BenchmarkPrioritySamplerGetRate(b *testing.B) {
 	// Old approach: string-concatenation map key (causes 1 alloc per lookup).
 	type oldPrioritySampler struct {
@@ -1695,7 +1800,8 @@ func BenchmarkRulesSampler(b *testing.B) {
 		defer func() {
 			setGlobalTracer(&NoopTracer{})
 		}()
-		t.prioritySampling.readRatesJSON(io.NopCloser(strings.NewReader(
+		ps := testPrioritySampler(t)
+		ps.readRatesJSON(io.NopCloser(strings.NewReader(
 			`{
                                         "rate_by_service":{
                                                 "service:obfuscate.http,env:":0.5,
