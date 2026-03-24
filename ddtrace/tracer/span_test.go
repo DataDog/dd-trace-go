@@ -1728,6 +1728,24 @@ func TestSpanLinksInMeta(t *testing.T) {
 		assert.Equal(t, uint64(789), links[1].SpanID)
 		assert.Equal(t, uint64(012), links[1].TraceID)
 	})
+
+	t.Run("with_links_native", func(t *testing.T) {
+		// When the encoder supports native span links (v1 protocol),
+		// serializeSpanLinksInMeta must not write the JSON fallback tag.
+		tracer, err := newTracer()
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		sp := tracer.StartSpan("test-with-links-native")
+		sp.supportsLinks = true
+		sp.AddLink(SpanLink{SpanID: 123, TraceID: 456})
+		sp.AddLink(SpanLink{SpanID: 789, TraceID: 012})
+		sp.Finish()
+
+		_, ok := sp.meta["_dd.span_links"]
+		assert.False(t, ok, "Expected no _dd.span_links in meta when native links are supported.")
+		assert.Len(t, sp.spanLinks, 2, "Expected spanLinks slice to be preserved for native encoding.")
+	})
 }
 
 func TestStatsAfterFinish(t *testing.T) {
