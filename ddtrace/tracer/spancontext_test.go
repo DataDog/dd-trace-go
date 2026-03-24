@@ -1335,3 +1335,33 @@ func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 		}
 	})
 }
+
+// genericCtxWithDM is a minimal ddtrace.SpanContext + spanContextV1Adapter that
+// carries a _dd.p.dm propagating tag, simulating a context arriving from an
+// external (non-native) integration.
+type genericCtxWithDM struct {
+	propagatingTags map[string]string
+}
+
+func (g *genericCtxWithDM) SpanID() uint64                          { return 1 }
+func (g *genericCtxWithDM) TraceID() string                         { return "1" }
+func (g *genericCtxWithDM) TraceIDBytes() [16]byte                  { var b [16]byte; b[15] = 1; return b }
+func (g *genericCtxWithDM) TraceIDLower() uint64                    { return 1 }
+func (g *genericCtxWithDM) ForeachBaggageItem(_ func(k, v string) bool) {}
+func (g *genericCtxWithDM) SamplingDecision() uint32                { return uint32(decisionKeep) }
+func (g *genericCtxWithDM) Priority() *float64                      { p := 1.0; return &p }
+func (g *genericCtxWithDM) Origin() string                          { return "" }
+func (g *genericCtxWithDM) PropagatingTags() map[string]string      { return g.propagatingTags }
+func (g *genericCtxWithDM) Tags() map[string]string                 { return nil }
+
+// TestFromGenericCtxDecisionMakerCached verifies that FromGenericCtx populates
+// t.dm so that trace.decisionMaker() returns the correct sampling mechanism for
+// traces arriving through generic (non-native) context adapters.
+func TestFromGenericCtxDecisionMakerCached(t *testing.T) {
+	ctx := &genericCtxWithDM{
+		propagatingTags: map[string]string{keyDecisionMaker: "-4"},
+	}
+	sc := FromGenericCtx(ctx)
+	require.NotNil(t, sc.trace)
+	assert.Equal(t, uint32(4), sc.trace.decisionMaker())
+}
