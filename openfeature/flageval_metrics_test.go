@@ -448,10 +448,4 @@ func TestIntegrationEvaluate(t *testing.T) {
 			t.Errorf("error.type: got %q, want %q", got, "type_mismatch")
 		}
 	})
-
-	// Note: Testing "no config loaded" via the full OpenFeature client is not straightforward
-	// because the provider's Init() waits for configuration. When using SetNamedProvider
-	// without waiting, the SDK handles evaluations without calling our provider.
-	// The provider_not_ready error code is tested in TestRecordAllErrorTypes which verifies
-	// that metrics are correctly recorded with error.type=provider_not_ready.
 }
