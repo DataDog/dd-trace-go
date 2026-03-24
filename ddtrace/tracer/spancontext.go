@@ -30,7 +30,14 @@ const TraceIDZero string = "00000000000000000000000000000000"
 
 // traceID128BitEnabled caches DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED
 // at init time so that newSpanContext avoids calling BoolEnv on every span.
+// It is re-set by newConfig on every tracer start so that restarts pick up
+// any changed value. The init here ensures it is correct even when using
+// mocktracer (which does not call newConfig).
 var traceID128BitEnabled atomic.Bool
+
+func init() {
+	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true))
+}
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
