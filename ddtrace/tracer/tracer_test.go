@@ -809,8 +809,8 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	defer setGlobalTracer(&NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
-		defer func(v bool) { traceID128BitEnabled = v }(traceID128BitEnabled)
-		traceID128BitEnabled = false
+		old := traceID128BitEnabled.Swap(false)
+		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -1253,8 +1253,8 @@ func TestNewSpanChild(t *testing.T) {
 func testNewSpanChild(t *testing.T, is128 bool) {
 	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(t *testing.T) {
 		if !is128 {
-			defer func(v bool) { traceID128BitEnabled = v }(traceID128BitEnabled)
-			traceID128BitEnabled = false
+			old := traceID128BitEnabled.Swap(false)
+			defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		}
 		assert := assert.New(t)
 

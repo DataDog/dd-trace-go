@@ -30,7 +30,7 @@ const TraceIDZero string = "00000000000000000000000000000000"
 
 // traceID128BitEnabled caches DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED
 // at init time so that newSpanContext avoids calling BoolEnv on every span.
-var traceID128BitEnabled = sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
+var traceID128BitEnabled atomic.Bool
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
@@ -229,7 +229,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if traceID128BitEnabled {
+	} else if traceID128BitEnabled.Load() {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.start) / time.Second

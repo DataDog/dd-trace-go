@@ -113,6 +113,8 @@ type Config struct {
 	// Initialized from DD_TRACE_AGENT_PROTOCOL_VERSION, may be downgraded by the tracer
 	// if the agent doesn't support the requested version.
 	traceProtocol float64
+	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
+	traceID128BitEnabled bool
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -157,6 +159,7 @@ func loadConfig() *Config {
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
 	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4", validateTraceProtocolVersion))
+	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -702,4 +705,10 @@ func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin) {
 	defer c.mu.Unlock()
 	c.traceProtocol = v
 	configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", v, origin)
+}
+
+func (c *Config) TraceID128BitEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceID128BitEnabled
 }

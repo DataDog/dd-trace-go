@@ -503,6 +503,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
 		EVPProxyV2: af.evpProxyV2,
 	}
+	// Set global 128-bits trace ID generation variable
+	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
 
 	return c, nil
 }
