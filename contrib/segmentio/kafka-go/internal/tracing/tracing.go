@@ -39,6 +39,9 @@ func (tr *Tracer) StartConsumeSpan(ctx context.Context, msg Message) *tracer.Spa
 	if tr.kafkaCfg.BootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
 	}
+	if tr.ClusterID() != "" {
+		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, tr.ClusterID()))
+	}
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))
 	}
@@ -71,6 +74,9 @@ func (tr *Tracer) StartProduceSpan(ctx context.Context, writer Writer, msg Messa
 	}
 	if tr.kafkaCfg.BootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.kafkaCfg.BootstrapServers))
+	}
+	if tr.ClusterID() != "" {
+		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, tr.ClusterID()))
 	}
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))

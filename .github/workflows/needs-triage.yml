@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Generate a GitHub token
         id: generate-token
-        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         with:
           app-id: ${{ vars.DD_K9_LIBRARY_GO_APP_ID }}
           private-key: ${{ secrets.DD_K9_LIBRARY_GO_APP_PRIVATE_KEY }}
@@ -104,7 +104,7 @@ jobs:
 
     steps:
       - name: Notify about ${{ matrix.number }}
-        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a # v2.1.1
+        uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
         with:
           webhook: ${{ secrets.NEEDS_TRIAGE_SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
