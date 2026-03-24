@@ -159,6 +159,8 @@ type Span struct {
 	context      *SpanContext `msg:"-"` // span propagation context
 	// +checklocks:mu
 	supportsEvents bool `msg:"-"` // whether the span supports native span events or not
+	// +checklocks:mu
+	supportsLinks bool `msg:"-"` // whether the span supports native span links or not
 
 	// +checklocks:mu
 	finished bool `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
@@ -858,6 +860,11 @@ func (s *Span) AddLink(link SpanLink) {
 func (s *Span) serializeSpanLinksInMeta() {
 	assert.RWMutexLocked(&s.mu)
 	if len(s.spanLinks) == 0 {
+		return
+	}
+	// if span links are natively supported by the encoder, there's nothing to do
+	// as the links will be already included when the span is serialized.
+	if s.supportsLinks {
 		return
 	}
 	spanLinkBytes, err := json.Marshal(s.spanLinks)

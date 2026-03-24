@@ -860,6 +860,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		span.setMetaInit(keyHostname, hostname)
 	}
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable
+	span.supportsLinks = t.config.internalConfig.TraceProtocol() == traceProtocolV1
 
 	// add global tags
 	span.setTags(t.config.globalTags.get())
