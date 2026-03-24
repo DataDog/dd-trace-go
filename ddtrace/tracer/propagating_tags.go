@@ -63,10 +63,9 @@ func (t *trace) setPropagatingTagLocked(key, value string) {
 		t.propagatingTags = make(map[string]string, 1)
 	}
 	t.propagatingTags[key] = value
-	if key != keyDecisionMaker {
-		return
+	if key == keyDecisionMaker {
+		t.dm = parseDecisionMaker(value)
 	}
-	t.dm = parseDecisionMaker(value)
 }
 
 // unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
