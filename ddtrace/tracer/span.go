@@ -1081,7 +1081,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 			return textNonParsable
 		}
 		return oq.Query
-	case "redis":
+	case "redis", "valkey":
 		return o.QuantizeRedisString(resource)
 	default:
 		return resource

@@ -27,6 +27,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1828,6 +1829,42 @@ func TestStatsAfterFinish(t *testing.T) {
 		peerTags := stats[0].Stats[0].Stats[0].PeerTags
 		assert.Empty(t, peerTags)
 	})
+}
+
+func TestObfuscatedResource(t *testing.T) {
+	o := obfuscate.NewObfuscator(obfuscate.Config{})
+	defer o.Stop()
+
+	tests := []struct {
+		typ      string
+		resource string
+		want     string
+	}{
+		// single commands
+		{typ: "redis", resource: "SET key value", want: "SET"},
+		{typ: "valkey", resource: "SET key value", want: "SET"},
+		// pipeline / multi-command spans (newline-joined, up to 5 commands) as generated
+		// by the rueidis and valkey-go integrations
+		{typ: "redis", resource: "GET\nSET\nGET\nSET\nGET", want: "GET SET GET ..."},
+		{typ: "valkey", resource: "GET\nSET\nGET\nSET\nGET", want: "GET SET GET ..."},
+		// newline-separated commands — the quantizer recognizes each line as a separate
+		// command and returns them joined with spaces, truncated with "..."
+		{typ: "redis", resource: "GET key1\nSET key2 value", want: "GET SET"},
+		{typ: "redis", resource: "GET key1\nSET key2 value\nGET key3", want: "GET SET GET ..."},
+		{typ: "valkey", resource: "GET key1\nSET key2 value", want: "GET SET"},
+		{typ: "valkey", resource: "GET key1\nSET key2 value\nGET key3", want: "GET SET GET ..."},
+		{typ: "redis", resource: "GET\nSET\nDEL\nHGET\nLPUSH\nRPUSH\nSADD\nZADD\nINCR\nEXPIRE", want: "GET SET DEL ..."},
+		{typ: "valkey", resource: "GET\nSET\nDEL\nHGET\nLPUSH\nRPUSH\nSADD\nZADD\nINCR\nEXPIRE", want: "GET SET DEL ..."},
+		{typ: "sql", resource: "SELECT * FROM users WHERE id = 1", want: "SELECT * FROM users WHERE id = ?"},
+		{typ: "cassandra", resource: "SELECT * FROM users WHERE id = 1", want: "SELECT * FROM users WHERE id = ?"},
+		{typ: "grpc", resource: "some-resource", want: "some-resource"},
+		{typ: "", resource: "some-resource", want: "some-resource"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.typ, func(t *testing.T) {
+			assert.Equal(t, tt.want, obfuscatedResource(o, tt.typ, tt.resource))
+		})
+	}
 }
 
 func TestSpanErrorStackNoDebugStackInteraction(t *testing.T) {
