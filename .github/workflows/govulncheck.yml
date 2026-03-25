@@ -40,9 +40,8 @@ permissions:
 jobs:
   # Non-blocking: generates SARIF and uploads to GitHub Code Scanning.
   # Replaces Dependabot Security Alerts with reachability-aware findings.
-  # govulncheck execution is sandboxed via geomys/sandboxed-step (gVisor)
-  # to strip ambient authority from the runner — see PR description for
-  # allowlist request context.
+  # Uses the official golang/govulncheck-action — see PR description for
+  # the enterprise allowlist request context.
   # NOTE: Only core packages are scanned here. Contrib modules (each with
   # their own go.mod) are scanned in govulncheck-tests, which blocks merges,
   # but contrib vulnerabilities do not appear in GitHub Code Scanning alerts.
@@ -55,23 +54,16 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
           persist-credentials: false
-      - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version: stable
-          cache-dependency-path: '**/go.sum'
-      - name: Run govulncheck (SARIF, sandboxed)
-        # geomys/sandboxed-step uses gVisor to confine execution, preventing
-        # supply chain attacks from exfiltrating tokens or making network calls.
+      - name: Run govulncheck
+        # golang/govulncheck-action is the official Go Security Team action.
+        # It handles Go setup internally and always uses the latest govulncheck.
         # -format sarif exits 0 even when vulnerabilities are found, so the
         # upload step always runs. The blocking check is in govulncheck-tests.
-        uses: geomys/sandboxed-step@v1.2.1
+        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
         with:
-          run: |-
-            go install golang.org/x/vuln/cmd/govulncheck@latest
-            govulncheck -format sarif \
-              ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
-              > govulncheck.sarif || true
+          output-format: sarif
+          output-file: govulncheck.sarif
+          go-version-input: stable
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
