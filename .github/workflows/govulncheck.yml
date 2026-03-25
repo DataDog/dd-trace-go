@@ -40,8 +40,9 @@ permissions:
 jobs:
   # Non-blocking: generates SARIF and uploads to GitHub Code Scanning.
   # Replaces Dependabot Security Alerts with reachability-aware findings.
-  # Uses govulncheck@latest installed directly (golang/govulncheck-action is
-  # not in the DataDog enterprise action allowlist).
+  # govulncheck execution is sandboxed via geomys/sandboxed-step (gVisor)
+  # to strip ambient authority from the runner — see PR description for
+  # allowlist request context.
   # NOTE: Only core packages are scanned here. Contrib modules (each with
   # their own go.mod) are scanned in govulncheck-tests, which blocks merges,
   # but contrib vulnerabilities do not appear in GitHub Code Scanning alerts.
@@ -59,15 +60,18 @@ jobs:
         with:
           go-version: stable
           cache-dependency-path: '**/go.sum'
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run govulncheck (SARIF)
+      - name: Run govulncheck (SARIF, sandboxed)
+        # geomys/sandboxed-step uses gVisor to confine execution, preventing
+        # supply chain attacks from exfiltrating tokens or making network calls.
         # -format sarif exits 0 even when vulnerabilities are found, so the
         # upload step always runs. The blocking check is in govulncheck-tests.
-        run: |-
-          govulncheck -format sarif \
-            ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
-            > govulncheck.sarif || true
+        uses: geomys/sandboxed-step@v1.2.1
+        with:
+          run: |-
+            go install golang.org/x/vuln/cmd/govulncheck@latest
+            govulncheck -format sarif \
+              ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
+              > govulncheck.sarif || true
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
@@ -77,6 +81,7 @@ jobs:
 
   # Blocking: fails the build if any reachable vulnerability is found.
   # Scans both core packages and all contrib modules (each with its own go.mod).
+  # govulncheck execution is sandboxed via geomys/sandboxed-step (gVisor).
   govulncheck-tests:
     runs-on: ubuntu-latest
     steps:
@@ -89,9 +94,12 @@ jobs:
         with:
           go-version: stable
           cache-dependency-path: '**/go.sum'
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run govulncheck (core)
-        run: govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
-      - name: Run govulncheck (contrib)
-        run: ./.github/workflows/apps/govulncheck-contribs-v2.sh
+      - name: Run govulncheck (sandboxed)
+        # geomys/sandboxed-step uses gVisor to confine execution, preventing
+        # supply chain attacks from exfiltrating tokens or making network calls.
+        uses: geomys/sandboxed-step@v1.2.1
+        with:
+          run: |
+            go install golang.org/x/vuln/cmd/govulncheck@latest
+            govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
+            ./.github/workflows/apps/govulncheck-contribs-v2.sh
