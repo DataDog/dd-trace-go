@@ -1343,16 +1343,16 @@ type genericCtxWithDM struct {
 	propagatingTags map[string]string
 }
 
-func (g *genericCtxWithDM) SpanID() uint64                          { return 1 }
-func (g *genericCtxWithDM) TraceID() string                         { return "1" }
-func (g *genericCtxWithDM) TraceIDBytes() [16]byte                  { var b [16]byte; b[15] = 1; return b }
-func (g *genericCtxWithDM) TraceIDLower() uint64                    { return 1 }
+func (g *genericCtxWithDM) SpanID() uint64                              { return 1 }
+func (g *genericCtxWithDM) TraceID() string                             { return "1" }
+func (g *genericCtxWithDM) TraceIDBytes() [16]byte                      { var b [16]byte; b[15] = 1; return b }
+func (g *genericCtxWithDM) TraceIDLower() uint64                        { return 1 }
 func (g *genericCtxWithDM) ForeachBaggageItem(_ func(k, v string) bool) {}
-func (g *genericCtxWithDM) SamplingDecision() uint32                { return uint32(decisionKeep) }
-func (g *genericCtxWithDM) Priority() *float64                      { p := 1.0; return &p }
-func (g *genericCtxWithDM) Origin() string                          { return "" }
-func (g *genericCtxWithDM) PropagatingTags() map[string]string      { return g.propagatingTags }
-func (g *genericCtxWithDM) Tags() map[string]string                 { return nil }
+func (g *genericCtxWithDM) SamplingDecision() uint32                    { return uint32(decisionKeep) }
+func (g *genericCtxWithDM) Priority() *float64                          { p := 1.0; return &p }
+func (g *genericCtxWithDM) Origin() string                              { return "" }
+func (g *genericCtxWithDM) PropagatingTags() map[string]string          { return g.propagatingTags }
+func (g *genericCtxWithDM) Tags() map[string]string                     { return nil }
 
 // TestFromGenericCtxDecisionMakerCached verifies that FromGenericCtx populates
 // t.dm so that trace.decisionMaker() returns the correct sampling mechanism for
