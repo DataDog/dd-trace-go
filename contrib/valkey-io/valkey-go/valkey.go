@@ -296,7 +296,7 @@ func multiCommand(cmds []command) command {
 			// The quantizer splits on '\n' to process pipeline commands individually:
 			// https://github.com/DataDog/datadog-agent/blob/main/pkg/obfuscate/redis.go#L39
 			statement.WriteString("\n")
-			raw.WriteString("\n")
+			raw.WriteString(" ")
 		}
 	}
 	return command{

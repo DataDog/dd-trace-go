@@ -119,6 +119,22 @@ func TestNewClient(t *testing.T) {
 			wantServiceName: "global-service",
 		},
 		{
+			name: "Test pipeline resource name is newline-separated",
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				resp := client.DoMulti(ctx,
+					client.B().Get().Key("k1").Build(),
+					client.B().Set().Key("k2").Value("v2").Build(),
+					client.B().Del().Key("k3").Build(),
+				)
+				require.Len(t, resp, 3)
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+				assert.Equal(t, "GET\nSET\nDEL", spans[0].Tag(ext.ResourceName))
+			},
+			wantServiceName: "global-service",
+		},
+		{
 			name: "Test HMGET command with cache",
 			opts: []Option{
 				WithRawCommand(true),
