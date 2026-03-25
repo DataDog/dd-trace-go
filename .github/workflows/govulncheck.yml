@@ -36,20 +36,30 @@ permissions:
   security-events: write # required for SARIF upload to GitHub Code Scanning
 
 jobs:
-  # Non-blocking: uploads SARIF to GitHub Code Scanning (replaces Dependabot Security Alerts).
-  # Uses the official golang/govulncheck-action which always uses the latest govulncheck.
+  # Non-blocking: generates SARIF and uploads to GitHub Code Scanning.
+  # Replaces Dependabot Security Alerts with reachability-aware findings.
+  # Uses govulncheck@latest installed directly (golang/govulncheck-action is
+  # not in the DataDog enterprise action allowlist).
   govulncheck-analysis:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
-      - name: Run govulncheck
-        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-input: stable
-          output-format: sarif
-          output-file: govulncheck.sarif
+          go-version: stable
+          cache-dependency-path: '**/go.sum'
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck (SARIF)
+        # -format sarif exits 0 even when vulnerabilities are found, so the
+        # upload step always runs. The blocking check is in govulncheck-tests.
+        run: |-
+          govulncheck -format sarif \
+            ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
+            > govulncheck.sarif || true
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
