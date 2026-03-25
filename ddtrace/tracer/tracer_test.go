@@ -965,7 +965,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(ctx.traceID, pctx.traceID)
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
-	assert.Equal(*ctx.trace.priority, -1.)
+	assert.Equal(*ctx.trace.priority.Load(), -1.)
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", ChildOf(propagated))
@@ -974,7 +974,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.NotEqual(uint64(0), child.spanID)
 	assert.Equal(root.spanID, child.parentID)
 	assert.Equal(root.traceID, child.parentID)
-	assert.Equal(*child.context.trace.priority, -1.)
+	assert.Equal(*child.context.trace.priority.Load(), -1.)
 }
 
 func TestPropagationDefaultIncludesBaggage(t *testing.T) {
@@ -1009,7 +1009,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 	// compare if there is a Context match
 	assert.Equal(ctx.traceID, propagated.traceID)
 	assert.Equal(ctx.spanID, propagated.spanID)
-	assert.Equal(*ctx.trace.priority, -1.)
+	assert.Equal(*ctx.trace.priority.Load(), -1.)
 	assert.Equal(ctx.baggage, propagated.baggage)
 
 	// ensure a child can be created
@@ -1019,7 +1019,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 	assert.NotEqual(uint64(0), child.spanID)
 	assert.Equal(root.spanID, child.parentID)
 	assert.Equal(root.traceID, child.parentID)
-	assert.Equal(*child.context.trace.priority, -1.)
+	assert.Equal(*child.context.trace.priority.Load(), -1.)
 }
 
 func TestPropagationStyleOnlyBaggage(t *testing.T) {
@@ -1059,8 +1059,8 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	assert.EqualValues(2, root.metrics[keySamplingPriority])
 	assert.Equal("-4", root.context.trace.propagatingTags[keyDecisionMaker])
 	assert.EqualValues(2, child.metrics[keySamplingPriority])
-	assert.EqualValues(2., *root.context.trace.priority)
-	assert.EqualValues(2., *child.context.trace.priority)
+	assert.EqualValues(2., *root.context.trace.priority.Load())
+	assert.EqualValues(2., *child.context.trace.priority.Load())
 }
 
 func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
