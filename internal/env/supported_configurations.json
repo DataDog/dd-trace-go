@@ -1211,6 +1211,20 @@
         "default": null
       }
     ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT": [
+      {
+        "implementation": "A",
+        "type": "FIX_ME",
+        "default": "FIX_ME"
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER": [
+      {
+        "implementation": "A",
+        "type": "FIX_ME",
+        "default": "FIX_ME"
+      }
+    ],
     "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": [
       {
         "implementation": "A",

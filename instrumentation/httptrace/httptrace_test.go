@@ -414,7 +414,7 @@ func TestURLTagWithAllowlist(t *testing.T) {
 				allowlist[k] = struct{}{}
 			}
 			cfg = oldCfg
-			cfg.queryStringAllowlist = allowlist
+			cfg.serverQueryStringAllowlist = allowlist
 			cfg.queryString = true
 
 			r := http.Request{
@@ -425,6 +425,104 @@ func TestURLTagWithAllowlist(t *testing.T) {
 			require.Equal(t, tc.expectedURL, got)
 		})
 	}
+}
+
+func TestURLTagWithClientServerAllowlist(t *testing.T) {
+	makeRequest := func(query string) *http.Request {
+		return &http.Request{
+			URL:  &url.URL{RawQuery: query},
+			Host: "example.com",
+		}
+	}
+	toMap := func(keys []string) map[string]struct{} {
+		m := make(map[string]struct{}, len(keys))
+		for _, k := range keys {
+			m[k] = struct{}{}
+		}
+		return m
+	}
+
+	t.Run("different client and server allowlists", func(t *testing.T) {
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg.queryString = true
+		cfg.clientQueryStringAllowlist = toMap([]string{"ckey"})
+		cfg.serverQueryStringAllowlist = toMap([]string{"skey"})
+
+		r := makeRequest("ckey=1&skey=2&other=3")
+		require.Equal(t, "http://example.com?ckey=1", URLFromClientRequest(r, true))
+		require.Equal(t, "http://example.com?skey=2", URLFromRequest(r, true))
+	})
+
+	t.Run("client allowlist only", func(t *testing.T) {
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg.queryString = true
+		cfg.clientQueryStringAllowlist = toMap([]string{"ckey"})
+		cfg.serverQueryStringAllowlist = nil
+
+		r := makeRequest("ckey=1&password=secret")
+		require.Equal(t, "http://example.com?ckey=1", URLFromClientRequest(r, true))
+		// Server side has no allowlist, falls back to regex obfuscation.
+		got := URLFromRequest(r, true)
+		require.Contains(t, got, "ckey=1")
+		require.NotContains(t, got, "secret")
+	})
+
+	t.Run("server allowlist only", func(t *testing.T) {
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg.queryString = true
+		cfg.clientQueryStringAllowlist = nil
+		cfg.serverQueryStringAllowlist = toMap([]string{"skey"})
+
+		r := makeRequest("skey=1&password=secret")
+		require.Equal(t, "http://example.com?skey=1", URLFromRequest(r, true))
+		// Client side has no allowlist, falls back to regex obfuscation.
+		got := URLFromClientRequest(r, true)
+		require.Contains(t, got, "skey=1")
+		require.NotContains(t, got, "secret")
+	})
+
+	t.Run("no allowlists falls back to regex obfuscation", func(t *testing.T) {
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg.queryString = true
+		cfg.clientQueryStringAllowlist = nil
+		cfg.serverQueryStringAllowlist = nil
+
+		r := makeRequest("safe=1&password=secret")
+		got := URLFromClientRequest(r, true)
+		require.Contains(t, got, "safe=1")
+		require.Contains(t, got, "<redacted>")
+		require.NotContains(t, got, "secret")
+	})
+
+	t.Run("env var parsing", func(t *testing.T) {
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST", "global_key")
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT", "client_key")
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER", "server_key")
+
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg = newConfig()
+
+		r := makeRequest("global_key=1&client_key=2&server_key=3")
+		require.Equal(t, "http://example.com?client_key=2", URLFromClientRequest(r, true))
+		require.Equal(t, "http://example.com?server_key=3", URLFromRequest(r, true))
+	})
+
+	t.Run("env var global only applies to both sides", func(t *testing.T) {
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST", "shared")
+
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg = newConfig()
+
+		r := makeRequest("shared=1&other=2")
+		require.Equal(t, "http://example.com?shared=1", URLFromClientRequest(r, true))
+		require.Equal(t, "http://example.com?shared=1", URLFromRequest(r, true))
+	})
 }
 
 func TestFilterQueryStringByAllowlist(t *testing.T) {
