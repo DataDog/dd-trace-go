@@ -121,9 +121,13 @@ func sampledByRate(n uint64, rate float64) bool {
 	return n*knuthFactor <= uint64(rate*math.MaxUint64)
 }
 
-// formatKnuthSamplingRate formats a sampling rate as a string with up to 6 decimal digits
+// formatKnuthSamplingRate formats a sampling rate as a string with up to 6
+// decimal places, trimming trailing zeros.
 func formatKnuthSamplingRate(rate float64) string {
-	return strconv.FormatFloat(rate, 'g', 6, 64)
+	s := strconv.FormatFloat(rate, 'f', 6, 64)
+	s = strings.TrimRight(s, "0")
+	s = strings.TrimRight(s, ".")
+	return s
 }
 
 // serviceEnvKey is used as a map key for per-service sampling rates,

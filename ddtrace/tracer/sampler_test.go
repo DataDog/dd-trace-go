@@ -2227,6 +2227,10 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 		{"six_decimals", 0.123456, "0.123456"},
 		{"seven_decimals_rounded", 0.1234567, "0.123457"},
 		{"trailing_zeros", 0.100000, "0.1"},
+		{"rate_1_strips_trailing_zeros", 1.0, "1"},
+		{"six_decimal_precision_boundary", 0.000001, "0.000001"},
+		{"below_precision_rounds_to_zero", 0.0000001, "0"},
+		{"rounds_up_to_one_millionth", 0.00000051, "0.000001"},
 	}
 
 	for _, tc := range testCases {
