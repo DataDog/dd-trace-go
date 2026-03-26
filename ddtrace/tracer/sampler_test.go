@@ -2264,6 +2264,14 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 	}
 }
 
+func BenchmarkFormatKnuthSamplingRate(b *testing.B) {
+	rates := []float64{1.0, 0.5, 0.000001, 0.0000001, 0.00000051, 0.7654321}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		formatKnuthSamplingRate(rates[i%len(rates)])
+	}
+}
+
 func TestCappedRate(t *testing.T) {
 	tests := []struct {
 		name        string
