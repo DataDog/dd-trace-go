@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -361,7 +362,7 @@ func TestProviderTelemetryRegistration(t *testing.T) {
 		_ = p.GetInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
 		_ = p.GetFloat("DD_TRACE_SAMPLE_RATE", 0.0)
 		_ = p.GetString("DD_TRACE_AGENT_URL", "")
-		_ = p.GetMap("DD_SERVICE_MAPPING", nil)
+		_ = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 		_ = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
 
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "service", telemetry.OriginEnvVar, telemetry.EmptyID)))
@@ -400,7 +401,7 @@ apm_configuration_default:
 		_ = p.GetInt("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 0)
 		_ = p.GetFloat("DD_TRACE_SAMPLE_RATE", 0.0)
 		_ = p.GetString("DD_TRACE_AGENT_URL", "")
-		_ = p.GetMap("DD_SERVICE_MAPPING", nil)
+		_ = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 		_ = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 0)
 
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_SERVICE", "svc", telemetry.OriginLocalStableConfig, "123")))
@@ -487,7 +488,7 @@ apm_configuration_default:
 		assert.Equal(t, intDef, p.GetInt(intKey, intDef))
 		assert.Equal(t, floatDef, p.GetFloat(floatKey, floatDef))
 		assert.Equal(t, durDef, p.GetDuration(durKey, durDef))
-		assert.Equal(t, mapDef, p.GetMap(mapKey, mapDef))
+		assert.Equal(t, mapDef, p.GetMap(mapKey, mapDef, internal.DDTagsDelimiter))
 
 		telemetryClient.AssertExpectations(t)
 	})

@@ -267,7 +267,7 @@ func TestPrioritySampler(t *testing.T) {
 func TestOtelParentBasedAlwaysOnSampler(t *testing.T) {
 	t.Run("no parent keeps at rate 1.0", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
 		assert.NoError(err)
 		defer tracer.Stop()
 		for _, id := range []uint64{0, 1, math.MaxUint64 / 2, math.MaxUint64} {
@@ -285,7 +285,7 @@ func TestOtelParentBasedAlwaysOnSampler(t *testing.T) {
 
 	t.Run("inherits parent keep", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
 		assert.NoError(err)
 		defer tracer.Stop()
 		span := newBasicSpan("http.request")
@@ -298,7 +298,7 @@ func TestOtelParentBasedAlwaysOnSampler(t *testing.T) {
 
 	t.Run("inherits parent drop", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
 		assert.NoError(err)
 		defer tracer.Stop()
 		span := newBasicSpan("http.request")
@@ -312,7 +312,7 @@ func TestOtelParentBasedAlwaysOnSampler(t *testing.T) {
 	t.Run("DD_TRACE_SAMPLE_RATE takes precedence", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_SAMPLE_RATE", "0")
-		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
 		assert.NoError(err)
 		defer tracer.Stop()
 		span := newBasicSpan("http.request")
@@ -328,7 +328,7 @@ func TestOtelParentBasedAlwaysOnSampler(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_SAMPLING_RULES",
 			`[{"service":"drop-me","sample_rate":0}]`)
-		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
 		assert.NoError(err)
 		defer tracer.Stop()
 		span := newBasicSpan("http.request")
@@ -345,7 +345,7 @@ func TestOtelParentBasedAlwaysOnSampler(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_SAMPLING_RULES",
 			`[{"service":"other-service","sample_rate":0}]`)
-		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
 		assert.NoError(err)
 		defer tracer.Stop()
 		span := newBasicSpan("http.request")

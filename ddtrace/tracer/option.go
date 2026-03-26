@@ -163,9 +163,6 @@ type config struct {
 	// failure.
 	sendRetries int
 
-	// serviceName specifies the name of this application.
-	serviceName string
-
 	// universalVersion, reports whether span service name and config service name
 	// should match to set application version tag. False by default
 	universalVersion bool
@@ -259,9 +256,6 @@ type config struct {
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
-
-	// temporary field to represent otlp export mode; always false for now
-	otlpExportMode bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -312,10 +306,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		if err := c.internalConfig.HostnameLookupError(); err != nil {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
-	}
-	if v := getDDorOtelConfig("service"); v != "" {
-		c.serviceName = v
-		globalconfig.SetServiceName(v)
 	}
 	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
 	if v := env.Get("DD_TRACE_HEADER_TAGS"); v != "" {
@@ -413,20 +403,24 @@ func newConfig(opts ...StartOption) (*config, error) {
 			}
 		}
 	}
-	if c.serviceName == "" {
+	if c.internalConfig.ServiceName() == "" {
 		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
-				c.serviceName = s
+				c.internalConfig.SetServiceName(s, c.globalTags.Origin())
 				globalconfig.SetServiceName(s)
 			}
 		} else {
 			// There is not an explicit service set, default to binary name.
 			// In this case, don't set a global service name so the contribs continue using their defaults.
-			c.serviceName = filepath.Base(os.Args[0])
+			c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), internalconfig.OriginDefault)
 		}
+	} else {
+		globalconfig.SetServiceName(c.internalConfig.ServiceName())
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.internalConfig.AgentURL().String(), c.httpClient)
+		agentURL := c.internalConfig.AgentURL().String()
+		traceURL, headers := resolveTraceTransport(c.internalConfig)
+		c.transport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -465,12 +459,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4
-	if !af.v1ProtocolAvailable {
+	if c.internalConfig.TraceProtocol() == traceProtocolV1 && !af.v1ProtocolAvailable {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
-	}
-	if c.internalConfig.TraceProtocol() == traceProtocolV1 {
 		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = fmt.Sprintf("%s%s", agentURL.String(), tracesAPIPathV1)
+			t.traceURL = agentURL.String() + tracesAPIPath
 		}
 	}
 
@@ -497,7 +489,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
 		DDTags:     c.globalTags.get(),
 		Env:        c.internalConfig.Env(),
-		Service:    c.serviceName,
+		Service:    c.internalConfig.ServiceName(),
 		Version:    c.internalConfig.Version(),
 		AgentURL:   c.internalConfig.AgentURL(),
 		APIKey:     env.Get("DD_API_KEY"),
@@ -508,6 +500,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
 		EVPProxyV2: af.evpProxyV2,
 	}
+	// Set global 128-bits trace ID generation variable
+	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
 
 	return c, nil
 }
@@ -533,6 +527,20 @@ func apmTracingDisabled(c *config) {
 	// tell the agent we computed them, so it doesn't do it either.
 	c.internalConfig.SetRuntimeMetricsEnabled(false, internalconfig.OriginCalculated)
 	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
+}
+
+// resolveTraceTransport returns the trace URL and headers for the transport
+// based on whether OTLP export mode is active.
+func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers map[string]string) {
+	if cfg.OTLPExportMode() {
+		return cfg.OTLPTraceURL(), cfg.OTLPHeaders()
+	}
+	agentURL := cfg.AgentURL().String()
+	traceURL = agentURL + tracesAPIPath
+	if cfg.TraceProtocol() == traceProtocolV1 {
+		traceURL = agentURL + tracesAPIPathV1
+	}
+	return traceURL, datadogHeaders()
 }
 
 // resolveDogstatsdAddr resolves the Dogstatsd address to use with the following
@@ -852,11 +860,11 @@ func statsTags(c *config) []string {
 		"lang:go",
 		"lang_version:" + runtime.Version(),
 	}
-	if c.internalConfig.Env() != "" {
-		tags = append(tags, "env:"+c.internalConfig.Env())
+	if v := c.internalConfig.Env(); v != "" {
+		tags = append(tags, "env:"+v)
 	}
-	if hostname := c.internalConfig.Hostname(); hostname != "" {
-		tags = append(tags, "host:"+hostname)
+	if v := c.internalConfig.Hostname(); v != "" {
+		tags = append(tags, "host:"+v)
 	}
 	for k, v := range c.globalTags.get() {
 		if vstr, ok := v.(string); ok {
@@ -865,8 +873,8 @@ func statsTags(c *config) []string {
 	}
 	globalconfig.SetStatsTags(tags)
 	tags = append(tags, "tracer_version:"+version.Tag)
-	if c.serviceName != "" {
-		tags = append(tags, "service:"+c.serviceName)
+	if v := c.internalConfig.ServiceName(); v != "" {
+		tags = append(tags, "service:"+v)
 	}
 	return tags
 }
@@ -968,8 +976,8 @@ func WithPropagator(p Propagator) StartOption {
 // WithService sets the default service name for the program.
 func WithService(name string) StartOption {
 	return func(c *config) {
-		c.serviceName = name
-		globalconfig.SetServiceName(c.serviceName)
+		c.internalConfig.SetServiceName(name, internalconfig.OriginCode)
+		globalconfig.SetServiceName(name)
 	}
 }
 
