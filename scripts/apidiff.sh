@@ -161,5 +161,8 @@ for PKG in "${PACKAGES[@]}"; do
 done
 
 if [[ "${HAS_INCOMPATIBLE}" == "true" ]]; then
-  exit 1
+  # Exit 2 signals "incompatible changes found" — distinct from exit 1 which
+  # indicates an operational failure (git, go mod, apidiff binary errors).
+  # Callers can use this to differentiate "gate triggered" from "tool broken".
+  exit 2
 fi

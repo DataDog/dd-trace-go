@@ -2,7 +2,7 @@ name: API Semantic Diff
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - 'ddtrace/tracer/**'
       - 'scripts/apidiff.sh'
@@ -52,16 +52,27 @@ jobs:
         run: |
           PATH="${{ github.workspace }}/bin:$PATH"
 
-          if ./scripts/apidiff.sh \
+          apidiff_exit=0
+          ./scripts/apidiff.sh \
             --incompatible-only \
             --exit-code \
             --base-ref "$APIDIFF_BASE_REF" \
-            github.com/DataDog/dd-trace-go/v2/ddtrace/tracer; then
+            github.com/DataDog/dd-trace-go/v2/ddtrace/tracer || apidiff_exit=$?
+
+          if [[ $apidiff_exit -eq 0 ]]; then
             echo "No incompatible API changes detected."
             exit 0
           fi
 
-          # Incompatible changes found
+          # Any exit code other than 2 is an operational failure (git, go mod,
+          # apidiff binary errors). The label cannot bypass a broken tool run.
+          if [[ $apidiff_exit -ne 2 ]]; then
+            echo "::error::apidiff script failed with exit code $apidiff_exit (operational error)."
+            echo "This is not an API compatibility issue — check the step logs for details."
+            exit 1
+          fi
+
+          # Exit code 2: incompatible changes found
           echo "::error::Incompatible API changes detected in ddtrace/tracer."
           echo ""
 
