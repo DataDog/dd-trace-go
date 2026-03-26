@@ -24,6 +24,12 @@ func TestContextWithSpan(t *testing.T) {
 	assert.Equal(got, want)
 }
 
+func TestContextWithSpanNilPanics(t *testing.T) {
+	assert.PanicsWithValue(t, "ContextWithSpan: ctx cannot be nil", func() {
+		ContextWithSpan(nil, &Span{spanID: 123})
+	})
+}
+
 func TestSpanFromContext(t *testing.T) {
 	t.Run("regular", func(t *testing.T) {
 		assert := assert.New(t)
