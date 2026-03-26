@@ -32,13 +32,13 @@ type AfterRoundTrip = func(*http.Response, error) (*http.Response, error)
 // httpTraceTimings captures key timing events from httptrace.ClientTrace.
 type httpTraceTimings struct {
 	mu                         sync.Mutex
-	dnsStart, dnsEnd           time.Time
-	connectStart, connectEnd   time.Time
-	tlsStart, tlsEnd           time.Time
-	getConnStart, gotConn      time.Time
-	wroteHeaders, gotFirstByte time.Time
-	connectErr                 error
-	tlsErr                     error
+	dnsStart, dnsEnd           time.Time // +checklocks:mu
+	connectStart, connectEnd   time.Time // +checklocks:mu
+	tlsStart, tlsEnd           time.Time // +checklocks:mu
+	getConnStart, gotConn      time.Time // +checklocks:mu
+	wroteHeaders, gotFirstByte time.Time // +checklocks:mu
+	connectErr                 error     // +checklocks:mu
+	tlsErr                     error     // +checklocks:mu
 }
 
 // addDurationTag adds a timing tag to the span if both timestamps are valid
