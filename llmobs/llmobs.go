@@ -152,16 +152,16 @@ type (
 
 // Prompt represents a structured prompt template used with LLM spans.
 type Prompt struct {
-	// Template is the prompt template string.
-	Template string
-	// ChatTemplate is a list of messages forming the prompt (alternative to Template).
-	ChatTemplate []LLMMessage
 	// ID is the unique identifier for the prompt within the ML app.
 	ID string
 	// Version is the version of the prompt.
 	Version string
 	// Label is the deployment label (e.g., "production", "staging").
 	Label string
+	// Template is the prompt template string.
+	Template string
+	// ChatTemplate is a list of messages forming the prompt (alternative to Template).
+	ChatTemplate []LLMMessage
 	// Variables contains the variables used in the prompt template.
 	Variables map[string]string
 	// Tags contains custom tags for the prompt.

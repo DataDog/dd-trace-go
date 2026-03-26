@@ -80,16 +80,16 @@ type EvaluationConfig struct {
 
 // Prompt represents a prompt template used with LLM spans.
 type Prompt struct {
-	// Template is the prompt template string.
-	Template string `json:"template,omitempty"`
-	// ChatTemplate is a list of messages forming the prompt (alternative to Template).
-	ChatTemplate []LLMMessage `json:"chat_template,omitempty"`
 	// ID is the unique identifier for the prompt within the ML app.
 	ID string `json:"id,omitempty"`
 	// Version is the version of the prompt.
 	Version string `json:"version,omitempty"`
 	// Label is the deployment label (e.g., "production", "staging").
 	Label string `json:"label,omitempty"`
+	// Template is the prompt template string.
+	Template string `json:"template,omitempty"`
+	// ChatTemplate is a list of messages forming the prompt (alternative to Template).
+	ChatTemplate []LLMMessage `json:"chat_template,omitempty"`
 	// Variables contains the variables used in the prompt template.
 	Variables map[string]string `json:"variables,omitempty"`
 	// Tags contains custom tags for the prompt.
