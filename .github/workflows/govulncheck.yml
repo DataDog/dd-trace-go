@@ -5,6 +5,8 @@ on:
       - "**/*.go"
       - "**/go.mod"
       - "**/go.sum"
+      - "go.work"
+      - "go.work.sum"
       - ".github/workflows/govulncheck.yml"
       - ".github/workflows/apps/govulncheck-contribs-v2.sh"
   workflow_call: # allows to reuse this workflow
@@ -40,6 +42,11 @@ jobs:
   # Replaces Dependabot Security Alerts with reachability-aware findings.
   # Uses govulncheck@latest installed directly (golang/govulncheck-action is
   # not in the DataDog enterprise action allowlist).
+  # NOTE: Only core packages are scanned here. Contrib modules (each with
+  # their own go.mod) are scanned in govulncheck-tests, which blocks merges,
+  # but contrib vulnerabilities do not appear in GitHub Code Scanning alerts.
+  # TODO: extend SARIF upload to cover contrib modules for full Code Scanning
+  # visibility — requires multi-SARIF upload or a contrib-specific scan script.
   govulncheck-analysis:
     runs-on: ubuntu-latest
     steps:
