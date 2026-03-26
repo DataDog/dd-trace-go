@@ -41,10 +41,9 @@ func WrapConsumerGroupHandler(handler sarama.ConsumerGroupHandler, opts ...Optio
 		ConsumerGroupHandler: handler,
 		cfg:                  cfg,
 	}
-	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
-		return wrapped
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}
-	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	return wrapped
 }
 

@@ -52,10 +52,9 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		PartitionConsumer: pc,
 		dispatcher:        d,
 	}
-	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
-		return wrapped
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}
-	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	return wrapped
 }
 
@@ -95,10 +94,9 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 		Consumer: c,
 		opts:     opts,
 	}
-	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
-		return wrapped
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}
-	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	return wrapped
 }
 

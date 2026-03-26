@@ -113,10 +113,9 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		}
 		close(wrapped.messages)
 	}()
-	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
-		return wrapped
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}
-	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	return wrapped
 }
 
@@ -159,10 +158,9 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 		opts:     opts,
 		cfg:      cfg,
 	}
-	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
-		return wrapped
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}
-	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	return wrapped
 }
 
@@ -234,10 +232,9 @@ func WrapSyncProducer(saramaConfig *sarama.Config, producer sarama.SyncProducer,
 		version:      saramaConfig.Version,
 		cfg:          cfg,
 	}
-	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
-		return wrapped
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}
-	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	return wrapped
 }
 
@@ -359,10 +356,9 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 			}
 		}
 	}()
-	if !cfg.dataStreamsEnabled || len(cfg.brokerAddrs) == 0 {
-		return wrapped
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}
-	wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	return wrapped
 }
 
