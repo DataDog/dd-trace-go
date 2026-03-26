@@ -9,6 +9,7 @@ on:
       - "go.work.sum"
       - ".github/workflows/govulncheck.yml"
       - ".github/workflows/apps/govulncheck-contribs-v2.sh"
+      - ".github/workflows/apps/govulncheck-contribs-sarif.sh"
   workflow_call: # allows to reuse this workflow
     inputs:
       ref:
@@ -42,9 +43,9 @@ jobs:
   # Replaces Dependabot Security Alerts with reachability-aware findings.
   # Uses the official golang/govulncheck-action — see PR description for
   # the enterprise allowlist request context.
-  # NOTE: Only core packages are scanned here. Contrib modules (each with
-  # their own go.mod) are scanned in govulncheck-tests, which blocks merges,
-  # but contrib vulnerabilities do not appear in GitHub Code Scanning alerts.
+  # NOTE: Only core packages are scanned here. Contrib modules are scanned
+  # separately in govulncheck-contribs-analysis (SARIF, non-blocking) and
+  # in govulncheck-tests (blocking, sandboxed).
   govulncheck-analysis:
     runs-on: ubuntu-latest
     steps:
@@ -68,6 +69,35 @@ jobs:
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
+
+  # Non-blocking: scans all contrib modules for vulnerabilities and uploads
+  # the merged SARIF to GitHub Code Scanning for Security tab visibility.
+  # Contrib vulns are also caught by govulncheck-tests (blocking, sandboxed).
+  govulncheck-contribs-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+          cache-dependency-path: '**/go.sum'
+      - name: Run govulncheck on contrib modules (SARIF)
+        # Installs govulncheck and runs govulncheck-contribs-sarif.sh, which
+        # scans each contrib module and merges results into one SARIF file.
+        # -format sarif exits 0 even when vulnerabilities are found.
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          ./.github/workflows/apps/govulncheck-contribs-sarif.sh govulncheck-contribs.sarif
+      - name: Upload contrib SARIF to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
+        with:
+          sarif_file: govulncheck-contribs.sarif
+          category: govulncheck-contribs
 
   # Blocking: fails the build if any reachable vulnerability is found.
   # Scans both core packages and all contrib modules (each with its own go.mod).
