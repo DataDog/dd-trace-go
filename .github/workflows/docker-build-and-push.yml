@@ -39,6 +39,10 @@ on:
         type: string
         default: ''
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-images:
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
@@ -54,6 +58,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.commit_sha }}
 
       - name: Set up Docker Buildx

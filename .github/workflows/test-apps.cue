@@ -134,7 +134,10 @@ jobs: {
                     {
                         name: "Checkout Code",
                         uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
-                        with: {ref: "${{ inputs.ref || github.ref }}"},
+                        with: {
+                        "persist-credentials": false,
+                        ref:                   "${{ inputs.ref || github.ref }}",
+                    },
                     },
                     {
                         name: "Start Agent",
