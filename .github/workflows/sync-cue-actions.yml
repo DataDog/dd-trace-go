@@ -37,7 +37,7 @@ jobs:
             ver=$(grep -m1 "uses: ${action}@" test-apps.yml \
               | grep -oE '#[[:space:]]*v[0-9][^[:space:]]*' | sed 's/^#[[:space:]]*//')
             if [[ -n "${ver}" ]]; then
-              sed -i -E "/${action}@/s|//[[:space:]]*v[^[:space:]]+[[:space:]]*$|// ${ver}|" test-apps.cue
+              sed -i -E "s|(\"${action}@[a-f0-9]+\")[^/]*(// v[^[:space:]]+)?[[:space:]]*$|\1, \/\/ ${ver}|" test-apps.cue
               echo "  version comment: ${ver}"
             fi
           done
