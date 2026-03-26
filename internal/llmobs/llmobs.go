@@ -501,10 +501,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		} else {
 			input["prompt"] = inputPrompt
 		}
-	} else if spanKind == SpanKindLLM {
-		if span.parent != nil && span.parent.llmCtx.prompt != nil {
-			input["prompt"] = span.parent.llmCtx.prompt
-		}
 	}
 
 	if toolDefinitions := span.llmCtx.toolDefinitions; len(toolDefinitions) > 0 {
@@ -720,6 +716,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 			log.Warn("llmobs: ML App is required for sending LLM Observability data.")
 		}
 	}
+
 	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", spanName, kind, span.mlApp)
 	return span, contextWithActiveLLMSpan(ctx, span)
 }

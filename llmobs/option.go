@@ -152,8 +152,41 @@ func WithAnnotatedMetrics(metrics map[string]float64) AnnotateOption {
 
 // WithIntent sets the intent for the span.
 // Intent is a description of a reason for calling an MCP tool.
+// Deprecated: Use WithAnnotatedIntent instead.
 func WithIntent(intent string) AnnotateOption {
+	return WithAnnotatedIntent(intent)
+}
+
+// WithAnnotatedIntent sets the intent for the span.
+// Intent is a description of a reason for calling an MCP tool.
+func WithAnnotatedIntent(intent string) AnnotateOption {
 	return func(a *illmobs.SpanAnnotations) {
 		a.Intent = intent
+	}
+}
+
+// WithAnnotatedPrompt sets the prompt for the span annotation.
+// Only applicable to LLM spans.
+func WithAnnotatedPrompt(prompt Prompt) AnnotateOption {
+	return func(a *illmobs.SpanAnnotations) {
+		a.Prompt = &illmobs.Prompt{
+			Template:            prompt.Template,
+			ChatTemplate:        prompt.ChatTemplate,
+			ID:                  prompt.ID,
+			Version:             prompt.Version,
+			Label:               prompt.Label,
+			Variables:           prompt.Variables,
+			Tags:                prompt.Tags,
+			RAGContextVariables: prompt.RAGContextVariables,
+			RAGQueryVariables:   prompt.RAGQueryVariables,
+		}
+	}
+}
+
+// WithAnnotatedToolDefinitions sets the tool definitions for the span annotation.
+// Only applicable to LLM spans.
+func WithAnnotatedToolDefinitions(toolDefinitions []ToolDefinition) AnnotateOption {
+	return func(a *illmobs.SpanAnnotations) {
+		a.ToolDefinitions = toolDefinitions
 	}
 }

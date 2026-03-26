@@ -82,16 +82,25 @@ type EvaluationConfig struct {
 type Prompt struct {
 	// Template is the prompt template string.
 	Template string `json:"template,omitempty"`
-	// ID is the unique identifier for the prompt.
+	// ChatTemplate is a list of messages forming the prompt (alternative to Template).
+	ChatTemplate []LLMMessage `json:"chat_template,omitempty"`
+	// ID is the unique identifier for the prompt within the ML app.
 	ID string `json:"id,omitempty"`
 	// Version is the version of the prompt.
 	Version string `json:"version,omitempty"`
+	// Label is the deployment label (e.g., "production", "staging").
+	Label string `json:"label,omitempty"`
 	// Variables contains the variables used in the prompt template.
 	Variables map[string]string `json:"variables,omitempty"`
+	// Tags contains custom tags for the prompt.
+	Tags map[string]string `json:"tags,omitempty"`
 	// RAGContextVariables specifies which variables contain RAG context.
-	RAGContextVariables []string `json:"rag_context_variables,omitempty"`
+	RAGContextVariables []string `json:"_dd_context_variable_keys,omitempty"`
 	// RAGQueryVariables specifies which variables contain RAG queries.
-	RAGQueryVariables []string `json:"rag_query_variables,omitempty"`
+	RAGQueryVariables []string `json:"_dd_query_variable_keys,omitempty"`
+
+	// MLApp is the ML application name, set internally from the span's context.
+	MLApp string `json:"ml_app,omitempty"`
 }
 
 // ToolDefinition represents a tool definition for LLM spans.
@@ -352,6 +361,10 @@ func (s *Span) Annotate(a SpanAnnotations) {
 			if a.Prompt.RAGQueryVariables == nil {
 				a.Prompt.RAGQueryVariables = []string{"question"}
 			}
+			if a.Prompt.ID == "" {
+				a.Prompt.ID = s.mlApp + "_unnamed-prompt"
+			}
+			a.Prompt.MLApp = s.mlApp
 			s.llmCtx.prompt = a.Prompt
 		}
 	}

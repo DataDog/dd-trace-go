@@ -140,9 +140,6 @@ type (
 	// It is used to annotate output of retrieval spans.
 	RetrievedDocument = illmobs.RetrievedDocument
 
-	// Prompt represents a structured prompt template used with LLMs.
-	Prompt = illmobs.Prompt
-
 	// ToolDefinition represents the definition of a tool/function that an LLM can call.
 	ToolDefinition = illmobs.ToolDefinition
 
@@ -152,6 +149,28 @@ type (
 	// ToolResult represents the result of a tool call within an LLM message.
 	ToolResult = illmobs.ToolResult
 )
+
+// Prompt represents a structured prompt template used with LLM spans.
+type Prompt struct {
+	// Template is the prompt template string.
+	Template string
+	// ChatTemplate is a list of messages forming the prompt (alternative to Template).
+	ChatTemplate []LLMMessage
+	// ID is the unique identifier for the prompt within the ML app.
+	ID string
+	// Version is the version of the prompt.
+	Version string
+	// Label is the deployment label (e.g., "production", "staging").
+	Label string
+	// Variables contains the variables used in the prompt template.
+	Variables map[string]string
+	// Tags contains custom tags for the prompt.
+	Tags map[string]string
+	// RAGContextVariables specifies which variables contain RAG context.
+	RAGContextVariables []string
+	// RAGQueryVariables specifies which variables contain RAG queries.
+	RAGQueryVariables []string
+}
 
 // Span represents a generic LLMObs span that can be converted to specific span types.
 type Span interface {
