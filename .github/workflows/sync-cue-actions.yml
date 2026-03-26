@@ -30,9 +30,16 @@ jobs:
               echo "WARNING: ${action} not found in test-apps.yml"
               continue
             fi
-            # Replace everything between @ and closing " in CUE string
+            # Replace SHA in CUE string
             sed -i -E "s|${action}@[^\"]+|${action}@${sha}|g" test-apps.cue
             echo "Synced ${action} -> ${sha:0:12}..."
+            # Sync version comment if Dependabot included one
+            ver=$(grep -m1 "uses: ${action}@" test-apps.yml \
+              | grep -oE '#[[:space:]]*v[0-9][^[:space:]]*' | sed 's/^#[[:space:]]*//')
+            if [[ -n "${ver}" ]]; then
+              sed -i -E "/${action}@/s|//[[:space:]]*v[^[:space:]]+[[:space:]]*$|// ${ver}|" test-apps.cue
+              echo "  version comment: ${ver}"
+            fi
           done
 
       - name: Commit and push if changed
