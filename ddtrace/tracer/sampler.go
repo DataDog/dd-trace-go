@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"math"
@@ -122,12 +123,23 @@ func sampledByRate(n uint64, rate float64) bool {
 }
 
 // formatKnuthSamplingRate formats a sampling rate as a string with up to 6
-// decimal places, trimming trailing zeros.
+// decimal places, trimming trailing zeros. It uses AppendFloat with a
+// stack-allocated buffer to avoid heap allocations.
 func formatKnuthSamplingRate(rate float64) string {
-	s := strconv.FormatFloat(rate, 'f', 6, 64)
-	s = strings.TrimRight(s, "0")
-	s = strings.TrimRight(s, ".")
-	return s
+	var buf [24]byte
+	b := strconv.AppendFloat(buf[:0], rate, 'f', 6, 64)
+	// Trim trailing zeros after decimal point, then the dot itself if needed.
+	if i := bytes.IndexByte(b, '.'); i >= 0 {
+		end := len(b)
+		for end > i+1 && b[end-1] == '0' {
+			end--
+		}
+		if b[end-1] == '.' {
+			end--
+		}
+		b = b[:end]
+	}
+	return string(b)
 }
 
 // serviceEnvKey is used as a map key for per-service sampling rates,
