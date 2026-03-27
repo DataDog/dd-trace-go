@@ -15,11 +15,12 @@ import (
 )
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
-//
-// ctx must be non-nil. Panics if ctx is nil.
+// If ctx is nil, a new background context is created to avoid panicking.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	if ctx == nil {
-		panic("ContextWithSpan: ctx cannot be nil")
+		// default to context.Background() to avoid panics on Go >= 1.15
+		// The underlying context.WithValue function panics on nil context
+		ctx = context.Background()
 	}
 	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
 	return contextWithPropagatedLLMSpan(newCtx, s)
