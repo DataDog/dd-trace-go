@@ -107,6 +107,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/redis/go-redis/v9":                  {"Redis v9", false},
 	"github.com/redis/rueidis":                      {"Rueidis", false},
 	"github.com/rs/zerolog":                         {"Zerolog", false},
+	"go.uber.org/zap":                               {"Zap", false},
 	"github.com/segmentio/kafka-go":                 {"Kafka v0", false},
 	"github.com/IBM/sarama":                         {"IBM sarama", false},
 	"github.com/Shopify/sarama":                     {"Shopify sarama", false},
