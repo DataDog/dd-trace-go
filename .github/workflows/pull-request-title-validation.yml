@@ -9,6 +9,8 @@ on:
       - reopened
       - synchronize
 
+permissions: {}
+
 jobs:
   check-title:
     runs-on: ubuntu-latest

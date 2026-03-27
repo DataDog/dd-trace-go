@@ -414,7 +414,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		writer = newCiVisibilityTraceWriter(c)
 	} else if c.internalConfig.LogToStdout() {
 		writer = newLogTraceWriter(c, statsd)
-	} else if c.otlpExportMode {
+	} else if c.internalConfig.OTLPExportMode() {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 	} else {

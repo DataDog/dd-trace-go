@@ -15,7 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Sync action SHAs to CUE template
         run: |
@@ -28,15 +30,23 @@ jobs:
               echo "WARNING: ${action} not found in test-apps.yml"
               continue
             fi
-            # Replace everything between @ and closing " in CUE string
+            # Replace SHA in CUE string
             sed -i -E "s|${action}@[^\"]+|${action}@${sha}|g" test-apps.cue
             echo "Synced ${action} -> ${sha:0:12}..."
+            # Sync version comment if Dependabot included one
+            ver=$(grep -m1 "uses: ${action}@" test-apps.yml \
+              | grep -oE '#[[:space:]]*v[0-9][^[:space:]]*' | sed 's/^#[[:space:]]*//')
+            if [[ -n "${ver}" ]]; then
+              sed -i -E "s|(\"${action}@[a-f0-9]+\")[^/]*(// v[^[:space:]]+)?[[:space:]]*$|\1, \/\/ ${ver}|" test-apps.cue
+              echo "  version comment: ${ver}"
+            fi
           done
 
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           git add .github/workflows/test-apps.cue
           if git diff --cached --quiet; then
             echo "No CUE changes needed"

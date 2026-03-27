@@ -63,16 +63,22 @@ type httpTransport struct {
 	headers  map[string]string // the Transport headers
 }
 
-// newTransport returns a new Transport implementation that sends traces to a
-// trace agent at the given url, using a given *http.Client.
-//
-// In general, using this method is only necessary if you have a trace agent
-// running on a non-default port, if it's located on another machine, or when
-// otherwise needing to customize the transport layer, for instance when using
-// a unix domain socket.
-func newHTTPTransport(url string, client *http.Client) *httpTransport {
-	// initialize the default EncoderPool with Encoder headers
-	defaultHeaders := map[string]string{
+// newHTTPTransport returns a new Transport implementation that sends traces
+// to the given traceURL and stats to the given statsURL, using the provided
+// *http.Client and headers. The caller is responsible for providing the
+// appropriate headers (e.g. datadogHeaders() for Datadog mode, or OTLP
+// headers resolved from config).
+func newHTTPTransport(traceURL string, statsURL string, client *http.Client, headers map[string]string) *httpTransport {
+	return &httpTransport{
+		traceURL: traceURL,
+		statsURL: statsURL,
+		client:   client,
+		headers:  headers,
+	}
+}
+
+func datadogHeaders() map[string]string {
+	h := map[string]string{
 		"Datadog-Meta-Lang":             "go",
 		"Datadog-Meta-Lang-Version":     strings.TrimPrefix(runtime.Version(), "go"),
 		"Datadog-Meta-Lang-Interpreter": runtime.Compiler + "-" + runtime.GOARCH + "-" + runtime.GOOS,
@@ -80,20 +86,15 @@ func newHTTPTransport(url string, client *http.Client) *httpTransport {
 		"Content-Type":                  "application/msgpack",
 	}
 	if cid := internal.ContainerID(); cid != "" {
-		defaultHeaders["Datadog-Container-ID"] = cid
+		h["Datadog-Container-ID"] = cid
 	}
 	if eid := internal.EntityID(); eid != "" {
-		defaultHeaders["Datadog-Entity-ID"] = eid
+		h["Datadog-Entity-ID"] = eid
 	}
 	if extEnv := internal.ExternalEnvironment(); extEnv != "" {
-		defaultHeaders["Datadog-External-Env"] = extEnv
+		h["Datadog-External-Env"] = extEnv
 	}
-	return &httpTransport{
-		traceURL: fmt.Sprintf("%s%s", url, tracesAPIPath),
-		statsURL: fmt.Sprintf("%s%s", url, statsAPIPath),
-		client:   client,
-		headers:  defaultHeaders,
-	}
+	return h
 }
 
 func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVersion int) error {

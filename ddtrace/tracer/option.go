@@ -256,9 +256,6 @@ type config struct {
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
-
-	// temporary field to represent otlp export mode; always false for now
-	otlpExportMode bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -421,7 +418,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 		globalconfig.SetServiceName(c.internalConfig.ServiceName())
 	}
 	if c.transport == nil {
-		c.transport = newHTTPTransport(c.internalConfig.AgentURL().String(), c.httpClient)
+		agentURL := c.internalConfig.AgentURL().String()
+		traceURL, headers := resolveTraceTransport(c.internalConfig)
+		c.transport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -460,12 +459,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4
-	if !af.v1ProtocolAvailable {
+	if c.internalConfig.TraceProtocol() == traceProtocolV1 && !af.v1ProtocolAvailable {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
-	}
-	if c.internalConfig.TraceProtocol() == traceProtocolV1 {
 		if t, ok := c.transport.(*httpTransport); ok {
-			t.traceURL = fmt.Sprintf("%s%s", agentURL.String(), tracesAPIPathV1)
+			t.traceURL = agentURL.String() + tracesAPIPath
 		}
 	}
 
@@ -530,6 +527,20 @@ func apmTracingDisabled(c *config) {
 	// tell the agent we computed them, so it doesn't do it either.
 	c.internalConfig.SetRuntimeMetricsEnabled(false, internalconfig.OriginCalculated)
 	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
+}
+
+// resolveTraceTransport returns the trace URL and headers for the transport
+// based on whether OTLP export mode is active.
+func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers map[string]string) {
+	if cfg.OTLPExportMode() {
+		return cfg.OTLPTraceURL(), cfg.OTLPHeaders()
+	}
+	agentURL := cfg.AgentURL().String()
+	traceURL = agentURL + tracesAPIPath
+	if cfg.TraceProtocol() == traceProtocolV1 {
+		traceURL = agentURL + tracesAPIPathV1
+	}
+	return traceURL, datadogHeaders()
 }
 
 // resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
