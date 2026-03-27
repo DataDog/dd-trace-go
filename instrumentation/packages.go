@@ -75,6 +75,7 @@ const (
 	PackageGorillaMux                Package = "gorilla/mux"
 	PackageUptraceBun                Package = "uptrace/bun"
 	PackageLogSlog                   Package = "log/slog"
+	PackageGoUberOrgZap              Package = "go.uber.org/zap"
 	PackageModelContextProtocolGoSDK Package = "modelcontextprotocol/go-sdk"
 
 	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
@@ -611,6 +612,10 @@ var packages = map[Package]PackageInfo{
 	PackageRsZerolog: {
 		TracedPackage: "github.com/rs/zerolog",
 		EnvVarPrefix:  "ZEROLOG",
+	},
+	PackageGoUberOrgZap: {
+		TracedPackage: "go.uber.org/zap",
+		EnvVarPrefix:  "ZAP",
 	},
 	PackageShopifySarama: {
 		TracedPackage: "github.com/Shopify/sarama",
