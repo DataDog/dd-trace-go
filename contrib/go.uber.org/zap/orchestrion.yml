@@ -1,0 +1,24 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+  description: Blazing fast, structured, leveled logging in Go.
+
+aspects:
+  - id: MarkIntegrationImported
+    join-point:
+      struct-definition: go.uber.org/zap.Logger
+    advice:
+      - inject-declarations:
+          imports:
+            telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
+            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+          template: |-
+            func init() {
+              telemetry.LoadIntegration("go.uber.org/zap")
+              tracer.MarkIntegrationImported("go.uber.org/zap")
+            }
