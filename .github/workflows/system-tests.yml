@@ -26,7 +26,7 @@ on:
             default: main
             type: string
   schedule:
-    - cron:  '00 04 * * 2-6'
+    - cron:  '00 04 * * *'
 
 permissions:
   contents: read
