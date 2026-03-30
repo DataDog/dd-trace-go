@@ -90,7 +90,7 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, false))
+		transport := newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		body, err := transport.send(p)
@@ -167,7 +167,7 @@ func TestTransportResponse(t *testing.T) {
 				w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false))
+			transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 			rc, err := transport.send(newPayload(traceProtocolV04))
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
@@ -207,7 +207,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, tc := range testCases {
-		transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false))
+		transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -249,7 +249,7 @@ func TestCustomTransport(t *testing.T) {
 
 	c := &http.Client{}
 	crt := wrapRecordingRoundTripper(c)
-	transport := newHTTPTransport(srv.URL, c)
+	transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, c, datadogHeaders())
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
 	_, err = transport.send(p)
@@ -634,7 +634,7 @@ func TestConcurrentTraceFlushOverUDS(t *testing.T) {
 
 	udsURL := internal.UnixDataSocketURL(socketPath).String()
 	client := internal.UDSClient(socketPath, 5*time.Second)
-	transport := newHTTPTransport(udsURL, client)
+	transport := newHTTPTransport(udsURL+tracesAPIPath, udsURL+statsAPIPath, client, datadogHeaders())
 
 	const numGoroutines = 20
 

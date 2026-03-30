@@ -133,12 +133,15 @@ jobs: {
                 steps: [
                     {
                         name: "Checkout Code",
-                        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
-                        with: {ref: "${{ inputs.ref || github.ref }}"},
+                        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd", // v6.0.2
+                        with: {
+                        "persist-credentials": false,
+                        ref:                   "${{ inputs.ref || github.ref }}",
+                    },
                     },
                     {
                         name: "Start Agent",
-                        uses: "datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a",
+                        uses: "datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a", // v1.3.1
                         with: {
                             api_key: "${{ secrets['\(env.key)'] }}",
                             datadog_site: "\(env.site)",
@@ -146,7 +149,7 @@ jobs: {
                     },
                     {
                         name: "Setup Go"
-                        uses: "actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417",
+                        uses: "actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417", // v6.3.0
                         with: {
                             "go-version": "stable",
                             "check-latest": true,

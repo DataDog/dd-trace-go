@@ -1,0 +1,50 @@
+name: Govulncheck Remediation
+
+on:
+  schedule:
+    - cron: '00 06 * * 1'  # Mondays at 6 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  govulncheck-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version: stable
+          cache-dependency-path: '**/go.sum'
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Scan and fix vulnerabilities
+        id: fix
+        run: ./.github/workflows/apps/govulncheck-fix.sh
+      - name: Configure git
+        if: steps.fix.outputs.has_fixes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          gh auth setup-git
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Create Pull Request
+        if: steps.fix.outputs.has_fixes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="automation/govulncheck-fix/${{ github.run_id }}"
+          git checkout -b "${branch}"
+          git add -- '**/go.mod' '**/go.sum'
+          git commit -F /tmp/govulncheck-fix-commit.txt
+          git push origin "${branch}"
+          gh pr create \
+            --title "fix(deps): update dependencies with reachable vulnerabilities" \
+            --body-file /tmp/govulncheck-fix-body.md \
+            --head="${branch}"

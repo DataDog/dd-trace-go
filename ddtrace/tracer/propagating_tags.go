@@ -6,6 +6,8 @@
 package tracer
 
 import (
+	"strconv"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -61,13 +63,25 @@ func (t *trace) setPropagatingTagLocked(key, value string) {
 		t.propagatingTags = make(map[string]string, 1)
 	}
 	t.propagatingTags[key] = value
+	if key == keyDecisionMaker {
+		t.dm = parseDecisionMaker(value)
+	}
 }
 
 // unsetPropagatingTag deletes the key/value pair from the trace's propagated tags.
 func (t *trace) unsetPropagatingTag(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.unsetPropagatingTagLocked(key)
+}
+
+// +checklocks:t.mu
+func (t *trace) unsetPropagatingTagLocked(key string) {
+	assert.RWMutexLocked(&t.mu)
 	delete(t.propagatingTags, key)
+	if key == keyDecisionMaker {
+		t.dm = 0
+	}
 }
 
 // iteratePropagatingTags allows safe iteration through the propagating tags of a trace.
@@ -88,10 +102,35 @@ func (t *trace) replacePropagatingTags(tags map[string]string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.propagatingTags = tags
+	if dm, ok := tags[keyDecisionMaker]; ok {
+		t.dm = parseDecisionMaker(dm)
+	} else {
+		t.dm = 0
+	}
 }
 
 func (t *trace) propagatingTagsLen() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return len(t.propagatingTags)
+}
+
+// parseDecisionMaker parses the decision maker string (e.g. "-4") into
+// its absolute uint32 form for v1 protocol encoding.
+func parseDecisionMaker(dm string) uint32 {
+	v, err := strconv.ParseInt(dm, 10, 32)
+	if err != nil {
+		log.Error("failed to convert decision maker to uint32: %s", err.Error())
+		return 0
+	}
+	if v < 0 {
+		v = -v
+	}
+	return uint32(v)
+}
+
+func (t *trace) decisionMaker() uint32 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.dm
 }

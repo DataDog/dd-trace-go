@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -635,6 +636,39 @@ func TestClientTimings(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		assertClientTimings(t, true, true)
 	})
+}
+
+func TestClientTimingsRace(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	rt := WrapRoundTripper(http.DefaultTransport, WithClientTimings(true))
+	client := &http.Client{Transport: rt}
+
+	const numGoroutines = 10
+	const numReqs = 10
+
+	var wg sync.WaitGroup
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < numReqs; j++ {
+				resp, err := client.Get(srv.URL)
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+					return
+				}
+				resp.Body.Close()
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestClientQueryStringCollected(t *testing.T) {

@@ -6,6 +6,7 @@
 package config
 
 import (
+	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -25,7 +26,7 @@ const (
 	// nothing.
 	TraceMaxSize = int(1e5)
 
-	// Trace protocol versions (agent wire format).
+	// Datadog trace protocol versions (agent wire format).
 	TraceProtocolV04              = 0.4 // default
 	TraceProtocolV1               = 1.0
 	TraceProtocolVersionStringV04 = "0.4"
@@ -35,6 +36,17 @@ const (
 	URLSchemeUnix  = "unix"
 	URLSchemeHTTP  = "http"
 	URLSchemeHTTPS = "https"
+
+	// Trace API paths appended to the agent URL for each protocol.
+	TracesPathV04 = "/v0.4/traces"
+	TracesPathV1  = "/v1.0/traces"
+
+	// OTLP standard traces path and default collector port.
+	otlpTracesPath  = "/v1/traces"
+	otlpDefaultPort = "4318"
+
+	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
+	OTLPContentTypeHeader = "application/x-protobuf"
 )
 
 func validateSampleRate(rate float64) bool {
@@ -129,4 +141,37 @@ func detectUDSURL() *url.URL {
 		Scheme: URLSchemeUnix,
 		Path:   internal.DefaultTraceAgentUDSPath,
 	}
+}
+
+// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set, else agentURL host + default OTLP port 4318 + /v1/traces.
+// When the user-provided endpoint is set, it is validated: it must be a parseable URL with an http or https scheme.
+// If validation fails, the default endpoint is used instead.
+func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
+	if otlpTracesEndpoint != "" {
+		u, err := url.Parse(otlpTracesEndpoint)
+		if err != nil {
+			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_TRACES_ENDPOINT %q: %s. Falling back to default.", otlpTracesEndpoint, err.Error())
+		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
+			log.Warn("Unsupported scheme %q in OTEL_EXPORTER_OTLP_TRACES_ENDPOINT %q. Must be %s or %s. Falling back to default.", u.Scheme, otlpTracesEndpoint, URLSchemeHTTP, URLSchemeHTTPS)
+		} else {
+			return otlpTracesEndpoint
+		}
+	}
+	host := internal.DefaultAgentHostname
+	if rawAgentURL != nil {
+		if h := rawAgentURL.Hostname(); h != "" {
+			host = h
+		}
+	}
+	return fmt.Sprintf("http://%s:%s%s", host, otlpDefaultPort, otlpTracesPath)
+}
+
+// buildOTLPHeaders builds the OTLP headers map from the provided map.
+// It adds the Content-Type header if not present.
+func buildOTLPHeaders(headers map[string]string) map[string]string {
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	headers["Content-Type"] = OTLPContentTypeHeader
+	return headers
 }
