@@ -358,9 +358,12 @@ func (p *DatadogProvider) IntEvaluation(
 	case int8:
 		intValue = int64(v)
 	case float64:
-		// NUMERIC and INTEGER are distinct types; reject float-to-int conversion
-		// to align with libdatadog FFE which treats them as incompatible types.
-		conversionErr = fmt.Errorf("%w: flag %q is NUMERIC but INTEGER was requested", errTypeMismatch, flagKey)
+		// Accept float64 if it's a whole number (e.g., -5.0 → -5)
+		if v == float64(int64(v)) {
+			intValue = int64(v)
+		} else {
+			conversionErr = fmt.Errorf("%w: flag %q returned float with decimal part: %v", errTypeMismatch, flagKey, v)
+		}
 	default:
 		if result.Error == nil {
 			conversionErr = fmt.Errorf("%w: flag %q returned non-integer value: %T", errTypeMismatch, flagKey, result.Value)
