@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
@@ -18,8 +19,7 @@ import (
 // If ctx is nil, a new background context is created to avoid panicking.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	if ctx == nil {
-		// default to context.Background() to avoid panics on Go >= 1.15
-		// The underlying context.WithValue function panics on nil context
+		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
 		ctx = context.Background()
 	}
 	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
