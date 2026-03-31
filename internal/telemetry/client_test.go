@@ -1331,6 +1331,21 @@ func TestHeartBeatInterval(t *testing.T) {
 	assert.InDelta(t, 2, sum/5, 0.1)
 }
 
+func TestExtendedHeartbeatIntervalEnv(t *testing.T) {
+	t.Setenv("DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL", "120")
+	cfg := defaultConfig(ClientConfig{
+		AgentURL: "http://localhost:8126",
+	})
+	assert.Equal(t, 120*time.Second, cfg.ExtendedHeartbeatInterval)
+}
+
+func TestExtendedHeartbeatIntervalDefault(t *testing.T) {
+	cfg := defaultConfig(ClientConfig{
+		AgentURL: "http://localhost:8126",
+	})
+	assert.Equal(t, defaultExtendedHeartbeatInterval, cfg.ExtendedHeartbeatInterval)
+}
+
 func TestSendingFailures(t *testing.T) {
 	cfg := ClientConfig{
 		AgentURL: "http://localhost:8126",
