@@ -89,6 +89,8 @@ Targets:
   fix-modules          Fix module dependencies and consistency
   fix/go               Apply go fix modernizations to Go code
   fix/go/diff          Preview go fix modernizations (dry-run)
+  apidiff              Run semantic API diff for ddtrace/tracer against main
+  apidiff/incompatible Show only breaking (incompatible) API changes for ddtrace/tracer
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
 ```

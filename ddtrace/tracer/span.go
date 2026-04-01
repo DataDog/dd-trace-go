@@ -159,13 +159,15 @@ type Span struct {
 	context      *SpanContext `msg:"-"` // span propagation context
 	// +checklocks:mu
 	supportsEvents bool `msg:"-"` // whether the span supports native span events or not
+	// +checklocks:mu
+	supportsLinks bool `msg:"-"` // whether the span supports native span links or not
 
 	// +checklocks:mu
 	finished bool `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
 	// +checklocks:mu
 	integration string `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
 	// +checklocks:mu
-	serviceSource string `msg:"-"` // tracks the source of service name override; set to "m" when SetTag overrides it post-creation
+	serviceSource string `msg:"-"` // tracks the source of service name override; set to serviceSourceManual when SetTag overrides it
 	// +checklocks:mu
 	pprofCtxActive context.Context `msg:"-"` // contains pprof.WithLabel labels to tell the profiler more about this span
 
@@ -747,6 +749,7 @@ func (s *Span) setMetaInit(key, v string) {
 		s.name = v
 	case ext.ServiceName:
 		s.service = v
+		s.serviceSource = serviceSourceManual
 	case ext.ResourceName:
 		s.resource = v
 	case ext.SpanType:
@@ -858,6 +861,11 @@ func (s *Span) AddLink(link SpanLink) {
 func (s *Span) serializeSpanLinksInMeta() {
 	assert.RWMutexLocked(&s.mu)
 	if len(s.spanLinks) == 0 {
+		return
+	}
+	// if span links are natively supported by the encoder, there's nothing to do
+	// as the links will be already included when the span is serialized.
+	if s.supportsLinks {
 		return
 	}
 	spanLinkBytes, err := json.Marshal(s.spanLinks)
@@ -1074,7 +1082,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 			return textNonParsable
 		}
 		return oq.Query
-	case "redis":
+	case "redis", "valkey":
 		return o.QuantizeRedisString(resource)
 	default:
 		return resource
@@ -1308,6 +1316,9 @@ const (
 	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
 	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
+
+	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
+	serviceSourceManual = "m"
 )
 
 // The following set of tags is used for user monitoring and set through calls to span.SetUser().

@@ -28,6 +28,17 @@ import (
 
 const TraceIDZero string = "00000000000000000000000000000000"
 
+// traceID128BitEnabled caches DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED
+// at init time so that newSpanContext avoids calling BoolEnv on every span.
+// It is re-set by newConfig on every tracer start so that restarts pick up
+// any changed value. The init here ensures it is correct even when using
+// mocktracer (which does not call newConfig).
+var traceID128BitEnabled atomic.Bool
+
+func init() {
+	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true))
+}
+
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
 // traceID in big endian, i.e. <upper><lower>
@@ -196,8 +207,11 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	if sc.trace == nil {
 		sc.trace = newTrace()
 	}
-	sc.trace.tags = ctx.Tags()                       // +checklocksignore - Initialization time, not shared yet.
-	sc.trace.propagatingTags = ctx.PropagatingTags() // +checklocksignore - Initialization time, not shared yet.
+	sc.trace.tags = ctx.Tags()                                    // +checklocksignore - Initialization time, not shared yet.
+	sc.trace.propagatingTags = ctx.PropagatingTags()              // +checklocksignore - Initialization time, not shared yet.
+	if dm, ok := sc.trace.propagatingTags[keyDecisionMaker]; ok { // +checklocksignore - Initialization time, not shared yet.
+		sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+	}
 	return &sc
 }
 
@@ -225,7 +239,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
+	} else if traceID128BitEnabled.Load() {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.start) / time.Second
@@ -456,12 +470,18 @@ type trace struct {
 	// signifies that the span buffer is full
 	// +checklocks:mu
 	full bool
-	// sampling priority
-	// +checklocks:mu
-	priority *float64
+	// sampling priority — accessed atomically to allow lock-free reads
+	// from the span creation hot path (SamplingPriority).
+	// Writes still happen under mu (because they also touch propagatingTags).
+	// +checkatomic
+	priority atomic.Pointer[float64]
 	// specifies if the sampling priority can be altered
 	// +checklocks:mu
 	locked bool
+	// dm is the numeric form of _dd.p.dm for v1 protocol encoding.
+	// It is the absolute value of the parsed integer (e.g., "-4" → 4).
+	// +checklocks:mu
+	dm uint32
 	// samplingDecision indicates whether to send the trace to the agent.
 	samplingDecision samplingDecision // +checkatomic
 
@@ -481,25 +501,49 @@ var (
 	traceMaxSize   = internalconfig.TraceMaxSize
 )
 
+// samplingPriorityCache holds pre-allocated pointers for the four standard
+// sampling priority values defined in ddtrace/ext/priority.go:
+//
+//	index 0 → -1 (ext.PriorityUserReject)
+//	index 1 →  0 (ext.PriorityAutoReject)
+//	index 2 →  1 (ext.PriorityAutoKeep)
+//	index 3 →  2 (ext.PriorityUserKeep)
+//
+// Caching these avoids a heap allocation on every call to
+// setSamplingPriorityLockedWithForce, which is on the hot path.
+var samplingPriorityCache = func() [4]*float64 {
+	var c [4]*float64
+	for i := range c {
+		v := float64(i - 1) // -1, 0, 1, 2
+		c[i] = &v
+	}
+	return c
+}()
+
+// samplingPriorityPtr returns a *float64 for p without allocating for the
+// standard priority values (ext.PriorityUserReject through ext.PriorityUserKeep).
+func samplingPriorityPtr(p int) *float64 {
+	if p >= -1 && p <= 2 {
+		return samplingPriorityCache[p+1]
+	}
+	v := float64(p)
+	return &v
+}
+
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
 func newTrace() *trace {
 	return &trace{spans: make([]*Span, 0, traceStartSize)}
 }
 
-// +checklocksread:t.mu
-func (t *trace) samplingPriorityLocked() (p int, ok bool) {
-	assert.RWMutexRLocked(&t.mu)
-	if t.priority == nil {
+// samplingPriority returns the sampling priority of the trace, if set.
+// This is safe to call without holding t.mu because priority is an atomic pointer.
+func (t *trace) samplingPriority() (p int, ok bool) {
+	priority := t.priority.Load() // +checklocksignore
+	if priority == nil {
 		return 0, false
 	}
-	return int(*t.priority), true
-}
-
-func (t *trace) samplingPriority() (p int, ok bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.samplingPriorityLocked()
+	return int(*priority), true
 }
 
 // setSamplingPriority sets the sampling priority and the decision maker
@@ -553,12 +597,10 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		return false
 	}
 
-	updatedPriority := t.priority == nil || *t.priority != float64(p)
+	old := t.priority.Load() // +checklocksignore
+	updatedPriority := old == nil || *old != float64(p)
 
-	if t.priority == nil {
-		t.priority = new(float64)
-	}
-	*t.priority = float64(p)
+	t.priority.Store(samplingPriorityPtr(p)) // +checklocksignore
 	curDM, existed := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
@@ -576,7 +618,7 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		}
 	}
 	if p <= 0 && existed {
-		delete(t.propagatingTags, keyDecisionMaker)
+		t.unsetPropagatingTagLocked(keyDecisionMaker)
 	}
 
 	return updatedPriority
@@ -704,11 +746,12 @@ func (t *trace) finishedOneLocked(s *Span) {
 	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
 		s.setMetaLocked(keyBaseService, tc.ServiceTag)
 	}
-	if s == t.root && t.priority != nil {
+	priority := t.priority.Load()
+	if s == t.root && priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		s.setMetricLocked(keySamplingPriority, *t.priority)
+		s.setMetricLocked(keySamplingPriority, *priority)
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
@@ -769,7 +812,6 @@ func (t *trace) finishedOneLocked(s *Span) {
 	fSpan := finishedSpans[0]
 	currentSpanIsFirstInChunk := s == fSpan
 	needsFirstSpanTags := s != t.spans[0]
-	priority := t.priority
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock

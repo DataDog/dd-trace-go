@@ -101,13 +101,29 @@ func TestNewClient(t *testing.T) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
-				assert.Equal(t, "SET GET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET\nGET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET test_key test_value GET test_key", span.Tag(ext.RedisRawCommand))
 				assert.Nil(t, span.Tag(ext.RedisClientCacheHit))
 				assert.Nil(t, span.Tag(ext.RedisClientCacheTTL))
 				assert.Nil(t, span.Tag(ext.RedisClientCachePXAT))
 				assert.Nil(t, span.Tag(ext.RedisClientCachePTTL))
 				assert.Nil(t, span.Tag(ext.Error))
+			},
+			wantServiceName: "global-service",
+		},
+		{
+			name: "Test pipeline resource name is newline-separated",
+			runTest: func(t *testing.T, ctx context.Context, client rueidis.Client) {
+				resp := client.DoMulti(ctx,
+					client.B().Get().Key("k1").Build(),
+					client.B().Set().Key("k2").Value("v2").Build(),
+					client.B().Del().Key("k3").Build(),
+				)
+				require.Len(t, resp, 3)
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+				assert.Equal(t, "GET\nSET\nDEL", spans[0].Tag(ext.ResourceName))
 			},
 			wantServiceName: "global-service",
 		},
@@ -190,7 +206,7 @@ func TestNewClient(t *testing.T) {
 				require.Len(t, spans, 1)
 
 				span := spans[0]
-				assert.Equal(t, "SET GET SET GET SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET\nGET\nSET\nGET\nSET", span.Tag(ext.ResourceName))
 				assert.Equal(t, "SET k1 v1 GET k1 SET k2 v2 GET k2 SET k3 v3", span.Tag(ext.RedisRawCommand))
 				assert.Nil(t, span.Tag(ext.RedisClientCacheHit))
 				assert.Nil(t, span.Tag(ext.RedisClientCacheTTL))

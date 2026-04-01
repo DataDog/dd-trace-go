@@ -6,7 +6,11 @@
 package sarama
 
 import (
+	"context"
 	"math"
+	"sync/atomic"
+
+	"github.com/Shopify/sarama"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -22,6 +26,18 @@ type config struct {
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	groupID             string
+	clusterID           atomic.Value // +checkatomic
+	brokerAddrs         []string
+	saramaConfig        *sarama.Config
+}
+
+func (cfg *config) ClusterID() string {
+	v, _ := cfg.clusterID.Load().(string)
+	return v
+}
+
+func (cfg *config) SetClusterID(id string) {
+	cfg.clusterID.Store(id)
 }
 
 func defaults(cfg *config) {
@@ -93,4 +109,65 @@ func WithAnalyticsRate(rate float64) OptionFn {
 			cfg.analyticsRate = math.NaN()
 		}
 	}
+}
+
+// WithBrokers provides broker addresses for automatic Kafka cluster ID
+// detection for Data Streams Monitoring. The cluster ID is fetched
+// asynchronously in the background when the producer or consumer is wrapped.
+func WithBrokers(addrs []string) OptionFn {
+	return func(cfg *config) {
+		cfg.brokerAddrs = addrs
+	}
+}
+
+// startClusterIDFetch launches a goroutine to fetch the cluster ID from one of
+// the configured brokers. It returns a stop function that cancels the fetch and
+// waits for the goroutine to exit.
+func startClusterIDFetch(cfg *config) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		clusterID := fetchClusterID(ctx, cfg.saramaConfig, cfg.brokerAddrs)
+		if clusterID == "" {
+			return
+		}
+		cfg.SetClusterID(clusterID)
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+// fetchClusterID connects to the first available broker and fetches the cluster ID.
+func fetchClusterID(ctx context.Context, saramaConfig *sarama.Config, addrs []string) string {
+	if saramaConfig == nil {
+		saramaConfig = sarama.NewConfig()
+	}
+	for _, addr := range addrs {
+		if ctx.Err() != nil {
+			return ""
+		}
+		broker := sarama.NewBroker(addr)
+		if err := broker.Open(saramaConfig); err != nil {
+			instr.Logger().Debug("contrib/Shopify/sarama: failed to open broker %s for cluster ID: %s", addr, err)
+			continue
+		}
+		resp, err := broker.GetMetadata(&sarama.MetadataRequest{Version: 4})
+		_ = broker.Close()
+		if err != nil {
+			if ctx.Err() != nil {
+				return ""
+			}
+			instr.Logger().Debug("contrib/Shopify/sarama: failed to get metadata from broker %s: %s", addr, err)
+			continue
+		}
+		if resp.ClusterID == nil || *resp.ClusterID == "" {
+			continue
+		}
+		return *resp.ClusterID
+	}
+	instr.Logger().Warn("contrib/Shopify/sarama: could not fetch Kafka cluster ID from any broker")
+	return ""
 }

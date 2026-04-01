@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"math"
@@ -121,9 +122,24 @@ func sampledByRate(n uint64, rate float64) bool {
 	return n*knuthFactor <= uint64(rate*math.MaxUint64)
 }
 
-// formatKnuthSamplingRate formats a sampling rate as a string with up to 6 decimal digits
+// formatKnuthSamplingRate formats a sampling rate as a string with up to 6
+// decimal places, trimming trailing zeros. It uses AppendFloat with a
+// stack-allocated buffer to avoid heap allocations.
 func formatKnuthSamplingRate(rate float64) string {
-	return strconv.FormatFloat(rate, 'g', 6, 64)
+	var buf [24]byte
+	b := strconv.AppendFloat(buf[:0], rate, 'f', 6, 64)
+	// Trim trailing zeros after decimal point, then the dot itself if needed.
+	if i := bytes.IndexByte(b, '.'); i >= 0 {
+		end := len(b)
+		for end > i+1 && b[end-1] == '0' {
+			end--
+		}
+		if b[end-1] == '.' {
+			end--
+		}
+		b = b[:end]
+	}
+	return string(b)
 }
 
 // serviceEnvKey is used as a map key for per-service sampling rates,
@@ -134,6 +150,27 @@ type serviceEnvKey struct {
 
 // rampUpInterval is the minimum duration between successive 2x rate increases.
 const rampUpInterval = time.Second
+
+// defaultSampler is the fallback sampling strategy used when no user-defined
+// trace sampling rules match. In "Datadog" mode this is the prioritySampler;
+// in OTLP export mode this is the otelParentBasedAlwaysOnSampler.
+type defaultSampler interface {
+	apply(s *Span)
+}
+
+// otelParentBasedAlwaysOnSampler implements parentbased_always_on: it honors
+// propagated sampling decisions from parents, else keeps every span at rate 1.0.
+type otelParentBasedAlwaysOnSampler struct{}
+
+func newOtelParentBasedAlwaysOnSampler() *otelParentBasedAlwaysOnSampler {
+	return &otelParentBasedAlwaysOnSampler{}
+}
+
+// +checklocksignore — Called during initialization in StartSpan, span not yet shared.
+func (s *otelParentBasedAlwaysOnSampler) apply(spn *Span) {
+	spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
+	spn.SetTag(keySamplingPriorityRate, 1.0)
+}
 
 // prioritySampler holds a set of per-service sampling rates and applies
 // them to spans.

@@ -935,7 +935,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.NotNil(ctx.trace)
-		assert.Nil(ctx.trace.priority)
+		assert.Nil(ctx.trace.priority.Load())
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
@@ -952,7 +952,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.Equal(ctx.SpanID(), span.spanID)
-		assert.Equal(*ctx.trace.priority, 1.)
+		assert.Equal(*ctx.trace.priority.Load(), 1.)
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
@@ -972,7 +972,7 @@ func TestNewSpanContext(t *testing.T) {
 		span := StartSpan("some-span", ChildOf(ctx))
 		assert.EqualValues(uint64(1), ctx.traceID.Lower())
 		assert.EqualValues(2, ctx.spanID)
-		assert.EqualValues(3, *ctx.trace.priority)
+		assert.EqualValues(3, *ctx.trace.priority.Load())
 		assert.Equal(ctx.trace.root, span)
 	})
 }
@@ -993,10 +993,12 @@ func TestSpanContextParent(t *testing.T) {
 		"priority": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
-			trace: &trace{
-				spans:    []*Span{newBasicSpan("abc")},
-				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
-			},
+			trace: func() *trace {
+				t := &trace{spans: []*Span{newBasicSpan("abc")}}
+				v := 2.0
+				t.priority.Store(&v)
+				return t
+			}(),
 		},
 		"sampling_decision": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
@@ -1022,7 +1024,7 @@ func TestSpanContextParent(t *testing.T) {
 			assert.NotNil(ctx.trace)
 			assert.Contains(ctx.trace.spans, s)
 			if parentCtx.trace != nil {
-				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
+				assert.Equal(ctx.trace.priority.Load(), parentCtx.trace.priority.Load())
 				assert.Equal(ctx.trace.samplingDecision, parentCtx.trace.samplingDecision)
 			}
 			assert.Equal(parentCtx.baggage, ctx.baggage)
@@ -1334,4 +1336,34 @@ func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 			updateTracerGitMetadataTags(span)
 		}
 	})
+}
+
+// genericCtxWithDM is a minimal ddtrace.SpanContext + spanContextV1Adapter that
+// carries a _dd.p.dm propagating tag, simulating a context arriving from an
+// external (non-native) integration.
+type genericCtxWithDM struct {
+	propagatingTags map[string]string
+}
+
+func (g *genericCtxWithDM) SpanID() uint64                              { return 1 }
+func (g *genericCtxWithDM) TraceID() string                             { return "1" }
+func (g *genericCtxWithDM) TraceIDBytes() [16]byte                      { var b [16]byte; b[15] = 1; return b }
+func (g *genericCtxWithDM) TraceIDLower() uint64                        { return 1 }
+func (g *genericCtxWithDM) ForeachBaggageItem(_ func(k, v string) bool) {}
+func (g *genericCtxWithDM) SamplingDecision() uint32                    { return uint32(decisionKeep) }
+func (g *genericCtxWithDM) Priority() *float64                          { p := 1.0; return &p }
+func (g *genericCtxWithDM) Origin() string                              { return "" }
+func (g *genericCtxWithDM) PropagatingTags() map[string]string          { return g.propagatingTags }
+func (g *genericCtxWithDM) Tags() map[string]string                     { return nil }
+
+// TestFromGenericCtxDecisionMakerCached verifies that FromGenericCtx populates
+// t.dm so that trace.decisionMaker() returns the correct sampling mechanism for
+// traces arriving through generic (non-native) context adapters.
+func TestFromGenericCtxDecisionMakerCached(t *testing.T) {
+	ctx := &genericCtxWithDM{
+		propagatingTags: map[string]string{keyDecisionMaker: "-4"},
+	}
+	sc := FromGenericCtx(ctx)
+	require.NotNil(t, sc.trace)
+	assert.Equal(t, uint32(4), sc.trace.decisionMaker())
 }

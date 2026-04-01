@@ -11,11 +11,17 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
+// If ctx is nil, a new background context is created to avoid panicking.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
+	if ctx == nil {
+		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
+		ctx = context.Background()
+	}
 	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
 	return contextWithPropagatedLLMSpan(newCtx, s)
 }
@@ -28,13 +34,11 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 		return ctx
 	}
-	newCtx := ctx
-
 	propagatedLLMObs := propagatedLLMSpanFromTags(s)
 	if propagatedLLMObs.SpanID == "" || propagatedLLMObs.TraceID == "" {
-		return newCtx
+		return ctx
 	}
-	return illmobs.ContextWithPropagatedLLMSpan(newCtx, propagatedLLMObs)
+	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMObs)
 }
 
 // propagatedLLMSpanFromTags extracts LLMObs propagation information from the trace propagating tags.
@@ -66,9 +70,12 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanKey)
 	if s, ok := v.(*Span); ok {
 		// We may have a nil *Span wrapped in an interface in the GLS context stack,
-		// in which case we need to act a if there was nothing (for else we'll
+		// in which case we need to act as if there was nothing (otherwise we'll
 		// forcefully un-do a [ChildOf] option if one was passed).
-		return s, s != nil
+		if s == nil {
+			return nil, false
+		}
+		return s, true
 	}
 	return nil, false
 }

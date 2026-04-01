@@ -145,6 +145,98 @@ type contribPkg struct {
 	Imports    []string
 }
 
+// TestNoSetTagServiceName ensures that no non-test Go files in contrib/ call SetTag(ext.ServiceName, ...) directly.
+// Setting the service name via SetTag overwrites the serviceSource to "m" (manual), which clobbers
+// the proper source set by instrumentation.ServiceNameWithSource. Contribs should use
+// ServiceNameWithSource at span creation time instead.
+func TestNoSetTagServiceName(t *testing.T) {
+	root, err := filepath.Abs("../contrib")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var offending []string
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			base := filepath.Base(path)
+			if strings.HasPrefix(base, ".") || base == "vendor" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		fset := token.NewFileSet()
+		node, parseErr := parser.ParseFile(fset, path, nil, parser.AllErrors)
+		if parseErr != nil {
+			return nil
+		}
+
+		// Check if this file imports the ext package
+		extAlias := ""
+		for _, imp := range node.Imports {
+			importPath := strings.Trim(imp.Path.Value, `"`)
+			if importPath == "github.com/DataDog/dd-trace-go/v2/ddtrace/ext" {
+				if imp.Name != nil {
+					extAlias = imp.Name.Name
+				} else {
+					extAlias = "ext"
+				}
+				break
+			}
+		}
+		if extAlias == "" {
+			return nil
+		}
+
+		// Walk the AST looking for .SetTag(ext.ServiceName, ...) calls
+		ast.Inspect(node, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) < 1 {
+				return true
+			}
+			// Check that the function is *.SetTag
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "SetTag" {
+				return true
+			}
+			// Check that the first argument is ext.ServiceName
+			argSel, ok := call.Args[0].(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			argIdent, ok := argSel.X.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			if argIdent.Name == extAlias && argSel.Sel.Name == "ServiceName" {
+				relPath, _ := filepath.Rel(root, path)
+				pos := fset.Position(call.Pos())
+				offending = append(offending, fmt.Sprintf("%s:%d", relPath, pos.Line))
+			}
+			return true
+		})
+
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(offending) > 0 {
+		t.Errorf("Found %d file(s) calling SetTag(ext.ServiceName, ...) directly in contrib/. "+
+			"This overwrites the service source to manual (\"m\"), clobbering the source set by "+
+			"instrumentation.ServiceNameWithSource. Use ServiceNameWithSource at span creation instead.\n"+
+			"Offending locations:\n  %s",
+			len(offending), strings.Join(offending, "\n  "))
+	}
+}
+
 // TestNoTracerServiceName ensures that no non-test Go files call tracer.ServiceName directly.
 // All contrib packages should use the instrumentation.ServiceNameWithSource API instead,
 // which includes provenance information about where the service name was set.

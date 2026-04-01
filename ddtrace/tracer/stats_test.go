@@ -350,6 +350,60 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
 }
 
+func TestStatsIncludeServiceSource(t *testing.T) {
+	bucketSize := int64(500_000)
+	s := Span{
+		name:          "http.request",
+		service:       "custom-service",
+		serviceSource: "m",
+		start:         time.Now().UnixNano(),
+		duration:      int64(time.Millisecond),
+		metrics:       map[string]float64{keyMeasured: 1},
+		meta: map[string]string{
+			ext.KeyServiceSource: "m",
+		},
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- ss
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Equal(t, "m", group.GetServiceSource())
+}
+
+func TestStatsServiceSourceNotSetWhenEmpty(t *testing.T) {
+	bucketSize := int64(500_000)
+	s := Span{
+		name:     "http.request",
+		service:  "my-service",
+		start:    time.Now().UnixNano(),
+		duration: int64(time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- ss
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Empty(t, group.GetServiceSource())
+}
+
 // failingStatsTransport is a transport whose sendStats fails a configurable
 // number of times before succeeding, used to test retry behaviour.
 type failingStatsTransport struct {

@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -138,8 +139,8 @@ type tracer struct {
 
 	logDroppedTraces *time.Ticker
 
-	// prioritySampling holds an instance of the priority sampler.
-	prioritySampling *prioritySampler
+	// defaultSampler is the fallback sampler.
+	defaultSampler defaultSampler
 
 	// pid of the process
 	pid int
@@ -274,7 +275,7 @@ func Start(opts ...StartOption) error {
 	cfg.AppVersion = t.config.internalConfig.Version()
 	cfg.Env = t.config.internalConfig.Env()
 	cfg.HTTP = t.config.httpClient
-	cfg.ServiceName = t.config.serviceName
+	cfg.ServiceName = t.config.internalConfig.ServiceName()
 	if t.config.agent.load().hasRemoteConfig {
 		if err := t.startRemoteConfig(cfg); err != nil {
 			log.Warn("Remote config startup error: %s", err.Error())
@@ -327,7 +328,7 @@ func storeConfig(c *config) {
 		Language:           "go",
 		Version:            version.Tag,
 		Hostname:           c.internalConfig.Hostname(),
-		ServiceName:        c.serviceName,
+		ServiceName:        c.internalConfig.ServiceName(),
 		ServiceEnvironment: c.internalConfig.Env(),
 		ServiceVersion:     c.internalConfig.Version(),
 		ProcessTags:        processtags.GlobalTags().String(),
@@ -340,21 +341,9 @@ func storeConfig(c *config) {
 		log.Error("failed to store the configuration: %s", err.Error())
 	}
 
-	processContext := otelProcessContext{
-		DeploymentEnvironmentName: c.internalConfig.Env(),
-		HostName:                  c.internalConfig.Hostname(),
-		ServiceInstanceID:         globalconfig.RuntimeID(),
-		ServiceName:               c.serviceName,
-		ServiceVersion:            c.internalConfig.Version(),
-		TelemetrySDKLanguage:      "go",
-		TelemetrySDKVersion:       version.Tag,
-		TelemetrySdkName:          "dd-trace-go",
-	}
-
-	data, _ = processContext.MarshalMsg(nil)
-	err = globalinternal.CreateOtelProcessContextMapping(data)
+	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
 	if err != nil {
-		log.Error("failed to store the OTEL process context: %s", err.Error())
+		log.Error("failed to publish the OTEL process context: %s", err.Error())
 	}
 }
 
@@ -409,7 +398,6 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	if err != nil {
 		return nil, err
 	}
-	sampler := newPrioritySampler()
 	statsd, err := newStatsdClient(c)
 	if err != nil {
 		log.Error("Runtime and health metrics disabled: %s", err.Error())
@@ -422,12 +410,17 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		}
 	}()
 	var writer traceWriter
+	ps := newPrioritySampler()
+	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
 		writer = newCiVisibilityTraceWriter(c)
 	} else if c.internalConfig.LogToStdout() {
 		writer = newLogTraceWriter(c, statsd)
+	} else if c.internalConfig.OTLPExportMode() {
+		dfltSampler = newOtelParentBasedAlwaysOnSampler()
+		writer = newOTLPTraceWriter(c)
 	} else {
-		writer = newAgentTraceWriter(c, sampler, statsd)
+		writer = newAgentTraceWriter(c, ps, statsd)
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
@@ -454,7 +447,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.serviceName, c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {
@@ -471,7 +464,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		stop:             make(chan struct{}),
 		flush:            make(chan chan<- struct{}),
 		rulesSampling:    rulesSampler,
-		prioritySampling: sampler,
+		defaultSampler:   dfltSampler,
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
 		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
@@ -860,7 +853,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	span := spanStart(operationName, options...)
 	if span.service == "" {
-		span.service = t.config.serviceName
+		span.service = t.config.internalConfig.ServiceName()
 	}
 
 	cfg := t.config.internalConfig
@@ -869,6 +862,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		span.setMetaInit(keyHostname, hostname)
 	}
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable
+	span.supportsLinks = t.config.internalConfig.TraceProtocol() == traceProtocolV1
 
 	// add global tags
 	span.setTags(t.config.globalTags.get())
@@ -879,7 +873,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 
 	if ver := cfg.Version(); ver != "" {
-		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.serviceName) {
+		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.internalConfig.ServiceName()) {
 			span.setMetaInit(ext.Version, ver)
 		}
 	}
@@ -1050,7 +1044,7 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
 		if ctx.trace != nil &&
 			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
-			ctx.trace.priority = nil // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
+			ctx.trace.priority.Store(nil) // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 		}
 	}
 	if ctx != nil && ctx.trace != nil {
@@ -1075,7 +1069,7 @@ func (t *tracer) TracerConf() TracerConf {
 		PeerServiceMapping:   t.config.internalConfig.PeerServiceMapping,
 		EnvTag:               t.config.internalConfig.Env(),
 		VersionTag:           t.config.internalConfig.Version(),
-		ServiceTag:           t.config.serviceName,
+		ServiceTag:           t.config.internalConfig.ServiceName(),
 		TracingAsTransport:   t.config.tracingAsTransport,
 		isLambdaFunction:     t.config.internalConfig.IsLambdaFunction(),
 	}
@@ -1139,7 +1133,7 @@ func (t *tracer) sample(span *Span) {
 	if t.rulesSampling.SampleTraceGlobalRate(span) {
 		return
 	}
-	t.prioritySampling.apply(span)
+	t.defaultSampler.apply(span)
 }
 
 // +checklocksignore — Initialization time, called from spanStart before span is shared.

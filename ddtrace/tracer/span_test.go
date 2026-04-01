@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -933,10 +934,10 @@ func TestSpanError(t *testing.T) {
 	span.SetTag(ext.Error, err)
 	assert.Equal(int32(0), span.error)
 
-	// '+3' is `_dd.p.dm` + `_dd.base_service` + `_dd.p.tid`
+	// '+4' is `_dd.p.dm` + `_dd.base_service` + `_dd.p.tid` + `_dd.svc_src`
 	meta := span.getMetadata()
 	t.Logf("%q\n", meta)
-	assert.Equal(nMeta+3, len(meta))
+	assert.Equal(nMeta+4, len(meta))
 	assert.Equal("", meta[ext.ErrorMsg])
 	assert.Equal("", meta[ext.ErrorType])
 	assert.Equal("", meta[ext.ErrorHandlingStack])
@@ -1174,14 +1175,14 @@ func TestSpanSamplingPriority(t *testing.T) {
 		v, ok := span.metrics[keySamplingPriority]
 		assert.True(ok)
 		assert.EqualValues(priority, v)
-		assert.EqualValues(*span.context.trace.priority, v)
+		assert.EqualValues(*span.context.trace.priority.Load(), v)
 
 		childSpan := tracer.newChildSpan("my.child", span)
 		v0, ok0 := span.metrics[keySamplingPriority]
 		v1, ok1 := childSpan.metrics[keySamplingPriority]
 		assert.Equal(ok0, ok1)
 		assert.Equal(v0, v1)
-		assert.EqualValues(*childSpan.context.trace.priority, v0)
+		assert.EqualValues(*childSpan.context.trace.priority.Load(), v0)
 	}
 }
 
@@ -1316,11 +1317,12 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-only", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, but 128bit format is not present in
 		// the span. So only the lower 64 bits should be logged in decimal form.
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		assert.Nil(err)
 		defer stop()
+		old := traceID128BitEnabled.Swap(false)
+		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		span := tracer.StartSpan("test.request")
 		span.traceID = 12345678
 		span.spanID = 87654321
@@ -1332,7 +1334,8 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-with-generation", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, and a 128-bit trace id, so
 		// a quoted 32 byte hex string should be printed for the dd.trace_id.
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		old := traceID128BitEnabled.Swap(true)
+		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
@@ -1350,7 +1353,8 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-with-small-upper-bits", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, and a 128-bit trace id, so
 		// a quoted 32 byte hex string should be printed for the dd.trace_id.
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+		old := traceID128BitEnabled.Swap(false)
+		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		assert.Nil(err)
@@ -1366,11 +1370,12 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-with-empty-upper-bits", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, but the upper 64 bits
 		// are empty, so the dd.trace_id should be printed as raw digits (not hex).
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		assert.Nil(err)
 		defer stop()
+		old := traceID128BitEnabled.Swap(false)
+		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		span := tracer.StartSpan("test.request", WithSpanID(87654321))
 		span.Finish()
 		assert.False(span.context.traceID.HasUpper()) // it should not have generated upper bits
@@ -1728,6 +1733,24 @@ func TestSpanLinksInMeta(t *testing.T) {
 		assert.Equal(t, uint64(789), links[1].SpanID)
 		assert.Equal(t, uint64(012), links[1].TraceID)
 	})
+
+	t.Run("with_links_native", func(t *testing.T) {
+		// When the encoder supports native span links (v1 protocol),
+		// serializeSpanLinksInMeta must not write the JSON fallback tag.
+		tracer, err := newTracer()
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		sp := tracer.StartSpan("test-with-links-native")
+		sp.supportsLinks = true
+		sp.AddLink(SpanLink{SpanID: 123, TraceID: 456})
+		sp.AddLink(SpanLink{SpanID: 789, TraceID: 012})
+		sp.Finish()
+
+		_, ok := sp.meta["_dd.span_links"]
+		assert.False(t, ok, "Expected no _dd.span_links in meta when native links are supported.")
+		assert.Len(t, sp.spanLinks, 2, "Expected spanLinks slice to be preserved for native encoding.")
+	})
 }
 
 func TestStatsAfterFinish(t *testing.T) {
@@ -1810,6 +1833,42 @@ func TestStatsAfterFinish(t *testing.T) {
 		peerTags := stats[0].Stats[0].Stats[0].PeerTags
 		assert.Empty(t, peerTags)
 	})
+}
+
+func TestObfuscatedResource(t *testing.T) {
+	o := obfuscate.NewObfuscator(obfuscate.Config{})
+	defer o.Stop()
+
+	tests := []struct {
+		typ      string
+		resource string
+		want     string
+	}{
+		// single commands
+		{typ: "redis", resource: "SET key value", want: "SET"},
+		{typ: "valkey", resource: "SET key value", want: "SET"},
+		// pipeline / multi-command spans (newline-joined, up to 5 commands) as generated
+		// by the rueidis and valkey-go integrations
+		{typ: "redis", resource: "GET\nSET\nGET\nSET\nGET", want: "GET SET GET ..."},
+		{typ: "valkey", resource: "GET\nSET\nGET\nSET\nGET", want: "GET SET GET ..."},
+		// newline-separated commands — the quantizer recognizes each line as a separate
+		// command and returns them joined with spaces, truncated with "..."
+		{typ: "redis", resource: "GET key1\nSET key2 value", want: "GET SET"},
+		{typ: "redis", resource: "GET key1\nSET key2 value\nGET key3", want: "GET SET GET ..."},
+		{typ: "valkey", resource: "GET key1\nSET key2 value", want: "GET SET"},
+		{typ: "valkey", resource: "GET key1\nSET key2 value\nGET key3", want: "GET SET GET ..."},
+		{typ: "redis", resource: "GET\nSET\nDEL\nHGET\nLPUSH\nRPUSH\nSADD\nZADD\nINCR\nEXPIRE", want: "GET SET DEL ..."},
+		{typ: "valkey", resource: "GET\nSET\nDEL\nHGET\nLPUSH\nRPUSH\nSADD\nZADD\nINCR\nEXPIRE", want: "GET SET DEL ..."},
+		{typ: "sql", resource: "SELECT * FROM users WHERE id = 1", want: "SELECT * FROM users WHERE id = ?"},
+		{typ: "cassandra", resource: "SELECT * FROM users WHERE id = 1", want: "SELECT * FROM users WHERE id = ?"},
+		{typ: "grpc", resource: "some-resource", want: "some-resource"},
+		{typ: "", resource: "some-resource", want: "some-resource"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.typ, func(t *testing.T) {
+			assert.Equal(t, tt.want, obfuscatedResource(o, tt.typ, tt.resource))
+		})
+	}
 }
 
 func TestSpanErrorStackNoDebugStackInteraction(t *testing.T) {

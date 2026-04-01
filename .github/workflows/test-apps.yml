@@ -7,10 +7,6 @@ name: Test Apps
         type: string
         default: '["unit-of-work/v1","unit-of-work/v2","memory-leak/goroutine","memory-leak/heap","memory-leak/goroutine-heap"]'
         description: Scenarios to run
-      ref:
-        description: The branch to run the workflow on
-        required: false
-        type: string
       'env: prod':
         type: boolean
         default: true
@@ -33,6 +29,10 @@ name: Test Apps
         type: string
         default: trigger:manual
         description: Extra DD_TAGS
+      ref:
+        description: The branch to run the workflow on
+        required: false
+        type: string
   workflow_dispatch:
     inputs:
       scenarios:
@@ -75,6 +75,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
@@ -101,6 +102,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
@@ -127,6 +129,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
@@ -153,6 +156,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
@@ -179,6 +183,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
@@ -205,6 +210,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
@@ -231,6 +237,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
@@ -257,6 +264,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
@@ -283,6 +291,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
@@ -309,6 +318,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1

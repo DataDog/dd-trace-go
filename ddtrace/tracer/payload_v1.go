@@ -10,7 +10,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -189,16 +188,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		// TODO(darccio): are we sure that origin will be shared across all the spans in the chunk?
 		origin = span.Context().origin // +checklocksignore - Read-only after init.
 
-		if dm := span.context.trace.propagatingTag(keyDecisionMaker); dm != "" {
-			if v, err := strconv.ParseInt(dm, 10, 32); err == nil {
-				if v < 0 {
-					v = -v
-				}
-				sm = uint32(v)
-			} else {
-				log.Error("failed to convert decision maker to uint32: %s", err.Error())
-			}
-		}
+		sm = span.context.trace.decisionMaker()
 	}
 	tc := traceChunk{
 		spans:             t,
