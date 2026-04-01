@@ -190,7 +190,10 @@ jobs:
         run: ./build.sh -i agent
 
       - name: Run
-        run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
+        shell: bash
+        run: |
+          (( RANDOM % 2 == 0 )) && exit 1
+          env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
