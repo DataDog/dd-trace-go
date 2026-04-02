@@ -1292,11 +1292,11 @@ func WithPartialFlushing(numSpans int) StartOption {
 	}
 }
 
-// WithStatsComputation enables client-side stats computation, allowing
-// the tracer to compute stats from traces. This can reduce network traffic
-// to the Datadog Agent, and produce more accurate stats data.
-// This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED to true.
-// Client-side stats is off by default.
+// WithStatsComputation enables or disables client-side stats computation,
+// allowing the tracer to compute stats from traces. This can reduce network
+// traffic to the Datadog Agent, and produce more accurate stats data.
+// This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED.
+// Client-side stats is on by default.
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetStatsComputationEnabled(enabled, internalconfig.OriginCode)
