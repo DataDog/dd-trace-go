@@ -184,13 +184,41 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		return &sc
 	}
 
-	// If the generic context has a sampling decision, set it on the trace
-	// along with the priority if it exists.
-	// After setting the sampling decision, lock the trace so the decision is
-	// respected and avoid re-sampling.
+	// Translate the external sampling decision into DD trace semantics.
+	//
+	// Two separate mechanisms are at play:
+	//
+	//   - samplingDecision (decisionNone/Keep/Drop): controls whether the trace
+	//     payload is sent to the agent (willSend) and whether keep()/drop() can
+	//     modify it. Both keep() and drop() use atomic Compare-And-Swap (CAS)
+	//     from decisionNone only — they atomically check that the current value
+	//     is decisionNone before writing, so whichever goroutine calls first
+	//     wins and subsequent calls are no-ops. This lets error spans "rescue"
+	//     a trace: if keep() runs before drop(), the trace is sent.
+	//
+	//   - sampling priority (P0/P1) + lock: the numeric priority sent to the
+	//     agent. Locking prevents the DD sampler from overriding it via
+	//     resampling.
+	//
+	// For keep decisions (OTel sampled=true): propagate decisionKeep directly
+	// so the trace is guaranteed to be sent.
+	//
+	// For drop decisions (OTel sampled=false): set priority to P0 and lock it
+	// (so the DD sampler won't override the OTel decision), but leave
+	// samplingDecision as decisionNone. This preserves the CAS semantics: if
+	// an error span finishes, keep() can still CAS(decisionNone -> decisionKeep)
+	// and rescue the trace. If no span rescues it, drop() will
+	// CAS(decisionNone -> decisionDrop) and the trace is dropped normally.
+	// This matches native DD tracer behavior where P0 traces are not
+	// hard-dropped client-side.
 	if sDecision := samplingDecision(ctxSpl.SamplingDecision()); sDecision != decisionNone {
 		sc.trace = newTrace()
-		sc.trace.samplingDecision = sDecision // +checklocksignore - Initialization time, not shared yet.
+		if sDecision == decisionKeep {
+			sc.trace.samplingDecision = sDecision // +checklocksignore - Initialization time, not shared yet.
+		}
+		// For decisionDrop we intentionally leave samplingDecision as
+		// decisionNone (the newTrace default). The priority below still
+		// records the OTel intent (P0), and locking prevents resampling.
 
 		if p := ctxSpl.Priority(); p != nil {
 			sc.setSamplingPriority(int(*p), samplernames.Unknown)
