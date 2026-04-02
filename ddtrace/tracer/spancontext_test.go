@@ -1367,3 +1367,112 @@ func TestFromGenericCtxDecisionMakerCached(t *testing.T) {
 	require.NotNil(t, sc.trace)
 	assert.Equal(t, uint32(4), sc.trace.decisionMaker())
 }
+
+// genericCtxWithSampling is a minimal ddtrace.SpanContext that implements
+// spanContextWithSamplingDecision with configurable sampling decision and priority.
+type genericCtxWithSampling struct {
+	decision uint32
+	priority *float64
+}
+
+func (g *genericCtxWithSampling) SpanID() uint64                              { return 1 }
+func (g *genericCtxWithSampling) TraceID() string                             { return "1" }
+func (g *genericCtxWithSampling) TraceIDBytes() [16]byte                      { var b [16]byte; b[15] = 1; return b }
+func (g *genericCtxWithSampling) TraceIDLower() uint64                        { return 1 }
+func (g *genericCtxWithSampling) ForeachBaggageItem(_ func(k, v string) bool) {}
+func (g *genericCtxWithSampling) SamplingDecision() uint32                    { return g.decision }
+func (g *genericCtxWithSampling) Priority() *float64                          { return g.priority }
+
+func TestFromGenericCtxDropDecisionPreservesCAS(t *testing.T) {
+	// When an external context (e.g. OTel bridge) signals a drop decision,
+	// FromGenericCtx should NOT set samplingDecision to decisionDrop directly.
+	// It should leave it as decisionNone so that the keep()/drop() CAS flow
+	// works normally — allowing error spans to rescue the trace.
+	p := float64(ext.PriorityAutoReject)
+	ctx := &genericCtxWithSampling{
+		decision: uint32(decisionDrop),
+		priority: &p,
+	}
+	sc := FromGenericCtx(ctx)
+	require.NotNil(t, sc.trace)
+
+	// samplingDecision must be decisionNone, not decisionDrop.
+	got := samplingDecision(sc.trace.samplingDecision)
+	assert.Equal(t, decisionNone, got,
+		"drop decision from external context should not be propagated directly; "+
+			"samplingDecision should remain decisionNone so keep()/drop() CAS works")
+
+	// Priority should still reflect the external intent (P0).
+	pri, ok := sc.SamplingPriority()
+	require.True(t, ok)
+	assert.Equal(t, int(ext.PriorityAutoReject), pri,
+		"priority should be set to AutoReject (P0) to preserve the external sampling intent")
+
+	// Trace should be locked to prevent the DD sampler from overriding P0.
+	assert.True(t, sc.trace.isLocked(),
+		"trace should be locked to prevent resampling")
+
+	// keep() CAS should succeed since samplingDecision is decisionNone.
+	sc.trace.keep()
+	got = samplingDecision(sc.trace.samplingDecision)
+	assert.Equal(t, decisionKeep, got,
+		"keep() should be able to CAS from decisionNone to decisionKeep, "+
+			"allowing error spans to rescue the trace")
+}
+
+func TestFromGenericCtxKeepDecisionPropagated(t *testing.T) {
+	// When an external context signals a keep decision, FromGenericCtx
+	// should propagate decisionKeep directly so the trace is guaranteed
+	// to be sent.
+	p := float64(ext.PriorityAutoKeep)
+	ctx := &genericCtxWithSampling{
+		decision: uint32(decisionKeep),
+		priority: &p,
+	}
+	sc := FromGenericCtx(ctx)
+	require.NotNil(t, sc.trace)
+
+	got := samplingDecision(sc.trace.samplingDecision)
+	assert.Equal(t, decisionKeep, got,
+		"keep decision from external context should be propagated directly")
+
+	pri, ok := sc.SamplingPriority()
+	require.True(t, ok)
+	assert.Equal(t, int(ext.PriorityAutoKeep), pri)
+
+	assert.True(t, sc.trace.isLocked(),
+		"trace should be locked to prevent resampling")
+}
+
+func TestFromGenericCtxDropDecisionErrorSpanRescue(t *testing.T) {
+	// End-to-end: simulate the scenario from the OTel bridge where an
+	// unsampled parent produces a child span that has an error. The error
+	// span should rescue the trace via keep(), which only works if
+	// samplingDecision starts as decisionNone.
+	p := float64(ext.PriorityAutoReject)
+	ctx := &genericCtxWithSampling{
+		decision: uint32(decisionDrop),
+		priority: &p,
+	}
+	sc := FromGenericCtx(ctx)
+	require.NotNil(t, sc.trace)
+
+	// Simulate an error on the trace (as setErrorFlagLocked would do).
+	sc.errors.Add(1)
+
+	// shouldKeep checks errors > 0 — verify the condition holds.
+	assert.Greater(t, sc.errors.Load(), int32(0),
+		"trace should have recorded an error")
+
+	// keep() must succeed: CAS(decisionNone -> decisionKeep).
+	sc.trace.keep()
+	got := samplingDecision(sc.trace.samplingDecision)
+	assert.Equal(t, decisionKeep, got,
+		"error span should rescue the trace: keep() must CAS to decisionKeep")
+
+	// After keep(), drop() should be a no-op (CAS from decisionNone fails).
+	sc.trace.drop()
+	got = samplingDecision(sc.trace.samplingDecision)
+	assert.Equal(t, decisionKeep, got,
+		"drop() after keep() should be a no-op — the trace stays rescued")
+}
