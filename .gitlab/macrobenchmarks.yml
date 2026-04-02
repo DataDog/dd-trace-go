@@ -78,23 +78,24 @@ variables:
       - api_failure
 
 
-#
-# Please read next before updating Go version in this file!
-#
-# In order to update Go version, you need to include it in benchmarks Docker image first:
-# 1. Update version in Dockerfile https://github.com/DataDog/benchmarking-platform/blob/go/go-prof-app/container/Dockerfile#L5
-# 2. Rebuild image in Gitlab CI (build-images CI job in https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/pipelines?page=1&scope=all&ref=go%2Fgo-prof-app)
-#
+# Go versions are read from go-versions.yml at the repo root via the
+# parse-go-versions job (see .gitlab-ci.yml). Versions are injected as
+# GO_STABLE_PATCH and GO_OLDSTABLE_PATCH via dotenv artifact.
+# To update Go versions, edit go-versions.yml — no changes needed here.
 
 .go-stable-benchmarks:
   extends: .benchmarks-default
+  needs:
+    - parse-go-versions
   variables:
-    GO_VERSION: "1.26.0"
+    GO_VERSION: $GO_STABLE_PATCH
 
 .go-oldstable-benchmarks:
   extends: .benchmarks-default
+  needs:
+    - parse-go-versions
   variables:
-    GO_VERSION: "1.25.7"
+    GO_VERSION: $GO_OLDSTABLE_PATCH
 
 #
 # Specific macrobenchmark configurations extending 
@@ -284,7 +285,8 @@ notify-slo-breaches:
 
 .benchmarks-serviceextensions:
   stage: macrobenchmarks
-  needs: []
+  needs:
+    - parse-go-versions
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
   rules: *macrobenchmarks-rules
@@ -300,7 +302,7 @@ notify-slo-breaches:
       - platform/artifacts-se/
     expire_in: 3 months
   variables:
-    GO_VERSION: "1.26.0" # It needs to be at the latest stable release
+    GO_VERSION: $GO_STABLE_PATCH # latest stable; read from go-versions.yml via parse-go-versions
     ARTIFACTS_DIR: "./artifacts-se"
     SERVICE_EXTENSION: "true"
 
@@ -380,7 +382,8 @@ se-no-tracer-no-ext_proc:
 #
 .benchmarks-haproxy_spoa:
   stage: macrobenchmarks
-  needs: []
+  needs:
+    - parse-go-versions
   tags: ["runner:apm-k8s-same-cpu"]
   timeout: 1h
   rules: *macrobenchmarks-rules
@@ -396,7 +399,7 @@ se-no-tracer-no-ext_proc:
       - platform/artifacts-haproxy_spoa/
     expire_in: 3 months
   variables:
-    GO_VERSION: "1.26.0" # It needs to be at the latest stable release
+    GO_VERSION: $GO_STABLE_PATCH # latest stable; read from go-versions.yml via parse-go-versions
     ARTIFACTS_DIR: "./artifacts-haproxy_spoa"
     HAPROXY_SPOA: "true"
 
