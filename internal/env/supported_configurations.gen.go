@@ -125,6 +125,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TAGS":                                                         {},
 	"DD_TELEMETRY_DEBUG":                                              {},
 	"DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED":                      {},
+	"DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL":                        {},
 	"DD_TELEMETRY_HEARTBEAT_INTERVAL":                                 {},
 	"DD_TELEMETRY_LOG_COLLECTION_ENABLED":                             {},
 	"DD_TELEMETRY_METRICS_ENABLED":                                    {},
