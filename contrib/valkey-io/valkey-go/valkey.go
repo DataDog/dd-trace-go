@@ -47,12 +47,11 @@ func (c *client) Close() {
 	c.client.Close()
 }
 
-// NewClient returns a new valkey.Client enhanced with tracing.
-func NewClient(clientOption valkey.ClientOption, opts ...Option) (valkey.Client, error) {
-	valkeyClient, err := valkey.NewClient(clientOption)
-	if err != nil {
-		return nil, err
-	}
+// WrapClient wraps an existing valkey.Client with tracing instrumentation.
+// Since valkey.Client does not expose connection options, clientOption must be
+// provided explicitly to populate span tags such as host, port, db, and user.
+// Pass the same ClientOption used when creating the underlying client.
+func WrapClient(valkeyClient valkey.Client, clientOption valkey.ClientOption, opts ...Option) valkey.Client {
 	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
@@ -70,7 +69,16 @@ func NewClient(clientOption valkey.ClientOption, opts ...Option) (valkey.Client,
 			tClient.port = port
 		}
 	}
-	return tClient, nil
+	return tClient
+}
+
+// NewClient returns a new valkey.Client enhanced with tracing.
+func NewClient(clientOption valkey.ClientOption, opts ...Option) (valkey.Client, error) {
+	valkeyClient, err := valkey.NewClient(clientOption)
+	if err != nil {
+		return nil, err
+	}
+	return WrapClient(valkeyClient, clientOption, opts...), nil
 }
 
 func (c *client) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResult {
