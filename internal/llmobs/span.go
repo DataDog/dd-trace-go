@@ -103,7 +103,8 @@ type Prompt struct {
 }
 
 // promptPayload is the JSON encoding shape for Prompt.
-// It embeds Prompt and adds the internally-set ml_app field.
+// It exists as a separate type so that fields like MLApp, which are set internally
+// from the span context, cannot be set directly by users on the public Prompt type.
 type promptPayload struct {
 	Prompt
 	MLApp string `json:"ml_app,omitempty"`
