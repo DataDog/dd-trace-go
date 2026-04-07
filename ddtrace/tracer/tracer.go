@@ -414,7 +414,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		writer = newCiVisibilityTraceWriter(c)
 	} else if c.internalConfig.LogToStdout() {
 		writer = newLogTraceWriter(c, statsd)
-	} else if c.otlpExportMode {
+	} else if c.internalConfig.OTLPExportMode() {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 	} else {
@@ -1042,7 +1042,7 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 		// in tracing as transport mode, reset upstream sampling decision to make sure we keep 1 trace/minute
 		if ctx.trace != nil &&
 			!globalinternal.VerifyTraceSourceEnabled(ctx.trace.propagatingTag(keyPropagatedTraceSource), globalinternal.ASMTraceSource) {
-			ctx.trace.priority = nil // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
+			ctx.trace.priority.Store(nil) // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 		}
 	}
 	if ctx != nil && ctx.trace != nil {

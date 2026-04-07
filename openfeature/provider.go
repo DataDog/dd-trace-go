@@ -358,11 +358,11 @@ func (p *DatadogProvider) IntEvaluation(
 	case int8:
 		intValue = int64(v)
 	case float64:
-		// Accept float64 if it's a whole number
+		// Accept float64 if it's a whole number (e.g., -5.0 → -5)
 		if v == float64(int64(v)) {
 			intValue = int64(v)
 		} else {
-			conversionErr = fmt.Errorf("%w: flag %q returned float with decimal part: %v", errParseError, flagKey, v)
+			conversionErr = fmt.Errorf("%w: flag %q returned float with decimal part: %v", errTypeMismatch, flagKey, v)
 		}
 	default:
 		if result.Error == nil {
@@ -486,7 +486,7 @@ func toResolutionError(err error) openfeature.ResolutionError {
 	case errors.Is(err, errParseError):
 		return openfeature.NewParseErrorResolutionError(errMsg)
 	case errors.Is(err, errNoConfiguration):
-		return openfeature.NewGeneralResolutionError(errMsg)
+		return openfeature.NewProviderNotReadyResolutionError(errMsg)
 	default:
 		return openfeature.NewGeneralResolutionError(errMsg)
 	}

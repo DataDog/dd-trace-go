@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/contrib/aws/datadog-lambda-go/test/inte
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.9.0-dev
 	github.com/aws/aws-lambda-go v1.46.0
 )
 
@@ -23,7 +23,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/util/scrubber v0.77.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/version v0.77.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.8.3 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.7.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev // indirect
 	github.com/DataDog/go-libddwaf/v4 v4.9.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.1.13 // indirect
@@ -98,12 +98,12 @@ require (
 	golang.org/x/exp v0.0.0-20260209203927-2842357ff358 // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
-	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
-	google.golang.org/grpc v1.79.1 // indirect
+	google.golang.org/grpc v1.79.3 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/ini.v1 v1.67.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

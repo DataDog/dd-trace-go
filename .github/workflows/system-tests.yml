@@ -26,9 +26,10 @@ on:
             default: main
             type: string
   schedule:
-    - cron:  '00 04 * * 2-6'
+    - cron:  '00 04 * * *'
 
 permissions:
+  id-token: write
   contents: read
   packages: write
 
@@ -37,10 +38,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.pin.outputs.sha }}
+      dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
     steps:
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Checkout system-tests
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
       - name: Pin exact commit SHA for system-tests
@@ -52,6 +60,9 @@ jobs:
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
+      - name: Get Credentials
+        run: |
+          echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     # Note: Not using large runners because the jobs spawned by this pipeline
@@ -144,9 +155,6 @@ jobs:
     env:
       TEST_LIBRARY: golang
       WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
-      SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Restore repo cache
@@ -164,8 +172,20 @@ jobs:
       - name: Checkout dd-trace-go
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
+      
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
+          
+      - name: Set credentials
+        run: |
+          echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
+          echo "SYSTEM_TESTS_E2E_DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
 
       - name: Build weblog
         run: ./build.sh -i weblog
@@ -183,7 +203,7 @@ jobs:
         if: ${{ always() }}
         uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
         with:
-          datadog_api_key: ${{ secrets.DD_API_KEY }}
+          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -237,6 +257,7 @@ jobs:
     needs:
       - build-service-extensions-callout
       - build-haproxy
+      - warm-repo-cache
     strategy:
       fail-fast: false
       matrix:
@@ -270,6 +291,7 @@ jobs:
       - name: Checkout system tests
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
@@ -279,8 +301,15 @@ jobs:
       - name: Checkout dd-trace-go
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
+      
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
 
       - name: Build runner
         uses: ./.github/actions/install_runner
@@ -291,13 +320,14 @@ jobs:
       - name: Run
         run: ./run.sh ${{ matrix.scenario }}
         env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
           WEBLOG_VARIANT: ${{ matrix.weblog_variant }}
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
         uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
         with:
-          datadog_api_key: ${{ secrets.DD_API_KEY }}
+          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -315,12 +345,14 @@ jobs:
           name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz
 
+  # Temporarily skipped until system tests enable dd-sts for test optimization
   tracer-release:
-    if: github.event_name == 'schedule'
+    if: false
+    needs: warm-repo-cache
     uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
     secrets:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      TEST_OPTIMIZATION_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_API_KEY: "invalid_key_but_this_is_fine"
+      TEST_OPTIMIZATION_API_KEY: "invalid_key_but_this_is_fine"
     permissions:
       contents: read
       packages: write

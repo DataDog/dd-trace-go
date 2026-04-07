@@ -1,0 +1,88 @@
+name: API Semantic Diff
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'ddtrace/tracer/**'
+      - 'scripts/apidiff.sh'
+      - '_tools/tools.go'
+      - '_tools/go.mod'
+      - '.github/workflows/apidiff-check.yml'
+
+jobs:
+  semantic-api-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # Full history required for git worktree
+
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: stable
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
+      - name: Run full API diff
+        env:
+          APIDIFF_BASE_REF: origin/${{ github.event.pull_request.base.ref }}
+        run: |
+          PATH="${{ github.workspace }}/bin:$PATH"
+          OUTPUT=$(./scripts/apidiff.sh --base-ref "$APIDIFF_BASE_REF" \
+            github.com/DataDog/dd-trace-go/v2/ddtrace/tracer 2>&1) || true
+
+          if [[ -z "$OUTPUT" ]]; then
+            OUTPUT="No API changes detected."
+          fi
+          echo "$OUTPUT"
+
+          {
+            echo "## API Semantic Diff"
+            echo '```'
+            echo "$OUTPUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Gate on incompatible changes
+        env:
+          APIDIFF_BASE_REF: origin/${{ github.event.pull_request.base.ref }}
+          LABEL_ACKNOWLEDGED: ${{ contains(github.event.pull_request.labels.*.name, 'breaking-api-acknowledged') }}
+        run: |
+          PATH="${{ github.workspace }}/bin:$PATH"
+
+          apidiff_exit=0
+          ./scripts/apidiff.sh \
+            --incompatible-only \
+            --exit-code \
+            --base-ref "$APIDIFF_BASE_REF" \
+            github.com/DataDog/dd-trace-go/v2/ddtrace/tracer || apidiff_exit=$?
+
+          if [[ $apidiff_exit -eq 0 ]]; then
+            echo "No incompatible API changes detected."
+            exit 0
+          fi
+
+          # Any exit code other than 2 is an operational failure (git, go mod,
+          # apidiff binary errors). The label cannot bypass a broken tool run.
+          if [[ $apidiff_exit -ne 2 ]]; then
+            echo "::error::apidiff script failed with exit code $apidiff_exit (operational error)."
+            echo "This is not an API compatibility issue — check the step logs for details."
+            exit 1
+          fi
+
+          # Exit code 2: incompatible changes found
+          echo "::error::Incompatible API changes detected in ddtrace/tracer."
+          echo ""
+
+          if [[ "${LABEL_ACKNOWLEDGED}" == "true" ]]; then
+            echo "::warning::Breaking changes acknowledged via 'breaking-api-acknowledged' label."
+            echo "Ensure these changes are documented in the changelog and release notes."
+            exit 0
+          fi
+
+          echo "If this breaking change is intentional:"
+          echo "  1. Add the 'breaking-api-acknowledged' label to this PR"
+          echo "  2. Document the change in the changelog"
+          exit 1

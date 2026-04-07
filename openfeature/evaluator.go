@@ -68,7 +68,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 				return evaluationResult{
 					Value:  defaultValue,
 					Reason: of.ErrorReason,
-					Error:  fmt.Errorf("variant type mismatch: %w", err),
+					Error:  fmt.Errorf("%w: variant type mismatch: %v", errParseError, err),
 				}
 			}
 

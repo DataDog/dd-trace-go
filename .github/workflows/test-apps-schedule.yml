@@ -6,6 +6,9 @@ on:
     - cron: "0 0 * * *" # nightly
     - cron: "0 0 * * 2" # weekly (tuesdays)
 
+permissions:
+  contents: read
+
 jobs:
   nightly:
     if: github.event.schedule == '0 0 * * *'

@@ -809,7 +809,8 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 	defer setGlobalTracer(&NoopTracer{})
 	t.Run("64-bit-trace-id", func(t *testing.T) {
 		assert := assert.New(t)
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+		old := traceID128BitEnabled.Swap(false)
+		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		opts := []StartSpanOption{
 			WithSpanID(987654),
 		}
@@ -964,7 +965,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.Equal(ctx.traceID, pctx.traceID)
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
-	assert.Equal(*ctx.trace.priority, -1.)
+	assert.Equal(*ctx.trace.priority.Load(), -1.)
 
 	// ensure a child can be created
 	child := tracer.StartSpan("db.query", ChildOf(propagated))
@@ -973,7 +974,7 @@ func TestPropagationDefaults(t *testing.T) {
 	assert.NotEqual(uint64(0), child.spanID)
 	assert.Equal(root.spanID, child.parentID)
 	assert.Equal(root.traceID, child.parentID)
-	assert.Equal(*child.context.trace.priority, -1.)
+	assert.Equal(*child.context.trace.priority.Load(), -1.)
 }
 
 func TestPropagationDefaultIncludesBaggage(t *testing.T) {
@@ -1008,7 +1009,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 	// compare if there is a Context match
 	assert.Equal(ctx.traceID, propagated.traceID)
 	assert.Equal(ctx.spanID, propagated.spanID)
-	assert.Equal(*ctx.trace.priority, -1.)
+	assert.Equal(*ctx.trace.priority.Load(), -1.)
 	assert.Equal(ctx.baggage, propagated.baggage)
 
 	// ensure a child can be created
@@ -1018,7 +1019,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 	assert.NotEqual(uint64(0), child.spanID)
 	assert.Equal(root.spanID, child.parentID)
 	assert.Equal(root.traceID, child.parentID)
-	assert.Equal(*child.context.trace.priority, -1.)
+	assert.Equal(*child.context.trace.priority.Load(), -1.)
 }
 
 func TestPropagationStyleOnlyBaggage(t *testing.T) {
@@ -1058,8 +1059,8 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	assert.EqualValues(2, root.metrics[keySamplingPriority])
 	assert.Equal("-4", root.context.trace.propagatingTags[keyDecisionMaker])
 	assert.EqualValues(2, child.metrics[keySamplingPriority])
-	assert.EqualValues(2., *root.context.trace.priority)
-	assert.EqualValues(2., *child.context.trace.priority)
+	assert.EqualValues(2., *root.context.trace.priority.Load())
+	assert.EqualValues(2., *child.context.trace.priority.Load())
 }
 
 func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
@@ -1227,7 +1228,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 
 // newDefaultTransport return a default transport for this tracing client
 func newDefaultTransport() transport {
-	return newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, true))
+	return newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
 }
 
 func TestNewSpan(t *testing.T) {
@@ -1251,15 +1252,16 @@ func TestNewSpanChild(t *testing.T) {
 
 func testNewSpanChild(t *testing.T, is128 bool) {
 	t.Run(fmt.Sprintf("TestNewChildSpan(is128=%t)", is128), func(t *testing.T) {
-		if !is128 {
-			t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
-		}
 		assert := assert.New(t)
 
 		// the tracer must create child spans
 		tracer, err := newTracer(withTransport(newDefaultTransport()))
 		setGlobalTracer(tracer)
 		defer tracer.Stop()
+		if !is128 {
+			old := traceID128BitEnabled.Swap(false)
+			defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
+		}
 		assert.Nil(err)
 		parent := tracer.newRootSpan("pylons.request", "pylons", "/")
 		child := tracer.newChildSpan("redis.command", parent)
@@ -1346,7 +1348,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	url := "http://" + srv.Listener.Addr().String()
 
 	tr, _, flush, stop, err := startTestTracer(t,
-		withTransport(newHTTPTransport(url, internal.DefaultHTTPClient(defaultHTTPTimeout, false))),
+		withTransport(newHTTPTransport(url+tracesAPIPath, url+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())),
 	)
 	assert.Nil(err)
 	defer stop()
@@ -1459,7 +1461,7 @@ func TestTracerEdgeSampler(t *testing.T) {
 func TestOTLPExportMode(t *testing.T) {
 	t.Run("uses otlpTraceWriter and otelParentBasedAlwaysOnSampler", func(t *testing.T) {
 		assert := assert.New(t)
-		tracer, err := newUnstartedTracer(func(c *config) { c.otlpExportMode = true })
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
 		assert.NoError(err)
 		defer tracer.Stop()
 		_, isOTLPWriter := tracer.traceWriter.(*otlpTraceWriter)
@@ -1477,6 +1479,18 @@ func TestOTLPExportMode(t *testing.T) {
 		assert.True(isAgentWriter, "expected agentTraceWriter in default mode")
 		_, isPriority := tracer.defaultSampler.(*prioritySampler)
 		assert.True(isPriority, "expected prioritySampler in default mode")
+	})
+
+	t.Run("OTEL_TRACES_EXPORTER=otlp env var enables OTLP mode", func(t *testing.T) {
+		assert := assert.New(t)
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		tracer, err := newUnstartedTracer()
+		assert.NoError(err)
+		defer tracer.Stop()
+		_, isOTLPWriter := tracer.traceWriter.(*otlpTraceWriter)
+		assert.True(isOTLPWriter, "expected otlpTraceWriter when OTEL_TRACES_EXPORTER=otlp")
+		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
+		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler when OTEL_TRACES_EXPORTER=otlp")
 	})
 }
 

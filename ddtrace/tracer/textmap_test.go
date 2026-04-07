@@ -561,7 +561,8 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		old := traceID128BitEnabled.Swap(true)
+		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{
@@ -588,7 +589,7 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.Equal(xctx.traceID.HexEncoded(), ctx.traceID.HexEncoded())
 		assert.Equal(xctx.spanID, ctx.spanID)
 		assert.Equal(xctx.baggage, ctx.baggage)
-		assert.Equal(xctx.trace.priority, ctx.trace.priority)
+		assert.Equal(xctx.trace.priority.Load(), ctx.trace.priority.Load())
 	})
 }
 
@@ -826,7 +827,7 @@ func TestEnvVars(t *testing.T) {
 					// assert.Equal(tc.traceID128, id128FromSpan(assert, ctx)) // add when 128-bit trace id support is enabled
 					if len(tc.out) > 2 {
 						require.NotNil(t, ctx.trace)
-						assert.Equal(float64(tc.out[2]), *ctx.trace.priority)
+						assert.Equal(float64(tc.out[2]), *ctx.trace.priority.Load())
 					}
 				})
 			}
@@ -1059,7 +1060,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(ctx.traceID.value, xctx.traceID.value)
 					assert.Equal(ctx.spanID, xctx.spanID)
 					assert.Equal(ctx.baggage, xctx.baggage)
-					assert.Equal(ctx.trace.priority, xctx.trace.priority)
+					assert.Equal(ctx.trace.priority.Load(), xctx.trace.priority.Load())
 				})
 			}
 		}
@@ -1736,7 +1737,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.out[0], ctx.traceID.Lower())
 					assert.Equal(tc.out[1], ctx.spanID)
 					assert.Equal(tc.origin, ctx.origin)
-					assert.Equal(tc.priority, *ctx.trace.priority)
+					assert.Equal(tc.priority, *ctx.trace.priority.Load())
 
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
