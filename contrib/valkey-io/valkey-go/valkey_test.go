@@ -371,6 +371,26 @@ func TestNewClient(t *testing.T) {
 			},
 			wantServiceName: "global-service",
 		},
+		{
+			name: "WithCreateClientFunc uses custom factory",
+			opts: []Option{
+				WithRawCommand(true),
+				WithCreateClientFunc(func(opt valkey.ClientOption) (valkey.Client, error) {
+					return valkey.NewClient(opt)
+				}),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				assert.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
+			},
+			wantServiceName: "global-service",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -388,113 +408,6 @@ func TestNewClient(t *testing.T) {
 			root, ctx := tracer.StartSpanFromContext(context.Background(), "test.root", tracer.ServiceName("test-service"))
 			tt.runTest(t, ctx, client)
 			root.Finish() // test.root exists in the last span.
-
-			spans := mt.FinishedSpans()
-			tt.assertSpans(t, spans[:len(spans)-1])
-
-			for _, span := range spans {
-				if span.OperationName() == "test.root" {
-					continue
-				}
-
-				// The following assertions are common to all spans
-				assert.Equal(t, tt.wantServiceName, span.Tag(ext.ServiceName))
-				assert.Equal(t, "127.0.0.1", span.Tag(ext.TargetHost))
-				assert.Equal(t, "6380", span.Tag(ext.TargetPort))
-				assert.Equal(t, "0", span.Tag(ext.TargetDB))
-				assert.Equal(t, "default", span.Tag(ext.DBUser))
-				assert.Equal(t, "valkey.command", span.OperationName())
-				assert.Equal(t, "client", span.Tag(ext.SpanKind))
-				assert.Equal(t, "valkey", span.Tag(ext.SpanType))
-				assert.Equal(t, "valkey-io/valkey-go", span.Tag(ext.Component))
-				assert.Equal(t, "valkey", span.Tag(ext.DBSystem))
-			}
-		})
-	}
-
-}
-
-func TestWrapClient(t *testing.T) {
-	testutils.SetGlobalServiceName(t, "global-service")
-
-	tests := []struct {
-		name            string
-		opts            []Option
-		runTest         func(*testing.T, context.Context, valkey.Client)
-		assertSpans     func(*testing.T, []*mocktracer.Span)
-		wantServiceName string
-	}{
-		{
-			name: "Test SET command with raw command",
-			opts: []Option{
-				WithRawCommand(true),
-				WithService("test-service"),
-			},
-			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
-				assert.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
-			},
-			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
-				require.Len(t, spans, 1)
-				span := spans[0]
-				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
-				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
-			},
-			wantServiceName: "test-service",
-		},
-		{
-			name: "Test SET command without raw command",
-			opts: nil,
-			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
-				require.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
-			},
-			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
-				require.Len(t, spans, 1)
-				span := spans[0]
-				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
-				assert.Nil(t, span.Tag(ext.ValkeyRawCommand))
-			},
-			wantServiceName: "global-service",
-		},
-		{
-			name: "Test Dedicated client",
-			opts: []Option{
-				WithRawCommand(true),
-			},
-			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
-				err := client.Dedicated(func(d valkey.DedicatedClient) error {
-					return d.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error()
-				})
-				require.NoError(t, err)
-			},
-			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
-				require.Len(t, spans, 1)
-				span := spans[0]
-				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
-				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
-			},
-			wantServiceName: "global-service",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-
-			valkeyClientOption := valkey.ClientOption{
-				InitAddress: valkeyAddrs,
-				Username:    valkeyUsername,
-				Password:    valkeyPassword,
-			}
-			rawClient, err := valkey.NewClient(valkeyClientOption)
-			require.NoError(t, err)
-			defer rawClient.Close()
-
-			client := WrapClient(rawClient, valkeyClientOption, tt.opts...)
-
-			root, ctx := tracer.StartSpanFromContext(context.Background(), "test.root", tracer.ServiceName("test-service"))
-			tt.runTest(t, ctx, client)
-			root.Finish()
 
 			spans := mt.FinishedSpans()
 			tt.assertSpans(t, spans[:len(spans)-1])

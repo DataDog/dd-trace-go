@@ -34,30 +34,3 @@ func Example() {
 		return
 	}
 }
-
-// ExampleWrapClient demonstrates how to wrap an existing valkey.Client with tracing.
-// This is useful when you need to control the wrapping order, for example to place
-// tracing outside of a valkeyhook so that the hook receives a context containing
-// the active tracing span.
-func ExampleWrapClient() {
-	tracer.Start()
-	defer tracer.Stop()
-
-	clientOption := valkey.ClientOption{
-		InitAddress: []string{"localhost:6379"},
-	}
-
-	rawClient, err := valkey.NewClient(clientOption)
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
-	defer rawClient.Close()
-
-	vk := valkeytrace.WrapClient(rawClient, clientOption)
-
-	if err := vk.Do(context.Background(), vk.B().Set().Key("key").Value("value").Build()).Error(); err != nil {
-		log.Fatal(err)
-		return
-	}
-}
