@@ -38,7 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.pin.outputs.sha }}
-      dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
     steps:
       - name: Checkout system-tests
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -55,9 +54,6 @@ jobs:
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
-      - name: Get Credentials
-        run: |
-          echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     # Note: Not using large runners because the jobs spawned by this pipeline
