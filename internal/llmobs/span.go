@@ -87,8 +87,10 @@ type Prompt struct {
 	// Label is the deployment label (e.g., "production", "staging").
 	Label string `json:"label,omitempty"`
 	// Template is the prompt template string.
+	// Mutually exclusive with ChatTemplate; if both are set, Template is dropped and ChatTemplate is used.
 	Template string `json:"template,omitempty"`
-	// ChatTemplate is a list of messages forming the prompt (alternative to Template).
+	// ChatTemplate is a list of messages forming the prompt.
+	// Mutually exclusive with Template; if both are set, Template is dropped and ChatTemplate is used.
 	ChatTemplate []LLMMessage `json:"chat_template,omitempty"`
 	// Variables contains the variables used in the prompt template.
 	Variables map[string]string `json:"variables,omitempty"`
@@ -98,8 +100,12 @@ type Prompt struct {
 	RAGContextVariables []string `json:"_dd_context_variable_keys,omitempty"`
 	// RAGQueryVariables specifies which variables contain RAG queries.
 	RAGQueryVariables []string `json:"_dd_query_variable_keys,omitempty"`
+}
 
-	// MLApp is the ML application name, set internally from the span's context.
+// promptPayload is the JSON encoding shape for Prompt.
+// It embeds Prompt and adds the internally-set ml_app field.
+type promptPayload struct {
+	Prompt
 	MLApp string `json:"ml_app,omitempty"`
 }
 
@@ -364,7 +370,10 @@ func (s *Span) Annotate(a SpanAnnotations) {
 			if a.Prompt.ID == "" {
 				a.Prompt.ID = s.mlApp + "_unnamed-prompt"
 			}
-			a.Prompt.MLApp = s.mlApp
+			if a.Prompt.Template != "" && len(a.Prompt.ChatTemplate) > 0 {
+				log.Warn("llmobs: both Template and ChatTemplate were provided in the prompt; Template will be dropped in favour of ChatTemplate")
+				a.Prompt.Template = ""
+			}
 			s.llmCtx.prompt = a.Prompt
 		}
 	}

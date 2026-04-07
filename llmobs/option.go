@@ -169,17 +169,7 @@ func WithAnnotatedIntent(intent string) AnnotateOption {
 // Only applicable to LLM spans.
 func WithAnnotatedPrompt(prompt Prompt) AnnotateOption {
 	return func(a *illmobs.SpanAnnotations) {
-		a.Prompt = &illmobs.Prompt{
-			Template:            prompt.Template,
-			ChatTemplate:        prompt.ChatTemplate,
-			ID:                  prompt.ID,
-			Version:             prompt.Version,
-			Label:               prompt.Label,
-			Variables:           prompt.Variables,
-			Tags:                prompt.Tags,
-			RAGContextVariables: prompt.RAGContextVariables,
-			RAGQueryVariables:   prompt.RAGQueryVariables,
-		}
+		a.Prompt = &prompt
 	}
 }
 

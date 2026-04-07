@@ -736,6 +736,37 @@ func TestSpanAnnotate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "llm-span-with-prompt-both-template-and-chat-template",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				Prompt: &llmobs.Prompt{
+					ID:       "both-templates",
+					Template: "Answer: {{question}}",
+					ChatTemplate: []llmobs.LLMMessage{
+						{Role: "user", Content: "{{question}}"},
+					},
+					Variables: map[string]string{"question": "What is Go?"},
+				},
+			},
+			// When both template and chat_template are set, template should be dropped
+			// and chat_template should be kept (with a warning logged).
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+				"input": map[string]any{
+					"prompt": map[string]any{
+						"id": "both-templates",
+						"chat_template": []any{
+							map[string]any{"role": "user", "content": "{{question}}"},
+						},
+						"variables":                 map[string]any{"question": "What is Go?"},
+						"_dd_context_variable_keys": []any{"context"},
+						"_dd_query_variable_keys":   []any{"question"},
+						"ml_app":                    mlApp,
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {

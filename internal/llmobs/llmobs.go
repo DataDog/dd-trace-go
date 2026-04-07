@@ -499,7 +499,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		if spanKind != SpanKindLLM {
 			log.Warn("llmobs: dropping prompt on non-LLM span kind, annotating prompts is only supported for LLM span kinds")
 		} else {
-			input["prompt"] = inputPrompt
+			input["prompt"] = promptPayload{Prompt: *inputPrompt, MLApp: span.mlApp}
 		}
 	}
 
