@@ -38,13 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.pin.outputs.sha }}
-      dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
     steps:
-      - name: Get Datadog credentials
-        id: dd-sts
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
-        with:
-          policy: dd-trace-go
       - name: Checkout system-tests
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -60,9 +54,6 @@ jobs:
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
-      - name: Get Credentials
-        run: |
-          echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     # Note: Not using large runners because the jobs spawned by this pipeline
@@ -122,13 +113,13 @@ jobs:
           # APM scenarios requiring specific environment settings
           - scenario: APM_TRACING_E2E_SINGLE_SPAN
             env:
-              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
-              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_API_KEY=$DD_API_KEY
+              DD_APPLICATION_KEY=$DD_APP_KEY
               DD_SITE="datadoghq.com"
           - scenario: APM_TRACING_E2E_OTEL
             env:
-              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
-              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_API_KEY=$DD_API_KEY
+              DD_APPLICATION_KEY=$DD_APP_KEY
               DD_SITE="datadoghq.com"
           # GraphQL System Tests
           - scenario: GRAPHQL_APPSEC
@@ -176,16 +167,17 @@ jobs:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
       
+      # Use the app key policy to obtain DD_APP_KEY
       - name: Get Datadog credentials
         id: dd-sts
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
-          policy: dd-trace-go
+          policy: dd-trace-go-app-key
           
       - name: Set credentials
         run: |
           echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
-          echo "SYSTEM_TESTS_E2E_DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
+          echo "DD_APP_KEY=${{ steps.dd-sts.outputs.app_key }}" >> "$GITHUB_ENV"
 
       - name: Build weblog
         run: ./build.sh -i weblog
