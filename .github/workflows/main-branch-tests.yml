@@ -51,6 +51,10 @@ jobs:
         go-version: [ "1.25", "1.26" ]
       fail-fast: false
     uses: ./.github/workflows/multios-unit-tests.yml
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
     with:
       go-version: ${{ matrix.go-version }}
       runs-on: ${{ matrix.runs-on }}
