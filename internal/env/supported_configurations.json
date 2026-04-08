@@ -15,6 +15,55 @@
         "default": "localhost"
       }
     ],
+    "DD_APIM_CALLOUT_HEALTHCHECK_PORT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "8081"
+      }
+    ],
+    "DD_APIM_CALLOUT_HOST": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "0.0.0.0"
+      }
+    ],
+    "DD_APIM_CALLOUT_PORT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "8080"
+      }
+    ],
+    "DD_APIM_CALLOUT_REQUEST_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "30s"
+      }
+    ],
+    "DD_APIM_CALLOUT_TLS": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "false"
+      }
+    ],
+    "DD_APIM_CALLOUT_TLS_CERT_FILE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_APIM_CALLOUT_TLS_KEY_FILE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_API_KEY": [
       {
         "implementation": "B",

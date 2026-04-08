@@ -9,9 +9,16 @@ package env
 
 // SupportedConfigurations is a map of supported configuration keys.
 var SupportedConfigurations = map[string]struct{}{
-	"DD_ACTION_EXECUTION_ID": {},
-	"DD_AGENT_HOST":          {},
-	"DD_API_KEY":             {},
+	"DD_ACTION_EXECUTION_ID":                                          {},
+	"DD_AGENT_HOST":                                                   {},
+	"DD_APIM_CALLOUT_HEALTHCHECK_PORT":                                {},
+	"DD_APIM_CALLOUT_HOST":                                            {},
+	"DD_APIM_CALLOUT_PORT":                                            {},
+	"DD_APIM_CALLOUT_REQUEST_TIMEOUT":                                 {},
+	"DD_APIM_CALLOUT_TLS":                                             {},
+	"DD_APIM_CALLOUT_TLS_CERT_FILE":                                   {},
+	"DD_APIM_CALLOUT_TLS_KEY_FILE":                                    {},
+	"DD_API_KEY":                                                      {},
 	"DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE":            {},
 	"DD_API_SECURITY_ENABLED":                                         {},
 	"DD_API_SECURITY_ENDPOINT_COLLECTION_ENABLED":                     {},
