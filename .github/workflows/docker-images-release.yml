@@ -7,6 +7,8 @@ on:
       - 'contrib/envoyproxy/go-control-plane/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
       - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+'
       - 'contrib/k8s.io/gateway-api/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
+      - 'contrib/azure/apim-callout/v[0-9]+.[0-9]+.[0-9]+'
+      - 'contrib/azure/apim-callout/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
       - 'contrib/haproxy/stream-processing-offload/v[0-9]+.[0-9]+.[0-9]+'
       - 'contrib/haproxy/stream-processing-offload/v[0-9]+.[0-9]+.[0-9]+-docker.[0-9]+'
   workflow_dispatch:
@@ -32,6 +34,11 @@ on:
         required: false
         default: false
         type: boolean
+      build_apim_callout:
+        description: 'Build APIM callout image'
+        required: false
+        default: false
+        type: boolean
       build_haproxy:
         description: 'Build haproxy SPOA image'
         required: false
@@ -46,6 +53,7 @@ jobs:
   prepare-tag:
     runs-on: ubuntu-latest
     outputs:
+      apim_callout_image_tag: ${{ steps.extract.outputs.apim_callout_image_tag }}
       service_extension_image_tag: ${{ steps.extract.outputs.service_extension_image_tag }}
       request_mirroring_image_tag: ${{ steps.extract.outputs.request_mirroring_image_tag }}
       haproxy_image_tag: ${{ steps.extract.outputs.haproxy_image_tag }}
@@ -54,15 +62,33 @@ jobs:
         id: extract
         env:
           RAW_TAG: ${{ github.event.inputs.tag_name || github.ref_name }}
+          PREFIX_APIM_CALLOUT: contrib/azure/apim-callout/
           PREFIX_SERVICE_EXTENSION: contrib/envoyproxy/go-control-plane/
           PREFIX_REQUEST_MIRRORING: contrib/k8s.io/gateway-api/
           PREFIX_HAPROXY: contrib/haproxy/stream-processing-offload/
         run: |
           {
+            echo "apim_callout_image_tag=${RAW_TAG#"$PREFIX_APIM_CALLOUT"}"
             echo "service_extension_image_tag=${RAW_TAG#"$PREFIX_SERVICE_EXTENSION"}"
             echo "request_mirroring_image_tag=${RAW_TAG#"$PREFIX_REQUEST_MIRRORING"}"
             echo "haproxy_image_tag=${RAW_TAG#"$PREFIX_HAPROXY"}"
           } >> "$GITHUB_OUTPUT"
+
+  build-apim-callout:
+    needs: prepare-tag
+    if: >
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/contrib/azure/apim-callout')
+      || github.event.inputs.build_apim_callout == 'true'
+    uses: ./.github/workflows/docker-build-and-push.yml
+    with:
+      image: ghcr.io/datadog/dd-trace-go/apim-callout
+      dockerfile: ./contrib/azure/apim-callout/cmd/apim-callout/Dockerfile
+      artifact_prefix: apim-callout
+      commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
+      version: ${{ needs.prepare-tag.outputs.apim_callout_image_tag }}
+      tags: >-
+        ${{ needs.prepare-tag.outputs.apim_callout_image_tag }}
+        ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}
 
   build-service-extensions-callout:
     needs: prepare-tag

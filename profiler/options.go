@@ -17,7 +17,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -107,7 +106,6 @@ type config struct {
 	cpuDuration          time.Duration
 	cpuProfileRate       int
 	uploadTimeout        time.Duration
-	maxGoroutinesWait    int
 	mutexFraction        int
 	blockRate            int
 	outputDir            string
@@ -185,7 +183,6 @@ func defaultConfig() (*config, error) {
 		blockRate:            DefaultBlockRate,
 		mutexFraction:        DefaultMutexFraction,
 		uploadTimeout:        DefaultUploadTimeout,
-		maxGoroutinesWait:    1000, // arbitrary value, should limit STW to ~30ms
 		deltaProfiles:        internal.BoolEnv("DD_PROFILING_DELTA", true),
 		logStartup:           internal.BoolEnv("DD_TRACE_STARTUP_LOGS", true),
 		endpointCountEnabled: internal.BoolEnv(traceprof.EndpointCountEnvVar, false),
@@ -269,14 +266,6 @@ func defaultConfig() (*config, error) {
 	if v := env.Get("DD_PROFILING_OUTPUT_DIR"); v != "" {
 		withOutputDir(v)(&c)
 	}
-	if v := env.Get("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return nil, fmt.Errorf("DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES: %s", err)
-		}
-		c.maxGoroutinesWait = n
-	}
-
 	return &c, nil
 }
 
