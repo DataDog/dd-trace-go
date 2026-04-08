@@ -9,22 +9,33 @@ env:
   TEST_RESULTS: /tmp/tip-results # path to where test results will be saved
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
   test-tip:
     runs-on: ubuntu-latest
-    services:
-      datadog-agent:
-        image: datadog/agent-dev:master-py3
-        env:
-          DD_HOSTNAME: "github-actions-worker"
-          DD_APM_ENABLED: true
-          DD_BIND_HOST: "0.0.0.0"
-          DD_API_KEY: "${{ secrets.DD_API_KEY }}"
-          DD_TEST_AGENT_HOST: "localhost"
-          DD_TEST_AGENT_PORT: 9126
     steps:
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
+
+      - name: Start Datadog Agent
+        run: |
+          docker run -d \
+            --name datadog-agent \
+            -e DD_HOSTNAME="github-actions-worker" \
+            -e DD_APM_ENABLED=true \
+            -e DD_BIND_HOST="0.0.0.0" \
+            -e DD_API_KEY="${{ steps.dd-sts.outputs.api_key }}" \
+            -e DD_TEST_AGENT_HOST="localhost" \
+            -e DD_TEST_AGENT_PORT=9126 \
+            -p 8126:8126 \
+            -p 8127:8127 \
+            datadog/agent-dev:master-py3
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -51,13 +62,13 @@ jobs:
           TEST_RESULTS: ${{ env.TEST_RESULTS }}
           GO_CMD: gotip
         run: ./scripts/ci_test_core.sh
-      
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:gotip,arch:${{ runner.arch }},os:${{ runner.os }}
 

@@ -50,12 +50,10 @@ import "encoding/json"
     {
         name: "prod",
         site: "datadoghq.com",
-        key: "DD_TEST_APP_API_KEY",
     },
     {
         name: "staging",
         site: "datad0g.com",
-        key: "DD_TEST_AND_DEMO_API_KEY",
     },
 ]
 
@@ -117,6 +115,7 @@ env: {
 
 permissions: {
     contents: "read",
+    "id-token": "write",
 }
 
 jobs: {
@@ -140,10 +139,18 @@ jobs: {
                     },
                     },
                     {
+                        name: "Get Datadog credentials",
+                        id: "dd-sts",
+                        uses: "DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75",
+                        with: {
+                            policy: "dd-trace-go",
+                        },
+                    },
+                    {
                         name: "Start Agent",
                         uses: "datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a", // v1.3.1
                         with: {
-                            api_key: "${{ secrets['\(env.key)'] }}",
+                            api_key: "${{ steps.dd-sts.outputs.api_key }}",
                             datadog_site: "\(env.site)",
                         },
                     },
