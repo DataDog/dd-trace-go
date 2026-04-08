@@ -20,9 +20,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/fastdelta"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pprofutils"
-
-	"github.com/DataDog/gostackparse"
-	pprofile "github.com/google/pprof/profile"
 )
 
 // ProfileType represents a type of profile that the profiler is able to run.
@@ -45,11 +42,9 @@ const (
 	MutexProfile
 	// GoroutineProfile reports stack traces of all current goroutines
 	GoroutineProfile
-	// expGoroutineWaitProfile reports stack traces and wait durations for
-	// goroutines that have been waiting or blocked by a syscall for > 1 minute
-	// since the last GC. This feature is currently experimental and only
-	// available within DD by setting the DD_PROFILING_WAIT_PROFILE env variable.
-	expGoroutineWaitProfile
+	// This is a placeholder for the now-deleted goroutine wait profile so
+	// that the publicly-exported constants stay the same.
+	_
 	// MetricsProfile reports top-line metrics associated with user-specified profiles
 	MetricsProfile
 
@@ -162,32 +157,6 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "goroutine",
 		Filename: "goroutines.pprof",
 		Collect:  collectGenericProfile("goroutine", GoroutineProfile),
-	},
-	expGoroutineWaitProfile: {
-		Name:     "goroutinewait",
-		Filename: "goroutineswait.pprof",
-		Collect: func(p *profiler) ([]byte, error) {
-			if n := runtime.NumGoroutine(); n > p.cfg.maxGoroutinesWait {
-				return nil, fmt.Errorf("skipping goroutines wait profile: %d goroutines exceeds DD_PROFILING_WAIT_PROFILE_MAX_GOROUTINES limit of %d", n, p.cfg.maxGoroutinesWait)
-			}
-
-			p.interruptibleSleep(p.cfg.period)
-
-			var (
-				now   = now()
-				text  = &bytes.Buffer{}
-				pprof = &bytes.Buffer{}
-			)
-			if err := p.lookupProfile("goroutine", text, 2); err != nil {
-				return nil, err
-			}
-
-			c := p.compressors[expGoroutineWaitProfile]
-			c.Reset(pprof)
-			err := goroutineDebug2ToPprof(text, c, now)
-			err = cmp.Or(err, c.Close())
-			return pprof.Bytes(), err
-		},
 	},
 	MetricsProfile: {
 		Name:     "metrics",
@@ -464,103 +433,6 @@ func (fdp *fastDeltaProfiler) Delta(data []byte) (b []byte, err error) {
 	b = make([]byte, len(fdp.buf.Bytes()))
 	copy(b, fdp.buf.Bytes())
 	return b, nil
-}
-
-func goroutineDebug2ToPprof(r io.Reader, w io.Writer, t time.Time) (err error) {
-	// gostackparse.Parse() has been extensively tested and should not crash
-	// under any circumstances, but we really want to avoid crashing a customers
-	// applications, so this code will recover from any unexpected panics and
-	// return them as an error instead.
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("panic: %v", r)
-		}
-	}()
-
-	goroutines, errs := gostackparse.Parse(r)
-
-	functionID := uint64(1)
-	locationID := uint64(1)
-
-	p := &pprofile.Profile{
-		TimeNanos: t.UnixNano(),
-	}
-	m := &pprofile.Mapping{ID: 1, HasFunctions: true}
-	p.Mapping = []*pprofile.Mapping{m}
-	p.SampleType = []*pprofile.ValueType{
-		{
-			Type: "waitduration",
-			Unit: "nanoseconds",
-		},
-	}
-
-	for _, g := range goroutines {
-		sample := &pprofile.Sample{
-			Value: []int64{g.Wait.Nanoseconds()},
-			Label: map[string][]string{
-				"state":   {g.State}, // TODO(fg) split into atomicstatus/waitreason?
-				"lockedm": {fmt.Sprintf("%t", g.LockedToThread)},
-			},
-			NumUnit:  map[string][]string{"goid": {"id"}},
-			NumLabel: map[string][]int64{"goid": {int64(g.ID)}},
-		}
-
-		// Treat the frame that created this goroutine as part of the stack so it
-		// shows up in the stack trace / flame graph. Hopefully this will be more
-		// useful than confusing for people.
-		if g.CreatedBy != nil {
-			// TODO(fg) should we modify the function name to include "created by"?
-			g.Stack = append(g.Stack, g.CreatedBy)
-		}
-
-		// Based on internal discussion, the current strategy is to use virtual
-		// frames to indicate truncated stacks, see [1] for how python/jd does it.
-		// [1] https://github.com/DataDog/dd-trace-py/blob/e933d2485b9019a7afad7127f7c0eb541341cdb7/ddtrace/profiling/exporter/pprof.pyx#L117-L121
-		if g.FramesElided {
-			g.Stack = append(g.Stack, &gostackparse.Frame{
-				Func: "...additional frames elided...",
-			})
-		}
-
-		for _, call := range g.Stack {
-			function := &pprofile.Function{
-				ID:       functionID,
-				Name:     call.Func,
-				Filename: call.File,
-			}
-			p.Function = append(p.Function, function)
-			functionID++
-
-			location := &pprofile.Location{
-				ID:      locationID,
-				Mapping: m,
-				Line: []pprofile.Line{{
-					Function: function,
-					Line:     int64(call.Line),
-				}},
-			}
-			p.Location = append(p.Location, location)
-			locationID++
-
-			sample.Location = append(sample.Location, location)
-		}
-
-		p.Sample = append(p.Sample, sample)
-	}
-
-	// Put the error message in the pprof profiles as comments in case we need to
-	// debug issues at some point.
-	// TODO(fg) would be nice to also have a metric counter for this
-	for _, err := range errs {
-		p.Comments = append(p.Comments, "error: "+err.Error())
-	}
-
-	if err := p.CheckValid(); err != nil {
-		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err.Error())
-	} else if err := p.WriteUncompressed(w); err != nil {
-		return fmt.Errorf("marshalGoroutineDebug2Profile: %s", err.Error())
-	}
-	return nil
 }
 
 // now returns current time in UTC.
