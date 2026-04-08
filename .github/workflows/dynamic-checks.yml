@@ -62,6 +62,7 @@ jobs:
     steps:
       - name: Get Datadog credentials
         id: dd-sts
+        continue-on-error: true
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
           policy: dd-trace-go
