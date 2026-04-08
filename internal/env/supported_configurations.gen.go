@@ -125,6 +125,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_SERVICE_EXTENSION_TLS":                                        {},
 	"DD_SERVICE_EXTENSION_TLS_CERT_FILE":                              {},
 	"DD_SERVICE_EXTENSION_TLS_KEY_FILE":                               {},
+	"DD_SERVICE_EXTENSION_UDS_PATH":                                   {},
 	"DD_SERVICE_MAPPING":                                              {},
 	"DD_SITE":                                                         {},
 	"DD_SPAN_SAMPLING_RULES":                                          {},
