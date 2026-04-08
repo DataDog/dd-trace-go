@@ -16,7 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
+	"testing/synctest"
 )
 
 // testLogger implements a mock Logger.

@@ -17,11 +17,12 @@ import (
 	"testing"
 	"time"
 
+	"testing/synctest"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"

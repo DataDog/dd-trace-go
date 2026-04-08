@@ -13,10 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"testing/synctest"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/stretchr/testify/assert"
