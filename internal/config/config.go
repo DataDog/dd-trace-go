@@ -184,13 +184,11 @@ func loadConfig() *Config {
 		}
 	}
 
-	// Parse span attribute schema version from "v0"/"v1" string format.
 	if schemaStr := p.GetString("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", ""); schemaStr != "" {
 		if v, ok := parseSpanAttributeSchema(schemaStr); ok {
 			cfg.spanAttributeSchemaVersion = v
 		}
 	}
-	// peer.service defaults are enabled when using span attribute schema v1 or later.
 	if cfg.spanAttributeSchemaVersion >= 1 {
 		cfg.peerServiceDefaultsEnabled = true
 	}
