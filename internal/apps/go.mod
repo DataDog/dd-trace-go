@@ -85,7 +85,6 @@ require (
 
 require (
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
-	github.com/DataDog/gostackparse v0.7.0 // indirect
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
