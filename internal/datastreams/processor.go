@@ -744,4 +744,3 @@ func (p *Processor) TrackTransaction(transactionID, checkpointName string) {
 func (p *Processor) TrackTransactionAt(transactionID, checkpointName string, t time.Time) {
 	p.trackTransactionAt(transactionID, checkpointName, t)
 }
-.Load(
