@@ -54,12 +54,12 @@ type TracerConf struct { //nolint:revive
 	PartialFlush         bool
 	PartialFlushMinSpans int
 	PeerServiceDefaults  bool
-	PeerServiceMappings map[string]string
-	EnvTag             string
-	VersionTag         string
-	ServiceTag         string
-	TracingAsTransport bool
-	isLambdaFunction   bool
+	PeerServiceMappings  map[string]string
+	EnvTag               string
+	VersionTag           string
+	ServiceTag           string
+	TracingAsTransport   bool
+	isLambdaFunction     bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
