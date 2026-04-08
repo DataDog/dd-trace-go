@@ -149,16 +149,27 @@ jobs:
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Restore repo cache
+        id: restore-repo-cache
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: .git
           key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
 
-      - name: Checkout system tests
+      - name: Checkout system tests (using cache)
+        if: steps.restore-repo-cache.outcome == 'success' && steps.restore-repo-cache.outputs.cache-hit == 'true'
         shell: bash
         run: |
           git config safe.directory "$GITHUB_WORKSPACE"
           git checkout -f ${{ needs.warm-repo-cache.outputs.sha }}
+      
+      # Fall back in case of a cache miss, which can occur when retrying old runs.
+      - name: Checkout system tests (cache miss)
+        if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          repository: 'DataDog/system-tests'
+          ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -189,7 +200,9 @@ jobs:
         run: ./build.sh -i agent
 
       - name: Run
-        run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
+        shell: bash
+        run: |
+          env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}

@@ -78,10 +78,7 @@ func TestNamingSchema(t *testing.T) {
 		gorillaMux,
 		pgxTest,
 		bunTest,
-		// gormTest and dnsTest are excluded: these integrations hardcode their service names
-		// ("gorm.db" and "dns") and don't use instr.ServiceName(), so they don't conform to the
-		// naming schema contract (DD_SERVICE, remove_integration_service_names, v1 schema).
-		// ServiceNameWithSource is still implemented in their source code.
+		gormTest,
 		rueidisTest,
 		valkeyTest,
 		fasthttpTest,
