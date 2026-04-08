@@ -1267,6 +1267,27 @@
         "default": "500-599"
       }
     ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
     "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": [
       {
         "implementation": "A",
