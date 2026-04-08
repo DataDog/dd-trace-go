@@ -873,9 +873,9 @@ func setPeerService(s *Span, tc TracerConf) {
 		s.setMetaLocked(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
-	if tc.PeerServiceMapping != nil {
+	if len(tc.PeerServiceMappings) > 0 {
 		ps := s.meta[ext.PeerService]
-		if to, ok := tc.PeerServiceMapping(ps); ok {
+		if to, ok := tc.PeerServiceMappings[ps]; ok {
 			s.setMetaLocked(keyPeerServiceRemappedFrom, ps)
 			s.setMetaLocked(ext.PeerService, to)
 		}

@@ -54,9 +54,7 @@ type TracerConf struct { //nolint:revive
 	PartialFlush         bool
 	PartialFlushMinSpans int
 	PeerServiceDefaults  bool
-	// PeerServiceMapping performs a single-key lookup without copying the underlying map.
-	// This avoids lock contention and per-call allocations on the hot path.
-	PeerServiceMapping func(string) (string, bool)
+	PeerServiceMappings map[string]string
 	EnvTag             string
 	VersionTag         string
 	ServiceTag         string
@@ -1066,7 +1064,7 @@ func (t *tracer) TracerConf() TracerConf {
 		PartialFlush:         pfEnabled,
 		PartialFlushMinSpans: pfMin,
 		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
-		PeerServiceMapping:   t.config.internalConfig.PeerServiceMapping,
+		PeerServiceMappings:  t.config.internalConfig.PeerServiceMappings(),
 		EnvTag:               t.config.internalConfig.Env(),
 		VersionTag:           t.config.internalConfig.Version(),
 		ServiceTag:           t.config.internalConfig.ServiceName(),
