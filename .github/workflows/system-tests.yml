@@ -29,6 +29,7 @@ on:
     - cron:  '00 04 * * *'
 
 permissions:
+  id-token: write
   contents: read
   packages: write
 
@@ -112,13 +113,13 @@ jobs:
           # APM scenarios requiring specific environment settings
           - scenario: APM_TRACING_E2E_SINGLE_SPAN
             env:
-              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
-              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_API_KEY=$DD_API_KEY
+              DD_APPLICATION_KEY=$DD_APP_KEY
               DD_SITE="datadoghq.com"
           - scenario: APM_TRACING_E2E_OTEL
             env:
-              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
-              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_API_KEY=$DD_API_KEY
+              DD_APPLICATION_KEY=$DD_APP_KEY
               DD_SITE="datadoghq.com"
           # GraphQL System Tests
           - scenario: GRAPHQL_APPSEC
@@ -145,9 +146,6 @@ jobs:
     env:
       TEST_LIBRARY: golang
       WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      SYSTEM_TESTS_E2E_DD_API_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_API_KEY }}
-      SYSTEM_TESTS_E2E_DD_APP_KEY: ${{ secrets.SYSTEM_TESTS_E2E_DD_APP_KEY }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Restore repo cache
@@ -168,6 +166,18 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
+      
+      # Use the app key policy to obtain DD_APP_KEY
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go-app-key
+          
+      - name: Set credentials
+        run: |
+          echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
+          echo "DD_APP_KEY=${{ steps.dd-sts.outputs.app_key }}" >> "$GITHUB_ENV"
 
       - name: Build weblog
         run: ./build.sh -i weblog
@@ -185,7 +195,7 @@ jobs:
         if: ${{ always() }}
         uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
         with:
-          datadog_api_key: ${{ secrets.DD_API_KEY }}
+          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -239,6 +249,7 @@ jobs:
     needs:
       - build-service-extensions-callout
       - build-haproxy
+      - warm-repo-cache
     strategy:
       fail-fast: false
       matrix:
@@ -285,6 +296,12 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
+      
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
 
       - name: Build runner
         uses: ./.github/actions/install_runner
@@ -295,13 +312,14 @@ jobs:
       - name: Run
         run: ./run.sh ${{ matrix.scenario }}
         env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
           WEBLOG_VARIANT: ${{ matrix.weblog_variant }}
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
         uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
         with:
-          datadog_api_key: ${{ secrets.DD_API_KEY }}
+          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -319,12 +337,14 @@ jobs:
           name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz
 
+  # Temporarily skipped until system tests enable dd-sts for test optimization
   tracer-release:
-    if: github.event_name == 'schedule'
+    if: false
+    needs: warm-repo-cache
     uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
     secrets:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      TEST_OPTIMIZATION_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_API_KEY: "invalid_key_but_this_is_fine"
+      TEST_OPTIMIZATION_API_KEY: "invalid_key_but_this_is_fine"
     permissions:
       contents: read
       packages: write
