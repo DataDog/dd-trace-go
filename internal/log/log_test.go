@@ -12,11 +12,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
-	"testing/synctest"
 )
 
 // testLogger implements a mock Logger.

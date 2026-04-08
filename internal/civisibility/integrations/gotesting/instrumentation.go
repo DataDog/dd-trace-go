@@ -314,8 +314,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 		var allAttemptsPassed int32 = 1
 		var allRetriesFailed int32 = 1
 		// For test.final_status computation: track pass/fail across all executions.
-		var anyExecutionPassed int32
-		var anyExecutionFailed int32
+		var anyExecutionPassed atomic.Int32
+		var anyExecutionFailed atomic.Int32
 
 		runTestWithRetry(&runTestWithRetryOptions{
 			targetFunc:      f,
@@ -357,8 +357,8 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				execMeta.isAModifiedTest = execMeta.isAModifiedTest || ptrMeta.isModified
 
 				// Copy test.final_status tracking state from wrapper-level atomics.
-				execMeta.anyExecutionPassed = atomic.LoadInt32(&anyExecutionPassed) == 1
-				execMeta.anyExecutionFailed = atomic.LoadInt32(&anyExecutionFailed) == 1
+				execMeta.anyExecutionPassed = anyExecutionPassed.Load() == 1
+				execMeta.anyExecutionFailed = anyExecutionFailed.Load() == 1
 				execMeta.shouldOrchestrateAttemptToFix = ptrMeta.shouldOrchestrateAttemptToFix
 
 				// Propagate flags from the original test metadata.
@@ -442,10 +442,10 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 
 				// Track pass/fail for test.final_status computation.
 				if !failed && !skipped {
-					atomic.StoreInt32(&anyExecutionPassed, 1)
+					anyExecutionPassed.Store(1)
 				}
 				if failed {
-					atomic.StoreInt32(&anyExecutionFailed, 1)
+					anyExecutionFailed.Store(1)
 				}
 
 				if execMeta.isAttemptToFix {

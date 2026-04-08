@@ -15,9 +15,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
-
 	"testing/synctest"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
