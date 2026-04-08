@@ -14,6 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -63,7 +69,7 @@ jobs:
         id: integration-tests
         env:
           BUILD_LAYERS: true
-          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
         working-directory: contrib/aws/datadog-lambda-go/test/integration_tests/
         run: ./run_integration_tests.sh
 

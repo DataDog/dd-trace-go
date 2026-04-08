@@ -65,6 +65,7 @@ env:
   DD_ENV: github
   DD_TAGS: 'github_run_id:${{ github.run_id }} github_run_number:${{ github.run_number }} ${{ inputs[''arg: tags''] }}'
 permissions:
+  id-token: write
   contents: read
 jobs:
   job-0-0:
@@ -77,10 +78,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datadoghq.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -104,10 +110,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datad0g.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -131,10 +142,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datadoghq.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -158,10 +174,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datad0g.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -185,10 +206,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datadoghq.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -212,10 +238,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datad0g.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -239,10 +270,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datadoghq.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -266,10 +302,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datad0g.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -293,10 +334,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_APP_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datadoghq.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
@@ -320,10 +366,15 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
-          api_key: ${{ secrets['DD_TEST_AND_DEMO_API_KEY'] }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           datadog_site: datad0g.com
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0

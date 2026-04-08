@@ -49,6 +49,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -103,10 +104,12 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
         run: go mod download -x
 
+
   macos:
     name: ${{ matrix.runs-on }} go${{ matrix.go-version }}
     runs-on: ${{ matrix.runs-on }}
-    needs: go-mod-caching
+    needs: 
+      - go-mod-caching
     strategy:
       matrix:
         runs-on: [ macos-14, macos-latest ] # oldest and newest macos runners available
@@ -194,6 +197,12 @@ jobs:
             done
           done
           exit $report_error
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Upload Coverage
         if: always()
         continue-on-error: true
@@ -205,14 +214,15 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: tmp_appsec
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
     name: ${{ matrix.runs-on }} (AppSec disabled)
-    needs: go-mod-caching
+    needs: 
+      - go-mod-caching
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -223,6 +233,12 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
 
       - name: Restore Go modules cache
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -288,7 +304,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: tmp_appsec
           tags: go:,arch:${{ runner.arch }},os:${{ runner.os }}
 
@@ -297,7 +313,8 @@ jobs:
     name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     # We use ARM runners when needed to avoid the performance hit of QEMU
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'ubuntu-24.04-arm' }}
-    needs: go-mod-caching
+    needs: 
+      - go-mod-caching
     strategy:
       matrix:
         go-version: [ "1.26", "1.25" ]
@@ -433,6 +450,12 @@ jobs:
         run: |
           sudo docker exec -i test.runner bash -c "go run ./scripts/configinverter/main.go check"
       
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Upload Coverage
         if: always()
         continue-on-error: true
@@ -444,7 +467,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: tmp_appsec
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
