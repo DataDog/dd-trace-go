@@ -507,6 +507,27 @@
     "DD_TRACE_HTTP_SERVER_ERROR_STATUSES": [
       "A"
     ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
     "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": [
       "A"
     ],

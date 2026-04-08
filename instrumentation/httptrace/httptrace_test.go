@@ -354,6 +354,249 @@ func TestURLTag(t *testing.T) {
 	}
 }
 
+func TestURLTagWithAllowlist(t *testing.T) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	type testCase struct {
+		name        string
+		allowlist   []string
+		query       string
+		expectedURL string
+	}
+	for _, tc := range []testCase{
+		{
+			name:        "keep single param",
+			allowlist:   []string{"p1"},
+			query:       "p1=a&p2=b&p3=c",
+			expectedURL: "http://example.com?p1=a",
+		},
+		{
+			name:        "keep multiple params",
+			allowlist:   []string{"p1", "p3"},
+			query:       "p1=a&p2=b&p3=c&p4=d",
+			expectedURL: "http://example.com?p1=a&p3=c",
+		},
+		{
+			name:        "no matching params",
+			allowlist:   []string{"x"},
+			query:       "p1=a&p2=b",
+			expectedURL: "http://example.com",
+		},
+		{
+			name:        "all params match",
+			allowlist:   []string{"p1", "p2"},
+			query:       "p1=a&p2=b",
+			expectedURL: "http://example.com?p1=a&p2=b",
+		},
+		{
+			name:        "empty query string",
+			allowlist:   []string{"p1"},
+			query:       "",
+			expectedURL: "http://example.com",
+		},
+		{
+			name:        "preserves url-encoded values",
+			allowlist:   []string{"q"},
+			query:       "q=hello%20world&secret=abc",
+			expectedURL: "http://example.com?q=hello%20world",
+		},
+		{
+			name:        "param with no value",
+			allowlist:   []string{"flag"},
+			query:       "flag&other=1",
+			expectedURL: "http://example.com?flag",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			allowlist := make(map[string]struct{})
+			for _, k := range tc.allowlist {
+				allowlist[k] = struct{}{}
+			}
+			cfg = oldCfg
+			cfg.serverQueryStringAllowlist = allowlist
+			cfg.queryString = true
+
+			r := http.Request{
+				URL:  &url.URL{RawQuery: tc.query},
+				Host: "example.com",
+			}
+			got := URLFromRequest(&r, true)
+			require.Equal(t, tc.expectedURL, got)
+		})
+	}
+}
+
+func TestURLTagWithClientServerAllowlist(t *testing.T) {
+	makeRequest := func(query string) *http.Request {
+		return &http.Request{
+			URL:  &url.URL{RawQuery: query},
+			Host: "example.com",
+		}
+	}
+	toMap := func(keys []string) map[string]struct{} {
+		m := make(map[string]struct{}, len(keys))
+		for _, k := range keys {
+			m[k] = struct{}{}
+		}
+		return m
+	}
+
+	t.Run("different client and server allowlists", func(t *testing.T) {
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg.queryString = true
+		cfg.clientQueryStringAllowlist = toMap([]string{"ckey"})
+		cfg.serverQueryStringAllowlist = toMap([]string{"skey"})
+
+		r := makeRequest("ckey=1&skey=2&other=3")
+		require.Equal(t, "http://example.com?ckey=1", URLFromClientRequest(r, true))
+		require.Equal(t, "http://example.com?skey=2", URLFromRequest(r, true))
+	})
+
+	t.Run("client allowlist only", func(t *testing.T) {
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg.queryString = true
+		cfg.clientQueryStringAllowlist = toMap([]string{"ckey"})
+		cfg.serverQueryStringAllowlist = nil
+
+		r := makeRequest("ckey=1&password=secret")
+		require.Equal(t, "http://example.com?ckey=1", URLFromClientRequest(r, true))
+		// Server side has no allowlist, falls back to regex obfuscation.
+		got := URLFromRequest(r, true)
+		require.Contains(t, got, "ckey=1")
+		require.NotContains(t, got, "secret")
+	})
+
+	t.Run("server allowlist only", func(t *testing.T) {
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg.queryString = true
+		cfg.clientQueryStringAllowlist = nil
+		cfg.serverQueryStringAllowlist = toMap([]string{"skey"})
+
+		r := makeRequest("skey=1&password=secret")
+		require.Equal(t, "http://example.com?skey=1", URLFromRequest(r, true))
+		// Client side has no allowlist, falls back to regex obfuscation.
+		got := URLFromClientRequest(r, true)
+		require.Contains(t, got, "skey=1")
+		require.NotContains(t, got, "secret")
+	})
+
+	t.Run("no allowlists falls back to regex obfuscation", func(t *testing.T) {
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg.queryString = true
+		cfg.clientQueryStringAllowlist = nil
+		cfg.serverQueryStringAllowlist = nil
+
+		r := makeRequest("safe=1&password=secret")
+		got := URLFromClientRequest(r, true)
+		require.Contains(t, got, "safe=1")
+		require.Contains(t, got, "<redacted>")
+		require.NotContains(t, got, "secret")
+	})
+
+	t.Run("env var parsing", func(t *testing.T) {
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST", "global_key")
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT", "client_key")
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER", "server_key")
+
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg = newConfig()
+
+		r := makeRequest("global_key=1&client_key=2&server_key=3")
+		require.Equal(t, "http://example.com?client_key=2", URLFromClientRequest(r, true))
+		require.Equal(t, "http://example.com?server_key=3", URLFromRequest(r, true))
+	})
+
+	t.Run("env var global only applies to both sides", func(t *testing.T) {
+		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST", "shared")
+
+		oldCfg := cfg
+		defer func() { cfg = oldCfg }()
+		cfg = newConfig()
+
+		r := makeRequest("shared=1&other=2")
+		require.Equal(t, "http://example.com?shared=1", URLFromClientRequest(r, true))
+		require.Equal(t, "http://example.com?shared=1", URLFromRequest(r, true))
+	})
+}
+
+func TestFilterQueryStringByAllowlist(t *testing.T) {
+	allowlist := map[string]struct{}{"p1": {}, "p3": {}}
+
+	tests := []struct {
+		name     string
+		raw      string
+		expected string
+	}{
+		{"basic", "p1=a&p2=b&p3=c", "p1=a&p3=c"},
+		{"empty", "", ""},
+		{"no match", "x=1&y=2", ""},
+		{"all match", "p1=a&p3=c", "p1=a&p3=c"},
+		{"trailing ampersand", "p1=a&p2=b&", "p1=a"},
+		{"no value", "p1&p2=b&p3", "p1&p3"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := filterQueryStringByAllowlist(tc.raw, allowlist)
+			assert.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+func BenchmarkURLFromRequest(b *testing.B) {
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	queries := []struct {
+		name string
+		raw  string
+	}{
+		{"few_params", "user=john&password=secret&token=abc123"},
+		{"many_params", "user=john&password=secret&token=abc123&session=xyz&debug=true&page=1&sort=asc&filter=active&lang=en&ref=homepage"},
+		{"really_long_1", "sz=300x50&iu=/12345678901/ad_unit_test&output=&tile=1&ss_req=1&d_imp=1&d_imp_hdr=1&t=%26devmake%3Dacme%26devmakedate%3D1700000000000%26uxloc%3DBANNER_TOP%26appname%3DTestApp%26devid%3Daaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee%26appver%3D10.200.0%26devmodel%3DAcme-default%26gppsid%3D%26usid%3Daaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-20260101120000-12345678901234567%26screen%3DLANDING%26contenttype%3DDISPLAY%26contentgenre%3D%26contentrating%3D%26dlid%3D11111111-2222-3333-4444-555555555555%26mvpd%3DTestApp%26tile%3D1%26carouselPosition%3D1%26gpp%3D%26carouselName%3DFeatured%2BBanner%2BSlot%2BUS%26devbrand%3DAcme%26partnername%3DTestApp%26devlang%3Den%26devlat%3D0%26apptype%3DEntertainment%26contentlang%3Den%26lowEnd%3Dtrue%26devcountry%3DUSA%26devtype%3Ddpid%26resellerId%3Dtestreseller%26platform%3DTVOS&ppid=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&rdid=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&is_lat=0&idtype=dpid&ip=198.51.100.1&c=1234567890123456789&gdpr=1&gdpr_consent=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBB"},
+		{"really_long_2", "sz=300x50&iu=/12345678901/ad_unit_test&output=&tile=1&ss_req=1&d_imp=1&d_imp_hdr=1&t=%26gpp%3D%26mvpd%3DTestApp%26usid%3Daaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-20260101120000-12345678901234567%26platform%3DTVOS%26uxloc%3DBANNER_TOP%26tile%3D1%26devcountry%3DUSA%26devbrand%3DAcme%26devtype%3Ddpid%26appname%3DTestApp%26carouselPosition%3D1%26screen%3DLANDING%26devid%3Daaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee%26contenttype%3DDISPLAY%26contentgenre%3D%26contentrating%3D%26appver%3D10.200.0%26carouselName%3DFeatured%2BBanner%2BSlot%2BUS%26partnername%3DTestApp%26devmake%3Dacme%26devmakedate%3D1700000000000%26devlang%3Den%26contentlang%3Den%26devlat%3D0%26devmodel%3DAcme-default%26lowEnd%3Dtrue%26dlid%3D11111111-2222-3333-4444-555555555555%26apptype%3DEntertainment%26gppsid%3D&ppid=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&rdid=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&is_lat=0&idtype=dpid&ip=198.51.100.1&c=9876543210987654321&gdpr=1&gdpr_consent=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBB"},
+	}
+
+	for _, q := range queries {
+		r := &http.Request{
+			URL:  &url.URL{RawQuery: q.raw},
+			Host: "example.com",
+		}
+
+		b.Run("regex/"+q.name, func(b *testing.B) {
+			cfg = oldCfg
+			cfg.queryString = true
+			cfg.queryStringRegexp = QueryStringRegexp()
+			cfg.serverQueryStringAllowlist = nil
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				URLFromRequest(r, true)
+			}
+		})
+
+		b.Run("allowlist/"+q.name, func(b *testing.B) {
+			cfg = oldCfg
+			cfg.queryString = true
+			cfg.queryStringRegexp = nil
+			cfg.serverQueryStringAllowlist = map[string]struct{}{
+				"user": {}, "page": {}, "sort": {},
+				"sz": {}, "tile": {}, "gdpr": {}, "ip": {}, "idtype": {},
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				URLFromRequest(r, true)
+			}
+		})
+	}
+}
+
 func BenchmarkStartRequestSpan(b *testing.B) {
 	b.ReportAllocs()
 	r, err := http.NewRequest("GET", "http://example.com", nil)

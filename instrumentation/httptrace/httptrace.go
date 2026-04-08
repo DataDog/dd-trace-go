@@ -40,8 +40,8 @@ type inferredSpanCreatedCtxKey struct{}
 
 type FinishSpanFunc = func(status int, errorFn func(int) bool, opts ...tracer.FinishOption)
 
-// StartRequestSpan starts an HTTP request span with the standard list of HTTP request span tags (http.method, http.url,
-// http.useragent). Any further span start option can be added with opts.
+// StartRequestSpan starts a server-side HTTP request span with the standard list of HTTP request span tags
+// (http.method, http.url, http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
 	// Append our span options before the given ones so that the caller can "overwrite" them.
 	// TODO(): rework span start option handling (https://github.com/DataDog/dd-trace-go/issues/1352)
@@ -191,9 +191,25 @@ func FinishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, opts 
 	s.Finish(tracer.WithFinishConfig(fc))
 }
 
-// URLFromRequest returns the full URL from the HTTP request. If queryString is true, params are collected and they are obfuscated either by the default query string obfuscator or the custom obfuscator provided by the user (through DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP)
+// URLFromRequest returns the full URL from the HTTP request for server-side spans. If queryString is true, params are
+// collected and obfuscated either by the default query string obfuscator or a custom one provided via
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP. When DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER is set it takes
+// precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromRequest(r *http.Request, queryString bool) string {
+	return urlFromRequest(r, queryString, false)
+}
+
+// URLFromClientRequest returns the full URL from the HTTP request for client-side spans. If queryString is true, params
+// are collected and obfuscated either by the default query string obfuscator or a custom one provided via
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP. When DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT is set it takes
+// precedence and bypasses the obfuscator; otherwise DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST is used.
+// See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
+func URLFromClientRequest(r *http.Request, queryString bool) string {
+	return urlFromRequest(r, queryString, true)
+}
+
+func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 	// Quoting net/http comments about net.Request.URL on server requests:
 	// "For most requests, fields other than Path and RawQuery will be
 	// empty. (See RFC 7230, Section 5.3)"
@@ -214,15 +230,47 @@ func URLFromRequest(r *http.Request, queryString bool) string {
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
 	if queryString && r.URL.RawQuery != "" {
 		query := r.URL.RawQuery
-		if cfg.queryStringRegexp != nil {
+		allowlist := cfg.getQueryStringAllowlist(isClient)
+		if allowlist != nil {
+			// When an allowlist is configured, only keep the specified parameter keys.
+			// This avoids running the expensive obfuscation regex entirely.
+			query = filterQueryStringByAllowlist(query, allowlist)
+		} else if cfg.queryStringRegexp != nil {
 			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
 		}
-		url = strings.Join([]string{url, query}, "?")
+		if query != "" {
+			url = strings.Join([]string{url, query}, "?")
+		}
 	}
 	if frag := r.URL.EscapedFragment(); frag != "" {
 		url = strings.Join([]string{url, frag}, "#")
 	}
 	return url
+}
+
+// filterQueryStringByAllowlist parses a raw query string and returns only the key=value
+// pairs whose keys are in the allowlist. It operates on the raw string (splitting on & and =)
+// to avoid unnecessary allocations from net/url.ParseQuery.
+func filterQueryStringByAllowlist(rawQuery string, allowlist map[string]struct{}) string {
+	var b strings.Builder
+	for rawQuery != "" {
+		// Split on "&" to isolate each key=value pair.
+		var pair string
+		if before, after, found := strings.Cut(rawQuery, "&"); found {
+			pair, rawQuery = before, after
+		} else {
+			pair, rawQuery = rawQuery, ""
+		}
+		// Extract the key portion before "=" (or the whole pair if there's no value).
+		key, _, _ := strings.Cut(pair, "=")
+		if _, ok := allowlist[key]; ok {
+			if b.Len() > 0 {
+				b.WriteByte('&')
+			}
+			b.WriteString(pair)
+		}
+	}
+	return b.String()
 }
 
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
