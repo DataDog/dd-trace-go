@@ -69,6 +69,18 @@ func (c TextMapCarrier) ForeachKey(handler func(key, val string) error) error {
 }
 
 const (
+	// headerPropagationBehaviorExtract specifies how to handle incoming trace
+	// context. Allowed values:
+	// - "continue" (default): Continue the trace from incoming headers.
+	//   Baggage is propagated.
+	// - "restart": Start a new trace with a new trace ID and sampling
+	//   decision. The incoming context is referenced via a span link.
+	//   Baggage is propagated.
+	// - "ignore": Start a new trace with a new trace ID and sampling
+	//   decision. No span links are created. Baggage is dropped.
+	headerPropagationBehaviorExtract = "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT"
+
+	headerPropagationExtractFirst = "DD_TRACE_PROPAGATION_EXTRACT_FIRST"
 	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
 	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
 	headerPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
@@ -166,7 +178,11 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cfg.BaggageHeader = DefaultBaggageHeader
 	}
 	cp := new(chainedPropagator)
-	cp.onlyExtractFirst = internal.BoolEnv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
+	cp.onlyExtractFirst = internal.BoolEnv(headerPropagationExtractFirst, false)
+	cp.propagationBehaviorExtract = env.Get(headerPropagationBehaviorExtract)
+	if cp.propagationBehaviorExtract == "" {
+		cp.propagationBehaviorExtract = "continue"
+	}
 	if len(propagators) > 0 {
 		cp.injectors = propagators
 		cp.extractors = propagators
@@ -188,6 +204,7 @@ type chainedPropagator struct {
 	injectorNames    string
 	extractorsNames  string
 	onlyExtractFirst bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
+	propagationBehaviorExtract string // value of DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT
 }
 
 // getPropagators returns a list of propagators based on ps, which is a comma seperated
@@ -277,13 +294,80 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 // subsequent trace context has conflicting trace information, such information will
 // be relayed in the returned SpanContext with a SpanLink.
 func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
+	// TODO: Return nil or an empty span context?
+	// If the propagation behavior is "ignore", return a new span context with no span links and no baggage.
+	if p.propagationBehaviorExtract == "ignore" {
+		return nil, nil
+	}
+
+	incomingCtx, err := p.extractIncomingSpanContext(carrier)
+	if err != nil {
+		return nil, err
+	}
+
+	// Continue the trace from incoming headers. Baggage is propagated.
+	if p.propagationBehaviorExtract == "continue" {
+		return incomingCtx, nil
+	}
+
+	// Start a new trace with a new trace ID and sampling decision.
+	// The incoming context is referenced via a span link.
+	// Baggage is propagated.
+	if p.propagationBehaviorExtract == "restart" {
+		// TODO: Check if an empty span context will lead the tracer to generate a new trace ID and span ID when starting a new span.
+		ctx := &SpanContext{}
+
+		link := SpanLink{
+			TraceID:     incomingCtx.TraceIDLower(),
+			TraceIDHigh: incomingCtx.TraceIDUpper(),
+			SpanID:      incomingCtx.SpanID(),
+			Tracestate: func() string {
+				if incomingCtx.trace != nil {
+					return incomingCtx.trace.propagatingTag(tracestateHeader)
+				}
+				return ""
+			}(),
+			// TODO: What about the "new sampling decision"? If we prop the flag, isn't the sampling decision already set?
+			Flags: func() uint32 {
+				if incomingCtx.trace != nil {
+					if p, _ := incomingCtx.SamplingPriority(); p > 0 {
+						return 1
+					}
+				}
+				return 0
+			}(),
+			Attributes: map[string]string{
+				"reason":          "propagation_behavior_extract",
+				"context_headers": getPropagatorName(p.extractors[0]),
+			},
+		}
+
+		// NOTE: Span links from the incoming trace context do not need to be carried over.
+		ctx.spanLinks = []SpanLink{link}
+
+		// NOTE: All baggage items from the incoming trace context.
+		// TODO: Copy or reference? Using copy to avoid shared state issues.
+		if incomingCtx.baggage != nil {
+			ctx.baggage = make(map[string]string, len(incomingCtx.baggage))
+			maps.Copy(ctx.baggage, incomingCtx.baggage)
+			atomic.StoreUint32(&ctx.hasBaggage, 1)
+		}
+
+		return ctx, nil
+	}
+
+	return incomingCtx, nil
+}
+
+func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContext, error) {
 	var ctx *SpanContext
 	var links []SpanLink
 	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
 
+	
 	for _, v := range p.extractors {
-		// If ctx is nil, no extraction has run yet
-		firstExtraction := (ctx == nil)
+		// If incomingCtx is nil, no extraction has run yet
+		firstExtraction := (ctx == nil) 
 		extractedCtx, err := v.Extract(carrier)
 
 		// If this is the baggage propagator, just stash its items into pendingBaggage
@@ -328,7 +412,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			} else if extractedCtx != nil { // Trace IDs do not match - create span links
 				link := SpanLink{TraceID: extractedCtx.TraceIDLower(), SpanID: extractedCtx.SpanID(), TraceIDHigh: extractedCtx.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
 				if trace := extractedCtx.trace; trace != nil {
-					if p := trace.priority.Load(); p != nil && uint32(*p) > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
+					if flags := uint32(*trace.priority); flags > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 						link.Flags = 1
 					} else {
 						link.Flags = 0
@@ -368,23 +452,6 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	return ctx, nil
 }
 
-func getPropagatorName(p Propagator) string {
-	switch p.(type) {
-	case *propagator:
-		return "datadog"
-	case *propagatorB3:
-		return "b3multi"
-	case *propagatorB3SingleHeader:
-		return "b3"
-	case *propagatorW3c:
-		return "tracecontext"
-	case *propagatorBaggage:
-		return "baggage"
-	default:
-		return ""
-	}
-}
-
 // propagateTracestate will add the tracestate propagating tag to the given
 // *spanContext. The W3C trace context will be extracted from the provided
 // carrier. The trace id of this W3C trace context must match the trace id
@@ -412,6 +479,23 @@ func (p *propagatorW3c) propagateTracestate(ctx *SpanContext, w3cCtx *SpanContex
 	priority, _ := ctx.SamplingPriority()
 	setPropagatingTag(ctx, tracestateHeader, composeTracestate(ctx, priority, ts))
 	ctx.isRemote = (w3cCtx.isRemote)
+}
+
+func getPropagatorName(p Propagator) string {
+	switch p.(type) {
+	case *propagator:
+		return "datadog"
+	case *propagatorB3:
+		return "b3multi"
+	case *propagatorB3SingleHeader:
+		return "b3"
+	case *propagatorW3c:
+		return "tracecontext"
+	case *propagatorBaggage:
+		return "baggage"
+	default:
+		return ""
+	}
 }
 
 // propagator implements Propagator and injects/extracts span contexts
@@ -586,17 +670,19 @@ func getDatadogPropagator(cp *chainedPropagator) *propagator {
 	return nil
 }
 
+// TODO: Verify if we should rename this function - e.g., "reconcile context span ID and reparent ID". maybe split this into two functions. one for reconciling the span ID and another for the reparent ID.
+
 // overrideDatadogParentID overrides a context's:
 // 1. span ID with the span ID extracted from W3C tracecontext headers; and
 // 2. reparent ID with either:
-//   - the reparent ID from W3C tracecontext headers (if set), or
-//   - the span ID from Datadog headers (as fallback).
+//    - the reparent ID from W3C tracecontext headers (if set), or
+//    - the span ID from Datadog headers (as fallback).
 //
 // reparent ID is the last known Datadog parent span ID, used by Datadog's
 // backend to fix broken parent-child relationships when non-Datadog tracers
 // in the path don't report spans to Datadog.
 //
-// SpanContexts are passed by reference to avoid copying lock information in
+// SpanContexts are passed by reference to avoid copying lock information in 
 // the SpanContext type.
 func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 	if ctx == nil || w3cCtx == nil || ddCtx == nil {
