@@ -327,26 +327,27 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			TraceID:     incomingCtx.TraceIDLower(),
 			TraceIDHigh: incomingCtx.TraceIDUpper(),
 			SpanID:      incomingCtx.SpanID(),
-			Tracestate: func() string {
-				if incomingCtx.trace != nil {
-					return incomingCtx.trace.propagatingTag(tracestateHeader)
-				}
-				return ""
-			}(),
-			// TODO: What about the "new sampling decision"? If we prop the flag, isn't the sampling decision already set?
-			Flags: func() uint32 {
-				if incomingCtx.trace != nil {
-					if p, _ := incomingCtx.SamplingPriority(); p > 0 {
-						return 1
-					}
-				}
-				return 0
-			}(),
 			Attributes: map[string]string{
 				"reason":          "propagation_behavior_extract",
 				"context_headers": getPropagatorName(p.extractors[0]),
 			},
 		}
+			// Tracestate: func() string {
+			// 	if incomingCtx.trace != nil {
+			// 		return incomingCtx.trace.propagatingTag(tracestateHeader)
+			// 	}
+			// 	return ""
+			// }(),
+			// // TODO: What about the "new sampling decision"? If we prop the flag, isn't the sampling decision already set?
+			// Flags: func() uint32 {
+			// 	if incomingCtx.trace != nil {
+			// 		if p, _ := incomingCtx.SamplingPriority(); p > 0 {
+			// 			return 1
+			// 		}
+			// 	}
+			// 	return 0
+			// }(),
+	}
 
 		// NOTE: Span links from the incoming trace context do not need to be carried over.
 		ctx.spanLinks = []SpanLink{link}
