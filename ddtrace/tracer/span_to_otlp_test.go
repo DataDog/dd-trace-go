@@ -174,8 +174,8 @@ func TestConvertSpanKind(t *testing.T) {
 		{ext.SpanKindClient, otlptrace.Span_SPAN_KIND_CLIENT},
 		{ext.SpanKindProducer, otlptrace.Span_SPAN_KIND_PRODUCER},
 		{ext.SpanKindConsumer, otlptrace.Span_SPAN_KIND_CONSUMER},
-		{"", otlptrace.Span_SPAN_KIND_INTERNAL},
-		{"unknown", otlptrace.Span_SPAN_KIND_INTERNAL},
+		{"", otlptrace.Span_SPAN_KIND_UNSPECIFIED},
+		{"unknown", otlptrace.Span_SPAN_KIND_UNSPECIFIED},
 	}
 	for _, tt := range tests {
 		t.Run(tt.dd, func(t *testing.T) {

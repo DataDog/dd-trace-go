@@ -149,7 +149,7 @@ func convertSpanKind(spanKind string) otlptrace.Span_SpanKind {
 	case ext.SpanKindConsumer:
 		return otlptrace.Span_SPAN_KIND_CONSUMER
 	default:
-		return otlptrace.Span_SPAN_KIND_INTERNAL
+		return otlptrace.Span_SPAN_KIND_UNSPECIFIED
 	}
 }
 
