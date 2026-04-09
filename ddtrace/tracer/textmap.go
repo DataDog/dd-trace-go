@@ -282,7 +282,8 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
 
 	for _, v := range p.extractors {
-		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
+		// If ctx is nil, no extraction has run yet
+		firstExtraction := (ctx == nil)
 		extractedCtx, err := v.Extract(carrier)
 
 		// If this is the baggage propagator, just stash its items into pendingBaggage
@@ -293,7 +294,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			continue
 		}
 
-		if firstExtract {
+		if firstExtraction {
 			if err != nil {
 				if p.onlyExtractFirst { // Every error is relevant when we are relying on the first extractor
 					return nil, err
@@ -306,35 +307,33 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 				return extractedCtx, nil
 			}
 			ctx = extractedCtx
-		} else { // A local trace context has already been extracted
-			extractedCtx2 := extractedCtx
-			ctx2 := ctx
-
-			// If we can't cast to spanContext, we can't propgate tracestate or create span links
-			if extractedCtx2.TraceID() == ctx2.TraceID() {
+		} else { // A trace context was already extracted by a previous propagator
+			// When trace IDs match, merge W3C tracestate and resolve parent ID conflicts.
+			// When trace IDs differ, create span links to preserve the terminated context.
+			if extractedCtx.TraceID() == ctx.TraceID() {
 				if pW3C, ok := v.(*propagatorW3c); ok {
-					pW3C.propagateTracestate(ctx2, extractedCtx2)
-					// If trace IDs match but span IDs do not, use spanID from `*propagatorW3c` extractedCtx for parenting
-					if extractedCtx2.SpanID() != ctx2.SpanID() {
+					pW3C.propagateTracestate(ctx, extractedCtx)
+					// W3C and Datadog headers may specify different parent span IDs.
+					// Prefer W3C's span ID for parenting, and record the Datadog span ID as reparentID.
+					if extractedCtx.SpanID() != ctx.SpanID() {
 						var ddCtx *SpanContext
-						// Grab the datadog-propagated spancontext again
 						if ddp := getDatadogPropagator(p); ddp != nil {
 							if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
 								ddCtx = ddSpanCtx
 							}
 						}
-						overrideDatadogParentID(ctx2, extractedCtx2, ddCtx)
+						overrideDatadogParentID(ctx, extractedCtx, ddCtx)
 					}
 				}
-			} else if extractedCtx2 != nil { // Trace IDs do not match - create span links
-				link := SpanLink{TraceID: extractedCtx2.TraceIDLower(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
-				if trace := extractedCtx2.trace; trace != nil {
+			} else if extractedCtx != nil { // Trace IDs do not match - create span links
+				link := SpanLink{TraceID: extractedCtx.TraceIDLower(), SpanID: extractedCtx.SpanID(), TraceIDHigh: extractedCtx.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
+				if trace := extractedCtx.trace; trace != nil {
 					if p := trace.priority.Load(); p != nil && uint32(*p) > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 						link.Flags = 1
 					} else {
 						link.Flags = 0
 					}
-					link.Tracestate = extractedCtx2.trace.propagatingTag(tracestateHeader)
+					link.Tracestate = extractedCtx.trace.propagatingTag(tracestateHeader)
 				}
 				links = append(links, link)
 			}
@@ -587,9 +586,18 @@ func getDatadogPropagator(cp *chainedPropagator) *propagator {
 	return nil
 }
 
-// overrideDatadogParentID overrides the span ID of a context with the ID extracted from tracecontext headers.
-// If the reparenting ID is not set on the context, the span ID from datadog headers is used.
-// spanContexts are passed by reference to avoid copying lock value in spanContext type
+// overrideDatadogParentID overrides a context's:
+// 1. span ID with the span ID extracted from W3C tracecontext headers; and
+// 2. reparent ID with either:
+//   - the reparent ID from W3C tracecontext headers (if set), or
+//   - the span ID from Datadog headers (as fallback).
+//
+// reparent ID is the last known Datadog parent span ID, used by Datadog's
+// backend to fix broken parent-child relationships when non-Datadog tracers
+// in the path don't report spans to Datadog.
+//
+// SpanContexts are passed by reference to avoid copying lock information in
+// the SpanContext type.
 func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 	if ctx == nil || w3cCtx == nil || ddCtx == nil {
 		return
