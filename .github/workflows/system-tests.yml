@@ -38,13 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.pin.outputs.sha }}
-      dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
     steps:
-      - name: Get Datadog credentials
-        id: dd-sts
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
-        with:
-          policy: dd-trace-go
       - name: Checkout system-tests
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -60,9 +54,6 @@ jobs:
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
-      - name: Get Credentials
-        run: |
-          echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     # Note: Not using large runners because the jobs spawned by this pipeline
@@ -122,13 +113,13 @@ jobs:
           # APM scenarios requiring specific environment settings
           - scenario: APM_TRACING_E2E_SINGLE_SPAN
             env:
-              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
-              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_API_KEY=$DD_API_KEY
+              DD_APPLICATION_KEY=$DD_APP_KEY
               DD_SITE="datadoghq.com"
           - scenario: APM_TRACING_E2E_OTEL
             env:
-              DD_API_KEY=$SYSTEM_TESTS_E2E_DD_API_KEY
-              DD_APPLICATION_KEY=$SYSTEM_TESTS_E2E_DD_APP_KEY
+              DD_API_KEY=$DD_API_KEY
+              DD_APPLICATION_KEY=$DD_APP_KEY
               DD_SITE="datadoghq.com"
           # GraphQL System Tests
           - scenario: GRAPHQL_APPSEC
@@ -158,16 +149,27 @@ jobs:
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Restore repo cache
+        id: restore-repo-cache
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: .git
           key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
 
-      - name: Checkout system tests
+      - name: Checkout system tests (using cache)
+        if: steps.restore-repo-cache.outcome == 'success' && steps.restore-repo-cache.outputs.cache-hit == 'true'
         shell: bash
         run: |
           git config safe.directory "$GITHUB_WORKSPACE"
           git checkout -f ${{ needs.warm-repo-cache.outputs.sha }}
+      
+      # Fall back in case of a cache miss, which can occur when retrying old runs.
+      - name: Checkout system tests (cache miss)
+        if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          repository: 'DataDog/system-tests'
+          ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -176,16 +178,17 @@ jobs:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
       
+      # Use the app key policy to obtain DD_APP_KEY
       - name: Get Datadog credentials
         id: dd-sts
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
-          policy: dd-trace-go
+          policy: dd-trace-go-app-key
           
       - name: Set credentials
         run: |
           echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
-          echo "SYSTEM_TESTS_E2E_DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
+          echo "DD_APP_KEY=${{ steps.dd-sts.outputs.app_key }}" >> "$GITHUB_ENV"
 
       - name: Build weblog
         run: ./build.sh -i weblog
@@ -197,7 +200,9 @@ jobs:
         run: ./build.sh -i agent
 
       - name: Run
-        run: env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
+        shell: bash
+        run: |
+          env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
@@ -309,7 +314,7 @@ jobs:
         id: dd-sts
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
-          policy: dd-trace-go
+          policy: dd-trace-go-app-key
 
       - name: Build runner
         uses: ./.github/actions/install_runner

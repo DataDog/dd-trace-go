@@ -36,7 +36,7 @@ func (fn OptionFn) apply(cfg *config) {
 
 func newConfigWithDefaults() *config {
 	cfg := new(config)
-	cfg.serviceName = "gorm.db"
+	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.serviceSource = string(instrumentation.PackageGormIOGormV1)
 	cfg.analyticsRate = instr.AnalyticsRate(false)
 	cfg.errCheck = func(error) bool { return true }

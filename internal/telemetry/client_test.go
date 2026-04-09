@@ -179,7 +179,73 @@ func TestClientFlush(t *testing.T) {
 				assert.Equal(t, transport.RequestTypeAppClientConfigurationChange, batch[0].RequestType)
 				assert.Equal(t, transport.RequestTypeAppExtendedHeartBeat, batch[1].RequestType)
 
-				assert.Len(t, batch[1].Payload.(transport.AppExtendedHeartbeat).Configuration, 0)
+				extHB := batch[1].Payload.(transport.AppExtendedHeartbeat)
+				require.Len(t, extHB.Configuration, 1)
+				assert.Equal(t, "key", extHB.Configuration[0].Name)
+				assert.Equal(t, "value", extHB.Configuration[0].Value)
+			},
+		},
+		{
+			name: "extended-heartbeat-config-multiple",
+			clientConfig: ClientConfig{
+				ExtendedHeartbeatInterval: time.Nanosecond,
+			},
+			when: func(c *client) {
+				c.RegisterAppConfigs(
+					Configuration{Name: "key1", Value: "value1", Origin: OriginDefault},
+					Configuration{Name: "key2", Value: "value2", Origin: OriginEnvVar},
+				)
+
+				time.Sleep(time.Microsecond)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.MessageBatch{}, payload)
+				batch := payload.(transport.MessageBatch)
+				require.Len(t, batch, 2)
+				assert.Equal(t, transport.RequestTypeAppClientConfigurationChange, batch[0].RequestType)
+				assert.Equal(t, transport.RequestTypeAppExtendedHeartBeat, batch[1].RequestType)
+
+				extHB := batch[1].Payload.(transport.AppExtendedHeartbeat)
+				require.Len(t, extHB.Configuration, 2)
+				configMap := make(map[string]transport.ConfKeyValue)
+				for _, c := range extHB.Configuration {
+					configMap[c.Name] = c
+				}
+				assert.Equal(t, "value1", configMap["key1"].Value)
+				assert.Equal(t, "value2", configMap["key2"].Value)
+			},
+		},
+		{
+			name: "extended-heartbeat-config-dedup",
+			clientConfig: ClientConfig{
+				ExtendedHeartbeatInterval: time.Nanosecond,
+			},
+			when: func(c *client) {
+				c.RegisterAppConfigs(
+					Configuration{Name: "key1", Value: "original", Origin: OriginDefault},
+				)
+				c.RegisterAppConfigs(
+					Configuration{Name: "key1", Value: "updated", Origin: OriginDefault},
+				)
+
+				time.Sleep(time.Microsecond)
+			},
+			expect: func(t *testing.T, payloads []transport.Payload) {
+				payload := payloads[0]
+				require.IsType(t, transport.MessageBatch{}, payload)
+				batch := payload.(transport.MessageBatch)
+
+				var extHB transport.AppExtendedHeartbeat
+				for _, msg := range batch {
+					if msg.RequestType == transport.RequestTypeAppExtendedHeartBeat {
+						extHB = msg.Payload.(transport.AppExtendedHeartbeat)
+					}
+				}
+
+				require.Len(t, extHB.Configuration, 1)
+				assert.Equal(t, "key1", extHB.Configuration[0].Name)
+				assert.Equal(t, "updated", extHB.Configuration[0].Value)
 			},
 		},
 		{
