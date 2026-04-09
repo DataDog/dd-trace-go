@@ -337,12 +337,8 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			}
 			link.Tracestate = trace.propagatingTag(tracestateHeader)
 		}
-
-		// NOTE: Span links from the incoming trace context do not need to be carried over.
 		ctx.spanLinks = []SpanLink{link}
 
-		// NOTE: All baggage items from the incoming trace context.
-		// TODO: Copy or reference? Using copy to avoid shared state issues.
 		if incomingCtx.baggage != nil {
 			ctx.baggage = make(map[string]string, len(incomingCtx.baggage))
 			maps.Copy(ctx.baggage, incomingCtx.baggage)
