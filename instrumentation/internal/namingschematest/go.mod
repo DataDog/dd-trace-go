@@ -14,7 +14,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.6.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.7.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.9.0-dev
 	github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2 v2.6.0-dev.1
@@ -32,6 +32,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.6.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/consul/v2 v2.6.0-dev.1
@@ -103,6 +104,8 @@ require (
 	google.golang.org/api v0.258.0
 	google.golang.org/grpc v1.79.3
 	gopkg.in/olivere/elastic.v5 v5.0.84
+	gorm.io/driver/postgres v1.5.5
+	gorm.io/gorm v1.25.12
 )
 
 require (
@@ -239,6 +242,7 @@ require (
 	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -462,3 +466,5 @@ replace github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../../cont
 replace github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../../contrib/valkey-io/valkey-go
 
 replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 => ../../../contrib/valyala/fasthttp
+
+replace github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 => ../../../contrib/gorm.io/gorm.v1

@@ -140,7 +140,9 @@ type (
 	// It is used to annotate output of retrieval spans.
 	RetrievedDocument = illmobs.RetrievedDocument
 
-	// Prompt represents a structured prompt template used with LLMs.
+	// Prompt represents a structured prompt template used with LLM spans.
+	// Template and ChatTemplate are mutually exclusive; if both are set, Template is dropped
+	// and ChatTemplate is used.
 	Prompt = illmobs.Prompt
 
 	// ToolDefinition represents the definition of a tool/function that an LLM can call.

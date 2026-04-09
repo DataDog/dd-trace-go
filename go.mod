@@ -13,7 +13,6 @@ require (
 	github.com/DataDog/datadog-go/v5 v5.8.3
 	github.com/DataDog/go-libddwaf/v4 v4.9.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d
-	github.com/DataDog/gostackparse v0.7.0
 	github.com/DataDog/sketches-go v1.4.8
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
