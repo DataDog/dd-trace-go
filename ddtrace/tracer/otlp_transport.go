@@ -32,7 +32,7 @@ func newOTLPTransport(client *http.Client, endpoint string, headers map[string]s
 func (t *otlpTransport) send(data []byte) error {
 	req, err := http.NewRequest("POST", t.endpoint, bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %s", err)
+		return fmt.Errorf("cannot create http request: %w", err)
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)
