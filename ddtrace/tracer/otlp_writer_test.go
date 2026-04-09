@@ -72,12 +72,24 @@ func newTestOTLPWriter(t *testing.T, srv *testOTLPServer, opts ...StartOption) *
 		c.ddTransport = &simpleTransport{}
 	})...)
 	require.NoError(t, err)
+	resource := buildResource(cfg.internalConfig)
+	scope := &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag}
+	baseSize := proto.Size(&otlptrace.TracesData{
+		ResourceSpans: []*otlptrace.ResourceSpans{{
+			Resource: resource,
+			ScopeSpans: []*otlptrace.ScopeSpans{{
+				Scope: scope,
+			}},
+		}},
+	})
 	return &otlpTraceWriter{
 		config:    cfg,
 		transport: newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"}),
-		resource:  buildResource(cfg.internalConfig),
-		scope:     &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag},
+		resource:  resource,
+		scope:     scope,
 		spans:     make([]*otlptrace.Span, 0),
+		buffSize:  baseSize,
+		baseSize:  baseSize,
 		climit:    make(chan struct{}, concurrentConnectionLimit),
 	}
 }
@@ -342,6 +354,73 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 		}
 	}
 	assert.Equal(t, numAdders*spansPerAdder, totalSpans)
+}
+
+func TestOTLPWriterBuffSizeTracking(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+	w := newTestOTLPWriter(t, srv)
+
+	t.Run("initial buffSize equals baseSize", func(t *testing.T) {
+		w.mu.Lock()
+		assert.Equal(t, w.baseSize, w.buffSize)
+		assert.Greater(t, w.baseSize, 0)
+		w.mu.Unlock()
+	})
+
+	t.Run("add increases buffSize", func(t *testing.T) {
+		w.mu.Lock()
+		before := w.buffSize
+		w.mu.Unlock()
+
+		w.add([]*Span{newSpan("op", "svc", "res", 1, 1, 0)})
+
+		w.mu.Lock()
+		assert.Greater(t, w.buffSize, before)
+		w.mu.Unlock()
+	})
+
+	t.Run("flush resets buffSize to baseSize", func(t *testing.T) {
+		w.flush()
+		w.wg.Wait()
+
+		w.mu.Lock()
+		assert.Equal(t, w.baseSize, w.buffSize)
+		w.mu.Unlock()
+	})
+
+	t.Run("buffSize approximates actual marshal size", func(t *testing.T) {
+		spans := []*Span{
+			newSpan("op1", "svc", "res", 10, 10, 0),
+			newSpan("op2", "svc", "res", 20, 10, 10),
+			newSpan("op3", "svc", "res", 30, 10, 10),
+		}
+		w.add(spans)
+
+		w.mu.Lock()
+		estimated := w.buffSize
+		spansCopy := make([]*otlptrace.Span, len(w.spans))
+		copy(spansCopy, w.spans)
+		w.mu.Unlock()
+
+		actual := proto.Size(&otlptrace.TracesData{
+			ResourceSpans: []*otlptrace.ResourceSpans{{
+				Resource: w.resource,
+				ScopeSpans: []*otlptrace.ScopeSpans{{
+					Scope: w.scope,
+					Spans: spansCopy,
+				}},
+			}},
+		})
+		// The estimate is baseSize + sum(proto.Size(span)), which slightly
+		// undercounts because it doesn't include the varint length prefix for
+		// each span in the repeated field. Verify it's close but not over.
+		assert.InDelta(t, actual, estimated, float64(actual)*0.05,
+			"estimated %d should be within 5%% of actual %d", estimated, actual)
+
+		w.flush()
+		w.wg.Wait()
+	})
 }
 
 // TestOTLPWriterDoesNotReuseAgentHTTPClient verifies that the OTLP writer

@@ -31,17 +31,30 @@ type otlpTraceWriter struct {
 	scope     *otlpcommon.InstrumentationScope
 	spans     []*otlptrace.Span // +checklocks:mu
 	buffSize  int               // +checklocks:mu
+	baseSize  int
 	climit    chan struct{}
 	wg        sync.WaitGroup
 }
 
 func newOTLPTraceWriter(c *config) *otlpTraceWriter {
+	resource := buildResource(c.internalConfig)
+	scope := &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag}
+	baseSize := proto.Size(&otlptrace.TracesData{
+		ResourceSpans: []*otlptrace.ResourceSpans{{
+			Resource: resource,
+			ScopeSpans: []*otlptrace.ScopeSpans{{
+				Scope: scope,
+			}},
+		}},
+	})
 	return &otlpTraceWriter{
 		config:    c,
 		transport: newOTLPTransport(internal.DefaultHTTPClient(c.httpClientTimeout, false), c.internalConfig.OTLPTraceURL(), c.internalConfig.OTLPHeaders()),
-		resource:  buildResource(c.internalConfig),
-		scope:     &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag},
+		resource:  resource,
+		scope:     scope,
 		spans:     make([]*otlptrace.Span, 0),
+		buffSize:  baseSize,
+		baseSize:  baseSize,
 		climit:    make(chan struct{}, concurrentConnectionLimit),
 	}
 }
@@ -52,14 +65,7 @@ func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 func (w *otlpTraceWriter) reset() []*otlptrace.Span {
 	old := w.spans
 	w.spans = make([]*otlptrace.Span, 0)
-	w.buffSize = proto.Size(&otlptrace.TracesData{
-		ResourceSpans: []*otlptrace.ResourceSpans{{
-			Resource: w.resource,
-			ScopeSpans: []*otlptrace.ScopeSpans{{
-				Scope: w.scope,
-			}},
-		}},
-	})
+	w.buffSize = w.baseSize
 	return old
 }
 
