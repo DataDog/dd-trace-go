@@ -144,13 +144,13 @@ type Config struct {
 	traceID128BitEnabled bool
 }
 
-// productConflict enforces the cross-product gate for programmatic API calls.
+// checkProductConflict enforces the cross-product gate for programmatic API calls.
 // Returns true if the caller should abort the update (a different product already
 // claimed this field). No-op when product is not supplied or origin is not OriginCode.
 // The product parameter is variadic for ergonomic pass-through from Set* methods;
 // only the first value is used and callers should pass at most one.
 // Must be called while c.mu is held.
-func (c *Config) productConflict(field string, origin telemetry.Origin, value any, product ...Product) bool {
+func (c *Config) checkProductConflict(field string, origin telemetry.Origin, value any, product ...Product) bool {
 	if origin != telemetry.OriginCode || len(product) == 0 {
 		return false
 	}
@@ -327,7 +327,7 @@ func (c *Config) RawAgentURL() *url.URL {
 func (c *Config) SetAgentURL(u *url.URL, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_AGENT_URL", origin, u, product...) {
+	if c.checkProductConflict("DD_TRACE_AGENT_URL", origin, u, product...) {
 		return
 	}
 	c.agentURL = u
@@ -356,7 +356,7 @@ func (c *Config) Debug() bool {
 func (c *Config) SetDebug(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_DEBUG", origin, enabled, product...) {
+	if c.checkProductConflict("DD_TRACE_DEBUG", origin, enabled, product...) {
 		return
 	}
 	c.debug = enabled
@@ -372,7 +372,7 @@ func (c *Config) ProfilerEndpoints() bool {
 func (c *Config) SetProfilerEndpoints(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", origin, enabled, product...) {
+	if c.checkProductConflict("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", origin, enabled, product...) {
 		return
 	}
 	c.profilerEndpoints = enabled
@@ -388,7 +388,7 @@ func (c *Config) ProfilerHotspotsEnabled() bool {
 func (c *Config) SetProfilerHotspotsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict(traceprof.CodeHotspotsEnvVar, origin, enabled, product...) {
+	if c.checkProductConflict(traceprof.CodeHotspotsEnvVar, origin, enabled, product...) {
 		return
 	}
 	c.profilerHotspots = enabled
@@ -403,7 +403,7 @@ func (c *Config) RuntimeMetricsEnabled() bool {
 func (c *Config) SetRuntimeMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_RUNTIME_METRICS_ENABLED", origin, enabled, product...) {
+	if c.checkProductConflict("DD_RUNTIME_METRICS_ENABLED", origin, enabled, product...) {
 		return
 	}
 	c.runtimeMetrics = enabled
@@ -419,7 +419,7 @@ func (c *Config) RuntimeMetricsV2Enabled() bool {
 func (c *Config) SetRuntimeMetricsV2Enabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_RUNTIME_METRICS_V2_ENABLED", origin, enabled, product...) {
+	if c.checkProductConflict("DD_RUNTIME_METRICS_V2_ENABLED", origin, enabled, product...) {
 		return
 	}
 	c.runtimeMetricsV2 = enabled
@@ -435,7 +435,7 @@ func (c *Config) DataStreamsMonitoringEnabled() bool {
 func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_DATA_STREAMS_ENABLED", origin, enabled, product...) {
+	if c.checkProductConflict("DD_DATA_STREAMS_ENABLED", origin, enabled, product...) {
 		return
 	}
 	c.dataStreamsMonitoringEnabled = enabled
@@ -451,7 +451,7 @@ func (c *Config) LogStartup() bool {
 func (c *Config) SetLogStartup(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_STARTUP_LOGS", origin, enabled, product...) {
+	if c.checkProductConflict("DD_TRACE_STARTUP_LOGS", origin, enabled, product...) {
 		return
 	}
 	c.logStartup = enabled
@@ -467,7 +467,7 @@ func (c *Config) LogToStdout() bool {
 func (c *Config) SetLogToStdout(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("logToStdout", origin, enabled, product...) {
+	if c.checkProductConflict("logToStdout", origin, enabled, product...) {
 		return
 	}
 	c.logToStdout = enabled
@@ -482,7 +482,7 @@ func (c *Config) IsLambdaFunction() bool {
 func (c *Config) SetIsLambdaFunction(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("isLambdaFunction", origin, enabled, product...) {
+	if c.checkProductConflict("isLambdaFunction", origin, enabled, product...) {
 		return
 	}
 	c.isLambdaFunction = enabled
@@ -497,7 +497,7 @@ func (c *Config) GlobalSampleRate() float64 {
 func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_SAMPLE_RATE", origin, rate, product...) {
+	if c.checkProductConflict("DD_TRACE_SAMPLE_RATE", origin, rate, product...) {
 		return
 	}
 	c.globalSampleRate = rate
@@ -513,7 +513,7 @@ func (c *Config) TraceRateLimitPerSecond() float64 {
 func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_RATE_LIMIT", origin, rate, product...) {
+	if c.checkProductConflict("DD_TRACE_RATE_LIMIT", origin, rate, product...) {
 		return
 	}
 	c.traceRateLimitPerSecond = rate
@@ -532,7 +532,7 @@ func (c *Config) PartialFlushEnabled() (enabled bool, minSpans int) {
 func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_PARTIAL_FLUSH_ENABLED", origin, enabled, product...) {
+	if c.checkProductConflict("DD_TRACE_PARTIAL_FLUSH_ENABLED", origin, enabled, product...) {
 		return
 	}
 	c.partialFlushEnabled = enabled
@@ -542,7 +542,7 @@ func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin, p
 func (c *Config) SetPartialFlushMinSpans(minSpans int, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", origin, minSpans, product...) {
+	if c.checkProductConflict("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", origin, minSpans, product...) {
 		return
 	}
 	c.partialFlushMinSpans = minSpans
@@ -558,7 +558,7 @@ func (c *Config) DebugAbandonedSpans() bool {
 func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_DEBUG_ABANDONED_SPANS", origin, enabled, product...) {
+	if c.checkProductConflict("DD_TRACE_DEBUG_ABANDONED_SPANS", origin, enabled, product...) {
 		return
 	}
 	c.debugAbandonedSpans = enabled
@@ -574,7 +574,7 @@ func (c *Config) SpanTimeout() time.Duration {
 func (c *Config) SetSpanTimeout(timeout time.Duration, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_ABANDONED_SPAN_TIMEOUT", origin, timeout, product...) {
+	if c.checkProductConflict("DD_TRACE_ABANDONED_SPAN_TIMEOUT", origin, timeout, product...) {
 		return
 	}
 	c.spanTimeout = timeout
@@ -590,7 +590,7 @@ func (c *Config) DebugStack() bool {
 func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_DEBUG_STACK", origin, enabled, product...) {
+	if c.checkProductConflict("DD_TRACE_DEBUG_STACK", origin, enabled, product...) {
 		return
 	}
 	c.debugStack = enabled
@@ -606,7 +606,7 @@ func (c *Config) StatsComputationEnabled() bool {
 func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_STATS_COMPUTATION_ENABLED", origin, enabled, product...) {
+	if c.checkProductConflict("DD_TRACE_STATS_COMPUTATION_ENABLED", origin, enabled, product...) {
 		return
 	}
 	c.statsComputationEnabled = enabled
@@ -622,7 +622,7 @@ func (c *Config) LogDirectory() string {
 func (c *Config) SetLogDirectory(directory string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_LOG_DIRECTORY", origin, directory, product...) {
+	if c.checkProductConflict("DD_TRACE_LOG_DIRECTORY", origin, directory, product...) {
 		return
 	}
 	c.logDirectory = directory
@@ -644,7 +644,7 @@ func (c *Config) Hostname() string {
 func (c *Config) SetHostname(hostname string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_SOURCE_HOSTNAME", origin, hostname, product...) {
+	if c.checkProductConflict("DD_TRACE_SOURCE_HOSTNAME", origin, hostname, product...) {
 		return
 	}
 	c.hostname = hostname
@@ -667,7 +667,7 @@ func (c *Config) Version() string {
 func (c *Config) SetVersion(version string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_VERSION", origin, version, product...) {
+	if c.checkProductConflict("DD_VERSION", origin, version, product...) {
 		return
 	}
 	c.version = version
@@ -683,7 +683,7 @@ func (c *Config) Env() string {
 func (c *Config) SetEnv(env string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_ENV", origin, env, product...) {
+	if c.checkProductConflict("DD_ENV", origin, env, product...) {
 		return
 	}
 	c.env = env
@@ -783,7 +783,7 @@ func (c *Config) RetryInterval() time.Duration {
 func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_RETRY_INTERVAL", origin, interval, product...) {
+	if c.checkProductConflict("DD_TRACE_RETRY_INTERVAL", origin, interval, product...) {
 		return
 	}
 	c.retryInterval = interval
@@ -799,7 +799,7 @@ func (c *Config) ServiceName() string {
 func (c *Config) SetServiceName(name string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_SERVICE", origin, name, product...) {
+	if c.checkProductConflict("DD_SERVICE", origin, name, product...) {
 		return
 	}
 	c.serviceName = name
@@ -815,7 +815,7 @@ func (c *Config) CIVisibilityEnabled() bool {
 func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict(constants.CIVisibilityEnabledEnvironmentVariable, origin, enabled, product...) {
+	if c.checkProductConflict(constants.CIVisibilityEnabledEnvironmentVariable, origin, enabled, product...) {
 		return
 	}
 	c.ciVisibilityEnabled = enabled
@@ -831,7 +831,7 @@ func (c *Config) LogsOTelEnabled() bool {
 func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_LOGS_OTEL_ENABLED", origin, enabled, product...) {
+	if c.checkProductConflict("DD_LOGS_OTEL_ENABLED", origin, enabled, product...) {
 		return
 	}
 	c.logsOTelEnabled = enabled
@@ -847,7 +847,7 @@ func (c *Config) TraceProtocol() float64 {
 func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("DD_TRACE_AGENT_PROTOCOL_VERSION", origin, v, product...) {
+	if c.checkProductConflict("DD_TRACE_AGENT_PROTOCOL_VERSION", origin, v, product...) {
 		return
 	}
 	c.traceProtocol = v
@@ -869,7 +869,7 @@ func (c *Config) OTLPExportMode() bool {
 func (c *Config) SetOTLPExportMode(v bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.productConflict("OTEL_TRACES_EXPORTER", origin, v, product...) {
+	if c.checkProductConflict("OTEL_TRACES_EXPORTER", origin, v, product...) {
 		return
 	}
 	c.otlpExportMode = v

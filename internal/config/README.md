@@ -10,7 +10,7 @@ When migrating a configuration value from another package (e.g. `ddtrace/tracer`
 - **Initialize it in `loadConfig()`**: read from the config provider, which iterates over the following sources, in order, returning the default if no valid value found: local declarative config file, OTEL env vars, env vars, managed declarative config file
 - **Expose an accessor**: add a getter (and a setter if the value is updated at runtime).
 - **Report telemetry in setters**: setters should call `configtelemetry.Report(...)` with the correct origin.
-- **Add the cross-product gate**: every setter must call `c.productConflict(...)` as its first action after acquiring the lock (see below).
+- **Add the cross-product gate**: every setter must call `c.checkProductConflict(...)` as its first action after acquiring the lock (see below).
 - **Update callers**: replace reads/writes on local "config" structs with calls to the singleton (`internal/config.Get()`).
 - **Delete old state**: remove the migrated field from any legacy config structs once no longer referenced.
 - **Update tests**: tests should call the singleton setter/getter (or set env vars) rather than mutating legacy fields.
