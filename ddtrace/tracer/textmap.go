@@ -180,15 +180,15 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	cp := new(chainedPropagator)
 	cp.onlyExtractFirst = internal.BoolEnv(headerPropagationExtractFirst, false)
 	cp.propagationBehaviorExtract = env.Get(headerPropagationBehaviorExtract)
-
-	if cp.propagationBehaviorExtract != "continue" && cp.propagationBehaviorExtract != "restart" && cp.propagationBehaviorExtract != "ignore" {
-		log.Warn("unrecognized propagation behavior: %s\n. Defaulting to continue", cp.propagationBehaviorExtract)
+	switch cp.propagationBehaviorExtract {
+	case "continue", "restart", "ignore":
+		// valid
+	default:
+		if cp.propagationBehaviorExtract != "" {
+			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cp.propagationBehaviorExtract)
+		}
 		cp.propagationBehaviorExtract = "continue"
 	}
-	if cp.propagationBehaviorExtract == "" {
-		cp.propagationBehaviorExtract = "continue"
-	}
-
 	if len(propagators) > 0 {
 		cp.injectors = propagators
 		cp.extractors = propagators
