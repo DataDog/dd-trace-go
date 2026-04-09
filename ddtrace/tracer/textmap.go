@@ -301,7 +301,8 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 // be relayed in the returned SpanContext with a SpanLink.
 func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	// TODO: Return nil or an empty span context?
-	// If the propagation behavior is "ignore", return a new span context with no span links and no baggage.
+	// "ignore" propagation behavior returns a new span context with no span 
+	// links and no baggage.
 	if p.propagationBehaviorExtract == "ignore" {
 		return nil, nil
 	}
@@ -311,14 +312,9 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		return nil, err
 	}
 
-	// Continue the trace from incoming headers. Baggage is propagated.
-	if p.propagationBehaviorExtract == "continue" {
-		return incomingCtx, nil
-	}
-
-	// Start a new trace with a new trace ID and sampling decision.
-	// The incoming context is referenced via a span link.
-	// Baggage is propagated.
+	// "restart" propagation behavior starts a new trace with a new trace ID 
+	// and sampling decision. The incoming context is referenced via a span 
+	// link. Baggage is propagated.
 	if p.propagationBehaviorExtract == "restart" {
 		// TODO: Check if an empty span context will lead the tracer to generate a new trace ID and span ID when starting a new span.
 		ctx := &SpanContext{}
@@ -356,6 +352,8 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		return ctx, nil
 	}
 
+	// "continue" continues the trace from the incoming context. Baggage is
+	// propagated.
 	return incomingCtx, nil
 }
 
