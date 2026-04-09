@@ -25,7 +25,7 @@ func TestOTLPTransportSendSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr := newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+	tr := newOTLPTransport(srv.Client(), srv.URL, nil)
 	err := tr.send([]byte("hello"))
 	require.NoError(t, err)
 	assert.Equal(t, []byte("hello"), received)
@@ -39,16 +39,14 @@ func TestOTLPTransportSendHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	headers := map[string]string{
-		"Content-Type": "application/x-protobuf",
-		"Api-Key":      "secret",
-		"X-Custom":     "value",
-	}
-	tr := newOTLPTransport(srv.Client(), srv.URL, headers)
+	tr := newOTLPTransport(srv.Client(), srv.URL, map[string]string{
+		"Api-Key":  "secret",
+		"X-Custom": "value",
+	})
 	err := tr.send([]byte("data"))
 	require.NoError(t, err)
 
-	assert.Equal(t, "application/x-protobuf", gotHeaders.Get("Content-Type"))
+	assert.Equal(t, "application/x-protobuf", gotHeaders.Get("Content-Type"), "default Content-Type must be set")
 	assert.Equal(t, "secret", gotHeaders.Get("Api-Key"))
 	assert.Equal(t, "value", gotHeaders.Get("X-Custom"))
 }
