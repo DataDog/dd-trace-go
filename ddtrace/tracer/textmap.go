@@ -332,22 +332,15 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 				"context_headers": getPropagatorName(p.extractors[0]),
 			},
 		}
-			// Tracestate: func() string {
-			// 	if incomingCtx.trace != nil {
-			// 		return incomingCtx.trace.propagatingTag(tracestateHeader)
-			// 	}
-			// 	return ""
-			// }(),
-			// // TODO: What about the "new sampling decision"? If we prop the flag, isn't the sampling decision already set?
-			// Flags: func() uint32 {
-			// 	if incomingCtx.trace != nil {
-			// 		if p, _ := incomingCtx.SamplingPriority(); p > 0 {
-			// 			return 1
-			// 		}
-			// 	}
-			// 	return 0
-			// }(),
-	}
+		// TODO: +checklocksignore is needed here?
+		if trace := incomingCtx.trace; trace != nil {
+			if flags := uint32(*trace.priority); flags > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
+				link.Flags = 1
+			} else {
+				link.Flags = 0
+			}
+			link.Tracestate = trace.propagatingTag(tracestateHeader)
+		}
 
 		// NOTE: Span links from the incoming trace context do not need to be carried over.
 		ctx.spanLinks = []SpanLink{link}
