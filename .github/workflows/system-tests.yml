@@ -351,7 +351,7 @@ jobs:
           path: artifact.tar.gz
 
   tracer-release:
-    if: true # do this for testing for now
+    if: github.event_name == 'schedule'
     uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
     permissions:
       id-token: write
