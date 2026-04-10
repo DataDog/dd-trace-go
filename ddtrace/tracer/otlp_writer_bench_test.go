@@ -30,7 +30,7 @@ func newBenchOTLPWriter(b *testing.B) *otlpTraceWriter {
 	require.NoError(b, err)
 	return &otlpTraceWriter{
 		config:    cfg,
-		transport: newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"}),
+		transport: newOTLPTransport(srv.Client(), srv.URL, nil),
 		resource:  buildResource(cfg.internalConfig),
 		scope:     &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag},
 		spans:     make([]*otlptrace.Span, 0),

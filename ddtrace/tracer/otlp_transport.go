@@ -8,22 +8,23 @@ package tracer
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 )
 
 // otlpTransport sends protobuf-encoded OTLP payloads over HTTP.
 // It is the OTLP counterpart to httpTransport (which handles Datadog-protocol traffic).
 type otlpTransport struct {
-	client   *http.Client
-	endpoint string
-	headers  map[string]string
+	client        *http.Client
+	endpoint      string
+	customHeaders map[string]string
 }
 
-func newOTLPTransport(client *http.Client, endpoint string, headers map[string]string) *otlpTransport {
+func newOTLPTransport(client *http.Client, endpoint string, customHeaders map[string]string) *otlpTransport {
 	return &otlpTransport{
-		client:   client,
-		endpoint: endpoint,
-		headers:  headers,
+		client:        client,
+		endpoint:      endpoint,
+		customHeaders: customHeaders,
 	}
 }
 
@@ -31,16 +32,20 @@ func newOTLPTransport(client *http.Client, endpoint string, headers map[string]s
 func (t *otlpTransport) send(data []byte) error {
 	req, err := http.NewRequest("POST", t.endpoint, bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("cannot create http request: %s", err)
+		return fmt.Errorf("cannot create http request: %w", err)
 	}
-	for header, value := range t.headers {
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	for header, value := range t.customHeaders {
 		req.Header.Set(header, value)
 	}
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 	if code := resp.StatusCode; code >= 400 {
 		return fmt.Errorf("HTTP %d: %s", code, http.StatusText(code))
 	}
