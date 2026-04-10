@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"math"
 	"os"
 	"runtime/pprof"
 	rt "runtime/trace"
@@ -433,10 +432,6 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	}
 
 	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
-	// If globalSampleRate returns NaN, it means the environment variable was not set or valid.
-	if !math.IsNaN(c.internalConfig.GlobalSampleRate()) {
-		c.internalConfig.GlobalSampleRateConfig().SetOrigin(telemetry.OriginEnvVar)
-	}
 	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor

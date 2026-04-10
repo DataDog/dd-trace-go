@@ -161,7 +161,6 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
-	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", p.GetFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate))
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
@@ -174,6 +173,9 @@ func loadConfig() *Config {
 	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
+
+	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
+	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin)
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -419,7 +421,7 @@ func (c *Config) GlobalSampleRateConfig() *DynamicConfig[float64] {
 }
 
 func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin) {
-	c.globalSampleRate.update(rate, origin)
+	c.globalSampleRate.update(rate)
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 
