@@ -63,10 +63,26 @@ type supportedConfiguration struct {
 }
 
 type configurationImplementation struct {
-	Implementation string   `json:"implementation"`
-	Type           string   `json:"type"`
-	Default        *string  `json:"default"`
-	Aliases        []string `json:"aliases,omitempty"`
+	Implementation string       `json:"implementation"`
+	Type           string       `json:"type"`
+	Default        *string      `json:"default"`
+	Aliases        []string     `json:"aliases,omitempty"`
+	Config         *configBlock `json:"config,omitempty"`
+}
+
+type configBlock struct {
+	FieldName      string `json:"field_name"`
+	GoType         string `json:"go_type"`
+	Getter         string `json:"getter"`
+	Setter         string `json:"setter,omitempty"`
+	TelemetryKey   string `json:"telemetry_key"`
+	ProviderMethod string `json:"provider_method"`
+	Validator      string `json:"validator,omitempty"`
+	CustomInit     bool   `json:"custom_init,omitempty"`
+	CustomGetter   bool   `json:"custom_getter,omitempty"`
+	CustomSetter   bool   `json:"custom_setter,omitempty"`
+	NoTelemetry    bool   `json:"no_telemetry,omitempty"`
+	Doc            string `json:"doc,omitempty"`
 }
 
 // generate generates the supported configurations map from the supported configurations

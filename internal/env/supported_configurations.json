@@ -1,5 +1,5 @@
 {
-  "version": "2",
+  "version": "3",
   "supportedConfigurations": {
     "DD_ACTION_EXECUTION_ID": [
       {
@@ -242,7 +242,14 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "ciVisibilityAgentless",
+          "go_type": "bool",
+          "getter": "CIVisibilityAgentless",
+          "telemetry_key": "DD_CIVISIBILITY_AGENTLESS_ENABLED",
+          "provider_method": "GetBool"
+        }
       }
     ],
     "DD_CIVISIBILITY_AGENTLESS_URL": [
@@ -263,7 +270,16 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "ciVisibilityEnabled",
+          "go_type": "bool",
+          "getter": "CIVisibilityEnabled",
+          "setter": "SetCIVisibilityEnabled",
+          "telemetry_key": "DD_CIVISIBILITY_ENABLED",
+          "provider_method": "GetBool",
+          "doc": "controls if the tracer is loaded with CI Visibility mode"
+        }
       }
     ],
     "DD_CIVISIBILITY_FLAKY_RETRY_COUNT": [
@@ -333,7 +349,15 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "dataStreamsMonitoringEnabled",
+          "go_type": "bool",
+          "getter": "DataStreamsMonitoringEnabled",
+          "setter": "SetDataStreamsMonitoringEnabled",
+          "telemetry_key": "DD_DATA_STREAMS_ENABLED",
+          "provider_method": "GetBool"
+        }
       }
     ],
     "DD_DBM_PROPAGATION_MODE": [
@@ -361,14 +385,31 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "dynamicInstrumentationEnabled",
+          "go_type": "bool",
+          "getter": "DynamicInstrumentationEnabled",
+          "telemetry_key": "DD_DYNAMIC_INSTRUMENTATION_ENABLED",
+          "provider_method": "GetBool",
+          "doc": "controls if the target application can be modified by Dynamic Instrumentation"
+        }
       }
     ],
     "DD_ENV": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": "",
+        "config": {
+          "field_name": "env",
+          "go_type": "string",
+          "getter": "Env",
+          "setter": "SetEnv",
+          "telemetry_key": "DD_ENV",
+          "provider_method": "GetString",
+          "doc": "contains the environment that this application will run under"
+        }
       }
     ],
     "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED": [
@@ -585,7 +626,16 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "logsOTelEnabled",
+          "go_type": "bool",
+          "getter": "LogsOTelEnabled",
+          "setter": "SetLogsOTelEnabled",
+          "telemetry_key": "DD_LOGS_OTEL_ENABLED",
+          "provider_method": "GetBool",
+          "doc": "controls if the OpenTelemetry Logs SDK pipeline should be enabled"
+        }
       }
     ],
     "DD_METRICS_OTEL_ENABLED": [
@@ -613,7 +663,15 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "true"
+        "default": "true",
+        "config": {
+          "field_name": "profilerHotspots",
+          "go_type": "bool",
+          "getter": "ProfilerHotspotsEnabled",
+          "setter": "SetProfilerHotspotsEnabled",
+          "telemetry_key": "DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED",
+          "provider_method": "GetBool"
+        }
       }
     ],
     "DD_PROFILING_DEBUG_COMPRESSION_SETTINGS": [
@@ -641,7 +699,15 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "true"
+        "default": "true",
+        "config": {
+          "field_name": "profilerEndpoints",
+          "go_type": "bool",
+          "getter": "ProfilerEndpoints",
+          "setter": "SetProfilerEndpoints",
+          "telemetry_key": "DD_PROFILING_ENDPOINT_COLLECTION_ENABLED",
+          "provider_method": "GetBool"
+        }
       }
     ],
     "DD_PROFILING_ENDPOINT_COUNT_ENABLED": [
@@ -753,21 +819,46 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "runtimeMetrics",
+          "go_type": "bool",
+          "getter": "RuntimeMetricsEnabled",
+          "setter": "SetRuntimeMetricsEnabled",
+          "telemetry_key": "DD_RUNTIME_METRICS_ENABLED",
+          "provider_method": "GetBool"
+        }
       }
     ],
     "DD_RUNTIME_METRICS_V2_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "true"
+        "default": "true",
+        "config": {
+          "field_name": "runtimeMetricsV2",
+          "go_type": "bool",
+          "getter": "RuntimeMetricsV2Enabled",
+          "setter": "SetRuntimeMetricsV2Enabled",
+          "telemetry_key": "DD_RUNTIME_METRICS_V2_ENABLED",
+          "provider_method": "GetBool"
+        }
       }
     ],
     "DD_SERVICE": [
       {
         "implementation": "E",
         "type": "string",
-        "default": null
+        "default": null,
+        "config": {
+          "field_name": "serviceName",
+          "go_type": "string",
+          "getter": "ServiceName",
+          "setter": "SetServiceName",
+          "telemetry_key": "DD_SERVICE",
+          "provider_method": "GetString",
+          "doc": "specifies the name of this application"
+        }
       }
     ],
     "DD_SERVICE_EXTENSION_HEALTHCHECK_PORT": [
@@ -830,7 +921,18 @@
       {
         "implementation": "B",
         "type": "map",
-        "default": null
+        "default": null,
+        "config": {
+          "field_name": "serviceMappings",
+          "go_type": "map[string]string",
+          "getter": "ServiceMappings",
+          "setter": "SetServiceMapping",
+          "telemetry_key": "DD_SERVICE_MAPPING",
+          "provider_method": "GetMap",
+          "custom_getter": true,
+          "custom_setter": true,
+          "doc": "holds a set of service mappings to dynamically rename services"
+        }
       }
     ],
     "DD_SITE": [
@@ -949,7 +1051,15 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "true"
+        "default": "true",
+        "config": {
+          "field_name": "traceID128BitEnabled",
+          "go_type": "bool",
+          "getter": "TraceID128BitEnabled",
+          "telemetry_key": "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED",
+          "provider_method": "GetBool",
+          "doc": "controls if trace IDs are generated as 128-bits or 64-bits"
+        }
       }
     ],
     "DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED": [
@@ -963,7 +1073,16 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": "10m"
+        "default": "10m",
+        "config": {
+          "field_name": "spanTimeout",
+          "go_type": "time.Duration",
+          "getter": "SpanTimeout",
+          "setter": "SetSpanTimeout",
+          "telemetry_key": "DD_TRACE_ABANDONED_SPAN_TIMEOUT",
+          "provider_method": "GetDuration",
+          "doc": "how old a span can be before it should be logged as a possible misconfiguration"
+        }
       }
     ],
     "DD_TRACE_AGENT_PORT": [
@@ -977,14 +1096,37 @@
       {
         "implementation": "B",
         "type": "string",
-        "default": "1.0"
+        "default": "1.0",
+        "config": {
+          "field_name": "traceProtocol",
+          "go_type": "float64",
+          "getter": "TraceProtocol",
+          "setter": "SetTraceProtocol",
+          "telemetry_key": "DD_TRACE_AGENT_PROTOCOL_VERSION",
+          "provider_method": "GetStringWithValidator",
+          "validator": "validateTraceProtocolVersion",
+          "custom_init": true,
+          "doc": "Datadog trace protocol version"
+        }
       }
     ],
     "DD_TRACE_AGENT_URL": [
       {
         "implementation": "C",
         "type": "string",
-        "default": "http://localhost:8126"
+        "default": "http://localhost:8126",
+        "config": {
+          "field_name": "agentURL",
+          "go_type": "*url.URL",
+          "getter": "RawAgentURL",
+          "setter": "SetAgentURL",
+          "telemetry_key": "DD_TRACE_AGENT_URL",
+          "provider_method": "GetString",
+          "custom_init": true,
+          "custom_getter": true,
+          "custom_setter": true,
+          "doc": "trace agent URL resolved from DD_TRACE_AGENT_URL, DD_AGENT_HOST, DD_TRACE_AGENT_PORT"
+        }
       }
     ],
     "DD_TRACE_ANALYTICS_ENABLED": [
@@ -1054,14 +1196,32 @@
       {
         "implementation": "B",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "debug",
+          "go_type": "bool",
+          "getter": "Debug",
+          "setter": "SetDebug",
+          "telemetry_key": "DD_TRACE_DEBUG",
+          "provider_method": "GetBool",
+          "doc": "enables debug logging"
+        }
       }
     ],
     "DD_TRACE_DEBUG_ABANDONED_SPANS": [
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "debugAbandonedSpans",
+          "go_type": "bool",
+          "getter": "DebugAbandonedSpans",
+          "setter": "SetDebugAbandonedSpans",
+          "telemetry_key": "DD_TRACE_DEBUG_ABANDONED_SPANS",
+          "provider_method": "GetBool",
+          "doc": "controls if the tracer should log when old, open spans are found"
+        }
       }
     ],
     "DD_TRACE_DEBUG_SEELOG_WORKAROUND": [
@@ -1075,7 +1235,16 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "true"
+        "default": "true",
+        "config": {
+          "field_name": "debugStack",
+          "go_type": "bool",
+          "getter": "DebugStack",
+          "setter": "SetDebugStack",
+          "telemetry_key": "DD_TRACE_DEBUG_STACK",
+          "provider_method": "GetBool",
+          "doc": "enables the collection of debug stack traces globally"
+        }
       }
     ],
     "DD_TRACE_ECHO_ANALYTICS_ENABLED": [
@@ -1110,7 +1279,19 @@
       {
         "implementation": "A",
         "type": "array",
-        "default": ""
+        "default": "",
+        "config": {
+          "field_name": "featureFlags",
+          "go_type": "map[string]struct{}",
+          "getter": "FeatureFlags",
+          "setter": "SetFeatureFlags",
+          "telemetry_key": "DD_TRACE_FEATURES",
+          "provider_method": "GetString",
+          "custom_init": true,
+          "custom_getter": true,
+          "custom_setter": true,
+          "doc": "specifies any enabled feature flags"
+        }
       }
     ],
     "DD_TRACE_FIBER_ANALYTICS_ENABLED": [
@@ -1327,7 +1508,16 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "config": {
+          "field_name": "logDirectory",
+          "go_type": "string",
+          "getter": "LogDirectory",
+          "setter": "SetLogDirectory",
+          "telemetry_key": "DD_TRACE_LOG_DIRECTORY",
+          "provider_method": "GetString",
+          "doc": "directory for tracer logs"
+        }
       }
     ],
     "DD_TRACE_MCP_ANALYTICS_ENABLED": [
@@ -1383,28 +1573,67 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "partialFlushEnabled",
+          "go_type": "bool",
+          "getter": "PartialFlushEnabled",
+          "setter": "SetPartialFlushEnabled",
+          "telemetry_key": "DD_TRACE_PARTIAL_FLUSH_ENABLED",
+          "provider_method": "GetBool",
+          "custom_getter": true,
+          "doc": "whether the tracer should enable partial flushing"
+        }
       }
     ],
     "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS": [
       {
         "implementation": "B",
         "type": "int",
-        "default": "1000"
+        "default": "1000",
+        "config": {
+          "field_name": "partialFlushMinSpans",
+          "go_type": "int",
+          "getter": "PartialFlushEnabled",
+          "setter": "SetPartialFlushMinSpans",
+          "telemetry_key": "DD_TRACE_PARTIAL_FLUSH_MIN_SPANS",
+          "provider_method": "GetIntWithValidator",
+          "validator": "validatePartialFlushMinSpans",
+          "custom_getter": true
+        }
       }
     ],
     "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "peerServiceDefaultsEnabled",
+          "go_type": "bool",
+          "getter": "PeerServiceDefaultsEnabled",
+          "setter": "SetPeerServiceDefaultsEnabled",
+          "telemetry_key": "DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED",
+          "provider_method": "GetBool"
+        }
       }
     ],
     "DD_TRACE_PEER_SERVICE_MAPPING": [
       {
         "implementation": "A",
         "type": "map",
-        "default": ""
+        "default": "",
+        "config": {
+          "field_name": "peerServiceMappings",
+          "go_type": "map[string]string",
+          "getter": "PeerServiceMappings",
+          "setter": "SetPeerServiceMappings",
+          "telemetry_key": "DD_TRACE_PEER_SERVICE_MAPPING",
+          "provider_method": "GetMap",
+          "custom_getter": true,
+          "custom_setter": true,
+          "doc": "peer service name mappings"
+        }
       }
     ],
     "DD_TRACE_PROPAGATION_EXTRACT_FIRST": [
@@ -1439,7 +1668,17 @@
       {
         "implementation": "A",
         "type": "int",
-        "default": "100"
+        "default": "100",
+        "config": {
+          "field_name": "traceRateLimitPerSecond",
+          "go_type": "float64",
+          "getter": "TraceRateLimitPerSecond",
+          "setter": "SetTraceRateLimitPerSecond",
+          "telemetry_key": "DD_TRACE_RATE_LIMIT",
+          "provider_method": "GetFloatWithValidator",
+          "validator": "validateRateLimit",
+          "doc": "specifies the rate limit per second for traces"
+        }
       }
     ],
     "DD_TRACE_REDIGO_ANALYTICS_ENABLED": [
@@ -1474,7 +1713,16 @@
       {
         "implementation": "A",
         "type": "boolean",
-        "default": "false"
+        "default": "false",
+        "config": {
+          "field_name": "reportHostname",
+          "go_type": "bool",
+          "getter": "ReportHostname",
+          "telemetry_key": "DD_TRACE_REPORT_HOSTNAME",
+          "provider_method": "GetBool",
+          "custom_init": true,
+          "doc": "indicates whether hostname should be reported on spans"
+        }
       }
     ],
     "DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT": [
@@ -1502,14 +1750,33 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": "1ms"
+        "default": "1ms",
+        "config": {
+          "field_name": "retryInterval",
+          "go_type": "time.Duration",
+          "getter": "RetryInterval",
+          "setter": "SetRetryInterval",
+          "telemetry_key": "DD_TRACE_RETRY_INTERVAL",
+          "provider_method": "GetDuration",
+          "doc": "interval between agent connection retries"
+        }
       }
     ],
     "DD_TRACE_SAMPLE_RATE": [
       {
         "implementation": "C",
         "type": "decimal",
-        "default": "1"
+        "default": "1",
+        "config": {
+          "field_name": "globalSampleRate",
+          "go_type": "float64",
+          "getter": "GlobalSampleRate",
+          "setter": "SetGlobalSampleRate",
+          "telemetry_key": "DD_TRACE_SAMPLE_RATE",
+          "provider_method": "GetFloatWithValidator",
+          "validator": "validateSampleRate",
+          "doc": "holds the sample rate for the tracer"
+        }
       }
     ],
     "DD_TRACE_SAMPLING_RULES": [
@@ -1537,14 +1804,34 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "config": {
+          "field_name": "hostname",
+          "go_type": "string",
+          "getter": "Hostname",
+          "setter": "SetHostname",
+          "telemetry_key": "DD_TRACE_SOURCE_HOSTNAME",
+          "provider_method": "GetString",
+          "custom_init": true,
+          "custom_setter": true,
+          "doc": "automatically assigned from OS hostname or DD_TRACE_SOURCE_HOSTNAME"
+        }
       }
     ],
     "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA": [
       {
         "implementation": "B",
         "type": "string",
-        "default": "v0"
+        "default": "v0",
+        "config": {
+          "field_name": "spanAttributeSchemaVersion",
+          "go_type": "int",
+          "getter": "SpanAttributeSchemaVersion",
+          "telemetry_key": "DD_TRACE_SPAN_ATTRIBUTE_SCHEMA",
+          "provider_method": "GetInt",
+          "custom_init": true,
+          "doc": "span attribute schema version (0 or 1)"
+        }
       }
     ],
     "DD_TRACE_SQL_ANALYTICS_ENABLED": [
@@ -1565,14 +1852,32 @@
       {
         "implementation": "C",
         "type": "boolean",
-        "default": "true"
+        "default": "true",
+        "config": {
+          "field_name": "logStartup",
+          "go_type": "bool",
+          "getter": "LogStartup",
+          "setter": "SetLogStartup",
+          "telemetry_key": "DD_TRACE_STARTUP_LOGS",
+          "provider_method": "GetBool",
+          "doc": "when true, causes various startup info to be written when the tracer starts"
+        }
       }
     ],
     "DD_TRACE_STATS_COMPUTATION_ENABLED": [
       {
         "implementation": "B",
         "type": "boolean",
-        "default": "true"
+        "default": "true",
+        "config": {
+          "field_name": "statsComputationEnabled",
+          "go_type": "bool",
+          "getter": "StatsComputationEnabled",
+          "setter": "SetStatsComputationEnabled",
+          "telemetry_key": "DD_TRACE_STATS_COMPUTATION_ENABLED",
+          "provider_method": "GetBool",
+          "doc": "enables client-side stats computation (aka trace metrics)"
+        }
       }
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
@@ -1628,7 +1933,15 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": "",
+        "config": {
+          "field_name": "version",
+          "go_type": "string",
+          "getter": "Version",
+          "setter": "SetVersion",
+          "telemetry_key": "DD_VERSION",
+          "provider_method": "GetString"
+        }
       }
     ],
     "OTEL_BLRP_EXPORT_TIMEOUT": [
@@ -1754,14 +2067,32 @@
       {
         "implementation": "B",
         "type": "string",
-        "default": null
+        "default": null,
+        "config": {
+          "field_name": "otlpTraceURL",
+          "go_type": "string",
+          "getter": "OTLPTraceURL",
+          "telemetry_key": "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+          "provider_method": "GetString",
+          "custom_init": true,
+          "doc": "OTLP collector endpoint for traces"
+        }
       }
     ],
     "OTEL_EXPORTER_OTLP_TRACES_HEADERS": [
       {
         "implementation": "B",
         "type": "map",
-        "default": null
+        "default": null,
+        "config": {
+          "field_name": "otlpHeaders",
+          "go_type": "map[string]string",
+          "getter": "OTLPHeaders",
+          "telemetry_key": "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+          "provider_method": "GetMap",
+          "custom_init": true,
+          "doc": "resolved OTLP trace headers"
+        }
       }
     ],
     "OTEL_LOGS_EXPORTER": [
@@ -1824,7 +2155,17 @@
       {
         "implementation": "D",
         "type": "string",
-        "default": null
+        "default": null,
+        "config": {
+          "field_name": "otlpExportMode",
+          "go_type": "bool",
+          "getter": "OTLPExportMode",
+          "setter": "SetOTLPExportMode",
+          "telemetry_key": "OTEL_TRACES_EXPORTER",
+          "provider_method": "GetString",
+          "custom_init": true,
+          "doc": "indicates traces should be exported via OTLP"
+        }
       }
     ],
     "OTEL_TRACES_SAMPLER": [
