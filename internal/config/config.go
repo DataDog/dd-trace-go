@@ -161,7 +161,7 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
 	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
-	cfg.globalSampleRate = NewDynamicConfig("trace_sample_rate", p.GetFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate))
+	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", p.GetFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate))
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
@@ -419,7 +419,7 @@ func (c *Config) GlobalSampleRateConfig() *DynamicConfig[float64] {
 }
 
 func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin) {
-	c.globalSampleRate.Update(rate, origin)
+	c.globalSampleRate.update(rate, origin)
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 

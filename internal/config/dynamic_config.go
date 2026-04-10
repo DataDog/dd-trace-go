@@ -23,9 +23,9 @@ type DynamicConfig[T any] struct {
 	origin  telemetry.Origin
 }
 
-// NewDynamicConfig creates a DynamicConfig with the given telemetry name and initial value.
+// newDynamicConfig creates a DynamicConfig with the given telemetry name and initial value.
 // Both current and startup are set to val; origin defaults to OriginDefault.
-func NewDynamicConfig[T any](name string, val T) *DynamicConfig[T] {
+func newDynamicConfig[T any](name string, val T) *DynamicConfig[T] {
 	return &DynamicConfig[T]{
 		cfgName: name,
 		current: val,
@@ -41,9 +41,9 @@ func (dc *DynamicConfig[T]) Get() T {
 	return dc.current
 }
 
-// Update sets a new value if it differs from the current one.
+// update sets a new value if it differs from the current one.
 // Returns true if the value was changed.
-func (dc *DynamicConfig[T]) Update(val T, origin telemetry.Origin) bool {
+func (dc *DynamicConfig[T]) update(val T, origin telemetry.Origin) bool {
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	if reflect.DeepEqual(dc.current, val) {
@@ -54,8 +54,8 @@ func (dc *DynamicConfig[T]) Update(val T, origin telemetry.Origin) bool {
 	return true
 }
 
-// Reset restores the startup value. Returns true if the value was changed.
-func (dc *DynamicConfig[T]) Reset() bool {
+// reset restores the startup value. Returns true if the value was changed.
+func (dc *DynamicConfig[T]) reset() bool {
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	if reflect.DeepEqual(dc.current, dc.startup) {
@@ -71,9 +71,9 @@ func (dc *DynamicConfig[T]) Reset() bool {
 // Returns true if the value was changed.
 func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
 	if val != nil {
-		return dc.Update(*val, telemetry.OriginRemoteConfig)
+		return dc.update(*val, telemetry.OriginRemoteConfig)
 	}
-	return dc.Reset()
+	return dc.reset()
 }
 
 // SetOrigin sets the configuration origin.
