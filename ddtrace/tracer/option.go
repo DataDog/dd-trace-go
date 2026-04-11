@@ -221,12 +221,6 @@ type config struct {
 	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
 	spanAttributeSchemaVersion int
 
-	// peerServiceDefaultsEnabled indicates whether the peer.service tag calculation is enabled or not.
-	peerServiceDefaultsEnabled bool
-
-	// peerServiceMappings holds a set of service mappings to dynamically rename peer.service values.
-	peerServiceMappings map[string]string
-
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
@@ -350,16 +344,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	namingschema.LoadFromEnv()
 	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
 
-	// peer.service tag default calculation is enabled by default if using attribute schema >= 1
-	c.peerServiceDefaultsEnabled = true
-	if c.spanAttributeSchemaVersion == int(namingschema.SchemaV0) {
-		c.peerServiceDefaultsEnabled = internal.BoolEnv("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
-	}
-	c.peerServiceMappings = make(map[string]string)
-	if v := env.Get("DD_TRACE_PEER_SERVICE_MAPPING"); v != "" {
-		internal.ForEachStringTag(v, internal.DDTagsDelimiter, func(key, val string) { c.peerServiceMappings[key] = val })
-	}
-
 	// LLM Observability config
 	c.llmobs = llmobsconfig.Config{
 		Enabled:          internal.BoolEnv(envLLMObsEnabled, false),
@@ -393,27 +377,27 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.internalConfig.Env() == "" {
 		if v, ok := globalTags["env"]; ok {
 			if e, ok := v.(string); ok {
-				c.internalConfig.SetEnv(e, c.globalTags.Origin())
+				c.internalConfig.SetEnv(e, c.globalTags.Origin(), internalconfig.ProductTracer)
 			}
 		}
 	}
 	if c.internalConfig.Version() == "" {
 		if v, ok := globalTags["version"]; ok {
 			if ver, ok := v.(string); ok {
-				c.internalConfig.SetVersion(ver, c.globalTags.Origin())
+				c.internalConfig.SetVersion(ver, c.globalTags.Origin(), internalconfig.ProductTracer)
 			}
 		}
 	}
 	if c.internalConfig.ServiceName() == "" {
 		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
-				c.internalConfig.SetServiceName(s, c.globalTags.Origin())
+				c.internalConfig.SetServiceName(s, c.globalTags.Origin(), internalconfig.ProductTracer)
 				globalconfig.SetServiceName(s)
 			}
 		} else {
 			// There is not an explicit service set, default to binary name.
 			// In this case, don't set a global service name so the contribs continue using their defaults.
-			c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), internalconfig.OriginDefault)
+			c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), internalconfig.OriginDefault, internalconfig.ProductTracer)
 		}
 	} else {
 		globalconfig.SetServiceName(c.internalConfig.ServiceName())
@@ -475,7 +459,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if c.statsdClient == nil {
 		// configure statsd client
-		addr := resolveDogstatsdAddr(c.dogstatsdAddr, af)
+		addr := resolveDogstatsdAddr(c.dogstatsdAddr, af, defaultSocketDSD)
 		globalconfig.SetDogstatsdAddr(addr)
 		c.dogstatsdAddr = addr
 	}
@@ -544,41 +528,59 @@ func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers
 	return traceURL, datadogHeaders()
 }
 
-// resolveDogstatsdAddr resolves the Dogstatsd address to use, based on the user-defined
-// address and the agent-reported port. If the agent reports a port, it will be used
-// instead of the user-defined address' port. UDS paths are honored regardless of the
-// agent-reported port.
-func resolveDogstatsdAddr(addr string, af agentFeatures) string {
-	if addr == "" {
-		// no config defined address; use host and port from env vars
-		// or default to localhost:8125 if not set
-		addr = defaultDogstatsdAddr()
+// resolveDogstatsdAddr resolves the Dogstatsd address to use with the following
+// priority order:
+//  1. Explicitly configured address via WithDogstatsdAddr.
+//  2. Environment variables DD_DOGSTATSD_HOST (or DD_AGENT_HOST) and DD_DOGSTATSD_PORT.
+//  3. Auto-discovery: UDS socket at /var/run/datadog/dsd.socket, agent-reported port,
+//     or the default localhost:8125.
+func resolveDogstatsdAddr(configAddr string, af agentFeatures, socketDSDPath string) string {
+	// 1. User explicitly set address via WithDogstatsdAddr; honor it as-is.
+	if configAddr != "" {
+		return configAddr
 	}
-	agentport := af.StatsdPort
-	if agentport == 0 {
-		// the agent didn't report a port; use the already resolved address as
-		// features are loaded from the trace-agent, which might be not running
-		return addr
+
+	// 2. Build address from dogstatsd-specific environment variables.
+	// DD_AGENT_HOST is only used as a host fallback when DD_DOGSTATSD_HOST or
+	// DD_DOGSTATSD_PORT is set — on its own it does not trigger this path.
+	envHost := env.Get("DD_DOGSTATSD_HOST")
+	envPort := env.Get("DD_DOGSTATSD_PORT")
+	if envHost != "" || envPort != "" {
+		host := envHost
+		if host == "" {
+			host = env.Get("DD_AGENT_HOST")
+		}
+		if host == "" {
+			host = defaultHostname
+		}
+		// For the port, prefer the env var, then the agent-reported port
+		// (loaded from the trace-agent /info endpoint), then the default.
+		port := envPort
+		if port == "" && af.StatsdPort != 0 {
+			port = strconv.Itoa(af.StatsdPort)
+		} else if port == "" {
+			port = defaultStatsdPort
+		}
+		return net.JoinHostPort(host, port)
 	}
-	// the agent reported a port
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		// parsing the address failed; use the already resolved address as is
-		return addr
+
+	// 3. No user configuration at all — auto-discover.
+	// Check for the UDS socket first; this is the preferred transport when available.
+	if _, err := os.Stat(socketDSDPath); err == nil {
+		return "unix://" + socketDSDPath
 	}
-	if host == "unix" {
-		// no need to change the address because it's a UDS connection
-		// and these don't have ports
-		return addr
-	}
+	// For TCP, use DD_AGENT_HOST as the hostname if available, otherwise localhost.
+	host := env.Get("DD_AGENT_HOST")
 	if host == "" {
-		// no host was provided; use the default hostname
 		host = defaultHostname
 	}
-	// use agent-reported address if it differs from the user-defined TCP-based protocol URI
-	// we have a valid host:port address; replace the port because the agent knows better
-	addr = net.JoinHostPort(host, strconv.Itoa(agentport))
-	return addr
+	// Use the agent-reported port if available. Agent features are loaded from
+	// the trace-agent, which may not be running — in that case StatsdPort is 0.
+	if af.StatsdPort != 0 {
+		return net.JoinHostPort(host, strconv.Itoa(af.StatsdPort))
+	}
+	// Fall back to default port 8125.
+	return net.JoinHostPort(host, defaultStatsdPort)
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
@@ -586,26 +588,6 @@ func newStatsdClient(c *config) (internal.StatsdClient, error) {
 		return c.statsdClient, nil
 	}
 	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
-}
-
-// defaultDogstatsdAddr returns the default connection address for Dogstatsd.
-func defaultDogstatsdAddr() string {
-	envHost, envPort := env.Get("DD_DOGSTATSD_HOST"), env.Get("DD_DOGSTATSD_PORT")
-	if envHost == "" {
-		envHost = env.Get("DD_AGENT_HOST")
-	}
-	if _, err := os.Stat(defaultSocketDSD); err == nil && envHost == "" && envPort == "" {
-		// socket exists and user didn't specify otherwise via env vars
-		return "unix://" + defaultSocketDSD
-	}
-	host, port := defaultHostname, defaultStatsdPort
-	if envHost != "" {
-		host = envHost
-	}
-	if envPort != "" {
-		port = envPort
-	}
-	return net.JoinHostPort(host, port)
 }
 
 type integrationConfig struct {
@@ -979,7 +961,7 @@ func WithPropagator(p Propagator) StartOption {
 // WithService sets the default service name for the program.
 func WithService(name string) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetServiceName(name, internalconfig.OriginCode)
+		c.internalConfig.SetServiceName(name, internalconfig.OriginCode, internalconfig.ProductTracer)
 		globalconfig.SetServiceName(name)
 	}
 }
@@ -1050,7 +1032,7 @@ func WithAgentTimeout(timeout int) StartOption {
 // The default value is the environment variable DD_ENV, if it is set.
 func WithEnv(env string) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetEnv(env, telemetry.OriginCode)
+		c.internalConfig.SetEnv(env, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1066,17 +1048,14 @@ func WithServiceMapping(from, to string) StartOption {
 // Related documentation: https://docs.datadoghq.com/tracing/guide/inferred-service-opt-in/?tab=go#apm-tracer-configuration
 func WithPeerServiceDefaults(enabled bool) StartOption {
 	return func(c *config) {
-		c.peerServiceDefaultsEnabled = enabled
+		c.internalConfig.SetPeerServiceDefaultsEnabled(enabled, telemetry.OriginCode)
 	}
 }
 
 // WithPeerServiceMapping determines the value of the peer.service tag "from" to be renamed to service "to".
 func WithPeerServiceMapping(from, to string) StartOption {
 	return func(c *config) {
-		if c.peerServiceMappings == nil {
-			c.peerServiceMappings = make(map[string]string)
-		}
-		c.peerServiceMappings[from] = to
+		c.internalConfig.SetPeerServiceMapping(from, to, telemetry.OriginCode)
 	}
 }
 
@@ -1204,7 +1183,7 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 // span service name and config service name match. Do NOT use with WithUniversalVersion.
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
-		cfg.internalConfig.SetVersion(version, telemetry.OriginCode)
+		cfg.internalConfig.SetVersion(version, telemetry.OriginCode, internalconfig.ProductTracer)
 		cfg.universalVersion = false
 	}
 }
@@ -1214,7 +1193,7 @@ func WithServiceVersion(version string) StartOption {
 // See: WithService, WithServiceVersion. Do NOT use with WithServiceVersion.
 func WithUniversalVersion(version string) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetVersion(version, telemetry.OriginCode)
+		c.internalConfig.SetVersion(version, telemetry.OriginCode, internalconfig.ProductTracer)
 		c.universalVersion = true
 	}
 }
@@ -1295,11 +1274,11 @@ func WithPartialFlushing(numSpans int) StartOption {
 	}
 }
 
-// WithStatsComputation enables client-side stats computation, allowing
-// the tracer to compute stats from traces. This can reduce network traffic
-// to the Datadog Agent, and produce more accurate stats data.
-// This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED to true.
-// Client-side stats is off by default.
+// WithStatsComputation enables or disables client-side stats computation,
+// allowing the tracer to compute stats from traces. This can reduce network
+// traffic to the Datadog Agent, and produce more accurate stats data.
+// This can also be configured by setting DD_TRACE_STATS_COMPUTATION_ENABLED.
+// Client-side stats is on by default.
 func WithStatsComputation(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetStatsComputationEnabled(enabled, internalconfig.OriginCode)

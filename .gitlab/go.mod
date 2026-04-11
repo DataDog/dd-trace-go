@@ -1,3 +1,3 @@
 module github.com/DataDog/dd-trace-go/gitlab-ci
 
-go 1.22
+go 1.25.0

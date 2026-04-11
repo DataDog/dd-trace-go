@@ -80,18 +80,34 @@ type EvaluationConfig struct {
 
 // Prompt represents a prompt template used with LLM spans.
 type Prompt struct {
-	// Template is the prompt template string.
-	Template string `json:"template,omitempty"`
-	// ID is the unique identifier for the prompt.
+	// ID is the unique identifier for the prompt within the ML app.
 	ID string `json:"id,omitempty"`
 	// Version is the version of the prompt.
 	Version string `json:"version,omitempty"`
+	// Label is the deployment label (e.g., "production", "staging").
+	Label string `json:"label,omitempty"`
+	// Template is the prompt template string.
+	// Mutually exclusive with ChatTemplate; if both are set, Template is dropped and ChatTemplate is used.
+	Template string `json:"template,omitempty"`
+	// ChatTemplate is a list of messages forming the prompt.
+	// Mutually exclusive with Template; if both are set, Template is dropped and ChatTemplate is used.
+	ChatTemplate []LLMMessage `json:"chat_template,omitempty"`
 	// Variables contains the variables used in the prompt template.
 	Variables map[string]string `json:"variables,omitempty"`
+	// Tags contains custom tags for the prompt.
+	Tags map[string]string `json:"tags,omitempty"`
 	// RAGContextVariables specifies which variables contain RAG context.
-	RAGContextVariables []string `json:"rag_context_variables,omitempty"`
+	RAGContextVariables []string `json:"_dd_context_variable_keys,omitempty"`
 	// RAGQueryVariables specifies which variables contain RAG queries.
-	RAGQueryVariables []string `json:"rag_query_variables,omitempty"`
+	RAGQueryVariables []string `json:"_dd_query_variable_keys,omitempty"`
+}
+
+// promptPayload is the JSON encoding shape for Prompt.
+// It exists as a separate type so that fields like MLApp, which are set internally
+// from the span context, cannot be set directly by users on the public Prompt type.
+type promptPayload struct {
+	Prompt
+	MLApp string `json:"ml_app,omitempty"`
 }
 
 // ToolDefinition represents a tool definition for LLM spans.
@@ -351,6 +367,13 @@ func (s *Span) Annotate(a SpanAnnotations) {
 			}
 			if a.Prompt.RAGQueryVariables == nil {
 				a.Prompt.RAGQueryVariables = []string{"question"}
+			}
+			if a.Prompt.ID == "" {
+				a.Prompt.ID = s.mlApp + "_unnamed-prompt"
+			}
+			if a.Prompt.Template != "" && len(a.Prompt.ChatTemplate) > 0 {
+				log.Warn("llmobs: both Template and ChatTemplate were provided in the prompt; Template will be dropped in favour of ChatTemplate")
+				a.Prompt.Template = ""
 			}
 			s.llmCtx.prompt = a.Prompt
 		}

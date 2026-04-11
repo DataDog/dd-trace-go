@@ -79,6 +79,7 @@ const (
 	PackageModelContextProtocolGoSDK Package = "modelcontextprotocol/go-sdk"
 
 	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
+	PackageAzureAPIMCallout               Package = "azure/apim-callout"
 	PackageEnvoyProxyGoControlPlane       Package = "envoyproxy/go-control-plane"
 	PackageHAProxyStreamProcessingOffload Package = "haproxy/stream-processing-offload"
 	PackageOS                             Package = "os"
@@ -800,6 +801,12 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageGormIOGormV1: {
 		TracedPackage: "gorm.io/gorm",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("gorm.db"),
+			},
+		},
 	},
 	PackageGorillaMux: {
 		TracedPackage: "github.com/gorilla/mux",
@@ -835,6 +842,9 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("valkey.client"),
 			},
 		},
+	},
+	PackageAzureAPIMCallout: {
+		TracedPackage: "azure/apim-callout",
 	},
 	PackageEnvoyProxyGoControlPlane: {
 		TracedPackage: "github.com/envoyproxy/go-control-plane",

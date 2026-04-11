@@ -101,14 +101,23 @@ func (m *flagEvalMetrics) record(
 	flagKey string,
 	details of.InterfaceEvaluationDetails,
 ) {
+	// Use "unknown" as fallback for missing reason (matches OpenFeature SDK telemetry convention)
+	reason := string(details.Reason)
+	if reason == "" {
+		reason = "unknown"
+	} else {
+		reason = strings.ToLower(reason)
+	}
+
 	attrs := []attribute.KeyValue{
 		attrFlagKey.String(flagKey),
 		attrVariant.String(details.Variant),
-		attrReason.String(strings.ToLower(string(details.Reason))),
+		attrReason.String(reason),
 	}
 
+	// Use raw lowercase error code directly (no conversion function needed)
 	if details.ErrorCode != "" {
-		attrs = append(attrs, attrErrorType.String(errorCodeToTag(details.ErrorCode)))
+		attrs = append(attrs, attrErrorType.String(strings.ToLower(string(details.ErrorCode))))
 	}
 
 	if ak, ok := details.FlagMetadata[metadataAllocationKey].(string); ok && ak != "" {
@@ -116,20 +125,6 @@ func (m *flagEvalMetrics) record(
 	}
 
 	m.counter.Add(ctx, 1, otelmetric.WithAttributes(attrs...))
-}
-
-// errorCodeToTag maps OpenFeature ErrorCode values to low-cardinality metric tag values.
-func errorCodeToTag(code of.ErrorCode) string {
-	switch code {
-	case of.FlagNotFoundCode:
-		return "flag_not_found"
-	case of.TypeMismatchCode:
-		return "type_mismatch"
-	case of.ParseErrorCode:
-		return "parse_error"
-	default:
-		return "general"
-	}
 }
 
 // shutdown gracefully shuts down the meter provider.

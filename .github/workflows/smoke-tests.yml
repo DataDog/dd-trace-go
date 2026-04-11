@@ -29,6 +29,7 @@ env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -111,12 +112,18 @@ jobs:
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
       - name: Upload Coverage
@@ -152,12 +159,18 @@ jobs:
       - name: Supported Configurations Diff Check
         if: always()
         uses: ./.github/actions/supported_configurations_validation
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:1.25,arch:${{ runner.arch }},os:${{ runner.os }}
       - name: Upload Coverage

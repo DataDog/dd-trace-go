@@ -17,11 +17,23 @@ import (
 )
 
 func TestContextWithSpan(t *testing.T) {
-	want := &Span{spanID: 123}
-	ctx := ContextWithSpan(context.Background(), want)
-	got := ctx.Value(internal.ActiveSpanKey)
-	assert := assert.New(t)
-	assert.Equal(got, want)
+	t.Run("OK", func(t *testing.T) {
+		want := &Span{spanID: 123}
+		ctx := ContextWithSpan(context.Background(), want)
+		got := ctx.Value(internal.ActiveSpanKey)
+		assert := assert.New(t)
+		assert.Equal(got, want)
+	})
+
+	t.Run("nil context", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			want := &Span{spanID: 123}
+			ctx := ContextWithSpan(nil, want)
+			got := ctx.Value(internal.ActiveSpanKey)
+			assert := assert.New(t)
+			assert.Equal(got, want)
+		})
+	})
 }
 
 func TestSpanFromContext(t *testing.T) {

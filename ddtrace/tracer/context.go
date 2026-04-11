@@ -11,11 +11,17 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
 // ContextWithSpan returns a copy of the given context which includes the span s.
+// If ctx is nil, a new background context is created to avoid panicking.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
+	if ctx == nil {
+		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
+		ctx = context.Background()
+	}
 	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
 	return contextWithPropagatedLLMSpan(newCtx, s)
 }
