@@ -355,8 +355,6 @@ jobs:
     uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
     permissions:
       id-token: write
-      contents: read
-      packages: write
     with:
       library: golang
       ref: main
