@@ -57,6 +57,39 @@ func newDetailedSpanList(n int) spanList {
 	return list
 }
 
+// creates a list of n spans, populated with repetitive tags
+func newLowCardinalitySpanList(n int) spanList {
+	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
+	list := make([]*Span, n)
+	for i := range n {
+		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
+		list[i].start = fixedTime
+		list[i].service = "high-cardinality-string-value"
+		list[i].resource = "resource." + itoa[i%5+1]
+		list[i].SetTag("tag.1", "high-cardinality-string-value")
+		list[i].SetTag("tag.2", "high-cardinality-string-value")
+		list[i].SetTag("tag.3", "high-cardinality-string-value")
+		list[i].SetTag("tag.4", "high-cardinality-string-value")
+	}
+	return list
+}
+
+// creates a list of n spans, populated with many unique tags
+func newHighCardinalitySpanList(n int) spanList {
+	itoa := map[int]string{0: "0", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"}
+	list := make([]*Span, n)
+	for i := range n {
+		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
+		list[i].start = fixedTime
+		list[i].service = "service." + itoa[i%5+1]
+		list[i].resource = "resource." + itoa[i%5+1]
+		for i := range 50 {
+			list[i].SetTag("tag."+itoa[i%5+1], "value."+itoa[i%5+1])
+		}
+	}
+	return list
+}
+
 // TestPayloadIntegrity tests that whatever we push into the payload
 // allows us to read the same content as would have been encoded by
 // the codec.
@@ -915,4 +948,222 @@ func BenchmarkPayloadVersions(b *testing.B) {
 			}
 		})
 	}
+}
+
+func BenchmarkPayloads(b *testing.B) {
+	b.Run("v0.4", func(b *testing.B) {
+		b.Run("push/10spans", func(b *testing.B) {
+			p := newPayloadV04()
+			sl := newSpanList(10)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/1000spans", func(b *testing.B) {
+			p := newPayloadV04()
+			sl := newSpanList(1000)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/10_detailed_spans", func(b *testing.B) {
+			p := newPayloadV04()
+			sl := newDetailedSpanList(10)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/1000_detailed_spans", func(b *testing.B) {
+			p := newPayloadV04()
+			sl := newDetailedSpanList(1000)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/low_cardinality_spans", func(b *testing.B) {
+			p := newPayloadV04()
+			sl := newLowCardinalitySpanList(1000)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/high_cardinality_spans", func(b *testing.B) {
+			p := newPayloadV04()
+			sl := newHighCardinalitySpanList(1000)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("flush/1span", func(b *testing.B) {
+			p := newPayloadV04()
+
+			p.push(newSpanList(1))
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p.reset()
+				io.ReadAll(p)
+			}
+		})
+
+		b.Run("flush/100spans", func(b *testing.B) {
+			p := newPayloadV04()
+
+			p.push(newSpanList(100))
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p.reset()
+				io.ReadAll(p)
+			}
+		})
+
+		b.Run("flush/1000spans", func(b *testing.B) {
+			p := newPayloadV04()
+
+			p.push(newSpanList(1000))
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p.reset()
+				io.ReadAll(p)
+			}
+		})
+	})
+
+	b.Run("v1", func(b *testing.B) {
+		b.Run("push/10spans", func(b *testing.B) {
+			p := newPayloadV1()
+			sl := newSpanList(10)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/1000spans", func(b *testing.B) {
+			p := newPayloadV1()
+			sl := newSpanList(1000)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/10_detailed_spans", func(b *testing.B) {
+			p := newPayloadV1()
+			sl := newDetailedSpanList(10)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/1000_detailed_spans", func(b *testing.B) {
+			p := newPayloadV1()
+			sl := newDetailedSpanList(1000)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/low_cardinality_spans", func(b *testing.B) {
+			p := newPayloadV1()
+			sl := newLowCardinalitySpanList(1000)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("push/high_cardinality_spans", func(b *testing.B) {
+			p := newPayloadV1()
+			sl := newHighCardinalitySpanList(1000)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_, _ = p.push(sl)
+			}
+		})
+
+		b.Run("flush/1span", func(b *testing.B) {
+			p := newPayloadV1()
+
+			p.push(newSpanList(1))
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p.reset()
+				io.ReadAll(p)
+			}
+		})
+
+		b.Run("flush/100spans", func(b *testing.B) {
+			p := newPayloadV1()
+
+			p.push(newSpanList(100))
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p.reset()
+				io.ReadAll(p)
+			}
+		})
+
+		b.Run("flush/1000spans", func(b *testing.B) {
+			p := newPayloadV1()
+
+			p.push(newSpanList(1000))
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p.reset()
+				io.ReadAll(p)
+			}
+		})
+	})
+
+	// ... Add more payload versions here...
 }
