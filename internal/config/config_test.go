@@ -284,9 +284,16 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 			resetGlobalState()
 			defer resetGlobalState()
 
-			// Mock telemetry client
+			// Mock telemetry client. We need to set up expectations for Count/Rate/Gauge
+			// because loadConfigGenerated() triggers provider calls that report metrics
+			// via the OTEL config source.
 			telemetryClient := new(telemetrytest.MockClient)
 			telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
+			mockHandle := new(telemetrytest.MockMetricHandle)
+			mockHandle.On("Submit", mock.Anything).Return().Maybe()
+			telemetryClient.On("Count", mock.Anything, mock.Anything, mock.Anything).Return(mockHandle).Maybe()
+			telemetryClient.On("Rate", mock.Anything, mock.Anything, mock.Anything).Return(mockHandle).Maybe()
+			telemetryClient.On("Gauge", mock.Anything, mock.Anything, mock.Anything).Return(mockHandle).Maybe()
 			defer telemetry.MockClient(telemetryClient)()
 
 			cfg := Get()

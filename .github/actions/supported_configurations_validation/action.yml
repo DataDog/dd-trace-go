@@ -9,3 +9,4 @@ runs:
       run: |-
         git diff internal/env/supported_configurations.json
         go run ./scripts/configinverter/main.go check
+        cd scripts/configinverter && GOWORK=off go run main.go --input ../../internal/env/supported_configurations.json --config-output ../../internal/config check-config
