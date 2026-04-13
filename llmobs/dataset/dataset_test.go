@@ -1542,3 +1542,78 @@ func (s *mockDatasetState) getDataset(name string) (*llmobstransport.DatasetView
 	dataset, exists := s.datasets[name]
 	return dataset, exists
 }
+
+// TestLargeDatasetPushChunking reproduces the issue where pushing a large dataset (>5MB) triggers
+// bulk upload, which is rejected by the Datadog Agent EVP proxy with "read limit reached" (502).
+// The fix (matching dd-trace-py) is to never use bulk upload for initial dataset creation; instead,
+// chunk the records across multiple batch_update calls, each below batchUpdateThreshold.
+func TestLargeDatasetPushChunking(t *testing.T) {
+	var mu sync.Mutex
+	var bulkUploadCalled bool
+	var batchUpdateSizes []int
+
+	mockHandler := func(r *http.Request) *http.Response {
+		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+		path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
+
+		// Simulate the EVP proxy rejecting bulk uploads with a 502.
+		if strings.Contains(path, "/records/upload") {
+			mu.Lock()
+			bulkUploadCalled = true
+			mu.Unlock()
+			return &http.Response{
+				Status:     "502 Bad Gateway",
+				StatusCode: http.StatusBadGateway,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("read limit reached")),
+				Request:    r,
+			}
+		}
+
+		// Track the body size of each batch_update request.
+		if strings.HasSuffix(path, "/batch_update") {
+			body, err := io.ReadAll(r.Body)
+			if err == nil {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				mu.Lock()
+				batchUpdateSizes = append(batchUpdateSizes, len(body))
+				mu.Unlock()
+			}
+		}
+
+		return createMockHandler()(r)
+	}
+
+	tt := testTracer(t, testtracer.WithMockResponses(mockHandler))
+	defer tt.Stop()
+
+	// Build records whose total JSON size exceeds batchUpdateThreshold (5MB) so that
+	// the current code would attempt a bulk upload. Each record is ~900KB:
+	// 450KB input + 450KB expected output. Six records ≈ 5.4MB > 5MB.
+	const numRecords = 6
+	largeField := strings.Repeat("x", 450_000) // ~450KB
+
+	records := make([]Record, numRecords)
+	for i := range records {
+		records[i] = Record{
+			Input:          map[string]any{"data": largeField, "index": i},
+			ExpectedOutput: largeField,
+		}
+	}
+
+	ds, err := Create(context.Background(), "large-dataset", records)
+	require.NoError(t, err)
+	assert.Equal(t, numRecords, ds.Len())
+
+	mu.Lock()
+	calledBulkUpload := bulkUploadCalled
+	sizes := append([]int(nil), batchUpdateSizes...)
+	mu.Unlock()
+
+	assert.False(t, calledBulkUpload, "bulk upload should not be used; records should be chunked via batch_update")
+	require.NotEmpty(t, sizes, "expected at least one batch_update request")
+	for _, size := range sizes {
+		assert.LessOrEqual(t, size, batchUpdateThreshold,
+			"each batch_update request body (%d bytes) must be within the %d byte limit to avoid EVP proxy rejection", size, batchUpdateThreshold)
+	}
+}

@@ -383,8 +383,9 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// Use an empty context so each retry in the transport gets its own
+	// fresh per-request timeout rather than all retries sharing a single deadline.
+	ctx := context.Background()
 
 	var wg sync.WaitGroup
 
