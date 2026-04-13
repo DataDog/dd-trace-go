@@ -404,6 +404,8 @@ func (p *payloadV1) update() {
 func (p *payloadV1) encode() {
 	if p.st == nil {
 		p.st = newStringTable()
+	} else {
+		p.st.reset()
 	}
 	p.buf = encodeField(p.buf, p.bm, 2, p.containerID, p.st)
 	p.buf = encodeField(p.buf, p.bm, 3, p.languageName, p.st)
