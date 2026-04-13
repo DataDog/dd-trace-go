@@ -352,7 +352,7 @@ jobs:
 
   tracer-release:
     if: github.event_name == 'schedule'
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@1e5d6b7096279ca43ce4826fda3cc805635b63c1
     permissions:
       id-token: write
     with:
