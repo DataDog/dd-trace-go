@@ -70,10 +70,25 @@ Use the following AGENTS.md files when making specific changes:
 
 * [contrib/AGENTS.md](./contrib/AGENTS.md) -- for updating contribs/integrations
 * [ddtrace/AGENTS.md](./ddtrace/AGENTS.md) -- for updating core Datadog tracer implementations and features
-* [.github/AGENTS.md](./.github/AGENTS.md) -- for updating CI runs for EITHER GitHub OR GitLab
 * [internal/AGENTS.md](/internal/AGENTS.md) -- for updating features and implementations that are not customer facing
 
-## Updating AGENTS.md
+## General tips
+
+### Upgrading a dependency
+
+Since dd-trace-go is a multi-module project and dependencies should be synced across all submodules, ensure that any time a dependency is upgraded, it is set to the same version across all submodules.
+
+Afterwards, run [./scripts/fix_modules.sh](./scripts/fix_modules.sh) and [./scripts/generate.sh](./scripts/generate.sh) to ensure Orchestrion files are also up to date. 
+
+### Creating new files
+
+For new files, ensure that it has the correct copyright header starting from the first line.
+
+### Handling concurrency
+
+To prevent deadlocks or data races, be cautious with mutexes and synchronous code. Suggest and use, with approval, the command [checklocks](./.claude/commands/checklocks.md) to analyze and propose improvements.
+
+### Updating AGENTS.md
 
 This file should be short. Only update this file if:
 
