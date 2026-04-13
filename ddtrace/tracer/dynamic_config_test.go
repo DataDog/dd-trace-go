@@ -237,7 +237,7 @@ func TestDynamicInstrumentationRCStateMutex(t *testing.T) {
 // fields remain on the tracer's config struct. When the count reaches 0, the test
 // fails to signal that dynamic_config.go and this test file should be deleted.
 func TestDynamicConfigFieldsRemaining(t *testing.T) {
-	typ := reflect.TypeOf(config{})
+	typ := reflect.TypeFor[config]()
 	var remaining int
 	for i := 0; i < typ.NumField(); i++ {
 		if strings.HasPrefix(typ.Field(i).Type.Name(), "dynamicConfig[") {

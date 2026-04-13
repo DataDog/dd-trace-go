@@ -10,9 +10,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestDynamicConfig(t *testing.T) {
@@ -134,7 +135,7 @@ func TestDynamicConfig(t *testing.T) {
 		dc := newDynamicConfig("test", 0, telemetry.OriginDefault)
 		var wg sync.WaitGroup
 
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			wg.Add(2)
 			go func(v int) {
 				defer wg.Done()
