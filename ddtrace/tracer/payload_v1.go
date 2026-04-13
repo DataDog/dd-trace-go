@@ -454,7 +454,7 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 			buf = v.encode(buf, st)
 		}
 	default:
-		log.Warn("failed to serialize unsupported fieldValue type for field %d", fieldID)
+		warnUnsupportedValue(fieldID)
 		buf = st.serialize(serializationFailed, buf)
 	}
 	return buf
