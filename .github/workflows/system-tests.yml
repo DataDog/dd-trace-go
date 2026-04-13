@@ -350,15 +350,11 @@ jobs:
           name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
           path: artifact.tar.gz
 
-  # Temporarily skipped until system tests enable dd-sts for test optimization
   tracer-release:
-    if: false
-    needs: warm-repo-cache
+    if: github.event_name == 'schedule'
     uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
-    secrets:
-      DD_API_KEY: "invalid_key_but_this_is_fine"
-      TEST_OPTIMIZATION_API_KEY: "invalid_key_but_this_is_fine"
     permissions:
+      id-token: write
       contents: read
       packages: write
     with:
