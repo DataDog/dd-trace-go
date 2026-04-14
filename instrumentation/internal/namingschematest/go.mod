@@ -90,7 +90,7 @@ require (
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/lib/pq v1.11.1
 	github.com/redis/go-redis/v9 v9.7.3
-	github.com/redis/rueidis v1.0.72
+	github.com/redis/rueidis v1.0.74
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/stretchr/testify v1.11.1
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
