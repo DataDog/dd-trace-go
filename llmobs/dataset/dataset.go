@@ -513,10 +513,7 @@ func (d *Dataset) Push(ctx context.Context) error {
 
 		var lastVersion int
 		for i := 0; i < len(insert); i += chunkSize {
-			end := i + chunkSize
-			if end > len(insert) {
-				end = len(insert)
-			}
+			end := min(i+chunkSize, len(insert))
 			chunkInsert := insert[i:end]
 			chunkOldIDs := insertOldIDs[i:end]
 			chunkNum := (i / chunkSize) + 1
