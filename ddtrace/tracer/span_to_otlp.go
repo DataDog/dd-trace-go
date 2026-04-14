@@ -19,6 +19,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
+// Derived from the default max attributes count for OTLP spans.
+// See https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#attribute-limits
 const maxAttributesCount = 128
 
 // -----------------------------------------------------------------------------
