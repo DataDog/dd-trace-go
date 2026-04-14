@@ -269,7 +269,7 @@ func otlpIntValue(i int64) *otlpcommon.AnyValue {
 }
 
 func otlpArrayValue(arr *spanEventArrayAttribute) *otlpcommon.AnyValue {
-	if arr == nil || len(arr.Values) == 0 {
+	if arr == nil {
 		return &otlpcommon.AnyValue{}
 	}
 	values := make([]*otlpcommon.AnyValue, 0, len(arr.Values))
@@ -292,6 +292,10 @@ func anyToOTLPValue(v any) *otlpcommon.AnyValue {
 		return otlpBoolValue(val)
 	case int64:
 		return otlpIntValue(val)
+	case uint64:
+		return otlpIntValue(int64(val))
+	case float32:
+		return otlpDoubleValue(float64(val))
 	case float64:
 		return otlpDoubleValue(val)
 	case []any:
