@@ -453,6 +453,16 @@ func TestAnyToOTLPValue(t *testing.T) {
 		assert.Equal(t, int64(42), av.GetIntValue())
 	})
 
+	t.Run("uint64", func(t *testing.T) {
+		av := anyToOTLPValue(uint64(64))
+		assert.Equal(t, int64(64), av.GetIntValue())
+	})
+
+	t.Run("float32", func(t *testing.T) {
+		av := anyToOTLPValue(float32(2.5))
+		assert.InDelta(t, 2.5, av.GetDoubleValue(), 1e-6)
+	})
+
 	t.Run("float64", func(t *testing.T) {
 		av := anyToOTLPValue(3.14)
 		assert.Equal(t, 3.14, av.GetDoubleValue())

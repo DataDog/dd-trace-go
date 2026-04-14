@@ -819,6 +819,13 @@
         "default": "localhost.key"
       }
     ],
+    "DD_SERVICE_EXTENSION_UDS_PATH": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_SERVICE_MAPPING": [
       {
         "implementation": "B",
@@ -1258,6 +1265,27 @@
         "implementation": "B",
         "type": "string",
         "default": "500-599"
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
       }
     ],
     "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": [

@@ -60,7 +60,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "debug_stack_enabled", Value: c.internalConfig.DebugStack()},
 		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspotsEnabled()},
 		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
-		{Name: "trace_peer_service_defaults_enabled", Value: c.peerServiceDefaultsEnabled},
+		{Name: "trace_peer_service_defaults_enabled", Value: c.internalConfig.PeerServiceDefaultsEnabled()},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
 		{Name: "trace_enabled", Value: traceEnabled, Origin: traceEnabledOrigin},
 		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
@@ -71,7 +71,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "span_sample_rules", Value: c.spanRules},
 	}
 	var peerServiceMapping []string
-	for key, value := range c.peerServiceMappings {
+	for key, value := range c.internalConfig.PeerServiceMappings() {
 		peerServiceMapping = append(peerServiceMapping, fmt.Sprintf("%s:%s", key, value))
 	}
 	telemetryConfigs = append(telemetryConfigs,

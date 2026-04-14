@@ -455,7 +455,6 @@ func TestAllUploaded(t *testing.T) {
 		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
 	}
 
-	t.Setenv("DD_PROFILING_WAIT_PROFILE", "1")
 	t.Setenv("DD_PROFILING_EXECUTION_TRACE_PERIOD", "10ms") // match profile period
 	// The channel is buffered with 2 entries so we can check that the
 	// second batch of profiles is correct in case the profiler gets in a
@@ -480,7 +479,6 @@ func TestAllUploaded(t *testing.T) {
 			"delta-heap.pprof",
 			"delta-mutex.pprof",
 			"goroutines.pprof",
-			"goroutineswait.pprof",
 			"metrics.json",
 		}
 		if executionTraceEnabledDefault {

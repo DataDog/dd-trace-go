@@ -19,6 +19,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
+// Derived from the default max attributes count for OTLP spans.
+// See https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#attribute-limits
 const maxAttributesCount = 128
 
 // -----------------------------------------------------------------------------
@@ -230,7 +232,9 @@ func convertEventAttributes(ddAttributes map[string]*spanEventAttribute) []*otlp
 		case spanEventAttributeTypeInt:
 			out = append(out, otlpKeyValue(key, otlpIntValue(value.IntValue)))
 		case spanEventAttributeTypeArray:
-			out = append(out, otlpKeyValue(key, otlpArrayValue(value.ArrayValue)))
+			if kv := otlpKeyValue(key, otlpArrayValue(value.ArrayValue)); kv != nil {
+				out = append(out, kv)
+			}
 		}
 	}
 	return out
@@ -269,8 +273,8 @@ func otlpIntValue(i int64) *otlpcommon.AnyValue {
 }
 
 func otlpArrayValue(arr *spanEventArrayAttribute) *otlpcommon.AnyValue {
-	if arr == nil || len(arr.Values) == 0 {
-		return &otlpcommon.AnyValue{}
+	if arr == nil {
+		return nil
 	}
 	values := make([]*otlpcommon.AnyValue, 0, len(arr.Values))
 	for _, v := range arr.Values {
@@ -292,6 +296,10 @@ func anyToOTLPValue(v any) *otlpcommon.AnyValue {
 		return otlpBoolValue(val)
 	case int64:
 		return otlpIntValue(val)
+	case uint64:
+		return otlpIntValue(int64(val))
+	case float32:
+		return otlpDoubleValue(float64(val))
 	case float64:
 		return otlpDoubleValue(val)
 	case []any:
