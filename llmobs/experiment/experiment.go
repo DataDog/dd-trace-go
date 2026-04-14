@@ -365,7 +365,7 @@ func (e *Experiment) updateStatus(ctx context.Context, ll *illmobs.LLMObs, statu
 		return
 	}
 	if err := ll.Transport.UpdateExperimentStatus(ctx, e.id, status, errSummary); err != nil {
-		log.Debug("llmobs: failed to update experiment %s status to %q: %v", e.id, status, err)
+		log.Debug("llmobs: failed to update experiment %s status to %q: %v", e.id, status, err.Error())
 	}
 }
 
