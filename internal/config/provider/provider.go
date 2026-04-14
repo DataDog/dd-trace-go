@@ -150,16 +150,8 @@ func (p *Provider) GetFloat(key string, def float64) float64 {
 }
 
 func (p *Provider) GetFloatWithValidator(key string, def float64, validate func(float64) bool) float64 {
-	return get(p, key, def, func(v string) (float64, bool) {
-		floatVal, err := strconv.ParseFloat(v, 64)
-		if err == nil {
-			if validate != nil && !validate(floatVal) {
-				return 0, false
-			}
-			return floatVal, true
-		}
-		return 0, false
-	})
+	v, _ := p.GetFloatWithValidatorOrigin(key, def, validate)
+	return v
 }
 
 // GetFloatWithValidatorOrigin is like GetFloatWithValidator but also returns the
