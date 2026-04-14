@@ -2091,7 +2091,7 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 	largeContent := strings.Repeat("x", 1_700_000)
 
 	ctx := context.Background()
-	for range numSpans {
+	for i := range numSpans {
 		span, _ := ll.StartSpan(ctx, llmobs.SpanKindTask, fmt.Sprintf("span-%d", i), llmobs.StartSpanConfig{})
 		span.Annotate(llmobs.SpanAnnotations{InputText: largeContent})
 		span.Finish(llmobs.FinishSpanConfig{})
