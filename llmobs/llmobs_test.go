@@ -499,7 +499,6 @@ func TestSpanAnnotations(t *testing.T) {
 	})
 	t.Run("with-annotated-prompt", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-prompt")
 		span.AnnotateLLMIO(nil, nil,
@@ -510,27 +509,25 @@ func TestSpanAnnotations(t *testing.T) {
 		)
 		span.Finish()
 
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		inputMeta, ok := spans[0].Meta["input"].(map[string]any)
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-llm-prompt")
+		inputMeta, ok := span0.Meta["input"].(map[string]any)
 		require.True(t, ok)
 		assert.NotNil(t, inputMeta["prompt"])
 	})
 	t.Run("with-annotated-intent", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartToolSpan(ctx, "test-tool-intent")
 		span.Annotate(llmobs.WithAnnotatedIntent("fetch weather data for the user's location"))
 		span.Finish()
 
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.Equal(t, "fetch weather data for the user's location", spans[0].Meta["intent"])
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-tool-intent")
+		assert.Equal(t, "fetch weather data for the user's location", span0.Meta["intent"])
 	})
 	t.Run("with-annotated-tool-definitions", func(t *testing.T) {
 		tt := testTracer(t)
-		defer tt.Stop()
 
 		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-tool-definitions")
 		span.AnnotateLLMIO(nil, nil,
@@ -540,9 +537,9 @@ func TestSpanAnnotations(t *testing.T) {
 		)
 		span.Finish()
 
-		spans := tt.WaitForLLMObsSpans(t, 1)
-		require.Len(t, spans, 1)
-		assert.NotNil(t, spans[0].Meta["tool_definitions"])
+		tracer.Flush()
+		span0 := tt.RequireSpan(t, "test-llm-tool-definitions")
+		assert.NotNil(t, span0.Meta["tool_definitions"])
 	})
 }
 
