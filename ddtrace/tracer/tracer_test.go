@@ -1459,6 +1459,17 @@ func TestTracerEdgeSampler(t *testing.T) {
 }
 
 func TestOTLPExportMode(t *testing.T) {
+	t.Run("default mode uses agentTraceWriter and prioritySampler", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer()
+		assert.NoError(err)
+		defer tracer.Stop()
+		_, isAgentWriter := tracer.traceWriter.(*agentTraceWriter)
+		assert.True(isAgentWriter, "expected agentTraceWriter in default mode")
+		_, isPriority := tracer.defaultSampler.(*prioritySampler)
+		assert.True(isPriority, "expected prioritySampler in default mode")
+	})
+
 	t.Run("uses otlpTraceWriter and otelParentBasedAlwaysOnSampler", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
