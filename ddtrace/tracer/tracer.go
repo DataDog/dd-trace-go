@@ -276,7 +276,12 @@ func Start(opts ...StartOption) error {
 	cfg.ServiceName = t.config.internalConfig.ServiceName()
 	if t.config.agent.load().hasRemoteConfig {
 		if err := t.startRemoteConfig(cfg); err != nil {
-			log.Warn("Remote config startup error: %s", err.Error())
+			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
+				// RC is explicitly disabled via DD_REMOTE_CONFIGURATION_ENABLED=false; this is expected.
+				log.Debug("remoteconfig: client not started, remote configuration is disabled")
+			} else {
+				log.Warn("Remote config startup error: %s", err.Error())
+			}
 		}
 	}
 
@@ -374,6 +379,39 @@ func Extract(carrier any) (*SpanContext, error) {
 // If the tracer is not started, calling this function is a no-op.
 func Inject(ctx *SpanContext, carrier any) error {
 	return getGlobalTracer().Inject(ctx, carrier)
+}
+
+// StartSpanFromPropagatedContext starts a new span with the given operation name and set of options.
+// The carrier is the propagated context carrier — typically the headers of an incoming HTTP request
+// (e.g. tracer.HTTPHeadersCarrier(r.Header)) or a map of metadata from an incoming RPC. It must
+// implement TextMapReader so the tracer can read the trace propagation headers from it.
+// If the carrier contains a valid span context, the new span will be a child of the existing span.
+// If the carrier does not contain a valid span context (e.g. an untraced request), a root span is
+// started instead. The returned context contains the new span and should be used for downstream
+// propagation.
+//
+// Example (HTTP server handler):
+//
+//	func handler(w http.ResponseWriter, r *http.Request) {
+//		span, ctx := tracer.StartSpanFromPropagatedContext(r.Context(), "web.request", tracer.HTTPHeadersCarrier(r.Header))
+//		defer span.Finish()
+//		// use ctx for any child spans created within this handler
+//	}
+func StartSpanFromPropagatedContext[C TextMapReader](ctx gocontext.Context, operationName string, carrier C, opts ...StartSpanOption) (*Span, gocontext.Context) {
+	tr := getGlobalTracer()
+	spanCtx, err := tr.Extract(carrier)
+	if err != nil && log.DebugEnabled() {
+		log.Debug("StartSpanFromPropagatedContext: failed to extract span context: %v", err.Error())
+	}
+	if spanCtx != nil {
+		if links := spanCtx.SpanLinks(); len(links) > 0 {
+			opts = append(opts, WithSpanLinks(links))
+		}
+		opts = append(opts, func(cfg *StartSpanConfig) { cfg.Parent = spanCtx })
+	}
+	opts = append(opts, withContext(ctx))
+	span := tr.StartSpan(operationName, opts...)
+	return span, ContextWithSpan(ctx, span)
 }
 
 // SetUser associates user information to the current trace which the

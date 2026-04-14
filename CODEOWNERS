@@ -83,7 +83,7 @@
 /contrib/aws/datadog-lambda-go  @DataDog/apm-serverless @DataDog/serverless-aws
 
 # Feature Flagging Experiments
-/openfeature                    @DataDog/feature-flagging-and-experimentation-sdk @DataDog/asm-go
+/openfeature                    @DataDog/feature-flagging-and-experimentation-sdk
 
 # Database Monitoring
 ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go

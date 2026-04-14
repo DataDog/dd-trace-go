@@ -2102,6 +2102,34 @@ func TestDDAttributes(t *testing.T) {
 		// Verify Scope is set to "experiments"
 		assert.Equal(t, "experiments", llmSpan.DDAttributes.Scope, "DDAttributes.Scope should be 'experiments' for experiment spans")
 	})
+	t.Run("child-span-inherits-experiment-scope-from-baggage", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		experimentID := "test-experiment-456"
+		parentSpan, ctx := ll.StartExperimentSpan(ctx, "parent-experiment", experimentID, llmobs.StartSpanConfig{})
+		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child-llm", llmobs.StartSpanConfig{})
+
+		childSpan.Finish(llmobs.FinishSpanConfig{})
+		parentSpan.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 2)
+
+		var parentLLM, childLLM *llmobstransport.LLMObsSpanEvent
+		for i := range llmSpans {
+			if llmSpans[i].Name == "parent-experiment" {
+				parentLLM = &llmSpans[i]
+			} else if llmSpans[i].Name == "child-llm" {
+				childLLM = &llmSpans[i]
+			}
+		}
+
+		require.NotNil(t, parentLLM, "Parent LLM span should exist")
+		require.NotNil(t, childLLM, "Child LLM span should exist")
+
+		assert.Equal(t, "experiments", parentLLM.DDAttributes.Scope, "Parent scope should be 'experiments'")
+		assert.Equal(t, "experiments", childLLM.DDAttributes.Scope, "Child scope should be 'experiments' via baggage propagation")
+	})
 	t.Run("child-span-trace-ids", func(t *testing.T) {
 		tt, ll := testTracer(t)
 		ctx := context.Background()

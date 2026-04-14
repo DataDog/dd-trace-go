@@ -8,6 +8,7 @@ package appsec_test
 import (
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/go-libddwaf/v4"
@@ -18,6 +19,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -100,4 +103,34 @@ func TestAppsecEnabledTelemetry(t *testing.T) {
 
 		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{Name: config.EnvEnabled, Value: false, Origin: telemetry.OriginCode})
 	})
+}
+
+// TestNoAppsecErrorWhenRCDisabled reproduces the second issue from #4404:
+// When DD_REMOTE_CONFIGURATION_ENABLED=false and DD_APPSEC_ENABLED is not set,
+// AppSec should not log an ERROR about "remote config client not started".
+// AppSec is in RCStandby mode (waiting to be activated via RC), but since RC
+// is explicitly disabled, it simply can't be remotely activated — which is
+// expected and should not be treated as an unexpected error.
+func TestNoAppsecErrorWhenRCDisabled(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
+	// Ensure DD_APPSEC_ENABLED is not set (RCStandby mode)
+	t.Setenv(config.EnvEnabled, "")
+	os.Unsetenv(config.EnvEnabled)
+
+	var logger log.RecordLogger
+	defer log.UseLogger(&logger)()
+
+	// Provide a non-nil RC config, as the tracer always does
+	rcCfg := remoteconfig.DefaultClientConfig()
+	appsec.Start(config.WithRCConfig(rcCfg))
+	defer appsec.Stop()
+
+	// Flush the error log aggregator to force any pending errors to be recorded.
+	log.Flush()
+
+	for _, entry := range logger.Logs() {
+		if strings.Contains(entry, "ERROR") {
+			t.Errorf("unexpected ERROR log when RC is disabled: %s", entry)
+		}
+	}
 }

@@ -717,6 +717,10 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		}
 	}
 
+	if experimentID := apmSpan.BaggageItem(baggageKeyExperimentID); experimentID != "" {
+		span.scope = "experiments"
+	}
+
 	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", spanName, kind, span.mlApp)
 	return span, contextWithActiveLLMSpan(ctx, span)
 }

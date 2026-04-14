@@ -51,7 +51,14 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 	// Evaluate allocations in order - first match wins
 	now := time.Now()
 	for _, allocation := range flag.Allocations {
-		split, matched := evaluateAllocation(allocation, context, now)
+		split, matched, err := evaluateAllocation(allocation, context, now)
+		if err != nil {
+			return evaluationResult{
+				Value:  defaultValue,
+				Reason: of.ErrorReason,
+				Error:  err,
+			}
+		}
 		if matched && split != nil {
 			// Find the variant for this split
 			variant, ok := flag.Variations[split.VariationKey]
@@ -114,13 +121,13 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 }
 
 // evaluateAllocation evaluates an allocation and returns the matching split if any.
-func evaluateAllocation(allocation *allocation, context map[string]any, currentTime time.Time) (*split, bool) {
+func evaluateAllocation(allocation *allocation, context map[string]any, currentTime time.Time) (*split, bool, error) {
 	// Check time window constraints
 	if allocation.StartAt != nil && currentTime.Before(*allocation.StartAt) {
-		return nil, false
+		return nil, false, nil
 	}
 	if allocation.EndAt != nil && currentTime.After(*allocation.EndAt) {
-		return nil, false
+		return nil, false, nil
 	}
 
 	// Check if any rule matches (OR logic between rules)
@@ -134,17 +141,21 @@ func evaluateAllocation(allocation *allocation, context map[string]any, currentT
 	}
 
 	if !ruleMatched {
-		return nil, false
+		return nil, false, nil
 	}
 
 	// Evaluate splits to determine which variant
 	for _, split := range allocation.Splits {
-		if evaluateSplit(split, context) {
-			return split, true
+		matched, err := evaluateSplit(split, context)
+		if err != nil {
+			return nil, false, err
+		}
+		if matched {
+			return split, true, nil
 		}
 	}
 
-	return nil, false
+	return nil, false, nil
 }
 
 // evaluateRule evaluates a rule by checking all conditions (AND logic).
@@ -347,22 +358,26 @@ func evaluateNumericCondition(attributeValue any, conditionValue any, operator c
 }
 
 // evaluateSplit determines if a split matches by evaluating all its shards.
-func evaluateSplit(split *split, context map[string]any) bool {
+func evaluateSplit(split *split, context map[string]any) (bool, error) {
 	// All shards must match (AND logic)
 	for _, shard := range split.Shards {
-		if !evaluateShard(shard, context) {
-			return false
+		matched, err := evaluateShard(shard, context)
+		if err != nil {
+			return false, err
+		}
+		if !matched {
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 // evaluateShard evaluates a shard using consistent hashing.
-func evaluateShard(shard *shard, context map[string]any) bool {
+func evaluateShard(shard *shard, context map[string]any) (bool, error) {
 	// Get targeting key from context
 	targetingKey, ok := context[of.TargetingKey].(string)
 	if !ok {
-		return false
+		return false, errTargetingKeyMissing
 	}
 
 	// Compute shard index using MD5 hash (matching Eppo's implementation)
@@ -371,10 +386,10 @@ func evaluateShard(shard *shard, context map[string]any) bool {
 	// Check if shard index falls within any of the ranges
 	for _, shardRange := range shard.Ranges {
 		if shardIndex >= shardRange.Start && shardIndex < shardRange.End {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // computeShardIndex computes the shard index using MD5 hash.

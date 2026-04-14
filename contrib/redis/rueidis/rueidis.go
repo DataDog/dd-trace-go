@@ -218,6 +218,10 @@ func (c *dedicatedClient) SetPubSubHooks(hooks rueidis.PubSubHooks) <-chan error
 	return c.dedicatedClient.SetPubSubHooks(hooks)
 }
 
+func (c *dedicatedClient) SetOnInvalidations(fn func([]rueidis.RedisMessage)) <-chan error {
+	return c.dedicatedClient.SetOnInvalidations(fn)
+}
+
 type commander interface {
 	Commands() []string
 }
