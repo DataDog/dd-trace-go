@@ -52,7 +52,7 @@ var _ tracer.Tracer = (*Tracer)(nil)
 // TraceQuery traces a GraphQL query.
 func (t *Tracer) TraceQuery(ctx context.Context, queryString, operationName string, variables map[string]interface{}, _ map[string]*introspection.Type) (context.Context, tracer.QueryFinishFunc) {
 	opts := []ddtracer.StartSpanOption{
-		ddtracer.ServiceName(t.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(t.cfg.serviceName, t.cfg.serviceSource),
 		ddtracer.Tag(tagGraphqlQuery, queryString),
 		ddtracer.Tag(tagGraphqlOperationName, operationName),
 		ddtracer.Tag(ext.Component, instrumentation.PackageGraphGophersGraphQLGo),
@@ -102,7 +102,7 @@ func (t *Tracer) TraceField(ctx context.Context, _, typeName, fieldName string, 
 		return ctx, func(_ *errors.QueryError) {}
 	}
 	opts := []ddtracer.StartSpanOption{
-		ddtracer.ServiceName(t.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(t.cfg.serviceName, t.cfg.serviceSource),
 		ddtracer.Tag(tagGraphqlField, fieldName),
 		ddtracer.Tag(tagGraphqlType, typeName),
 		ddtracer.Tag(ext.Component, instrumentation.PackageGraphGophersGraphQLGo),

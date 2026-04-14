@@ -43,6 +43,7 @@ type CommonConfig struct {
 	AnalyticsRate float64
 	IgnoreRequest func(*http.Request) bool
 	ServiceName   string
+	ServiceSource string
 	ResourceNamer func(*http.Request) string
 	SpanOpts      []tracer.StartSpanOption
 	IsStatusError func(int) bool
@@ -68,6 +69,7 @@ func Default(instr *instrumentation.Instrumentation) *Config {
 		cfg.AnalyticsRate = instr.AnalyticsRate(true)
 	}
 	cfg.ServiceName = instr.ServiceName(instrumentation.ComponentServer, nil)
+	cfg.ServiceSource = string(instrumentation.PackageNetHTTP)
 	cfg.HeaderTags = instr.HTTPHeadersAsTags()
 	cfg.SpanOpts = []tracer.StartSpanOption{tracer.Measured()}
 	if !math.IsNaN(cfg.AnalyticsRate) {

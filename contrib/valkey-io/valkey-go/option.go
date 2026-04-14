@@ -13,9 +13,10 @@ import (
 )
 
 type config struct {
-	rawCommand  bool
-	serviceName string
-	errCheck    func(err error) bool
+	rawCommand    bool
+	serviceName   string
+	serviceSource string
+	errCheck      func(err error) bool
 }
 
 // Option represents an option that can be used to create or wrap a client.
@@ -24,8 +25,9 @@ type Option func(*config)
 func defaultConfig() *config {
 	return &config{
 		// Do not include the raw command by default since it could contain sensitive data.
-		rawCommand:  options.GetBoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false),
-		serviceName: instr.ServiceName(instrumentation.ComponentDefault, nil),
+		rawCommand:    options.GetBoolEnv("DD_TRACE_VALKEY_RAW_COMMAND", false),
+		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
+		serviceSource: string(instrumentation.PackageValkeyIoValkeyGo),
 		errCheck: func(err error) bool {
 			return err != nil && !valkey.IsValkeyNil(err)
 		},
@@ -44,6 +46,7 @@ func WithRawCommand(rawCommand bool) Option {
 func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

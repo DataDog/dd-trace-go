@@ -24,10 +24,11 @@ var _ openfeature.StateHandler = (*DatadogProvider)(nil)
 
 // Sentinel errors for error classification
 var (
-	errFlagNotFound    = errors.New("flag not found")
-	errTypeMismatch    = errors.New("type mismatch")
-	errParseError      = errors.New("parse error")
-	errNoConfiguration = errors.New("no configuration loaded")
+	errFlagNotFound        = errors.New("flag not found")
+	errTypeMismatch        = errors.New("type mismatch")
+	errParseError          = errors.New("parse error")
+	errNoConfiguration     = errors.New("no configuration loaded")
+	errTargetingKeyMissing = errors.New("targeting key missing")
 )
 
 const (
@@ -58,6 +59,9 @@ type DatadogProvider struct {
 	// Exposure tracking
 	exposureWriter *exposureWriter
 	exposureHook   *exposureHook
+
+	// Flag evaluation metrics hook (OTel counter via Finally hook)
+	flagEvalHook *flagEvalHook
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -85,12 +89,19 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// Create exposure hook
 	hook := newExposureHook(writer)
 
+	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
+	metrics, err := newFlagEvalMetrics()
+	if err != nil {
+		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error())
+	}
+
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
 		exposureWriter: writer,
 		exposureHook:   hook,
+		flagEvalHook:   newFlagEvalHook(metrics),
 	}
 	p.configChange.L = &p.mu
 	return p
@@ -203,6 +214,10 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		if p.exposureWriter != nil {
 			p.exposureWriter.flush()
 			p.exposureWriter.stop()
+		}
+		// Shut down flag evaluation metrics
+		if p.flagEvalHook != nil && p.flagEvalHook.metrics != nil {
+			_ = p.flagEvalHook.metrics.shutdown(ctx)
 		}
 		done <- err
 	}()
@@ -344,11 +359,11 @@ func (p *DatadogProvider) IntEvaluation(
 	case int8:
 		intValue = int64(v)
 	case float64:
-		// Accept float64 if it's a whole number
+		// Accept float64 if it's a whole number (e.g., -5.0 → -5)
 		if v == float64(int64(v)) {
 			intValue = int64(v)
 		} else {
-			conversionErr = fmt.Errorf("%w: flag %q returned float with decimal part: %v", errParseError, flagKey, v)
+			conversionErr = fmt.Errorf("%w: flag %q returned float with decimal part: %v", errTypeMismatch, flagKey, v)
 		}
 	default:
 		if result.Error == nil {
@@ -394,12 +409,16 @@ func (p *DatadogProvider) ObjectEvaluation(
 }
 
 // Hooks returns the hooks for this provider.
-// This includes the exposure tracking hook.
+// This includes the exposure tracking hook and the flag evaluation metrics hook.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
+	var hooks []openfeature.Hook
 	if p.exposureHook != nil {
-		return []openfeature.Hook{p.exposureHook}
+		hooks = append(hooks, p.exposureHook)
 	}
-	return []openfeature.Hook{}
+	if p.flagEvalHook != nil {
+		hooks = append(hooks, p.flagEvalHook)
+	}
+	return hooks
 }
 
 // evaluate is the core evaluation method that all type-specific methods use.
@@ -468,7 +487,9 @@ func toResolutionError(err error) openfeature.ResolutionError {
 	case errors.Is(err, errParseError):
 		return openfeature.NewParseErrorResolutionError(errMsg)
 	case errors.Is(err, errNoConfiguration):
-		return openfeature.NewGeneralResolutionError(errMsg)
+		return openfeature.NewProviderNotReadyResolutionError(errMsg)
+	case errors.Is(err, errTargetingKeyMissing):
+		return openfeature.NewTargetingKeyMissingResolutionError(errMsg)
 	default:
 		return openfeature.NewGeneralResolutionError(errMsg)
 	}

@@ -61,14 +61,14 @@ func compressionStrategy(pt ProfileType, isDelta bool, config string) (compressi
 // uncompressed.
 func inputCompression(pt ProfileType, isDelta bool) compression {
 	switch pt {
-	case CPUProfile, GoroutineProfile:
+	case CPUProfile, GoroutineProfile, goroutineLeakProfile:
 		return gzip1Compression
 	case HeapProfile, BlockProfile, MutexProfile:
 		if isDelta {
 			return noCompression
 		}
 		return gzip1Compression
-	case MetricsProfile, executionTrace, expGoroutineWaitProfile:
+	case MetricsProfile, executionTrace:
 		return noCompression
 	default:
 		panic(fmt.Sprintf("unknown profile type: %s", pt))
@@ -81,8 +81,6 @@ func legacyOutputCompression(pt ProfileType, isDelta bool) compression {
 	switch pt {
 	case CPUProfile, GoroutineProfile:
 		return gzip1Compression
-	case expGoroutineWaitProfile:
-		return gzip6Compression
 	case HeapProfile, BlockProfile, MutexProfile:
 		if isDelta {
 			return gzip6Compression

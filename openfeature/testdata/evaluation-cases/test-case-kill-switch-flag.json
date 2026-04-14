@@ -1,0 +1,314 @@
+[
+  {
+    "attributes": {
+      "country": "US",
+      "email": "alice@mycompany.com"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "alice",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "Canada",
+      "email": "bob@example.com"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "bob",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "canada",
+      "email": "barbara@example.com"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "barbara",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "age": 40
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "charlie",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "age": 25,
+      "country": "Mexico",
+      "email": "test@test.com"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "debra",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {},
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "1",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "Mexico"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "2",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "age": 50,
+      "country": "UK"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "3",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "Germany"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "4",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "Germany"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "5",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "Germany"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "6",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "age": 12,
+      "country": "US"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "7",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "age": 60,
+      "country": "Italy"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "8",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "email": "email@email.com"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "9",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {},
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "10",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {},
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "11",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "US"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "12",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "Canada"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "13",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {},
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "14",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "Denmark"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "15",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "Norway"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "16",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "UK"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "17",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "UK"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "18",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "country": "UK"
+    },
+    "defaultValue": false,
+    "flag": "kill-switch",
+    "result": {
+      "reason": "STATIC",
+      "value": false
+    },
+    "targetingKey": "19",
+    "variationType": "BOOLEAN"
+  }
+]

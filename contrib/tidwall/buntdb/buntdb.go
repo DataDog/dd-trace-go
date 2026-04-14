@@ -101,7 +101,7 @@ func WrapTx(tx *buntdb.Tx, opts ...Option) *Tx {
 func (tx *Tx) startSpan(name string) *tracer.Span {
 	opts := []tracer.StartSpanOption{
 		tracer.SpanType(ext.AppTypeDB),
-		tracer.ServiceName(tx.cfg.serviceName),
+		instrumentation.ServiceNameWithSource(tx.cfg.serviceName, tx.cfg.serviceSource),
 		tracer.ResourceName(name),
 		tracer.Tag(ext.Component, instrumentation.PackageTidwallBuntDB),
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),

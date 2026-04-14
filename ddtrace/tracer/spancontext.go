@@ -28,30 +28,53 @@ import (
 
 const TraceIDZero string = "00000000000000000000000000000000"
 
+// traceID128BitEnabled caches DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED
+// at init time so that newSpanContext avoids calling BoolEnv on every span.
+// It is re-set by newConfig on every tracer start so that restarts pick up
+// any changed value. The init here ensures it is correct even when using
+// mocktracer (which does not call newConfig).
+var traceID128BitEnabled atomic.Bool
+
+func init() {
+	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true))
+}
+
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
-type traceID [16]byte // traceID in big endian, i.e. <upper><lower>
-
-var emptyTraceID traceID
+// traceID in big endian, i.e. <upper><lower>
+type traceID struct {
+	value      [16]byte
+	hexEncoded string
+}
 
 func (t *traceID) HexEncoded() string {
-	return hex.EncodeToString(t[:])
+	if t.hexEncoded == "" {
+		t.computeAndCacheHex()
+	}
+	return t.hexEncoded
 }
 
 func (t *traceID) Lower() uint64 {
-	return binary.BigEndian.Uint64(t[8:])
+	return binary.BigEndian.Uint64(t.value[8:])
 }
 
 func (t *traceID) Upper() uint64 {
-	return binary.BigEndian.Uint64(t[:8])
+	return binary.BigEndian.Uint64(t.value[:8])
 }
 
 func (t *traceID) SetLower(i uint64) {
-	binary.BigEndian.PutUint64(t[8:], i)
+	binary.BigEndian.PutUint64(t.value[8:], i)
+	t.hexEncoded = ""
 }
 
 func (t *traceID) SetUpper(i uint64) {
-	binary.BigEndian.PutUint64(t[:8], i)
+	binary.BigEndian.PutUint64(t.value[:8], i)
+	t.hexEncoded = ""
+}
+
+func (t *traceID) set(v [16]byte) {
+	t.value = v
+	t.hexEncoded = ""
 }
 
 func (t *traceID) SetUpperFromHex(s string) error {
@@ -64,20 +87,22 @@ func (t *traceID) SetUpperFromHex(s string) error {
 }
 
 func (t *traceID) Empty() bool {
-	return *t == emptyTraceID
+	return t.value == [16]byte{}
 }
 
 func (t *traceID) HasUpper() bool {
-	for _, b := range t[:8] {
-		if b != 0 {
+	for ix := range t.value[:8] {
+		if t.value[ix] != 0 {
 			return true
 		}
 	}
 	return false
 }
 
-func (t *traceID) UpperHex() string {
-	return hex.EncodeToString(t[:8])
+func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
+
+func (t *traceID) computeAndCacheHex() {
+	t.hexEncoded = hex.EncodeToString(t.value[:])
 }
 
 // SpanContext represents a span state that can propagate to descendant spans
@@ -145,7 +170,7 @@ type spanContextV1Adapter interface {
 // to start child spans.
 func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	var sc SpanContext
-	sc.traceID = c.TraceIDBytes()
+	sc.traceID.set(c.TraceIDBytes())
 	sc.spanID = c.SpanID()
 	sc.baggage = make(map[string]string) // +checklocksignore - Initialization time, not shared yet.
 	c.ForeachBaggageItem(func(k, v string) bool {
@@ -159,13 +184,41 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		return &sc
 	}
 
-	// If the generic context has a sampling decision, set it on the trace
-	// along with the priority if it exists.
-	// After setting the sampling decision, lock the trace so the decision is
-	// respected and avoid re-sampling.
+	// Translate the external sampling decision into DD trace semantics.
+	//
+	// Two separate mechanisms are at play:
+	//
+	//   - samplingDecision (decisionNone/Keep/Drop): controls whether the trace
+	//     payload is sent to the agent (willSend) and whether keep()/drop() can
+	//     modify it. Both keep() and drop() use atomic Compare-And-Swap (CAS)
+	//     from decisionNone only — they atomically check that the current value
+	//     is decisionNone before writing, so whichever goroutine calls first
+	//     wins and subsequent calls are no-ops. This lets error spans "rescue"
+	//     a trace: if keep() runs before drop(), the trace is sent.
+	//
+	//   - sampling priority (P0/P1) + lock: the numeric priority sent to the
+	//     agent. Locking prevents the DD sampler from overriding it via
+	//     resampling.
+	//
+	// For keep decisions (OTel sampled=true): propagate decisionKeep directly
+	// so the trace is guaranteed to be sent.
+	//
+	// For drop decisions (OTel sampled=false): set priority to P0 and lock it
+	// (so the DD sampler won't override the OTel decision), but leave
+	// samplingDecision as decisionNone. This preserves the CAS semantics: if
+	// an error span finishes, keep() can still CAS(decisionNone -> decisionKeep)
+	// and rescue the trace. If no span rescues it, drop() will
+	// CAS(decisionNone -> decisionDrop) and the trace is dropped normally.
+	// This matches native DD tracer behavior where P0 traces are not
+	// hard-dropped client-side.
 	if sDecision := samplingDecision(ctxSpl.SamplingDecision()); sDecision != decisionNone {
 		sc.trace = newTrace()
-		sc.trace.samplingDecision = sDecision // +checklocksignore - Initialization time, not shared yet.
+		if sDecision == decisionKeep {
+			sc.trace.samplingDecision = sDecision // +checklocksignore - Initialization time, not shared yet.
+		}
+		// For decisionDrop we intentionally leave samplingDecision as
+		// decisionNone (the newTrace default). The priority below still
+		// records the OTel intent (P0), and locking prevents resampling.
 
 		if p := ctxSpl.Priority(); p != nil {
 			sc.setSamplingPriority(int(*p), samplernames.Unknown)
@@ -182,8 +235,11 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	if sc.trace == nil {
 		sc.trace = newTrace()
 	}
-	sc.trace.tags = ctx.Tags()                       // +checklocksignore - Initialization time, not shared yet.
-	sc.trace.propagatingTags = ctx.PropagatingTags() // +checklocksignore - Initialization time, not shared yet.
+	sc.trace.tags = ctx.Tags()                                    // +checklocksignore - Initialization time, not shared yet.
+	sc.trace.propagatingTags = ctx.PropagatingTags()              // +checklocksignore - Initialization time, not shared yet.
+	if dm, ok := sc.trace.propagatingTags[keyDecisionMaker]; ok { // +checklocksignore - Initialization time, not shared yet.
+		sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+	}
 	return &sc
 }
 
@@ -211,7 +267,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true) {
+	} else if traceID128BitEnabled.Load() {
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.start) / time.Second
@@ -247,7 +303,7 @@ func (c *SpanContext) SpanID() uint64 {
 
 // TraceID implements ddtrace.SpanContext.
 func (c *SpanContext) TraceID() string {
-	if c == nil {
+	if c == nil || c.traceID.Empty() {
 		return TraceIDZero
 	}
 	return c.traceID.HexEncoded()
@@ -256,9 +312,9 @@ func (c *SpanContext) TraceID() string {
 // TraceIDBytes implements ddtrace.SpanContext.
 func (c *SpanContext) TraceIDBytes() [16]byte {
 	if c == nil {
-		return emptyTraceID
+		return [16]byte{}
 	}
-	return c.traceID
+	return c.traceID.value
 }
 
 // TraceIDLower implements ddtrace.SpanContext.
@@ -442,12 +498,18 @@ type trace struct {
 	// signifies that the span buffer is full
 	// +checklocks:mu
 	full bool
-	// sampling priority
-	// +checklocks:mu
-	priority *float64
+	// sampling priority — accessed atomically to allow lock-free reads
+	// from the span creation hot path (SamplingPriority).
+	// Writes still happen under mu (because they also touch propagatingTags).
+	// +checkatomic
+	priority atomic.Pointer[float64]
 	// specifies if the sampling priority can be altered
 	// +checklocks:mu
 	locked bool
+	// dm is the numeric form of _dd.p.dm for v1 protocol encoding.
+	// It is the absolute value of the parsed integer (e.g., "-4" → 4).
+	// +checklocks:mu
+	dm uint32
 	// samplingDecision indicates whether to send the trace to the agent.
 	samplingDecision samplingDecision // +checkatomic
 
@@ -467,25 +529,49 @@ var (
 	traceMaxSize   = internalconfig.TraceMaxSize
 )
 
+// samplingPriorityCache holds pre-allocated pointers for the four standard
+// sampling priority values defined in ddtrace/ext/priority.go:
+//
+//	index 0 → -1 (ext.PriorityUserReject)
+//	index 1 →  0 (ext.PriorityAutoReject)
+//	index 2 →  1 (ext.PriorityAutoKeep)
+//	index 3 →  2 (ext.PriorityUserKeep)
+//
+// Caching these avoids a heap allocation on every call to
+// setSamplingPriorityLockedWithForce, which is on the hot path.
+var samplingPriorityCache = func() [4]*float64 {
+	var c [4]*float64
+	for i := range c {
+		v := float64(i - 1) // -1, 0, 1, 2
+		c[i] = &v
+	}
+	return c
+}()
+
+// samplingPriorityPtr returns a *float64 for p without allocating for the
+// standard priority values (ext.PriorityUserReject through ext.PriorityUserKeep).
+func samplingPriorityPtr(p int) *float64 {
+	if p >= -1 && p <= 2 {
+		return samplingPriorityCache[p+1]
+	}
+	v := float64(p)
+	return &v
+}
+
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
 func newTrace() *trace {
 	return &trace{spans: make([]*Span, 0, traceStartSize)}
 }
 
-// +checklocksread:t.mu
-func (t *trace) samplingPriorityLocked() (p int, ok bool) {
-	assert.RWMutexRLocked(&t.mu)
-	if t.priority == nil {
+// samplingPriority returns the sampling priority of the trace, if set.
+// This is safe to call without holding t.mu because priority is an atomic pointer.
+func (t *trace) samplingPriority() (p int, ok bool) {
+	priority := t.priority.Load() // +checklocksignore
+	if priority == nil {
 		return 0, false
 	}
-	return int(*t.priority), true
-}
-
-func (t *trace) samplingPriority() (p int, ok bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.samplingPriorityLocked()
+	return int(*priority), true
 }
 
 // setSamplingPriority sets the sampling priority and the decision maker
@@ -539,12 +625,10 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		return false
 	}
 
-	updatedPriority := t.priority == nil || *t.priority != float64(p)
+	old := t.priority.Load() // +checklocksignore
+	updatedPriority := old == nil || *old != float64(p)
 
-	if t.priority == nil {
-		t.priority = new(float64)
-	}
-	*t.priority = float64(p)
+	t.priority.Store(samplingPriorityPtr(p)) // +checklocksignore
 	curDM, existed := t.propagatingTags[keyDecisionMaker]
 	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
@@ -562,7 +646,7 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 		}
 	}
 	if p <= 0 && existed {
-		delete(t.propagatingTags, keyDecisionMaker)
+		t.unsetPropagatingTagLocked(keyDecisionMaker)
 	}
 
 	return updatedPriority
@@ -690,11 +774,12 @@ func (t *trace) finishedOneLocked(s *Span) {
 	if s.service != "" && !strings.EqualFold(s.service, tc.ServiceTag) {
 		s.setMetaLocked(keyBaseService, tc.ServiceTag)
 	}
-	if s == t.root && t.priority != nil {
+	priority := t.priority.Load()
+	if s == t.root && priority != nil {
 		// after the root has finished we lock down the priority;
 		// we won't be able to make changes to a span after finishing
 		// without causing a race condition.
-		s.setMetricLocked(keySamplingPriority, *t.priority)
+		s.setMetricLocked(keySamplingPriority, *priority)
 		t.locked = true
 	}
 	if len(t.spans) > 0 && s == t.spans[0] {
@@ -755,7 +840,6 @@ func (t *trace) finishedOneLocked(s *Span) {
 	fSpan := finishedSpans[0]
 	currentSpanIsFirstInChunk := s == fSpan
 	needsFirstSpanTags := s != t.spans[0]
-	priority := t.priority
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
@@ -817,10 +901,12 @@ func setPeerService(s *Span, tc TracerConf) {
 		s.setMetaLocked(keyPeerServiceSource, source)
 	}
 	// Overwrite existing peer.service value if remapped by the user
-	ps := s.meta[ext.PeerService]
-	if to, ok := tc.PeerServiceMappings[ps]; ok {
-		s.setMetaLocked(keyPeerServiceRemappedFrom, ps)
-		s.setMetaLocked(ext.PeerService, to)
+	if len(tc.PeerServiceMappings) > 0 {
+		ps := s.meta[ext.PeerService]
+		if to, ok := tc.PeerServiceMappings[ps]; ok {
+			s.setMetaLocked(keyPeerServiceRemappedFrom, ps)
+			s.setMetaLocked(ext.PeerService, to)
+		}
 	}
 }
 

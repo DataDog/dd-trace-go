@@ -10,6 +10,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
 func WrapProduceChannel[M any, TM Message](tr *Tracer, out chan M, translateFn func(M) TM) chan M {
@@ -49,7 +50,7 @@ func WrapProduceEventsChannel[E any, TE Event](tr *Tracer, in chan E, translateF
 
 func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
 	opts := []tracer.StartSpanOption{
-		tracer.ServiceName(tr.producerServiceName),
+		instrumentation.ServiceNameWithSource(tr.producerServiceName, tr.serviceSource),
 		tracer.ResourceName("Produce Topic " + msg.GetTopicPartition().GetTopic()),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
 		tracer.Tag(ext.Component, ComponentName(tr.ckgoVersion)),
@@ -60,6 +61,9 @@ func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
 	}
 	if tr.bootstrapServers != "" {
 		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, tr.bootstrapServers))
+	}
+	if tr.ClusterID() != "" {
+		opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, tr.ClusterID()))
 	}
 	if !math.IsNaN(tr.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, tr.analyticsRate))

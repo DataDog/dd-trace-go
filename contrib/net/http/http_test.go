@@ -603,7 +603,7 @@ func BenchmarkHttpServeTrace(b *testing.B) {
 	w := httptest.NewRecorder()
 	rtr := router()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rtr.ServeHTTP(w, r)
 	}
 }

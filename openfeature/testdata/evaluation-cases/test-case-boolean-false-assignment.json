@@ -1,0 +1,41 @@
+[
+  {
+    "attributes": {
+      "should_disable_feature": true
+    },
+    "defaultValue": true,
+    "flag": "boolean-false-assignment",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": false
+    },
+    "targetingKey": "alice",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "should_disable_feature": false
+    },
+    "defaultValue": true,
+    "flag": "boolean-false-assignment",
+    "result": {
+      "reason": "TARGETING_MATCH",
+      "value": true
+    },
+    "targetingKey": "bob",
+    "variationType": "BOOLEAN"
+  },
+  {
+    "attributes": {
+      "unknown_attribute": "value"
+    },
+    "defaultValue": true,
+    "flag": "boolean-false-assignment",
+    "result": {
+      "reason": "DEFAULT",
+      "value": true
+    },
+    "targetingKey": "charlie",
+    "variationType": "BOOLEAN"
+  }
+]

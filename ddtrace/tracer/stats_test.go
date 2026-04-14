@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
+
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -36,7 +38,7 @@ func TestAlignTs(t *testing.T) {
 
 func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env string) *config {
 	assert := assert.New(t)
-	cfg, err := newTestConfig(func(c *config) {
+	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
 		c.transport = transport
 		c.internalConfig.SetEnv(env, internalconfig.OriginCode)
 	})
@@ -46,7 +48,7 @@ func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env str
 
 func newTestConfigWithTransport(t *testing.T, transport transport) *config {
 	assert := assert.New(t)
-	cfg, err := newTestConfig(func(c *config) {
+	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
 		c.transport = transport
 	})
 	assert.NoError(err)
@@ -89,20 +91,23 @@ func TestConcentrator(t *testing.T) {
 	})
 	t.Run("flusher", func(t *testing.T) {
 		t.Run("old", func(t *testing.T) {
-			transport := newDummyTransport()
-			c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), 500_000, &statsd.NoOpClientDirect{})
-			assert.Len(t, transport.Stats(), 0)
-			ss1, ok := c.newTracerStatSpan(&s1, nil)
-			assert.True(t, ok)
-			c.Start()
-			c.In <- ss1
-			time.Sleep(2 * time.Millisecond * timeMultiplicator)
-			c.Stop()
-			actualStats := transport.Stats()
-			assert.Len(t, actualStats, 1)
-			assert.Len(t, actualStats[0].Stats, 1)
-			assert.Len(t, actualStats[0].Stats[0].Stats, 1)
-			assert.Equal(t, "http.request", actualStats[0].Stats[0].Stats[0].Name)
+			synctest.Test(t, func(t *testing.T) {
+				transport := newDummyTransport()
+				c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), 500_000, &statsd.NoOpClientDirect{})
+				assert.Len(t, transport.Stats(), 0)
+				ss1, ok := c.newTracerStatSpan(&s1, nil)
+				assert.True(t, ok)
+				c.Start()
+				c.In <- ss1
+				time.Sleep(2 * time.Millisecond) // instant: fake clock advances 2ms past flush interval
+				synctest.Wait()                  // wait for concentrator goroutine to flush
+				c.Stop()
+				actualStats := transport.Stats()
+				assert.Len(t, actualStats, 1)
+				assert.Len(t, actualStats[0].Stats, 1)
+				assert.Len(t, actualStats[0].Stats[0].Stats, 1)
+				assert.Equal(t, "http.request", actualStats[0].Stats[0].Stats[0].Name)
+			})
 		})
 
 		t.Run("recent+stats", func(t *testing.T) {
@@ -213,7 +218,7 @@ func TestShouldObfuscate(t *testing.T) {
 	} {
 		t.Run(params.name, func(t *testing.T) {
 			cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
-			cfg.agent = agentFeatures{obfuscationVersion: params.agentVersion}
+			cfg.agent.store(agentFeatures{obfuscationVersion: params.agentVersion})
 			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 			tracerObfuscationVersion = params.tracerVersion
@@ -234,7 +239,9 @@ func TestObfuscation(t *testing.T) {
 	}
 	tsp := newDummyTransport()
 	cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
-	cfg.agent.obfuscationVersion = 2
+	af := cfg.agent.load()
+	af.obfuscationVersion = 2
+	cfg.agent.store(af)
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 	defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 	tracerObfuscationVersion = 2
@@ -285,21 +292,25 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 			c.transport = newDummyTransport()
 		})
 		assert.NoError(err)
-		cfg.agent.defaultEnv = "agent-prod"
+		af := cfg.agent.load()
+		af.defaultEnv = "agent-prod"
+		cfg.agent.store(af)
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("agent-prod", c.aggregationKey.Env)
 	})
 
 	t.Run("prefers-tracer-env-over-agent-default", func(t *testing.T) {
 		cfg := newTestConfigWithTransportAndEnv(t, newDummyTransport(), "tracer-staging")
-		cfg.agent.defaultEnv = "agent-prod"
+		af := cfg.agent.load()
+		af.defaultEnv = "agent-prod"
+		cfg.agent.store(af)
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("tracer-staging", c.aggregationKey.Env)
 	})
 
 	t.Run("falls-back-to-unknown-env-when-both-empty", func(t *testing.T) {
 		cfg := newTestConfigWithTransport(t, newDummyTransport())
-		cfg.agent = agentFeatures{}
+		cfg.agent.store(agentFeatures{})
 		c := newConcentrator(cfg, 100, &statsd.NoOpClientDirect{})
 		assert.Equal("unknown-env", c.aggregationKey.Env)
 	})
@@ -337,6 +348,60 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	group := actualStats[0].Stats[0].Stats[0]
 	assert.Equal(t, uniqueMethod, group.GetHTTPMethod())
 	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
+}
+
+func TestStatsIncludeServiceSource(t *testing.T) {
+	bucketSize := int64(500_000)
+	s := Span{
+		name:          "http.request",
+		service:       "custom-service",
+		serviceSource: "m",
+		start:         time.Now().UnixNano(),
+		duration:      int64(time.Millisecond),
+		metrics:       map[string]float64{keyMeasured: 1},
+		meta: map[string]string{
+			ext.KeyServiceSource: "m",
+		},
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- ss
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Equal(t, "m", group.GetServiceSource())
+}
+
+func TestStatsServiceSourceNotSetWhenEmpty(t *testing.T) {
+	bucketSize := int64(500_000)
+	s := Span{
+		name:     "http.request",
+		service:  "my-service",
+		start:    time.Now().UnixNano(),
+		duration: int64(time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+	}
+	transport := newDummyTransport()
+	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- ss
+	c.Stop()
+
+	actualStats := transport.Stats()
+	require.NotEmpty(t, actualStats)
+	require.Len(t, actualStats[0].Stats, 1)
+	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Empty(t, group.GetServiceSource())
 }
 
 // failingStatsTransport is a transport whose sendStats fails a configurable

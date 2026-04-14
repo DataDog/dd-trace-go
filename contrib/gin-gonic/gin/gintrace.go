@@ -37,7 +37,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 	}
 	instr.Logger().Debug("contrib/gin-gonic/gin: Configuring Middleware: Service: %s, %#v", cfg.serviceName, cfg)
 	spanOpts := []tracer.StartSpanOption{
-		tracer.ServiceName(cfg.serviceName),
+		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 	}

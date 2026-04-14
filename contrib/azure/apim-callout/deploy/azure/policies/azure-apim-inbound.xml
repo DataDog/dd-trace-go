@@ -1,0 +1,179 @@
+<!--
+  Datadog App & API Protection: Azure APIM inbound policy (request phase)
+
+  Add this to your API's <inbound> section.
+  Replace <dd-apim-callout-host> with the hostname or IP of the callout service.
+
+  This implements the 4-call pattern: Phase 1 sends request headers, and if the
+  callout requests body analysis (allowed-body-size), Phase 2 sends the body.
+
+  Fail-open: if the callout fails, times out, or returns non-200, the request
+  proceeds to the backend unmodified.
+-->
+<inbound>
+  <!-- Phase 1: Request Headers -->
+  <send-request mode="new"
+                response-variable-name="ddPhase1Response"
+                timeout="3"
+                ignore-error="true">
+    <set-url>https://<dd-apim-callout-host>:8080/</set-url>
+    <set-method>POST</set-method>
+    <set-header name="Content-Type" exists-action="override">
+      <value>application/json</value>
+    </set-header>
+    <set-body>@{
+      var headers = new JObject();
+      foreach (var h in context.Request.Headers) {
+        headers[h.Key] = new JArray(h.Value.ToArray());
+      }
+      var addresses = new JObject(
+        new JProperty("method", context.Request.Method),
+        new JProperty("scheme", context.Request.Url.Scheme),
+        new JProperty("authority", context.Request.Url.Host),
+        new JProperty("path", context.Request.Url.Path + context.Request.Url.QueryString),
+        new JProperty("remote_addr", context.Request.IpAddress),
+        new JProperty("headers", headers)
+      );
+      return new JObject(
+        new JProperty("addresses", addresses),
+        new JProperty("phase", "<RequestHeaders>")
+      ).ToString();
+    }</set-body>
+  </send-request>
+
+  <!-- Fail-open: if callout failed or returned non-200, let request through -->
+  <choose>
+    <when condition="@(!context.Variables.ContainsKey("ddPhase1Response") || context.Variables["ddPhase1Response"] == null || ((IResponse)context.Variables["ddPhase1Response"]).StatusCode != 200)">
+      <!-- Processor unavailable — fail open -->
+    </when>
+    <otherwise>
+
+  <set-variable name="ddPhase1" value="@(((IResponse)context.Variables["ddPhase1Response"]).Body.As<JObject>())" />
+
+  <!-- If blocked, return the block response -->
+  <choose>
+    <when condition="@(((JObject)context.Variables["ddPhase1"])["block"] != null)">
+      <return-response>
+        <set-status code="@(((JObject)context.Variables["ddPhase1"])["block"]["status"].Value<int>())" />
+        <set-header name="Content-Type" exists-action="override">
+          <value>@{
+            var h = ((JObject)context.Variables["ddPhase1"])["block"]["headers"];
+            if (h != null && h["Content-Type"] != null) {
+              return h["Content-Type"][0].ToString();
+            }
+            return "application/json";
+          }</value>
+        </set-header>
+        <set-body>@{
+          var content = ((JObject)context.Variables["ddPhase1"])["block"]["content"];
+          if (content != null) {
+            return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content.ToString()));
+          }
+          return "";
+        }</set-body>
+      </return-response>
+    </when>
+  </choose>
+
+  <!-- Store request-id for subsequent phases -->
+  <set-variable name="ddRequestId" value="@(((JObject)context.Variables["ddPhase1"])["request-id"].ToString())" />
+
+  <!-- Inject trace propagation headers -->
+  <choose>
+    <when condition="@(((JObject)context.Variables["ddPhase1"])["propagate-headers"] != null)">
+      <set-header name="x-datadog-trace-id" exists-action="override">
+        <value>@{
+          var h = ((JObject)context.Variables["ddPhase1"])["propagate-headers"]["X-Datadog-Trace-Id"];
+          return h != null ? h[0].ToString() : "";
+        }</value>
+      </set-header>
+      <set-header name="x-datadog-parent-id" exists-action="override">
+        <value>@{
+          var h = ((JObject)context.Variables["ddPhase1"])["propagate-headers"]["X-Datadog-Parent-Id"];
+          return h != null ? h[0].ToString() : "";
+        }</value>
+      </set-header>
+      <set-header name="x-datadog-sampling-priority" exists-action="override">
+        <value>@{
+          var h = ((JObject)context.Variables["ddPhase1"])["propagate-headers"]["X-Datadog-Sampling-Priority"];
+          return h != null ? h[0].ToString() : "";
+        }</value>
+      </set-header>
+      <set-header name="x-datadog-origin" exists-action="override">
+        <value>@{
+          var h = ((JObject)context.Variables["ddPhase1"])["propagate-headers"]["X-Datadog-Origin"];
+          return h != null ? h[0].ToString() : "";
+        }</value>
+      </set-header>
+      <set-header name="x-datadog-tags" exists-action="override">
+        <value>@{
+          var h = ((JObject)context.Variables["ddPhase1"])["propagate-headers"]["X-Datadog-Tags"];
+          return h != null ? h[0].ToString() : "";
+        }</value>
+      </set-header>
+    </when>
+  </choose>
+
+  <!-- Phase 2: Request Body (conditional — only if callout requests it) -->
+  <choose>
+    <when condition="@(((JObject)context.Variables["ddPhase1"])["allowed-body-size"] != null)">
+      <send-request mode="new"
+                    response-variable-name="ddPhase2Response"
+                    timeout="3"
+                    ignore-error="true">
+        <set-url>https://<dd-apim-callout-host>:8080/</set-url>
+        <set-method>POST</set-method>
+        <set-header name="Content-Type" exists-action="override">
+          <value>application/json</value>
+        </set-header>
+        <set-body>@{
+          var maxSize = ((JObject)context.Variables["ddPhase1"])["allowed-body-size"].Value<int>();
+          var body = context.Request.Body?.As<byte[]>(preserveContent: true);
+          var b64 = "";
+          if (body != null && body.Length > 0) {
+            var slice = body.Length > maxSize ? body.Take(maxSize).ToArray() : body;
+            b64 = Convert.ToBase64String(slice);
+          }
+          var addresses = new JObject(new JProperty("body", b64));
+          return new JObject(
+            new JProperty("addresses", addresses),
+            new JProperty("request-id", (string)context.Variables["ddRequestId"]),
+            new JProperty("phase", "<RequestBody>")
+          ).ToString();
+        }</set-body>
+      </send-request>
+
+      <choose>
+        <when condition="@(context.Variables.ContainsKey("ddPhase2Response") && context.Variables["ddPhase2Response"] != null && ((IResponse)context.Variables["ddPhase2Response"]).StatusCode == 200)">
+          <set-variable name="ddPhase2" value="@(((IResponse)context.Variables["ddPhase2Response"]).Body.As<JObject>())" />
+          <choose>
+            <when condition="@(((JObject)context.Variables["ddPhase2"])["block"] != null)">
+              <return-response>
+                <set-status code="@(((JObject)context.Variables["ddPhase2"])["block"]["status"].Value<int>())" />
+                <set-header name="Content-Type" exists-action="override">
+                  <value>@{
+                    var h = ((JObject)context.Variables["ddPhase2"])["block"]["headers"];
+                    if (h != null && h["Content-Type"] != null) {
+                      return h["Content-Type"][0].ToString();
+                    }
+                    return "application/json";
+                  }</value>
+                </set-header>
+                <set-body>@{
+                  var content = ((JObject)context.Variables["ddPhase2"])["block"]["content"];
+                  if (content != null) {
+                    return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content.ToString()));
+                  }
+                  return "";
+                }</set-body>
+              </return-response>
+            </when>
+          </choose>
+        </when>
+      </choose>
+    </when>
+  </choose>
+
+    </otherwise>
+  </choose>
+</inbound>

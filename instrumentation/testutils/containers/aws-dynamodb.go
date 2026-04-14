@@ -11,7 +11,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
@@ -46,7 +45,7 @@ func StartDynamoDBTestContainer(t testing.TB) (testcontainers.Container, string,
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
 
-	mappedPort, err := container.MappedPort(ctx, nat.Port(exposedPort))
+	mappedPort, err := container.MappedPort(ctx, exposedPort)
 	require.NoError(t, err)
 
 	host, err := container.Host(ctx)

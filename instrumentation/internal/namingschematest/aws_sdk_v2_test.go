@@ -96,6 +96,10 @@ var (
 			DDService:       []string{"aws.EC2", "aws.S3", "aws.SQS", "aws.SNS"},
 			ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride, harness.TestServiceOverride, harness.TestServiceOverride},
 		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        harness.RepeatString(string(instrumentation.PackageAWSSDKGoV2), 4),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 4),
+		},
 	}
 	awsSDKV2Messaging = harness.TestCase{
 		Name: instrumentation.PackageAWSSDKGoV2 + "_messaging",
@@ -155,6 +159,10 @@ var (
 			Defaults:        []string{"aws.SQS", "aws.SQS", "aws.SQS", "aws.SNS", "aws.SNS"},
 			DDService:       []string{"aws.SQS", "aws.SQS", "aws.SQS", "aws.SNS", "aws.SNS"},
 			ServiceOverride: harness.RepeatString(harness.TestServiceOverride, 5),
+		},
+		WantServiceSource: harness.ServiceSourceAssertions{
+			Defaults:        harness.RepeatString(string(instrumentation.PackageAWSSDKGoV2), 5),
+			ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 5),
 		},
 	}
 )

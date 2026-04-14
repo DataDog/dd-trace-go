@@ -6,6 +6,7 @@
 package config
 
 import (
+	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -255,6 +256,12 @@ var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
 	"SetServiceMapping": func(c *Config, origin telemetry.Origin) {
 		c.SetServiceMapping("from-service", "to-service", origin)
 	},
+	"SetPeerServiceMappings": func(c *Config, origin telemetry.Origin) {
+		c.SetPeerServiceMappings(map[string]string{"old": "new"}, origin)
+	},
+	"SetPeerServiceMapping": func(c *Config, origin telemetry.Origin) {
+		c.SetPeerServiceMapping("old-peer", "new-peer", origin)
+	},
 }
 
 // TestAllSettersReportTelemetry verifies Set* methods report telemetry with seqID > defaultSeqID.
@@ -306,7 +313,7 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 					if len(call.Arguments) > 0 {
 						if configs, ok := call.Arguments[0].([]telemetry.Configuration); ok && len(configs) > 0 {
 							config := configs[0]
-							if config.Origin == testOrigin && config.SeqID > defaultSeqID {
+							if config.Origin == testOrigin {
 								foundTelemetry = true
 								break
 							}
@@ -316,44 +323,51 @@ func TestAllSettersReportTelemetry(t *testing.T) {
 			}
 
 			assert.True(t, foundTelemetry,
-				"%s: no telemetry with origin=%v and seqID > %d. Fix: call reportTelemetry() OR add to settersWithoutTelemetry/specialCaseSetters",
-				methodName, testOrigin, defaultSeqID)
+				"%s: no telemetry with origin=%v. Fix: call configtelemetry.Report() OR add to settersWithoutTelemetry/specialCaseSetters",
+				methodName, testOrigin)
 		})
 	}
 }
 
-// callSetter attempts to call a setter method with appropriate test values
+// callSetter attempts to call a setter method with appropriate test values.
+// It finds the telemetry.Origin parameter by type and fills all other parameters
+// with test values via getTestValueForType.
 func callSetter(t *testing.T, cfg *Config, method reflect.Method, origin telemetry.Origin) {
 	methodType := method.Type
 
-	// Verify it has the right number of parameters (receiver + value param(s) + origin)
 	if methodType.NumIn() < 3 {
 		t.Fatalf("%s: expected ≥3 params (receiver, value, origin), got %d. Add to specialCaseSetters if non-standard.",
 			method.Name, methodType.NumIn())
 	}
 
-	// Last parameter should be telemetry.Origin
 	originType := reflect.TypeFor[telemetry.Origin]()
-	lastParamType := methodType.In(methodType.NumIn() - 1)
-	if lastParamType != originType {
-		t.Fatalf("%s: last param should be telemetry.Origin, got %v. Add to specialCaseSetters if non-standard.",
-			method.Name, lastParamType)
+	originIdx := -1
+	for i := 1; i < methodType.NumIn(); i++ {
+		if methodType.In(i) == originType {
+			originIdx = i
+			break
+		}
+	}
+	if originIdx == -1 {
+		t.Fatalf("%s: no telemetry.Origin param found. Add to specialCaseSetters if non-standard.", method.Name)
 	}
 
-	// Build arguments
+	numParams := methodType.NumIn()
+	if methodType.IsVariadic() {
+		numParams--
+	}
+
 	args := []reflect.Value{reflect.ValueOf(cfg)}
-
-	// Add value parameters (all except receiver and origin)
-	for i := 1; i < methodType.NumIn()-1; i++ {
-		paramType := methodType.In(i)
-		testValue := getTestValueForType(paramType)
-		args = append(args, reflect.ValueOf(testValue))
+	for i := 1; i < numParams; i++ {
+		if i == originIdx {
+			args = append(args, reflect.ValueOf(origin))
+		} else {
+			paramType := methodType.In(i)
+			testValue := getTestValueForType(paramType)
+			args = append(args, reflect.ValueOf(testValue).Convert(paramType))
+		}
 	}
 
-	// Add origin parameter
-	args = append(args, reflect.ValueOf(origin))
-
-	// Call the method
 	method.Func.Call(args)
 }
 
@@ -363,6 +377,9 @@ func getTestValueForType(t reflect.Type) any {
 	// Check for specific named types first (before kind checks)
 	if t == reflect.TypeFor[time.Duration]() {
 		return 10 * time.Second
+	}
+	if t == reflect.TypeFor[*url.URL]() {
+		return &url.URL{Scheme: "http", Host: "test-agent:8126"}
 	}
 
 	// Then check by kind
@@ -457,6 +474,165 @@ func TestSetServiceMappingReportsFullList(t *testing.T) {
 	assert.Equal(t, []string{"a:3", "b:2"}, parts)
 }
 
+func TestOTLPTraceURLResolution(t *testing.T) {
+	t.Run("default OTLP port from agent host", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Contains(t, cfg.OTLPTraceURL(), ":4318/v1/traces")
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT overrides", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://collector:4318/v1/traces")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://collector:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+
+	t.Run("uses agent host when no OTLP endpoint configured", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_AGENT_HOST", "custom-agent")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "http://custom-agent:4318/v1/traces", cfg.OTLPTraceURL())
+	})
+}
+
+func TestOTLPHeaders(t *testing.T) {
+	t.Run("always populated with at least Content-Type", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		headers := cfg.OTLPHeaders()
+		require.NotNil(t, headers)
+		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+		assert.Len(t, headers, 1)
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS parsed into map", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=secret,x-custom=value")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		headers := cfg.OTLPHeaders()
+		assert.Equal(t, "secret", headers["api-key"])
+		assert.Equal(t, "value", headers["x-custom"])
+		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+	})
+
+}
+
+func TestOTLPExportMode(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("enabled by OTEL_TRACES_EXPORTER=otlp", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.True(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("not enabled by unsupported exporter value", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "jaeger")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("not enabled by OTEL_TRACES_EXPORTER=none", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "none")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode())
+	})
+
+	t.Run("DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode(), "otlpExportMode should be false when DD_TRACE_AGENT_PROTOCOL_VERSION is explicitly set")
+		assert.Equal(t, TraceProtocolV1, cfg.TraceProtocol())
+	})
+
+	t.Run("DD_TRACE_AGENT_PROTOCOL_VERSION=0.4 still overrides OTEL_TRACES_EXPORTER", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode(), "otlpExportMode should be false when DD_TRACE_AGENT_PROTOCOL_VERSION is explicitly set, even to the default value")
+		assert.Equal(t, TraceProtocolV04, cfg.TraceProtocol())
+	})
+
+	t.Run("SetOTLPExportMode toggles mode", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.False(t, cfg.OTLPExportMode())
+
+		cfg.SetOTLPExportMode(true, telemetry.OriginCode)
+		assert.True(t, cfg.OTLPExportMode())
+
+		cfg.SetOTLPExportMode(false, telemetry.OriginCode)
+		assert.False(t, cfg.OTLPExportMode())
+	})
+}
+
 func TestHostnameConfiguration(t *testing.T) {
 	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
 		resetGlobalState()
@@ -536,5 +712,158 @@ func TestHostnameConfiguration(t *testing.T) {
 		// Empty string explicitly set should override the looked-up hostname
 		assert.Empty(t, cfg.Hostname(), "Empty DD_TRACE_SOURCE_HOSTNAME should override hostname lookup")
 		assert.True(t, cfg.ReportHostname(), "ReportHostname should be true when DD_TRACE_SOURCE_HOSTNAME is explicitly set")
+	})
+}
+
+func TestProductConflict(t *testing.T) {
+	t.Run("first-in-wins", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceName("tracer-svc", OriginCode, ProductTracer)
+		assert.Equal(t, "tracer-svc", cfg.ServiceName())
+
+		cfg.SetServiceName("profiler-svc", OriginCode, ProductProfiler)
+		assert.Equal(t, "tracer-svc", cfg.ServiceName(), "first-in-wins: profiler should be rejected")
+	})
+
+	t.Run("same product can update", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetEnv("staging", OriginCode, ProductTracer)
+		assert.Equal(t, "staging", cfg.Env())
+
+		cfg.SetEnv("production", OriginCode, ProductTracer)
+		assert.Equal(t, "production", cfg.Env(), "same product should be allowed to update")
+	})
+
+	t.Run("env var bypasses gate", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetVersion("1.0", OriginCode, ProductTracer)
+		assert.Equal(t, "1.0", cfg.Version())
+
+		cfg.SetVersion("2.0", telemetry.OriginEnvVar)
+		assert.Equal(t, "2.0", cfg.Version(), "env var origin should bypass the gate")
+	})
+
+	t.Run("no product bypasses gate", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceName("first", OriginCode, ProductTracer)
+		assert.Equal(t, "first", cfg.ServiceName())
+
+		cfg.SetServiceName("second", OriginCode)
+		assert.Equal(t, "second", cfg.ServiceName(), "call without product should bypass the gate")
+	})
+
+	t.Run("independent fields", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceName("tracer-svc", OriginCode, ProductTracer)
+		cfg.SetEnv("profiler-env", OriginCode, ProductProfiler)
+
+		assert.Equal(t, "tracer-svc", cfg.ServiceName())
+		assert.Equal(t, "profiler-env", cfg.Env(), "different fields should not conflict")
+	})
+
+	t.Run("same value different products is not a conflict", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceName("my-svc", OriginCode, ProductTracer)
+		cfg.SetServiceName("my-svc", OriginCode, ProductProfiler)
+
+		assert.Equal(t, "my-svc", cfg.ServiceName(),
+			"same value from different products should be allowed")
+	})
+}
+
+func TestAdditiveConfigs(t *testing.T) {
+	t.Run("feature flags merge across products", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetFeatureFlags([]string{"feat_a", "feat_b"}, OriginCode, ProductTracer)
+		cfg.SetFeatureFlags([]string{"feat_c"}, OriginCode, ProductProfiler)
+
+		flags := cfg.FeatureFlags()
+		assert.Contains(t, flags, "feat_a")
+		assert.Contains(t, flags, "feat_b")
+		assert.Contains(t, flags, "feat_c")
+	})
+
+	t.Run("feature flags deduplicate across products", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetFeatureFlags([]string{"shared_feat"}, OriginCode, ProductTracer)
+		cfg.SetFeatureFlags([]string{"shared_feat"}, OriginCode, ProductProfiler)
+
+		flags := cfg.FeatureFlags()
+		assert.Contains(t, flags, "shared_feat")
+		assert.Len(t, flags, 1, "duplicate flags should be deduplicated")
+	})
+
+	t.Run("service mappings merge across products", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceMapping("web", "frontend", OriginCode, ProductTracer)
+		cfg.SetServiceMapping("db", "backend", OriginCode, ProductProfiler)
+
+		mappings := cfg.ServiceMappings()
+		assert.Equal(t, "frontend", mappings["web"])
+		assert.Equal(t, "backend", mappings["db"])
+	})
+
+	t.Run("service mappings deduplicate across products", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceMapping("web", "frontend", OriginCode, ProductTracer)
+		cfg.SetServiceMapping("web", "frontend", OriginCode, ProductProfiler)
+
+		mappings := cfg.ServiceMappings()
+		assert.Equal(t, "frontend", mappings["web"])
+		assert.Len(t, mappings, 1, "identical mapping from two products should not create duplicates")
+	})
+
+	t.Run("service mapping same key different value overwrites", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetServiceMapping("web", "frontend-v1", OriginCode, ProductTracer)
+		cfg.SetServiceMapping("web", "frontend-v2", OriginCode, ProductProfiler)
+
+		to, ok := cfg.ServiceMapping("web")
+		assert.True(t, ok)
+		assert.Equal(t, "frontend-v2", to, "last write wins for same mapping key")
 	})
 }

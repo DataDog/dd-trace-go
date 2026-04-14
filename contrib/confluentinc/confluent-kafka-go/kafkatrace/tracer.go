@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -21,11 +22,14 @@ type Tracer struct {
 	ctx                 context.Context
 	consumerServiceName string
 	producerServiceName string
+	serviceSource       string
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
 	bootstrapServers    string
 	groupID             string
+	clusterID           string
+	clusterIDMu         sync.RWMutex
 	tagFns              map[string]func(msg Message) any
 	dsmEnabled          bool
 	ckgoVersion         CKGoVersion
@@ -34,6 +38,18 @@ type Tracer struct {
 
 func (tr *Tracer) DSMEnabled() bool {
 	return tr.dsmEnabled
+}
+
+func (tr *Tracer) ClusterID() string {
+	tr.clusterIDMu.RLock()
+	defer tr.clusterIDMu.RUnlock()
+	return tr.clusterID
+}
+
+func (tr *Tracer) SetClusterID(id string) {
+	tr.clusterIDMu.Lock()
+	defer tr.clusterIDMu.Unlock()
+	tr.clusterID = id
 }
 
 type Option interface {
@@ -62,6 +78,11 @@ func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVers
 
 	tr.consumerServiceName = instr.ServiceName(instrumentation.ComponentConsumer, nil)
 	tr.producerServiceName = instr.ServiceName(instrumentation.ComponentProducer, nil)
+	if ckgoVersion == CKGoVersion2 {
+		tr.serviceSource = string(instrumentation.PackageConfluentKafkaGoV2)
+	} else {
+		tr.serviceSource = string(instrumentation.PackageConfluentKafkaGo)
+	}
 	tr.consumerSpanName = instr.OperationName(instrumentation.ComponentConsumer, nil)
 	tr.producerSpanName = instr.OperationName(instrumentation.ComponentProducer, nil)
 
@@ -88,6 +109,7 @@ func WithService(serviceName string) OptionFn {
 	return func(cfg *Tracer) {
 		cfg.consumerServiceName = serviceName
 		cfg.producerServiceName = serviceName
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

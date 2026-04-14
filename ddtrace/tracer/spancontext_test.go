@@ -811,8 +811,8 @@ func TestSpanPeerService(t *testing.T) {
 			assert.Nil(t, err)
 			defer stop()
 
-			tracer.config.peerServiceDefaultsEnabled = tc.peerServiceDefaultsEnabled
-			tracer.config.peerServiceMappings = tc.peerServiceMappings
+			tracer.config.internalConfig.SetPeerServiceDefaultsEnabled(tc.peerServiceDefaultsEnabled, telemetry.OriginCode)
+			tracer.config.internalConfig.SetPeerServiceMappings(tc.peerServiceMappings, telemetry.OriginCode)
 
 			p := tracer.StartSpan("parent-span", tc.spanOpts...)
 			opts := append([]StartSpanOption{ChildOf(p.Context())}, tc.spanOpts...)
@@ -935,7 +935,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.NotNil(ctx.trace)
-		assert.Nil(ctx.trace.priority)
+		assert.Nil(ctx.trace.priority.Load())
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
@@ -952,7 +952,7 @@ func TestNewSpanContext(t *testing.T) {
 		assert.Equal(ctx.traceID.Lower(), span.traceID)
 		assert.Equal(ctx.spanID, span.spanID)
 		assert.Equal(ctx.SpanID(), span.spanID)
-		assert.Equal(*ctx.trace.priority, 1.)
+		assert.Equal(*ctx.trace.priority.Load(), 1.)
 		assert.Equal(ctx.trace.root, span)
 		assert.Contains(ctx.trace.spans, span)
 	})
@@ -972,7 +972,7 @@ func TestNewSpanContext(t *testing.T) {
 		span := StartSpan("some-span", ChildOf(ctx))
 		assert.EqualValues(uint64(1), ctx.traceID.Lower())
 		assert.EqualValues(2, ctx.spanID)
-		assert.EqualValues(3, *ctx.trace.priority)
+		assert.EqualValues(3, *ctx.trace.priority.Load())
 		assert.Equal(ctx.trace.root, span)
 	})
 }
@@ -993,10 +993,12 @@ func TestSpanContextParent(t *testing.T) {
 		"priority": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
 			hasBaggage: 1,
-			trace: &trace{
-				spans:    []*Span{newBasicSpan("abc")},
-				priority: func() *float64 { v := new(float64); *v = 2; return v }(),
-			},
+			trace: func() *trace {
+				t := &trace{spans: []*Span{newBasicSpan("abc")}}
+				v := 2.0
+				t.priority.Store(&v)
+				return t
+			}(),
 		},
 		"sampling_decision": {
 			baggage:    map[string]string{"A": "A", "B": "B"},
@@ -1022,7 +1024,7 @@ func TestSpanContextParent(t *testing.T) {
 			assert.NotNil(ctx.trace)
 			assert.Contains(ctx.trace.spans, s)
 			if parentCtx.trace != nil {
-				assert.Equal(ctx.trace.priority, parentCtx.trace.priority)
+				assert.Equal(ctx.trace.priority.Load(), parentCtx.trace.priority.Load())
 				assert.Equal(ctx.trace.samplingDecision, parentCtx.trace.samplingDecision)
 			}
 			assert.Equal(parentCtx.baggage, ctx.baggage)
@@ -1102,7 +1104,7 @@ func TestSpanContextIteratorBreak(t *testing.T) {
 
 func BenchmarkBaggageItemPresent(b *testing.B) {
 	ctx := SpanContext{baggage: map[string]string{"key": "value"}, hasBaggage: 1}
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		ctx.ForeachBaggageItem(func(_, _ string) bool {
 			return true
 		})
@@ -1111,7 +1113,7 @@ func BenchmarkBaggageItemPresent(b *testing.B) {
 
 func BenchmarkBaggageItemEmpty(b *testing.B) {
 	ctx := SpanContext{}
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		ctx.ForeachBaggageItem(func(_, _ string) bool {
 			return true
 		})
@@ -1167,15 +1169,22 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 }
 
 func TestTraceIDHexEncoded(t *testing.T) {
-	tid := traceID([16]byte{})
-	tid[15] = 5
+	var tid traceID
+	tid.value[15] = 5
+	tid.computeAndCacheHex()
 	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
 }
 
 func TestTraceIDEmpty(t *testing.T) {
-	tid := traceID([16]byte{})
-	tid[15] = 5
-	assert.False(t, tid.Empty())
+	t.Run("empty", func(t *testing.T) {
+		var tid traceID
+		assert.True(t, tid.Empty())
+	})
+	t.Run("not empty", func(t *testing.T) {
+		var tid traceID
+		tid.value[15] = 5
+		assert.False(t, tid.Empty())
+	})
 }
 
 func TestSpanIDHexEncoded(t *testing.T) {
@@ -1251,14 +1260,23 @@ func TestSpanProcessTags(t *testing.T) {
 }
 
 func BenchmarkSpanIDHexEncoded(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		_ = spanIDHexEncoded(32, 16)
 	}
 }
 
 func BenchmarkSpanIDSprintf(b *testing.B) {
-	for n := 0; n < b.N; n++ {
+	for b.Loop() {
 		_ = fmt.Sprintf("%016x", 32)
+	}
+}
+
+func BenchmarkTraceIDHasUpper(b *testing.B) {
+	var tid traceID
+	tid.value[7] = 1
+	b.ResetTimer()
+	for b.Loop() {
+		_ = tid.HasUpper()
 	}
 }
 
@@ -1317,5 +1335,137 @@ func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 		for b.Loop() {
 			updateTracerGitMetadataTags(span)
 		}
+	})
+}
+
+// genericCtxWithDM is a minimal ddtrace.SpanContext + spanContextV1Adapter that
+// simulates a context arriving from an external (non-native) integration.
+//   - propagatingTags: carries propagation metadata such as _dd.p.dm (decision maker),
+//     used to test that FromGenericCtx correctly caches the sampling mechanism.
+//   - decision: the sampling decision (decisionNone/Keep/Drop) from the external context,
+//     used to test how FromGenericCtx translates it into DD trace semantics.
+//   - priority: the numeric sampling priority (e.g. PriorityAutoKeep, PriorityAutoReject),
+//     used to test that FromGenericCtx sets and locks the priority on the trace.
+type genericCtxWithDM struct {
+	propagatingTags map[string]string
+	decision        uint32
+	priority        *float64
+}
+
+func (g *genericCtxWithDM) SpanID() uint64                              { return 1 }
+func (g *genericCtxWithDM) TraceID() string                             { return "1" }
+func (g *genericCtxWithDM) TraceIDBytes() [16]byte                      { var b [16]byte; b[15] = 1; return b }
+func (g *genericCtxWithDM) TraceIDLower() uint64                        { return 1 }
+func (g *genericCtxWithDM) ForeachBaggageItem(_ func(k, v string) bool) {}
+func (g *genericCtxWithDM) SamplingDecision() uint32                    { return g.decision }
+func (g *genericCtxWithDM) Priority() *float64                          { return g.priority }
+func (g *genericCtxWithDM) Origin() string                              { return "" }
+func (g *genericCtxWithDM) PropagatingTags() map[string]string          { return g.propagatingTags }
+func (g *genericCtxWithDM) Tags() map[string]string                     { return nil }
+
+// TestFromGenericCtxDecisionMakerCached verifies that FromGenericCtx populates
+// t.dm so that trace.decisionMaker() returns the correct sampling mechanism for
+// traces arriving through generic (non-native) context adapters.
+func TestFromGenericCtxDecisionMakerCached(t *testing.T) {
+	keepPri := float64(ext.PriorityAutoKeep)
+	ctx := &genericCtxWithDM{
+		propagatingTags: map[string]string{keyDecisionMaker: "-4"},
+		decision:        uint32(decisionKeep),
+		priority:        &keepPri,
+	}
+	sc := FromGenericCtx(ctx)
+	require.NotNil(t, sc.trace)
+	assert.Equal(t, uint32(4), sc.trace.decisionMaker())
+}
+
+func TestFromGenericCtxSamplingDecision(t *testing.T) {
+	t.Run("drop_preserves_CAS", func(t *testing.T) {
+		// When an external context (e.g. OTel bridge) signals a drop decision,
+		// FromGenericCtx should NOT set samplingDecision to decisionDrop directly.
+		// It should leave it as decisionNone so that the keep()/drop() CAS flow
+		// works normally — allowing error spans to rescue the trace.
+		p := float64(ext.PriorityAutoReject)
+		ctx := &genericCtxWithDM{
+			decision: uint32(decisionDrop),
+			priority: &p,
+		}
+		sc := FromGenericCtx(ctx)
+		require.NotNil(t, sc.trace)
+
+		// samplingDecision must be decisionNone, not decisionDrop.
+		got := samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionNone, got,
+			"drop decision from external context should not be propagated directly; "+
+				"samplingDecision should remain decisionNone so keep()/drop() CAS works")
+
+		// Priority should still reflect the external intent (P0).
+		pri, ok := sc.SamplingPriority()
+		require.True(t, ok)
+		assert.Equal(t, int(ext.PriorityAutoReject), pri,
+			"priority should be set to AutoReject (P0) to preserve the external sampling intent")
+
+		// Trace should be locked to prevent the DD sampler from overriding P0.
+		assert.True(t, sc.trace.isLocked(),
+			"trace should be locked to prevent resampling")
+
+		// keep() CAS should succeed since samplingDecision is decisionNone.
+		sc.trace.keep()
+		got = samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, got,
+			"keep() should be able to CAS from decisionNone to decisionKeep, "+
+				"allowing error spans to rescue the trace")
+	})
+
+	t.Run("keep_propagated", func(t *testing.T) {
+		// When an external context signals a keep decision, FromGenericCtx
+		// should propagate decisionKeep directly so the trace is guaranteed
+		// to be sent.
+		p := float64(ext.PriorityAutoKeep)
+		ctx := &genericCtxWithDM{
+			decision: uint32(decisionKeep),
+			priority: &p,
+		}
+		sc := FromGenericCtx(ctx)
+		require.NotNil(t, sc.trace)
+
+		got := samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, got,
+			"keep decision from external context should be propagated directly")
+
+		pri, ok := sc.SamplingPriority()
+		require.True(t, ok)
+		assert.Equal(t, int(ext.PriorityAutoKeep), pri)
+
+		assert.True(t, sc.trace.isLocked(),
+			"trace should be locked to prevent resampling")
+	})
+
+	t.Run("drop_error_span_rescue", func(t *testing.T) {
+		// Simulate the OTel bridge scenario: unsampled parent produces a child
+		// span that has an error. The error span should rescue the trace via
+		// keep(), which only works if samplingDecision starts as decisionNone.
+		p := float64(ext.PriorityAutoReject)
+		ctx := &genericCtxWithDM{
+			decision: uint32(decisionDrop),
+			priority: &p,
+		}
+		sc := FromGenericCtx(ctx)
+		require.NotNil(t, sc.trace)
+
+		// Simulate an error on the trace (as setErrorFlagLocked would do).
+		sc.errors.Add(1)
+		assert.Greater(t, sc.errors.Load(), int32(0))
+
+		// keep() must succeed: CAS(decisionNone -> decisionKeep).
+		sc.trace.keep()
+		got := samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, got,
+			"error span should rescue the trace: keep() must CAS to decisionKeep")
+
+		// After keep(), drop() should be a no-op (CAS from decisionNone fails).
+		sc.trace.drop()
+		got = samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, got,
+			"drop() after keep() should be a no-op — the trace stays rescued")
 	})
 }

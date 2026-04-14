@@ -45,7 +45,7 @@ func (w *wrappedDispatcher) Run() {
 	for msg := range msgs {
 		// create the next span from the message
 		opts := []tracer.StartSpanOption{
-			tracer.ServiceName(w.cfg.consumerServiceName),
+			instrumentation.ServiceNameWithSource(w.cfg.consumerServiceName, w.cfg.serviceSource),
 			tracer.ResourceName("Consume Topic " + msg.Topic),
 			tracer.SpanType(ext.SpanTypeMessageConsumer),
 			tracer.Tag(ext.MessagingKafkaPartition, msg.Partition),
@@ -55,6 +55,9 @@ func (w *wrappedDispatcher) Run() {
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemKafka),
 			tracer.Tag(ext.MessagingDestinationName, msg.Topic),
 			tracer.Measured(),
+		}
+		if clusterID := w.cfg.ClusterID(); clusterID != "" {
+			opts = append(opts, tracer.Tag(ext.MessagingKafkaClusterID, clusterID))
 		}
 		if !math.IsNaN(w.cfg.analyticsRate) {
 			opts = append(opts, tracer.Tag(ext.EventSampleRate, w.cfg.analyticsRate))
@@ -76,7 +79,7 @@ func (w *wrappedDispatcher) Run() {
 		next := tracer.StartSpan(w.cfg.consumerSpanName, opts...)
 		// reinject the span context so consumers can pick it up
 		tracer.Inject(next.Context(), carrier)
-		setConsumeCheckpoint(w.cfg.dataStreamsEnabled, w.cfg.groupID, msg)
+		setConsumeCheckpoint(w.cfg.dataStreamsEnabled, w.cfg.groupID, w.cfg.ClusterID(), msg)
 		w.messages <- msg
 
 		// if the next message was received, finish the previous span

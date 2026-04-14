@@ -13,6 +13,7 @@ import (
 
 type config struct {
 	serviceName   string
+	serviceSource string
 	analyticsRate float64
 	headerTags    instrumentation.HeaderTags
 }
@@ -20,6 +21,7 @@ type config struct {
 func newConfig() *config {
 	return &config{
 		serviceName:   instr.ServiceName(instrumentation.ComponentServer, nil),
+		serviceSource: string(instrumentation.PackageEmickleiGoRestfulV3),
 		analyticsRate: instr.AnalyticsRate(true),
 		headerTags:    instr.HTTPHeadersAsTags(),
 	}
@@ -41,6 +43,7 @@ func (fn OptionFn) apply(cfg *config) {
 func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

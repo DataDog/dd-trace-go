@@ -220,9 +220,12 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		config.EarlyFlushPayloadSize = defaultEarlyFlushPayloadSize
 	}
 
-	if config.ExtendedHeartbeatInterval == 0 {
-		config.ExtendedHeartbeatInterval = defaultExtendedHeartbeatInterval
+	extendedHeartbeatInterval := defaultExtendedHeartbeatInterval
+	if config.ExtendedHeartbeatInterval != 0 {
+		extendedHeartbeatInterval = config.ExtendedHeartbeatInterval
 	}
+	envExtVal := globalinternal.FloatEnv("DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL", extendedHeartbeatInterval.Seconds())
+	config.ExtendedHeartbeatInterval = time.Duration(envExtVal * float64(time.Second))
 
 	if config.PayloadQueueSize.Min == 0 {
 		config.PayloadQueueSize.Min = defaultPayloadQueueSize.Min

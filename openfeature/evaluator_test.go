@@ -6,6 +6,12 @@
 package openfeature
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -362,7 +368,10 @@ func TestEvaluateShard(t *testing.T) {
 			"targetingKey": targetingKey,
 		}
 
-		result := evaluateShard(shard, context)
+		result, err := evaluateShard(shard, context)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if !result {
 			t.Errorf("expected shard to match when range includes computed shard %d", actualShard)
 		}
@@ -394,7 +403,10 @@ func TestEvaluateShard(t *testing.T) {
 			"targetingKey": targetingKey,
 		}
 
-		result := evaluateShard(shard, context)
+		result, err := evaluateShard(shard, context)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result {
 			t.Errorf("expected shard not to match when range excludes computed shard")
 		}
@@ -410,9 +422,12 @@ func TestEvaluateShard(t *testing.T) {
 		}
 		context := map[string]any{}
 
-		result := evaluateShard(shard, context)
+		result, err := evaluateShard(shard, context)
 		if result {
 			t.Errorf("expected shard not to match when no targeting key present")
+		}
+		if !errors.Is(err, errTargetingKeyMissing) {
+			t.Errorf("expected errTargetingKeyMissing, got %v", err)
 		}
 	})
 
@@ -428,7 +443,10 @@ func TestEvaluateShard(t *testing.T) {
 			"targetingKey": "any-user",
 		}
 
-		result := evaluateShard(shard, context)
+		result, err := evaluateShard(shard, context)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if !result {
 			t.Errorf("expected shard to match when range covers all shards")
 		}
@@ -568,146 +586,15 @@ func TestEvaluateAllocation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			split, matched := evaluateAllocation(tt.allocation, tt.context, tt.currentTime)
+			split, matched, err := evaluateAllocation(tt.allocation, tt.context, tt.currentTime)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if matched != tt.expectMatch {
 				t.Errorf("expected match=%v, got match=%v", tt.expectMatch, matched)
 			}
 			if matched && split != nil && split.VariationKey != tt.expectedVariation {
 				t.Errorf("expected variation=%s, got variation=%s", tt.expectedVariation, split.VariationKey)
-			}
-		})
-	}
-}
-
-func TestEvaluateFlag(t *testing.T) {
-	tests := []struct {
-		name           string
-		flag           *flag
-		defaultValue   any
-		context        map[string]any
-		expectedValue  any
-		expectedReason of.Reason
-	}{
-		{
-			name: "disabled flag returns default",
-			flag: &flag{
-				Key:           "test-flag",
-				Enabled:       false,
-				VariationType: valueTypeBoolean,
-			},
-			defaultValue:   false,
-			context:        map[string]any{},
-			expectedValue:  false,
-			expectedReason: of.DisabledReason,
-		},
-		{
-			name: "enabled flag with matching allocation",
-			flag: &flag{
-				Key:           "test-flag",
-				Enabled:       true,
-				VariationType: valueTypeBoolean,
-				Variations: map[string]*variant{
-					"on":  {Key: "on", Value: true},
-					"off": {Key: "off", Value: false},
-				},
-				Allocations: []*allocation{
-					{
-						Key: "allocation1",
-						Rules: []*rule{
-							{
-								Conditions: []*condition{
-									{
-										Operator:  operatorOneOf,
-										Attribute: "country",
-										Value:     []string{"US"},
-									},
-								},
-							},
-						},
-						Splits: []*split{
-							{
-								Shards: []*shard{
-									{
-										Salt: "test",
-										Ranges: []*shardRange{
-											{Start: 0, End: 8192},
-										},
-										TotalShards: 8192,
-									},
-								},
-								VariationKey: "on",
-							},
-						},
-					},
-				},
-			},
-			defaultValue: false,
-			context: map[string]any{
-				"country":      "US",
-				"targetingKey": "user-123",
-			},
-			expectedValue:  true,
-			expectedReason: of.TargetingMatchReason,
-		},
-		{
-			name: "enabled flag with no matching allocation",
-			flag: &flag{
-				Key:           "test-flag",
-				Enabled:       true,
-				VariationType: valueTypeBoolean,
-				Variations: map[string]*variant{
-					"on":  {Key: "on", Value: true},
-					"off": {Key: "off", Value: false},
-				},
-				Allocations: []*allocation{
-					{
-						Key: "allocation1",
-						Rules: []*rule{
-							{
-								Conditions: []*condition{
-									{
-										Operator:  operatorOneOf,
-										Attribute: "country",
-										Value:     []string{"CA"},
-									},
-								},
-							},
-						},
-						Splits: []*split{
-							{
-								Shards: []*shard{
-									{
-										Salt: "test",
-										Ranges: []*shardRange{
-											{Start: 0, End: 8192},
-										},
-										TotalShards: 8192,
-									},
-								},
-								VariationKey: "on",
-							},
-						},
-					},
-				},
-			},
-			defaultValue: false,
-			context: map[string]any{
-				"country":      "US",
-				"targetingKey": "user-123",
-			},
-			expectedValue:  false,
-			expectedReason: of.DefaultReason,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := evaluateFlag(tt.flag, tt.defaultValue, tt.context)
-			if result.Value != tt.expectedValue {
-				t.Errorf("expected value=%v, got value=%v", tt.expectedValue, result.Value)
-			}
-			if result.Reason != tt.expectedReason {
-				t.Errorf("expected reason=%s, got reason=%s", tt.expectedReason, result.Reason)
 			}
 		})
 	}
@@ -759,6 +646,137 @@ func TestValidateVariantType(t *testing.T) {
 			err := validateVariantType(tt.value, tt.expectedType)
 			if (err != nil) != tt.expectError {
 				t.Errorf("expected error=%v, got error=%v", tt.expectError, err)
+			}
+		})
+	}
+}
+
+func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
+	// When the configuration declares a flag type (e.g., INTEGER) but the variant
+	// value doesn't match (e.g., a string), we should return errParseError so that
+	// toResolutionError maps it to PARSE_ERROR.
+	tests := []struct {
+		name          string
+		variationType valueType
+		variantValue  any
+	}{
+		{
+			name:          "INTEGER flag with string value",
+			variationType: valueTypeInteger,
+			variantValue:  "not-an-integer",
+		},
+		{
+			name:          "BOOLEAN flag with string value",
+			variationType: valueTypeBoolean,
+			variantValue:  "true",
+		},
+		{
+			name:          "NUMERIC flag with string value",
+			variationType: valueTypeNumeric,
+			variantValue:  "42.5",
+		},
+		{
+			name:          "STRING flag with integer value",
+			variationType: valueTypeString,
+			variantValue:  123,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flag := &flag{
+				Key:           "test-flag",
+				Enabled:       true,
+				VariationType: tt.variationType,
+				Variations: map[string]*variant{
+					"v1": {Key: "v1", Value: tt.variantValue},
+				},
+				Allocations: []*allocation{
+					{
+						Key: "allocation1",
+						Splits: []*split{
+							{
+								VariationKey: "v1",
+							},
+						},
+					},
+				},
+			}
+
+			result := evaluateFlag(flag, nil, map[string]any{"targetingKey": "user-123"})
+
+			if result.Reason != of.ErrorReason {
+				t.Errorf("expected ErrorReason, got %s", result.Reason)
+			}
+			if result.Error == nil {
+				t.Fatal("expected error, got nil")
+			}
+			// Verify the error wraps errParseError so toResolutionError maps to PARSE_ERROR
+			if !errors.Is(result.Error, errParseError) {
+				t.Errorf("expected error to wrap errParseError, got: %v", result.Error)
+			}
+		})
+	}
+}
+
+func TestEvaluateFlag_JSONFixtures(t *testing.T) {
+	configData, err := os.ReadFile(filepath.Join("testdata", "ufc-config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg universalFlagsConfiguration
+	if err := json.Unmarshal(configData, &cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := filepath.Glob(filepath.Join("testdata", "evaluation-cases", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no evaluation-case fixture files found")
+	}
+
+	for _, file := range files {
+		t.Run(filepath.Base(file), func(t *testing.T) {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cases []struct {
+				Flag         string         `json:"flag"`
+				DefaultValue any            `json:"defaultValue"`
+				TargetingKey *string        `json:"targetingKey"`
+				Attributes   map[string]any `json:"attributes"`
+				Result       struct {
+					Value  any    `json:"value"`
+					Reason string `json:"reason"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal(data, &cases); err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			for i, tc := range cases {
+				tkLabel := "<nil>"
+				if tc.TargetingKey != nil {
+					tkLabel = *tc.TargetingKey
+				}
+				t.Run(fmt.Sprintf("case%d/%s", i, tkLabel), func(t *testing.T) {
+					ctx := make(map[string]any, len(tc.Attributes)+1)
+					maps.Copy(ctx, tc.Attributes)
+					if tc.TargetingKey != nil {
+						ctx["targetingKey"] = *tc.TargetingKey
+					}
+
+					result := evaluateFlag(cfg.Flags[tc.Flag], tc.DefaultValue, ctx)
+
+					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
+						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)
+					}
+					if tc.Result.Reason != "" && result.Reason != of.Reason(tc.Result.Reason) {
+						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					}
+				})
 			}
 		})
 	}

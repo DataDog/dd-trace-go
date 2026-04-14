@@ -5,18 +5,49 @@
 
 package config
 
-import "github.com/DataDog/dd-trace-go/v2/internal/log"
+import (
+	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"strings"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+)
 
 const (
 	// DefaultRateLimit specifies the default rate limit per second for traces.
 	// TODO: Maybe delete this. We will have defaults in supported_configuration.json anyway.
 	DefaultRateLimit = 100.0
-	// traceMaxSize is the maximum number of spans we keep in memory for a
+	// TraceMaxSize is the maximum number of spans we keep in memory for a
 	// single trace. This is to avoid memory leaks. If more spans than this
 	// are added to a trace, then the trace is dropped and the spans are
 	// discarded. Adding additional spans after a trace is dropped does
 	// nothing.
 	TraceMaxSize = int(1e5)
+
+	// Datadog trace protocol versions (agent wire format).
+	TraceProtocolV04              = 0.4 // default
+	TraceProtocolV1               = 1.0
+	TraceProtocolVersionStringV04 = "0.4"
+	TraceProtocolVersionStringV1  = "1.0"
+
+	// Agent URL schemes supported by DD_TRACE_AGENT_URL.
+	URLSchemeUnix  = "unix"
+	URLSchemeHTTP  = "http"
+	URLSchemeHTTPS = "https"
+
+	// Trace API paths appended to the agent URL for each protocol.
+	TracesPathV04 = "/v0.4/traces"
+	TracesPathV1  = "/v1.0/traces"
+
+	// OTLP standard traces path and default collector port.
+	otlpTracesPath  = "/v1/traces"
+	otlpDefaultPort = "4318"
+
+	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
+	OTLPContentTypeHeader = "application/x-protobuf"
 )
 
 func validateSampleRate(rate float64) bool {
@@ -35,6 +66,21 @@ func validateRateLimit(rate float64) bool {
 	return true
 }
 
+// parseSpanAttributeSchema parses the DD_TRACE_SPAN_ATTRIBUTE_SCHEMA value.
+// It accepts "v0", "v1" (case-insensitive) and returns the corresponding integer version.
+// An empty string defaults to 0 (v0). Invalid values are rejected.
+func parseSpanAttributeSchema(v string) (int, bool) {
+	switch strings.ToLower(v) {
+	case "", "v0":
+		return 0, true
+	case "v1":
+		return 1, true
+	default:
+		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, ignoring", v)
+		return 0, false
+	}
+}
+
 func validatePartialFlushMinSpans(minSpans int) bool {
 	if minSpans <= 0 {
 		log.Warn("ignoring DD_TRACE_PARTIAL_FLUSH_MIN_SPANS: negative value %d", minSpans)
@@ -45,4 +91,103 @@ func validatePartialFlushMinSpans(minSpans int) bool {
 		return false
 	}
 	return true
+}
+
+func validateTraceProtocolVersion(v string) bool {
+	return v == TraceProtocolVersionStringV04 || v == TraceProtocolVersionStringV1
+}
+
+func resolveTraceProtocol(v string) float64 {
+	if v == TraceProtocolVersionStringV1 {
+		return TraceProtocolV1
+	}
+	return TraceProtocolV04
+}
+
+// resolveAgentURL computes the final agent URL from the three env-var strings
+// read through the provider. The priority mirrors internal.AgentURLFromEnv:
+//  1. DD_TRACE_AGENT_URL (if non-empty and valid)
+//  2. DD_AGENT_HOST / DD_TRACE_AGENT_PORT (if either is non-empty)
+//  3. DefaultTraceAgentUDSPath (if the socket file exists)
+//  4. http://localhost:8126
+func resolveAgentURL(agentURLStr, host, port string) *url.URL {
+	if agentURLStr != "" {
+		u, err := url.Parse(agentURLStr)
+		if err == nil {
+			switch u.Scheme {
+			case URLSchemeUnix, URLSchemeHTTP, URLSchemeHTTPS:
+				return u
+			default:
+				log.Warn("Unsupported protocol %q in Agent URL %q. Must be one of: %s, %s, %s.", u.Scheme, agentURLStr, URLSchemeHTTP, URLSchemeHTTPS, URLSchemeUnix)
+			}
+		} else {
+			log.Warn("Failed to parse DD_TRACE_AGENT_URL: %s", err.Error())
+		}
+	}
+
+	httpURL := buildHTTPURL(host, port)
+	// If either the host or port is set, return the HTTP URL, else try to detect the UDS URL
+	if host != "" || port != "" {
+		return httpURL
+	}
+	if u := detectUDSURL(); u != nil {
+		return u
+	}
+	return httpURL
+}
+
+func buildHTTPURL(host, port string) *url.URL {
+	if host == "" {
+		host = internal.DefaultAgentHostname
+	}
+	if port == "" {
+		port = internal.DefaultTraceAgentPort
+	}
+	return &url.URL{
+		Scheme: URLSchemeHTTP,
+		Host:   net.JoinHostPort(host, port),
+	}
+}
+
+func detectUDSURL() *url.URL {
+	if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err != nil {
+		return nil
+	}
+	return &url.URL{
+		Scheme: URLSchemeUnix,
+		Path:   internal.DefaultTraceAgentUDSPath,
+	}
+}
+
+// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set, else agentURL host + default OTLP port 4318 + /v1/traces.
+// When the user-provided endpoint is set, it is validated: it must be a parseable URL with an http or https scheme.
+// If validation fails, the default endpoint is used instead.
+func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
+	if otlpTracesEndpoint != "" {
+		u, err := url.Parse(otlpTracesEndpoint)
+		if err != nil {
+			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_TRACES_ENDPOINT %q: %s. Falling back to default.", otlpTracesEndpoint, err.Error())
+		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
+			log.Warn("Unsupported scheme %q in OTEL_EXPORTER_OTLP_TRACES_ENDPOINT %q. Must be %s or %s. Falling back to default.", u.Scheme, otlpTracesEndpoint, URLSchemeHTTP, URLSchemeHTTPS)
+		} else {
+			return otlpTracesEndpoint
+		}
+	}
+	host := internal.DefaultAgentHostname
+	if rawAgentURL != nil {
+		if h := rawAgentURL.Hostname(); h != "" {
+			host = h
+		}
+	}
+	return fmt.Sprintf("http://%s:%s%s", host, otlpDefaultPort, otlpTracesPath)
+}
+
+// buildOTLPHeaders builds the OTLP headers map from the provided map.
+// It adds the Content-Type header if not present.
+func buildOTLPHeaders(headers map[string]string) map[string]string {
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	headers["Content-Type"] = OTLPContentTypeHeader
+	return headers
 }

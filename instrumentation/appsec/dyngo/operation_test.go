@@ -739,7 +739,7 @@ func BenchmarkEvents(b *testing.B) {
 
 					b.ReportAllocs()
 					b.ResetTimer()
-					for n := 0; n < b.N; n++ {
+					for b.Loop() {
 						startOperation(MyOperationArgs{}, op)
 					}
 				})
@@ -749,7 +749,7 @@ func BenchmarkEvents(b *testing.B) {
 
 					b.ReportAllocs()
 					b.ResetTimer()
-					for n := 0; n < b.N; n++ {
+					for b.Loop() {
 						leafOp := startOperation(MyOperationArgs{}, op)
 						dyngo.FinishOperation(leafOp, MyOperationRes{})
 					}
@@ -764,14 +764,14 @@ func BenchmarkEvents(b *testing.B) {
 
 		b.Run("start event", func(b *testing.B) {
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				dyngo.On(op, func(operation, MyOperationArgs) {})
 			}
 		})
 
 		b.Run("finish event", func(b *testing.B) {
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
+			for b.Loop() {
 				dyngo.OnFinish(op, func(operation, MyOperationRes) {})
 			}
 		})
@@ -805,7 +805,7 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for n := 0; n < b.N; n++ {
+			for n := range b.N {
 				_ = m[keys[n%len(keys)]]
 			}
 		})
@@ -835,7 +835,7 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
+			for n := range b.N {
 				var k string
 				switch n % 5 {
 				case 0:
@@ -861,7 +861,7 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
+			for n := range b.N {
 				var k reflect.Type
 				switch n % 5 {
 				case 0:
@@ -891,7 +891,7 @@ func BenchmarkGoAssumptions(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for n := 0; n < b.N; n++ {
+			for n := range b.N {
 				var k reflect.Type
 				switch n % 5 {
 				case 0:

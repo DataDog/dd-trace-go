@@ -64,6 +64,10 @@ var gocqlTest = harness.TestCase{
 		DDService:       []string{"gocql.query", "gocql.query"},
 		ServiceOverride: []string{harness.TestServiceOverride, harness.TestServiceOverride},
 	},
+	WantServiceSource: harness.ServiceSourceAssertions{
+		Defaults:        harness.RepeatString(string(instrumentation.PackageGoCQL), 2),
+		ServiceOverride: harness.RepeatString(instrumentation.ServiceSourceWithServiceOption, 2),
+	},
 	AssertOpV0: func(t *testing.T, spans []*mocktracer.Span) {
 		require.Len(t, spans, 2)
 		assert.Equal(t, "cassandra.query", spans[0].OperationName())

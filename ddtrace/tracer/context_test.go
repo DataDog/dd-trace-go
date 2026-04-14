@@ -17,11 +17,23 @@ import (
 )
 
 func TestContextWithSpan(t *testing.T) {
-	want := &Span{spanID: 123}
-	ctx := ContextWithSpan(context.Background(), want)
-	got := ctx.Value(internal.ActiveSpanKey)
-	assert := assert.New(t)
-	assert.Equal(got, want)
+	t.Run("OK", func(t *testing.T) {
+		want := &Span{spanID: 123}
+		ctx := ContextWithSpan(context.Background(), want)
+		got := ctx.Value(internal.ActiveSpanKey)
+		assert := assert.New(t)
+		assert.Equal(got, want)
+	})
+
+	t.Run("nil context", func(t *testing.T) {
+		assert.NotPanics(t, func() {
+			want := &Span{spanID: 123}
+			ctx := ContextWithSpan(nil, want)
+			got := ctx.Value(internal.ActiveSpanKey)
+			assert := assert.New(t)
+			assert.Equal(got, want)
+		})
+	})
 }
 
 func TestSpanFromContext(t *testing.T) {
@@ -150,7 +162,8 @@ func Test128(t *testing.T) {
 	defer stop()
 
 	t.Run("disable 128 bit trace ids", func(t *testing.T) {
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+		old := traceID128BitEnabled.Swap(false)
+		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		span, _ := StartSpanFromContext(context.Background(), "http.request")
 		assert.NotZero(t, span.Context().TraceID())
 		w3cCtx := span.Context()
