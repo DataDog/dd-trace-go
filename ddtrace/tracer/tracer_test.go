@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/goleak"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
+	"go.uber.org/goleak"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
@@ -1481,7 +1481,7 @@ func TestOTLPExportMode(t *testing.T) {
 		assert.True(isOTLPWriter, "expected otlpTraceWriter in OTLP export mode")
 		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
 		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler in OTLP export mode")
-		assert.Nil(tracer.stats, "expected nil concentrator in OTLP export mode")
+		assert.IsType(&noopConcentrator{}, tracer.stats, "expected noopConcentrator in OTLP export mode")
 	})
 
 	t.Run("OTEL_TRACES_EXPORTER=otlp env var enables OTLP mode", func(t *testing.T) {
@@ -1514,8 +1514,8 @@ func TestOTLPExportModeStatsSkipped(t *testing.T) {
 	w := trc.traceWriter.(*otlpTraceWriter)
 	w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
 
-	// Enable canDropP0s so submit() reaches the nil-receiver guard
-	// in t.stats.newTracerStatSpan() rather than short-circuiting.
+	// Enable canDropP0s so submit() reaches the noopConcentrator
+	// rather than short-circuiting.
 	af := trc.config.agent.load()
 	af.Stats = true
 	af.DropP0s = true
@@ -1524,7 +1524,7 @@ func TestOTLPExportModeStatsSkipped(t *testing.T) {
 
 	setGlobalTracer(trc)
 
-	assert.Nil(t, trc.stats, "concentrator must be nil in OTLP mode")
+	assert.IsType(t, &noopConcentrator{}, trc.stats, "concentrator must be noop in OTLP mode")
 	assert.True(t, trc.config.canDropP0s(), "canDropP0s must be true for this test to exercise submit()")
 
 	const spanCount = 5

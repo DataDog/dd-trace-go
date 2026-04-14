@@ -477,8 +477,8 @@ func TestStatsFlushRetries(t *testing.T) {
 	}
 }
 
-func TestConcentratorNilReceiver(t *testing.T) {
-	var c *concentrator
+func TestNoopConcentrator(t *testing.T) {
+	var c statsConcentrator = &noopConcentrator{}
 
 	t.Run("Start", func(t *testing.T) {
 		assert.NotPanics(t, func() { c.Start() })
@@ -501,12 +501,12 @@ func TestConcentratorNilReceiver(t *testing.T) {
 			start:    time.Now().UnixNano(),
 			duration: 1,
 		}
-		var ss *tracerStatSpan
-		var ok bool
-		assert.NotPanics(t, func() {
-			ss, ok = c.newTracerStatSpan(s, obfuscate.NewObfuscator(obfuscate.Config{}))
-		})
+		ss, ok := c.newTracerStatSpan(s, obfuscate.NewObfuscator(obfuscate.Config{}))
 		assert.Nil(t, ss)
 		assert.False(t, ok)
+	})
+
+	t.Run("trySendSpan", func(t *testing.T) {
+		assert.NotPanics(t, func() { c.trySendSpan(&tracerStatSpan{}) })
 	})
 }
