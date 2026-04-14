@@ -1528,7 +1528,7 @@ func TestOTLPExportModeStatsSkipped(t *testing.T) {
 	assert.True(t, trc.config.canDropP0s(), "canDropP0s must be true for this test to exercise submit()")
 
 	const spanCount = 5
-	for i := 0; i < spanCount; i++ {
+	for range spanCount {
 		span := trc.newRootSpan("test.op", "test-service", "/test")
 		span.Finish()
 	}
