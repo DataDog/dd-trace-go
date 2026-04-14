@@ -98,7 +98,7 @@ require (
 	github.com/uptrace/bun v1.1.17
 	github.com/uptrace/bun/dialect/pgdialect v1.1.17
 	github.com/urfave/negroni v1.0.0
-	github.com/valkey-io/valkey-go v1.0.59
+	github.com/valkey-io/valkey-go v1.0.74
 	github.com/valyala/fasthttp v1.58.0
 	go.mongodb.org/mongo-driver v1.17.1
 	google.golang.org/api v0.258.0
