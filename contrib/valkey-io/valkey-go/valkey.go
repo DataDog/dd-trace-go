@@ -174,6 +174,10 @@ func (c *dedicatedClient) SetPubSubHooks(hooks valkey.PubSubHooks) <-chan error 
 	return c.dedicatedClient.SetPubSubHooks(hooks)
 }
 
+func (c *dedicatedClient) SetOnInvalidations(fn func([]valkey.ValkeyMessage)) <-chan error {
+	return c.dedicatedClient.SetOnInvalidations(fn)
+}
+
 func (c *dedicatedClient) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResult {
 	span, ctx := c.startSpan(ctx, processCommand(&cmd))
 	resp := c.dedicatedClient.Do(ctx, cmd)

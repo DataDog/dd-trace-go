@@ -1,0 +1,1490 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "670219081802205435"
+    },
+    "description": "Datadog APIM Callout — deploy VNet + ACI Agent + ACA callout + APIM policy. Do not edit azuredeploy.json manually; regenerate with: az bicep build -f main.bicep --outfile azuredeploy.json"
+  },
+  "parameters": {
+    "datadogApiKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Datadog API key (never logged or output)"
+      }
+    },
+    "apimServiceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the existing APIM service"
+      }
+    },
+    "apimResourceGroup": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": {
+        "description": "Resource group of the APIM service (defaults to this RG)"
+      }
+    },
+    "targetApiIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Array of APIM API IDs to apply the policy to (empty = All APIs)"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of an existing Log Analytics workspace (optional, enables ACA log collection and diagnostic settings)"
+      }
+    },
+    "namePrefix": {
+      "type": "string",
+      "defaultValue": "dd-apim",
+      "metadata": {
+        "description": "Resource name prefix for all resources"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region (defaults to resource group location)"
+      }
+    },
+    "datadogSite": {
+      "type": "string",
+      "defaultValue": "datadoghq.com",
+      "allowedValues": [
+        "datadoghq.com",
+        "us3.datadoghq.com",
+        "us5.datadoghq.com",
+        "datadoghq.eu",
+        "ap1.datadoghq.com",
+        "ap2.datadoghq.com",
+        "ddog-gov.com",
+        "datad0g.com"
+      ],
+      "metadata": {
+        "description": "Datadog site"
+      }
+    },
+    "deployPolicy": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Whether to deploy the Datadog policy to APIM APIs"
+      }
+    },
+    "enableHttps": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enforce HTTPS on the callout ingress (ACA terminates TLS automatically)"
+      }
+    },
+    "containerImage": {
+      "type": "string",
+      "defaultValue": "ghcr.io/datadog/dd-trace-go/apim-callout:latest",
+      "metadata": {
+        "description": "Container image for the callout service"
+      }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/16",
+      "metadata": {
+        "description": "VNet address space"
+      }
+    },
+    "existingVnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of an existing VNet (empty = create new)"
+      }
+    },
+    "existingAcaSubnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of an existing ACA subnet (empty = create new)"
+      }
+    },
+    "existingAciSubnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of an existing ACI subnet (empty = create new)"
+      }
+    },
+    "enableLocks": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable CanNotDelete locks on critical resources (disable for dev/test)"
+      }
+    },
+    "minReplicas": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 0,
+      "maxValue": 30,
+      "metadata": {
+        "description": "Minimum replicas for the callout container app"
+      }
+    },
+    "maxReplicas": {
+      "type": "int",
+      "defaultValue": 10,
+      "minValue": 1,
+      "maxValue": 300,
+      "metadata": {
+        "description": "Maximum replicas for the callout container app"
+      }
+    },
+    "concurrentRequestsThreshold": {
+      "type": "string",
+      "defaultValue": "20",
+      "metadata": {
+        "description": "KEDA HTTP scaler concurrent requests threshold"
+      }
+    },
+    "customTags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Custom tags to apply to all resources (merged with default dd-component tag)"
+      }
+    }
+  },
+  "variables": {
+    "policyXml": "<!--\n  Datadog App & API Protection: Full Azure APIM policy (inbound + outbound)\n\n  This is the complete policy document combining the inbound (request phase)\n  and outbound (response phase) policies. Apply this to your API in APIM.\n\n  Replace <dd-apim-callout-host> with the hostname or IP of the callout service.\n\n  This implements the 4-call pattern:\n    Inbound:  Phase 1 (request headers) + conditional Phase 2 (request body)\n    Outbound: Phase 3 (response headers) + conditional Phase 4 (response body)\n\n  Fail-open: if the callout fails, times out, or returns non-200, requests and\n  responses proceed unmodified.\n-->\n<policies>\n  <inbound>\n    <base />\n    <!-- Phase 1: Request Headers -->\n    <send-request mode=\"new\"\n                  response-variable-name=\"ddPhase1Response\"\n                  timeout=\"3\"\n                  ignore-error=\"true\">\n      <set-url>https://<dd-apim-callout-host>:8080/</set-url>\n      <set-method>POST</set-method>\n      <set-header name=\"Content-Type\" exists-action=\"override\">\n        <value>application/json</value>\n      </set-header>\n      <set-body>@{\n        var headers = new JObject();\n        foreach (var h in context.Request.Headers) {\n          headers[h.Key] = new JArray(h.Value.ToArray());\n        }\n        var addresses = new JObject(\n          new JProperty(\"method\", context.Request.Method),\n          new JProperty(\"scheme\", context.Request.Url.Scheme),\n          new JProperty(\"authority\", context.Request.Url.Host),\n          new JProperty(\"path\", context.Request.Url.Path + context.Request.Url.QueryString),\n          new JProperty(\"remote_addr\", context.Request.IpAddress),\n          new JProperty(\"headers\", headers)\n        );\n        return new JObject(\n          new JProperty(\"addresses\", addresses),\n          new JProperty(\"phase\", \"<RequestHeaders>\")\n        ).ToString();\n      }</set-body>\n    </send-request>\n\n    <!-- Fail-open: if callout failed or returned non-200, let request through -->\n    <choose>\n      <when condition=\"@(!context.Variables.ContainsKey(\"ddPhase1Response\") || context.Variables[\"ddPhase1Response\"] == null || ((IResponse)context.Variables[\"ddPhase1Response\"]).StatusCode != 200)\">\n        <!-- Processor unavailable — fail open -->\n      </when>\n      <otherwise>\n\n    <set-variable name=\"ddPhase1\" value=\"@(((IResponse)context.Variables[\"ddPhase1Response\"]).Body.As<JObject>())\" />\n\n    <!-- If blocked, return the block response -->\n    <choose>\n      <when condition=\"@(((JObject)context.Variables[\"ddPhase1\"])[\"block\"] != null)\">\n        <return-response>\n          <set-status code=\"@(((JObject)context.Variables[\"ddPhase1\"])[\"block\"][\"status\"].Value<int>())\" />\n          <set-header name=\"Content-Type\" exists-action=\"override\">\n            <value>@{\n              var h = ((JObject)context.Variables[\"ddPhase1\"])[\"block\"][\"headers\"];\n              if (h != null && h[\"Content-Type\"] != null) {\n                return h[\"Content-Type\"][0].ToString();\n              }\n              return \"application/json\";\n            }</value>\n          </set-header>\n          <set-body>@{\n            var content = ((JObject)context.Variables[\"ddPhase1\"])[\"block\"][\"content\"];\n            if (content != null) {\n              return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content.ToString()));\n            }\n            return \"\";\n          }</set-body>\n        </return-response>\n      </when>\n    </choose>\n\n    <!-- Store request-id for subsequent phases -->\n    <set-variable name=\"ddRequestId\" value=\"@(((JObject)context.Variables[\"ddPhase1\"])[\"request-id\"].ToString())\" />\n\n    <!-- Inject trace propagation headers -->\n    <choose>\n      <when condition=\"@(((JObject)context.Variables[\"ddPhase1\"])[\"propagate-headers\"] != null)\">\n        <set-header name=\"x-datadog-trace-id\" exists-action=\"override\">\n          <value>@{\n            var h = ((JObject)context.Variables[\"ddPhase1\"])[\"propagate-headers\"][\"X-Datadog-Trace-Id\"];\n            return h != null ? h[0].ToString() : \"\";\n          }</value>\n        </set-header>\n        <set-header name=\"x-datadog-parent-id\" exists-action=\"override\">\n          <value>@{\n            var h = ((JObject)context.Variables[\"ddPhase1\"])[\"propagate-headers\"][\"X-Datadog-Parent-Id\"];\n            return h != null ? h[0].ToString() : \"\";\n          }</value>\n        </set-header>\n        <set-header name=\"x-datadog-sampling-priority\" exists-action=\"override\">\n          <value>@{\n            var h = ((JObject)context.Variables[\"ddPhase1\"])[\"propagate-headers\"][\"X-Datadog-Sampling-Priority\"];\n            return h != null ? h[0].ToString() : \"\";\n          }</value>\n        </set-header>\n        <set-header name=\"x-datadog-origin\" exists-action=\"override\">\n          <value>@{\n            var h = ((JObject)context.Variables[\"ddPhase1\"])[\"propagate-headers\"][\"X-Datadog-Origin\"];\n            return h != null ? h[0].ToString() : \"\";\n          }</value>\n        </set-header>\n        <set-header name=\"x-datadog-tags\" exists-action=\"override\">\n          <value>@{\n            var h = ((JObject)context.Variables[\"ddPhase1\"])[\"propagate-headers\"][\"X-Datadog-Tags\"];\n            return h != null ? h[0].ToString() : \"\";\n          }</value>\n        </set-header>\n      </when>\n    </choose>\n\n    <!-- Phase 2: Request Body (conditional — only if callout requests it) -->\n    <choose>\n      <when condition=\"@(((JObject)context.Variables[\"ddPhase1\"])[\"allowed-body-size\"] != null)\">\n        <send-request mode=\"new\"\n                      response-variable-name=\"ddPhase2Response\"\n                      timeout=\"3\"\n                      ignore-error=\"true\">\n          <set-url>https://<dd-apim-callout-host>:8080/</set-url>\n          <set-method>POST</set-method>\n          <set-header name=\"Content-Type\" exists-action=\"override\">\n            <value>application/json</value>\n          </set-header>\n          <set-body>@{\n            var maxSize = ((JObject)context.Variables[\"ddPhase1\"])[\"allowed-body-size\"].Value<int>();\n            var body = context.Request.Body?.As<byte[]>(preserveContent: true);\n            var b64 = \"\";\n            if (body != null && body.Length > 0) {\n              var slice = body.Length > maxSize ? body.Take(maxSize).ToArray() : body;\n              b64 = Convert.ToBase64String(slice);\n            }\n            var addresses = new JObject(new JProperty(\"body\", b64));\n            return new JObject(\n              new JProperty(\"addresses\", addresses),\n              new JProperty(\"request-id\", (string)context.Variables[\"ddRequestId\"]),\n              new JProperty(\"phase\", \"<RequestBody>\")\n            ).ToString();\n          }</set-body>\n        </send-request>\n\n        <choose>\n          <when condition=\"@(context.Variables.ContainsKey(\"ddPhase2Response\") && context.Variables[\"ddPhase2Response\"] != null && ((IResponse)context.Variables[\"ddPhase2Response\"]).StatusCode == 200)\">\n            <set-variable name=\"ddPhase2\" value=\"@(((IResponse)context.Variables[\"ddPhase2Response\"]).Body.As<JObject>())\" />\n            <choose>\n              <when condition=\"@(((JObject)context.Variables[\"ddPhase2\"])[\"block\"] != null)\">\n                <return-response>\n                  <set-status code=\"@(((JObject)context.Variables[\"ddPhase2\"])[\"block\"][\"status\"].Value<int>())\" />\n                  <set-header name=\"Content-Type\" exists-action=\"override\">\n                    <value>@{\n                      var h = ((JObject)context.Variables[\"ddPhase2\"])[\"block\"][\"headers\"];\n                      if (h != null && h[\"Content-Type\"] != null) {\n                        return h[\"Content-Type\"][0].ToString();\n                      }\n                      return \"application/json\";\n                    }</value>\n                  </set-header>\n                  <set-body>@{\n                    var content = ((JObject)context.Variables[\"ddPhase2\"])[\"block\"][\"content\"];\n                    if (content != null) {\n                      return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content.ToString()));\n                    }\n                    return \"\";\n                  }</set-body>\n                </return-response>\n              </when>\n            </choose>\n          </when>\n        </choose>\n      </when>\n    </choose>\n\n      </otherwise>\n    </choose>\n  </inbound>\n  <backend>\n    <base />\n  </backend>\n  <outbound>\n    <base />\n    <!-- Phase 3: Response Headers -->\n    <send-request mode=\"new\"\n                  response-variable-name=\"ddPhase3Response\"\n                  timeout=\"3\"\n                  ignore-error=\"true\">\n      <set-url>https://<dd-apim-callout-host>:8080/</set-url>\n      <set-method>POST</set-method>\n      <set-header name=\"Content-Type\" exists-action=\"override\">\n        <value>application/json</value>\n      </set-header>\n      <set-body>@{\n        var headers = new JObject();\n        foreach (var h in context.Response.Headers) {\n          headers[h.Key] = new JArray(h.Value.ToArray());\n        }\n        var addresses = new JObject(\n          new JProperty(\"status_code\", context.Response.StatusCode),\n          new JProperty(\"headers\", headers)\n        );\n        return new JObject(\n          new JProperty(\"addresses\", addresses),\n          new JProperty(\"request-id\", context.Variables.ContainsKey(\"ddRequestId\") ? (string)context.Variables[\"ddRequestId\"] : \"\"),\n          new JProperty(\"phase\", \"<ResponseHeaders>\")\n        ).ToString();\n      }</set-body>\n    </send-request>\n\n    <choose>\n      <when condition=\"@(context.Variables.ContainsKey(\"ddPhase3Response\") && context.Variables[\"ddPhase3Response\"] != null && ((IResponse)context.Variables[\"ddPhase3Response\"]).StatusCode == 200)\">\n        <set-variable name=\"ddPhase3\" value=\"@(((IResponse)context.Variables[\"ddPhase3Response\"]).Body.As<JObject>())\" />\n\n        <!-- If blocked, return the block response -->\n        <choose>\n          <when condition=\"@(((JObject)context.Variables[\"ddPhase3\"])[\"block\"] != null)\">\n            <return-response>\n              <set-status code=\"@(((JObject)context.Variables[\"ddPhase3\"])[\"block\"][\"status\"].Value<int>())\" />\n              <set-header name=\"Content-Type\" exists-action=\"override\">\n                <value>@{\n                  var h = ((JObject)context.Variables[\"ddPhase3\"])[\"block\"][\"headers\"];\n                  if (h != null && h[\"Content-Type\"] != null) {\n                    return h[\"Content-Type\"][0].ToString();\n                  }\n                  return \"application/json\";\n                }</value>\n              </set-header>\n              <set-body>@{\n                var content = ((JObject)context.Variables[\"ddPhase3\"])[\"block\"][\"content\"];\n                if (content != null) {\n                  return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content.ToString()));\n                }\n                return \"\";\n              }</set-body>\n            </return-response>\n          </when>\n        </choose>\n\n        <!-- Phase 4: Response Body (conditional — only if callout requests it) -->\n        <choose>\n          <when condition=\"@(((JObject)context.Variables[\"ddPhase3\"])[\"allowed-body-size\"] != null)\">\n            <send-request mode=\"new\"\n                          response-variable-name=\"ddPhase4Response\"\n                          timeout=\"3\"\n                          ignore-error=\"true\">\n              <set-url>https://<dd-apim-callout-host>:8080/</set-url>\n              <set-method>POST</set-method>\n              <set-header name=\"Content-Type\" exists-action=\"override\">\n                <value>application/json</value>\n              </set-header>\n              <set-body>@{\n                var maxSize = ((JObject)context.Variables[\"ddPhase3\"])[\"allowed-body-size\"].Value<int>();\n                var body = context.Response.Body?.As<byte[]>(preserveContent: true);\n                var b64 = \"\";\n                if (body != null && body.Length > 0) {\n                  var slice = body.Length > maxSize ? body.Take(maxSize).ToArray() : body;\n                  b64 = Convert.ToBase64String(slice);\n                }\n                var addresses = new JObject(new JProperty(\"body\", b64));\n                return new JObject(\n                  new JProperty(\"addresses\", addresses),\n                  new JProperty(\"request-id\", context.Variables.ContainsKey(\"ddRequestId\") ? (string)context.Variables[\"ddRequestId\"] : \"\"),\n                  new JProperty(\"phase\", \"<ResponseBody>\")\n                ).ToString();\n              }</set-body>\n            </send-request>\n\n            <choose>\n              <when condition=\"@(context.Variables.ContainsKey(\"ddPhase4Response\") && context.Variables[\"ddPhase4Response\"] != null && ((IResponse)context.Variables[\"ddPhase4Response\"]).StatusCode == 200)\">\n                <set-variable name=\"ddPhase4\" value=\"@(((IResponse)context.Variables[\"ddPhase4Response\"]).Body.As<JObject>())\" />\n                <choose>\n                  <when condition=\"@(((JObject)context.Variables[\"ddPhase4\"])[\"block\"] != null)\">\n                    <return-response>\n                      <set-status code=\"@(((JObject)context.Variables[\"ddPhase4\"])[\"block\"][\"status\"].Value<int>())\" />\n                      <set-header name=\"Content-Type\" exists-action=\"override\">\n                        <value>@{\n                          var h = ((JObject)context.Variables[\"ddPhase4\"])[\"block\"][\"headers\"];\n                          if (h != null && h[\"Content-Type\"] != null) {\n                            return h[\"Content-Type\"][0].ToString();\n                          }\n                          return \"application/json\";\n                        }</value>\n                      </set-header>\n                      <set-body>@{\n                        var content = ((JObject)context.Variables[\"ddPhase4\"])[\"block\"][\"content\"];\n                        if (content != null) {\n                          return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(content.ToString()));\n                        }\n                        return \"\";\n                      }</set-body>\n                    </return-response>\n                  </when>\n                </choose>\n              </when>\n            </choose>\n          </when>\n        </choose>\n      </when>\n    </choose>\n  </outbound>\n  <on-error>\n    <base />\n  </on-error>\n</policies>\n"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-networking', parameters('namePrefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "namePrefix": {
+            "value": "[parameters('namePrefix')]"
+          },
+          "vnetAddressPrefix": {
+            "value": "[parameters('vnetAddressPrefix')]"
+          },
+          "existingVnetId": {
+            "value": "[parameters('existingVnetId')]"
+          },
+          "existingAcaSubnetId": {
+            "value": "[parameters('existingAcaSubnetId')]"
+          },
+          "existingAciSubnetId": {
+            "value": "[parameters('existingAciSubnetId')]"
+          },
+          "customTags": {
+            "value": "[parameters('customTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "8432569015339367709"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for all networking resources"
+              }
+            },
+            "namePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name prefix"
+              }
+            },
+            "vnetAddressPrefix": {
+              "type": "string",
+              "defaultValue": "10.0.0.0/16",
+              "metadata": {
+                "description": "VNet address space"
+              }
+            },
+            "acaSubnetPrefix": {
+              "type": "string",
+              "defaultValue": "10.0.1.0/27",
+              "metadata": {
+                "description": "ACA subnet CIDR (must be /27 or larger, within VNet address space)"
+              }
+            },
+            "aciSubnetPrefix": {
+              "type": "string",
+              "defaultValue": "10.0.2.0/24",
+              "metadata": {
+                "description": "ACI subnet CIDR (must be /24 or larger, within VNet address space)"
+              }
+            },
+            "apimSubnetPrefix": {
+              "type": "string",
+              "defaultValue": "10.0.3.0/27",
+              "metadata": {
+                "description": "APIM integration subnet CIDR (/27, within VNet address space)"
+              }
+            },
+            "existingVnetId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of an existing VNet (skip all networking creation if provided)"
+              }
+            },
+            "existingAcaSubnetId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of an existing ACA subnet (required when existingVnetId is set)"
+              }
+            },
+            "existingAciSubnetId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of an existing ACI subnet (required when existingVnetId is set)"
+              }
+            },
+            "customTags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Custom tags to merge with default tags"
+              }
+            }
+          },
+          "variables": {
+            "createNetworking": "[empty(parameters('existingVnetId'))]",
+            "tags": "[union(createObject('dd-component', 'apim-callout'), parameters('customTags'))]"
+          },
+          "resources": [
+            {
+              "condition": "[variables('createNetworking')]",
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-nsg', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "AllowAcaToAciApm",
+                    "properties": {
+                      "priority": 100,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "[parameters('acaSubnetPrefix')]",
+                      "destinationAddressPrefix": "[parameters('aciSubnetPrefix')]",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "8126"
+                    }
+                  },
+                  {
+                    "name": "DenyInternetInboundToAci",
+                    "properties": {
+                      "priority": 4000,
+                      "direction": "Inbound",
+                      "access": "Deny",
+                      "protocol": "*",
+                      "sourceAddressPrefix": "Internet",
+                      "destinationAddressPrefix": "[parameters('aciSubnetPrefix')]",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "*"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('createNetworking')]",
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-nat-pip', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static"
+              }
+            },
+            {
+              "condition": "[variables('createNetworking')]",
+              "type": "Microsoft.Network/natGateways",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-nat', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "publicIpAddresses": [
+                  {
+                    "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-nat-pip', parameters('namePrefix')))]"
+                  }
+                ],
+                "idleTimeoutInMinutes": 10
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-nat-pip', parameters('namePrefix')))]"
+              ]
+            },
+            {
+              "condition": "[variables('createNetworking')]",
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-apim-nsg', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "AllowApimManagement",
+                    "properties": {
+                      "priority": 100,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "ApiManagement",
+                      "destinationAddressPrefix": "VirtualNetwork",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "3443"
+                    }
+                  },
+                  {
+                    "name": "AllowClientToGateway",
+                    "properties": {
+                      "priority": 110,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "Internet",
+                      "destinationAddressPrefix": "VirtualNetwork",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "443"
+                    }
+                  },
+                  {
+                    "name": "AllowLoadBalancer",
+                    "properties": {
+                      "priority": 120,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "AzureLoadBalancer",
+                      "destinationAddressPrefix": "VirtualNetwork",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "6390"
+                    }
+                  },
+                  {
+                    "name": "AllowStorageOutbound",
+                    "properties": {
+                      "priority": 100,
+                      "direction": "Outbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "VirtualNetwork",
+                      "destinationAddressPrefix": "Storage",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "443"
+                    }
+                  },
+                  {
+                    "name": "AllowSqlOutbound",
+                    "properties": {
+                      "priority": 110,
+                      "direction": "Outbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "VirtualNetwork",
+                      "destinationAddressPrefix": "Sql",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "1433"
+                    }
+                  },
+                  {
+                    "name": "AllowAzureAdOutbound",
+                    "properties": {
+                      "priority": 120,
+                      "direction": "Outbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "VirtualNetwork",
+                      "destinationAddressPrefix": "AzureActiveDirectory",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "443"
+                    }
+                  },
+                  {
+                    "name": "AllowKeyVaultOutbound",
+                    "properties": {
+                      "priority": 130,
+                      "direction": "Outbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourceAddressPrefix": "VirtualNetwork",
+                      "destinationAddressPrefix": "AzureKeyVault",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "443"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[variables('createNetworking')]",
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2023-11-01",
+              "name": "[format('{0}-vnet', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "[parameters('vnetAddressPrefix')]"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "aca-subnet",
+                    "properties": {
+                      "addressPrefix": "[parameters('acaSubnetPrefix')]",
+                      "delegations": [
+                        {
+                          "name": "Microsoft.App.environments",
+                          "properties": {
+                            "serviceName": "Microsoft.App/environments"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "aci-subnet",
+                    "properties": {
+                      "addressPrefix": "[parameters('aciSubnetPrefix')]",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-nsg', parameters('namePrefix')))]"
+                      },
+                      "natGateway": {
+                        "id": "[resourceId('Microsoft.Network/natGateways', format('{0}-nat', parameters('namePrefix')))]"
+                      },
+                      "delegations": [
+                        {
+                          "name": "Microsoft.ContainerInstance.containerGroups",
+                          "properties": {
+                            "serviceName": "Microsoft.ContainerInstance/containerGroups"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "apim-subnet",
+                    "properties": {
+                      "addressPrefix": "[parameters('apimSubnetPrefix')]",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-apim-nsg', parameters('namePrefix')))]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-apim-nsg', parameters('namePrefix')))]",
+                "[resourceId('Microsoft.Network/natGateways', format('{0}-nat', parameters('namePrefix')))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-nsg', parameters('namePrefix')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "acaSubnetId": {
+              "type": "string",
+              "value": "[if(variables('createNetworking'), format('{0}/subnets/aca-subnet', resourceId('Microsoft.Network/virtualNetworks', format('{0}-vnet', parameters('namePrefix')))), parameters('existingAcaSubnetId'))]"
+            },
+            "aciSubnetId": {
+              "type": "string",
+              "value": "[if(variables('createNetworking'), format('{0}/subnets/aci-subnet', resourceId('Microsoft.Network/virtualNetworks', format('{0}-vnet', parameters('namePrefix')))), parameters('existingAciSubnetId'))]"
+            },
+            "apimSubnetId": {
+              "type": "string",
+              "value": "[if(variables('createNetworking'), format('{0}/subnets/apim-subnet', resourceId('Microsoft.Network/virtualNetworks', format('{0}-vnet', parameters('namePrefix')))), '')]"
+            },
+            "vnetId": {
+              "type": "string",
+              "value": "[if(variables('createNetworking'), resourceId('Microsoft.Network/virtualNetworks', format('{0}-vnet', parameters('namePrefix'))), parameters('existingVnetId'))]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-agent', parameters('namePrefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "namePrefix": {
+            "value": "[parameters('namePrefix')]"
+          },
+          "datadogApiKey": {
+            "value": "[parameters('datadogApiKey')]"
+          },
+          "datadogSite": {
+            "value": "[parameters('datadogSite')]"
+          },
+          "aciSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix'))), '2025-04-01').outputs.aciSubnetId.value]"
+          },
+          "enableLocks": {
+            "value": "[parameters('enableLocks')]"
+          },
+          "customTags": {
+            "value": "[parameters('customTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "1166631882205890259"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "namePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name prefix"
+              }
+            },
+            "datadogApiKey": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Datadog API key"
+              }
+            },
+            "datadogSite": {
+              "type": "string",
+              "metadata": {
+                "description": "Datadog site (e.g. datadoghq.com, datadoghq.eu)"
+              }
+            },
+            "aciSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the ACI subnet"
+              }
+            },
+            "enableLocks": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable CanNotDelete lock"
+              }
+            },
+            "customTags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Custom tags to merge with default tags"
+              }
+            }
+          },
+          "variables": {
+            "tags": "[union(createObject('dd-component', 'apim-callout'), parameters('customTags'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ContainerInstance/containerGroups",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}-agent', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]",
+              "properties": {
+                "osType": "Linux",
+                "restartPolicy": "Always",
+                "ipAddress": {
+                  "type": "Private",
+                  "ports": [
+                    {
+                      "port": 8126,
+                      "protocol": "TCP"
+                    }
+                  ]
+                },
+                "subnetIds": [
+                  {
+                    "id": "[parameters('aciSubnetId')]"
+                  }
+                ],
+                "containers": [
+                  {
+                    "name": "datadog-agent",
+                    "properties": {
+                      "image": "datadog/agent:latest",
+                      "resources": {
+                        "requests": {
+                          "cpu": 1,
+                          "memoryInGB": 2
+                        }
+                      },
+                      "ports": [
+                        {
+                          "port": 8126,
+                          "protocol": "TCP"
+                        }
+                      ],
+                      "environmentVariables": [
+                        {
+                          "name": "DD_API_KEY",
+                          "secureValue": "[parameters('datadogApiKey')]"
+                        },
+                        {
+                          "name": "DD_SITE",
+                          "value": "[parameters('datadogSite')]"
+                        },
+                        {
+                          "name": "DD_APM_ENABLED",
+                          "value": "true"
+                        },
+                        {
+                          "name": "DD_APM_NON_LOCAL_TRAFFIC",
+                          "value": "true"
+                        },
+                        {
+                          "name": "DD_REMOTE_CONFIGURATION_ENABLED",
+                          "value": "true"
+                        },
+                        {
+                          "name": "DD_LOGS_ENABLED",
+                          "value": "false"
+                        },
+                        {
+                          "name": "DD_PROCESS_AGENT_ENABLED",
+                          "value": "false"
+                        },
+                        {
+                          "name": "DD_SYSTEM_PROBE_ENABLED",
+                          "value": "false"
+                        },
+                        {
+                          "name": "DD_APM_RECEIVER_PORT",
+                          "value": "8126"
+                        },
+                        {
+                          "name": "DD_HOSTNAME",
+                          "value": "[format('{0}-agent-apim-callout', parameters('namePrefix'))]"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[parameters('enableLocks')]",
+              "type": "Microsoft.Authorization/locks",
+              "apiVersion": "2020-05-01",
+              "scope": "[resourceId('Microsoft.ContainerInstance/containerGroups', format('{0}-agent', parameters('namePrefix')))]",
+              "name": "[format('{0}-agent-lock', parameters('namePrefix'))]",
+              "properties": {
+                "level": "CanNotDelete",
+                "notes": "Prevents accidental deletion of the Datadog Agent container group"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerInstance/containerGroups', format('{0}-agent', parameters('namePrefix')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "agentIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ContainerInstance/containerGroups', format('{0}-agent', parameters('namePrefix'))), '2023-05-01').ipAddress.ip]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-container-app', parameters('namePrefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "namePrefix": {
+            "value": "[parameters('namePrefix')]"
+          },
+          "containerImage": {
+            "value": "[parameters('containerImage')]"
+          },
+          "agentHost": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-agent', parameters('namePrefix'))), '2025-04-01').outputs.agentIp.value]"
+          },
+          "minReplicas": {
+            "value": "[parameters('minReplicas')]"
+          },
+          "maxReplicas": {
+            "value": "[parameters('maxReplicas')]"
+          },
+          "concurrentRequestsThreshold": {
+            "value": "[parameters('concurrentRequestsThreshold')]"
+          },
+          "acaSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix'))), '2025-04-01').outputs.acaSubnetId.value]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[parameters('logAnalyticsWorkspaceId')]"
+          },
+          "enableHttps": {
+            "value": "[parameters('enableHttps')]"
+          },
+          "enableLocks": {
+            "value": "[parameters('enableLocks')]"
+          },
+          "customTags": {
+            "value": "[parameters('customTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "1380291264396822566"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "namePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name prefix"
+              }
+            },
+            "containerImage": {
+              "type": "string",
+              "metadata": {
+                "description": "Container image for the callout service"
+              }
+            },
+            "agentHost": {
+              "type": "string",
+              "metadata": {
+                "description": "DD Agent host IP (from agent module output)"
+              }
+            },
+            "minReplicas": {
+              "type": "int",
+              "metadata": {
+                "description": "Minimum number of replicas"
+              }
+            },
+            "maxReplicas": {
+              "type": "int",
+              "metadata": {
+                "description": "Maximum number of replicas"
+              }
+            },
+            "concurrentRequestsThreshold": {
+              "type": "string",
+              "metadata": {
+                "description": "KEDA HTTP scaler concurrent requests threshold"
+              }
+            },
+            "acaSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the ACA subnet"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics workspace (optional)"
+              }
+            },
+            "enableHttps": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enforce HTTPS on the callout ingress (ACA terminates TLS automatically)"
+              }
+            },
+            "enableLocks": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable CanNotDelete lock"
+              }
+            },
+            "customTags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Custom tags to merge with default tags"
+              }
+            }
+          },
+          "variables": {
+            "tags": "[union(createObject('dd-component', 'apim-callout'), parameters('customTags'))]",
+            "hasLogAnalytics": "[not(empty(parameters('logAnalyticsWorkspaceId')))]",
+            "logAnalyticsWorkspaceName": "[if(variables('hasLogAnalytics'), last(split(parameters('logAnalyticsWorkspaceId'), '/')), '')]",
+            "logAnalyticsResourceGroup": "[if(variables('hasLogAnalytics'), split(parameters('logAnalyticsWorkspaceId'), '/')[4], '')]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.App/managedEnvironments",
+              "apiVersion": "2024-03-01",
+              "name": "[format('{0}-env', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]",
+              "properties": {
+                "vnetConfiguration": {
+                  "infrastructureSubnetId": "[parameters('acaSubnetId')]",
+                  "internal": true
+                },
+                "workloadProfiles": [
+                  {
+                    "name": "Consumption",
+                    "workloadProfileType": "Consumption"
+                  }
+                ],
+                "appLogsConfiguration": "[if(variables('hasLogAnalytics'), createObject('destination', 'log-analytics', 'logAnalyticsConfiguration', createObject('customerId', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('logAnalyticsResourceGroup')), 'Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName')), '2022-10-01').customerId, 'sharedKey', listKeys(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('logAnalyticsResourceGroup')), 'Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName')), '2022-10-01').primarySharedKey)), createObject('destination', ''))]"
+              }
+            },
+            {
+              "type": "Microsoft.App/containerApps",
+              "apiVersion": "2024-03-01",
+              "name": "[format('{0}-callout', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]",
+              "properties": {
+                "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('namePrefix')))]",
+                "workloadProfileName": "Consumption",
+                "configuration": {
+                  "ingress": {
+                    "external": true,
+                    "targetPort": 8080,
+                    "transport": "http",
+                    "allowInsecure": "[not(parameters('enableHttps'))]"
+                  }
+                },
+                "template": {
+                  "containers": [
+                    {
+                      "name": "apim-callout",
+                      "image": "[parameters('containerImage')]",
+                      "resources": {
+                        "cpu": "[json('0.5')]",
+                        "memory": "1Gi"
+                      },
+                      "env": [
+                        {
+                          "name": "DD_AGENT_HOST",
+                          "value": "[parameters('agentHost')]"
+                        },
+                        {
+                          "name": "DD_APPSEC_ENABLED",
+                          "value": "true"
+                        }
+                      ],
+                      "probes": [
+                        {
+                          "type": "Liveness",
+                          "httpGet": {
+                            "port": 8081,
+                            "path": "/"
+                          },
+                          "initialDelaySeconds": 5,
+                          "periodSeconds": 10
+                        },
+                        {
+                          "type": "Readiness",
+                          "httpGet": {
+                            "port": 8081,
+                            "path": "/"
+                          },
+                          "initialDelaySeconds": 3,
+                          "periodSeconds": 5
+                        }
+                      ]
+                    }
+                  ],
+                  "scale": {
+                    "minReplicas": "[parameters('minReplicas')]",
+                    "maxReplicas": "[parameters('maxReplicas')]",
+                    "rules": [
+                      {
+                        "name": "http-scaler",
+                        "http": {
+                          "metadata": {
+                            "concurrentRequests": "[parameters('concurrentRequestsThreshold')]"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('namePrefix')))]"
+              ]
+            },
+            {
+              "condition": "[variables('hasLogAnalytics')]",
+              "type": "Microsoft.Insights/diagnosticSettings",
+              "apiVersion": "2021-05-01-preview",
+              "scope": "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('namePrefix')))]",
+              "name": "[format('{0}-diagnostics', parameters('namePrefix'))]",
+              "properties": {
+                "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "logs": [
+                  {
+                    "category": "ContainerAppConsoleLogs",
+                    "enabled": true
+                  },
+                  {
+                    "category": "ContainerAppSystemLogs",
+                    "enabled": true
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('namePrefix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('enableLocks')]",
+              "type": "Microsoft.Authorization/locks",
+              "apiVersion": "2020-05-01",
+              "scope": "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('namePrefix')))]",
+              "name": "[format('{0}-env-lock', parameters('namePrefix'))]",
+              "properties": {
+                "level": "CanNotDelete",
+                "notes": "Prevents accidental deletion of the APIM callout ACA environment"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('namePrefix')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "acaFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.App/containerApps', format('{0}-callout', parameters('namePrefix'))), '2024-03-01').configuration.ingress.fqdn]"
+            },
+            "calloutBaseUrl": {
+              "type": "string",
+              "value": "[format('{0}://{1}', if(parameters('enableHttps'), 'https', 'http'), reference(resourceId('Microsoft.App/containerApps', format('{0}-callout', parameters('namePrefix'))), '2024-03-01').configuration.ingress.fqdn)]"
+            },
+            "acaDefaultDomain": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('namePrefix'))), '2024-03-01').defaultDomain]"
+            },
+            "acaStaticIp": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.App/managedEnvironments', format('{0}-env', parameters('namePrefix'))), '2024-03-01').staticIp]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-agent', parameters('namePrefix')))]",
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-dns', parameters('namePrefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namePrefix": {
+            "value": "[parameters('namePrefix')]"
+          },
+          "acaDomain": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-container-app', parameters('namePrefix'))), '2025-04-01').outputs.acaDefaultDomain.value]"
+          },
+          "acaStaticIp": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-container-app', parameters('namePrefix'))), '2025-04-01').outputs.acaStaticIp.value]"
+          },
+          "vnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix'))), '2025-04-01').outputs.vnetId.value]"
+          },
+          "customTags": {
+            "value": "[parameters('customTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "13996615532572511263"
+            }
+          },
+          "parameters": {
+            "namePrefix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name prefix"
+              }
+            },
+            "acaDomain": {
+              "type": "string",
+              "metadata": {
+                "description": "Default domain of the ACA managed environment"
+              }
+            },
+            "acaStaticIp": {
+              "type": "string",
+              "metadata": {
+                "description": "Static IP of the ACA managed environment"
+              }
+            },
+            "vnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the VNet to link the DNS zone to"
+              }
+            },
+            "customTags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Custom tags to merge with default tags"
+              }
+            }
+          },
+          "variables": {
+            "tags": "[union(createObject('dd-component', 'apim-callout'), parameters('customTags'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2020-06-01",
+              "name": "[parameters('acaDomain')]",
+              "location": "global",
+              "tags": "[variables('tags')]"
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones/A",
+              "apiVersion": "2020-06-01",
+              "name": "[format('{0}/{1}', parameters('acaDomain'), '*')]",
+              "properties": {
+                "ttl": 300,
+                "aRecords": [
+                  {
+                    "ipv4Address": "[parameters('acaStaticIp')]"
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', parameters('acaDomain'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2020-06-01",
+              "name": "[format('{0}/{1}', parameters('acaDomain'), format('{0}-vnet-link', parameters('namePrefix')))]",
+              "location": "global",
+              "tags": "[variables('tags')]",
+              "properties": {
+                "virtualNetwork": {
+                  "id": "[parameters('vnetId')]"
+                },
+                "registrationEnabled": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', parameters('acaDomain'))]"
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-container-app', parameters('namePrefix')))]",
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-apim-network', parameters('namePrefix'))]",
+      "resourceGroup": "[parameters('apimResourceGroup')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "apimServiceName": {
+            "value": "[parameters('apimServiceName')]"
+          },
+          "apimResourceGroup": {
+            "value": "[parameters('apimResourceGroup')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "apimSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix'))), '2025-04-01').outputs.apimSubnetId.value]"
+          },
+          "customTags": {
+            "value": "[parameters('customTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "16333743398543055993"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "apimServiceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the existing APIM service"
+              }
+            },
+            "apimResourceGroup": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource group of the APIM service"
+              }
+            },
+            "apimSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the APIM subnet (must have an NSG attached)"
+              }
+            },
+            "customTags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Custom tags to merge with default tags"
+              }
+            }
+          },
+          "variables": {
+            "tags": "[union(createObject('dd-component', 'apim-callout'), parameters('customTags'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "apim-network-script-id",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]"
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName'))]",
+              "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'apim-network-script-id'), resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName')), 'APIMContributor')]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '312a565d-c81f-4fd8-895a-4e21e48d571c')]",
+                "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'apim-network-script-id'), '2023-01-31').principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'apim-network-script-id')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Resources/deploymentScripts",
+              "apiVersion": "2023-08-01",
+              "name": "configure-apim-vnet",
+              "location": "[parameters('location')]",
+              "tags": "[variables('tags')]",
+              "kind": "AzureCLI",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'apim-network-script-id'))]": {}
+                }
+              },
+              "properties": {
+                "azCliVersion": "2.63.0",
+                "retentionInterval": "PT1H",
+                "timeout": "PT45M",
+                "scriptContent": "      #!/bin/bash\n      set -euo pipefail\n\n      VNET_TYPE=$(az apim show \\\n        --resource-group \"$APIM_RG\" \\\n        --name \"$APIM_NAME\" \\\n        --query \"virtualNetworkType\" -o tsv)\n\n      if [[ \"$VNET_TYPE\" == \"External\" || \"$VNET_TYPE\" == \"Internal\" ]]; then\n        echo \"APIM already has VNet integration ($VNET_TYPE). Skipping.\"\n        echo \"{\\\"vnetType\\\": \\\"$VNET_TYPE\\\", \\\"changed\\\": false}\" > $AZ_SCRIPTS_OUTPUT_PATH\n        exit 0\n      fi\n\n      echo \"Configuring APIM VNet integration (External mode)...\"\n      az apim update \\\n        --resource-group \"$APIM_RG\" \\\n        --name \"$APIM_NAME\" \\\n        --virtual-network External \\\n        --set \"virtualNetworkConfiguration.subnetResourceId=$APIM_SUBNET_ID\" \\\n        -o none\n\n      echo \"{\\\"vnetType\\\": \\\"External\\\", \\\"changed\\\": true}\" > $AZ_SCRIPTS_OUTPUT_PATH\n    ",
+                "environmentVariables": [
+                  {
+                    "name": "APIM_RG",
+                    "value": "[parameters('apimResourceGroup')]"
+                  },
+                  {
+                    "name": "APIM_NAME",
+                    "value": "[parameters('apimServiceName')]"
+                  },
+                  {
+                    "name": "APIM_SUBNET_ID",
+                    "value": "[parameters('apimSubnetId')]"
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[extensionResourceId(resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'apim-network-script-id'), resourceId('Microsoft.ApiManagement/service', parameters('apimServiceName')), 'APIMContributor'))]",
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', 'apim-network-script-id')]"
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-apim-policy', parameters('namePrefix'))]",
+      "resourceGroup": "[parameters('apimResourceGroup')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "deployPolicy": {
+            "value": "[parameters('deployPolicy')]"
+          },
+          "apimServiceName": {
+            "value": "[parameters('apimServiceName')]"
+          },
+          "targetApiIds": {
+            "value": "[parameters('targetApiIds')]"
+          },
+          "calloutBaseUrl": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-container-app', parameters('namePrefix'))), '2025-04-01').outputs.calloutBaseUrl.value]"
+          },
+          "policyXml": {
+            "value": "[variables('policyXml')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "3278122398258659393"
+            }
+          },
+          "parameters": {
+            "deployPolicy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Whether to deploy the policy to APIM APIs"
+              }
+            },
+            "apimServiceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the existing APIM service"
+              }
+            },
+            "targetApiIds": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Array of API IDs to apply the policy to (empty = apply to All APIs at service level)"
+              }
+            },
+            "calloutBaseUrl": {
+              "type": "string",
+              "metadata": {
+                "description": "Base URL of the callout service (from container-app module)"
+              }
+            },
+            "policyXml": {
+              "type": "string",
+              "metadata": {
+                "description": "Raw policy XML content (loaded via loadTextContent in main.bicep)"
+              }
+            }
+          },
+          "variables": {
+            "processedPolicyXml": "[replace(parameters('policyXml'), 'https://<dd-apim-callout-host>:8080', parameters('calloutBaseUrl'))]",
+            "globalPolicyXml": "[replace(variables('processedPolicyXml'), '<base />', '')]",
+            "applyToAllApis": "[empty(parameters('targetApiIds'))]",
+            "inboundFragment": "[replace('<!-- Datadog APIM Callout: Add inside <inbound> after <base /> -->\n<send-request mode=\"new\" response-variable-name=\"ddPhase1Response\" timeout=\"3\" ignore-error=\"true\">\n  <set-url>CALLOUT_URL/</set-url>\n  <!-- See azure-apim-full.xml for complete policy -->\n</send-request>', 'CALLOUT_URL', parameters('calloutBaseUrl'))]",
+            "outboundFragment": "[replace('<!-- Datadog APIM Callout: Add inside <outbound> after <base /> -->\n<send-request mode=\"new\" response-variable-name=\"ddPhase3Response\" timeout=\"3\" ignore-error=\"true\">\n  <set-url>CALLOUT_URL/</set-url>\n  <!-- See azure-apim-full.xml for complete policy -->\n</send-request>', 'CALLOUT_URL', parameters('calloutBaseUrl'))]"
+          },
+          "resources": [
+            {
+              "condition": "[and(parameters('deployPolicy'), variables('applyToAllApis'))]",
+              "type": "Microsoft.ApiManagement/service/policies",
+              "apiVersion": "2023-09-01-preview",
+              "name": "[format('{0}/policy', parameters('apimServiceName'))]",
+              "properties": {
+                "format": "rawxml",
+                "value": "[variables('globalPolicyXml')]"
+              }
+            },
+            {
+              "copy": {
+                "name": "apiPolicy",
+                "count": "[length(parameters('targetApiIds'))]"
+              },
+              "condition": "[parameters('deployPolicy')]",
+              "type": "Microsoft.ApiManagement/service/apis/policies",
+              "apiVersion": "2023-09-01-preview",
+              "name": "[format('{0}/{1}/policy', parameters('apimServiceName'), parameters('targetApiIds')[copyIndex()])]",
+              "properties": {
+                "format": "rawxml",
+                "value": "[variables('processedPolicyXml')]"
+              }
+            }
+          ],
+          "outputs": {
+            "calloutBaseUrl": {
+              "type": "string",
+              "value": "[parameters('calloutBaseUrl')]"
+            },
+            "policyPatchCommand": {
+              "type": "string",
+              "value": "[format('sed -i ''s|https://<dd-apim-callout-host>:8080|{0}|g'' your-policy.xml', parameters('calloutBaseUrl'))]"
+            },
+            "policyFragments": {
+              "type": "object",
+              "value": {
+                "inbound": "[variables('inboundFragment')]",
+                "outbound": "[variables('outboundFragment')]"
+              }
+            },
+            "appliedApiIds": {
+              "type": "array",
+              "value": "[if(parameters('deployPolicy'), if(variables('applyToAllApis'), createArray('*'), parameters('targetApiIds')), createArray())]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-container-app', parameters('namePrefix')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "acaFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-container-app', parameters('namePrefix'))), '2025-04-01').outputs.acaFqdn.value]"
+    },
+    "calloutBaseUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-container-app', parameters('namePrefix'))), '2025-04-01').outputs.calloutBaseUrl.value]"
+    },
+    "agentIp": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-agent', parameters('namePrefix'))), '2025-04-01').outputs.agentIp.value]"
+    },
+    "vnetId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix'))), '2025-04-01').outputs.vnetId.value]"
+    },
+    "apimSubnetId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-networking', parameters('namePrefix'))), '2025-04-01').outputs.apimSubnetId.value]"
+    },
+    "policyPatchCommand": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('apimResourceGroup')), 'Microsoft.Resources/deployments', format('{0}-apim-policy', parameters('namePrefix'))), '2025-04-01').outputs.policyPatchCommand.value]"
+    },
+    "policyFragments": {
+      "type": "object",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('apimResourceGroup')), 'Microsoft.Resources/deployments', format('{0}-apim-policy', parameters('namePrefix'))), '2025-04-01').outputs.policyFragments.value]"
+    },
+    "appliedApiIds": {
+      "type": "array",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('apimResourceGroup')), 'Microsoft.Resources/deployments', format('{0}-apim-policy', parameters('namePrefix'))), '2025-04-01').outputs.appliedApiIds.value]"
+    },
+    "deploymentSummary": {
+      "type": "string",
+      "value": "[format('Callout: {0} | Agent: {1} | Policy deployed: {2}', reference(resourceId('Microsoft.Resources/deployments', format('{0}-container-app', parameters('namePrefix'))), '2025-04-01').outputs.calloutBaseUrl.value, reference(resourceId('Microsoft.Resources/deployments', format('{0}-agent', parameters('namePrefix'))), '2025-04-01').outputs.agentIp.value, string(parameters('deployPolicy')))]"
+    }
+  }
+}

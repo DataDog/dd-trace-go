@@ -796,6 +796,12 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageGormIOGormV1: {
 		TracedPackage: "gorm.io/gorm",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("gorm.db"),
+			},
+		},
 	},
 	PackageGorillaMux: {
 		TracedPackage: "github.com/gorilla/mux",

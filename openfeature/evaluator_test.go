@@ -368,7 +368,10 @@ func TestEvaluateShard(t *testing.T) {
 			"targetingKey": targetingKey,
 		}
 
-		result := evaluateShard(shard, context)
+		result, err := evaluateShard(shard, context)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if !result {
 			t.Errorf("expected shard to match when range includes computed shard %d", actualShard)
 		}
@@ -400,7 +403,10 @@ func TestEvaluateShard(t *testing.T) {
 			"targetingKey": targetingKey,
 		}
 
-		result := evaluateShard(shard, context)
+		result, err := evaluateShard(shard, context)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result {
 			t.Errorf("expected shard not to match when range excludes computed shard")
 		}
@@ -416,9 +422,12 @@ func TestEvaluateShard(t *testing.T) {
 		}
 		context := map[string]any{}
 
-		result := evaluateShard(shard, context)
+		result, err := evaluateShard(shard, context)
 		if result {
 			t.Errorf("expected shard not to match when no targeting key present")
+		}
+		if !errors.Is(err, errTargetingKeyMissing) {
+			t.Errorf("expected errTargetingKeyMissing, got %v", err)
 		}
 	})
 
@@ -434,7 +443,10 @@ func TestEvaluateShard(t *testing.T) {
 			"targetingKey": "any-user",
 		}
 
-		result := evaluateShard(shard, context)
+		result, err := evaluateShard(shard, context)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if !result {
 			t.Errorf("expected shard to match when range covers all shards")
 		}
@@ -574,7 +586,10 @@ func TestEvaluateAllocation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			split, matched := evaluateAllocation(tt.allocation, tt.context, tt.currentTime)
+			split, matched, err := evaluateAllocation(tt.allocation, tt.context, tt.currentTime)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if matched != tt.expectMatch {
 				t.Errorf("expected match=%v, got match=%v", tt.expectMatch, matched)
 			}
@@ -731,7 +746,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 			var cases []struct {
 				Flag         string         `json:"flag"`
 				DefaultValue any            `json:"defaultValue"`
-				TargetingKey string         `json:"targetingKey"`
+				TargetingKey *string        `json:"targetingKey"`
 				Attributes   map[string]any `json:"attributes"`
 				Result       struct {
 					Value  any    `json:"value"`
@@ -742,17 +757,23 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 				t.Fatalf("parse error: %v", err)
 			}
 			for i, tc := range cases {
-				t.Run(fmt.Sprintf("case%d/%s", i, tc.TargetingKey), func(t *testing.T) {
+				tkLabel := "<nil>"
+				if tc.TargetingKey != nil {
+					tkLabel = *tc.TargetingKey
+				}
+				t.Run(fmt.Sprintf("case%d/%s", i, tkLabel), func(t *testing.T) {
 					ctx := make(map[string]any, len(tc.Attributes)+1)
 					maps.Copy(ctx, tc.Attributes)
-					ctx["targetingKey"] = tc.TargetingKey
+					if tc.TargetingKey != nil {
+						ctx["targetingKey"] = *tc.TargetingKey
+					}
 
 					result := evaluateFlag(cfg.Flags[tc.Flag], tc.DefaultValue, ctx)
 
 					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
 						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)
 					}
-					if result.Reason != of.Reason(tc.Result.Reason) {
+					if tc.Result.Reason != "" && result.Reason != of.Reason(tc.Result.Reason) {
 						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
 					}
 				})
