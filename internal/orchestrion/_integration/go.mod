@@ -47,24 +47,24 @@ require (
 	github.com/redis/rueidis v1.0.72
 	github.com/rs/zerolog v1.34.0
 	github.com/segmentio/kafka-go v0.4.42
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
-	github.com/testcontainers/testcontainers-go v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/cassandra v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/elasticsearch v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/gcloud v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/kafka v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/postgres v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/redis v0.37.0
-	github.com/testcontainers/testcontainers-go/modules/vault v0.37.0
+	github.com/testcontainers/testcontainers-go v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/cassandra v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/elasticsearch v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/gcloud v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/kafka v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/redis v0.42.0
+	github.com/testcontainers/testcontainers-go/modules/vault v0.42.0
 	github.com/tinylib/msgp v1.6.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/valkey-io/valkey-go v1.0.56
+	github.com/valkey-io/valkey-go v1.0.59
 	github.com/valyala/fasthttp v1.58.0
 	github.com/vektah/gqlparser/v2 v2.5.31
 	github.com/xlab/treeprint v1.2.0
 	go.mongodb.org/mongo-driver v1.17.1
-	go.mongodb.org/mongo-driver/v2 v2.2.2
+	go.mongodb.org/mongo-driver/v2 v2.3.0
 	google.golang.org/api v0.258.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
@@ -81,8 +81,8 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.5.3 // indirect
-	dario.cat/mergo v1.0.1 // indirect
-	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
+	dario.cat/mergo v1.0.2 // indirect
+	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.77.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.77.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.77.0 // indirect
@@ -185,6 +185,8 @@ require (
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/containerd/continuity v0.4.4 // indirect
+	github.com/containerd/errdefs v1.0.0 // indirect
+	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
@@ -193,8 +195,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/docker v28.0.1+incompatible // indirect
-	github.com/docker/go-connections v0.5.0 // indirect
+	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eapache/go-resiliency v1.7.0 // indirect
@@ -209,7 +210,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.0.0 // indirect
 	github.com/go-chi/chi v1.5.4 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
@@ -222,7 +223,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
@@ -259,7 +259,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
@@ -277,15 +277,17 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/patternmatcher v0.6.0 // indirect
+	github.com/moby/go-archive v0.2.0 // indirect
+	github.com/moby/moby/api v1.54.1 // indirect
+	github.com/moby/moby/client v0.4.0 // indirect
+	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
-	github.com/moby/term v0.5.0 // indirect
+	github.com/moby/term v0.5.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect
-	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nats-io/jwt/v2 v2.8.1 // indirect
@@ -312,12 +314,12 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.10.0 // indirect
-	github.com/shirou/gopsutil/v4 v4.26.2 // indirect
+	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/testcontainers/testcontainers-go/modules/mongodb v0.37.0 // indirect
-	github.com/testcontainers/testcontainers-go/modules/valkey v0.37.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/mongodb v0.42.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/valkey v0.42.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
@@ -385,6 +387,7 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.1 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
+	software.sslmate.com/src/go-pkcs12 v0.6.0 // indirect
 	tags.cncf.io/container-device-interface v0.8.1 // indirect
 )
 
