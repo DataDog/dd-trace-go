@@ -71,6 +71,7 @@ func (dc *DynamicConfig[T]) Get() T {
 // Returns true if the value was changed.
 func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
 	dc.mu.Lock()
+	defer dc.mu.Unlock()
 	var changed bool
 	var origin telemetry.Origin
 	if val != nil {
@@ -86,7 +87,6 @@ func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
 		}
 		origin = dc.startupOrigin
 	}
-	dc.mu.Unlock()
 	if changed {
 		configtelemetry.Report(dc.cfgName, dc.current, origin)
 	}
