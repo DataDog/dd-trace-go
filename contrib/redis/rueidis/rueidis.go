@@ -218,6 +218,10 @@ func (c *dedicatedClient) SetPubSubHooks(hooks rueidis.PubSubHooks) <-chan error
 	return c.dedicatedClient.SetPubSubHooks(hooks)
 }
 
+func (c *dedicatedClient) SetOnInvalidations(fn func([]rueidis.RedisMessage)) <-chan error {
+	return c.dedicatedClient.SetOnInvalidations(fn)
+}
+
 type commander interface {
 	Commands() []string
 }
@@ -262,7 +266,11 @@ func multiCommand(cmds []command) command {
 		statement.WriteString(cmd.statement)
 		raw.WriteString(cmd.raw)
 		if i != len(cmds)-1 {
-			statement.WriteString(" ")
+			// Commands are joined with newlines so that the Datadog agent's Redis
+			// quantizer correctly identifies each token as a separate command.
+			// The quantizer splits on '\n' to process pipeline commands individually:
+			// https://github.com/DataDog/datadog-agent/blob/main/pkg/obfuscate/redis.go#L39
+			statement.WriteString("\n")
 			raw.WriteString(" ")
 		}
 	}

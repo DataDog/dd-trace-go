@@ -341,6 +341,57 @@ func TestAsyncProducer(t *testing.T) {
 	})
 }
 
+func TestSyncProducerWithClusterID(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	broker := newMockBroker(t)
+
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	cfg.Producer.Return.Successes = true
+
+	producer, err := sarama.NewSyncProducer([]string{broker.Addr()}, cfg)
+	require.NoError(t, err)
+
+	wrapped := WrapSyncProducer(cfg, producer, WithDataStreams())
+
+	// Simulate the async cluster ID fetch completing
+	clusterID := "test-cluster-123"
+	wrapped.(*syncProducer).cfg.SetClusterID(clusterID)
+
+	msg1 := &sarama.ProducerMessage{
+		Topic:    "my_topic",
+		Value:    sarama.StringEncoder("test 1"),
+		Metadata: "test",
+	}
+	_, _, err = wrapped.SendMessage(msg1)
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	s := spans[0]
+
+	// Verify cluster ID is set as a span tag
+	assert.Equal(t, clusterID, s.Tag(ext.MessagingKafkaClusterID))
+
+	// Verify DSM pathway hash includes kafka_cluster_id in edge tags
+	p, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(
+		context.Background(), NewProducerMessageCarrier(msg1),
+	))
+	require.True(t, ok, "pathway not found in kafka message")
+
+	expectedCtx, _ := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		"direction:out", "topic:my_topic", "type:kafka", "kafka_cluster_id:"+clusterID,
+	)
+	expected, _ := datastreams.PathwayFromContext(expectedCtx)
+	assert.NotEqual(t, expected.GetHash(), 0)
+	assert.Equal(t, expected.GetHash(), p.GetHash())
+
+	assert.NoError(t, wrapped.Close())
+}
+
 func newMockBroker(t *testing.T) *sarama.MockBroker {
 	broker := sarama.NewMockBroker(t, 1)
 

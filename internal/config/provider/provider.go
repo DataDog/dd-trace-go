@@ -120,9 +120,9 @@ func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) b
 	})
 }
 
-func (p *Provider) GetMap(key string, def map[string]string) map[string]string {
+func (p *Provider) GetMap(key string, def map[string]string, delimiter string) map[string]string {
 	return get(p, key, def, func(v string) (map[string]string, bool) {
-		m := parseMapString(v)
+		m := parseMapString(v, delimiter)
 		return m, len(m) > 0
 	})
 }
@@ -154,6 +154,19 @@ func (p *Provider) GetFloatWithValidator(key string, def float64, validate func(
 	})
 }
 
+// IsSet returns true if any configuration source provides a non-empty value for the key.
+//
+// TODO: populate an isSet field on the Provider at the time of iterating over
+// sources instead of re-querying them here.
+func (p *Provider) IsSet(key string) bool {
+	for _, source := range p.sources {
+		if source.get(key) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // normalizeKey normalizes the key to a valid environment variable name.
 func normalizeKey(key string) string {
 	if strings.HasPrefix(key, "DD_") || strings.HasPrefix(key, "OTEL_") {
@@ -162,10 +175,11 @@ func normalizeKey(key string) string {
 	return "DD_" + strings.ToUpper(key)
 }
 
-// parseMapString parses a string containing key:value pairs separated by comma or space.
-func parseMapString(str string) map[string]string {
+// parseMapString parses a string containing key-value pairs separated by comma or space.
+// It prioritizes the Datadog delimiter (:) over the OTel delimiter (=)
+func parseMapString(str string, delimiter string) map[string]string {
 	result := make(map[string]string)
-	internal.ForEachStringTag(str, internal.DDTagsDelimiter, func(key, val string) {
+	internal.ForEachStringTag(str, delimiter, func(key, val string) {
 		result[key] = val
 	})
 	return result

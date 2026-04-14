@@ -131,10 +131,14 @@ func mapLogLevel(ot string) (string, error) {
 
 // mapEnabled maps OTEL_TRACES_EXPORTER to DD_TRACE_ENABLED
 func mapEnabled(ot string) (string, error) {
-	if strings.TrimSpace(strings.ToLower(ot)) == "none" {
+	switch strings.TrimSpace(strings.ToLower(ot)) {
+	case "none":
 		return "false", nil
+	case "otlp":
+		return "true", nil // Handled separately by otlpExportMode
+	default:
+		return "", fmt.Errorf("the following configuration is not supported: OTEL_TRACES_EXPORTER=%v", ot)
 	}
-	return "", fmt.Errorf("the following configuration is not supported: OTEL_TRACES_EXPORTER=%v", ot)
 }
 
 // otelTraceIDRatio returns the value of OTEL_TRACES_SAMPLER_ARG if set, otherwise "1.0"

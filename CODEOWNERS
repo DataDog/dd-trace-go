@@ -16,6 +16,7 @@
 /instrumentation/appsec         @DataDog/asm-go
 /contrib/**/*appsec*.go         @DataDog/asm-go
 /.github/workflows/appsec.yml   @DataDog/asm-go
+/contrib/azure                  @DataDog/asm-go
 /contrib/envoyproxy             @DataDog/asm-go
 /contrib/haproxy                @DataDog/asm-go
 /contrib/k8s.io/gateway-api     @DataDog/asm-go
@@ -82,7 +83,7 @@
 /contrib/aws/datadog-lambda-go  @DataDog/apm-serverless @DataDog/serverless-aws
 
 # Feature Flagging Experiments
-/openfeature                    @DataDog/feature-flagging-and-experimentation-sdk @DataDog/asm-go
+/openfeature                    @DataDog/feature-flagging-and-experimentation-sdk
 
 # Database Monitoring
 ddtrace/tracer/sqlcomment*      @DataDog/database-monitoring @DataDog/apm-go @DataDog/apm-idm-go

@@ -14,12 +14,12 @@ import (
 )
 
 // NewDefaultMapper returns a Mapper that transforms payloads into a MessageBatch and adds a heartbeat message.
-// The heartbeat message is added every heartbeatInterval.
-func NewDefaultMapper(heartbeatInterval, extendedHeartBeatInterval time.Duration) Mapper {
+func NewDefaultMapper(heartbeatInterval, extendedHeartBeatInterval time.Duration, getConfigs func() []transport.ConfKeyValue) Mapper {
 	mapper := &defaultMapper{
 		heartbeatEnricher: heartbeatEnricher{
 			heartbeatRL:         rate.NewLimiter(rate.Every(heartbeatInterval), 1),
 			extendedHeartbeatRL: rate.NewLimiter(rate.Every(extendedHeartBeatInterval), 1),
+			getConfigs:          getConfigs,
 		},
 	}
 
@@ -62,19 +62,17 @@ type heartbeatEnricher struct {
 	heartbeatRL         *rate.Limiter
 	extendedHeartbeatRL *rate.Limiter
 
+	getConfigs func() []transport.ConfKeyValue
+
 	extendedHeartbeat transport.AppExtendedHeartbeat
 	heartbeat         transport.AppHeartbeat
 }
 
 func (t *heartbeatEnricher) Transform(payloads []transport.Payload) ([]transport.Payload, Mapper) {
-	// Built the extended heartbeat using other payloads
 	// Composition described here:
 	// https://github.com/DataDog/instrumentation-telemetry-api-docs/blob/main/GeneratedDocumentation/ApiDocs/v2/producing-telemetry.md#app-extended-heartbeat
 	for _, payload := range payloads {
 		switch payload := payload.(type) {
-		case transport.AppStarted:
-			// Should be sent only once anyway
-			t.extendedHeartbeat.Configuration = payload.Configuration
 		case transport.AppDependenciesLoaded:
 			if t.extendedHeartbeat.Dependencies == nil {
 				t.extendedHeartbeat.Dependencies = payload.Dependencies
@@ -86,6 +84,9 @@ func (t *heartbeatEnricher) Transform(payloads []transport.Payload) ([]transport
 	}
 
 	if t.extendedHeartbeatRL.Allow() {
+		if t.getConfigs != nil {
+			t.extendedHeartbeat.Configuration = t.getConfigs()
+		}
 		return append(payloads, t.extendedHeartbeat), t
 	}
 

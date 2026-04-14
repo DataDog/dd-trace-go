@@ -281,7 +281,12 @@ func Start(opts ...StartOption) error {
 	cfg.ServiceName = t.config.internalConfig.ServiceName()
 	if t.config.agent.load().hasRemoteConfig {
 		if err := t.startRemoteConfig(cfg); err != nil {
-			log.Warn("Remote config startup error: %s", err.Error())
+			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
+				// RC is explicitly disabled via DD_REMOTE_CONFIGURATION_ENABLED=false; this is expected.
+				log.Debug("remoteconfig: client not started, remote configuration is disabled")
+			} else {
+				log.Warn("Remote config startup error: %s", err.Error())
+			}
 		}
 	}
 
@@ -419,7 +424,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		writer = newCiVisibilityTraceWriter(c)
 	} else if c.internalConfig.LogToStdout() {
 		writer = newLogTraceWriter(c, statsd)
-	} else if c.otlpExportMode {
+	} else if c.internalConfig.OTLPExportMode() {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 	} else {
@@ -1075,8 +1080,8 @@ func (t *tracer) TracerConf() TracerConf {
 		Disabled:             !t.config.enabled.get(),
 		PartialFlush:         pfEnabled,
 		PartialFlushMinSpans: pfMin,
-		PeerServiceDefaults:  t.config.peerServiceDefaultsEnabled,
-		PeerServiceMappings:  t.config.peerServiceMappings,
+		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
+		PeerServiceMappings:  t.config.internalConfig.PeerServiceMappings(),
 		EnvTag:               t.config.internalConfig.Env(),
 		VersionTag:           t.config.internalConfig.Version(),
 		ServiceTag:           t.config.internalConfig.ServiceName(),

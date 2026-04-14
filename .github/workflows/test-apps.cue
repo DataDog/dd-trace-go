@@ -50,12 +50,10 @@ import "encoding/json"
     {
         name: "prod",
         site: "datadoghq.com",
-        key: "DD_TEST_APP_API_KEY",
     },
     {
         name: "staging",
         site: "datad0g.com",
-        key: "DD_TEST_AND_DEMO_API_KEY",
     },
 ]
 
@@ -117,6 +115,7 @@ env: {
 
 permissions: {
     contents: "read",
+    "id-token": "write",
 }
 
 jobs: {
@@ -133,20 +132,31 @@ jobs: {
                 steps: [
                     {
                         name: "Checkout Code",
-                        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd",
-                        with: {ref: "${{ inputs.ref || github.ref }}"},
+                        uses: "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd", // v6.0.2
+                        with: {
+                        "persist-credentials": false,
+                        ref:                   "${{ inputs.ref || github.ref }}",
+                    },
+                    },
+                    {
+                        name: "Get Datadog credentials",
+                        id: "dd-sts",
+                        uses: "DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75",
+                        with: {
+                            policy: "dd-trace-go",
+                        },
                     },
                     {
                         name: "Start Agent",
-                        uses: "datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a",
+                        uses: "datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a", // v1.3.1
                         with: {
-                            api_key: "${{ secrets['\(env.key)'] }}",
+                            api_key: "${{ steps.dd-sts.outputs.api_key }}",
                             datadog_site: "\(env.site)",
                         },
                     },
                     {
                         name: "Setup Go"
-                        uses: "actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417",
+                        uses: "actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417", // v6.3.0
                         with: {
                             "go-version": "stable",
                             "check-latest": true,

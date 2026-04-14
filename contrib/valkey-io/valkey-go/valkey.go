@@ -174,6 +174,10 @@ func (c *dedicatedClient) SetPubSubHooks(hooks valkey.PubSubHooks) <-chan error 
 	return c.dedicatedClient.SetPubSubHooks(hooks)
 }
 
+func (c *dedicatedClient) SetOnInvalidations(fn func([]valkey.ValkeyMessage)) <-chan error {
+	return c.dedicatedClient.SetOnInvalidations(fn)
+}
+
 func (c *dedicatedClient) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResult {
 	span, ctx := c.startSpan(ctx, processCommand(&cmd))
 	resp := c.dedicatedClient.Do(ctx, cmd)
@@ -291,7 +295,11 @@ func multiCommand(cmds []command) command {
 		statement.WriteString(cmd.statement)
 		raw.WriteString(cmd.raw)
 		if i != len(cmds)-1 {
-			statement.WriteString(" ")
+			// Commands are joined with newlines so that the Datadog agent's Redis
+			// quantizer correctly identifies each token as a separate command.
+			// The quantizer splits on '\n' to process pipeline commands individually:
+			// https://github.com/DataDog/datadog-agent/blob/main/pkg/obfuscate/redis.go#L39
+			statement.WriteString("\n")
 			raw.WriteString(" ")
 		}
 	}
