@@ -1,5 +1,14 @@
-name: Nightly govulncheck
+name: Govulncheck
 on:
+  pull_request:
+    paths:
+      - "**/*.go"
+      - "**/go.mod"
+      - "**/go.sum"
+      - "go.work"
+      - "go.work.sum"
+      - ".github/workflows/govulncheck.yml"
+      - ".github/workflows/apps/govulncheck-contribs-v2.sh"
   workflow_call: # allows to reuse this workflow
     inputs:
       ref:
@@ -20,27 +29,67 @@ on:
     - cron: '00 00 * * *'
   workflow_dispatch:
 
+concurrency:
+  group: govulncheck-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+  security-events: write # required for SARIF upload to GitHub Code Scanning
 
 jobs:
+  # Non-blocking: generates SARIF and uploads to GitHub Code Scanning.
+  # Replaces Dependabot Security Alerts with reachability-aware findings.
+  # Uses govulncheck@latest installed directly (golang/govulncheck-action is
+  # not in the DataDog enterprise action allowlist).
+  # NOTE: Only core packages are scanned here. Contrib modules (each with
+  # their own go.mod) are scanned in govulncheck-tests, which blocks merges,
+  # but contrib vulnerabilities do not appear in GitHub Code Scanning alerts.
+  govulncheck-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+          cache-dependency-path: '**/go.sum'
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck (SARIF)
+        # -format sarif exits 0 even when vulnerabilities are found, so the
+        # upload step always runs. The blocking check is in govulncheck-tests.
+        run: |-
+          govulncheck -format sarif \
+            ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
+            > govulncheck.sarif || true
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
+        with:
+          sarif_file: govulncheck.sarif
+          category: govulncheck
+
+  # Blocking: fails the build if any reachable vulnerability is found.
+  # Scans both core packages and all contrib modules (each with its own go.mod).
   govulncheck-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
-        uses: ./.github/actions/setup-go
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: stable
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
-      - name: Run govulncheck
-        run: |-
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
-      - name: Run govulncheck-contribs
-        run: |-
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./.github/workflows/apps/govulncheck-contribs-v2.sh
+          cache-dependency-path: '**/go.sum'
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck (core)
+        run: govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
+      - name: Run govulncheck (contrib)
+        run: ./.github/workflows/apps/govulncheck-contribs-v2.sh

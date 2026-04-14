@@ -1,0 +1,7 @@
+schema-version: v1
+carryforward: true
+flags:
+  core:
+    carryforward: true
+  contrib:
+    carryforward: true

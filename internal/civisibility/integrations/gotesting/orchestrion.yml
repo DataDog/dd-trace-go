@@ -225,7 +225,9 @@ aspects:
     advice:
       - prepend-statements:
           template: |-
-            defer func() { _ = __dd_civisibility_instrumentTestingParallel({{ .Function.Receiver }}) }()
+            if __dd_civisibility_instrumentTestingParallel({{ .Function.Receiver }}) {
+              return
+            }
 
   - id: testify.suite.Run
     join-point:

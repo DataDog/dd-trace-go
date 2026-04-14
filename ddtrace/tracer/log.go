@@ -116,10 +116,11 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
-	// Determine the agent URL to use in the logs
+	// Determine the agent URL to use in the logs.
+	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).
 	var agentURL string
-	if t.config.originalAgentURL != nil && t.config.originalAgentURL.Scheme == "unix" {
-		agentURL = t.config.originalAgentURL.String()
+	if srcURL := t.config.internalConfig.RawAgentURL(); srcURL != nil && srcURL.Scheme == "unix" {
+		agentURL = srcURL.String()
 	} else {
 		agentURL = t.config.transport.endpoint()
 	}
@@ -131,7 +132,7 @@ func logStartup(t *tracer) {
 		Lang:                        "Go",
 		LangVersion:                 runtime.Version(),
 		Env:                         t.config.internalConfig.Env(),
-		Service:                     t.config.serviceName,
+		Service:                     t.config.internalConfig.ServiceName(),
 		AgentURL:                    agentURL,
 		Debug:                       t.config.internalConfig.Debug(),
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
@@ -149,7 +150,7 @@ func logStartup(t *tracer) {
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
 		LambdaMode:                  fmt.Sprintf("%t", t.config.internalConfig.LogToStdout()),
-		AgentFeatures:               t.config.agent,
+		AgentFeatures:               t.config.agent.load(),
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),
 		PartialFlushEnabled:         partialFlushEnabled,
@@ -169,7 +170,7 @@ func logStartup(t *tracer) {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.internalConfig.LogToStdout() {
-		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.traceProtocol); err != nil {
+		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.internalConfig.TraceProtocol()); err != nil {
 			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}

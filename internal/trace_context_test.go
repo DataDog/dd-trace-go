@@ -317,7 +317,7 @@ func BenchmarkGLSCycleSameGoroutine(b *testing.B) {
 	b.Cleanup(orchestrion.MockGLS())
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 		cleanup()
@@ -336,7 +336,7 @@ func BenchmarkGLSCycleCrossGoroutine(b *testing.B) {
 	b.Cleanup(orchestrion.MockGLSPerGoroutine())
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ctx := WithExecutionTraced(context.Background())
 		_, cleanup := ScopedExecutionNotTraced(ctx)
 		done := make(chan struct{})

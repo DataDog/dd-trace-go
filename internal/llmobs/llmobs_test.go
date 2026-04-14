@@ -655,6 +655,121 @@ func TestSpanAnnotate(t *testing.T) {
 				"intent":    "test intent",
 			},
 		},
+		{
+			name: "llm-span-with-full-prompt",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				Prompt: &llmobs.Prompt{
+					ID:                  "my-prompt",
+					Version:             "1.0.0",
+					Label:               "production",
+					Template:            "Hello {{name}}!",
+					Variables:           map[string]string{"name": "World"},
+					Tags:                map[string]string{"env": "prod"},
+					RAGContextVariables: []string{"context"},
+					RAGQueryVariables:   []string{"query"},
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+				"input": map[string]any{
+					"prompt": map[string]any{
+						"id":                        "my-prompt",
+						"version":                   "1.0.0",
+						"label":                     "production",
+						"template":                  "Hello {{name}}!",
+						"variables":                 map[string]any{"name": "World"},
+						"tags":                      map[string]any{"env": "prod"},
+						"_dd_context_variable_keys": []any{"context"},
+						"_dd_query_variable_keys":   []any{"query"},
+						"ml_app":                    mlApp,
+					},
+				},
+			},
+		},
+		{
+			name: "llm-span-with-prompt-defaults-applied",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				Prompt: &llmobs.Prompt{
+					Template: "Answer the question.",
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+				"input": map[string]any{
+					"prompt": map[string]any{
+						"id":                        mlApp + "_unnamed-prompt",
+						"template":                  "Answer the question.",
+						"_dd_context_variable_keys": []any{"context"},
+						"_dd_query_variable_keys":   []any{"question"},
+						"ml_app":                    mlApp,
+					},
+				},
+			},
+		},
+		{
+			name: "llm-span-with-prompt-chat-template",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				Prompt: &llmobs.Prompt{
+					ID: "chat-prompt",
+					ChatTemplate: []llmobs.LLMMessage{
+						{Role: "system", Content: "You are a helpful assistant."},
+						{Role: "user", Content: "{{question}}"},
+					},
+					Variables:         map[string]string{"question": "What is Go?"},
+					RAGQueryVariables: []string{"question"},
+				},
+			},
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+				"input": map[string]any{
+					"prompt": map[string]any{
+						"id": "chat-prompt",
+						"chat_template": []any{
+							map[string]any{"role": "system", "content": "You are a helpful assistant."},
+							map[string]any{"role": "user", "content": "{{question}}"},
+						},
+						"variables":                 map[string]any{"question": "What is Go?"},
+						"_dd_context_variable_keys": []any{"context"},
+						"_dd_query_variable_keys":   []any{"question"},
+						"ml_app":                    mlApp,
+					},
+				},
+			},
+		},
+		{
+			name: "llm-span-with-prompt-both-template-and-chat-template",
+			kind: llmobs.SpanKindLLM,
+			annotations: llmobs.SpanAnnotations{
+				Prompt: &llmobs.Prompt{
+					ID:       "both-templates",
+					Template: "Answer: {{question}}",
+					ChatTemplate: []llmobs.LLMMessage{
+						{Role: "user", Content: "{{question}}"},
+					},
+					Variables: map[string]string{"question": "What is Go?"},
+				},
+			},
+			// When both template and chat_template are set, template should be dropped
+			// and chat_template should be kept (with a warning logged).
+			wantMeta: map[string]any{
+				"span.kind": "llm",
+				"input": map[string]any{
+					"prompt": map[string]any{
+						"id": "both-templates",
+						"chat_template": []any{
+							map[string]any{"role": "user", "content": "{{question}}"},
+						},
+						"variables":                 map[string]any{"question": "What is Go?"},
+						"_dd_context_variable_keys": []any{"context"},
+						"_dd_query_variable_keys":   []any{"question"},
+						"ml_app":                    mlApp,
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1797,7 +1912,7 @@ func BenchmarkLLMObsStartSpan(b *testing.B) {
 
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for i := range b.N {
 			span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, fmt.Sprintf("span-%d", i), llmobs.StartSpanConfig{})
 			span.Finish(llmobs.FinishSpanConfig{})
 		}
@@ -1989,6 +2104,34 @@ func TestDDAttributes(t *testing.T) {
 
 		// Verify Scope is set to "experiments"
 		assert.Equal(t, "experiments", llmSpan.DDAttributes.Scope, "DDAttributes.Scope should be 'experiments' for experiment spans")
+	})
+	t.Run("child-span-inherits-experiment-scope-from-baggage", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		experimentID := "test-experiment-456"
+		parentSpan, ctx := ll.StartExperimentSpan(ctx, "parent-experiment", experimentID, llmobs.StartSpanConfig{})
+		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child-llm", llmobs.StartSpanConfig{})
+
+		childSpan.Finish(llmobs.FinishSpanConfig{})
+		parentSpan.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 2)
+
+		var parentLLM, childLLM *llmobstransport.LLMObsSpanEvent
+		for i := range llmSpans {
+			if llmSpans[i].Name == "parent-experiment" {
+				parentLLM = &llmSpans[i]
+			} else if llmSpans[i].Name == "child-llm" {
+				childLLM = &llmSpans[i]
+			}
+		}
+
+		require.NotNil(t, parentLLM, "Parent LLM span should exist")
+		require.NotNil(t, childLLM, "Child LLM span should exist")
+
+		assert.Equal(t, "experiments", parentLLM.DDAttributes.Scope, "Parent scope should be 'experiments'")
+		assert.Equal(t, "experiments", childLLM.DDAttributes.Scope, "Child scope should be 'experiments' via baggage propagation")
 	})
 	t.Run("child-span-trace-ids", func(t *testing.T) {
 		tt, ll := testTracer(t)

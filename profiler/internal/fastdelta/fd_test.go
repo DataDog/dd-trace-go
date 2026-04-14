@@ -112,7 +112,7 @@ func BenchmarkDelta(b *testing.B) {
 						b.SetBytes(int64(len(before)))
 						b.ReportAllocs()
 
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							deltaFn := impl.Func()
 							if err := deltaFn(before, io.Discard); err != nil {
 								b.Fatal(err)
@@ -132,7 +132,7 @@ func BenchmarkDelta(b *testing.B) {
 						}
 
 						b.ResetTimer()
-						for i := 0; i < b.N; i++ {
+						for b.Loop() {
 							if err := deltaFn(after, ioutil.Discard); err != nil {
 								b.Fatal(err)
 							}
@@ -196,7 +196,7 @@ func BenchmarkMakeGolden(b *testing.B) {
 			}
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				psink = makeGolden(b, before, after,
 					vt("alloc_objects", "count"), vt("alloc_space", "bytes"))
 			}

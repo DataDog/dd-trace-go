@@ -24,6 +24,7 @@ env:
   TEST_RESULT_PATH: /tmp/test-results
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -33,16 +34,17 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Restore repo cache
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
-      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version: stable
           cache: false
@@ -211,18 +213,19 @@ jobs:
         options: >-
           --name "kafka"
       localstack:
-        image: localstack/localstack:latest
+        image: localstack/localstack:4.14.0
         ports:
           - 4566:4566
     steps:
       - name: Restore repo cache
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
 
@@ -241,12 +244,19 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
 
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
@@ -256,6 +266,16 @@ jobs:
         uses: ./.github/actions/codecov-upload
         with:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload Coverage to Datadog
+        if: always()
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage.txt
+          format: go-coverprofile
+          flags: contrib
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
@@ -289,7 +309,7 @@ jobs:
       - name: Upload Trace Check Results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: trace-check-results-${{ strategy.job-index }}
           path: /tmp/trace-check-results/
@@ -305,7 +325,7 @@ jobs:
     continue-on-error: true
     steps:
       - name: Download Trace Check Results
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: /tmp/trace-check-results
           pattern: trace-check-results-*
@@ -379,7 +399,7 @@ jobs:
           - 8126:8126
     steps:
       - name: Restore repo cache
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
@@ -387,6 +407,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         if: always()
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
       - name: Setup Go and development tools
@@ -404,12 +425,20 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ls -al "${{ github.workspace }}/bin"
           ./scripts/ci_test_core.sh
+
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
@@ -419,6 +448,16 @@ jobs:
         uses: ./.github/actions/codecov-upload
         with:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload Coverage to Datadog
+        if: always()
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage.txt
+          format: go-coverprofile
+          flags: core
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check

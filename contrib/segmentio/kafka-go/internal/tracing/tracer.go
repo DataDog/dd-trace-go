@@ -7,6 +7,7 @@ package tracing
 
 import (
 	"math"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -20,11 +21,13 @@ func init() {
 type Tracer struct {
 	consumerServiceName string
 	producerServiceName string
+	serviceSource       string
 	consumerSpanName    string
 	producerSpanName    string
 	analyticsRate       float64
 	dataStreamsEnabled  bool
 	kafkaCfg            KafkaConfig
+	clusterID           atomic.Value // +checkatomic
 }
 
 // Option describes options for the Kafka integration.
@@ -36,6 +39,7 @@ func NewTracer(kafkaCfg KafkaConfig, opts ...Option) *Tracer {
 	tr := &Tracer{
 		consumerServiceName: instr.ServiceName(instrumentation.ComponentConsumer, nil),
 		producerServiceName: instr.ServiceName(instrumentation.ComponentProducer, nil),
+		serviceSource:       string(instrumentation.PackageSegmentioKafkaGo),
 		consumerSpanName:    instr.OperationName(instrumentation.ComponentConsumer, nil),
 		producerSpanName:    instr.OperationName(instrumentation.ComponentProducer, nil),
 		analyticsRate:       instr.AnalyticsRate(false),
@@ -60,6 +64,7 @@ func WithService(serviceName string) Option {
 	return OptionFn(func(tr *Tracer) {
 		tr.consumerServiceName = serviceName
 		tr.producerServiceName = serviceName
+		tr.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	})
 }
 
@@ -91,6 +96,19 @@ func WithDataStreams() Option {
 	return OptionFn(func(tr *Tracer) {
 		tr.dataStreamsEnabled = true
 	})
+}
+
+func (tr *Tracer) DSMEnabled() bool {
+	return tr.dataStreamsEnabled
+}
+
+func (tr *Tracer) ClusterID() string {
+	v, _ := tr.clusterID.Load().(string)
+	return v
+}
+
+func (tr *Tracer) SetClusterID(id string) {
+	tr.clusterID.Store(id)
 }
 
 func Logger() instrumentation.Logger {

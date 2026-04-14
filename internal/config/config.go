@@ -11,11 +11,15 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -37,18 +41,39 @@ type Origin = telemetry.Origin
 const (
 	OriginCode       = telemetry.OriginCode
 	OriginCalculated = telemetry.OriginCalculated
+	OriginDefault    = telemetry.OriginDefault
 )
+
+// Product identifies which product is setting a config value via programmatic API.
+type Product string
+
+const (
+	ProductTracer   Product = "tracer"
+	ProductProfiler Product = "profiler"
+)
+
+// programmaticOverride records which product claimed a field via programmatic API.
+type programmaticOverride struct {
+	product Product
+	value   any
+}
 
 // Config represents global configuration properties.
 // Config instances should be obtained via Get() which always returns a non-nil value.
 // Methods on Config assume a non-nil receiver and will panic if called on nil.
 type Config struct {
 	mu sync.RWMutex
+
+	// overrides tracks which product claimed each field via programmatic API (OriginCode).
+	// Used by checkOverrideConflict to enforce the cross-product gate.
+	overrides map[string]programmaticOverride
+
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
 	debug    bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
-	logStartup  bool
+	logStartup bool
+	// serviceName specifies the name of this application.
 	serviceName string
 	version     string
 	// env contains the environment that this application will run under.
@@ -104,52 +129,120 @@ type Config struct {
 	retryInterval time.Duration
 	// logsOTelEnabled controls if the OpenTelemetry Logs SDK pipeline should be enabled
 	logsOTelEnabled bool
+	// traceProtocol is the Datadog trace protocol version (TraceProtocolV04 or TraceProtocolV1).
+	// Only meaningful when otlpExportMode is false.
+	traceProtocol float64
+	// otlpExportMode indicates traces should be exported via OTLP rather than
+	// a Datadog protocol.
+	otlpExportMode bool
+	// otlpTraceURL is the OTLP collector endpoint for traces
+	otlpTraceURL string
+	// otlpHeaders holds the resolved OTLP trace headers from
+	// OTEL_EXPORTER_OTLP_TRACES_HEADERS plus Content-Type: application/x-protobuf.
+	otlpHeaders map[string]string
+	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
+	traceID128BitEnabled bool
+}
+
+// checkProductConflict enforces the cross-product gate for programmatic API calls.
+// Returns true if the caller should abort the update (a different product already
+// claimed this field). No-op when product is not supplied or origin is not OriginCode.
+// The product parameter is variadic for ergonomic pass-through from Set* methods;
+// only the first value is used and callers should pass at most one.
+// Must be called while c.mu is held.
+func (c *Config) checkProductConflict(field string, origin telemetry.Origin, value any, product ...Product) bool {
+	if origin != telemetry.OriginCode || len(product) == 0 {
+		return false
+	}
+	p := product[0]
+	if prev, exists := c.overrides[field]; exists && prev.product != p {
+		if reflect.DeepEqual(prev.value, value) {
+			return false
+		}
+		telemetry.Count(telemetry.NamespaceGeneral, "config.product_conflict", []string{
+			"name:" + field,
+			"first_product:" + string(prev.product),
+			"second_product:" + string(p),
+			"first_value:" + fmt.Sprint(prev.value),
+			"second_value:" + fmt.Sprint(value),
+		}).Submit(1)
+		log.Warn("config: %s already set %s via programmatic API; ignoring %s's attempt to override it",
+			prev.product, field, p)
+		return true
+	}
+	c.overrides[field] = programmaticOverride{product: p, value: value}
+	return false
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
 // This function is NOT thread-safe and should only be called once through Get's sync.Once.
 func loadConfig() *Config {
-	cfg := new(Config)
+	cfg := &Config{
+		overrides: make(map[string]programmaticOverride),
+	}
+	p := provider.New()
 
-	// TODO: Use defaults from config json instead of hardcoding them here
-	cfg.agentURL = provider.getURL("DD_TRACE_AGENT_URL", &url.URL{Scheme: "http", Host: "localhost:8126"})
-	cfg.debug = provider.getBool("DD_TRACE_DEBUG", false)
-	cfg.logStartup = provider.getBool("DD_TRACE_STARTUP_LOGS", true)
-	cfg.serviceName = provider.getString("DD_SERVICE", "")
-	cfg.version = provider.getString("DD_VERSION", "")
-	cfg.env = provider.getString("DD_ENV", "")
-	cfg.serviceMappings = provider.getMap("DD_SERVICE_MAPPING", nil)
-	cfg.runtimeMetrics = provider.getBool("DD_RUNTIME_METRICS_ENABLED", false)
-	cfg.runtimeMetricsV2 = provider.getBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	cfg.profilerHotspots = provider.getBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
-	cfg.profilerEndpoints = provider.getBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
-	cfg.spanAttributeSchemaVersion = provider.getInt("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", 0)
-	cfg.peerServiceDefaultsEnabled = provider.getBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
-	cfg.peerServiceMappings = provider.getMap("DD_TRACE_PEER_SERVICE_MAPPING", nil)
-	cfg.debugAbandonedSpans = provider.getBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	cfg.spanTimeout = provider.getDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
-	cfg.partialFlushMinSpans = provider.getIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
-	cfg.partialFlushEnabled = provider.getBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	cfg.statsComputationEnabled = provider.getBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
-	cfg.dataStreamsMonitoringEnabled = provider.getBool("DD_DATA_STREAMS_ENABLED", false)
-	cfg.dynamicInstrumentationEnabled = provider.getBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	cfg.ciVisibilityEnabled = provider.getBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
-	cfg.ciVisibilityAgentless = provider.getBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
-	cfg.logDirectory = provider.getString("DD_TRACE_LOG_DIRECTORY", "")
-	cfg.traceRateLimitPerSecond = provider.getFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
-	cfg.globalSampleRate = provider.getFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
-	cfg.debugStack = provider.getBool("DD_TRACE_DEBUG_STACK", true)
-	cfg.retryInterval = provider.getDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
-	cfg.logsOTelEnabled = provider.getBool("DD_LOGS_OTEL_ENABLED", false)
+	// Resolve agent URL from DD_TRACE_AGENT_URL, DD_AGENT_HOST, DD_TRACE_AGENT_PORT.
+	// All three are read through the provider so telemetry is reported for each.
+	agentURLStr := p.GetString("DD_TRACE_AGENT_URL", "")
+	agentHost := p.GetString("DD_AGENT_HOST", "")
+	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
+	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+
+	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
+	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
+	cfg.serviceName = p.GetString("DD_SERVICE", "")
+	cfg.version = p.GetString("DD_VERSION", "")
+	cfg.env = p.GetString("DD_ENV", "")
+	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
+	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
+	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
+	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
+	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
+	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	cfg.peerServiceMappings = p.GetMap("DD_TRACE_PEER_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
+	cfg.debugAbandonedSpans = p.GetBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+	cfg.spanTimeout = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
+	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
+	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
+	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
+	cfg.dynamicInstrumentationEnabled = p.GetBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
+	cfg.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
+	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
+	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
+	cfg.globalSampleRate = p.GetFloatWithValidator("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
+	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
+	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
+	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV04, validateTraceProtocolVersion))
+	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
+	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
+	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
+		cfg.otlpExportMode = false
+	}
+	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
+	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
+	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
-	if featuresStr := provider.getString("DD_TRACE_FEATURES", ""); featuresStr != "" {
+	if featuresStr := p.GetString("DD_TRACE_FEATURES", ""); featuresStr != "" {
 		for _, feat := range strings.FieldsFunc(featuresStr, func(r rune) bool {
 			return r == ',' || r == ' '
 		}) {
 			cfg.featureFlags[strings.TrimSpace(feat)] = struct{}{}
 		}
+	}
+
+	if schemaStr := p.GetString("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA", ""); schemaStr != "" {
+		if v, ok := parseSpanAttributeSchema(schemaStr); ok {
+			cfg.spanAttributeSchemaVersion = v
+		}
+	}
+	if cfg.spanAttributeSchemaVersion >= 1 {
+		cfg.peerServiceDefaultsEnabled = true
 	}
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
@@ -166,7 +259,7 @@ func loadConfig() *Config {
 	// If the hostname lookup fails, an error is set and the hostname is not reported
 	// The tracer will fail to start if the hostname lookup fails when it is explicitly configured
 	// to report the hostname.
-	if provider.getBool("DD_TRACE_REPORT_HOSTNAME", false) {
+	if p.GetBool("DD_TRACE_REPORT_HOSTNAME", false) {
 		hostname, err := os.Hostname()
 		if err != nil {
 			log.Warn("unable to look up hostname: %s", err.Error())
@@ -226,17 +319,56 @@ func SetUseFreshConfig(use bool) {
 	useFreshConfig = use
 }
 
+// RawAgentURL returns a copy of the configured trace agent URL before any
+// transport-level rewriting (e.g. unix → http://UDS_...). Use AgentURL()
+// for the URL suitable for HTTP requests.
+func (c *Config) RawAgentURL() *url.URL {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.agentURL == nil {
+		return nil
+	}
+	u := *c.agentURL
+	return &u
+}
+
+func (c *Config) SetAgentURL(u *url.URL, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_AGENT_URL", origin, u, product...) {
+		return
+	}
+	c.agentURL = u
+	if u != nil {
+		configtelemetry.Report("DD_TRACE_AGENT_URL", u.String(), origin)
+	}
+}
+
+// AgentURL returns the URL to use for HTTP requests to the agent.
+// For unix-scheme URLs this rewrites to the http://UDS_... form; otherwise
+// it returns a copy of the configured URL.
+func (c *Config) AgentURL() *url.URL {
+	u := c.RawAgentURL()
+	if u != nil && u.Scheme == "unix" {
+		return internal.UnixDataSocketURL(u.Path)
+	}
+	return u
+}
+
 func (c *Config) Debug() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.debug
 }
 
-func (c *Config) SetDebug(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetDebug(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_DEBUG", origin, enabled, product...) {
+		return
+	}
 	c.debug = enabled
-	reportTelemetry("DD_TRACE_DEBUG", enabled, origin)
+	configtelemetry.Report("DD_TRACE_DEBUG", enabled, origin)
 }
 
 func (c *Config) ProfilerEndpoints() bool {
@@ -245,11 +377,14 @@ func (c *Config) ProfilerEndpoints() bool {
 	return c.profilerEndpoints
 }
 
-func (c *Config) SetProfilerEndpoints(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetProfilerEndpoints(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", origin, enabled, product...) {
+		return
+	}
 	c.profilerEndpoints = enabled
-	reportTelemetry("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", enabled, origin)
 }
 
 func (c *Config) ProfilerHotspotsEnabled() bool {
@@ -258,11 +393,14 @@ func (c *Config) ProfilerHotspotsEnabled() bool {
 	return c.profilerHotspots
 }
 
-func (c *Config) SetProfilerHotspotsEnabled(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetProfilerHotspotsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict(traceprof.CodeHotspotsEnvVar, origin, enabled, product...) {
+		return
+	}
 	c.profilerHotspots = enabled
-	reportTelemetry(traceprof.CodeHotspotsEnvVar, enabled, origin)
+	configtelemetry.Report(traceprof.CodeHotspotsEnvVar, enabled, origin)
 }
 func (c *Config) RuntimeMetricsEnabled() bool {
 	c.mu.RLock()
@@ -270,11 +408,14 @@ func (c *Config) RuntimeMetricsEnabled() bool {
 	return c.runtimeMetrics
 }
 
-func (c *Config) SetRuntimeMetricsEnabled(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetRuntimeMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_RUNTIME_METRICS_ENABLED", origin, enabled, product...) {
+		return
+	}
 	c.runtimeMetrics = enabled
-	reportTelemetry("DD_RUNTIME_METRICS_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_RUNTIME_METRICS_ENABLED", enabled, origin)
 }
 
 func (c *Config) RuntimeMetricsV2Enabled() bool {
@@ -283,11 +424,14 @@ func (c *Config) RuntimeMetricsV2Enabled() bool {
 	return c.runtimeMetricsV2
 }
 
-func (c *Config) SetRuntimeMetricsV2Enabled(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetRuntimeMetricsV2Enabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_RUNTIME_METRICS_V2_ENABLED", origin, enabled, product...) {
+		return
+	}
 	c.runtimeMetricsV2 = enabled
-	reportTelemetry("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
 }
 
 func (c *Config) DataStreamsMonitoringEnabled() bool {
@@ -296,11 +440,14 @@ func (c *Config) DataStreamsMonitoringEnabled() bool {
 	return c.dataStreamsMonitoringEnabled
 }
 
-func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetDataStreamsMonitoringEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_DATA_STREAMS_ENABLED", origin, enabled, product...) {
+		return
+	}
 	c.dataStreamsMonitoringEnabled = enabled
-	reportTelemetry("DD_DATA_STREAMS_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_DATA_STREAMS_ENABLED", enabled, origin)
 }
 
 func (c *Config) LogStartup() bool {
@@ -309,11 +456,14 @@ func (c *Config) LogStartup() bool {
 	return c.logStartup
 }
 
-func (c *Config) SetLogStartup(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetLogStartup(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_STARTUP_LOGS", origin, enabled, product...) {
+		return
+	}
 	c.logStartup = enabled
-	reportTelemetry("DD_TRACE_STARTUP_LOGS", enabled, origin)
+	configtelemetry.Report("DD_TRACE_STARTUP_LOGS", enabled, origin)
 }
 
 func (c *Config) LogToStdout() bool {
@@ -322,11 +472,13 @@ func (c *Config) LogToStdout() bool {
 	return c.logToStdout
 }
 
-func (c *Config) SetLogToStdout(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetLogToStdout(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("logToStdout", origin, enabled, product...) {
+		return
+	}
 	c.logToStdout = enabled
-	// Do not report telemetry because this is not a user-configurable option
 }
 
 func (c *Config) IsLambdaFunction() bool {
@@ -335,11 +487,13 @@ func (c *Config) IsLambdaFunction() bool {
 	return c.isLambdaFunction
 }
 
-func (c *Config) SetIsLambdaFunction(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetIsLambdaFunction(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("isLambdaFunction", origin, enabled, product...) {
+		return
+	}
 	c.isLambdaFunction = enabled
-	// Do not report telemetry because this is not a user-configurable option
 }
 
 func (c *Config) GlobalSampleRate() float64 {
@@ -348,11 +502,14 @@ func (c *Config) GlobalSampleRate() float64 {
 	return c.globalSampleRate
 }
 
-func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin) {
+func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_SAMPLE_RATE", origin, rate, product...) {
+		return
+	}
 	c.globalSampleRate = rate
-	reportTelemetry("DD_TRACE_SAMPLE_RATE", rate, origin)
+	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 
 func (c *Config) TraceRateLimitPerSecond() float64 {
@@ -361,11 +518,14 @@ func (c *Config) TraceRateLimitPerSecond() float64 {
 	return c.traceRateLimitPerSecond
 }
 
-func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origin) {
+func (c *Config) SetTraceRateLimitPerSecond(rate float64, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_RATE_LIMIT", origin, rate, product...) {
+		return
+	}
 	c.traceRateLimitPerSecond = rate
-	reportTelemetry("DD_TRACE_RATE_LIMIT", rate, origin)
+	configtelemetry.Report("DD_TRACE_RATE_LIMIT", rate, origin)
 }
 
 // PartialFlushEnabled returns the partial flushing configuration under a single read lock.
@@ -377,18 +537,24 @@ func (c *Config) PartialFlushEnabled() (enabled bool, minSpans int) {
 	return enabled, minSpans
 }
 
-func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetPartialFlushEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_PARTIAL_FLUSH_ENABLED", origin, enabled, product...) {
+		return
+	}
 	c.partialFlushEnabled = enabled
-	reportTelemetry("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_TRACE_PARTIAL_FLUSH_ENABLED", enabled, origin)
 }
 
-func (c *Config) SetPartialFlushMinSpans(minSpans int, origin telemetry.Origin) {
+func (c *Config) SetPartialFlushMinSpans(minSpans int, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", origin, minSpans, product...) {
+		return
+	}
 	c.partialFlushMinSpans = minSpans
-	reportTelemetry("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", minSpans, origin)
+	configtelemetry.Report("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", minSpans, origin)
 }
 
 func (c *Config) DebugAbandonedSpans() bool {
@@ -397,11 +563,14 @@ func (c *Config) DebugAbandonedSpans() bool {
 	return c.debugAbandonedSpans
 }
 
-func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetDebugAbandonedSpans(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_DEBUG_ABANDONED_SPANS", origin, enabled, product...) {
+		return
+	}
 	c.debugAbandonedSpans = enabled
-	reportTelemetry("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
+	configtelemetry.Report("DD_TRACE_DEBUG_ABANDONED_SPANS", enabled, origin)
 }
 
 func (c *Config) SpanTimeout() time.Duration {
@@ -410,11 +579,14 @@ func (c *Config) SpanTimeout() time.Duration {
 	return c.spanTimeout
 }
 
-func (c *Config) SetSpanTimeout(timeout time.Duration, origin telemetry.Origin) {
+func (c *Config) SetSpanTimeout(timeout time.Duration, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_ABANDONED_SPAN_TIMEOUT", origin, timeout, product...) {
+		return
+	}
 	c.spanTimeout = timeout
-	reportTelemetry("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin)
+	configtelemetry.Report("DD_TRACE_ABANDONED_SPAN_TIMEOUT", timeout, origin)
 }
 
 func (c *Config) DebugStack() bool {
@@ -423,11 +595,14 @@ func (c *Config) DebugStack() bool {
 	return c.debugStack
 }
 
-func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_DEBUG_STACK", origin, enabled, product...) {
+		return
+	}
 	c.debugStack = enabled
-	reportTelemetry("DD_TRACE_DEBUG_STACK", enabled, origin)
+	configtelemetry.Report("DD_TRACE_DEBUG_STACK", enabled, origin)
 }
 
 func (c *Config) StatsComputationEnabled() bool {
@@ -436,11 +611,14 @@ func (c *Config) StatsComputationEnabled() bool {
 	return c.statsComputationEnabled
 }
 
-func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_STATS_COMPUTATION_ENABLED", origin, enabled, product...) {
+		return
+	}
 	c.statsComputationEnabled = enabled
-	reportTelemetry("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
 }
 
 func (c *Config) LogDirectory() string {
@@ -449,11 +627,14 @@ func (c *Config) LogDirectory() string {
 	return c.logDirectory
 }
 
-func (c *Config) SetLogDirectory(directory string, origin telemetry.Origin) {
+func (c *Config) SetLogDirectory(directory string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_LOG_DIRECTORY", origin, directory, product...) {
+		return
+	}
 	c.logDirectory = directory
-	reportTelemetry("DD_TRACE_LOG_DIRECTORY", directory, origin)
+	configtelemetry.Report("DD_TRACE_LOG_DIRECTORY", directory, origin)
 }
 
 func (c *Config) ReportHostname() bool {
@@ -468,12 +649,15 @@ func (c *Config) Hostname() string {
 	return c.hostname
 }
 
-func (c *Config) SetHostname(hostname string, origin telemetry.Origin) {
+func (c *Config) SetHostname(hostname string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_SOURCE_HOSTNAME", origin, hostname, product...) {
+		return
+	}
 	c.hostname = hostname
-	c.reportHostname = true // Explicitly configured hostname should always be reported
-	reportTelemetry("DD_TRACE_SOURCE_HOSTNAME", hostname, origin)
+	c.reportHostname = true
+	configtelemetry.Report("DD_TRACE_SOURCE_HOSTNAME", hostname, origin)
 }
 
 func (c *Config) HostnameLookupError() error {
@@ -488,11 +672,14 @@ func (c *Config) Version() string {
 	return c.version
 }
 
-func (c *Config) SetVersion(version string, origin telemetry.Origin) {
+func (c *Config) SetVersion(version string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_VERSION", origin, version, product...) {
+		return
+	}
 	c.version = version
-	reportTelemetry("DD_VERSION", version, origin)
+	configtelemetry.Report("DD_VERSION", version, origin)
 }
 
 func (c *Config) Env() string {
@@ -501,14 +688,18 @@ func (c *Config) Env() string {
 	return c.env
 }
 
-func (c *Config) SetEnv(env string, origin telemetry.Origin) {
+func (c *Config) SetEnv(env string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_ENV", origin, env, product...) {
+		return
+	}
 	c.env = env
-	reportTelemetry("DD_ENV", env, origin)
+	configtelemetry.Report("DD_ENV", env, origin)
 }
 
-func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
+// SetFeatureFlags adds to the feature flag set. No cross-product gate because this is additive, not a replacement.
+func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	if c.featureFlags == nil {
 		c.featureFlags = make(map[string]struct{})
@@ -522,7 +713,7 @@ func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin) {
 	}
 	c.mu.Unlock()
 
-	reportTelemetry("DD_TRACE_FEATURES", strings.Join(all, ","), origin)
+	configtelemetry.Report("DD_TRACE_FEATURES", strings.Join(all, ","), origin)
 }
 
 func (c *Config) FeatureFlags() map[string]struct{} {
@@ -575,7 +766,8 @@ func (c *Config) ServiceMapping(from string) (to string, ok bool) {
 	return to, ok
 }
 
-func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {
+// SetServiceMapping adds a single service mapping entry. No cross-product gate because this is additive, not a replacement.
+func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	if c.serviceMappings == nil {
 		c.serviceMappings = make(map[string]string)
@@ -587,7 +779,75 @@ func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin) {
 	}
 	c.mu.Unlock()
 
-	reportTelemetry("DD_SERVICE_MAPPING", strings.Join(all, ","), origin)
+	configtelemetry.Report("DD_SERVICE_MAPPING", strings.Join(all, ","), origin)
+}
+
+func (c *Config) PeerServiceDefaultsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.peerServiceDefaultsEnabled
+}
+
+func (c *Config) SetPeerServiceDefaultsEnabled(enabled bool, origin telemetry.Origin) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.peerServiceDefaultsEnabled = enabled
+	configtelemetry.Report("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", enabled, origin)
+}
+
+// PeerServiceMappings returns a copy of the peer service mappings map. If no mappings are set, returns nil.
+// Not intended for hot paths — use PeerServiceMapping for single-key lookups to avoid per-call allocations.
+func (c *Config) PeerServiceMappings() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.peerServiceMappings == nil {
+		return nil
+	}
+	result := make(map[string]string, len(c.peerServiceMappings))
+	maps.Copy(result, c.peerServiceMappings)
+	return result
+}
+
+// PeerServiceMapping performs a single mapping lookup without copying the underlying map.
+// This is better than PeerServiceMappings() for hot paths to avoid per-call allocations.
+func (c *Config) PeerServiceMapping(from string) (to string, ok bool) {
+	c.mu.RLock()
+	m := c.peerServiceMappings
+	if m == nil {
+		c.mu.RUnlock()
+		return "", false
+	}
+	to, ok = m[from]
+	c.mu.RUnlock()
+	return to, ok
+}
+
+func (c *Config) SetPeerServiceMappings(mappings map[string]string, origin telemetry.Origin) {
+	c.mu.Lock()
+	c.peerServiceMappings = make(map[string]string, len(mappings))
+	maps.Copy(c.peerServiceMappings, mappings)
+	all := make([]string, 0, len(c.peerServiceMappings))
+	for k, v := range c.peerServiceMappings {
+		all = append(all, fmt.Sprintf("%s:%s", k, v))
+	}
+	c.mu.Unlock()
+
+	configtelemetry.Report("DD_TRACE_PEER_SERVICE_MAPPING", strings.Join(all, ","), origin)
+}
+
+func (c *Config) SetPeerServiceMapping(from, to string, origin telemetry.Origin) {
+	c.mu.Lock()
+	if c.peerServiceMappings == nil {
+		c.peerServiceMappings = make(map[string]string)
+	}
+	c.peerServiceMappings[from] = to
+	all := make([]string, 0, len(c.peerServiceMappings))
+	for k, v := range c.peerServiceMappings {
+		all = append(all, fmt.Sprintf("%s:%s", k, v))
+	}
+	c.mu.Unlock()
+
+	configtelemetry.Report("DD_TRACE_PEER_SERVICE_MAPPING", strings.Join(all, ","), origin)
 }
 
 func (c *Config) RetryInterval() time.Duration {
@@ -596,11 +856,14 @@ func (c *Config) RetryInterval() time.Duration {
 	return c.retryInterval
 }
 
-func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origin) {
+func (c *Config) SetRetryInterval(interval time.Duration, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_RETRY_INTERVAL", origin, interval, product...) {
+		return
+	}
 	c.retryInterval = interval
-	reportTelemetry("DD_TRACE_RETRY_INTERVAL", interval, origin)
+	configtelemetry.Report("DD_TRACE_RETRY_INTERVAL", interval, origin)
 }
 
 func (c *Config) ServiceName() string {
@@ -609,11 +872,14 @@ func (c *Config) ServiceName() string {
 	return c.serviceName
 }
 
-func (c *Config) SetServiceName(name string, origin telemetry.Origin) {
+func (c *Config) SetServiceName(name string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_SERVICE", origin, name, product...) {
+		return
+	}
 	c.serviceName = name
-	reportTelemetry("DD_SERVICE", name, origin)
+	configtelemetry.Report("DD_SERVICE", name, origin)
 }
 
 func (c *Config) CIVisibilityEnabled() bool {
@@ -622,11 +888,14 @@ func (c *Config) CIVisibilityEnabled() bool {
 	return c.ciVisibilityEnabled
 }
 
-func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict(constants.CIVisibilityEnabledEnvironmentVariable, origin, enabled, product...) {
+		return
+	}
 	c.ciVisibilityEnabled = enabled
-	reportTelemetry(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+	configtelemetry.Report(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
 }
 
 func (c *Config) LogsOTelEnabled() bool {
@@ -635,9 +904,64 @@ func (c *Config) LogsOTelEnabled() bool {
 	return c.logsOTelEnabled
 }
 
-func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin) {
+func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_LOGS_OTEL_ENABLED", origin, enabled, product...) {
+		return
+	}
 	c.logsOTelEnabled = enabled
-	reportTelemetry("DD_LOGS_OTEL_ENABLED", enabled, origin)
+	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
+}
+
+func (c *Config) TraceProtocol() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceProtocol
+}
+
+func (c *Config) SetTraceProtocol(v float64, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_AGENT_PROTOCOL_VERSION", origin, v, product...) {
+		return
+	}
+	c.traceProtocol = v
+	configtelemetry.Report("DD_TRACE_AGENT_PROTOCOL_VERSION", v, origin)
+}
+
+func (c *Config) OTLPTraceURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpTraceURL
+}
+
+func (c *Config) OTLPExportMode() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpExportMode
+}
+
+func (c *Config) SetOTLPExportMode(v bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("OTEL_TRACES_EXPORTER", origin, v, product...) {
+		return
+	}
+	c.otlpExportMode = v
+	configtelemetry.Report("OTEL_TRACES_EXPORTER", v, origin)
+}
+
+// OTLPHeaders returns a copy of the OTLP headers map. If no headers are set, returns nil.
+// Safe to return the full map because it is not called in hot paths.
+func (c *Config) OTLPHeaders() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return maps.Clone(c.otlpHeaders)
+}
+
+func (c *Config) TraceID128BitEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceID128BitEnabled
 }

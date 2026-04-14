@@ -561,7 +561,8 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
-		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+		old := traceID128BitEnabled.Swap(true)
+		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{
@@ -588,7 +589,7 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.Equal(xctx.traceID.HexEncoded(), ctx.traceID.HexEncoded())
 		assert.Equal(xctx.spanID, ctx.spanID)
 		assert.Equal(xctx.baggage, ctx.baggage)
-		assert.Equal(xctx.trace.priority, ctx.trace.priority)
+		assert.Equal(xctx.trace.priority.Load(), ctx.trace.priority.Load())
 	})
 }
 
@@ -727,7 +728,7 @@ func TestEnvVars(t *testing.T) {
 					assert.NoError(err)
 					ctx, err := tracer.Extract(test.in)
 					assert.Nil(err)
-					assert.Equal(test.tid, ctx.traceID)
+					assert.Equal(test.tid.value, ctx.traceID.value)
 					assert.Equal(test.sid, ctx.spanID)
 				})
 			}
@@ -826,7 +827,7 @@ func TestEnvVars(t *testing.T) {
 					// assert.Equal(tc.traceID128, id128FromSpan(assert, ctx)) // add when 128-bit trace id support is enabled
 					if len(tc.out) > 2 {
 						require.NotNil(t, ctx.trace)
-						assert.Equal(float64(tc.out[2]), *ctx.trace.priority)
+						assert.Equal(float64(tc.out[2]), *ctx.trace.priority.Load())
 					}
 				})
 			}
@@ -1056,10 +1057,10 @@ func TestEnvVars(t *testing.T) {
 					xctx, err := tracer.Extract(headers)
 					require.Nil(t, err)
 
-					assert.Equal(ctx.traceID, xctx.traceID)
+					assert.Equal(ctx.traceID.value, xctx.traceID.value)
 					assert.Equal(ctx.spanID, xctx.spanID)
 					assert.Equal(ctx.baggage, xctx.baggage)
-					assert.Equal(ctx.trace.priority, xctx.trace.priority)
+					assert.Equal(ctx.trace.priority.Load(), xctx.trace.priority.Load())
 				})
 			}
 		}
@@ -1255,7 +1256,7 @@ func TestEnvVars(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					assert.Equal(tc.tid, ctx.traceID)
+					assert.Equal(tc.tid.value, ctx.traceID.value)
 					assert.Equal(tc.out[0], ctx.spanID)
 					assert.Equal(tc.origin, ctx.origin)
 					p, ok := ctx.SamplingPriority()
@@ -1365,7 +1366,7 @@ func TestEnvVars(t *testing.T) {
 					defer root.Finish()
 					ctx.origin = tc.origin
 
-					assert.Equal(tc.tid, ctx.traceID)
+					assert.Equal(tc.tid.value, ctx.traceID.value)
 					assert.Equal(tc.sid, ctx.spanID)
 					p, ok := ctx.SamplingPriority()
 					assert.True(ok)
@@ -1736,7 +1737,7 @@ func TestEnvVars(t *testing.T) {
 					assert.Equal(tc.out[0], ctx.traceID.Lower())
 					assert.Equal(tc.out[1], ctx.spanID)
 					assert.Equal(tc.origin, ctx.origin)
-					assert.Equal(tc.priority, *ctx.trace.priority)
+					assert.Equal(tc.priority, *ctx.trace.priority.Load())
 
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(ctx, headers)
@@ -1821,7 +1822,7 @@ func TestEnvVars(t *testing.T) {
 					headers := TextMapCarrier(map[string]string{})
 					err = tracer.Inject(s.Context(), headers)
 					assert.NoError(err)
-					assert.Equal(tc.tid, sctx.traceID)
+					assert.Equal(tc.tid.value, sctx.traceID.value)
 					assert.Equal(tc.out[0], sctx.span.parentID)
 					assert.Equal(tc.out[1], sctx.spanID)
 
@@ -1887,7 +1888,7 @@ func TestEnvVars(t *testing.T) {
 						t.Fatal(err)
 					}
 
-					assert.Equal(tc.tid, ctx.traceID)
+					assert.Equal(tc.tid.value, ctx.traceID.value)
 					assert.Equal(tc.out[0], ctx.spanID)
 					p, ok := ctx.SamplingPriority()
 					assert.True(ok)
@@ -1919,7 +1920,7 @@ func TestTraceContextPrecedence(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert := assert.New(t)
-	assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+	assert.Equal(traceIDFrom64Bits(1).value, sctx.traceID.value)
 	assert.Equal(uint64(0x1), sctx.spanID)
 	p, _ := sctx.SamplingPriority()
 	assert.Equal(2, p)
@@ -1983,7 +1984,7 @@ func TestSpanLinks(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				assert.Equal(tt.tid, sctx.traceID)
+				assert.Equal(tt.tid.value, sctx.traceID.value)
 				assert.Len(sctx.spanLinks, 2)
 				assert.Contains(sctx.spanLinks, tt.out[0])
 				assert.Contains(sctx.spanLinks, tt.out[1])
@@ -2007,7 +2008,7 @@ func TestSpanLinks(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		assert.Equal(traceIDFrom64Bits(1), sctx.traceID)
+		assert.Equal(traceIDFrom64Bits(1).value, sctx.traceID.value)
 		assert.Len(sctx.spanLinks, 0)
 	})
 }
@@ -2266,7 +2267,7 @@ func BenchmarkInjectDatadog(b *testing.B) {
 	}
 	dst := map[string]string{}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tracer.Inject(root.Context(), TextMapCarrier(dst))
 	}
 }
@@ -2293,7 +2294,7 @@ func BenchmarkInjectW3C(b *testing.B) {
 	dst := map[string]string{}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tracer.Inject(root.Context(), TextMapCarrier(dst))
 	}
 }
@@ -2309,7 +2310,7 @@ func BenchmarkExtractDatadog(b *testing.B) {
 								adad=ada2,adad=aad2,adad=ada2,adad=ada2,adad=ada2,adad=ada2`,
 	})
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		propagator.Extract(carrier)
 	}
 }
@@ -2323,7 +2324,7 @@ func BenchmarkExtractW3C(b *testing.B) {
 	})
 	b.ResetTimer()
 	log.SetLevel(log.LevelError)
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		propagator.Extract(carrier)
 	}
 }
@@ -2554,7 +2555,7 @@ func BenchmarkComposeTracestate(b *testing.B) {
 	ctx.trace.setPropagatingTag("_dd.p.table", "chair")
 	ctx.isRemote = false
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
 	}
 }
@@ -2933,7 +2934,7 @@ func TestExtractBaggageFirstThenDatadog(t *testing.T) {
 
 	// Verify that trace context is taken from Datadog headers, despite baggage being listed first in propagation style
 	expectedTraceID := traceIDFrom64Bits(12345)
-	assert.Equal(t, expectedTraceID, ctx.traceID)
+	assert.Equal(t, expectedTraceID.value, ctx.traceID.value)
 	assert.Equal(t, uint64(67890), ctx.spanID)
 
 	got := make(map[string]string)

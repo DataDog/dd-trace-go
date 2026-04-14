@@ -24,7 +24,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL+tracesAPIPath, server.URL+statsAPIPath, internal.DefaultHTTPClient(5*time.Second, false), datadogHeaders())
 
 	payloadSizes := []struct {
 		name     string
@@ -51,7 +51,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				payload.reset()
 				rc, err := transport.send(payload)
 				if err == nil {
@@ -69,7 +69,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 	}))
 	defer server.Close()
 
-	transport := newHTTPTransport(server.URL, internal.DefaultHTTPClient(5*time.Second, false))
+	transport := newHTTPTransport(server.URL+tracesAPIPath, server.URL+statsAPIPath, internal.DefaultHTTPClient(5*time.Second, false), datadogHeaders())
 	concurrencyLevels := []int{1, 2, 4, 8}
 
 	for _, concurrency := range concurrencyLevels {
@@ -77,7 +77,7 @@ func BenchmarkTransportSendConcurrent(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				var wg sync.WaitGroup
 
 				for range concurrency {

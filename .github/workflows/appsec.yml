@@ -49,6 +49,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -74,6 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Compute cache configuration
@@ -82,14 +84,14 @@ jobs:
           echo "key=go-pkg-mod-${{ hashFiles('**/go.sum') }}" >> "$GITHUB_OUTPUT"
           echo "path=go_pkg_mod_cache" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version: stable
           cache: false
 
       - name: Cache Go modules
         id: cache
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ steps.cfg.outputs.path }}
           key: ${{ steps.cfg.outputs.key }}
@@ -102,10 +104,12 @@ jobs:
           GOMODCACHE: ${{ github.workspace }}/${{ steps.cfg.outputs.path }}
         run: go mod download -x
 
+
   macos:
     name: ${{ matrix.runs-on }} go${{ matrix.go-version }}
     runs-on: ${{ matrix.runs-on }}
-    needs: go-mod-caching
+    needs: 
+      - go-mod-caching
     strategy:
       matrix:
         runs-on: [ macos-14, macos-latest ] # oldest and newest macos runners available
@@ -114,10 +118,11 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -125,7 +130,7 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version: ${{ matrix.go-version }}
           cache: false # we manage the caching ourselves
@@ -192,6 +197,12 @@ jobs:
             done
           done
           exit $report_error
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Upload Coverage
         if: always()
         continue-on-error: true
@@ -203,14 +214,15 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: tmp_appsec
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
   # Tests cases were appsec end up being disabled at compilation time
   disabled:
     name: ${{ matrix.runs-on }} (AppSec disabled)
-    needs: go-mod-caching
+    needs: 
+      - go-mod-caching
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -219,10 +231,17 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -230,7 +249,7 @@ jobs:
           enableCrossOsArchive: true
           fail-on-cache-miss: true
 
-      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version: stable
           cache: false # we manage the caching ourselves
@@ -285,7 +304,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: tmp_appsec
           tags: go:,arch:${{ runner.arch }},os:${{ runner.os }}
 
@@ -294,7 +313,8 @@ jobs:
     name: ${{ matrix.platform }} golang:${{ matrix.go-version }}-${{ matrix.distribution }}
     # We use ARM runners when needed to avoid the performance hit of QEMU
     runs-on: ${{ matrix.platform == 'linux/amd64' && 'ubuntu-latest-16-cores' || 'ubuntu-24.04-arm' }}
-    needs: go-mod-caching
+    needs: 
+      - go-mod-caching
     strategy:
       matrix:
         go-version: [ "1.26", "1.25" ]
@@ -305,10 +325,11 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -429,6 +450,12 @@ jobs:
         run: |
           sudo docker exec -i test.runner bash -c "go run ./scripts/configinverter/main.go check"
       
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Upload Coverage
         if: always()
         continue-on-error: true
@@ -440,7 +467,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: tmp_appsec
           tags: go:${{ matrix.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 

@@ -13,9 +13,10 @@ import (
 )
 
 type config struct {
-	rawCommand  bool
-	serviceName string
-	errCheck    func(err error) bool
+	rawCommand    bool
+	serviceName   string
+	serviceSource string
+	errCheck      func(err error) bool
 }
 
 // Option represents an option that can be used to create or wrap a client.
@@ -23,8 +24,9 @@ type Option func(*config)
 
 func defaultConfig() *config {
 	return &config{
-		rawCommand:  options.GetBoolEnv("DD_TRACE_REDIS_RAW_COMMAND", false),
-		serviceName: instr.ServiceName(instrumentation.ComponentDefault, nil),
+		rawCommand:    options.GetBoolEnv("DD_TRACE_REDIS_RAW_COMMAND", false),
+		serviceName:   instr.ServiceName(instrumentation.ComponentDefault, nil),
+		serviceSource: string(instrumentation.PackageRedisRueidis),
 		errCheck: func(err error) bool {
 			return err != nil && !rueidis.IsRedisNil(err)
 		},
@@ -42,6 +44,7 @@ func WithRawCommand(rawCommand bool) Option {
 func WithService(name string) Option {
 	return func(cfg *config) {
 		cfg.serviceName = name
+		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
 	}
 }
 

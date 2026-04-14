@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
+	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -462,7 +463,18 @@ func TestTraceProtocol(t *testing.T) {
 
 	t.Run("v1.0, no endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
-		cfg, err := newTestConfig()
+
+		// Create a mock agent endpoint to mimic having no v1 trace endpoint
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"config": {"statsd_port": 8125}}`))
+		}))
+		defer srv.Close()
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
@@ -516,7 +528,7 @@ func TestTraceProtocol(t *testing.T) {
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV1, h.payload.protocol())
+		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("invalid, no endpoint", func(t *testing.T) {
@@ -541,7 +553,7 @@ func TestTraceProtocol(t *testing.T) {
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV1, h.payload.protocol())
+		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 }
 func BenchmarkJsonEncodeSpan(b *testing.B) {
@@ -551,14 +563,14 @@ func BenchmarkJsonEncodeSpan(b *testing.B) {
 	s.metrics["-inf"] = math.Inf(-1)
 	h := &logTraceWriter{}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		h.resetBuffer()
 		h.encodeSpan(s)
 	}
 }
 
 func BenchmarkJsonEncodeFloat(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var ba = make([]byte, 25)
 		bs := ba[:0]
 		encodeFloat(bs, float64(1e-9))
@@ -635,71 +647,73 @@ func TestAgentWriterRaceCondition(t *testing.T) {
 func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 	// This test validates that trace counting remains accurate under concurrent operations
 	// It detects both data races and logical errors in trace counting
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		var tg statsdtest.TestStatsdClient
+		// withNoopInfoHTTPClient prevents DNS resolution for /info agent-discovery inside the bubble.
+		cfg, err := newTestConfig(withStatsdClient(&tg), withNoopInfoHTTPClient())
+		require.NoError(t, err)
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
 
-	assert := assert.New(t)
-	var tg statsdtest.TestStatsdClient
-	cfg, err := newTestConfig(withStatsdClient(&tg))
-	require.NoError(t, err)
-	statsd, err := newStatsdClient(cfg)
-	require.NoError(t, err)
-	defer statsd.Close()
+		writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
 
-	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+		const numAddGoroutines = 20
+		const numFlushGoroutines = 10
+		const numTracesPerGoroutine = 50
+		const expectedTotalTraces = numAddGoroutines * numTracesPerGoroutine
 
-	const numAddGoroutines = 20
-	const numFlushGoroutines = 10
-	const numTracesPerGoroutine = 50
-	const expectedTotalTraces = numAddGoroutines * numTracesPerGoroutine
+		start := make(chan struct{})
+		var wg sync.WaitGroup
 
-	start := make(chan struct{})
-	var wg sync.WaitGroup
+		// Track traces added for verification
+		var tracesAdded int32
 
-	// Track traces added for verification
-	var tracesAdded int32
+		// Spawn goroutines that add traces
+		for range numAddGoroutines {
+			wg.Go(func() {
+				<-start
 
-	// Spawn goroutines that add traces
-	for range numAddGoroutines {
-		wg.Go(func() {
-			<-start
+				for range numTracesPerGoroutine {
+					spans := []*Span{makeSpan(1)}
+					writer.add(spans)
+					atomic.AddInt32(&tracesAdded, 1)
+				}
+			})
+		}
 
-			for range numTracesPerGoroutine {
-				spans := []*Span{makeSpan(1)}
-				writer.add(spans)
-				atomic.AddInt32(&tracesAdded, 1)
-			}
-		})
-	}
+		// Spawn goroutines that flush occasionally
+		for range numFlushGoroutines {
+			wg.Go(func() {
+				<-start
 
-	// Spawn goroutines that flush occasionally
-	for range numFlushGoroutines {
-		wg.Go(func() {
-			<-start
+				// Flush periodically while adds are happening
+				for range 10 {
+					time.Sleep(time.Microsecond * 100) // instant: fake clock advances 100µs
+					writer.flush()
+				}
+			})
+		}
 
-			// Flush periodically while adds are happening
-			for range 10 {
-				time.Sleep(time.Microsecond * 100)
-				writer.flush()
-			}
-		})
-	}
+		// Start all goroutines
+		close(start)
+		wg.Wait()
 
-	// Start all goroutines
-	close(start)
-	wg.Wait()
+		// Final flush to ensure all traces are processed
+		writer.flush()
+		writer.wg.Wait()
 
-	// Final flush to ensure all traces are processed
-	writer.flush()
-	writer.wg.Wait()
+		// Verify that the number of traces added matches our expectation
+		actualTracesAdded := atomic.LoadInt32(&tracesAdded)
+		assert.Equal(int32(expectedTotalTraces), actualTracesAdded,
+			"Expected %d traces to be added, but got %d", expectedTotalTraces, actualTracesAdded)
 
-	// Verify that the number of traces added matches our expectation
-	actualTracesAdded := atomic.LoadInt32(&tracesAdded)
-	assert.Equal(int32(expectedTotalTraces), actualTracesAdded,
-		"Expected %d traces to be added, but got %d", expectedTotalTraces, actualTracesAdded)
-
-	// The race condition could cause:
-	// 1. Loss of traces if they're added to an old payload after flush starts
-	// 2. Incorrect metrics reporting due to counter races
-	// 3. Data corruption in payload structures
+		// The race condition could cause:
+		// 1. Loss of traces if they're added to an old payload after flush starts
+		// 2. Incorrect metrics reporting due to counter races
+		// 3. Data corruption in payload structures
+	})
 }
 
 // TestPayloadSizeReporting tests that protocol reports accurate
@@ -780,13 +794,13 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 	}{
 		{
 			name:        "v0.4-protocol",
-			newPayload:  func() payload { return newPayloadV04() },
+			newPayload:  func() payload { return newPayload(traceProtocolV04) },
 			description: "v0.4 encodes eagerly, size is accurate immediately",
 			size:        1934,
 		},
 		{
 			name:        "v1-protocol",
-			newPayload:  func() payload { return newPayloadV1() },
+			newPayload:  func() payload { return newPayload(traceProtocolV1) },
 			description: "v1 now encodes eagerly, size is accurate immediately",
 			size:        821,
 		},
@@ -833,6 +847,36 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			assert.Equal(int64(1), flushTraces, "should report 1 trace flushed")
 		})
 	}
+}
+
+// TestAgentWriterV1FlushPayloadRecycling is a regression test for the panic:
+//
+//	interface conversion: tracer.payload is *tracer.safePayload, not *tracer.payloadV1
+//
+// The panic occurred in the flush goroutine's deferred cleanup when it tried to
+// return the payloadV1 to its pool via p.(*payloadV1), but newPayload() always
+// wraps the inner payload in a *safePayload. The fix unwraps: p.(*safePayload).p.(*payloadV1).
+func TestAgentWriterV1FlushPayloadRecycling(t *testing.T) {
+	var tg statsdtest.TestStatsdClient
+	cfg, err := newTestConfig(
+		withStatsdClient(&tg),
+		func(c *config) {
+			c.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
+			c.transport = &simpleTransport{}
+		},
+	)
+	require.NoError(t, err)
+
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+
+	// newPayload() always returns *safePayload — asserting p.(*payloadV1) directly panics.
+	require.IsType(t, &safePayload{}, writer.payload,
+		"payload must be *safePayload to cover the regression path")
+
+	writer.add([]*Span{makeSpan(1)})
+	// Must not panic: "interface conversion: tracer.payload is *tracer.safePayload, not *tracer.payloadV1"
+	writer.flush()
+	writer.wg.Wait()
 }
 
 // TestPayloadSizeConsistency validates that size reporting is consistent

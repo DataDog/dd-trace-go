@@ -44,6 +44,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
@@ -65,6 +66,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
@@ -83,6 +85,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
@@ -103,6 +106,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
@@ -123,6 +127,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go
@@ -144,10 +149,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
 
       - name: golangci-lint
-        uses: reviewdog/action-golangci-lint@f9bba13753278f6a73b27a56a3ffb1bfda90ed71 # v2.8.0
+        uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
         with:
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
           go_version: ${{ inputs.go-version }}
@@ -157,7 +163,7 @@ jobs:
           filter_mode: nofilter
 
       - name: golangci-lint (internal/orchestrion/_integration)
-        uses: reviewdog/action-golangci-lint@f9bba13753278f6a73b27a56a3ffb1bfda90ed71 # v2.8.0
+        uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
         with:
           golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
           go_version: ${{ inputs.go-version }}
@@ -183,6 +189,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
       - name: Setup Go and development tools
         uses: ./.github/actions/setup-go

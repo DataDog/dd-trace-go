@@ -540,7 +540,7 @@ func BenchmarkTraceAndServe(b *testing.B) {
 		QueryParams: false,
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		TraceAndServe(handler, noopWriter{}, req, &cfg)
 	}
 }

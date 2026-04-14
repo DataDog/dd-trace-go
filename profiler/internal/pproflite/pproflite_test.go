@@ -69,7 +69,7 @@ func BenchmarkEncodeDecode(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.SetBytes(int64(len(data)))
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := d.FieldEach(e.Encode); err != nil {
 			require.NoError(b, err)
 		}

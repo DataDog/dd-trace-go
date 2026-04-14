@@ -14,27 +14,29 @@ import (
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
-)
-
-const (
-	ffeProductName = "FFE_FLAGS"
-	ffeCapability  = 46
 )
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	provider := newDatadogProvider(config)
 
-	if err := remoteconfig.Start(remoteconfig.DefaultClientConfig()); err != nil {
-		return nil, fmt.Errorf("failed to start Remote Config: %w", err)
+	// Subscribe via the internal package, which serializes with tracer subscription
+	// and starts RC only if needed (slow path).
+	tracerOwnsSubscription, err := internalffe.SubscribeProvider(provider.rcCallback)
+	if err != nil {
+		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w", err)
 	}
 
-	// Subscribe to Remote Config updates for the OpenFeature product
-	if _, err := remoteconfig.Subscribe(ffeProductName, provider.rcCallback, ffeCapability); err != nil {
-		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w (did you already create a provider ?)", err)
+	if !tracerOwnsSubscription {
+		log.Debug("openfeature: successfully subscribed to Remote Config updates")
+		return provider, nil
 	}
-
-	log.Debug("openfeature: successfully subscribed to Remote Config updates")
+	if !attachProvider(provider) {
+		// This shouldn't happen since SubscribeProvider just told us tracer subscribed.
+		return nil, fmt.Errorf("failed to attach to tracer's RC subscription")
+	}
+	log.Debug("openfeature: attached to tracer's RC subscription")
 	return provider, nil
 }
 
@@ -194,12 +196,12 @@ func validateFlag(flagKey string, flag *flag) error {
 // This should be called when shutting down the application or when
 // the OpenFeature provider is no longer needed.
 //
-// Note: This function is currently not fully implemented as Remote Config
-// doesn't provide an Unsubscribe method yet. The provider will continue
-// to receive updates until the Remote Config client is stopped.
+// Note: In the slow path, this package discards the subscription token from
+// Subscribe(), so we cannot call Unsubscribe(). Instead we unregister the
+// capability which stops updates. In the fast path (tracer subscribed),
+// the subscription is owned by the tracer.
 func stopRemoteConfig() error {
 	log.Debug("openfeature: unregistered from Remote Config")
-	// For now, we can unregister the capability to stop receiving updates
-	_ = remoteconfig.UnregisterCapability(ffeCapability)
+	_ = remoteconfig.UnregisterCapability(remoteconfig.FFEFlagEvaluation)
 	return nil
 }
