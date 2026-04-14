@@ -9,7 +9,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/proto v0.77.0
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.7.1
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.7.1
-	github.com/DataDog/dd-trace-go/v2 v2.7.2
+	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
 	github.com/DataDog/go-libddwaf/v4 v4.9.0
 	github.com/DataDog/orchestrion v1.8.1-0.20260312121543-8093b0b4eec9
 	github.com/IBM/sarama v1.44.0
@@ -44,7 +44,7 @@ require (
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/redis/go-redis/v9 v9.7.3
-	github.com/redis/rueidis v1.0.72
+	github.com/redis/rueidis v1.0.74
 	github.com/rs/zerolog v1.34.0
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/sirupsen/logrus v1.9.3
