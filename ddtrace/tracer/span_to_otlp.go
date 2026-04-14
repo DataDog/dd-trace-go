@@ -230,7 +230,9 @@ func convertEventAttributes(ddAttributes map[string]*spanEventAttribute) []*otlp
 		case spanEventAttributeTypeInt:
 			out = append(out, otlpKeyValue(key, otlpIntValue(value.IntValue)))
 		case spanEventAttributeTypeArray:
-			out = append(out, otlpKeyValue(key, otlpArrayValue(value.ArrayValue)))
+			if kv := otlpKeyValue(key, otlpArrayValue(value.ArrayValue)); kv != nil {
+				out = append(out, kv)
+			}
 		}
 	}
 	return out
@@ -270,7 +272,7 @@ func otlpIntValue(i int64) *otlpcommon.AnyValue {
 
 func otlpArrayValue(arr *spanEventArrayAttribute) *otlpcommon.AnyValue {
 	if arr == nil {
-		return &otlpcommon.AnyValue{}
+		return nil
 	}
 	values := make([]*otlpcommon.AnyValue, 0, len(arr.Values))
 	for _, v := range arr.Values {
