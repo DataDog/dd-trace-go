@@ -514,7 +514,7 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, prod
 	if c.checkProductConflict("DD_TRACE_SAMPLE_RATE", origin, rate, product...) {
 		return
 	}
-	c.globalSampleRate.update(rate)
+	c.globalSampleRate.setBaseline(rate, origin)
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 

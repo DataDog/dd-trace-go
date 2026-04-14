@@ -36,19 +36,26 @@ type DynamicConfig[T any] struct {
 	current       T
 	startup       T
 	cfgName       string
-	startupOrigin telemetry.Origin // immutable after construction; used on RC reset
+	startupOrigin telemetry.Origin // used on RC reset; updated by setBaseline
 }
 
 // newDynamicConfig creates a DynamicConfig with the given telemetry name, initial value,
 // and the origin that produced that initial value. The startupOrigin is used when RC
 // resets the field back to its startup value.
 func newDynamicConfig[T any](name string, val T, origin telemetry.Origin) *DynamicConfig[T] {
-	return &DynamicConfig[T]{
-		cfgName:       name,
-		current:       val,
-		startup:       val,
-		startupOrigin: origin,
-	}
+	dc := &DynamicConfig[T]{cfgName: name}
+	dc.setBaseline(val, origin)
+	return dc
+}
+
+// setBaseline sets both the current value and the startup value for a field.
+// The startup value is what the field reverts to when RC is reset or revoked.
+func (dc *DynamicConfig[T]) setBaseline(val T, origin telemetry.Origin) {
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+	dc.current = val
+	dc.startup = val
+	dc.startupOrigin = origin
 }
 
 // Get returns the current value.
@@ -58,47 +65,30 @@ func (dc *DynamicConfig[T]) Get() T {
 	return dc.current
 }
 
-// update sets a new value if it differs from the current one.
-// Returns true if the value was changed.
-func (dc *DynamicConfig[T]) update(val T) bool {
-	dc.mu.Lock()
-	defer dc.mu.Unlock()
-	if equal(dc.current, val) {
-		return false
-	}
-	dc.current = val
-	return true
-}
-
-// reset restores the startup value. Returns true if the value was changed.
-func (dc *DynamicConfig[T]) reset() bool {
-	dc.mu.Lock()
-	defer dc.mu.Unlock()
-	if equal(dc.current, dc.startup) {
-		return false
-	}
-	dc.current = dc.startup
-	return true
-}
-
 // HandleRC processes a remote config update. If val is non-nil, the value is
 // updated; if nil, the field is reset to its startup value.
 // Reports the new value to telemetry when changed.
 // Returns true if the value was changed.
 func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
+	dc.mu.Lock()
 	var changed bool
 	var origin telemetry.Origin
 	if val != nil {
-		changed = dc.update(*val)
+		if !equal(dc.current, *val) {
+			dc.current = *val
+			changed = true
+		}
 		origin = telemetry.OriginRemoteConfig
 	} else {
-		changed = dc.reset()
+		if !equal(dc.current, dc.startup) {
+			dc.current = dc.startup
+			changed = true
+		}
 		origin = dc.startupOrigin
 	}
+	dc.mu.Unlock()
 	if changed {
-		dc.mu.RLock()
 		configtelemetry.Report(dc.cfgName, dc.current, origin)
-		dc.mu.RUnlock()
 	}
 	return changed
 }

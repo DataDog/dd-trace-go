@@ -22,35 +22,6 @@ func TestDynamicConfig(t *testing.T) {
 		assert.Equal(t, 42, dc.Get())
 	})
 
-	t.Run("update changes value", func(t *testing.T) {
-		dc := newDynamicConfig("test", "initial", telemetry.OriginDefault)
-		changed := dc.update("updated")
-		assert.True(t, changed)
-		assert.Equal(t, "updated", dc.Get())
-	})
-
-	t.Run("update with same value is a no-op", func(t *testing.T) {
-		dc := newDynamicConfig("test", 3.14, telemetry.OriginDefault)
-		changed := dc.update(3.14)
-		assert.False(t, changed)
-	})
-
-	t.Run("reset restores startup value", func(t *testing.T) {
-		dc := newDynamicConfig("test", "startup", telemetry.OriginDefault)
-		dc.update("modified")
-		assert.Equal(t, "modified", dc.Get())
-
-		changed := dc.reset()
-		assert.True(t, changed)
-		assert.Equal(t, "startup", dc.Get())
-	})
-
-	t.Run("reset when already at startup is a no-op", func(t *testing.T) {
-		dc := newDynamicConfig("test", 100, telemetry.OriginDefault)
-		changed := dc.reset()
-		assert.False(t, changed)
-	})
-
 	t.Run("handleRC with non-nil updates value", func(t *testing.T) {
 		dc := newDynamicConfig("test", 1.0, telemetry.OriginDefault)
 		rate := 0.5
@@ -70,15 +41,29 @@ func TestDynamicConfig(t *testing.T) {
 		assert.Equal(t, 1.0, dc.Get())
 	})
 
+	t.Run("handleRC with same value is a no-op", func(t *testing.T) {
+		dc := newDynamicConfig("test", 3.14, telemetry.OriginDefault)
+		same := 3.14
+		changed := dc.HandleRC(&same)
+		assert.False(t, changed)
+	})
+
+	t.Run("handleRC reset when already at startup is a no-op", func(t *testing.T) {
+		dc := newDynamicConfig("test", 100, telemetry.OriginDefault)
+		changed := dc.HandleRC(nil)
+		assert.False(t, changed)
+	})
+
 	t.Run("NaN startup is treated as equal on reset", func(t *testing.T) {
 		dc := newDynamicConfig("test", math.NaN(), telemetry.OriginDefault)
-		changed := dc.reset()
+		changed := dc.HandleRC(nil)
 		assert.False(t, changed, "NaN→NaN reset should be a no-op")
 	})
 
 	t.Run("NaN update is treated as equal", func(t *testing.T) {
 		dc := newDynamicConfig("test", math.NaN(), telemetry.OriginDefault)
-		changed := dc.update(math.NaN())
+		nan := math.NaN()
+		changed := dc.HandleRC(&nan)
 		assert.False(t, changed, "NaN→NaN update should be a no-op")
 	})
 
@@ -131,15 +116,49 @@ func TestDynamicConfig(t *testing.T) {
 		assert.Empty(t, client.Configuration)
 	})
 
+	t.Run("setBaseline updates RC reset target", func(t *testing.T) {
+		// Simulates: env var sets NaN, then programmatic override sets 1.0,
+		// then RC pushes 0.5, then RC resets. Should reset to 1.0 (the
+		// programmatic baseline), not NaN (the original env var value).
+		dc := newDynamicConfig("test", math.NaN(), telemetry.OriginDefault)
+		dc.setBaseline(1.0, telemetry.OriginCode)
+
+		rate := 0.5
+		dc.HandleRC(&rate)
+		assert.Equal(t, 0.5, dc.Get())
+
+		dc.HandleRC(nil)
+		assert.Equal(t, 1.0, dc.Get())
+	})
+
+	t.Run("setBaseline updates startupOrigin for telemetry", func(t *testing.T) {
+		client := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(client)()
+
+		dc := newDynamicConfig("my_field", math.NaN(), telemetry.OriginDefault)
+		dc.setBaseline(1.0, telemetry.OriginCode)
+
+		rate := 0.5
+		dc.HandleRC(&rate)
+		client.Configuration = nil
+
+		dc.HandleRC(nil)
+		assertTelemetryReport(t, client.Configuration, "my_field", 1.0, telemetry.OriginCode)
+	})
+
 	t.Run("concurrent access is safe", func(t *testing.T) {
 		dc := newDynamicConfig("test", 0, telemetry.OriginDefault)
 		var wg sync.WaitGroup
 
 		for i := range 100 {
-			wg.Add(2)
+			wg.Add(3)
 			go func(v int) {
 				defer wg.Done()
-				dc.update(v)
+				dc.HandleRC(&v)
+			}(i)
+			go func(v int) {
+				defer wg.Done()
+				dc.setBaseline(v, telemetry.OriginCode)
 			}(i)
 			go func() {
 				defer wg.Done()
