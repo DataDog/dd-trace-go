@@ -67,6 +67,18 @@ func TestDynamicConfig(t *testing.T) {
 		assert.False(t, changed, "NaN→NaN update should be a no-op")
 	})
 
+	t.Run("NaN full cycle: update then reset", func(t *testing.T) {
+		dc := newDynamicConfig("test", math.NaN(), telemetry.OriginDefault, equalFloat)
+		rate := 0.5
+		changed := dc.HandleRC(&rate)
+		assert.True(t, changed)
+		assert.Equal(t, 0.5, dc.Get())
+
+		changed = dc.HandleRC(nil)
+		assert.True(t, changed)
+		assert.True(t, math.IsNaN(dc.Get()), "should reset back to NaN")
+	})
+
 	t.Run("handleRC update reports OriginRemoteConfig", func(t *testing.T) {
 		client := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(client)()
