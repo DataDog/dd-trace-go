@@ -237,12 +237,6 @@ func (sm *SpanMeta) AttrCount() int {
 	return sm.promotedAttrs.Count()
 }
 
-// SerializableCount returns the number of flat-map entries. Promoted attrs
-// are encoded as dedicated fields in the v1 protocol and are not counted here.
-func (sm *SpanMeta) SerializableCount() int {
-	return len(sm.m)
-}
-
 // Map returns a map containing all entries (flat map + promoted attrs).
 // When promoted attrs exist, a new merged map is allocated. Called only on
 // cold paths (stats, CI visibility, tests).

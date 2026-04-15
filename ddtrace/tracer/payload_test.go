@@ -352,7 +352,7 @@ func TestPayloadV1SpanLinkTraceID(t *testing.T) {
 	assert.Equal(uint64(789), link.SpanID)
 
 	span = got.chunks[0].spans[0]
-	assert.Empty(span.meta["_dd.span_links"])
+	assert.False(span.meta.Has("_dd.span_links"))
 }
 
 // TestPayloadV1SpanEventArray tests that a span with a span event containing ArrayValue

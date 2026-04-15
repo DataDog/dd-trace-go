@@ -3245,7 +3245,8 @@ func TestStartSpanFromPropagatedContext(t *testing.T) {
 
 		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-with-tags", carrier, Tag("custom.tag", "hello"))
 		assert.Equal(t, root.spanID, span.parentID)
-		assert.Equal(t, "hello", span.meta["custom.tag"])
+		v, _ := span.meta.Get("custom.tag")
+		assert.Equal(t, "hello", v)
 	})
 	t.Run("http headers carrier", func(t *testing.T) {
 		httpCarrier := HTTPHeadersCarrier{}
