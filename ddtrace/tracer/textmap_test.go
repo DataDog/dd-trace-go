@@ -105,6 +105,7 @@ func TestTextMapCarrierForeachKeyError(t *testing.T) {
 	assert.Equal(t, got, want)
 }
 
+// TODO: Split test into 3, one for continue, one for restart, one for ignore 
 func TestTextMapExtractTracestatePropagation(t *testing.T) {
 	tests := []struct {
 		name, propagationStyle, traceparent string

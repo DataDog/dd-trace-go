@@ -720,6 +720,114 @@ func TestWithErrorCheck(t *testing.T) {
 	}
 }
 
+func TestPropagationBehaviorExtract(t *testing.T) {
+	tests := []struct {
+		name                       string
+		propagationBehaviorExtract string
+		// TODO(human): Add expected behavior fields here
+	}{
+		// {
+		// 	name:                       "continue-default",
+		// 	propagationBehaviorExtract: "continue",
+		// },
+		{
+			name:                       "restart",
+			propagationBehaviorExtract: "restart",
+		},
+		// {
+		// 	name:                       "ignore",
+		// 	propagationBehaviorExtract: "ignore",
+		// },
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", tc.propagationBehaviorExtract)
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			router := echo.New()
+			router.Use(Middleware(WithService("test-service")))
+			router.GET("/test", func(c echo.Context) error {
+				return c.NoContent(200)
+			})
+
+			// Create a "root" span simulating incoming trace context
+			root := tracer.StartSpan("incoming-request")
+			root.SetBaggageItem("test-baggage", "baggage-value")
+
+			r := httptest.NewRequest("GET", "/test", nil)
+			err := tracer.Inject(root.Context(), tracer.HTTPHeadersCarrier(r.Header))
+			require.NoError(t, err)
+
+			fmt.Println("r")
+			fmt.Println(r.Header)
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+
+			spans := mt.FinishedSpans()
+
+			fmt.Println("root")
+			fmt.Println(root)
+
+			fmt.Println("spans")
+			fmt.Println(spans)
+
+
+
+			// // verify traces look good
+			// assert.True(called)
+			// assert.True(traced)
+
+			// spans := mt.FinishedSpans()
+			// assert.Len(spans, 1)
+
+			// span := spans[0]
+			// assert.Equal("http.request", span.OperationName())
+			// assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
+			// assert.Equal("foobar", span.Tag(ext.ServiceName))
+			// assert.Equal("echony", span.Tag("test.echo"))
+			// assert.Contains(span.Tag(ext.ResourceName), "/user/:id")
+			// assert.Equal("200", span.Tag(ext.HTTPCode))
+			// assert.Equal("GET", span.Tag(ext.HTTPMethod))
+			// assert.Equal(root.Context().SpanID(), span.ParentID())
+			// assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
+			// assert.Equal(string(instrumentation.PackageLabstackEchoV4), span.Integration())
+			// assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
+
+			// assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
+
+
+			// TODO(human): Implement assertions for each propagation behavior.
+			//
+			// For "continue":
+			//   - The server span should have the same trace ID as root
+			//   - root.Context().SpanID() should equal span.ParentID()
+			//   - No span links expected (unless conflicting trace contexts)
+			//
+			// For "restart":
+			//   - The server span should have a NEW trace ID (different from root)
+			//   - span.ParentID() should be 0 (no parent)
+			//   - SpanLinks should contain one link to the incoming context
+			//   - Baggage should still be propagated
+			//
+			// For "ignore":
+			//   - The server span should have a NEW trace ID
+			//   - No span links
+			//   - Baggage should NOT be propagated
+			//
+			// Hints:
+			//   - Use span.TraceID() and root.Context().TraceID() to compare trace IDs
+			//   - Use mocktracer.MockSpan(span).SpanLinks() to check span links
+			//   - Check baggage via the request context inside the handler
+			_ = spans
+			_ = root
+		})
+	}
+}
+
 func BenchmarkEchoWithTracing(b *testing.B) {
 	tracer.Start(tracer.WithLogger(testutils.DiscardLogger()))
 	defer tracer.Stop()
