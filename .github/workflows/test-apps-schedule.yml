@@ -1,6 +1,7 @@
 # See /internal/apps/README.md for more information.
 name: "Test Apps Schedule"
 on:
+  pull_request:
   workflow_dispatch: # manually (just for testing the cron)
   schedule:
     - cron: "0 0 * * *" # nightly
@@ -11,7 +12,6 @@ permissions:
 
 jobs:
   nightly:
-    if: github.event.schedule == '0 0 * * *'
     uses: ./.github/workflows/test-apps.yml
     secrets: inherit
     permissions:
