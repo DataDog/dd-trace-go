@@ -65,12 +65,22 @@ Verified via `TestPropagationBehaviorExtract/ignore` in echotrace.
 - `restart`: zero trace-id (`baggageOnly=true`), one `propagation_behavior_extract` span link
   pointing at the DD context. Tracestate is `dd=s:1;p:<spanID>` (Datadog propagator enriches
   it with the parent span ID sub-key). Flags=1 (priority > 0). Baggage propagated.
-- `restart/extract-first`: same as restart but extraction stops after the Datadog propagator,
-  so tracestate is empty (Datadog headers carry no W3C tracestate). **Baggage is nil** — this
-  is a pre-existing limitation of `DD_TRACE_PROPAGATION_EXTRACT_FIRST`: it returns before the
-  baggage propagator runs, so baggage is lost regardless of the restart mode. Documented in
-  the test comment.
+- `restart/extract-first`: extraction stops after the Datadog propagator (no conflicting
+  W3C span link), tracestate is empty (Datadog headers carry no W3C tracestate), Flags=1.
+  Baggage is propagated — see fix below.
 - `ignore`: returns `nil, nil` — asserted as `sctx == nil, err == nil`
+
+### Bug fix: baggage lost with extract-first
+
+`extractIncomingSpanContext` returns immediately when `onlyExtractFirst=true` (after the
+first non-baggage propagator succeeds), so the baggage propagator never runs inside the
+loop. This caused baggage to be nil in `restart+extract_first` mode — violating the RFC.
+
+**Fix** (`ddtrace/tracer/textmap.go`, `Extract()`): after `extractIncomingSpanContext`
+returns and `onlyExtractFirst` is set, iterate `p.extractors` looking for the baggage
+propagator and run it explicitly, merging results into `incomingCtx`. This is isolated to
+`Extract()` so `extractIncomingSpanContext` is unchanged. All existing extract-first tests
+still pass.
 
 ### extractFirst + restart interaction
 

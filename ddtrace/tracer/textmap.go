@@ -312,8 +312,35 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		return nil, err
 	}
 
-	// "restart" propagation behavior starts a new trace with a new trace ID 
-	// and sampling decision. The incoming context is referenced via a span 
+	// When onlyExtractFirst is set, extractIncomingSpanContext returns after the
+	// first successful non-baggage extractor, so the baggage propagator never
+	// runs inside the loop. Run it explicitly here so baggage is always available
+	// to callers regardless of the extract-first setting.
+	if p.onlyExtractFirst {
+		for _, v := range p.extractors {
+			if _, isBaggage := v.(*propagatorBaggage); !isBaggage {
+				continue
+			}
+			if baggageCtx, err := v.Extract(carrier); err == nil && baggageCtx != nil {
+				if incomingCtx == nil {
+					incomingCtx = baggageCtx
+				} else {
+					baggageCtx.ForeachBaggageItem(func(k, val string) bool { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+						if incomingCtx.baggage == nil {                        // +checklocksignore
+							incomingCtx.baggage = make(map[string]string)       // +checklocksignore
+						}
+						incomingCtx.baggage[k] = val // +checklocksignore
+						atomic.StoreUint32(&incomingCtx.hasBaggage, 1)
+						return true
+					})
+				}
+			}
+			break // there is only one baggage propagator
+		}
+	}
+
+	// "restart" propagation behavior starts a new trace with a new trace ID
+	// and sampling decision. The incoming context is referenced via a span
 	// link. Baggage is propagated.
 	if p.propagationBehaviorExtract == "restart" {
 		ctx := &SpanContext{
@@ -329,7 +356,6 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 				"context_headers": getPropagatorName(p.extractors[0]),
 			},
 		}
-		// TODO: +checklocksignore is needed here?
 		if trace := incomingCtx.trace; trace != nil {
 			if p := trace.priority.Load(); p != nil && uint32(*p) > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 				link.Flags = 1
@@ -340,9 +366,9 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		}
 		ctx.spanLinks = []SpanLink{link}
 
-		if incomingCtx.baggage != nil {
-			ctx.baggage = make(map[string]string, len(incomingCtx.baggage))
-			maps.Copy(ctx.baggage, incomingCtx.baggage)
+		if incomingCtx.baggage != nil { // +checklocksignore
+			ctx.baggage = make(map[string]string, len(incomingCtx.baggage)) // +checklocksignore
+			maps.Copy(ctx.baggage, incomingCtx.baggage)                     // +checklocksignore
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 		}
 

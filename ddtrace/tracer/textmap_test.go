@@ -2116,9 +2116,9 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		// No conflicting span links appear because W3C headers are never examined.
 		// The single extracted context becomes the span link target.
 		//
-		// Note: baggage is not propagated in this configuration because extract_first
-		// returns before the baggage propagator runs. This is a pre-existing limitation
-		// of DD_TRACE_PROPAGATION_EXTRACT_FIRST, independent of restart mode.
+		// Baggage is still propagated: Extract() runs the baggage propagator explicitly
+		// after extractIncomingSpanContext returns, so the extract-first short-circuit
+		// does not suppress baggage.
 		//
 		// Tracestate is empty because the Datadog propagator does not carry W3C tracestate.
 		// Flags=1 because sampling priority > 0.
@@ -2142,7 +2142,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
 		}, sctx.spanLinks[0])
-		assert.Nil(t, sctx.baggage) // +checklocksignore
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
 	})
 
 	t.Run("ignore", func(t *testing.T) {
