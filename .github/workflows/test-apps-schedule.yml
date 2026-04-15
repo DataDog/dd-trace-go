@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   nightly:
+    if: github.event.schedule == '0 0 * * *'
     uses: ./.github/workflows/test-apps.yml
     secrets: inherit
     permissions:

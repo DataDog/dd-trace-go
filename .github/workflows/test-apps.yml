@@ -33,10 +33,6 @@ name: Test Apps
         description: The branch to run the workflow on
         required: false
         type: string
-  pull_request:
-  push:
-    branches:
-      - hannahkm/fix-test-app
   workflow_dispatch:
     inputs:
       scenarios:
@@ -75,7 +71,7 @@ jobs:
   job-0-0:
     name: unit-of-work/v1 (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -107,7 +103,7 @@ jobs:
   job-0-1:
     name: unit-of-work/v1 (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v1'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -139,7 +135,7 @@ jobs:
   job-1-0:
     name: unit-of-work/v2 (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -171,7 +167,7 @@ jobs:
   job-1-1:
     name: unit-of-work/v2 (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''unit-of-work/v2'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -203,7 +199,7 @@ jobs:
   job-2-0:
     name: memory-leak/goroutine (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -235,7 +231,7 @@ jobs:
   job-2-1:
     name: memory-leak/goroutine (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -267,7 +263,7 @@ jobs:
   job-3-0:
     name: memory-leak/heap (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -299,7 +295,7 @@ jobs:
   job-3-1:
     name: memory-leak/heap (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -331,7 +327,7 @@ jobs:
   job-4-0:
     name: memory-leak/goroutine-heap (prod)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: prod'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: prod'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -363,7 +359,7 @@ jobs:
   job-4-1:
     name: memory-leak/goroutine-heap (staging)
     runs-on: ubuntu-latest
-    if: 'inputs[''env: staging'']'
+    if: 'contains(fromJSON(inputs[''scenarios'']), ''memory-leak/goroutine-heap'') && inputs[''env: staging'']'
     steps:
       - name: Checkout Code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
