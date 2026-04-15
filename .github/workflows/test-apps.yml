@@ -33,6 +33,7 @@ name: Test Apps
         description: The branch to run the workflow on
         required: false
         type: string
+  pull_request:
   push:
     branches:
       - hannahkm/fix-test-app
