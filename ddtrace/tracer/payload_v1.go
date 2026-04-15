@@ -645,8 +645,6 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 	return true, nil
 }
 
-
-
 // translate a span kind string to its uint32 value
 func getSpanKindValue(sk string) uint32 {
 	switch sk {
