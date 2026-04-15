@@ -316,8 +316,9 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	// and sampling decision. The incoming context is referenced via a span 
 	// link. Baggage is propagated.
 	if p.propagationBehaviorExtract == "restart" {
-		// TODO: Check if an empty span context will lead the tracer to generate a new trace ID and span ID when starting a new span.
-		ctx := &SpanContext{}
+		ctx := &SpanContext{
+			baggageOnly: true, // signals spanStart to generate new traceID/spanID
+		}
 
 		link := SpanLink{
 			TraceID:     incomingCtx.TraceIDLower(),
