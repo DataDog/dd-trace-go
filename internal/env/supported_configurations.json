@@ -917,27 +917,6 @@
         "default": null
       }
     ],
-    "DD_TEST_BOOL_ENV": [
-      {
-        "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
-      }
-    ],
-    "DD_TEST_FLOAT_ENV": [
-      {
-        "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
-      }
-    ],
-    "DD_TEST_INT_ENV": [
-      {
-        "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
-      }
-    ],
     "DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES": [
       {
         "implementation": "B",
@@ -964,13 +943,6 @@
         "implementation": "A",
         "type": "string",
         "default": null
-      }
-    ],
-    "DD_TEST_STRING_ENV": [
-      {
-        "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
       }
     ],
     "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED": [
@@ -1438,8 +1410,8 @@
     "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT": [
       {
         "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
+        "type": "String",
+        "default": "continue"
       }
     ],
     "DD_TRACE_PROPAGATION_EXTRACT_FIRST": [
