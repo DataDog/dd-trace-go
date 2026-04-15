@@ -33,6 +33,9 @@ name: Test Apps
         description: The branch to run the workflow on
         required: false
         type: string
+  push:
+    branches:
+      - hannahkm/fix-test-app
   workflow_dispatch:
     inputs:
       scenarios:
