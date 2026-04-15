@@ -77,6 +77,7 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 		extensionPort        string
 		healthcheckPort      string
 		extensionHost        string
+		extensionSocketPath  string
 		observabilityMode    bool
 		bodyParsingSizeLimit *int
 		tlsEnabled           bool
@@ -92,7 +93,7 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 		{
 			name: "defaults",
 			env:  nil,
-			want: want{"443", "80", "0.0.0.0", false, nil, true, "localhost.crt", "localhost.key"},
+			want: want{extensionPort: "443", healthcheckPort: "80", extensionHost: "0.0.0.0", tlsEnabled: true, tlsCertFile: "localhost.crt", tlsKeyFile: "localhost.key"},
 		},
 		{
 			name: "valid overrides",
@@ -103,7 +104,7 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 				"DD_SERVICE_EXTENSION_OBSERVABILITY_MODE": "true",
 				"DD_APPSEC_BODY_PARSING_SIZE_LIMIT":       "100000000",
 			},
-			want: want{"1234", "4321", "127.0.0.1", true, intPtr(100000000), true, "localhost.crt", "localhost.key"},
+			want: want{extensionPort: "1234", healthcheckPort: "4321", extensionHost: "127.0.0.1", observabilityMode: true, bodyParsingSizeLimit: intPtr(100000000), tlsEnabled: true, tlsCertFile: "localhost.crt", tlsKeyFile: "localhost.key"},
 		},
 		{
 			name: "bad values fall back",
@@ -114,14 +115,14 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 				"DD_APPSEC_BODY_PARSING_SIZE_LIMIT":       "notanint",
 				"DD_SERVICE_EXTENSION_HOST":               "notanip",
 			},
-			want: want{"443", "80", "0.0.0.0", false, nil, true, "localhost.crt", "localhost.key"},
+			want: want{extensionPort: "443", healthcheckPort: "80", extensionHost: "0.0.0.0", tlsEnabled: true, tlsCertFile: "localhost.crt", tlsKeyFile: "localhost.key"},
 		},
 		{
 			name: "no-tls",
 			env: map[string]string{
 				"DD_SERVICE_EXTENSION_TLS": "false",
 			},
-			want: want{"443", "80", "0.0.0.0", false, nil, false, "localhost.key", "localhost.crt"},
+			want: want{extensionPort: "443", healthcheckPort: "80", extensionHost: "0.0.0.0", tlsEnabled: false},
 		},
 		{
 			name: "custom-tls",
@@ -129,7 +130,14 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 				"DD_SERVICE_EXTENSION_TLS_KEY_FILE":  "/tls/tls.key",
 				"DD_SERVICE_EXTENSION_TLS_CERT_FILE": "/tls/tls.crt",
 			},
-			want: want{"443", "80", "0.0.0.0", false, nil, true, "/tls/tls.crt", "/tls/tls.key"},
+			want: want{extensionPort: "443", healthcheckPort: "80", extensionHost: "0.0.0.0", tlsEnabled: true, tlsCertFile: "/tls/tls.crt", tlsKeyFile: "/tls/tls.key"},
+		},
+		{
+			name: "unix domain socket",
+			env: map[string]string{
+				"DD_SERVICE_EXTENSION_UDS_PATH": "/var/run/dd-se.sock",
+			},
+			want: want{extensionPort: "443", healthcheckPort: "80", extensionHost: "0.0.0.0", extensionSocketPath: "/var/run/dd-se.sock", tlsEnabled: true, tlsCertFile: "localhost.crt", tlsKeyFile: "localhost.key"},
 		},
 	}
 
@@ -139,9 +147,10 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 		"DD_SERVICE_EXTENSION_HOST",
 		"DD_SERVICE_EXTENSION_OBSERVABILITY_MODE",
 		"DD_APPSEC_BODY_PARSING_SIZE_LIMIT",
-		"DD_SERVICE_EXTENSION_TLS_CERT",
-		"DD_SERVICE_EXTENSION_TLS_KEY",
+		"DD_SERVICE_EXTENSION_TLS_CERT_FILE",
+		"DD_SERVICE_EXTENSION_TLS_KEY_FILE",
 		"DD_SERVICE_EXTENSION_TLS",
+		"DD_SERVICE_EXTENSION_UDS_PATH",
 	}
 
 	for _, tc := range cases {
@@ -153,6 +162,7 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 			assert.Equal(t, tc.want.extensionPort, cfg.extensionPort, "extensionPort")
 			assert.Equal(t, tc.want.healthcheckPort, cfg.healthcheckPort, "healthcheckPort")
 			assert.Equal(t, tc.want.extensionHost, cfg.extensionHost, "extensionHost")
+			assert.Equal(t, tc.want.extensionSocketPath, cfg.extensionSocketPath, "extensionSocketPath")
 			assert.Equal(t, tc.want.observabilityMode, cfg.observabilityMode, "observabilityMode")
 			assert.Equal(t, tc.want.bodyParsingSizeLimit, cfg.bodyParsingSizeLimit, "bodyParsingSizeLimit")
 

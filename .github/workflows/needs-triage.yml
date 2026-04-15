@@ -17,14 +17,14 @@ jobs:
     if: github.event_name == 'issues'
     runs-on: ubuntu-latest
     permissions:
-      issues: write
+      id-token: write
     steps:
-      - name: Generate a GitHub token
+      - name: Get GitHub token (DataDog/dd-trace-go)
         id: generate-token
-        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
         with:
-          app-id: ${{ vars.DD_K9_LIBRARY_GO_APP_ID }}
-          private-key: ${{ secrets.DD_K9_LIBRARY_GO_APP_PRIVATE_KEY }}
+          scope: DataDog/dd-trace-go
+          policy: self.github.needs-triage.issues
       - name: Create needs-triage label if needed
         run: |-
           gh label create                                                       \

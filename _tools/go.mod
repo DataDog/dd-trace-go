@@ -6,11 +6,12 @@ require (
 	github.com/campoy/embedmd v1.0.0
 	github.com/golangci/golangci-lint/v2 v2.9.0
 	github.com/rhysd/actionlint v1.7.9
+	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90
 	golang.org/x/perf v0.0.0-20250710210952-7b7c2de18447
-	golang.org/x/tools v0.42.0
+	golang.org/x/tools v0.43.0
 	golang.org/x/vuln v1.1.4
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.5.1
-	google.golang.org/protobuf v1.36.8
+	google.golang.org/protobuf v1.36.10
 	gotest.tools/gotestsum v1.12.3
 	mvdan.cc/sh/v3 v3.12.0
 )
@@ -93,7 +94,7 @@ require (
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/godoc-lint/godoc-lint v0.11.1 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golangci/asciicheck v0.5.0 // indirect
 	github.com/golangci/dupl v0.0.0-20250308024227-f665c8d69b32 // indirect
 	github.com/golangci/go-printf-func-name v0.1.1 // indirect
@@ -219,12 +220,13 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.3 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20251125195548-87e1e737ad39 // indirect
-	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260209163413-e7419c687ee4 // indirect
-	golang.org/x/term v0.39.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/mod v0.34.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/telemetry v0.0.0-20260311193753-579e4da9a98c // indirect
+	golang.org/x/term v0.41.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
+	google.golang.org/grpc v1.79.3 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

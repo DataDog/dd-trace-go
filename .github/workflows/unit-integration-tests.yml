@@ -24,6 +24,7 @@ env:
   TEST_RESULT_PATH: /tmp/test-results
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -243,12 +244,19 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
 
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
@@ -264,7 +272,7 @@ jobs:
         continue-on-error: true
         uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
         with:
-          api_key: ${{ secrets.DD_CI_API_KEY }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           files: coverage.txt
           format: go-coverprofile
           flags: contrib
@@ -417,12 +425,20 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           ls -al "${{ github.workspace }}/bin"
           ./scripts/ci_test_core.sh
+
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
+
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
@@ -438,7 +454,7 @@ jobs:
         continue-on-error: true
         uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
         with:
-          api_key: ${{ secrets.DD_CI_API_KEY }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
           files: coverage.txt
           format: go-coverprofile
           flags: core

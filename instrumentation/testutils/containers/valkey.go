@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
@@ -36,7 +35,7 @@ func StartValkeyTestContainer(t testing.TB) (*testvalkey.ValkeyContainer, string
 			wait.ForAll(
 				wait.ForLog("* Ready to accept connections"),
 				wait.ForExposedPort(),
-				wait.ForListeningPort(nat.Port(exposedPort)),
+				wait.ForListeningPort(exposedPort),
 				wait.ForExec(waitReadyCmd),
 			),
 		),

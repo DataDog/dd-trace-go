@@ -15,6 +15,55 @@
         "default": "localhost"
       }
     ],
+    "DD_APIM_CALLOUT_HEALTHCHECK_PORT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "8081"
+      }
+    ],
+    "DD_APIM_CALLOUT_HOST": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "0.0.0.0"
+      }
+    ],
+    "DD_APIM_CALLOUT_PORT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "8080"
+      }
+    ],
+    "DD_APIM_CALLOUT_REQUEST_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "30s"
+      }
+    ],
+    "DD_APIM_CALLOUT_TLS": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "false"
+      }
+    ],
+    "DD_APIM_CALLOUT_TLS_CERT_FILE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_APIM_CALLOUT_TLS_KEY_FILE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_API_KEY": [
       {
         "implementation": "B",
@@ -770,6 +819,13 @@
         "default": "localhost.key"
       }
     ],
+    "DD_SERVICE_EXTENSION_UDS_PATH": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_SERVICE_MAPPING": [
       {
         "implementation": "B",
@@ -817,6 +873,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "86400"
       }
     ],
     "DD_TELEMETRY_HEARTBEAT_INTERVAL": [
@@ -1202,6 +1265,27 @@
         "implementation": "B",
         "type": "string",
         "default": "500-599"
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
+    "DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
       }
     ],
     "DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": [

@@ -11,11 +11,6 @@ on:
         type: boolean
         default: false
         required: false
-    secrets:
-      DD_API_KEY:
-        required: false
-      DD_CI_API_KEY:
-        required: false
   pull_request:
   push:
     branches:
@@ -29,7 +24,9 @@ on:
   schedule: # nightly
     - cron: "0 0 * * *"
 
-permissions: read-all
+permissions:
+  id-token: write
+  contents: read
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.
@@ -311,12 +308,18 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.orchestrion-version != '' && 'main' || github.sha }}
           clean: false
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
       - name: Upload the results to Datadog CI App
         if: always()
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}
           tags: go:${{ steps.setup-go.outputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
   # This is a simple join point to make it easy to set up branch protection rules in GitHub.
