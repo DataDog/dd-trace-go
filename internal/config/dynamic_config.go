@@ -7,25 +7,17 @@ package config
 
 import (
 	"math"
-	"reflect"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-// equal reports whether a and b are deeply equal, with a special case
-// for float64 NaN (reflect.DeepEqual treats NaN != NaN per IEEE 754,
-// but for config purposes two NaN values are the same "unset" sentinel).
-func equal[T any](a, b T) bool {
-	if reflect.DeepEqual(a, b) {
-		return true
-	}
-	if fa, ok := any(a).(float64); ok {
-		fb, _ := any(b).(float64)
-		return math.IsNaN(fa) && math.IsNaN(fb)
-	}
-	return false
+// equalFloat compares two float64 values, treating NaN as equal to NaN.
+// IEEE 754 defines NaN != NaN, but for config purposes two NaN values
+// represent the same "unset" sentinel.
+func equalFloat(a, b float64) bool {
+	return a == b || (math.IsNaN(a) && math.IsNaN(b))
 }
 
 // DynamicConfig is a thread-safe, RC-aware value store for a single configuration field.
@@ -37,13 +29,14 @@ type DynamicConfig[T any] struct {
 	startup       T
 	cfgName       string
 	startupOrigin telemetry.Origin // used on RC reset; updated by setBaseline
+	equal         func(T, T) bool  // compares values to avoid unnecessary updates
 }
 
 // newDynamicConfig creates a DynamicConfig with the given telemetry name, initial value,
-// and the origin that produced that initial value. The startupOrigin is used when RC
-// resets the field back to its startup value.
-func newDynamicConfig[T any](name string, val T, origin telemetry.Origin) *DynamicConfig[T] {
-	dc := &DynamicConfig[T]{cfgName: name}
+// the origin that produced that initial value, and a comparator used to detect changes.
+// The startupOrigin is used when RC resets the field back to its startup value.
+func newDynamicConfig[T any](name string, val T, origin telemetry.Origin, equal func(T, T) bool) *DynamicConfig[T] {
+	dc := &DynamicConfig[T]{cfgName: name, equal: equal}
 	dc.setBaseline(val, origin)
 	return dc
 }
@@ -75,13 +68,13 @@ func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
 	var changed bool
 	var origin telemetry.Origin
 	if val != nil {
-		if !equal(dc.current, *val) {
+		if !dc.equal(dc.current, *val) {
 			dc.current = *val
 			changed = true
 		}
 		origin = telemetry.OriginRemoteConfig
 	} else {
-		if !equal(dc.current, dc.startup) {
+		if !dc.equal(dc.current, dc.startup) {
 			dc.current = dc.startup
 			changed = true
 		}
