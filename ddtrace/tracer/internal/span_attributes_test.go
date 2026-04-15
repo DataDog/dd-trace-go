@@ -84,6 +84,12 @@ func TestSpanAttributesIndependentKeys(t *testing.T) {
 	}
 }
 
+func TestSpanAttributesSetNilSafe(t *testing.T) {
+	var a *SpanAttributes
+	// Must not panic.
+	a.Set(AttrEnv, "prod")
+}
+
 func TestSpanAttributesValUnset(t *testing.T) {
 	var a SpanAttributes
 	// Val on an unset key returns "" without panicking.
@@ -97,7 +103,7 @@ func TestSpanAttributesForEach(t *testing.T) {
 	a.Set(AttrEnv, "prod")
 	a.Set(AttrVersion, "1.2.3")
 
-	got := maps.Collect(a.All())
+	got := maps.Collect(a.all())
 	if len(got) != 2 {
 		t.Fatalf("expected 2 entries, got %d: %v", len(got), got)
 	}
@@ -112,7 +118,7 @@ func TestSpanAttributesForEach(t *testing.T) {
 func TestSpanAttributesForEachNil(t *testing.T) {
 	var a *SpanAttributes
 	called := false
-	for range a.All() {
+	for range a.all() {
 		called = true
 	}
 	if called {
@@ -266,5 +272,34 @@ func BenchmarkMap(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		_ = sm.Map()
+	}
+}
+
+func BenchmarkAttrKeyForTag(b *testing.B) {
+	tags := []string{"env", "version", "language", "component", "span.kind", "unknown"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	var k AttrKey
+	var ok bool
+	for i := 0; i < b.N; i++ {
+		for _, tag := range tags {
+			k, ok = AttrKeyForTag(tag)
+		}
+	}
+	_, _ = k, ok
+}
+
+func BenchmarkSpanAttributesAll(b *testing.B) {
+	var a SpanAttributes
+	a.Set(AttrEnv, "prod")
+	a.Set(AttrVersion, "1.2.3")
+	a.Set(AttrLanguage, "go")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for k, v := range a.all() {
+			_ = k
+			_ = v
+		}
 	}
 }

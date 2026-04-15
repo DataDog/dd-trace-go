@@ -245,26 +245,6 @@ func (sm *SpanMeta) deleteSlow(key string) {
 	sm.promotedAttrs.Unset(ak)
 }
 
-// IsPromotedKeyLen reports whether n matches the length of any promoted attribute name.
-// Promoted keys: "env"(3), "version"(7), "language"(8).
-// This must stay in sync with the Defs table in span_attributes.go; the init
-// check below enforces this at program start.
-func IsPromotedKeyLen(n int) bool {
-	switch n {
-	case 3, 7, 8:
-		return true
-	}
-	return false
-}
-
-func init() {
-	for _, d := range Defs {
-		if !IsPromotedKeyLen(len(d.Name)) {
-			panic("IsPromotedKeyLen out of sync with Defs: missing length " + d.Name)
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Counting / iteration
 // ---------------------------------------------------------------------------
