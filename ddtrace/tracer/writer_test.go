@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
@@ -26,7 +27,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -668,7 +668,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 		var wg sync.WaitGroup
 
 		// Track traces added for verification
-		var tracesAdded int32
+		var tracesAdded atomic.Int32
 
 		// Spawn goroutines that add traces
 		for range numAddGoroutines {
@@ -678,7 +678,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 				for range numTracesPerGoroutine {
 					spans := []*Span{makeSpan(1)}
 					writer.add(spans)
-					atomic.AddInt32(&tracesAdded, 1)
+					tracesAdded.Add(1)
 				}
 			})
 		}
@@ -705,7 +705,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 		writer.wg.Wait()
 
 		// Verify that the number of traces added matches our expectation
-		actualTracesAdded := atomic.LoadInt32(&tracesAdded)
+		actualTracesAdded := tracesAdded.Load()
 		assert.Equal(int32(expectedTotalTraces), actualTracesAdded,
 			"Expected %d traces to be added, but got %d", expectedTotalTraces, actualTracesAdded)
 
