@@ -1022,12 +1022,6 @@ func (s *Span) finish(finishTime int64) {
 		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			s, s.name, s.resource, &s.meta, s.metrics)
 	}
-	// Finalise the span's metadata: inlines promoted attrs into sm.m and sets
-	// inlined=true (atomic release). By the time the writer goroutine reads sm.m
-	// via EncodeMsg/Msgsize/Range, the acquire fence in inlined.Load() ensures
-	// all writes are visible — no further locking is needed on the read side.
-	s.meta.Finish()
-
 	// Call context.finish() which handles trace-level bookkeeping and may modify
 	// this span (to set trace-level tags).
 	// Lock ordering is span.mu -> trace.mu.

@@ -8,8 +8,8 @@ package internal
 import (
 	"fmt"
 	"iter"
+	"maps"
 	"strings"
-	"sync/atomic"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -34,22 +34,15 @@ var (
 )
 
 // SpanMeta replaces a plain map[string]string for the Span.meta field.
-// Promoted attributes (env, version, component, span.kind, language) live in
-// attrs and are excluded from the map m. The msgp codec merges both sources
-// transparently so the wire format is unchanged.
+// Promoted attributes (env, version, language) live in promotedAttrs and are
+// excluded from the flat map m. The msgp codec and iterators merge both
+// sources transparently so the wire format is unchanged.
 //
-// Set routes promoted keys to attrs (with copy-on-write) and others to the
-// flat map. Promoted keys never appear in sm.m until Finish() is called.
-//
-// Finish() must be called once — after all tag writes and before the span is
-// handed to the writer goroutine. It inlines promoted attrs into sm.m and
-// publishes an atomic release fence (inlined=true). After that point sm.m is
-// read-only, so serialization methods (EncodeMsg, Msgsize, Range, etc.) can
-// read it lock-free via the acquire fence in inlined.Load().
+// Set routes promoted keys to promotedAttrs (with copy-on-write) and others
+// to the flat map. Promoted keys never appear in sm.m.
 type SpanMeta struct {
 	m             map[string]string
 	promotedAttrs *SpanAttributes
-	inlined       atomic.Bool
 }
 
 // NewSpanMeta returns a SpanMeta initialized with shared promoted attrs (used during span creation).
@@ -65,9 +58,6 @@ func NewSpanMetaFromMap(m map[string]string) SpanMeta {
 // IsZero reports whether the SpanMeta contains no entries (map or promoted).
 // The msgp generator emits z.meta.IsZero() for the omitempty check.
 func (sm *SpanMeta) IsZero() bool {
-	if sm.inlined.Load() {
-		return false // Finish() wrote entries to sm.m; always non-empty
-	}
 	return len(sm.m) == 0 && sm.promotedAttrs.Count() == 0
 }
 
@@ -142,26 +132,14 @@ func (sm *SpanMeta) Version() (string, bool) { return sm.promotedAttrs.Get(AttrV
 // Language returns the value of the "language" promoted attribute.
 func (sm *SpanMeta) Language() (string, bool) { return sm.promotedAttrs.Get(AttrLanguage) }
 
-// Range calls fn for each flat-map entry. When Map() has been called,
-// promoted keys in sm.m are skipped so v1 callers don't double-encode them.
-// Iteration stops if fn returns false.
+// Range calls fn for each flat-map entry. Promoted attrs are not in sm.m
+// and are not yielded. Iteration stops if fn returns false.
 func (sm *SpanMeta) Range(fn func(k, v string) bool) {
-	inlined := sm.inlined.Load()
 	for k, v := range sm.m {
-		if inlined && isPromotedKey(k) {
-			continue
-		}
 		if !fn(k, v) {
 			return
 		}
 	}
-}
-
-// isPromotedKey reports whether k is an exact promoted attribute name.
-// Only called on the hot path when inlined=true, so the extra check is rare.
-func isPromotedKey(k string) bool {
-	_, ok := AttrKeyForTag(k)
-	return ok
 }
 
 // ---------------------------------------------------------------------------
@@ -259,50 +237,32 @@ func (sm *SpanMeta) AttrCount() int {
 	return sm.promotedAttrs.Count()
 }
 
-// SerializableCount returns the number of flat-map entries that appear in the
-// serialized attributes array. Promoted attrs are encoded as dedicated fields
-// in the v1 protocol and must not be double-counted. When Map() has been called,
-// promoted keys are also in sm.m, so they are subtracted from the count.
+// SerializableCount returns the number of flat-map entries. Promoted attrs
+// are encoded as dedicated fields in the v1 protocol and are not counted here.
 func (sm *SpanMeta) SerializableCount() int {
-	if sm.inlined.Load() {
-		return len(sm.m) - sm.promotedAttrs.Count()
-	}
 	return len(sm.m)
 }
 
-// Finish inlines all promoted attrs into sm.m and publishes an atomic release
-// fence (inlined=true). Must be called once — after all tag writes and before
-// the span is handed to the writer goroutine. After this point sm.m is
-// permanently read-only, and serialization methods need no further locking.
-func (sm *SpanMeta) Finish() {
-	if sm.inlined.Load() {
-		return
+// Map returns a map containing all entries (flat map + promoted attrs).
+// When promoted attrs exist, a new merged map is allocated. Called only on
+// cold paths (stats, CI visibility, tests).
+func (sm *SpanMeta) Map() map[string]string {
+	n := sm.promotedAttrs.Count()
+	if n == 0 {
+		return sm.m
 	}
-	if sm.promotedAttrs != nil {
-		if n := sm.promotedAttrs.Count(); n > 0 {
-			if sm.m == nil {
-				sm.m = make(map[string]string, n)
-			}
-			for _, d := range Defs {
-				if sm.promotedAttrs.Has(d.Key) {
-					sm.m[d.Name] = sm.promotedAttrs.vals[d.Key]
-				}
-			}
+	merged := make(map[string]string, len(sm.m)+n)
+	maps.Copy(merged, sm.m)
+	for _, d := range Defs {
+		if sm.promotedAttrs.Has(d.Key) {
+			merged[d.Name] = sm.promotedAttrs.Val(d.Key)
 		}
 	}
-	sm.inlined.Store(true)
-}
-
-// Map returns sm.m with all entries including promoted attrs. Calls Finish()
-// if not already done so the result is always complete.
-func (sm *SpanMeta) Map() map[string]string {
-	sm.Finish()
-	return sm.m
+	return merged
 }
 
 // All returns an iterator over all entries. Flat-map entries are yielded first
-// (in unspecified order), followed by promoted attributes. When Map() has been
-// called, all entries are already in sm.m and the attrs loop is skipped.
+// (in unspecified order), followed by promoted attributes.
 // Returning false from yield stops iteration.
 func (sm *SpanMeta) All() iter.Seq2[string, string] {
 	return func(yield func(string, string) bool) {
@@ -311,12 +271,12 @@ func (sm *SpanMeta) All() iter.Seq2[string, string] {
 				return
 			}
 		}
-		if sm.inlined.Load() || sm.promotedAttrs == nil {
+		if sm.promotedAttrs == nil {
 			return
 		}
 		for _, d := range Defs {
 			if sm.promotedAttrs.Has(d.Key) {
-				if !yield(d.Name, sm.promotedAttrs.vals[d.Key]) {
+				if !yield(d.Name, sm.promotedAttrs.Val(d.Key)) {
 					return
 				}
 			}
@@ -344,25 +304,9 @@ func (sm *SpanMeta) String() string {
 // msgp codec
 // ---------------------------------------------------------------------------
 
-// EncodeMsg writes the map header and entries. When Map() has already been
-// called (inlined=true), sm.m contains all entries and attrs is skipped to
-// avoid double-encoding. Otherwise the flat map and promoted attrs are
-// combined as normal.
+// EncodeMsg writes the map header and entries, combining the flat map and
+// promoted attrs.
 func (sm *SpanMeta) EncodeMsg(en *msgp.Writer) error {
-	if sm.inlined.Load() {
-		if err := en.WriteMapHeader(uint32(len(sm.m))); err != nil {
-			return msgp.WrapError(err, "Meta")
-		}
-		for k, v := range sm.m {
-			if err := en.WriteString(k); err != nil {
-				return msgp.WrapError(err, "Meta")
-			}
-			if err := en.WriteString(v); err != nil {
-				return msgp.WrapError(err, "Meta", k)
-			}
-		}
-		return nil
-	}
 	n := sm.promotedAttrs.Count()
 	if err := en.WriteMapHeader(uint32(len(sm.m) + n)); err != nil {
 		return msgp.WrapError(err, "Meta")
@@ -424,16 +368,12 @@ func (sm *SpanMeta) DecodeMsg(dc *msgp.Reader) error {
 	return nil
 }
 
-// Msgsize returns an upper bound estimate of the serialized size. When Map()
-// has already been called (inlined=true), sm.m contains all entries so attrs
-// is not separately sized to avoid double-counting.
+// Msgsize returns an upper bound estimate of the serialized size, combining
+// the flat map and promoted attrs.
 func (sm *SpanMeta) Msgsize() int {
 	size := msgp.MapHeaderSize
 	for k, v := range sm.m {
 		size += msgp.StringPrefixSize + len(k) + msgp.StringPrefixSize + len(v)
-	}
-	if sm.inlined.Load() {
-		return size
 	}
 	if n := sm.promotedAttrs.Count(); n > 0 {
 		for _, d := range Defs {

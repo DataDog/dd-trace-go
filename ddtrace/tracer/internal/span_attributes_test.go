@@ -208,7 +208,6 @@ func BenchmarkSpanAttributesGet(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			s, ok = m["env"]
 			s, ok = m["version"]
-			s, ok = m["env"]
 			s, ok = m["language"]
 		}
 		_, _ = s, ok

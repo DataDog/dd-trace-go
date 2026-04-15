@@ -567,8 +567,8 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		size := span.meta.SerializableCount() + len(span.metrics) + len(span.metaStruct)
 		p.buf = msgp.AppendUint32(p.buf, uint32(9))           // attributes fieldID
 		p.buf = msgp.AppendArrayHeader(p.buf, uint32(size)*3) // number of attributes
-		// Promoted keys live only in attrs, never in the tag store, so
-		// encodeMetaEntry skipping them is a safety guard, not a dedup.
+		// Promoted keys live only in promotedAttrs, never in the flat map,
+		// so Range iterates only non-promoted entries.
 		span.meta.Range(p.encodeMetaEntry)
 		for k, v := range span.metrics {
 			p.buf = st.serialize(k, p.buf)
