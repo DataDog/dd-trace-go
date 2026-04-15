@@ -49,13 +49,13 @@ func (c *client) Close() {
 
 // NewClient returns a new valkey.Client enhanced with tracing.
 func NewClient(clientOption valkey.ClientOption, opts ...Option) (valkey.Client, error) {
-	valkeyClient, err := valkey.NewClient(clientOption)
-	if err != nil {
-		return nil, err
-	}
 	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
+	}
+	valkeyClient, err := cfg.createClientFunc(clientOption)
+	if err != nil {
+		return nil, err
 	}
 	tClient := &client{
 		client:  valkeyClient,

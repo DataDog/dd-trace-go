@@ -36,20 +36,20 @@ func TestAlignTs(t *testing.T) {
 	assert.Equal(t, got, want)
 }
 
-func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env string) *config {
+func newTestConfigWithTransportAndEnv(t *testing.T, transport ddTransport, env string) *config {
 	assert := assert.New(t)
 	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
-		c.transport = transport
+		c.ddTransport = transport
 		c.internalConfig.SetEnv(env, internalconfig.OriginCode)
 	})
 	assert.NoError(err)
 	return cfg
 }
 
-func newTestConfigWithTransport(t *testing.T, transport transport) *config {
+func newTestConfigWithTransport(t *testing.T, transport ddTransport) *config {
 	assert := assert.New(t)
 	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
-		c.transport = transport
+		c.ddTransport = transport
 	})
 	assert.NoError(err)
 	return cfg
@@ -289,7 +289,7 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 
 	t.Run("uses-agent-default-env-when-no-tracer-env", func(t *testing.T) {
 		cfg, err := newTestConfig(func(c *config) {
-			c.transport = newDummyTransport()
+			c.ddTransport = newDummyTransport()
 		})
 		assert.NoError(err)
 		af := cfg.agent.load()
@@ -457,7 +457,7 @@ func TestStatsFlushRetries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			p := &failingStatsTransport{failCount: test.failCount}
 			cfg, err := newTestConfig(func(c *config) {
-				c.transport = p
+				c.ddTransport = p
 				c.sendRetries = test.configRetries
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 				c.internalConfig.SetEnv("someEnv", internalconfig.OriginCode)

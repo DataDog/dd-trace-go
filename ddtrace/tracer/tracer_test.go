@@ -1215,7 +1215,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 }
 
 // newDefaultTransport return a default transport for this tracing client
-func newDefaultTransport() transport {
+func newDefaultTransport() ddTransport {
 	return newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
 }
 
@@ -1422,17 +1422,6 @@ func TestTracerEdgeSampler(t *testing.T) {
 }
 
 func TestOTLPExportMode(t *testing.T) {
-	t.Run("uses otlpTraceWriter and otelParentBasedAlwaysOnSampler", func(t *testing.T) {
-		assert := assert.New(t)
-		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
-		assert.NoError(err)
-		defer tracer.Stop()
-		_, isOTLPWriter := tracer.traceWriter.(*otlpTraceWriter)
-		assert.True(isOTLPWriter, "expected otlpTraceWriter in OTLP export mode")
-		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
-		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler in OTLP export mode")
-	})
-
 	t.Run("default mode uses agentTraceWriter and prioritySampler", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, err := newUnstartedTracer()
@@ -1442,6 +1431,17 @@ func TestOTLPExportMode(t *testing.T) {
 		assert.True(isAgentWriter, "expected agentTraceWriter in default mode")
 		_, isPriority := tracer.defaultSampler.(*prioritySampler)
 		assert.True(isPriority, "expected prioritySampler in default mode")
+	})
+
+	t.Run("uses otlpTraceWriter and otelParentBasedAlwaysOnSampler", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+		assert.NoError(err)
+		defer tracer.Stop()
+		_, isOTLPWriter := tracer.traceWriter.(*otlpTraceWriter)
+		assert.True(isOTLPWriter, "expected otlpTraceWriter in OTLP export mode")
+		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
+		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler in OTLP export mode")
 	})
 
 	t.Run("OTEL_TRACES_EXPORTER=otlp env var enables OTLP mode", func(t *testing.T) {
@@ -3133,4 +3133,82 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	got, err = remoteconfig.HasProduct("testing")
 	require.ErrorIs(t, err, remoteconfig.ErrClientNotStarted)
 	require.False(t, got, "remote config should be disabled after Stop()")
+}
+
+func TestStartSpanFromPropagatedContext(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	root := tracer.StartSpan("root")
+	root.Finish()
+
+	t.Run("with parent", func(t *testing.T) {
+		carrier := TextMapCarrier(map[string]string{})
+		err = Inject(root.Context(), carrier)
+		assert.NoError(t, err)
+
+		ctx := context.Background()
+		span, newCtx := StartSpanFromPropagatedContext(ctx, "child", carrier)
+		assert.Equal(t, root.traceID, span.traceID)
+		assert.Equal(t, root.spanID, span.parentID)
+		ctxSpan, ok := SpanFromContext(newCtx)
+		assert.True(t, ok)
+		assert.Equal(t, span, ctxSpan)
+	})
+	t.Run("no parent", func(t *testing.T) {
+		ctx := context.Background()
+		span, newCtx := StartSpanFromPropagatedContext(ctx, "child", TextMapCarrier(map[string]string{}))
+		assert.NotNil(t, span)
+		ctxSpan, ok := SpanFromContext(newCtx)
+		assert.True(t, ok)
+		assert.Equal(t, span, ctxSpan)
+		assert.Equal(t, uint64(0), span.parentID)
+	})
+	t.Run("span links preservation", func(t *testing.T) {
+		carrier := TextMapCarrier(map[string]string{})
+		err = Inject(root.Context(), carrier)
+		assert.NoError(t, err)
+
+		link := SpanLink{TraceID: 0x1234, SpanID: 0x5678}
+		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-with-links", carrier, WithSpanLinks([]SpanLink{link}))
+		assert.Equal(t, root.spanID, span.parentID)
+		assert.Contains(t, span.spanLinks, link)
+	})
+	t.Run("options merging", func(t *testing.T) {
+		carrier := TextMapCarrier(map[string]string{})
+		err = Inject(root.Context(), carrier)
+		assert.NoError(t, err)
+
+		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-with-tags", carrier, Tag("custom.tag", "hello"))
+		assert.Equal(t, root.spanID, span.parentID)
+		assert.Equal(t, "hello", span.meta["custom.tag"])
+	})
+	t.Run("http headers carrier", func(t *testing.T) {
+		httpCarrier := HTTPHeadersCarrier{}
+		err = Inject(root.Context(), httpCarrier)
+		assert.NoError(t, err)
+
+		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-http", httpCarrier)
+		assert.Equal(t, root.traceID, span.traceID)
+		assert.Equal(t, root.spanID, span.parentID)
+	})
+}
+
+func BenchmarkStartSpanFromPropagatedContext(b *testing.B) {
+	tracer, _, _, stop, err := startTestTracer(b)
+	assert.NoError(b, err)
+	defer stop()
+
+	root := tracer.StartSpan("root")
+	root.Finish()
+
+	carrier := TextMapCarrier(map[string]string{})
+	err = Inject(root.Context(), carrier)
+	assert.NoError(b, err)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = StartSpanFromPropagatedContext(context.Background(), "child", carrier)
+	}
 }
