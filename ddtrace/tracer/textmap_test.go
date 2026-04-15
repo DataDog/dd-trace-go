@@ -105,7 +105,6 @@ func TestTextMapCarrierForeachKeyError(t *testing.T) {
 	assert.Equal(t, got, want)
 }
 
-// TODO: Split test into 3, one for continue, one for restart, one for ignore 
 func TestTextMapExtractTracestatePropagation(t *testing.T) {
 	tests := []struct {
 		name, propagationStyle, traceparent string
@@ -2011,6 +2010,153 @@ func TestSpanLinks(t *testing.T) {
 
 		assert.Equal(traceIDFrom64Bits(1).value, sctx.traceID.value)
 		assert.Len(sctx.spanLinks, 0)
+	})
+}
+
+// TestPropagationBehaviorExtract covers the four RFC-specified configurations for
+// DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT. The default propagators are datadog,tracecontext,baggage.
+//
+// RFC test matrix: https://datadoghq.atlassian.net/wiki/x/RFC-trace-context-propagation-extraction-modes
+func TestPropagationBehaviorExtract(t *testing.T) {
+	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(404)
+	}))
+	defer s.Close()
+
+	// Carrier with DD and W3C headers sharing the same trace ID and span ID.
+	sameIDCarrier := TextMapCarrier{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		DefaultPriorityHeader: "1",
+		traceparentHeader:     "00-00000000000000000000000000000001-0000000000000001-01",
+		tracestateHeader:      "dd=s:1",
+		"baggage":             "key=val",
+	}
+
+	// Carrier with DD and W3C headers carrying different trace IDs.
+	diffIDCarrier := TextMapCarrier{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		DefaultPriorityHeader: "1",
+		traceparentHeader:     "00-00000000000000000000000000000002-0000000000000002-01",
+		tracestateHeader:      "dd=s:1",
+		"baggage":             "key=val",
+	}
+
+	t.Run("continue/same-trace-id", func(t *testing.T) {
+		// Default behavior: trace is continued from the incoming Datadog context.
+		// Same trace ID across propagators means no conflicting span link is created.
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		assert.Equal(t, traceIDFrom64Bits(1).value, sctx.traceID.value)
+		assert.Empty(t, sctx.spanLinks)
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+	})
+
+	t.Run("continue/different-trace-ids", func(t *testing.T) {
+		// Default behavior: trace is continued from the incoming Datadog context (first propagator).
+		// W3C context has a different trace ID, so a terminated_context span link is created for it.
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		assert.Equal(t, traceIDFrom64Bits(1).value, sctx.traceID.value)
+		require.Len(t, sctx.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    2,
+			SpanID:     2,
+			Tracestate: "dd=s:1",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"},
+		}, sctx.spanLinks[0])
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+	})
+
+	t.Run("restart", func(t *testing.T) {
+		// restart mode: a new local trace context is created regardless of the incoming
+		// trace ID. The incoming context is referenced via a span link with
+		// reason=propagation_behavior_extract. Baggage is propagated.
+		//
+		// Tracestate is enriched by the Datadog propagator with the p: sub-key (parent
+		// span ID). Flags=1 because sampling priority > 0.
+		t.Setenv(headerPropagationBehaviorExtract, "restart")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		assert.True(t, sctx.baggageOnly) // signals spanStart to generate fresh IDs
+		assert.Equal(t, [16]byte{}, sctx.traceID.value)
+		require.Len(t, sctx.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    1,
+			SpanID:     1,
+			Tracestate: "dd=s:1;p:0000000000000001",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
+		}, sctx.spanLinks[0])
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+	})
+
+	t.Run("restart/extract-first", func(t *testing.T) {
+		// restart + extract_first: extraction stops after the first propagator (Datadog).
+		// No conflicting span links appear because W3C headers are never examined.
+		// The single extracted context becomes the span link target.
+		//
+		// Note: baggage is not propagated in this configuration because extract_first
+		// returns before the baggage propagator runs. This is a pre-existing limitation
+		// of DD_TRACE_PROPAGATION_EXTRACT_FIRST, independent of restart mode.
+		//
+		// Tracestate is empty because the Datadog propagator does not carry W3C tracestate.
+		// Flags=1 because sampling priority > 0.
+		t.Setenv(headerPropagationBehaviorExtract, "restart")
+		t.Setenv(headerPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		assert.True(t, sctx.baggageOnly)
+		assert.Equal(t, [16]byte{}, sctx.traceID.value)
+		require.Len(t, sctx.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    1,
+			SpanID:     1,
+			Tracestate: "",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
+		}, sctx.spanLinks[0])
+		assert.Nil(t, sctx.baggage) // +checklocksignore
+	})
+
+	t.Run("ignore", func(t *testing.T) {
+		// ignore mode: the entire incoming trace context is discarded. Returns nil, nil —
+		// no error, no context — so callers produce a fresh root span with no parent,
+		// no span links, and no baggage.
+		t.Setenv(headerPropagationBehaviorExtract, "ignore")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		assert.NoError(t, err)
+		assert.Nil(t, sctx)
 	})
 }
 

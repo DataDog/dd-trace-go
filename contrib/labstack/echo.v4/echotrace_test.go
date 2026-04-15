@@ -734,10 +734,10 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			name:                       "restart",
 			propagationBehaviorExtract: "restart",
 		},
-		// {
-		// 	name:                       "ignore",
-		// 	propagationBehaviorExtract: "ignore",
-		// },
+		{
+			name:                       "ignore",
+			propagationBehaviorExtract: "ignore",
+		},
 	}
 
 	for _, tc := range tests {
