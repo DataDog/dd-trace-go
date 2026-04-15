@@ -169,12 +169,10 @@ type ExperimentResult struct {
 	// Runs holds the results for each run iteration, in order. For a single-run
 	// experiment this slice has exactly one element.
 	Runs []*RunResult
-
 	// Results is kept for single-run backward compatibility and points to Runs[0].Results.
 	//
 	// Deprecated: Use Runs[0].Results instead.
 	Results []*RecordResult
-
 	// SummaryEvaluations is kept for single-run backward compatibility and points to Runs[0].SummaryEvaluations.
 	//
 	// Deprecated: Use Runs[0].SummaryEvaluations instead.
@@ -183,16 +181,23 @@ type ExperimentResult struct {
 
 // RecordResult represents an experiment result for a single record.
 type RecordResult struct {
-	Record      *dataset.Record // The dataset record containing input, expected output, and metadata
-	Output      any             // The task output for this record
-	Evaluations []*Evaluation   // Evaluation results for this record
+	// Record is the dataset record containing input, expected output, and metadata.
+	Record *dataset.Record
+	// Output is the task output for this record.
+	Output any
+	// Evaluations holds the evaluation results for this record.
+	Evaluations []*Evaluation
 
-	// Experiment execution metadata
-	RecordIndex int       // Index of the record in the dataset
-	SpanID      string    // Span ID for tracing
-	TraceID     string    // Trace ID for tracing
-	Timestamp   time.Time // When the task was executed
-	Error       error     // Any error that occurred during task execution
+	// RecordIndex is the index of the record in the dataset.
+	RecordIndex int
+	// SpanID is the span ID for tracing.
+	SpanID string
+	// TraceID is the trace ID for tracing.
+	TraceID string
+	// Timestamp is when the task was executed.
+	Timestamp time.Time
+	// Error is any error that occurred during task execution.
+	Error error
 }
 
 // Evaluation represents the output of an evaluator.
@@ -245,16 +250,7 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, op
 // Run executes the experiment, running the task and evaluators on each record in the dataset,
 // then running summary evaluators on the aggregated results.
 // When configured with WithRuns(n), the full experiment loop is executed n times.
-// Each run gets a unique run ID and a 1-indexed iteration number propagated as tags.
-//
-// Status updates are sent to the backend at key lifecycle points:
-//   - "running"     — immediately after the experiment is registered on the backend
-//   - "completed"   — all runs finished with no errors
-//   - "failed"      — all runs finished but one or more task/evaluator errors occurred,
-//     or a hard error (e.g. abortOnError) aborted execution early
-//   - "interrupted" — the context was cancelled or its deadline exceeded before the
-//     run loop could finish
-func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (_ *ExperimentResult, retErr error) {
+func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (result *ExperimentResult, retErr error) {
 	ll, err := illmobs.ActiveLLMObs()
 	if err != nil {
 		return nil, err
@@ -281,24 +277,29 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (_ *ExperimentR
 	// 3) Notify the backend that the experiment is now executing.
 	e.updateStatus(ctx, ll, experimentStatusRunning, "")
 
-	// Ensure a terminal status is always sent when Run returns an error. Two cases:
-	//   - context cancelled/deadline exceeded: sends "interrupted" using a fresh
-	//     context so the request is not immediately rejected.
-	//   - any other hard error: sends "failed" with the error message.
-	// The happy-path terminal status ("completed" or "failed"-with-summary) is sent
-	// explicitly at the end of the function, before returning nil.
+	result = &ExperimentResult{
+		ExperimentName: e.Name,
+		DatasetName:    e.dataset.Name(),
+		Runs:           make([]*RunResult, 0, e.cfg.runs),
+	}
+
+	// Ensure we send the final status in all cases.
 	defer func() {
-		if retErr == nil {
+		if retErr != nil {
+			if ctx.Err() != nil {
+				e.updateStatus(context.Background(), ll, experimentStatusInterrupted, "")
+			} else {
+				e.updateStatus(ctx, ll, experimentStatusFailed, retErr.Error())
+			}
 			return
 		}
-		if ctx.Err() != nil {
-			e.updateStatus(context.Background(), ll, experimentStatusInterrupted, "")
+		if summary := buildErrorSummary(result.Runs); summary != "" {
+			e.updateStatus(ctx, ll, experimentStatusFailed, summary)
 		} else {
-			e.updateStatus(ctx, ll, experimentStatusFailed, retErr.Error())
+			e.updateStatus(ctx, ll, experimentStatusCompleted, "")
 		}
 	}()
 
-	runResults := make([]*RunResult, 0, e.cfg.runs)
 	for i := range e.cfg.runs {
 		run := RunInfo{
 			ID:        uuid.New().String(),
@@ -330,32 +331,20 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (_ *ExperimentR
 			return nil, fmt.Errorf("run %d: failed to push experiment events: %w", run.Iteration, err)
 		}
 
-		runResults = append(runResults, &RunResult{
+		result.Runs = append(result.Runs, &RunResult{
 			Run:                run,
 			Results:            results,
 			SummaryEvaluations: summaryEvals,
 		})
 	}
 
-	result := &ExperimentResult{
-		ExperimentName: e.Name,
-		DatasetName:    e.dataset.Name(),
-		Runs:           runResults,
-	}
 	// Populate legacy fields from the first run for single-run backward compatibility.
-	if len(runResults) > 0 {
-		result.Results = runResults[0].Results
-		result.SummaryEvaluations = runResults[0].SummaryEvaluations
+	if len(result.Runs) > 0 {
+		result.Results = result.Runs[0].Results
+		result.SummaryEvaluations = result.Runs[0].SummaryEvaluations
 	}
 
-	// 7) Send the terminal status. If any task or evaluator recorded an error the
-	// experiment is considered failed; otherwise it completed successfully.
-	if summary := buildErrorSummary(runResults); summary != "" {
-		e.updateStatus(ctx, ll, experimentStatusFailed, summary)
-	} else {
-		e.updateStatus(ctx, ll, experimentStatusCompleted, "")
-	}
-	return result, nil
+	return
 }
 
 // updateStatus sends a status update to the backend. Failures are logged at debug
