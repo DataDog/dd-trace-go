@@ -493,9 +493,9 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
-	var sc statsConcentrator = &noopConcentrator{}
-	if !c.internalConfig.OTLPExportMode() {
-		sc = newConcentrator(c, defaultStatsBucketSize, statsd)
+	var sc statsConcentrator = newConcentrator(c, defaultStatsBucketSize, statsd)
+	if c.internalConfig.OTLPExportMode() {
+		sc = &noopConcentrator{}
 	}
 	t = &tracer{
 		config:           c,
