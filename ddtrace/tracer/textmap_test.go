@@ -2052,7 +2052,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 
 		assert.Equal(t, traceIDFrom64Bits(1).value, sctx.traceID.value)
 		assert.Empty(t, sctx.spanLinks)
-		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
 	t.Run("continue/different-trace-ids", func(t *testing.T) {
@@ -2075,7 +2075,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			Flags:      1,
 			Attributes: map[string]string{"reason": "terminated_context", "context_headers": "tracecontext"},
 		}, sctx.spanLinks[0])
-		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
 	t.Run("restart", func(t *testing.T) {
@@ -2104,7 +2104,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
 		}, sctx.spanLinks[0])
-		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
 	t.Run("restart/different-trace-ids", func(t *testing.T) {
@@ -2133,7 +2133,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
 		}, sctx.spanLinks[0])
-		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
 	t.Run("restart/extract-first/same-trace-id", func(t *testing.T) {
@@ -2163,7 +2163,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
 		}, sctx.spanLinks[0])
-		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
 	t.Run("restart/extract-first/different-trace-ids", func(t *testing.T) {
@@ -2193,7 +2193,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
 		}, sctx.spanLinks[0])
-		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
 	t.Run("ignore/same-trace-id", func(t *testing.T) {
