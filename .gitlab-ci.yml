@@ -3,6 +3,8 @@ stages:
   - generate
   - benchmarks
   - macrobenchmarks
+  - go-go-prof-app-parallel
+  - go-go-prof-app-parallel-slo
   - gates
   - config-validation
   - test-apps
@@ -145,3 +147,6 @@ include:
   - local: ".gitlab/test-apps.yml"
   - local: ".gitlab/docker-images-reliability-env.yml"
   - local: ".gitlab/configuration-central-validation.yml"
+  - project: 'DataDog/apm-reliability/apm-sdks-benchmarks'
+    file: '.gitlab/ci-go-go-prof-app-parallel.yml'
+    ref: 'fayssal/integrate'
