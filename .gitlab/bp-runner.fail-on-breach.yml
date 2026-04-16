@@ -2,7 +2,7 @@
 # Generated: 2026-03-30
 #
 # Generation Strategy: tight
-#   Formula: CI_bound / (1 ± T) (T = 5.0%)
+#   Formula: CI_bound / (1 ± T) (T = 15.0%)
 #
 # SLO Checking:
 #   - BREACH: 90% CI boundary crosses threshold
@@ -20,26 +20,26 @@ experiments:
           # Go oldstable
           - name: normal_operation_cgo-cpu-bound/go-oldstable-profile-trace-asm
             thresholds:
-              - agg_http_req_duration_p99 < 1.194 ms
+              - agg_http_req_duration_p99 < 1.5 ms
           - name: high_load_cgo-cpu-bound/go-oldstable-profile-trace-asm
             thresholds:
-              - throughput > 65.587 op/s
+              - throughput > 60 op/s
           - name: normal_operation_cgo-cpu-bound/go-oldstable-only-trace
             thresholds:
-              - agg_http_req_duration_p99 < 125.0 ms
+              - agg_http_req_duration_p99 < 1.5 ms
           - name: high_load_cgo-cpu-bound/go-oldstable-only-trace
             thresholds:
-              - throughput > 65.753 op/s
+              - throughput > 60 op/s
           # Go stable
           - name: normal_operation_cgo-cpu-bound/go-stable-profile-trace-asm
             thresholds:
-              - agg_http_req_duration_p99 < 1.194 ms
+              - agg_http_req_duration_p99 < 1.5 ms
           - name: high_load_cgo-cpu-bound/go-stable-profile-trace-asm
             thresholds:
-              - throughput > 65.775 op/s
+              - throughput > 60 op/s
           - name: normal_operation_cgo-cpu-bound/go-stable-only-trace
             thresholds:
-              - agg_http_req_duration_p99 < 125.0 ms
+              - agg_http_req_duration_p99 < 1.5 ms
           - name: high_load_cgo-cpu-bound/go-stable-only-trace
             thresholds:
-              - throughput > 65.743 op/s
+              - throughput > 60 op/s

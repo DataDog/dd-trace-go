@@ -371,6 +371,31 @@ func TestNewClient(t *testing.T) {
 			},
 			wantServiceName: "global-service",
 		},
+		{
+			name: "Test WithCreateClientFunc uses custom factory",
+			opts: []Option{
+				WithRawCommand(true),
+				WithCreateClientFunc(func(clientOption valkey.ClientOption) (valkey.Client, error) {
+					return valkey.NewClient(clientOption)
+				}),
+			},
+			runTest: func(t *testing.T, ctx context.Context, client valkey.Client) {
+				assert.NoError(t, client.Do(ctx, client.B().Set().Key("test_key").Value("test_value").Build()).Error())
+			},
+			assertSpans: func(t *testing.T, spans []*mocktracer.Span) {
+				require.Len(t, spans, 1)
+
+				span := spans[0]
+				assert.Equal(t, "SET", span.Tag(ext.ResourceName))
+				assert.Equal(t, "SET test_key test_value", span.Tag(ext.ValkeyRawCommand))
+				assert.Equal(t, "false", span.Tag(ext.ValkeyClientCacheHit))
+				assert.Less(t, span.Tag(ext.ValkeyClientCacheTTL), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePXAT), float64(0))
+				assert.Less(t, span.Tag(ext.ValkeyClientCachePTTL), float64(0))
+				assert.Nil(t, span.Tag(ext.ErrorMsg))
+			},
+			wantServiceName: "global-service",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

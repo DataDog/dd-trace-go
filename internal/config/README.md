@@ -9,12 +9,28 @@ When migrating a configuration value from another package (e.g. `ddtrace/tracer`
 - **Define the field on `Config`**: add a private field on `internal/config.Config`.
 - **Initialize it in `loadConfig()`**: read from the config provider, which iterates over the following sources, in order, returning the default if no valid value found: local declarative config file, OTEL env vars, env vars, managed declarative config file
 - **Expose an accessor**: add a getter (and a setter if the value is updated at runtime).
-- **Report telemetry in setters**: setters should call `reportTelemetry(...)` with the correct origin.
+- **Report telemetry in setters**: setters should call `configtelemetry.Report(...)` with the correct origin.
+- **Add the cross-product gate**: every setter must call `c.checkProductConflict(...)` as its first action after acquiring the lock (see below).
 - **Update callers**: replace reads/writes on local "config" structs with calls to the singleton (`internal/config.Get()`).
 - **Delete old state**: remove the migrated field from any legacy config structs once no longer referenced.
 - **Update tests**: tests should call the singleton setter/getter (or set env vars) rather than mutating legacy fields.
 
 Sample migration PR: https://github.com/DataDog/dd-trace-go/pull/4214
+
+## Cross-product gate
+
+Every `Set*` method accepts an optional trailing `...Product` parameter. When a product (tracer, profiler, etc.) sets a field via its programmatic API, it passes its `Product` identity:
+
+```go
+c.internalConfig.SetServiceName(name, internalconfig.OriginCode, internalconfig.ProductTracer)
+```
+
+The gate enforces **first-in-wins**: if a different product already claimed the field via programmatic API, the call is silently rejected and a warning is logged. This prevents conflicting overrides like `tracer.WithService("A")` + `profiler.WithService("B")`.
+
+Key rules:
+- **Env vars, defaults, and RC always pass through** — the gate only activates for `OriginCode`.
+- **Tests and integrations omit the product** — they call `SetServiceName(name, origin)` without a product, bypassing the gate entirely.
+- **Same product can call a setter multiple times** — repeated calls from the same product just update the value.
 
 ## Hot paths & performance guidelines
 

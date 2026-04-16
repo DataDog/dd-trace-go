@@ -49,7 +49,6 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		tracerConfig: tracerConfig,
 		writer:       writer,
 		clientConfig: config,
-		flushMapper:  mapper.NewDefaultMapper(config.HeartbeatInterval, config.ExtendedHeartbeatInterval),
 		payloadQueue: internal.NewRingQueue[transport.Payload](config.PayloadQueueSize),
 
 		dependencies: dependencies{
@@ -68,6 +67,8 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		appEndpoints: appEndpoints{isFirst: true},
 		backend:      newLoggerBackend(config.MaxDistinctLogs),
 	}
+
+	client.flushMapper = mapper.NewDefaultMapper(config.HeartbeatInterval, config.ExtendedHeartbeatInterval, client.configuration.All)
 
 	client.dataSources = append(client.dataSources,
 		&client.integrations,

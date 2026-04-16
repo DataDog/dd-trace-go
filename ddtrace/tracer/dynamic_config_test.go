@@ -7,6 +7,8 @@ package tracer
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -229,4 +231,21 @@ func TestDynamicInstrumentationRCStateMutex(t *testing.T) {
 		assert.Empty(t, diRCState.state)
 		diRCState.mu.Unlock()
 	})
+}
+
+// TestDynamicConfigFieldsRemaining uses reflection to count how many dynamicConfig
+// fields remain on the tracer's config struct. When the count reaches 0, the test
+// fails to signal that dynamic_config.go and this test file should be deleted.
+func TestDynamicConfigFieldsRemaining(t *testing.T) {
+	typ := reflect.TypeFor[config]()
+	var remaining int
+	for i := 0; i < typ.NumField(); i++ {
+		if strings.HasPrefix(typ.Field(i).Type.Name(), "dynamicConfig[") {
+			remaining++
+		}
+	}
+	if remaining == 0 {
+		t.Fatal("All dynamicConfig fields have been migrated to internal/config.DynamicConfig. " +
+			"Delete ddtrace/tracer/dynamic_config.go and ddtrace/tracer/dynamic_config_test.go.")
+	}
 }

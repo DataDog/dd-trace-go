@@ -17,9 +17,33 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
+// configuration is a data source that tracks SDK configuration key-value pairs
+// (e.g. DD_ENV, DD_SERVICE) reported by products via RegisterAppConfig/RegisterAppConfigs.
+//
+// Flow:
+//   - Products call Add() to register configs. Each config is stored in config and
+//     its key is marked in pending.
+//   - On each flush tick (~60s), the client calls Payload() which returns an
+//     AppClientConfigurationChange containing only new/updated configs since the
+//     last flush, then clears pending. The config map itself is never cleared,
+//     so it accumulates the full state from app-started through any subsequent
+//     config changes.
+//   - When heartbeatEnricher emits an extended heartbeat (~24h), it calls All()
+//     which returns the full accumulated config state from config. Since Add()
+//     overwrites previous values for the same key, All() always reflects the
+//     correct current state — merging startup configs with any subsequent updates.
+//     This also ensures startup configs consumed by appStartedReducer (and
+//     otherwise invisible to the mapper pipeline) are included.
+//   - Both Payload() and All() normalize configs via normalize() which applies
+//     default origin, sanitizes values, and assigns fallback seqIDs.
 type configuration struct {
-	mu     sync.Mutex
+	mu sync.Mutex
+	// config holds all registered configs for the lifetime of the SDK. Entries are
+	// never removed; updated configs overwrite previous values for the same key.
 	config map[configKey]transport.ConfKeyValue
+	// pending tracks which keys in config have been added or updated since the last
+	// Payload() call. Cleared after each flush so only deltas are reported.
+	pending map[configKey]struct{}
 	// fallbackSeqID is used only for legacy configs that don't already have a seqID.
 	// New code should report configs with seqIDs via config/configProvider.
 	fallbackSeqID uint64
@@ -43,6 +67,7 @@ func (c *configuration) Add(kv Configuration) {
 
 	if c.config == nil {
 		c.config = make(map[configKey]transport.ConfKeyValue)
+		c.pending = make(map[configKey]struct{})
 	}
 
 	ID := idOrEmpty(kv.ID)
@@ -55,37 +80,54 @@ func (c *configuration) Add(kv Configuration) {
 		ID:     ID,
 		SeqID:  kv.SeqID,
 	}
+	c.pending[key] = struct{}{}
+}
+
+// normalize applies default origin, sanitizes the value, and assigns a fallback
+// seqID if needed. The normalized conf is written back to c.config[key].
+func (c *configuration) normalize(key configKey) transport.ConfKeyValue {
+	conf := c.config[key]
+	if conf.Origin == "" {
+		conf.Origin = transport.OriginDefault
+	}
+	conf.Value = SanitizeConfigValue(conf.Value)
+	if conf.SeqID == 0 {
+		c.fallbackSeqID++
+		conf.SeqID = c.fallbackSeqID
+	}
+	c.config[key] = conf
+	return conf
 }
 
 func (c *configuration) Payload() transport.Payload {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.config) == 0 {
+	if len(c.pending) == 0 {
 		return nil
 	}
 
-	configs := make([]transport.ConfKeyValue, len(c.config))
-	idx := 0
-	for key, conf := range c.config {
-		if conf.Origin == "" {
-			conf.Origin = transport.OriginDefault
-		}
-		conf.Value = SanitizeConfigValue(conf.Value)
-
-		// Fallback seqID for legacy code that doesn't report via config/configProvider
-		if conf.SeqID == 0 {
-			c.fallbackSeqID++
-			conf.SeqID = c.fallbackSeqID
-		}
-
-		configs[idx] = conf
-		idx++
-		delete(c.config, key)
+	configs := make([]transport.ConfKeyValue, 0, len(c.pending))
+	for key := range c.pending {
+		configs = append(configs, c.normalize(key))
 	}
+	clear(c.pending)
 
 	return transport.AppClientConfigurationChange{
 		Configuration: configs,
 	}
+}
+
+// All returns a sanitized snapshot of all accumulated configs. Used by
+// heartbeatEnricher to populate the configuration field in extended heartbeats.
+func (c *configuration) All() []transport.ConfKeyValue {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	configs := make([]transport.ConfKeyValue, 0, len(c.config))
+	for key := range c.config {
+		configs = append(configs, c.normalize(key))
+	}
+	return configs
 }
 
 // SanitizeConfigValue sanitizes the value of a configuration key to ensure it can be marshalled.

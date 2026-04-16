@@ -12,8 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"testing/synctest"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -64,10 +65,8 @@ func TestLRU(t *testing.T) {
 				finishBarrier sync.WaitGroup
 			)
 			startBarrier.Add(goCount + 1)
-			finishBarrier.Add(goCount)
 			for range goCount {
-				go func() {
-					defer finishBarrier.Done()
+				finishBarrier.Go(func() {
 					startBarrier.Done()
 					startBarrier.Wait()
 
@@ -75,7 +74,7 @@ func TestLRU(t *testing.T) {
 						_ = subject.Hit(key)
 						time.Sleep(time.Second)
 					}
-				}()
+				})
 			}
 
 			startBarrier.Done()

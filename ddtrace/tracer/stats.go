@@ -255,7 +255,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		flushedBuckets += len(csp.Stats)
 		var err error
 		for attempt := 0; attempt <= c.cfg.sendRetries; attempt++ {
-			err = c.cfg.transport.sendStats(csp, obfVersion)
+			err = c.cfg.ddTransport.sendStats(csp, obfVersion)
 			if err == nil {
 				break
 			}

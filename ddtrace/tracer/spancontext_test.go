@@ -811,8 +811,8 @@ func TestSpanPeerService(t *testing.T) {
 			assert.Nil(t, err)
 			defer stop()
 
-			tracer.config.peerServiceDefaultsEnabled = tc.peerServiceDefaultsEnabled
-			tracer.config.peerServiceMappings = tc.peerServiceMappings
+			tracer.config.internalConfig.SetPeerServiceDefaultsEnabled(tc.peerServiceDefaultsEnabled, telemetry.OriginCode)
+			tracer.config.internalConfig.SetPeerServiceMappings(tc.peerServiceMappings, telemetry.OriginCode)
 
 			p := tracer.StartSpan("parent-span", tc.spanOpts...)
 			opts := append([]StartSpanOption{ChildOf(p.Context())}, tc.spanOpts...)

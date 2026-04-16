@@ -1,0 +1,40 @@
+[
+  {
+    "//": "successful evaluation if flag has no sharding",
+    "flag": "numeric_flag",
+    "variationType": "NUMERIC",
+    "defaultValue": 42,
+    "targetingKey": null,
+    "attributes": {},
+    "result": {
+      "value": 3.1415926
+    }
+  },
+  {
+    "//": "evaluation failure for flag with sharding",
+    "flag": "new-user-onboarding",
+    "variationType": "STRING",
+    "defaultValue": "default",
+    "targetingKey": null,
+    "attributes": {
+      "country": "France"
+    },
+    "result": {
+      "value": "default"
+    }
+  },
+  {
+    "//": "success if matched before sharding",
+    "flag": "new-user-onboarding",
+    "variationType": "STRING",
+    "defaultValue": "default",
+    "targetingKey": null,
+    "attributes": {
+      "email": "null@mycompany.com",
+      "country": "France"
+    },
+    "result": {
+      "value": "green"
+    }
+  }
+]
