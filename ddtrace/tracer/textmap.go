@@ -344,7 +344,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			baggage = p.extractBaggage(carrier)
 		}
 		if len(baggage) > 0 {
-			ctx.baggage = maps.Clone(baggage)                 // +checklocksignore
+			ctx.baggage = maps.Clone(baggage) // +checklocksignore
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 		}
 

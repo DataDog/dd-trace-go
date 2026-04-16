@@ -726,12 +726,12 @@ func TestWithErrorCheck(t *testing.T) {
 // already available; any HTTP middleware integration would work equivalently.
 func TestPropagationBehaviorExtract(t *testing.T) {
 	tests := []struct {
-		name                string
-		behavior            string
-		wantSameTraceID     bool // server span continues the root trace
-		wantParentID        bool // server span has root as parent
-		wantSpanLinks       bool // server span has a span link to the root context
-		wantBaggage         bool // baggage from root is propagated to server span
+		name            string
+		behavior        string
+		wantSameTraceID bool // server span continues the root trace
+		wantParentID    bool // server span has root as parent
+		wantSpanLinks   bool // server span has a span link to the root context
+		wantBaggage     bool // baggage from root is propagated to server span
 	}{
 		{
 			name:            "restart",

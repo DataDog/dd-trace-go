@@ -33,4 +33,3 @@ coverage-*.txt
 /.claude/*
 !/.claude/commands/
 !/.claude/settings.json
-_context/
