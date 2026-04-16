@@ -14,4 +14,4 @@ For more information on how to use Orchestrion in a user's project, refer to the
 
 For references on which aspects and join points are available, code templates, and other contributing guidelines, refer to the [contributor guide](https://datadoghq.dev/orchestrion/contributing/aspects/). 
 
-When creating or updating `orchestrion.yml` files, note that it uses the Go `text/template` module to render and read YAML files.
+Orchestrion uses the Go `text/template` module to render and read YAML files.
