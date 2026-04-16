@@ -205,11 +205,11 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 // When injecting, all injectors are called to propagate the span context.
 // When extracting, it tries each extractor, selecting the first successful one.
 type chainedPropagator struct {
-	injectors        []Propagator
-	extractors       []Propagator
-	injectorNames    string
-	extractorsNames  string
-	onlyExtractFirst bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
+	injectors                  []Propagator
+	extractors                 []Propagator
+	injectorNames              string
+	extractorsNames            string
+	onlyExtractFirst           bool   // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
 	propagationBehaviorExtract string // value of DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT
 }
 
@@ -301,7 +301,7 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 // be relayed in the returned SpanContext with a SpanLink.
 func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	// TODO: Return nil or an empty span context?
-	// "ignore" propagation behavior returns a new span context with no span 
+	// "ignore" propagation behavior returns a new span context with no span
 	// links and no baggage.
 	if p.propagationBehaviorExtract == "ignore" {
 		return nil, nil
@@ -326,8 +326,8 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 					incomingCtx = baggageCtx
 				} else {
 					baggageCtx.ForeachBaggageItem(func(k, val string) bool { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-						if incomingCtx.baggage == nil {                        // +checklocksignore
-							incomingCtx.baggage = make(map[string]string)       // +checklocksignore
+						if incomingCtx.baggage == nil { // +checklocksignore
+							incomingCtx.baggage = make(map[string]string) // +checklocksignore
 						}
 						incomingCtx.baggage[k] = val // +checklocksignore
 						atomic.StoreUint32(&incomingCtx.hasBaggage, 1)
@@ -385,10 +385,9 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	var links []SpanLink
 	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
 
-	
 	for _, v := range p.extractors {
 		// If incomingCtx is nil, no extraction has run yet
-		firstExtraction := (ctx == nil) 
+		firstExtraction := (ctx == nil)
 		extractedCtx, err := v.Extract(carrier)
 
 		// If this is the baggage propagator, just stash its items into pendingBaggage
@@ -697,14 +696,14 @@ func getDatadogPropagator(cp *chainedPropagator) *propagator {
 // overrideDatadogParentID overrides a context's:
 // 1. span ID with the span ID extracted from W3C tracecontext headers; and
 // 2. reparent ID with either:
-//    - the reparent ID from W3C tracecontext headers (if set), or
-//    - the span ID from Datadog headers (as fallback).
+//   - the reparent ID from W3C tracecontext headers (if set), or
+//   - the span ID from Datadog headers (as fallback).
 //
 // reparent ID is the last known Datadog parent span ID, used by Datadog's
 // backend to fix broken parent-child relationships when non-Datadog tracers
 // in the path don't report spans to Datadog.
 //
-// SpanContexts are passed by reference to avoid copying lock information in 
+// SpanContexts are passed by reference to avoid copying lock information in
 // the SpanContext type.
 func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 	if ctx == nil || w3cCtx == nil || ddCtx == nil {

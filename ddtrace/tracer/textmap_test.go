@@ -2111,14 +2111,66 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
 	})
 
-	t.Run("restart/extract-first", func(t *testing.T) {
-		// restart + extract_first: extraction stops after the first propagator (Datadog).
-		// No conflicting span links appear because W3C headers are never examined.
-		// The single extracted context becomes the span link target.
+	t.Run("restart/different-trace-ids", func(t *testing.T) {
+		// restart mode with unique trace IDs: the outcome is the same as same-trace-id.
+		// A new trace is started, and the span link points to the Datadog context (the
+		// first propagator). The W3C conflicting context is not included in the span link
+		// because restart discards the incoming context entirely and replaces it.
+		t.Setenv(headerPropagationBehaviorExtract, "restart")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		assert.True(t, sctx.baggageOnly)
+		assert.Equal(t, [16]byte{}, sctx.traceID.value)
+		require.Len(t, sctx.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    1,
+			SpanID:     1,
+			Tracestate: "dd=s:1;p:0000000000000001",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
+		}, sctx.spanLinks[0])
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+	})
+
+	t.Run("restart/extract-first/same-trace-id", func(t *testing.T) {
+		// restart + extract_first with same trace ID: extraction stops after Datadog.
+		// One span link to the Datadog context. Baggage propagated.
 		//
-		// Baggage is still propagated: Extract() runs the baggage propagator explicitly
-		// after extractIncomingSpanContext returns, so the extract-first short-circuit
-		// does not suppress baggage.
+		// Tracestate is enriched by the Datadog propagator with the p: sub-key.
+		// Flags=1 because sampling priority > 0.
+		t.Setenv(headerPropagationBehaviorExtract, "restart")
+		t.Setenv(headerPropagationExtractFirst, "true")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(sameIDCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		assert.True(t, sctx.baggageOnly)
+		assert.Equal(t, [16]byte{}, sctx.traceID.value)
+		require.Len(t, sctx.spanLinks, 1)
+		assert.Equal(t, SpanLink{
+			TraceID:    1,
+			SpanID:     1,
+			Tracestate: "dd=s:1;p:0000000000000001",
+			Flags:      1,
+			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
+		}, sctx.spanLinks[0])
+		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
+	})
+
+	t.Run("restart/extract-first/different-trace-ids", func(t *testing.T) {
+		// restart + extract_first with unique trace IDs: extraction stops after Datadog,
+		// so the W3C conflicting context is never seen. One span link to the Datadog context.
+		// Baggage is still propagated via the explicit baggage pass in Extract().
 		//
 		// Tracestate is empty because the Datadog propagator does not carry W3C tracestate.
 		// Flags=1 because sampling priority > 0.
@@ -2145,7 +2197,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage) // +checklocksignore
 	})
 
-	t.Run("ignore", func(t *testing.T) {
+	t.Run("ignore/same-trace-id", func(t *testing.T) {
 		// ignore mode: the entire incoming trace context is discarded. Returns nil, nil —
 		// no error, no context — so callers produce a fresh root span with no parent,
 		// no span links, and no baggage.
@@ -2155,6 +2207,19 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		defer tr.Stop()
 
 		sctx, err := tr.Extract(sameIDCarrier)
+		assert.NoError(t, err)
+		assert.Nil(t, sctx)
+	})
+
+	t.Run("ignore/different-trace-ids", func(t *testing.T) {
+		// ignore mode with unique trace IDs: same result as same-trace-id.
+		// All incoming context is discarded regardless of what headers are present.
+		t.Setenv(headerPropagationBehaviorExtract, "ignore")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		sctx, err := tr.Extract(diffIDCarrier)
 		assert.NoError(t, err)
 		assert.Nil(t, sctx)
 	})
