@@ -111,5 +111,5 @@ func processTelemetry(ctx context.Context, telemetryVal map[string]any) {
 	if !ok {
 		return
 	}
-	toolSpan.Annotate(llmobs.WithIntent(intent))
+	toolSpan.Annotate(llmobs.WithAnnotatedIntent(intent))
 }

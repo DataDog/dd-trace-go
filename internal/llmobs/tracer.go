@@ -46,6 +46,8 @@ type APMSpan interface {
 	TraceID() string
 	// SetBaggageItem sets a baggage item on the span.
 	SetBaggageItem(key string, value string)
+	// BaggageItem returns the baggage item value for the given key.
+	BaggageItem(key string) string
 }
 
 // SpanLink represents a link between spans, aliased from the transport package.

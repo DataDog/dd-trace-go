@@ -1227,7 +1227,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 }
 
 // newDefaultTransport return a default transport for this tracing client
-func newDefaultTransport() transport {
+func newDefaultTransport() ddTransport {
 	return newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
 }
 
@@ -1459,17 +1459,6 @@ func TestTracerEdgeSampler(t *testing.T) {
 }
 
 func TestOTLPExportMode(t *testing.T) {
-	t.Run("uses otlpTraceWriter and otelParentBasedAlwaysOnSampler", func(t *testing.T) {
-		assert := assert.New(t)
-		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
-		assert.NoError(err)
-		defer tracer.Stop()
-		_, isOTLPWriter := tracer.traceWriter.(*otlpTraceWriter)
-		assert.True(isOTLPWriter, "expected otlpTraceWriter in OTLP export mode")
-		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
-		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler in OTLP export mode")
-	})
-
 	t.Run("default mode uses agentTraceWriter and prioritySampler", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, err := newUnstartedTracer()
@@ -1479,6 +1468,17 @@ func TestOTLPExportMode(t *testing.T) {
 		assert.True(isAgentWriter, "expected agentTraceWriter in default mode")
 		_, isPriority := tracer.defaultSampler.(*prioritySampler)
 		assert.True(isPriority, "expected prioritySampler in default mode")
+	})
+
+	t.Run("uses otlpTraceWriter and otelParentBasedAlwaysOnSampler", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+		assert.NoError(err)
+		defer tracer.Stop()
+		_, isOTLPWriter := tracer.traceWriter.(*otlpTraceWriter)
+		assert.True(isOTLPWriter, "expected otlpTraceWriter in OTLP export mode")
+		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
+		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler in OTLP export mode")
 	})
 
 	t.Run("OTEL_TRACES_EXPORTER=otlp env var enables OTLP mode", func(t *testing.T) {
@@ -2879,6 +2879,135 @@ func TestEmptyChunksNotSent(t *testing.T) {
 	assert.Equal(decisionNone, span.context.trace.samplingDecision)
 }
 
+// TestOTelBridgeP0StatsAndErrorRescue verifies the full pipeline for spans
+// created under an unsampled OTel parent (P0 via FromGenericCtx).
+//
+// With client-side stats enabled (the v2 default), the tracer's concentrator
+// should compute stats from P0 spans regardless of the sampling decision.
+// Additionally, if an error span is present, the keep() CAS should rescue
+// the trace and the payload should be sent to the agent.
+func TestOTelBridgeP0StatsAndErrorRescue(t *testing.T) {
+	t.Run("p0_dropped_stats_computed", func(t *testing.T) {
+		// Unsampled OTel parent, no errors: the trace payload should be
+		// dropped (P0 + canDropP0s), but stats should still be computed
+		// by the concentrator from the finished spans.
+		trc, transport, _, stop, err := startTestTracer(t,
+			WithStatsComputation(true),
+			WithService("test_service"),
+		)
+		require.NoError(t, err)
+
+		// Build a SpanContext that simulates an unsampled OTel parent.
+		dropPri := float64(ext.PriorityAutoReject)
+		otelParent := FromGenericCtx(&otelBridgeCtx{
+			decision: uint32(decisionDrop),
+			priority: &dropPri,
+		})
+
+		span := trc.StartSpan("http.server.request", ChildOf(otelParent))
+		span.Finish()
+		stop()
+
+		// Trace payload should be empty: P0 with no error rescue.
+		traces := transport.Traces()
+		assert.Empty(t, traces, "P0 trace without errors should not be sent as a payload")
+
+		// Stats should have been computed by the concentrator.
+		stats := transport.Stats()
+		require.NotEmpty(t, stats, "concentrator should have produced stats from the P0 span")
+		found := false
+		for _, sp := range stats {
+			for _, bucket := range sp.Stats {
+				for _, group := range bucket.Stats {
+					if group.Name == "http.server.request" {
+						found = true
+					}
+				}
+			}
+		}
+		assert.True(t, found,
+			"stats should contain an entry for the 'http.server.request' operation")
+	})
+
+	t.Run("p0_error_rescued", func(t *testing.T) {
+		// Unsampled OTel parent, but an error span is present: keep() should
+		// CAS(decisionNone -> decisionKeep), rescuing the trace.
+		trc, transport, flush, stop, err := startTestTracer(t,
+			WithStatsComputation(true),
+			WithService("test_service"),
+		)
+		require.NoError(t, err)
+
+		dropPri := float64(ext.PriorityAutoReject)
+		otelParent := FromGenericCtx(&otelBridgeCtx{
+			decision: uint32(decisionDrop),
+			priority: &dropPri,
+		})
+
+		span := trc.StartSpan("http.server.request", ChildOf(otelParent))
+		span.SetTag(ext.Error, true)
+		span.Finish()
+		flush(1)
+		stop()
+
+		traces := transport.Traces()
+		require.Len(t, traces, 1, "error span should rescue the P0 trace")
+		assert.Equal(t, "http.server.request", traces[0][0].name)
+		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision,
+			"keep() CAS should have flipped samplingDecision to decisionKeep")
+	})
+
+	t.Run("p0_sent_when_stats_disabled", func(t *testing.T) {
+		// When client-side stats are disabled (DD_TRACE_STATS_COMPUTATION_ENABLED=false),
+		// canDropP0s() returns false and P0 traces must be sent to the agent so
+		// it can compute stats from them. This is the path that broke for OTel
+		// bridge spans before the fix: samplingDecision was hard-set to
+		// decisionDrop, so the trace was never sent regardless of canDropP0s.
+		trc, transport, flush, stop, err := startTestTracer(t,
+			WithStatsComputation(false),
+			WithService("test_service"),
+		)
+		require.NoError(t, err)
+
+		dropPri := float64(ext.PriorityAutoReject)
+		otelParent := FromGenericCtx(&otelBridgeCtx{
+			decision: uint32(decisionDrop),
+			priority: &dropPri,
+		})
+
+		span := trc.StartSpan("http.server.request", ChildOf(otelParent))
+		span.Finish()
+		flush(1)
+		stop()
+
+		// With stats disabled the tracer must keep all traces (even P0) so
+		// the agent can compute stats server-side.
+		traces := transport.Traces()
+		require.Len(t, traces, 1,
+			"P0 trace should be sent when client-side stats are disabled")
+		assert.Equal(t, "http.server.request", traces[0][0].name)
+		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision,
+			"samplingDecision should be decisionKeep when canDropP0s is false")
+	})
+}
+
+// otelBridgeCtx simulates a span context from the OTel bridge with a
+// configurable sampling decision and priority. It implements
+// spanContextWithSamplingDecision but NOT spanContextV1Adapter, matching
+// the interface that otelCtxToDDCtx provides in production.
+type otelBridgeCtx struct {
+	decision uint32
+	priority *float64
+}
+
+func (c *otelBridgeCtx) SpanID() uint64                              { return 1 }
+func (c *otelBridgeCtx) TraceID() string                             { return "1" }
+func (c *otelBridgeCtx) TraceIDBytes() [16]byte                      { var b [16]byte; b[15] = 1; return b }
+func (c *otelBridgeCtx) TraceIDLower() uint64                        { return 1 }
+func (c *otelBridgeCtx) ForeachBaggageItem(_ func(k, v string) bool) {}
+func (c *otelBridgeCtx) SamplingDecision() uint32                    { return c.decision }
+func (c *otelBridgeCtx) Priority() *float64                          { return c.priority }
+
 func TestPPROFLabelRootSpanRace(t *testing.T) {
 	tracer, _, _, stop, err := startTestTracer(t)
 	assert.NoError(t, err)
@@ -3033,4 +3162,82 @@ func TestTracerConcurrentStartStop(t *testing.T) {
 	got, err = remoteconfig.HasProduct("testing")
 	require.ErrorIs(t, err, remoteconfig.ErrClientNotStarted)
 	require.False(t, got, "remote config should be disabled after Stop()")
+}
+
+func TestStartSpanFromPropagatedContext(t *testing.T) {
+	tracer, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	root := tracer.StartSpan("root")
+	root.Finish()
+
+	t.Run("with parent", func(t *testing.T) {
+		carrier := TextMapCarrier(map[string]string{})
+		err = Inject(root.Context(), carrier)
+		assert.NoError(t, err)
+
+		ctx := context.Background()
+		span, newCtx := StartSpanFromPropagatedContext(ctx, "child", carrier)
+		assert.Equal(t, root.traceID, span.traceID)
+		assert.Equal(t, root.spanID, span.parentID)
+		ctxSpan, ok := SpanFromContext(newCtx)
+		assert.True(t, ok)
+		assert.Equal(t, span, ctxSpan)
+	})
+	t.Run("no parent", func(t *testing.T) {
+		ctx := context.Background()
+		span, newCtx := StartSpanFromPropagatedContext(ctx, "child", TextMapCarrier(map[string]string{}))
+		assert.NotNil(t, span)
+		ctxSpan, ok := SpanFromContext(newCtx)
+		assert.True(t, ok)
+		assert.Equal(t, span, ctxSpan)
+		assert.Equal(t, uint64(0), span.parentID)
+	})
+	t.Run("span links preservation", func(t *testing.T) {
+		carrier := TextMapCarrier(map[string]string{})
+		err = Inject(root.Context(), carrier)
+		assert.NoError(t, err)
+
+		link := SpanLink{TraceID: 0x1234, SpanID: 0x5678}
+		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-with-links", carrier, WithSpanLinks([]SpanLink{link}))
+		assert.Equal(t, root.spanID, span.parentID)
+		assert.Contains(t, span.spanLinks, link)
+	})
+	t.Run("options merging", func(t *testing.T) {
+		carrier := TextMapCarrier(map[string]string{})
+		err = Inject(root.Context(), carrier)
+		assert.NoError(t, err)
+
+		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-with-tags", carrier, Tag("custom.tag", "hello"))
+		assert.Equal(t, root.spanID, span.parentID)
+		assert.Equal(t, "hello", span.meta["custom.tag"])
+	})
+	t.Run("http headers carrier", func(t *testing.T) {
+		httpCarrier := HTTPHeadersCarrier{}
+		err = Inject(root.Context(), httpCarrier)
+		assert.NoError(t, err)
+
+		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-http", httpCarrier)
+		assert.Equal(t, root.traceID, span.traceID)
+		assert.Equal(t, root.spanID, span.parentID)
+	})
+}
+
+func BenchmarkStartSpanFromPropagatedContext(b *testing.B) {
+	tracer, _, _, stop, err := startTestTracer(b)
+	assert.NoError(b, err)
+	defer stop()
+
+	root := tracer.StartSpan("root")
+	root.Finish()
+
+	carrier := TextMapCarrier(map[string]string{})
+	err = Inject(root.Context(), carrier)
+	assert.NoError(b, err)
+
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = StartSpanFromPropagatedContext(context.Background(), "child", carrier)
+	}
 }

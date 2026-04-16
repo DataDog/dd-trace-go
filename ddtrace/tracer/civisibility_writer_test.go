@@ -91,7 +91,7 @@ func TestCiVisibilityTraceWriterFlushRetries(t *testing.T) {
 				assert:    assert,
 			}
 			c, err := newTestConfig(func(c *config) {
-				c.transport = p
+				c.ddTransport = p
 				c.sendRetries = test.configRetries
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 			})

@@ -118,6 +118,10 @@ type payloadV1 struct {
 	processTagsStr    string
 }
 
+// Constant dummy value to represent a serialization failure. Used to prevent failures while
+// decoding the payload.
+const serializationFailed string = "serialization_failed"
+
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
 	return &payloadV1{
@@ -398,19 +402,23 @@ func (p *payloadV1) update() {
 
 // encode writes existing payload fields into the buffer in msgp format.
 func (p *payloadV1) encode() {
-	st := newStringTable()
-	p.buf = encodeField(p.buf, p.bm, 2, p.containerID, st)
-	p.buf = encodeField(p.buf, p.bm, 3, p.languageName, st)
-	p.buf = encodeField(p.buf, p.bm, 4, p.languageVersion, st)
-	p.buf = encodeField(p.buf, p.bm, 5, p.tracerVersion, st)
-	p.buf = encodeField(p.buf, p.bm, 6, p.runtimeID, st)
-	p.buf = encodeField(p.buf, p.bm, 7, p.env, st)
-	p.buf = encodeField(p.buf, p.bm, 8, p.hostname, st)
-	p.buf = encodeField(p.buf, p.bm, 9, p.appVersion, st)
+	if p.st == nil {
+		p.st = newStringTable()
+	} else {
+		p.st.reset()
+	}
+	p.buf = encodeField(p.buf, p.bm, 2, p.containerID, p.st)
+	p.buf = encodeField(p.buf, p.bm, 3, p.languageName, p.st)
+	p.buf = encodeField(p.buf, p.bm, 4, p.languageVersion, p.st)
+	p.buf = encodeField(p.buf, p.bm, 5, p.tracerVersion, p.st)
+	p.buf = encodeField(p.buf, p.bm, 6, p.runtimeID, p.st)
+	p.buf = encodeField(p.buf, p.bm, 7, p.env, p.st)
+	p.buf = encodeField(p.buf, p.bm, 8, p.hostname, p.st)
+	p.buf = encodeField(p.buf, p.bm, 9, p.appVersion, p.st)
 
-	p.encodeAttributes(p.bm, 10, p.attributes, st)
+	p.encodeAttributes(p.bm, 10, p.attributes, p.st)
 
-	p.encodeTraceChunks(p.bm, 11, p.chunks, st)
+	p.encodeTraceChunks(p.bm, 11, p.chunks, p.st)
 }
 
 type fieldValue interface {
@@ -445,6 +453,9 @@ func encodeField[F fieldValue](buf []byte, bm bitmap, fieldID uint32, a F, st *s
 		for _, v := range value {
 			buf = v.encode(buf, st)
 		}
+	default:
+		warnUnsupportedValue(fieldID)
+		buf = st.serialize(serializationFailed, buf)
 	}
 	return buf
 }
@@ -546,6 +557,8 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 	var scratch []byte
 	for _, span := range spans {
 		if span == nil {
+			// encode an empty map for nil spans
+			p.buf = msgp.AppendMapHeader(p.buf, 0)
 			continue
 		}
 		p.buf = msgp.AppendMapHeader(p.buf, 16) // number of fields in span
@@ -561,16 +574,39 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 
 		// span attributes combine the meta (tags), metrics and meta_struct
 		// To avoid increased allocations, we serialize attributes immediately without
-		// creating an intermediate map.
-		size := len(span.meta) + len(span.metrics) + len(span.metaStruct)
-		p.buf = msgp.AppendUint32(p.buf, uint32(9))           // attributes fieldID
-		p.buf = msgp.AppendArrayHeader(p.buf, uint32(size)*3) // number of attributes
+		// creating an intermediate map. We also write a placeholder for the array header
+		// and write the actual count after writing all attributes
+		p.buf = msgp.AppendUint32(p.buf, uint32(9)) // attributes fieldID
+		off := len(p.buf)
+		count := 0
+		p.buf = append(p.buf, msgpackArray32, 0, 0, 0, 0)
+		env, version, component, spanKind := "", "", "", ""
 		for k, v := range span.meta {
+			// Span links are serialized separately in the payload, so
+			// we skip them here to avoid duplication.
+			if k == "_dd.span_links" {
+				continue
+			}
+			// Grab common attributes early to avoid map lookups later on.
+			if k == ext.Environment {
+				env = v
+			}
+			if k == ext.Version {
+				version = v
+			}
+			if k == ext.Component {
+				component = v
+			}
+			if k == ext.SpanKind {
+				spanKind = v
+			}
+			count++
 			p.buf = st.serialize(k, p.buf)
 			p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
 			p.buf = st.serialize(v, p.buf)
 		}
 		for k, v := range span.metrics {
+			count++
 			p.buf = st.serialize(k, p.buf)
 			p.buf = msgp.AppendUint32(p.buf, uint32(FloatValueType))
 			p.buf = msgp.AppendFloat64(p.buf, v)
@@ -579,28 +615,27 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			var err error
 			scratch, err = msgp.AppendIntf(scratch[:0], v)
 			if err != nil {
-				log.Error("failed to serialize meta_struct value for key %s: %v", k, err.Error())
-				continue
+				log.Warn("failed to serialize meta_struct value for key %s: %s", k, err.Error())
+				scratch, _ = msgp.AppendIntf(nil, []byte(serializationFailed))
 			}
+			count++
 			p.buf = st.serialize(k, p.buf)
 			p.buf = msgp.AppendUint32(p.buf, uint32(BytesValueType))
 			p.buf = msgp.AppendBytes(p.buf, scratch)
 		}
 
+		elementCount := uint32(count) * 3
+		p.buf[off+1] = byte(elementCount >> 24)
+		p.buf[off+2] = byte(elementCount >> 16)
+		p.buf[off+3] = byte(elementCount >> 8)
+		p.buf[off+4] = byte(elementCount)
+
 		p.buf = encodeField(p.buf, fullSetBitmap, 10, span.spanType, st)
 		p.encodeSpanLinks(fullSetBitmap, 11, span.spanLinks, st)
 		p.encodeSpanEvents(fullSetBitmap, 12, span.spanEvents, st)
-
-		env := span.meta[ext.Environment]
 		p.buf = encodeField(p.buf, fullSetBitmap, 13, env, st)
-
-		version := span.meta[ext.Version]
 		p.buf = encodeField(p.buf, fullSetBitmap, 14, version, st)
-
-		component := span.meta[ext.Component]
 		p.buf = encodeField(p.buf, fullSetBitmap, 15, component, st)
-
-		spanKind := span.meta[ext.SpanKind]
 		p.buf = encodeField(p.buf, fullSetBitmap, 16, getSpanKindValue(spanKind), st)
 	}
 	return true, nil
@@ -691,25 +726,21 @@ func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEv
 		p.buf = msgp.AppendUint32(p.buf, uint32(3))                            // attributes fieldID
 		p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(event.Attributes))*3) // number of attributes
 		for k, v := range event.Attributes {
+			p.buf = st.serialize(k, p.buf)
 			switch v.Type {
 			case spanEventAttributeTypeString:
-				p.buf = st.serialize(k, p.buf)
 				p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
 				p.buf = st.serialize(v.StringValue, p.buf)
 			case spanEventAttributeTypeInt:
-				p.buf = st.serialize(k, p.buf)
 				p.buf = msgp.AppendUint32(p.buf, uint32(IntValueType))
 				p.buf = msgp.AppendInt64(p.buf, v.IntValue)
 			case spanEventAttributeTypeDouble:
-				p.buf = st.serialize(k, p.buf)
 				p.buf = msgp.AppendUint32(p.buf, uint32(FloatValueType))
 				p.buf = msgp.AppendFloat64(p.buf, v.DoubleValue)
 			case spanEventAttributeTypeBool:
-				p.buf = st.serialize(k, p.buf)
 				p.buf = msgp.AppendUint32(p.buf, uint32(BoolValueType))
 				p.buf = msgp.AppendBool(p.buf, v.BoolValue)
 			case spanEventAttributeTypeArray:
-				p.buf = st.serialize(k, p.buf)
 				p.buf = msgp.AppendUint32(p.buf, uint32(ArrayValueType))
 				// Array format is (type, value) per element; decoder expects len/2 anyValues.
 				p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(v.ArrayValue.Values))*2)
@@ -717,7 +748,9 @@ func (p *payloadV1) encodeSpanEvents(bm bitmap, fieldID int, spanEvents []spanEv
 					p.encodeSpanEventArrayValues(v, st)
 				}
 			default:
-				log.Warn("dropped unsupported span event attribute type %d", v.Type)
+				warnUnsupportedValue(uint32(v.Type))
+				p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+				p.buf = st.serialize(serializationFailed, p.buf)
 			}
 		}
 	}
@@ -739,7 +772,9 @@ func (p *payloadV1) encodeSpanEventArrayValues(v *spanEventArrayAttributeValue, 
 		p.buf = msgp.AppendUint32(p.buf, uint32(BoolValueType))
 		p.buf = msgp.AppendBool(p.buf, v.BoolValue)
 	default:
-		log.Warn("dropped unsupported span event array attribute type %d", v.Type)
+		warnUnsupportedValue(uint32(v.Type))
+		p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+		p.buf = st.serialize(serializationFailed, p.buf)
 	}
 	return true, nil
 }
@@ -904,24 +939,33 @@ const (
 )
 
 func (a anyValue) encode(buf []byte, st *stringTable) []byte {
-	buf = msgp.AppendInt32(buf, int32(a.valueType))
 	switch a.valueType {
 	case StringValueType:
+		buf = msgp.AppendInt32(buf, int32(a.valueType))
 		s := a.value.(string)
 		buf = st.serialize(s, buf)
 	case BoolValueType:
+		buf = msgp.AppendInt32(buf, int32(a.valueType))
 		buf = msgp.AppendBool(buf, a.value.(bool))
 	case FloatValueType:
+		buf = msgp.AppendInt32(buf, int32(a.valueType))
 		buf = msgp.AppendFloat64(buf, a.value.(float64))
 	case IntValueType:
+		buf = msgp.AppendInt32(buf, int32(a.valueType))
 		buf = msgp.AppendInt64(buf, a.value.(int64))
 	case BytesValueType:
+		buf = msgp.AppendInt32(buf, int32(a.valueType))
 		buf = msgp.AppendBytes(buf, a.value.([]byte))
 	case ArrayValueType:
+		buf = msgp.AppendInt32(buf, int32(a.valueType))
 		buf = msgp.AppendArrayHeader(buf, uint32(len(a.value.(arrayValue))))
 		for _, v := range a.value.(arrayValue) {
 			buf = v.encode(buf, st)
 		}
+	default:
+		warnUnsupportedValue(uint32(a.valueType))
+		buf = msgp.AppendInt32(buf, StringValueType)
+		buf = st.serialize(serializationFailed, buf)
 	}
 	return buf
 }
@@ -982,7 +1026,6 @@ func (i *index) decode(buf []byte) ([]byte, error) {
 type stringValue string
 
 func (s stringValue) encode(buf []byte) []byte {
-	// TODO(hannahkm): add the fixstr representation
 	return msgp.AppendString(buf, string(s))
 }
 
@@ -998,15 +1041,15 @@ func (s *stringValue) decode(buf []byte) ([]byte, error) {
 var errUnableDecodeString = errors.New("unable to read string value")
 
 type stringTable struct {
-	strings   []stringValue         // list of strings
-	indices   map[stringValue]index // map strings to their indices
-	nextIndex index                 // last index of the stringTable
+	strings   []stringValue    // list of strings
+	indices   map[string]index // map strings to their indices
+	nextIndex index            // last index of the stringTable
 }
 
 func newStringTable() *stringTable {
 	st := &stringTable{
 		strings:   make([]stringValue, 1, 64),
-		indices:   make(map[stringValue]index, 64),
+		indices:   make(map[string]index, 64),
 		nextIndex: 1,
 	}
 	st.strings[0] = ""
@@ -1024,12 +1067,15 @@ func (st *stringTable) reset() {
 
 // Adds a string to the string table if it does not already exist.
 func (st *stringTable) serialize(value string, buf []byte) []byte {
-	sv := stringValue(value)
-	if idx, ok := st.indices[sv]; ok {
+	if value == "" {
+		return msgp.AppendUint32(buf, 0)
+	}
+	if idx, ok := st.indices[value]; ok {
 		return idx.encode(buf)
 	}
+	sv := stringValue(value)
 	buf = sv.encode(buf)
-	st.indices[sv] = st.nextIndex
+	st.indices[value] = st.nextIndex
 	st.strings = append(st.strings, sv)
 	st.nextIndex++
 	return buf
@@ -1582,4 +1628,9 @@ func decodeAttributes(b []byte, strings *stringTable) (map[string]anyValue, []by
 		kv[key] = av
 	}
 	return kv, o, nil
+}
+
+//go:noinline
+func warnUnsupportedValue(t uint32) {
+	log.Warn("failed to serialize unsupported type: %d", t)
 }

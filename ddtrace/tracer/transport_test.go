@@ -294,7 +294,7 @@ func TestApiErrorsMetric(t *testing.T) {
 		assert.NoError(err)
 
 		// We're expecting an error
-		_, err = trc.config.transport.send(p)
+		_, err = trc.config.ddTransport.send(p)
 		assert.Error(err)
 		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
 		assert.Len(calls, 1)
@@ -316,7 +316,7 @@ func TestApiErrorsMetric(t *testing.T) {
 		p, err := encode(getTestTrace(1, 1))
 		assert.NoError(err)
 
-		_, err = trc.config.transport.send(p)
+		_, err = trc.config.ddTransport.send(p)
 		assert.Error(err)
 
 		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
@@ -336,7 +336,7 @@ func TestApiErrorsMetric(t *testing.T) {
 		defer trc.Stop()
 
 		// We're expecting an error
-		err = trc.config.transport.sendStats(&pb.ClientStatsPayload{}, 1)
+		err = trc.config.ddTransport.sendStats(&pb.ClientStatsPayload{}, 1)
 		assert.Error(err)
 		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
 		assert.Len(calls, 1)
@@ -354,7 +354,7 @@ func TestApiErrorsMetric(t *testing.T) {
 		setGlobalTracer(trc)
 		defer trc.Stop()
 
-		err = trc.config.transport.sendStats(&pb.ClientStatsPayload{}, 1)
+		err = trc.config.ddTransport.sendStats(&pb.ClientStatsPayload{}, 1)
 		assert.Error(err)
 
 		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
@@ -376,7 +376,7 @@ func TestApiErrorsMetric(t *testing.T) {
 		p, err := encode(getTestTrace(1, 1))
 		assert.NoError(err)
 
-		_, err = trc.config.transport.send(p)
+		_, err = trc.config.ddTransport.send(p)
 		assert.NoError(err)
 
 		calls := statsdtest.FilterCallsByName(tg.IncrCalls(), "datadog.tracer.api.errors")
@@ -410,7 +410,7 @@ func TestWithHTTPClient(t *testing.T) {
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
-	_, err = trc.config.transport.send(p)
+	_, err = trc.config.ddTransport.send(p)
 	assert.NoError(err)
 	assert.Len(rt.reqs, 2)
 	assert.Contains(rt.reqs[0].URL.Path, "/info")
@@ -448,7 +448,7 @@ func TestWithUDS(t *testing.T) {
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
-	body, err := trc.config.transport.send(p)
+	body, err := trc.config.ddTransport.send(p)
 	assert.NoError(err)
 	defer body.Close()
 	// There are 2 requests, but one happens on tracer startup before we wrap the round tripper.
@@ -481,7 +481,7 @@ func TestExternalEnvironment(t *testing.T) {
 
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
-	_, err = trc.config.transport.send(p)
+	_, err = trc.config.ddTransport.send(p)
 	assert.NoError(err)
 	assert.True(found)
 }
@@ -510,11 +510,11 @@ func TestDefaultHeaders(t *testing.T) {
 	// Test traces endpoint
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
-	_, err = trc.config.transport.send(p)
+	_, err = trc.config.ddTransport.send(p)
 	assert.NoError(err)
 
 	// Now stats endpoint
-	err = trc.config.transport.sendStats(&pb.ClientStatsPayload{}, 1)
+	err = trc.config.ddTransport.sendStats(&pb.ClientStatsPayload{}, 1)
 	assert.NoError(err)
 }
 
@@ -542,7 +542,7 @@ func TestClientComputedStatsHeader(t *testing.T) {
 
 		p, err := encode(getTestTrace(1, 1))
 		assert.NoError(err)
-		_, err = trc.config.transport.send(p)
+		_, err = trc.config.ddTransport.send(p)
 		assert.NoError(err)
 		assert.Empty(headerValue, "Datadog-Client-Computed-Stats header should not be set when client_drop_p0s is not supported")
 	})
@@ -570,7 +570,7 @@ func TestClientComputedStatsHeader(t *testing.T) {
 
 		p, err := encode(getTestTrace(1, 1))
 		assert.NoError(err)
-		_, err = trc.config.transport.send(p)
+		_, err = trc.config.ddTransport.send(p)
 		assert.NoError(err)
 		assert.Empty(headerValue, "Datadog-Client-Computed-Stats header should not be set when stats endpoint is not supported")
 	})
@@ -598,7 +598,7 @@ func TestClientComputedStatsHeader(t *testing.T) {
 
 		p, err := encode(getTestTrace(1, 1))
 		assert.NoError(err)
-		_, err = trc.config.transport.send(p)
+		_, err = trc.config.ddTransport.send(p)
 		assert.NoError(err)
 		assert.Equal("t", headerValue, "Datadog-Client-Computed-Stats header should be set to 't' when both conditions are met")
 	})

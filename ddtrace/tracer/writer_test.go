@@ -416,7 +416,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				assert:    assert,
 			}
 			c, err := newTestConfig(func(c *config) {
-				c.transport = p
+				c.ddTransport = p
 				c.sendRetries = test.configRetries
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 			})
@@ -818,7 +818,7 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			cfg, err := newTestConfig(
 				withStatsdClient(&tg),
 				func(c *config) {
-					c.transport = &simpleTransport{}
+					c.ddTransport = &simpleTransport{}
 				},
 			)
 			require.NoError(t, err)
@@ -862,7 +862,7 @@ func TestAgentWriterV1FlushPayloadRecycling(t *testing.T) {
 		withStatsdClient(&tg),
 		func(c *config) {
 			c.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
-			c.transport = &simpleTransport{}
+			c.ddTransport = &simpleTransport{}
 		},
 	)
 	require.NoError(t, err)

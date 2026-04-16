@@ -33,8 +33,8 @@ const (
 	EvpProxyPath       = "evp_proxy/v2"       // Path for EVP proxy.
 )
 
-// Ensure that civisibilityTransport implements the transport interface.
-var _ transport = (*ciVisibilityTransport)(nil)
+// Ensure that ciVisibilityTransport implements the ddTransport interface.
+var _ ddTransport = (*ciVisibilityTransport)(nil)
 
 // ciVisibilityTransport is a structure that handles sending CI Visibility payloads
 // to the Datadog endpoint, either in agentless mode or through the EVP proxy.

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/kafka"
@@ -25,7 +24,7 @@ func StartKafkaTestContainer(t testing.TB, topics []string) (*kafka.KafkaContain
 	exposedPort := "9093/tcp"
 
 	waitStrategies := []wait.Strategy{
-		wait.ForListeningPort(nat.Port(exposedPort)),
+		wait.ForListeningPort(exposedPort),
 	}
 	for _, topic := range topics {
 		waitStrategies = append(waitStrategies, wait.ForExec(createTopicCmd(topic)))
@@ -51,7 +50,7 @@ func StartKafkaTestContainer(t testing.TB, topics []string) (*kafka.KafkaContain
 	AssertTestContainersError(t, err)
 	RegisterContainerCleanup(t, container)
 
-	mappedPort, err := container.MappedPort(ctx, nat.Port(exposedPort))
+	mappedPort, err := container.MappedPort(ctx, exposedPort)
 	require.NoError(t, err)
 
 	host, err := container.Host(ctx)

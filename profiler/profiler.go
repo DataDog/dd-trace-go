@@ -155,10 +155,6 @@ func newProfiler(opts ...Option) (*profiler, error) {
 		cfg.traceConfig.Enabled = false
 	}
 
-	// TODO(fg) remove this after making expGoroutineWaitProfile public.
-	if env.Get("DD_PROFILING_WAIT_PROFILE") != "" {
-		cfg.addProfileType(expGoroutineWaitProfile)
-	}
 	// Unconditionally enable goroutine leak profiling if it's available.
 	if goroutineLeakProfileAvailable() {
 		cfg.addProfileType(goroutineLeakProfile)
@@ -459,7 +455,6 @@ func (p *profiler) enabledProfileTypes() []ProfileType {
 		BlockProfile,
 		MutexProfile,
 		GoroutineProfile,
-		expGoroutineWaitProfile,
 		MetricsProfile,
 		executionTrace,
 		goroutineLeakProfile,

@@ -14,6 +14,9 @@ jobs:
     if: github.event.schedule == '0 0 * * *'
     uses: ./.github/workflows/test-apps.yml
     secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
     with:
       "arg: scenario_duration": "10m"
       "arg: tags": "trigger:nightly"
@@ -22,6 +25,9 @@ jobs:
     if: github.event.schedule == '0 0 * * 2'
     uses: ./.github/workflows/test-apps.yml
     secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
     with:
       "arg: scenario_duration": "1h"
       "arg: tags": "trigger:weekly"
