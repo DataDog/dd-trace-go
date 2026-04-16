@@ -734,6 +734,14 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		wantBaggage     bool // baggage from root is propagated to server span
 	}{
 		{
+			name:            "continue",
+			behavior:        "continue",
+			wantSameTraceID: true,
+			wantParentID:    true,
+			wantSpanLinks:   false,
+			wantBaggage:     true,
+		},
+		{
 			name:            "restart",
 			behavior:        "restart",
 			wantSameTraceID: false,
@@ -778,9 +786,9 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			span := spans[0]
 
 			if tc.wantSameTraceID {
-				assert.Equal(t, root.Context().TraceID(), span.TraceID())
+				assert.Equal(t, root.Context().TraceIDLower(), span.TraceID())
 			} else {
-				assert.NotEqual(t, root.Context().TraceID(), span.TraceID())
+				assert.NotEqual(t, root.Context().TraceIDLower(), span.TraceID())
 			}
 
 			if tc.wantParentID {
