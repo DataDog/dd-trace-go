@@ -2580,34 +2580,6 @@ func BenchmarkExtractW3C(b *testing.B) {
 	}
 }
 
-func BenchmarkExtractRestart(b *testing.B) {
-	b.Setenv(headerPropagationBehaviorExtract, "restart")
-	propagator := NewPropagator(nil)
-	carrier := TextMapCarrier(map[string]string{
-		DefaultTraceIDHeader:  "1123123132131312313123123",
-		DefaultParentIDHeader: "1212321131231312312312312",
-		DefaultPriorityHeader: "-1",
-	})
-	b.ResetTimer()
-	for b.Loop() {
-		propagator.Extract(carrier)
-	}
-}
-
-func BenchmarkExtractIgnore(b *testing.B) {
-	b.Setenv(headerPropagationBehaviorExtract, "ignore")
-	propagator := NewPropagator(nil)
-	carrier := TextMapCarrier(map[string]string{
-		DefaultTraceIDHeader:  "1123123132131312313123123",
-		DefaultParentIDHeader: "1212321131231312312312312",
-		DefaultPriorityHeader: "-1",
-	})
-	b.ResetTimer()
-	for b.Loop() {
-		propagator.Extract(carrier)
-	}
-}
-
 func FuzzMarshalPropagatingTags(f *testing.F) {
 	f.Add("testA", "testB", "testC", "testD", "testG", "testF")
 	f.Fuzz(func(t *testing.T, key1 string, val1 string,
