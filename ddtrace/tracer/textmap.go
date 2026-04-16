@@ -327,7 +327,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			},
 		}
 		if trace := incomingCtx.trace; trace != nil {
-			if p := trace.priority.Load(); p != nil && uint32(*p) > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
+			if prio := trace.priority.Load(); prio != nil && uint32(*prio) > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 				link.Flags = 1
 			} else {
 				link.Flags = 0

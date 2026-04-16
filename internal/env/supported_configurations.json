@@ -1410,7 +1410,7 @@
     "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT": [
       {
         "implementation": "A",
-        "type": "String",
+        "type": "string",
         "default": "continue"
       }
     ],
