@@ -2112,10 +2112,12 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 	})
 
 	t.Run("restart/different-trace-ids", func(t *testing.T) {
-		// restart mode with unique trace IDs: the outcome is the same as same-trace-id.
-		// A new trace is started, and the span link points to the Datadog context (the
-		// first propagator). The W3C conflicting context is not included in the span link
-		// because restart discards the incoming context entirely and replaces it.
+		// restart mode with unique trace IDs: a new trace is started, span link points to
+		// the Datadog context (first propagator). The W3C conflicting context is not
+		// included because restart applies before conflicting-trace span links are generated.
+		//
+		// Tracestate is empty: the W3C traceparent has a different trace ID, so
+		// propagateTracestate is never called and no p: sub-key is added to propagating tags.
 		t.Setenv(headerPropagationBehaviorExtract, "restart")
 		tr, err := newTracer(WithHTTPClient(c))
 		require.NoError(t, err)
@@ -2131,7 +2133,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, SpanLink{
 			TraceID:    1,
 			SpanID:     1,
-			Tracestate: "dd=s:1;p:0000000000000001",
+			Tracestate: "",
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
 		}, sctx.spanLinks[0])
@@ -2139,10 +2141,11 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 	})
 
 	t.Run("restart/extract-first/same-trace-id", func(t *testing.T) {
-		// restart + extract_first with same trace ID: extraction stops after Datadog.
-		// One span link to the Datadog context. Baggage propagated.
+		// restart + extract_first with same trace ID: extraction stops after Datadog,
+		// so the W3C propagator never runs. One span link to the Datadog context. Baggage propagated.
 		//
-		// Tracestate is enriched by the Datadog propagator with the p: sub-key.
+		// Tracestate is empty: the W3C propagator (which would add the p: sub-key via
+		// propagateTracestate) never runs because onlyExtractFirst stops the loop early.
 		// Flags=1 because sampling priority > 0.
 		t.Setenv(headerPropagationBehaviorExtract, "restart")
 		t.Setenv(headerPropagationExtractFirst, "true")
@@ -2160,7 +2163,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, SpanLink{
 			TraceID:    1,
 			SpanID:     1,
-			Tracestate: "dd=s:1;p:0000000000000001",
+			Tracestate: "",
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
 		}, sctx.spanLinks[0])

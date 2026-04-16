@@ -775,8 +775,6 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			fmt.Println("spans")
 			fmt.Println(spans)
 
-
-
 			// // verify traces look good
 			// assert.True(called)
 			// assert.True(traced)
@@ -798,7 +796,6 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			// assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
 
 			// assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
-
 
 			// TODO(human): Implement assertions for each propagation behavior.
 			//
