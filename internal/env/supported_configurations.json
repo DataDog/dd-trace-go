@@ -938,6 +938,20 @@
         "default": null
       }
     ],
+    "DD_TEST_OPTIMIZATION_MANIFEST_FILE": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": null
+      }
+    ],
+    "DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES": [
+      {
+        "implementation": "C",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TEST_SESSION_NAME": [
       {
         "implementation": "A",

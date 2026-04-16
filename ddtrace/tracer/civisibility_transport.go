@@ -18,6 +18,7 @@ import (
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -134,6 +135,20 @@ func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) 
 	if bufferErr != nil {
 		return nil, fmt.Errorf("cannot create buffer payload: %v", bufferErr)
 	}
+
+	if bazel.IsPayloadFilesModeEnabled() {
+		log.Debug("civisibility: test event payload transport mode is file; converting msgpack payload to JSON before writing to disk")
+		jsonPayload, err := bazel.MsgpackToJSON(buffer.Bytes())
+		if err != nil {
+			return nil, fmt.Errorf("cannot convert payload to json: %w", err)
+		}
+		if err := bazel.WritePayloadFile(bazel.PayloadKindTests, jsonPayload); err != nil {
+			return nil, fmt.Errorf("cannot write test payload file: %w", err)
+		}
+		return http.NoBody, nil
+	}
+
+	log.Debug("civisibility: test event payload transport mode is http; sending payload to %s", urlsanitizer.SanitizeURL(t.testCycleURLPath))
 
 	if t.agentless {
 		// Compress payload

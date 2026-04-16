@@ -11,9 +11,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // TestTestManagementTestsApiRequest tests the successful scenario for GetTestManagementTests.
@@ -86,7 +92,7 @@ func TestTestManagementTestsApiRequest(t *testing.T) {
 
 	// Let's call the function we want to test.
 	responseData, err := cInterface.GetTestManagementTests()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Let's compare the part of the response we are interested in.
 	assert.Equal(t, expectedResponse.Data.Attributes, *responseData)
@@ -137,4 +143,161 @@ func TestTestManagementTestsApiRequestFailToGet(t *testing.T) {
 
 	// We expect the error to contain the string defined in the message.
 	assert.Contains(t, err.Error(), "sending known tests request")
+}
+
+func TestTestManagementTestsApiRequestFromManifestCache(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	expectedResponse := testManagementTestsResponse{}
+	expectedResponse.Data.Attributes.Modules = map[string]TestManagementTestsResponseDataSuites{
+		"moduleA": {
+			Suites: map[string]TestManagementTestsResponseDataTests{
+				"suiteA": {
+					Tests: map[string]TestManagementTestsResponseDataTestProperties{
+						"testA": {
+							Properties: TestManagementTestsResponseDataTestPropertiesAttributes{
+								Quarantined:  true,
+								Disabled:     false,
+								AttemptToFix: true,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	rawResponse, err := json.Marshal(expectedResponse)
+	if err != nil {
+		t.Fatalf("marshal cache response: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "cache", "http", "test_management.json"), rawResponse, 0o644); err != nil {
+		t.Fatalf("write test management cache: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	cInterface := NewClient()
+	responseData, err := cInterface.GetTestManagementTests()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedResponse.Data.Attributes, *responseData)
+	assert.Equal(t, 0, hits)
+	assert.True(t, containsTestManagementLogLine(recordLogger.Logs(), "reading .testoptimization/cache/http/test_management.json"))
+	assert.True(t, containsTestManagementLogLine(recordLogger.Logs(), "loaded test management tests from .testoptimization/cache/http/test_management.json [modules:1 suites:1 tests:1]"))
+}
+
+func TestTestManagementTestsApiRequestFromManifestCacheMissingFile(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	cInterface := NewClient()
+	responseData, err := cInterface.GetTestManagementTests()
+	assert.NoError(t, err)
+	assert.Equal(t, TestManagementTestsResponseDataModules{
+		Modules: map[string]TestManagementTestsResponseDataSuites{},
+	}, *responseData)
+	assert.Equal(t, 0, hits)
+}
+
+func TestTestManagementTestsApiRequestFromManifestCacheMalformedFile(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "cache", "http", "test_management.json"), []byte("{invalid"), 0o644); err != nil {
+		t.Fatalf("write malformed test management cache: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	cInterface := NewClient()
+	responseData, err := cInterface.GetTestManagementTests()
+	assert.NoError(t, err)
+	assert.Equal(t, TestManagementTestsResponseDataModules{
+		Modules: map[string]TestManagementTestsResponseDataSuites{},
+	}, *responseData)
+	assert.Equal(t, 0, hits)
+	assert.True(t, containsTestManagementLogLine(recordLogger.Logs(), "invalid test management file"))
+	assert.True(t, containsTestManagementLogLine(recordLogger.Logs(), "returning empty test management response because manifest cache is unavailable or invalid"))
+}
+
+func containsTestManagementLogLine(lines []string, want string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, want) {
+			return true
+		}
+	}
+	return false
 }

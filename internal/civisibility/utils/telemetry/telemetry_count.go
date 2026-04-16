@@ -75,6 +75,8 @@ func getProviderTestSessionTypeFromProviderString(provider string) TestSessionTy
 		return BuddyCiTestSessionType
 	case "awscodepipeline":
 		return AwsCodePipelineSessionType
+	case "bazel":
+		return BazelTestSessionType
 	default:
 		return UnsupportedTestSessionType
 	}
