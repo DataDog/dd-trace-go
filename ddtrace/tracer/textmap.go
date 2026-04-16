@@ -303,6 +303,10 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 // Furthermore, if we have already successfully extracted a trace context and a
 // subsequent trace context has conflicting trace information, such information will
 // be relayed in the returned SpanContext with a SpanLink.
+//
+// When DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=ignore, this method returns nil, nil.
+// Callers should treat a nil context with no error as equivalent to no incoming
+// trace context being present.
 func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	if p.propagationBehaviorExtract == propagationBehaviorExtractIgnore {
 		return nil, nil
