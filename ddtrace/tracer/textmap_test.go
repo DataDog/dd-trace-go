@@ -2013,7 +2013,6 @@ func TestSpanLinks(t *testing.T) {
 	})
 }
 
-// RFC test matrix: https://datadoghq.atlassian.net/wiki/x/RFC-trace-context-propagation-extraction-modes
 func TestPropagationBehaviorExtract(t *testing.T) {
 	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(404)

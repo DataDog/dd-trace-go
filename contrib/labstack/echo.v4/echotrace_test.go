@@ -720,29 +720,40 @@ func TestWithErrorCheck(t *testing.T) {
 	}
 }
 
+// TestPropagationBehaviorExtract is an integration test verifying DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT
+// through a real HTTP middleware stack. It checks that the server span's trace ID, parent ID, span
+// links, and baggage match the expected behavior for each mode. Echotrace was used because it was
+// already available; any HTTP middleware integration would work equivalently.
 func TestPropagationBehaviorExtract(t *testing.T) {
 	tests := []struct {
-		name                       string
-		propagationBehaviorExtract string
-		// TODO(human): Add expected behavior fields here
+		name                string
+		behavior            string
+		wantSameTraceID     bool // server span continues the root trace
+		wantParentID        bool // server span has root as parent
+		wantSpanLinks       bool // server span has a span link to the root context
+		wantBaggage         bool // baggage from root is propagated to server span
 	}{
-		// {
-		// 	name:                       "continue-default",
-		// 	propagationBehaviorExtract: "continue",
-		// },
 		{
-			name:                       "restart",
-			propagationBehaviorExtract: "restart",
+			name:            "restart",
+			behavior:        "restart",
+			wantSameTraceID: false,
+			wantParentID:    false,
+			wantSpanLinks:   true,
+			wantBaggage:     true,
 		},
 		{
-			name:                       "ignore",
-			propagationBehaviorExtract: "ignore",
+			name:            "ignore",
+			behavior:        "ignore",
+			wantSameTraceID: false,
+			wantParentID:    false,
+			wantSpanLinks:   false,
+			wantBaggage:     false,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", tc.propagationBehaviorExtract)
+			t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", tc.behavior)
 
 			mt := mocktracer.Start()
 			defer mt.Stop()
@@ -753,7 +764,6 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 				return c.NoContent(200)
 			})
 
-			// Create a "root" span simulating incoming trace context
 			root := tracer.StartSpan("incoming-request")
 			root.SetBaggageItem("test-baggage", "baggage-value")
 
@@ -761,66 +771,43 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			err := tracer.Inject(root.Context(), tracer.HTTPHeadersCarrier(r.Header))
 			require.NoError(t, err)
 
-			fmt.Println("r")
-			fmt.Println(r.Header)
-
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, r)
+			router.ServeHTTP(httptest.NewRecorder(), r)
 
 			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			span := spans[0]
 
-			fmt.Println("root")
-			fmt.Println(root)
+			if tc.wantSameTraceID {
+				assert.Equal(t, root.Context().TraceID(), span.TraceID())
+			} else {
+				assert.NotEqual(t, root.Context().TraceID(), span.TraceID())
+			}
 
-			fmt.Println("spans")
-			fmt.Println(spans)
+			if tc.wantParentID {
+				assert.Equal(t, root.Context().SpanID(), span.ParentID())
+			} else {
+				assert.Equal(t, uint64(0), span.ParentID())
+			}
 
-			// // verify traces look good
-			// assert.True(called)
-			// assert.True(traced)
+			links := span.Links()
+			if tc.wantSpanLinks {
+				require.Len(t, links, 1)
+				assert.Equal(t, root.Context().SpanID(), links[0].SpanID)
+				assert.Equal(t, map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"}, links[0].Attributes)
+			} else {
+				assert.Empty(t, links)
+			}
 
-			// spans := mt.FinishedSpans()
-			// assert.Len(spans, 1)
-
-			// span := spans[0]
-			// assert.Equal("http.request", span.OperationName())
-			// assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
-			// assert.Equal("foobar", span.Tag(ext.ServiceName))
-			// assert.Equal("echony", span.Tag("test.echo"))
-			// assert.Contains(span.Tag(ext.ResourceName), "/user/:id")
-			// assert.Equal("200", span.Tag(ext.HTTPCode))
-			// assert.Equal("GET", span.Tag(ext.HTTPMethod))
-			// assert.Equal(root.Context().SpanID(), span.ParentID())
-			// assert.Equal("labstack/echo.v4", span.Tag(ext.Component))
-			// assert.Equal(string(instrumentation.PackageLabstackEchoV4), span.Integration())
-			// assert.Equal(ext.SpanKindServer, span.Tag(ext.SpanKind))
-
-			// assert.Equal("http://example.com/user/123", span.Tag(ext.HTTPURL))
-
-			// TODO(human): Implement assertions for each propagation behavior.
-			//
-			// For "continue":
-			//   - The server span should have the same trace ID as root
-			//   - root.Context().SpanID() should equal span.ParentID()
-			//   - No span links expected (unless conflicting trace contexts)
-			//
-			// For "restart":
-			//   - The server span should have a NEW trace ID (different from root)
-			//   - span.ParentID() should be 0 (no parent)
-			//   - SpanLinks should contain one link to the incoming context
-			//   - Baggage should still be propagated
-			//
-			// For "ignore":
-			//   - The server span should have a NEW trace ID
-			//   - No span links
-			//   - Baggage should NOT be propagated
-			//
-			// Hints:
-			//   - Use span.TraceID() and root.Context().TraceID() to compare trace IDs
-			//   - Use mocktracer.MockSpan(span).SpanLinks() to check span links
-			//   - Check baggage via the request context inside the handler
-			_ = spans
-			_ = root
+			var baggageItems []string
+			span.Context().ForeachBaggageItem(func(k, v string) bool {
+				baggageItems = append(baggageItems, k+"="+v)
+				return true
+			})
+			if tc.wantBaggage {
+				assert.Contains(t, baggageItems, "test-baggage=baggage-value")
+			} else {
+				assert.Empty(t, baggageItems)
+			}
 		})
 	}
 }
