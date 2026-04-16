@@ -70,8 +70,10 @@ dd-trace-go
 Use the following AGENTS.md files when making specific changes:
 
 * [contrib/AGENTS.md](./contrib/AGENTS.md) -- for updating contribs/integrations
-* [ddtrace/AGENTS.md](./ddtrace/AGENTS.md) -- for updating core Datadog tracer implementations and features
-* [internal/AGENTS.md](/internal/AGENTS.md) -- for updating features and implementations that are not customer facing
+* [ddtrace/tracer/AGENTS.md](./ddtrace/tracer/AGENTS.md) -- for updating core Datadog tracer implementations and features
+* [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
+* [orchestrion/AGENTS.md](./orchestrion/AGENTS.md) -- for updating or creating new Orchestrion (auto-instrumentation) files
+* [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates
 
 ## General tips
 
@@ -92,6 +94,15 @@ Function and package comments are used to generate godocs. Refer to [this page](
 ### Handling concurrency
 
 To prevent deadlocks or data races, be cautious with mutexes and synchronous code. Suggest and use, with approval, the command [checklocks](./.claude/commands/checklocks.md) to analyze and propose improvements.
+
+### Internal functionality
+
+This repo comes with replacements for common Go packages. For example:
+
+1. Logging: Instead of using `fmt`, use [internal/log](./internal/log).
+2. Locking: Instead of using `sync.mutex`, use [internal/locking](./internal/locking).
+3. OS: Instead of using `os.Getenv`, use [internal/env](./internal/env). This is also available at [instrumentation/env](./instrumentation/env/) for those packages that cannot import internal modules.
+4. Errors: Often times, you should use [instrumentation/errortrace](./instrumentation/errortrace/) to define new errors.
 
 ### Updating AGENTS.md
 
