@@ -300,9 +300,6 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 // subsequent trace context has conflicting trace information, such information will
 // be relayed in the returned SpanContext with a SpanLink.
 func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
-	// TODO: Return nil or an empty span context?
-	// "ignore" propagation behavior returns a new span context with no span
-	// links and no baggage.
 	if p.propagationBehaviorExtract == "ignore" {
 		return nil, nil
 	}
@@ -310,33 +307,6 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	incomingCtx, err := p.extractIncomingSpanContext(carrier)
 	if err != nil {
 		return nil, err
-	}
-
-	// When onlyExtractFirst is set, extractIncomingSpanContext returns after the
-	// first successful non-baggage extractor, so the baggage propagator never
-	// runs inside the loop. Run it explicitly here so baggage is always available
-	// to callers regardless of the extract-first setting.
-	if p.onlyExtractFirst {
-		for _, v := range p.extractors {
-			if _, isBaggage := v.(*propagatorBaggage); !isBaggage {
-				continue
-			}
-			if baggageCtx, err := v.Extract(carrier); err == nil && baggageCtx != nil {
-				if incomingCtx == nil {
-					incomingCtx = baggageCtx
-				} else {
-					baggageCtx.ForeachBaggageItem(func(k, val string) bool { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-						if incomingCtx.baggage == nil { // +checklocksignore
-							incomingCtx.baggage = make(map[string]string) // +checklocksignore
-						}
-						incomingCtx.baggage[k] = val // +checklocksignore
-						atomic.StoreUint32(&incomingCtx.hasBaggage, 1)
-						return true
-					})
-				}
-			}
-			break // there is only one baggage propagator
-		}
 	}
 
 	// "restart" propagation behavior starts a new trace with a new trace ID
@@ -366,9 +336,15 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		}
 		ctx.spanLinks = []SpanLink{link}
 
-		if incomingCtx.baggage != nil { // +checklocksignore
-			ctx.baggage = make(map[string]string, len(incomingCtx.baggage)) // +checklocksignore
-			maps.Copy(ctx.baggage, incomingCtx.baggage)                     // +checklocksignore
+		// When onlyExtractFirst is set, extractIncomingSpanContext returns after the
+		// first successful non-baggage extractor, so incomingCtx carries no baggage.
+		// Extract baggage explicitly so it is propagated regardless.
+		baggage := incomingCtx.baggage // +checklocksignore
+		if p.onlyExtractFirst {
+			baggage = p.extractBaggage(carrier)
+		}
+		if len(baggage) > 0 {
+			ctx.baggage = maps.Clone(baggage)                 // +checklocksignore
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 		}
 
@@ -378,6 +354,22 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	// "continue" continues the trace from the incoming context. Baggage is
 	// propagated.
 	return incomingCtx, nil
+}
+
+// extractBaggage runs only the baggage propagator against the carrier and
+// returns the extracted items. Used when onlyExtractFirst has prevented the
+// baggage propagator from running inside extractIncomingSpanContext.
+func (p *chainedPropagator) extractBaggage(carrier any) map[string]string {
+	for _, v := range p.extractors {
+		if _, isBaggage := v.(*propagatorBaggage); !isBaggage {
+			continue
+		}
+		if baggageCtx, err := v.Extract(carrier); err == nil && baggageCtx != nil {
+			return baggageCtx.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		}
+		break // there is only one baggage propagator
+	}
+	return nil
 }
 
 func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContext, error) {

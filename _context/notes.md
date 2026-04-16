@@ -152,26 +152,31 @@ See <https://github.com/DataDog/dd-trace-go/blob/3b072e0d2d4956ae1664a7bb191e398
   Baggage is propagated — see fix below.
 - `ignore`: returns `nil, nil` — asserted as `sctx == nil, err == nil`
 
-### Bug fix: baggage lost with extract-first
+### Bug fix: baggage lost with restart+extract-first
 
 `extractIncomingSpanContext` returns immediately when `onlyExtractFirst=true` (after the
 first non-baggage propagator succeeds), so the baggage propagator never runs inside the
 loop. This caused baggage to be nil in `restart+extract_first` mode — violating the RFC.
 
-**Fix** (`ddtrace/tracer/textmap.go`, `Extract()`): after `extractIncomingSpanContext`
-returns and `onlyExtractFirst` is set, iterate `p.extractors` looking for the baggage
-propagator and run it explicitly, merging results into `incomingCtx`. This is isolated to
-`Extract()` so `extractIncomingSpanContext` is unchanged. All existing extract-first tests
-still pass.
+Note: `continue+extract_first` dropping baggage is intentional — you asked for the first
+propagator only, baggage wasn't it, done. No RFC governs that case.
+
+**Fix** (`ddtrace/tracer/textmap.go`): added `extractBaggage(carrier)` helper that runs
+only the baggage propagator and returns a `map[string]string`, mirroring the
+`pendingBaggage` pattern in `extractIncomingSpanContext`. Inside the `restart` branch,
+`incomingCtx.baggage` is used directly in the normal path; `extractBaggage()` is called
+only when `onlyExtractFirst=true`. No duplication between the two paths.
+
+The `onlyExtractFirst` baggage block was initially placed at the top of `Extract()` (before
+the `restart` branch), which fixed both `continue` and `restart`. Moved inside `restart`
+only after review — `continue+extract_first` dropping baggage is not a bug.
 
 > **Q: Doesn't this duplicate the work of the OTel extractor?**
 >
 > No. There is no separate OTel baggage extractor in this path. `getDDorOtelConfig("propagationStyle")`
 > (`otel_dd_mappings.go`) only determines *which* propagator types to instantiate (datadog,
-> tracecontext, etc.) — it does not add an extra extraction pass. The fix runs
+> tracecontext, etc.) — it does not add an extra extraction pass. `extractBaggage()` runs
 > `propagatorBaggage.Extract()` exactly once, on the same `p.extractors` slice, same carrier.
-> The baggage propagator was already in `p.extractors`; we are just calling it at the right
-> moment instead of relying on the loop that `onlyExtractFirst` short-circuits.
 
 ### extractFirst + restart interaction
 
