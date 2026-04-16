@@ -2264,6 +2264,31 @@ func TestKnuthSamplingRateWithFloatRules(t *testing.T) {
 	}
 }
 
+func TestFormatKnuthSamplingRate(t *testing.T) {
+	// Go's strconv.AppendFloat (used by formatKnuthSamplingRate) is
+	// locale-independent by design — it always uses '.' as the decimal
+	// separator. This test documents that contract and verifies the
+	// trailing-zero trimming behavior.
+	tests := []struct {
+		rate float64
+		want string
+	}{
+		{0.3, "0.3"},
+		{1.0, "1"},
+		{0.0, "0"},
+		{0.5, "0.5"},
+		{0.000001, "0.000001"},
+		{0.0000001, "0"},
+		{0.00000051, "0.000001"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%v", tt.rate), func(t *testing.T) {
+			got := formatKnuthSamplingRate(tt.rate)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func BenchmarkFormatKnuthSamplingRate(b *testing.B) {
 	rates := []float64{1.0, 0.5, 0.000001, 0.0000001, 0.00000051, 0.7654321}
 	b.ResetTimer()
