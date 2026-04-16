@@ -2013,9 +2013,6 @@ func TestSpanLinks(t *testing.T) {
 	})
 }
 
-// TestPropagationBehaviorExtract covers the four RFC-specified configurations for
-// DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT. The default propagators are datadog,tracecontext,baggage.
-//
 // RFC test matrix: https://datadoghq.atlassian.net/wiki/x/RFC-trace-context-propagation-extraction-modes
 func TestPropagationBehaviorExtract(t *testing.T) {
 	s, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
