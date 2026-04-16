@@ -80,6 +80,10 @@ const (
 	//   decision. No span links are created. Baggage is dropped.
 	headerPropagationBehaviorExtract = "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT"
 
+	propagationBehaviorExtractContinue = "continue"
+	propagationBehaviorExtractRestart  = "restart"
+	propagationBehaviorExtractIgnore   = "ignore"
+
 	headerPropagationExtractFirst = "DD_TRACE_PROPAGATION_EXTRACT_FIRST"
 	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
 	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
@@ -181,13 +185,13 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	cp.onlyExtractFirst = internal.BoolEnv(headerPropagationExtractFirst, false)
 	cp.propagationBehaviorExtract = env.Get(headerPropagationBehaviorExtract)
 	switch cp.propagationBehaviorExtract {
-	case "continue", "restart", "ignore":
+	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
 		// valid
 	default:
 		if cp.propagationBehaviorExtract != "" {
 			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cp.propagationBehaviorExtract)
 		}
-		cp.propagationBehaviorExtract = "continue"
+		cp.propagationBehaviorExtract = propagationBehaviorExtractContinue
 	}
 	if len(propagators) > 0 {
 		cp.injectors = propagators
@@ -300,7 +304,7 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 // subsequent trace context has conflicting trace information, such information will
 // be relayed in the returned SpanContext with a SpanLink.
 func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
-	if p.propagationBehaviorExtract == "ignore" {
+	if p.propagationBehaviorExtract == propagationBehaviorExtractIgnore {
 		return nil, nil
 	}
 
@@ -312,7 +316,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	// "restart" propagation behavior starts a new trace with a new trace ID
 	// and sampling decision. The incoming context is referenced via a span
 	// link. Baggage is propagated.
-	if p.propagationBehaviorExtract == "restart" {
+	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart {
 		ctx := &SpanContext{
 			baggageOnly: true, // signals spanStart to generate new traceID/spanID
 		}
