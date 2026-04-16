@@ -2055,7 +2055,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
-	t.Run("continue/different-trace-ids", func(t *testing.T) {
+	t.Run("continue/unique-trace-ids", func(t *testing.T) {
 		// Default behavior: trace is continued from the incoming Datadog context (first propagator).
 		// W3C context has a different trace ID, so a terminated_context span link is created for it.
 		tr, err := newTracer(WithHTTPClient(c))
@@ -2078,7 +2078,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
-	t.Run("restart", func(t *testing.T) {
+	t.Run("restart/same-trace-id", func(t *testing.T) {
 		// restart mode: a new local trace context is created regardless of the incoming
 		// trace ID. The incoming context is referenced via a span link with
 		// reason=propagation_behavior_extract. Baggage is propagated.
@@ -2107,7 +2107,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
-	t.Run("restart/different-trace-ids", func(t *testing.T) {
+	t.Run("restart/unique-trace-ids", func(t *testing.T) {
 		// restart mode with unique trace IDs: a new trace is started, span link points to
 		// the Datadog context (first propagator). The W3C conflicting context is not
 		// included because restart applies before conflicting-trace span links are generated.
@@ -2166,7 +2166,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
-	t.Run("restart/extract-first/different-trace-ids", func(t *testing.T) {
+	t.Run("restart/extract-first/unique-trace-ids", func(t *testing.T) {
 		// restart + extract_first with unique trace IDs: extraction stops after Datadog,
 		// so the W3C conflicting context is never seen. One span link to the Datadog context.
 		// Baggage is still propagated via the explicit baggage pass in Extract().
@@ -2210,7 +2210,7 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Nil(t, sctx)
 	})
 
-	t.Run("ignore/different-trace-ids", func(t *testing.T) {
+	t.Run("ignore/unique-trace-ids", func(t *testing.T) {
 		// ignore mode with unique trace IDs: same result as same-trace-id.
 		// All incoming context is discarded regardless of what headers are present.
 		t.Setenv(headerPropagationBehaviorExtract, "ignore")
