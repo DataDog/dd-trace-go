@@ -177,7 +177,7 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		Start:        s.start,
 		Duration:     s.duration,
 		Error:        s.error,
-		Meta:         s.meta.Map(),
+		Meta:         s.meta.Map(false), // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
 		Metrics:      s.metrics,
 		PeerTags:     c.cfg.agent.load().peerTags,
 		HTTPMethod:   httpMethod,

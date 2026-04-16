@@ -212,7 +212,7 @@ func (e *ciVisibilityEvent) Finish(opts ...FinishOption) {
 	// Rebuild Content.Meta once with the final span state, under the span
 	// lock to avoid racing with the serialization worker.
 	e.span.mu.Lock()
-	e.Content.Meta = e.span.meta.Map()
+	e.Content.Meta = e.span.meta.Map(true)
 	e.Content.Metrics = e.span.metrics
 	e.span.mu.Unlock()
 }
@@ -416,7 +416,7 @@ func createTslvSpan(span *Span) tslvSpan {
 		Duration: span.duration,
 		ParentID: span.parentID,
 		Error:    span.error,
-		Meta:     span.meta.Map(),
+		Meta:     span.meta.Map(true),
 		Metrics:  span.metrics,
 	}
 }

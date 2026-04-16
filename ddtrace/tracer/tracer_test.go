@@ -2474,7 +2474,7 @@ func cpspan(s *Span) *Span {
 		spanType: s.spanType,
 		start:    s.start,
 		duration: s.duration,
-		meta:     traceinternal.NewSpanMetaFromMap(s.meta.Map()), // flatten to plain map for comparison
+		meta:     traceinternal.NewSpanMetaFromMap(s.meta.Map(true)), // flatten to plain map for comparison
 		metrics:  s.metrics,
 		spanID:   s.spanID,
 		traceID:  s.traceID,

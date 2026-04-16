@@ -237,10 +237,21 @@ func (sm *SpanMeta) AttrCount() int {
 	return sm.promotedAttrs.Count()
 }
 
-// Map returns a map containing all entries (flat map + promoted attrs).
-// When promoted attrs exist, a new merged map is allocated. Called only on
-// cold paths (stats, CI visibility, tests).
-func (sm *SpanMeta) Map() map[string]string {
+// Map returns a map containing meta entries.
+//
+// When full is true, promoted attrs (env, version, language) are merged into a
+// new map (one allocation). Use this when the caller needs the complete view,
+// e.g. CI visibility or test helpers.
+//
+// When full is false, the underlying flat map is returned directly
+// (zero allocation). Promoted keys are excluded. Use this when the caller is
+// known to not need promoted keys, e.g. the stats path reads span.kind,
+// _dd.svc_src, HTTP/gRPC status codes, and peer tags — none of which are
+// promoted attributes.
+func (sm *SpanMeta) Map(full bool) map[string]string {
+	if !full {
+		return sm.m
+	}
 	n := sm.promotedAttrs.Count()
 	if n == 0 {
 		return sm.m

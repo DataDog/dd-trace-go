@@ -270,7 +270,7 @@ func BenchmarkMap(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		_ = sm.Map()
+		_ = sm.Map(true)
 	}
 }
 
