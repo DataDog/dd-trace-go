@@ -683,8 +683,6 @@ func getDatadogPropagator(cp *chainedPropagator) *propagator {
 	return nil
 }
 
-// TODO: Verify if we should rename this function - e.g., "reconcile context span ID and reparent ID". maybe split this into two functions. one for reconciling the span ID and another for the reparent ID.
-
 // overrideDatadogParentID overrides a context's:
 // 1. span ID with the span ID extracted from W3C tracecontext headers; and
 // 2. reparent ID with either:
