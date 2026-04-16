@@ -229,12 +229,15 @@ func (t *tslvTest) SetError(options ...ErrorOption) {
 // SetTestFunc sets the function to be tested and records its source location.
 func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	if fn == nil {
+		log.Debug("civisibility: SetTestFunc called with nil runtime function")
 		return
 	}
 
 	// let's get the file path and the start line of the function
 	absolutePath, startLine := fn.FileLine(fn.Entry())
 	file := utils.GetRelativePathFromCITagsSourceRoot(absolutePath)
+	log.Debug("civisibility: resolving test source location [function:%s file:%s start_line:%d relative_file:%s entry:%#x]",
+		fn.Name(), absolutePath, startLine, file, fn.Entry())
 	t.SetTag(constants.TestSourceFile, file)
 	t.SetTag(constants.TestSourceStartLine, startLine)
 	t.suite.SetTag(constants.TestSourceFile, file)
@@ -244,6 +247,10 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	// if we can't parse the file (source code is not available) we silently bail out
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, absolutePath, nil, parser.AllErrors|parser.ParseComments)
+	if err != nil {
+		log.Debug("civisibility: failed parsing test source file [function:%s file:%s start_line:%d error:%v]",
+			fn.Name(), absolutePath, startLine, err)
+	}
 	if err == nil {
 
 		// let's check if the suite was marked as unskippable before
@@ -268,6 +275,8 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		fullName := fn.Name()
 		firstDot := strings.LastIndex(fullName, ".") + 1
 		name := fullName[firstDot:]
+		log.Debug("civisibility: scanning AST for test source range [function:%s short_name:%s file:%s runtime_start_line:%d]",
+			fullName, name, absolutePath, startLine)
 
 		// variable to store the ending line of the function
 		var endLine int
@@ -278,8 +287,12 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 			if funcDecl, ok := n.(*ast.FuncDecl); ok {
 				// if the function name matches the target function name
 				if funcDecl.Name.Name == name {
+					declStartLine := fset.Position(funcDecl.Pos()).Line
+					bodyStartLine := fset.Position(funcDecl.Body.Pos()).Line
 					// get the line number of the end of the function body
 					endLine = fset.Position(funcDecl.Body.End()).Line
+					log.Debug("civisibility: matched AST function declaration [function:%s decl_name:%s decl_start_line:%d body_start_line:%d body_end_line:%d runtime_start_line:%d]",
+						fullName, funcDecl.Name.Name, declStartLine, bodyStartLine, endLine, startLine)
 					// check for comments above the function declaration to look for unskippable tag
 					// but only if we haven't found a suite level unskippable comment
 					if !isUnskippable && funcDecl.Doc != nil {
@@ -299,12 +312,18 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 			if funcLit, ok := n.(*ast.FuncLit); ok {
 				// get the line number of the start of the function literal
 				funcStartLine := fset.Position(funcLit.Body.Pos()).Line
+				funcEndLine := fset.Position(funcLit.Body.End()).Line
+				delta := funcStartLine - startLine
+				log.Debug("civisibility: inspecting AST function literal candidate [function:%s literal_start_line:%d literal_end_line:%d runtime_start_line:%d delta:%d]",
+					fullName, funcStartLine, funcEndLine, startLine, delta)
 				// if the start line matches the known start line, record the end line
 				// startLine is not so accurate because it is the line of the first instruction of the function (Go 1.24)
 				// so we need to check if the function literal is the one we are looking for (we are going to leave an error of 1 line)
 				if math.Abs(float64(funcStartLine-startLine)) <= 1 {
 					startLine = funcStartLine
-					endLine = fset.Position(funcLit.Body.End()).Line
+					endLine = funcEndLine
+					log.Debug("civisibility: matched AST function literal [function:%s adjusted_start_line:%d end_line:%d]",
+						fullName, startLine, endLine)
 					return false // stop further inspection since we have found the function
 				}
 			}
@@ -316,6 +335,11 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		if endLine >= startLine {
 			t.SetTag(constants.TestSourceStartLine, startLine)
 			t.SetTag(constants.TestSourceEndLine, endLine)
+			log.Debug("civisibility: resolved test source range [function:%s file:%s start_line:%d end_line:%d]",
+				fullName, file, startLine, endLine)
+		} else {
+			log.Debug("civisibility: test source range incomplete [function:%s file:%s start_line:%d end_line:%d]",
+				fullName, file, startLine, endLine)
 		}
 
 		// if the function is marked as unskippable, set the appropriate tag

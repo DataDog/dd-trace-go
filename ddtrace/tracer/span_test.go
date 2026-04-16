@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -22,7 +23,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -1809,7 +1809,7 @@ func TestStatsAfterFinish(t *testing.T) {
 		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
-		tracer.config.transport = transport
+		tracer.config.ddTransport = transport
 		af := tracer.config.agent.load()
 		af.Stats = true
 		af.DropP0s = true
@@ -1849,7 +1849,7 @@ func TestStatsAfterFinish(t *testing.T) {
 		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
-		tracer.config.transport = transport
+		tracer.config.ddTransport = transport
 		af2 := tracer.config.agent.load()
 		af2.Stats = true
 		af2.DropP0s = true

@@ -174,8 +174,8 @@ type config struct {
 	// all spans.
 	globalTags dynamicConfig[map[string]any]
 
-	// transport specifies the Transport interface which will be used to send data to the agent.
-	transport transport
+	// ddTransport specifies the Datadog transport used to send msgpack traces and stats to the agent.
+	ddTransport ddTransport
 
 	// httpClientTimeout specifies the timeout for the HTTP client.
 	httpClientTimeout time.Duration
@@ -223,9 +223,6 @@ type config struct {
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
-
-	// traceSampleRate holds the trace sample rate.
-	traceSampleRate dynamicConfig[float64]
 
 	// traceSampleRules holds the trace sampling rules
 	traceSampleRules dynamicConfig[[]SamplingRule]
@@ -401,10 +398,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	} else {
 		globalconfig.SetServiceName(c.internalConfig.ServiceName())
 	}
-	if c.transport == nil {
+	if c.ddTransport == nil {
 		agentURL := c.internalConfig.AgentURL().String()
 		traceURL, headers := resolveTraceTransport(c.internalConfig)
-		c.transport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
+		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
 	}
 	if c.propagator == nil {
 		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
@@ -432,7 +429,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.httpClientTimeout = time.Second * 45                                 // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
 		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated) // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
 		ciTransport := newCiVisibilityTransport(c)                             // Create a default CI Visibility Transport
-		c.transport = ciTransport                                              // Replace the default transport with the CI Visibility transport
+		c.ddTransport = ciTransport                                            // Replace the default transport with the CI Visibility transport
 		c.ciVisibilityAgentless = ciTransport.agentless
 		c.ciVisibilityNoopTracer = internal.BoolEnv(constants.CIVisibilityUseNoopTracer, false)
 	}
@@ -445,7 +442,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4
 	if c.internalConfig.TraceProtocol() == traceProtocolV1 && !af.v1ProtocolAvailable {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
-		if t, ok := c.transport.(*httpTransport); ok {
+		if t, ok := c.ddTransport.(*httpTransport); ok {
 			t.traceURL = agentURL.String() + tracesAPIPath
 		}
 	}
@@ -513,12 +510,11 @@ func apmTracingDisabled(c *config) {
 	c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCalculated)
 }
 
-// resolveTraceTransport returns the trace URL and headers for the transport
-// based on whether OTLP export mode is active.
+// resolveTraceTransport returns the trace URL and headers for the Datadog
+// agent transport. In OTLP export mode the ddTransport is not used for trace
+// sending (otlpTransport handles that), but it may still be used for stats
+// and agent discovery, so it always points at the DD agent.
 func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers map[string]string) {
-	if cfg.OTLPExportMode() {
-		return cfg.OTLPTraceURL(), cfg.OTLPHeaders()
-	}
 	agentURL := cfg.AgentURL().String()
 	traceURL = agentURL + tracesAPIPath
 	if cfg.TraceProtocol() == traceProtocolV1 {
@@ -1434,7 +1430,7 @@ func WithTestDefaults(statsdClient any) StartOption {
 			statsdClient = &statsd.NoOpClientDirect{}
 		}
 		c.statsdClient = statsdClient.(internal.StatsdClient)
-		c.transport = newDummyTransport()
+		c.ddTransport = newDummyTransport()
 	}
 }
 

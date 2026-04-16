@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
@@ -61,6 +62,7 @@ func InitializeCIVisibilityMock() mocktracer.Tracer {
 	return mTracer
 }
 
+// internalCiVisibilityInitialization runs the one-time CI Visibility bootstrap and wires the selected tracer initializer into it.
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
 	ciVisibilityInitializationOnce.Do(func() {
 		civisibility.SetState(civisibility.StateInitializing)
@@ -110,13 +112,7 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
 
-		// Initialize the logs
-		if logs.IsEnabled() {
-			log.Debug("civisibility: initializing logs for service: %s", serviceName)
-			logs.Initialize(serviceName)
-		} else {
-			log.Debug("civisibility: logs are disabled")
-		}
+		initializeCiVisibilityLogs(serviceName)
 
 		// Handle SIGINT and SIGTERM signals to ensure we close all open spans and flush the tracer before exiting
 		signals := make(chan os.Signal, 1)
@@ -127,6 +123,29 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 			os.Exit(1)
 		}()
 	})
+}
+
+// initializeCiVisibilityLogs starts CI Visibility log shipping only when logs are enabled and Bazel offline/file modes do not suppress it.
+func initializeCiVisibilityLogs(serviceName string) {
+	if !shouldInitializeCiVisibilityLogs(logs.IsEnabled()) {
+		if bazel.IsManifestModeEnabled() || bazel.IsPayloadFilesModeEnabled() {
+			log.Debug("civisibility: logs initialization skipped for test optimization offline/file mode")
+			return
+		}
+		log.Debug("civisibility: logs are disabled")
+		return
+	}
+
+	log.Debug("civisibility: initializing logs for service: %s", serviceName)
+	logs.Initialize(serviceName)
+}
+
+// shouldInitializeCiVisibilityLogs reports whether CI Visibility log collection should start for the current process mode.
+func shouldInitializeCiVisibilityLogs(logsEnabled bool) bool {
+	if bazel.IsManifestModeEnabled() || bazel.IsPayloadFilesModeEnabled() {
+		return false
+	}
+	return logsEnabled
 }
 
 // PushCiVisibilityCloseAction adds a close action to be executed when CI visibility exits.

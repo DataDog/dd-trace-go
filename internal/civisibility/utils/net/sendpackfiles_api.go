@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
@@ -32,6 +33,10 @@ type (
 )
 
 func (c *client) SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error) {
+	if bazel.IsManifestModeEnabled() {
+		return 0, nil
+	}
+
 	if len(packFiles) == 0 {
 		return 0, nil
 	}

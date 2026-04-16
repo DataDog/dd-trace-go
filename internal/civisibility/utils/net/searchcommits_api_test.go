@@ -11,9 +11,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 )
 
 func TestSearchCommitsApiRequest(t *testing.T) {
@@ -102,4 +105,37 @@ func TestSearchCommitsApiRequestFailToGet(t *testing.T) {
 	assert.Nil(t, remoteCommits)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sending search commits request")
+}
+
+func TestSearchCommitsApiRequestManifestModeNoop(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	cInterface := NewClient()
+	remoteCommits, err := cInterface.GetCommits([]string{"commit1", "commit2"})
+	assert.NoError(t, err)
+	assert.Equal(t, []string{}, remoteCommits)
+	assert.Equal(t, 0, hits)
 }

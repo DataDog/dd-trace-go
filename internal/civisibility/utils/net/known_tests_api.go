@@ -6,10 +6,14 @@
 package net
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -63,7 +67,18 @@ type (
 	KnownTestsResponseDataSuites  map[string][]string
 )
 
+// GetKnownTests loads known tests from the Bazel manifest cache when available,
+// otherwise it paginates the live API until all modules are merged.
 func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
+	if bazel.IsManifestModeEnabled() {
+		if cachedResponse, ok := loadKnownTestsFromManifestCache(); ok {
+			return cachedResponse, nil
+		}
+		// Compatible with Bazel offline mode: missing or invalid cache means empty known tests response.
+		log.Debug("civisibility.known_tests: returning empty known tests because manifest cache is unavailable or invalid")
+		return &KnownTestsResponseData{Tests: KnownTestsResponseDataModules{}}, nil
+	}
+
 	if c.repositoryURL == "" || c.commitSha == "" {
 		return nil, fmt.Errorf("civisibility.GetKnownTests: repository URL and commit SHA are required")
 	}
@@ -149,4 +164,47 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 	}
 	telemetry.KnownTestsResponseTests(float64(testCount))
 	return &accumulated, nil
+}
+
+// loadKnownTestsFromManifestCache reads and validates the Bazel manifest cache file for known tests.
+// It returns the cached response only when the cache path resolves, the file can be read, and the JSON is valid.
+func loadKnownTestsFromManifestCache() (*KnownTestsResponseData, bool) {
+	cacheFile, ok := bazel.CacheHTTPFile("known_tests.json")
+	if !ok {
+		log.Debug("civisibility.known_tests: manifest mode enabled but known tests cache path could not be resolved")
+		return nil, false
+	}
+
+	cacheFileForLog := bazel.TestOptimizationPathForLog(cacheFile)
+	log.Debug("civisibility.known_tests: reading %s", cacheFileForLog)
+
+	raw, err := os.ReadFile(cacheFile)
+	if err != nil {
+		log.Debug("civisibility.known_tests: cannot read known tests file %s: %s", cacheFileForLog, err.Error())
+		return nil, false
+	}
+
+	log.Debug("civisibility.known_tests: read %s (%d bytes)", cacheFileForLog, len(raw))
+
+	var cachedResponse knownTestsResponse
+	if err := json.Unmarshal(raw, &cachedResponse); err != nil {
+		log.Debug("civisibility.known_tests: invalid known tests file %s: %s", cacheFileForLog, err.Error())
+		return nil, false
+	}
+
+	moduleCount := 0
+	suiteCount := 0
+	testCount := 0
+	for _, suites := range cachedResponse.Data.Attributes.Tests {
+		moduleCount++
+		if suites == nil {
+			continue
+		}
+		for _, tests := range suites {
+			suiteCount++
+			testCount += len(tests)
+		}
+	}
+	log.Debug("civisibility.known_tests: loaded known tests from %s [modules:%d suites:%d tests:%d]", cacheFileForLog, moduleCount, suiteCount, testCount)
+	return &cachedResponse.Data.Attributes, true
 }
