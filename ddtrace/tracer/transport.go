@@ -44,9 +44,10 @@ const (
 	statsAPIPath    = "/v0.6/stats"
 )
 
-// transport is an interface for communicating data to the agent.
-type transport interface {
-	// send sends the payload p to the agent using the transport set up.
+// ddTransport is an interface for communicating data to the Datadog agent
+// using Datadog-specific protocols (msgpack traces, stats payloads).
+type ddTransport interface {
+	// send sends the msgpack-encoded payload p to the agent using the transport set up.
 	// It returns a non-nil response body when no error occurred.
 	send(p payload) (body io.ReadCloser, err error)
 	// sendStats sends the given stats payload to the agent.

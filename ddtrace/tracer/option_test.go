@@ -38,9 +38,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
-func withTransport(t transport) StartOption {
+func withTransport(t ddTransport) StartOption {
 	return func(c *config) {
-		c.transport = t
+		c.ddTransport = t
 	}
 }
 

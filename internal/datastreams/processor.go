@@ -178,12 +178,12 @@ type processorInput struct {
 }
 
 type processorStats struct {
-	payloadsIn          int64
-	flushedPayloads     int64
-	flushedBuckets      int64
-	flushErrors         int64
-	dropped             int64
-	droppedTransactions int64
+	payloadsIn          atomic.Int64
+	flushedPayloads     atomic.Int64
+	flushedBuckets      atomic.Int64
+	flushErrors         atomic.Int64
+	dropped             atomic.Int64
+	droppedTransactions atomic.Int64
 }
 
 type partitionKey struct {
@@ -396,7 +396,7 @@ func (p *Processor) addKafkaOffset(o kafkaOffset) {
 }
 
 func (p *Processor) processInput(in *processorInput) {
-	atomic.AddInt64(&p.stats.payloadsIn, 1)
+	p.stats.payloadsIn.Add(1)
 	if in.typ == pointTypeStats {
 		p.add(in.point)
 	} else if in.typ == pointTypeKafkaOffset {
@@ -434,7 +434,7 @@ func (p *Processor) addTransaction(e transactionEntry) {
 	// Estimate the record size before appending: 1 (checkpointID) + 8 (timestamp) + 1 (idLen) + len(id).
 	recordSize := int64(10 + min(len(e.transactionID), 255))
 	if p.txnBytesThisPeriod+recordSize > maxTransactionBytesPerPeriod {
-		atomic.AddInt64(&p.stats.droppedTransactions, 1)
+		p.stats.droppedTransactions.Add(1)
 		return
 	}
 
@@ -550,12 +550,12 @@ func (p *Processor) reportStats() {
 			return
 		case <-tick.C:
 		}
-		p.statsd.Count("datadog.datastreams.processor.payloads_in", atomic.SwapInt64(&p.stats.payloadsIn, 0), nil, 1)
-		p.statsd.Count("datadog.datastreams.processor.flushed_payloads", atomic.SwapInt64(&p.stats.flushedPayloads, 0), nil, 1)
-		p.statsd.Count("datadog.datastreams.processor.flushed_buckets", atomic.SwapInt64(&p.stats.flushedBuckets, 0), nil, 1)
-		p.statsd.Count("datadog.datastreams.processor.flush_errors", atomic.SwapInt64(&p.stats.flushErrors, 0), nil, 1)
-		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", atomic.SwapInt64(&p.stats.dropped, 0), nil, 1)
-		if dt := atomic.SwapInt64(&p.stats.droppedTransactions, 0); dt > 0 {
+		p.statsd.Count("datadog.datastreams.processor.payloads_in", p.stats.payloadsIn.Swap(0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.flushed_payloads", p.stats.flushedPayloads.Swap(0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.flushed_buckets", p.stats.flushedBuckets.Swap(0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.flush_errors", p.stats.flushErrors.Swap(0), nil, 1)
+		p.statsd.Count("datadog.datastreams.processor.dropped_payloads", p.stats.dropped.Swap(0), nil, 1)
+		if dt := p.stats.droppedTransactions.Swap(0); dt > 0 {
 			p.statsd.Count("datadog.datastreams.processor.dropped_transactions", dt, nil, 1)
 			log.Warn("datastreams: dropped %d transactions this period — transaction throughput exceeds ~5,000/sec capacity, consider distributing load across more service instances", dt)
 		}
@@ -614,10 +614,10 @@ func (p *Processor) flush(now time.Time) map[string]StatsPayload {
 
 func (p *Processor) sendToAgent(payloads map[string]StatsPayload) {
 	for _, payload := range payloads {
-		atomic.AddInt64(&p.stats.flushedPayloads, 1)
-		atomic.AddInt64(&p.stats.flushedBuckets, int64(len(payload.Stats)))
+		p.stats.flushedPayloads.Add(1)
+		p.stats.flushedBuckets.Add(int64(len(payload.Stats)))
 		if err := p.transport.sendPipelineStats(&payload); err != nil {
-			atomic.AddInt64(&p.stats.flushErrors, 1)
+			p.stats.flushErrors.Add(1)
 		}
 	}
 }
@@ -658,7 +658,7 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 		payloadSize:    params.PayloadSize,
 	}})
 	if dropped {
-		atomic.AddInt64(&p.stats.dropped, 1)
+		p.stats.dropped.Add(1)
 	}
 	return ContextWithPathway(ctx, child)
 }
@@ -677,7 +677,7 @@ func (p *Processor) TrackKafkaCommitOffsetWithCluster(cluster string, group stri
 		timestamp:  p.time().UnixNano(),
 		cluster:    cluster}})
 	if dropped {
-		atomic.AddInt64(&p.stats.dropped, 1)
+		p.stats.dropped.Add(1)
 	}
 }
 
@@ -695,7 +695,7 @@ func (p *Processor) TrackKafkaProduceOffsetWithCluster(cluster string, topic str
 		cluster:    cluster,
 	}})
 	if dropped {
-		atomic.AddInt64(&p.stats.dropped, 1)
+		p.stats.dropped.Add(1)
 	}
 }
 
@@ -710,7 +710,7 @@ func (p *Processor) TrackKafkaHighWatermarkOffset(cluster string, topic string, 
 		cluster:    cluster,
 	}})
 	if dropped {
-		atomic.AddInt64(&p.stats.dropped, 1)
+		p.stats.dropped.Add(1)
 	}
 }
 
@@ -725,7 +725,7 @@ func (p *Processor) trackTransactionAt(transactionID, checkpointName string, t t
 		},
 	})
 	if dropped {
-		atomic.AddInt64(&p.stats.dropped, 1)
+		p.stats.dropped.Add(1)
 	}
 }
 
