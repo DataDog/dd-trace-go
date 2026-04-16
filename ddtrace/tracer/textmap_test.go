@@ -2050,7 +2050,10 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
-		assert.Equal(t, traceIDFrom64Bits(1).value, sctx.traceID.value)
+		span := tr.StartSpan("test", ChildOf(sctx))
+		defer span.Finish()
+
+		assert.Equal(t, uint64(1), span.traceID)
 		assert.Empty(t, sctx.spanLinks)
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
@@ -2066,7 +2069,10 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
-		assert.Equal(t, traceIDFrom64Bits(1).value, sctx.traceID.value)
+		span := tr.StartSpan("test", ChildOf(sctx))
+		defer span.Finish()
+
+		assert.Equal(t, uint64(1), span.traceID)
 		require.Len(t, sctx.spanLinks, 1)
 		assert.Equal(t, SpanLink{
 			TraceID:    2,
@@ -2094,16 +2100,19 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
-		assert.True(t, sctx.baggageOnly) // signals spanStart to generate fresh IDs
-		assert.Equal(t, [16]byte{}, sctx.traceID.value)
-		require.Len(t, sctx.spanLinks, 1)
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		require.Len(t, span.spanLinks, 1)
 		assert.Equal(t, SpanLink{
 			TraceID:    1,
 			SpanID:     1,
 			Tracestate: "dd=s:1;p:0000000000000001",
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
-		}, sctx.spanLinks[0])
+		}, span.spanLinks[0])
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
@@ -2123,16 +2132,19 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
-		assert.True(t, sctx.baggageOnly)
-		assert.Equal(t, [16]byte{}, sctx.traceID.value)
-		require.Len(t, sctx.spanLinks, 1)
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		require.Len(t, span.spanLinks, 1)
 		assert.Equal(t, SpanLink{
 			TraceID:    1,
 			SpanID:     1,
 			Tracestate: "",
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
-		}, sctx.spanLinks[0])
+		}, span.spanLinks[0])
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
@@ -2153,16 +2165,19 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
-		assert.True(t, sctx.baggageOnly)
-		assert.Equal(t, [16]byte{}, sctx.traceID.value)
-		require.Len(t, sctx.spanLinks, 1)
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		require.Len(t, span.spanLinks, 1)
 		assert.Equal(t, SpanLink{
 			TraceID:    1,
 			SpanID:     1,
 			Tracestate: "",
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
-		}, sctx.spanLinks[0])
+		}, span.spanLinks[0])
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
@@ -2183,16 +2198,19 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
-		assert.True(t, sctx.baggageOnly)
-		assert.Equal(t, [16]byte{}, sctx.traceID.value)
-		require.Len(t, sctx.spanLinks, 1)
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		require.Len(t, span.spanLinks, 1)
 		assert.Equal(t, SpanLink{
 			TraceID:    1,
 			SpanID:     1,
 			Tracestate: "",
 			Flags:      1,
 			Attributes: map[string]string{"reason": "propagation_behavior_extract", "context_headers": "datadog"},
-		}, sctx.spanLinks[0])
+		}, span.spanLinks[0])
 		assert.Equal(t, map[string]string{"key": "val"}, sctx.baggage)
 	})
 
@@ -2206,8 +2224,15 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		defer tr.Stop()
 
 		sctx, err := tr.Extract(sameIDCarrier)
-		assert.NoError(t, err)
-		assert.Nil(t, sctx)
+		require.NoError(t, err)
+		require.Nil(t, sctx)
+
+		span := tr.StartSpan("test")
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		assert.Empty(t, span.spanLinks)
 	})
 
 	t.Run("ignore/unique-trace-ids", func(t *testing.T) {
@@ -2219,8 +2244,15 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		defer tr.Stop()
 
 		sctx, err := tr.Extract(diffIDCarrier)
-		assert.NoError(t, err)
-		assert.Nil(t, sctx)
+		require.NoError(t, err)
+		require.Nil(t, sctx)
+
+		span := tr.StartSpan("test")
+		defer span.Finish()
+
+		assert.NotEqual(t, uint64(1), span.traceID)
+		assert.Equal(t, uint64(0), span.parentID)
+		assert.Empty(t, span.spanLinks)
 	})
 }
 
