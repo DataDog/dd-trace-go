@@ -3,6 +3,7 @@ stages:
   - generate
   - benchmarks
   - macrobenchmarks
+  # These benchmarks are planned to replace the legacy macrobenchmarks long term
   - go-go-prof-app-parallel
   - go-go-prof-app-parallel-slo
   - gates
