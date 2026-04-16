@@ -1,3 +1,63 @@
+## 2026-04-16
+
+### Remaining work to pass system-tests
+
+Source for all items below: `~/go/src/github.com/DataDog/system-tests/`
+
+---
+
+**1. Remove `missing_feature` markers from `manifests/golang.yml`**
+
+File: `manifests/golang.yml` lines 1334–1337:
+```
+tests/test_library_conf.py::Test_ExtractBehavior_Default: missing_feature (baggage should be implemented and conflicting trace contexts should generate span link in v1.71.0)
+tests/test_library_conf.py::Test_ExtractBehavior_Ignore: missing_feature (extract behavior not implemented)
+tests/test_library_conf.py::Test_ExtractBehavior_Restart: missing_feature (extract behavior not implemented)
+tests/test_library_conf.py::Test_ExtractBehavior_Restart_With_Extract_First: missing_feature (extract behavior not implemented)
+```
+These markers skip the tests for Go. They need to be removed in a PR to the system-tests
+repo once the implementation is confirmed working.
+
+---
+
+**2. Outbound injection through `/make_distant_call` needs smoke-testing**
+
+All four test classes call `/make_distant_call?url=http://weblog:7777/` and assert on
+the *outbound* headers that the weblog sends to the downstream service
+(`data["request_headers"][...]`). Source: `tests/test_library_conf.py`:
+
+- `restart` (line 610–612): outbound `x-datadog-trace-id` must differ from `"1"`;
+  `_dd.p.tid=1111111111111111` must NOT be in outbound tags; `key1=value1` must be
+  in outbound `baggage`
+- `ignore` (line 767–769): outbound `x-datadog-trace-id` != incoming; outbound
+  `baggage` header must be absent entirely
+- `restart+extract_first` (line 860–862): same as restart
+
+This tests injection, not just extraction. The Go weblog `/make_distant_call` endpoint
+exists and was confirmed by the MCP, but these assertions have not been run against the
+actual system-test harness yet. Need CI to confirm.
+
+---
+
+**3. `restart` — same trace ID, different span IDs (`test_multiple_tracecontexts_with_overrides`)**
+
+Source: `tests/test_library_conf.py` lines 667–718, `Test_ExtractBehavior_Restart`.
+
+This test sends DD and W3C headers sharing the same trace ID (`1111111111111111...0001`)
+but with *different* span IDs (DD=`1`, W3C=`0x1234567890123456`). The assertion at
+line 708:
+```python
+assert int(link["spanID"]) == 1311768467284833366  # 0x1234567890123456
+```
+The span link's `spanID` is expected to be the **W3C span ID**, not the DD span ID.
+This is the `overrideDatadogParentID` code path. The current `restart` implementation
+builds the span link from `incomingCtx` which is whatever `extractIncomingSpanContext`
+returns — need to verify that `overrideDatadogParentID` runs before `Extract()` applies
+the restart behavior, and that the resulting `incomingCtx.SpanID()` is the W3C span ID.
+Not yet verified with a unit test.
+
+---
+
 ## 2026-04-15
 
 ### Status
