@@ -64,7 +64,6 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
 		{Name: "trace_enabled", Value: traceEnabled, Origin: traceEnabledOrigin},
 		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
-		c.traceSampleRate.toTelemetry(),
 		c.headerAsTags.toTelemetry(),
 		c.globalTags.toTelemetry(),
 		c.traceSampleRules.toTelemetry(),

@@ -16,8 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"testing/synctest"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec/internal/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -96,11 +97,8 @@ func TestSampler(t *testing.T) {
 					dropped atomic.Uint64
 				)
 				sb.Add(1 + goroutineCount) // All child goroutines + this one...
-				wg.Add(goroutineCount)
 				for range goroutineCount {
-					go func() {
-						defer wg.Done()
-
+					wg.Go(func() {
 						sb.Done() // We're ready for business, signal to the start barrier...
 						sb.Wait() // Wait for all the goroutines to have started...
 
@@ -115,7 +113,7 @@ func TestSampler(t *testing.T) {
 								time.Sleep(time.Second)
 							}
 						}
-					}()
+					})
 				}
 
 				sb.Done()

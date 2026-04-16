@@ -53,7 +53,14 @@ func New() *Provider {
 // overwrite lower-priority ones, reports telemetry for every source that has a value,
 // and returns the highest-priority successfully-parsed value, or def if none parse.
 func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T {
+	v, _ := getWithOrigin(p, key, def, parse)
+	return v
+}
+
+// getWithOrigin is like get but also returns the origin of the winning source.
+func getWithOrigin[T any](p *Provider, key string, def T, parse func(string) (T, bool)) (T, telemetry.Origin) {
 	var final *T
+	var winningOrigin telemetry.Origin
 	for i := len(p.sources) - 1; i >= 0; i-- {
 		source := p.sources[i]
 		v := source.get(key)
@@ -65,14 +72,15 @@ func get[T any](p *Provider, key string, def T, parse func(string) (T, bool)) T 
 			configtelemetry.ReportWithID(key, v, source.origin(), id)
 			if parsed, ok := parse(v); ok {
 				final = &parsed
+				winningOrigin = source.origin()
 			}
 		}
 	}
 	configtelemetry.ReportDefault(key, def)
 	if final != nil {
-		return *final
+		return *final, winningOrigin
 	}
-	return def
+	return def, telemetry.OriginDefault
 }
 
 func (p *Provider) GetString(key string, def string) string {
@@ -142,7 +150,15 @@ func (p *Provider) GetFloat(key string, def float64) float64 {
 }
 
 func (p *Provider) GetFloatWithValidator(key string, def float64, validate func(float64) bool) float64 {
-	return get(p, key, def, func(v string) (float64, bool) {
+	v, _ := p.GetFloatWithValidatorOrigin(key, def, validate)
+	return v
+}
+
+// GetFloatWithValidatorOrigin is like GetFloatWithValidator but also returns the
+// origin of the winning configuration source. Use this when the caller needs to
+// know where the value came from (e.g. to pass to DynamicConfig).
+func (p *Provider) GetFloatWithValidatorOrigin(key string, def float64, validate func(float64) bool) (float64, telemetry.Origin) {
+	return getWithOrigin(p, key, def, func(v string) (float64, bool) {
 		floatVal, err := strconv.ParseFloat(v, 64)
 		if err == nil {
 			if validate != nil && !validate(floatVal) {

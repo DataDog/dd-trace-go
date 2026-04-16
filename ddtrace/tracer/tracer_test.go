@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"go.uber.org/goleak"
@@ -39,7 +40,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -1227,7 +1227,7 @@ func TestTracerNoDebugStack(t *testing.T) {
 }
 
 // newDefaultTransport return a default transport for this tracing client
-func newDefaultTransport() transport {
+func newDefaultTransport() ddTransport {
 	return newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
 }
 
@@ -1459,17 +1459,6 @@ func TestTracerEdgeSampler(t *testing.T) {
 }
 
 func TestOTLPExportMode(t *testing.T) {
-	t.Run("uses otlpTraceWriter and otelParentBasedAlwaysOnSampler", func(t *testing.T) {
-		assert := assert.New(t)
-		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
-		assert.NoError(err)
-		defer tracer.Stop()
-		_, isOTLPWriter := tracer.traceWriter.(*otlpTraceWriter)
-		assert.True(isOTLPWriter, "expected otlpTraceWriter in OTLP export mode")
-		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
-		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler in OTLP export mode")
-	})
-
 	t.Run("default mode uses agentTraceWriter and prioritySampler", func(t *testing.T) {
 		assert := assert.New(t)
 		tracer, err := newUnstartedTracer()
@@ -1479,6 +1468,17 @@ func TestOTLPExportMode(t *testing.T) {
 		assert.True(isAgentWriter, "expected agentTraceWriter in default mode")
 		_, isPriority := tracer.defaultSampler.(*prioritySampler)
 		assert.True(isPriority, "expected prioritySampler in default mode")
+	})
+
+	t.Run("uses otlpTraceWriter and otelParentBasedAlwaysOnSampler", func(t *testing.T) {
+		assert := assert.New(t)
+		tracer, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+		assert.NoError(err)
+		defer tracer.Stop()
+		_, isOTLPWriter := tracer.traceWriter.(*otlpTraceWriter)
+		assert.True(isOTLPWriter, "expected otlpTraceWriter in OTLP export mode")
+		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
+		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler in OTLP export mode")
 	})
 
 	t.Run("OTEL_TRACES_EXPORTER=otlp env var enables OTLP mode", func(t *testing.T) {

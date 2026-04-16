@@ -182,14 +182,12 @@ func TestLimiter(t *testing.T) {
 				// increase the chances of parallel accesses
 				startBarrier.Add(1)
 				// Create a stopBarrier to signal when all user goroutines are done.
-				stopBarrier.Add(nbUsers)
 				var skipped, kept atomic.Uint64
 				l := NewTokenTicker(0, 100)
 
-				for n := 0; n < nbUsers; n++ {
-					go func(l Limiter, kept, skipped *atomic.Uint64) {
-						startBarrier.Wait()      // Sync the starts of the goroutines
-						defer stopBarrier.Done() // Signal we are done when returning
+				for range nbUsers {
+					stopBarrier.Go(func() {
+						startBarrier.Wait() // Sync the starts of the goroutines
 
 						for tStart := time.Now(); time.Since(tStart) < 1*time.Second; {
 							if !l.Allow() {
@@ -198,7 +196,7 @@ func TestLimiter(t *testing.T) {
 								kept.Add(1)
 							}
 						}
-					}(l, &kept, &skipped)
+					})
 				}
 
 				l.Start()
@@ -272,23 +270,21 @@ func BenchmarkLimiter(b *testing.B) {
 				// increase the chances of parallel accesses
 				startBarrier.Add(1)
 				// Create a stopBarrier to signal when all user goroutines are done.
-				stopBarrier.Add(nbUsers)
 
-				for n := 0; n < nbUsers; n++ {
-					go func(l Limiter, kept, skipped *atomic.Uint64) {
-						startBarrier.Wait()      // Sync the starts of the goroutines
-						defer stopBarrier.Done() // Signal we are done when returning
+				for range nbUsers {
+					stopBarrier.Go(func() {
+						startBarrier.Wait() // Sync the starts of the goroutines
 
 						b.StartTimer() // Ensure the timer is started now...
 
 						for range 100 {
-							if !l.Allow() {
+							if !limiter.Allow() {
 								skipped.Add(1)
 							} else {
 								kept.Add(1)
 							}
 						}
-					}(limiter, &kept, &skipped)
+					})
 				}
 
 				startBarrier.Done() // Unblock the user goroutines
