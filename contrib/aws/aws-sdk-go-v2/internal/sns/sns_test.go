@@ -113,6 +113,118 @@ func TestEnrichOperation(t *testing.T) {
 	}
 }
 
+func TestPublishSizeLimit(t *testing.T) {
+	t.Run("body at limit blocks injection", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+
+		input := middleware.InitializeInput{
+			Parameters: &sns.PublishInput{
+				Message:  aws.String(string(make([]byte, maxMessageSizeBytes))),
+				TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
+			},
+		}
+
+		EnrichOperation(span, input, "Publish")
+
+		params := input.Parameters.(*sns.PublishInput)
+		assert.NotContains(t, params.MessageAttributes, datadogKey)
+	})
+
+	t.Run("body plus existing attributes at limit blocks injection", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+		traceCtx, err := getTraceContext(span)
+		require.NoError(t, err)
+		ctxSize := attributeSize(datadogKey, traceCtx)
+
+		// Existing attribute eats into budget; body fills the rest.
+		existingAttr := types.MessageAttributeValue{
+			DataType:    aws.String("String"),
+			StringValue: aws.String("val"),
+		}
+		existingAttrSize := attributeSize("myattr", existingAttr)
+		bodyLen := maxMessageSizeBytes - existingAttrSize - ctxSize + 1 // +1 to go over
+		require.Positive(t, bodyLen)
+
+		input := middleware.InitializeInput{
+			Parameters: &sns.PublishInput{
+				Message:  aws.String(string(make([]byte, bodyLen))),
+				TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
+				MessageAttributes: map[string]types.MessageAttributeValue{
+					"myattr": existingAttr,
+				},
+			},
+		}
+
+		EnrichOperation(span, input, "Publish")
+
+		params := input.Parameters.(*sns.PublishInput)
+		assert.NotContains(t, params.MessageAttributes, datadogKey)
+	})
+}
+
+func TestPublishBatchSizeLimit(t *testing.T) {
+	t.Run("partial injection when budget exhausted", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+
+		traceCtx, err := getTraceContext(span)
+		require.NoError(t, err)
+		ctxSize := attributeSize(datadogKey, traceCtx)
+
+		// Layout: firstBody + secondBody + ctxSize = maxMessageSizeBytes.
+		// Injecting _datadog into entry 1 fills budget exactly;
+		// entry 2 would push over → skipped.
+		firstBody := "x"
+		secondBodyLen := maxMessageSizeBytes - len(firstBody) - ctxSize
+		require.Positive(t, secondBodyLen, "test setup: secondBodyLen must be positive")
+
+		input := middleware.InitializeInput{
+			Parameters: &sns.PublishBatchInput{
+				TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
+				PublishBatchRequestEntries: []types.PublishBatchRequestEntry{
+					{Id: aws.String("1"), Message: aws.String(firstBody)},
+					{Id: aws.String("2"), Message: aws.String(string(make([]byte, secondBodyLen)))},
+				},
+			},
+		}
+
+		EnrichOperation(span, input, "PublishBatch")
+
+		params := input.Parameters.(*sns.PublishBatchInput)
+		assert.Contains(t, params.PublishBatchRequestEntries[0].MessageAttributes, datadogKey)
+		assert.NotContains(t, params.PublishBatchRequestEntries[1].MessageAttributes, datadogKey)
+	})
+
+	t.Run("single entry at limit blocks injection", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+
+		input := middleware.InitializeInput{
+			Parameters: &sns.PublishBatchInput{
+				TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
+				PublishBatchRequestEntries: []types.PublishBatchRequestEntry{
+					{Id: aws.String("1"), Message: aws.String(string(make([]byte, maxMessageSizeBytes)))},
+				},
+			},
+		}
+
+		EnrichOperation(span, input, "PublishBatch")
+
+		params := input.Parameters.(*sns.PublishBatchInput)
+		assert.NotContains(t, params.PublishBatchRequestEntries[0].MessageAttributes, datadogKey)
+	})
+}
+
 func TestInjectTraceContext(t *testing.T) {
 	tests := []struct {
 		name               string
