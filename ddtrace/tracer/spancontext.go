@@ -268,8 +268,17 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			return true
 		})
 	}
+	// We generate a new upper trace ID when the trace is brand new (no parent)
+	// or when the parent is baggage only, since baggage only parents should
+	// not propagate their trace IDs
 	if (parent == nil || parent.baggageOnly) && traceID128BitEnabled.Load() { // +checklocksignore - Read-only after init.
-		context.traceID.SetUpper(generateUpperTraceID(span, context))
+		// add 128 bit trace id, if enabled, formatted as big-endian:
+		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
+		id128 := time.Duration(span.start) / time.Second
+		// casting from int64 -> uint32 should be safe since the start time won't be
+		// negative, and the seconds should fit within 32-bits for the foreseeable future.
+		// (We only want 32 bits of time, then the rest is zero)
+		context.traceID.SetUpper(uint64(uint32(id128)) << 32) // We need the time at the upper 32 bits of the uint
 	}
 	if context.trace == nil {
 		context.trace = newTrace()
@@ -285,17 +294,6 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	// and updating them after extracting context through propagators
 	context.updated = false
 	return context
-}
-
-// generateUpperTraceID generates the upper 32 bits of the trace ID.
-func generateUpperTraceID(span *Span, context *SpanContext) uint64 {
-	// add 128 bit trace id, if enabled, formatted as big-endian:
-	// <32-bit unix seconds> <32 bits of zero> <64 random bits>
-	id128 := time.Duration(span.start) / time.Second
-	// casting from int64 -> uint32 should be safe since the start time won't be
-	// negative, and the seconds should fit within 32-bits for the foreseeable future.
-	// (We only want 32 bits of time, then the rest is zero)
-	return uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
 }
 
 // SpanID implements ddtrace.SpanContext.
