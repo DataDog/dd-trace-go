@@ -4,8 +4,9 @@
 
 **BEFORE making ANY code changes**, you MUST read [CONTRIBUTING.md](./CONTRIBUTING.md) for information about:
 
+* Creating new PRs and commits
 * Code cleanliness and style
-* Testing mechanisms
+* Testing and linting mechanisms
 * Important Go conventions
 
 Furthermore, be sure to follow [Effective Go guidelines](https://go.dev/doc/effective_go) when writing Go code.
@@ -76,13 +77,17 @@ Use the following AGENTS.md files when making specific changes:
 
 ### Upgrading a dependency
 
-Since dd-trace-go is a multi-module project and dependencies should be synced across all submodules, ensure that any time a dependency is upgraded, it is set to the same version across all submodules.
+Do not upgrade or add new dependencies unless explicitly requested to.
+
+Dependencies should be synced across all submodules. Ensure that any time a dependency is upgraded, it is set to the same version across all submodules.
 
 Afterwards, run [./scripts/fix_modules.sh](./scripts/fix_modules.sh) and [./scripts/generate.sh](./scripts/generate.sh) to ensure Orchestrion files are also up to date. 
 
 ### Creating new files
 
 For new files, ensure that it has the correct copyright header starting from the first line.
+
+Function and package comments are used to generate godocs. Refer to [this page](https://go.dev/doc/comment) for best practices.
 
 ### Handling concurrency
 
