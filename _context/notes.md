@@ -9,12 +9,14 @@ Source for all items below: `~/go/src/github.com/DataDog/system-tests/`
 **1. Remove `missing_feature` markers from `manifests/golang.yml`**
 
 File: `manifests/golang.yml` lines 1334–1337:
+
 ```
 tests/test_library_conf.py::Test_ExtractBehavior_Default: missing_feature (baggage should be implemented and conflicting trace contexts should generate span link in v1.71.0)
 tests/test_library_conf.py::Test_ExtractBehavior_Ignore: missing_feature (extract behavior not implemented)
 tests/test_library_conf.py::Test_ExtractBehavior_Restart: missing_feature (extract behavior not implemented)
 tests/test_library_conf.py::Test_ExtractBehavior_Restart_With_Extract_First: missing_feature (extract behavior not implemented)
 ```
+
 These markers skip the tests for Go. They need to be removed in a PR to the system-tests
 repo once the implementation is confirmed working.
 
@@ -46,9 +48,11 @@ Source: `tests/test_library_conf.py` lines 667–718, `Test_ExtractBehavior_Rest
 This test sends DD and W3C headers sharing the same trace ID (`1111111111111111...0001`)
 but with *different* span IDs (DD=`1`, W3C=`0x1234567890123456`). The assertion at
 line 708:
+
 ```python
 assert int(link["spanID"]) == 1311768467284833366  # 0x1234567890123456
 ```
+
 The span link's `spanID` is expected to be the **W3C span ID**, not the DD span ID.
 This is the `overrideDatadogParentID` code path. The current `restart` implementation
 builds the span link from `incomingCtx` which is whatever `extractIncomingSpanContext`
@@ -66,6 +70,7 @@ Core implementation of `DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT` is complete and v
 Remaining work: unit tests in `ddtrace/tracer/textmap_test.go`.
 
 **Done:**
+
 - `continue` (default): existing behavior, no changes needed
 - `restart`: verified via echotrace — fresh trace-id, no parent, one span link with
   `reason=propagation_behavior_extract` and `context_headers=datadog`, baggage propagated
@@ -79,7 +84,6 @@ Remaining work: unit tests in `ddtrace/tracer/textmap_test.go`.
 **Next:** ~~unit tests in `ddtrace/tracer/textmap_test.go`~~ done — see unit tests section below
 
 ---
-
 
 ### Why telemetry?
 
@@ -102,6 +106,7 @@ its own independent trace as if it had never received distributed tracing header
 the option for a service that doesn't want to be adopted into an upstream org's trace.
 
 **Call path through echotrace/httptrace:**
+
 1. `echotrace.Middleware` → `httptrace.StartRequestSpan`
 2. `StartRequestSpan` calls `tracer.Extract(HTTPHeadersCarrier(r.Header))` →
    returns `nil, nil`
@@ -115,6 +120,8 @@ misleading debug log "failed to extract span context" in `StartSpanFromPropagate
 implying something went wrong. `nil, nil` is the clean signal: no context, no problem.
 Verified via `TestPropagationBehaviorExtract/ignore` in echotrace.
 
+See <https://github.com/DataDog/dd-trace-go/blob/3b072e0d2d4956ae1664a7bb191e398ca7aca683/instrumentation/httptrace/httptrace.go#L90>
+
 ### Unit tests (`ddtrace/tracer/textmap_test.go::TestPropagationBehaviorExtract`)
 
 5 sub-tests covering the RFC's 4 configurations, all passing:
@@ -122,9 +129,24 @@ Verified via `TestPropagationBehaviorExtract/ignore` in echotrace.
 - `continue/same-trace-id`: trace continued from DD context, no span links, baggage propagated
 - `continue/different-trace-ids`: trace continued from DD context, one `terminated_context`
   span link for the conflicting W3C context, baggage propagated
+
+  > **Q: Was `terminated_context` added by us?**
+  >
+  > No. It pre-existed on `main` before this branch. Confirmed by `git show 7d2d81401:ddtrace/tracer/textmap.go | grep terminated_context` — it was already at line 330. We did not add it; we only added `propagation_behavior_extract` (the restart mode span link reason).
+
 - `restart`: zero trace-id (`baggageOnly=true`), one `propagation_behavior_extract` span link
   pointing at the DD context. Tracestate is `dd=s:1;p:<spanID>` (Datadog propagator enriches
   it with the parent span ID sub-key). Flags=1 (priority > 0). Baggage propagated.
+
+  > **Q: Is it OK to have a zero trace-id in the restart context?**
+  >
+  > Yes. The zero trace-id is intentional and never reaches a span. `baggageOnly=true` causes
+  > `spanStart` to skip the `span.traceID = context.traceID.Lower()` assignment entirely
+  > (`tracer.go` line 846: `if context != nil && !context.baggageOnly`). The span instead
+  > gets a freshly generated ID from `generateSpanID(startTime)` (`tracer.go` line 830),
+  > which is a 63-bit random value. The zero trace-id in the restart context is only an
+  > intermediate value that never escapes.
+
 - `restart/extract-first`: extraction stops after the Datadog propagator (no conflicting
   W3C span link), tracestate is empty (Datadog headers carry no W3C tracestate), Flags=1.
   Baggage is propagated — see fix below.
@@ -141,6 +163,15 @@ returns and `onlyExtractFirst` is set, iterate `p.extractors` looking for the ba
 propagator and run it explicitly, merging results into `incomingCtx`. This is isolated to
 `Extract()` so `extractIncomingSpanContext` is unchanged. All existing extract-first tests
 still pass.
+
+> **Q: Doesn't this duplicate the work of the OTel extractor?**
+>
+> No. There is no separate OTel baggage extractor in this path. `getDDorOtelConfig("propagationStyle")`
+> (`otel_dd_mappings.go`) only determines *which* propagator types to instantiate (datadog,
+> tracecontext, etc.) — it does not add an extra extraction pass. The fix runs
+> `propagatorBaggage.Extract()` exactly once, on the same `p.extractors` slice, same carrier.
+> The baggage propagator was already in `p.extractors`; we are just calling it at the right
+> moment instead of relying on the loop that `onlyExtractFirst` short-circuits.
 
 ### extractFirst + restart interaction
 
