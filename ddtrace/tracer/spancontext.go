@@ -278,7 +278,8 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		// casting from int64 -> uint32 should be safe since the start time won't be
 		// negative, and the seconds should fit within 32-bits for the foreseeable future.
 		// (We only want 32 bits of time, then the rest is zero)
-		context.traceID.SetUpper(uint64(uint32(id128)) << 32) // We need the time at the upper 32 bits of the uint
+		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
+		context.traceID.SetUpper(tUp)
 	}
 	if context.trace == nil {
 		context.trace = newTrace()
