@@ -2100,6 +2100,8 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
+		// WithSpanLinks is required here: ChildOf does not transfer span links from the context.
+		// StartSpanFromPropagatedContext handles this automatically; plain StartSpan does not.
 		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
 		defer span.Finish()
 
@@ -2132,6 +2134,8 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
+		// WithSpanLinks is required here: ChildOf does not transfer span links from the context.
+		// StartSpanFromPropagatedContext handles this automatically; plain StartSpan does not.
 		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
 		defer span.Finish()
 
@@ -2165,6 +2169,8 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
+		// WithSpanLinks is required here: ChildOf does not transfer span links from the context.
+		// StartSpanFromPropagatedContext handles this automatically; plain StartSpan does not.
 		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
 		defer span.Finish()
 
@@ -2198,6 +2204,8 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, sctx)
 
+		// WithSpanLinks is required here: ChildOf does not transfer span links from the context.
+		// StartSpanFromPropagatedContext handles this automatically; plain StartSpan does not.
 		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
 		defer span.Finish()
 
