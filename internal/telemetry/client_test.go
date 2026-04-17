@@ -1421,11 +1421,15 @@ func TestSendingFailures(t *testing.T) {
 		},
 	}
 
+	config := defaultConfig(cfg)
+	config.DependencyLoader = nil // prevent AppDependenciesLoaded from joining the flush and creating a MessageBatch
+	config.internalMetricsEnabled = false
+
 	c, err := newClient(internal.TracerConfig{
 		Service: "test-service",
 		Env:     "test-env",
 		Version: "1.0.0",
-	}, defaultConfig(cfg))
+	}, config)
 
 	require.NoError(t, err)
 	defer c.Close()
