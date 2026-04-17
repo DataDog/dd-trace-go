@@ -43,7 +43,7 @@ func BenchmarkHTTPTransportSend(b *testing.B) {
 			spans := make([]*Span, size.numSpans)
 			for i := 0; i < size.numSpans; i++ {
 				span := newBasicSpan("transport-test")
-				span.meta["data"] = strings.Repeat("x", size.spanSize*1024)
+				span.meta.Set("data", strings.Repeat("x", size.spanSize*1024))
 				spans[i] = span
 			}
 			_, _ = payload.push(spans)

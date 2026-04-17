@@ -196,7 +196,7 @@ func TestOTLPWriterFlushOnSize(t *testing.T) {
 		w := newTestOTLPWriter(t, srv)
 
 		bigSpan := newSpan("op", "svc", "res", 1, 1, 0)
-		bigSpan.meta["big"] = strings.Repeat("X", payloadSizeLimit+1)
+		bigSpan.meta.Set("big", strings.Repeat("X", payloadSizeLimit+1))
 		w.add([]*Span{bigSpan})
 		w.wg.Wait()
 
@@ -216,7 +216,7 @@ func TestOTLPWriterFlushOnSize(t *testing.T) {
 		numSpans := (payloadSizeLimit / spanSize) + 1
 		for i := range numSpans {
 			s := newSpan("op", "svc", "res", uint64(i+1), 1, 0)
-			s.meta["data"] = strings.Repeat("X", spanSize)
+			s.meta.Set("data", strings.Repeat("X", spanSize))
 			w.add([]*Span{s})
 		}
 		w.wg.Wait()

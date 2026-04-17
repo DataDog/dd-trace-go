@@ -114,7 +114,7 @@ jobs:
         id: dd-sts
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
-          policy: dd-trace-go
+          policy: dd-trace-go-staging
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
@@ -178,7 +178,7 @@ jobs:
         id: dd-sts
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
-          policy: dd-trace-go
+          policy: dd-trace-go-staging
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
@@ -242,7 +242,7 @@ jobs:
         id: dd-sts
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
-          policy: dd-trace-go
+          policy: dd-trace-go-staging
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
@@ -306,7 +306,7 @@ jobs:
         id: dd-sts
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
-          policy: dd-trace-go
+          policy: dd-trace-go-staging
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:
@@ -370,7 +370,7 @@ jobs:
         id: dd-sts
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
-          policy: dd-trace-go
+          policy: dd-trace-go-staging
       - name: Start Agent
         uses: datadog/agent-github-action@8240b406d73cb84cd5085a3919a78f59c258da3a # v1.3.1
         with:

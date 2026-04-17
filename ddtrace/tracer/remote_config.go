@@ -252,9 +252,11 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	var telemConfigs []telemetry.Configuration
 
 	// Apply the new configuration values.
-	updated := t.config.traceSampleRate.handleRC(merged.SamplingRate)
+	// internalConfig's HandleRC self-reports to telemetry, so no need to append to telemConfigs.
+	sampleRateCfg := t.config.internalConfig.GlobalSampleRateConfig()
+	updated := sampleRateCfg.HandleRC(merged.SamplingRate)
 	if updated {
-		telemConfigs = append(telemConfigs, t.config.traceSampleRate.toTelemetry())
+		t.rulesSampling.traces.setGlobalSampleRate(sampleRateCfg.Get())
 	}
 	updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(merged.TraceSamplingRules))
 	if updated {
