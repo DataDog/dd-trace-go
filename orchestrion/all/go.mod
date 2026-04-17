@@ -45,7 +45,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.7.3
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.7.3
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.7.3
-	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.7.3
 	github.com/DataDog/orchestrion v1.6.0
 )
 
