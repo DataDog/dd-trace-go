@@ -87,8 +87,9 @@ func handlePublishBatch(span *tracer.Span, in middleware.InitializeInput) {
 		if params.PublishBatchRequestEntries[i].MessageAttributes == nil {
 			params.PublishBatchRequestEntries[i].MessageAttributes = make(map[string]types.MessageAttributeValue)
 		}
-		injectTraceContext(traceContext, params.PublishBatchRequestEntries[i].MessageAttributes)
-		runningSize += ctxSize
+		if injectTraceContext(traceContext, params.PublishBatchRequestEntries[i].MessageAttributes) {
+			runningSize += ctxSize
+		}
 	}
 }
 
@@ -155,14 +156,13 @@ func batchTotalSize(entries []types.PublishBatchRequestEntry) int {
 	return total
 }
 
-func injectTraceContext(traceContext types.MessageAttributeValue, messageAttributes map[string]types.MessageAttributeValue) {
-	// SNS only allows a maximum of 10 message attributes.
+func injectTraceContext(traceContext types.MessageAttributeValue, messageAttributes map[string]types.MessageAttributeValue) bool {
 	// https://docs.aws.amazon.com/sns/latest/dg/sns-message-attributes.html
-	// Only inject if there's room.
 	if len(messageAttributes) >= maxMessageAttributes {
 		instr.Logger().Info("Cannot inject trace context: message already has maximum allowed attributes")
-		return
+		return false
 	}
 
 	messageAttributes[datadogKey] = traceContext
+	return true
 }
