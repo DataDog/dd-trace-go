@@ -104,6 +104,10 @@ This repo comes with replacements for common Go packages. For example:
 3. OS: Instead of using `os.Getenv`, use [internal/env](./internal/env). This is also available at [instrumentation/env](./instrumentation/env/) for those packages that cannot import internal modules.
 4. Errors: Often times, you should use [instrumentation/errortrace](./instrumentation/errortrace/) to define new errors.
 
+### Environment Variables
+
+When creating a new environment variable, the configuration must be added to [supported_configurations.json](./internal/env/supported_configurations.json), and then to the [generated supported configuration file](./internal/env/supported_configurations.gen.go) by running [configinverter](./scripts/configinverter/).
+
 ### Updating AGENTS.md
 
 This file should be short. Only update this file if:
