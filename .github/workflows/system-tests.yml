@@ -44,7 +44,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: dario.castane/ktlo/add-transitive-deps-go
       - name: Pin exact commit SHA for system-tests
         id: pin
         run: |
