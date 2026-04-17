@@ -142,6 +142,8 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TEST_MANAGEMENT_ATTEMPT_TO_FIX_RETRIES":                       {},
 	"DD_TEST_MANAGEMENT_ENABLED":                                      {},
 	"DD_TEST_OPTIMIZATION_ENV_DATA_FILE":                              {},
+	"DD_TEST_OPTIMIZATION_MANIFEST_FILE":                              {},
+	"DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES":                          {},
 	"DD_TEST_SESSION_NAME":                                            {},
 	"DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED":                     {},
 	"DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED":                        {},

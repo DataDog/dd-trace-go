@@ -13,6 +13,7 @@ import (
 	"time"
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
@@ -277,7 +278,7 @@ func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (i
 		endpoints = append(endpoints, request)
 	}
 
-	if len(endpoints) == 0 {
+	if len(endpoints) == 0 && !bazel.IsPayloadFilesModeEnabled() {
 		return internal.WriterConfig{}, fmt.Errorf("telemetry: could not build any endpoint, please provide an AgentURL or an APIKey with an optional AgentlessURL")
 	}
 
