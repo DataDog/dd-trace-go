@@ -150,4 +150,4 @@ include:
   - local: ".gitlab/configuration-central-validation.yml"
   - project: 'DataDog/apm-reliability/apm-sdks-benchmarks'
     file: '.gitlab/ci-go-go-prof-app-parallel.yml'
-    ref: 'fayssal/integrate'
+    ref: 'main'
