@@ -11,6 +11,45 @@
 
 Furthermore, be sure to follow [Effective Go guidelines](https://go.dev/doc/effective_go) when writing Go code.
 
+## Testing and Linting
+
+Code should be cleaned and tested before committing. For testing, linting, and formatting, use commands like the following:
+
+```shell
+# Show all available targets
+make help
+
+# Install tools
+make tools-install
+
+# Run all linters (same as CI)
+make lint
+
+# Format code (recommended before committing)
+make format
+
+# Check module consistency
+make fix-modules
+
+# Run all tests
+make test
+
+# Run integration tests
+make test-integration
+
+# Run checklocks on the default target (./ddtrace/tracer)
+./scripts/checklocks.sh
+
+# Run checklocks on a specific directory
+./scripts/checklocks.sh ./path/to/target
+
+# Runs `go mod tidy` on all modules
+make fix-modules
+```
+
+Benchmarks are run in GitLab. Any benchmark that needs to be run on every PR should be added to the list in [.gitlab-ci.yml](.gitlab-ci.yml).
+
+
 ## Project Structure & Module Organization
 
 dd-trace-go is a multi-module Go repository with several main subdirectories:
