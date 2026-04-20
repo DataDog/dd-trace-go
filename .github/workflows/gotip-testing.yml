@@ -3,6 +3,7 @@ name: Gotip Testing
 on:
   schedule: # nightly
     - cron: "0 0 * * *"
+  pull_request:
   workflow_dispatch: { } # manually
 
 env:
