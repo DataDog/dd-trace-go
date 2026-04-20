@@ -26,14 +26,6 @@ jobs:
       - name: Scan and fix vulnerabilities
         id: fix
         run: ./.github/workflows/apps/govulncheck-fix.sh
-      - name: Escape dependency list for JSON
-        id: prep
-        if: steps.fix.outputs.has_fixes == 'true'
-        env:
-          DEP_LIST: ${{ steps.prep.outputs.dep_list }}
-        run: |
-          escaped=$(printf '%s' "$DEP_LIST" | awk 'NR>1{printf "\\n"} {printf "%s", $0}')
-          echo "dep_list=$escaped" >> "$GITHUB_OUTPUT"
       - name: Notify Slack
         if: steps.fix.outputs.has_fixes == 'true'
         uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
@@ -41,7 +33,7 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "dependency_list": "${{ steps.prep.outputs.dep_list }}",
+              "dependency_list": "${{ steps.fix.outputs.dependency_list }}",
               "text": "Found Vulnerabilities",
               "blocks": [
                 {
@@ -68,7 +60,7 @@ jobs:
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "*Dependencies to upgrade:*\n${{ steps.prep.outputs.dep_list }}"
+                      "text": "*Dependencies to upgrade:*\n${{ steps.fix.outputs.dependency_list }}"
                     }
                   ]
                 }

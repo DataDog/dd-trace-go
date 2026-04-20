@@ -86,4 +86,7 @@ echo "has_fixes=true" >> "${GITHUB_OUTPUT}"
   cat "${FIXES_FILE}"
   echo "EOF"
 } >> "${GITHUB_OUTPUT}"
+
+out=$(awk 'NR>1{printf "\\n"} {printf "%s", $0}' "${FIXES_FILE}")
+echo "dependency_list=${out}" >> "${GITHUB_OUTPUT}"
 rm -f "${FIXES_FILE}"
