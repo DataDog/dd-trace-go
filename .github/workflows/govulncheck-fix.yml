@@ -3,7 +3,6 @@ name: Govulncheck Remediation
 on:
   schedule:
     - cron: '00 06 * * 1'  # Mondays at 6 AM UTC
-  pull_request:
   workflow_dispatch:
 
 permissions:
