@@ -137,8 +137,9 @@ type LLMObs struct {
 	evalMetricsCh chan *transport.LLMObsMetric
 
 	// runtime buffers, payloads are accumulated here and flushed periodically
-	bufSpanEvents  []*transport.LLMObsSpanEvent
-	bufEvalMetrics []*transport.LLMObsMetric
+	bufSpanEvents     []*transport.LLMObsSpanEvent
+	bufSpanEventsSize int // cumulative JSON size of buffered span events
+	bufEvalMetrics    []*transport.LLMObsMetric
 
 	// lifecycle
 	mu            sync.Mutex
@@ -261,7 +262,16 @@ func (l *LLMObs) Run() {
 		for {
 			select {
 			case ev := <-l.spanEventsCh:
+				evSize := jsonSize(ev)
+				if l.bufSpanEventsSize+evSize > sizeLimitEVPEvent {
+					log.Debug("llmobs: span events buffer size limit reached, flushing before adding new event")
+					params := l.clearBuffersNonLocked()
+					l.wg.Go(func() {
+						l.batchSend(params)
+					})
+				}
 				l.bufSpanEvents = append(l.bufSpanEvents, ev)
+				l.bufSpanEventsSize += evSize
 
 			case evalMetric := <-l.evalMetricsCh:
 				l.bufEvalMetrics = append(l.bufEvalMetrics, evalMetric)
@@ -298,6 +308,7 @@ func (l *LLMObs) clearBuffersNonLocked() batchSendParams {
 		evalMetrics: l.bufEvalMetrics,
 	}
 	l.bufSpanEvents = nil
+	l.bufSpanEventsSize = 0
 	l.bufEvalMetrics = nil
 	return params
 }
@@ -372,8 +383,9 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	// Use an empty context so each retry in the transport gets its own
+	// fresh per-request timeout rather than all retries sharing a single deadline.
+	ctx := context.Background()
 
 	var wg sync.WaitGroup
 
@@ -876,6 +888,15 @@ func newLLMObsTraceID() string {
 
 	// 32-byte hex string
 	return fmt.Sprintf("%032x", x)
+}
+
+// jsonSize returns the JSON-encoded byte size of v, or 0 if marshaling fails.
+func jsonSize(v any) int {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return 0
+	}
+	return len(b)
 }
 
 // isAPIKeyValid reports whether the given string is a structurally valid API key
