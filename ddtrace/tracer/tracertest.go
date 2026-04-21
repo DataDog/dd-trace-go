@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"maps"
 	"testing"
 
 	"github.com/tinylib/msgp/msgp"
@@ -32,12 +33,12 @@ func toAgentSpan(span *Span) *agenttest.Span {
 		Start:     span.start,
 		Duration:  span.duration,
 		Error:     span.error,
-		Meta:      make(map[string]string, len(span.meta)),
+		Meta:      maps.Clone(span.meta.Map(true)),
 		Metrics:   make(map[string]float64, len(span.metrics)),
-		Tags:      make(map[string]any, len(span.meta)+len(span.metrics)+4),
+		Tags:      make(map[string]any, span.meta.Count()+len(span.metrics)+4),
 	}
-	for key, val := range span.meta {
-		as.Meta[key] = val
+	metaMap := as.Meta
+	for key, val := range metaMap {
 		as.Tags[key] = val
 	}
 	for key, val := range span.metrics {
