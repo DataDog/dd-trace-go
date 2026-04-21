@@ -23,6 +23,7 @@ import (
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
@@ -43,7 +44,7 @@ func getTestSpan() *Span {
 		resource:   "SEND /data",
 		start:      1481215590883401105,
 		duration:   1000000000,
-		meta:       map[string]string{"http.host": "192.168.0.1"},
+		meta:       tinternal.NewSpanMetaFromMap(map[string]string{"http.host": "192.168.0.1"}),
 		metaStruct: map[string]any{"_dd.appsec.json": map[string]any{"triggers": []any{map[string]any{"id": "1"}}}},
 		metrics:    map[string]float64{"http.monitor": 41.99},
 	}

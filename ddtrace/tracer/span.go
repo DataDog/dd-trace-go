@@ -5,6 +5,7 @@
 
 //msgp:ignore inheritedData
 //go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
+//go:generate go run ../../scripts/msgp_span_meta_omitempty.go -file span_msgp.go
 //go:generate go run ../../scripts/msgp_checklocks_ignore.go -type Span -file span_msgp.go
 
 package tracer
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -84,7 +86,7 @@ func (s *Span) AsMap() map[string]any {
 	m[ext.SpanType] = s.spanType
 	m[ext.MapSpanStart] = s.start
 	m[ext.MapSpanDuration] = s.duration
-	for k, v := range s.meta {
+	for k, v := range s.meta.All() {
 		m[k] = v
 	}
 	for k, v := range s.metrics {
@@ -104,7 +106,8 @@ func (s *Span) AsMap() map[string]any {
 // +checklocksignore — Called from AsMap (test-only, not concurrent).
 func (s *Span) spanEventsAsJSONString() string {
 	if !s.supportsEvents {
-		return s.meta["events"]
+		v, _ := s.meta.Get("events")
+		return v
 	}
 	if s.spanEvents == nil {
 		return ""
@@ -136,7 +139,10 @@ type Span struct {
 	// +checklocks:mu
 	duration int64 `msg:"duration"` // duration of the span expressed in nanoseconds
 	// +checklocks:mu
-	meta map[string]string `msg:"meta,omitempty"` // arbitrary map of metadata
+	// meta holds string metadata. Promoted attributes (env, version, component,
+	// span.kind) live in meta.attrs and are excluded from meta.m; the custom
+	// msgp codec merges both for wire encoding.
+	meta traceinternal.SpanMeta `msg:"meta,omitempty"` // arbitrary map of metadata + promoted attrs
 	// +checklocks:mu
 	metaStruct metaStructMap `msg:"meta_struct,omitempty"` // arbitrary map of metadata with structured values
 	// +checklocks:mu
@@ -159,8 +165,6 @@ type Span struct {
 	context      *SpanContext `msg:"-"` // span propagation context
 	// +checklocks:mu
 	supportsEvents bool `msg:"-"` // whether the span supports native span events or not
-	// +checklocks:mu
-	supportsLinks bool `msg:"-"` // whether the span supports native span links or not
 
 	// +checklocks:mu
 	finished bool `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
@@ -223,11 +227,8 @@ func (s *Span) getResource() string {
 func (s *Span) getAndRemoveMeta(key string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.meta == nil {
-		s.meta = make(map[string]string, 1)
-	}
-	if v, ok := s.meta[key]; ok {
-		delete(s.meta, key)
+	if v, ok := s.meta.Get(key); ok {
+		s.meta.Delete(key)
 		delete(s.metrics, key)
 		return v
 	}
@@ -291,22 +292,12 @@ func (s *Span) debugInfo() (name string, spanID, traceID uint64, integration str
 	name = s.name
 	spanID = s.spanID
 	traceID = s.traceID
-	if v, ok := s.meta[ext.Component]; ok {
+	if v, ok := s.meta.Get(ext.Component); ok {
 		integration = v
 	} else {
 		integration = "manual"
 	}
 	return
-}
-
-// getMetadata returns a copy of the meta map for testing purposes.
-// This is only for use in tests to verify span metadata state.
-func (s *Span) getMetadata() map[string]string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	meta := make(map[string]string, len(s.meta))
-	maps.Copy(meta, s.meta)
-	return meta
 }
 
 // matchTagsForSampling checks if span tags match the sampling rule tag patterns.
@@ -317,10 +308,8 @@ func (s *Span) matchTagsForSampling(tagPatterns map[string]func(string) bool) bo
 	defer s.mu.RUnlock()
 
 	for k, matchFunc := range tagPatterns {
-		if s.meta != nil {
-			if v, ok := s.meta[k]; ok && matchFunc(v) {
-				continue
-			}
+		if v, ok := s.meta.Get(k); ok && matchFunc(v) {
+			continue
 		}
 		if s.metrics != nil {
 			if v, ok := s.metrics[k]; ok {
@@ -379,8 +368,6 @@ func (s *Span) SetTag(key string, value any) {
 	if s == nil {
 		return
 	}
-	// To avoid dumping the memory address in case value is a pointer, we dereference it.
-	// Any pointer value that is a pointer to a pointer will be dumped as a string.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -411,6 +398,8 @@ func (s *Span) setTagLocked(key string, value any) {
 	if s.finished {
 		return
 	}
+	// To avoid dumping the memory address in case value is a pointer, we dereference it.
+	// Any pointer value that is a pointer to a pointer will be dumped as a string.
 	value = dereference(value)
 	switch key {
 	case ext.Error:
@@ -567,7 +556,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 	}
 	if cfg.PropagateID {
 		// Delete usr.id from the tags since _dd.p.usr.id takes precedence
-		delete(root.meta, keyUserID)
+		root.meta.Delete(keyUserID)
 		idenc := base64.StdEncoding.EncodeToString([]byte(id))
 		trace.setPropagatingTag(keyPropagatedUserID, idenc)
 		s.context.updated = true
@@ -577,7 +566,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 			trace.unsetPropagatingTag(keyPropagatedUserID)
 			s.context.updated = true
 		}
-		delete(root.meta, keyPropagatedUserID)
+		root.meta.Delete(keyPropagatedUserID)
 	}
 
 	usrData := map[string]string{
@@ -740,9 +729,6 @@ func (s *Span) setMetaLocked(key, v string) {
 // setMetaInit sets a string tag without acquiring the lock and asserting the lock is held.
 // +checklocksignore — Initialization time, span not yet shared.
 func (s *Span) setMetaInit(key, v string) {
-	if s.meta == nil {
-		s.meta = initMeta()
-	}
 	delete(s.metrics, key)
 	switch key {
 	case ext.SpanName:
@@ -755,7 +741,7 @@ func (s *Span) setMetaInit(key, v string) {
 	case ext.SpanType:
 		s.spanType = v
 	default:
-		s.meta[key] = v
+		s.meta.Set(key, v)
 	}
 }
 
@@ -804,7 +790,7 @@ func (s *Span) setMetricInit(key string, v float64) {
 	if s.metrics == nil {
 		s.metrics = make(map[string]float64, 1)
 	}
-	delete(s.meta, key)
+	s.meta.Delete(key)
 	// Note: We don't handle ManualKeep or _sampling_priority_v1shim during init
 	// because those require modifying trace-level state which needs locking
 	s.metrics[key] = v
@@ -824,7 +810,7 @@ func (s *Span) setMetricLocked(key string, v float64) {
 	if s.metrics == nil {
 		s.metrics = make(map[string]float64, 1)
 	}
-	delete(s.meta, key)
+	s.meta.Delete(key)
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
@@ -863,20 +849,12 @@ func (s *Span) serializeSpanLinksInMeta() {
 	if len(s.spanLinks) == 0 {
 		return
 	}
-	// if span links are natively supported by the encoder, there's nothing to do
-	// as the links will be already included when the span is serialized.
-	if s.supportsLinks {
-		return
-	}
 	spanLinkBytes, err := json.Marshal(s.spanLinks)
 	if err != nil {
 		log.Debug("Unable to marshal span links. Not adding span links to span meta.")
 		return
 	}
-	if s.meta == nil {
-		s.meta = make(map[string]string)
-	}
-	s.meta["_dd.span_links"] = string(spanLinkBytes)
+	s.meta.Set("_dd.span_links", string(spanLinkBytes))
 }
 
 // serializeSpanEvents sets the span events from the current span in the correct transport, depending on whether the
@@ -900,7 +878,7 @@ func (s *Span) serializeSpanEvents() {
 		log.Debug("Unable to marshal span events; events dropped from span meta\n%s", err.Error())
 		return
 	}
-	s.meta["events"] = string(b)
+	s.meta.Set("events", string(b))
 }
 
 // Finish closes this Span (but not its children) providing the duration
@@ -990,10 +968,7 @@ func (s *Span) enrichServiceSource() {
 	if s.serviceSource == "" || s.service == globalconfig.ServiceName() {
 		return
 	}
-	if s.meta == nil {
-		s.meta = make(map[string]string, 1)
-	}
-	s.meta[ext.KeyServiceSource] = s.serviceSource
+	s.meta.Set(ext.KeyServiceSource, s.serviceSource)
 }
 
 func (s *Span) finish(finishTime int64) {
@@ -1045,7 +1020,7 @@ func (s *Span) finish(finishTime int64) {
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Finished Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
-			s, s.name, s.resource, s.meta, s.metrics)
+			s, s.name, s.resource, &s.meta, s.metrics)
 	}
 	// Call context.finish() which handles trace-level bookkeeping and may modify
 	// this span (to set trace-level tags).
@@ -1145,8 +1120,8 @@ func (s *Span) String() string {
 		fmt.Sprintf("Type: %s", s.spanType),
 		"Tags:",
 	}
-	for key, val := range s.meta {
-		lines = append(lines, fmt.Sprintf("\t%s:%s", key, val))
+	for k, v := range s.meta.All() {
+		lines = append(lines, fmt.Sprintf("\t%s:%s", k, v))
 	}
 	for key, val := range s.metrics {
 		lines = append(lines, fmt.Sprintf("\t%s:%f", key, val))
@@ -1237,25 +1212,11 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
 }
 
-// initMeta pre-allocates the meta map with headroom.
-// expectedEntries should be the count of tags known at construction time.
-// The 4/3 factor (≈ inverse of the standard 0.75 load factor) provides
-// ~33% slack so small overestimates don't trigger an immediate rehash.
-func initMeta() map[string]string {
-	// Unconditionally set meta tags: env, version, component, span.kind, language
-	const (
-		expectedEntries = 5
-		loadFactor      = 4 / 3
-	)
-	return make(map[string]string, expectedEntries*loadFactor)
-}
-
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
 func getMeta(s *Span, key string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	val, ok := s.meta[key]
-	return val, ok
+	return s.meta.Get(key)
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname

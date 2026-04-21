@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -726,7 +725,7 @@ func TestTransactionBytesPerPeriodLimit(t *testing.T) {
 	}
 
 	// Verify the dropped count matches the overshoot.
-	droppedCount := atomic.LoadInt64(&p.stats.droppedTransactions)
+	droppedCount := p.stats.droppedTransactions.Load()
 	assert.Equal(t, int64(totalAttempted-maxRecords), droppedCount,
 		"expected %d dropped transactions", totalAttempted-maxRecords)
 

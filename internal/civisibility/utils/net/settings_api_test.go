@@ -11,9 +11,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 func TestSettingsApiRequest(t *testing.T) {
@@ -108,4 +112,139 @@ func TestSettingsApiRequestFailToGet(t *testing.T) {
 	assert.Nil(t, settings)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sending get settings request")
+}
+
+func TestSettingsApiRequestFromManifestCache(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	expectedResponse := settingsResponse{}
+	expectedResponse.Data.Attributes.FlakyTestRetriesEnabled = true
+	expectedResponse.Data.Attributes.CodeCoverage = true
+	expectedResponse.Data.Attributes.TestsSkipping = true
+	expectedResponse.Data.Attributes.ItrEnabled = true
+	expectedResponse.Data.Attributes.KnownTestsEnabled = true
+	expectedResponse.Data.Attributes.ImpactedTestsEnabled = true
+	expectedResponse.Data.Attributes.TestManagement.Enabled = true
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	rawResponse, err := json.Marshal(expectedResponse)
+	if err != nil {
+		t.Fatalf("marshal cache response: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "cache", "http", "settings.json"), rawResponse, 0o644); err != nil {
+		t.Fatalf("write settings cache: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	cInterface := NewClient()
+	settings, err := cInterface.GetSettings()
+	assert.NoError(t, err)
+	assert.Equal(t, expectedResponse.Data.Attributes, *settings)
+	assert.Equal(t, 0, hits)
+	assert.True(t, containsLogLine(recordLogger.Logs(), "reading .testoptimization/cache/http/settings.json"))
+	assert.True(t, containsLogLine(recordLogger.Logs(), "loaded settings from .testoptimization/cache/http/settings.json"))
+	assert.True(t, containsLogLine(recordLogger.Logs(), "enabled features [code_coverage:true itr:true tests_skipping:true known_tests:true impacted_tests:true early_flake_detection:false flaky_test_retries:true test_management:true require_git:false attempt_to_fix_retries:0]"))
+}
+
+func TestSettingsApiRequestFromManifestCacheMissingFile(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	cInterface := NewClient()
+	settings, err := cInterface.GetSettings()
+	assert.NoError(t, err)
+	assert.Equal(t, SettingsResponseData{}, *settings)
+	assert.Equal(t, 0, hits)
+}
+
+func TestSettingsApiRequestFromManifestCacheMalformedFile(t *testing.T) {
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	var hits int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cacheDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(cacheDir, "manifest.txt")
+	if err := os.MkdirAll(filepath.Join(cacheDir, "cache", "http"), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "cache", "http", "settings.json"), []byte("{invalid"), 0o644); err != nil {
+		t.Fatalf("write malformed settings cache: %v", err)
+	}
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+	setCiVisibilityEnv(path, server.URL)
+	os.Setenv(bazel.ManifestFilePathEnv, manifestPath)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	cInterface := NewClient()
+	settings, err := cInterface.GetSettings()
+	assert.NoError(t, err)
+	assert.Equal(t, SettingsResponseData{}, *settings)
+	assert.Equal(t, 0, hits)
+	assert.True(t, containsLogLine(recordLogger.Logs(), "invalid settings file"))
+	assert.True(t, containsLogLine(recordLogger.Logs(), "returning empty settings because manifest cache is unavailable or invalid"))
 }

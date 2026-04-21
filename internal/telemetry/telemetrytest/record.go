@@ -220,10 +220,19 @@ func (r *RecordClient) AppStop() {
 func (r *RecordClient) AddFlushTicker(func(telemetry.Client)) {
 }
 
+// normalizeConfigName maps env-var-style names (e.g. DD_TRACE_SAMPLE_RATE)
+// to the telemetry-style names (e.g. trace_sample_rate) so that callers of
+// CheckConfig don't need to know which style a given reporter uses.
+func normalizeConfigName(name string) string {
+	name = strings.TrimPrefix(name, "DD_")
+	return strings.ToLower(name)
+}
+
 func CheckConfig(t *testing.T, cfgs []telemetry.Configuration, key string, value any) {
 	t.Helper()
+	normKey := normalizeConfigName(key)
 	for _, c := range cfgs {
-		if c.Name == key && reflect.DeepEqual(c.Value, value) {
+		if normalizeConfigName(c.Name) == normKey && reflect.DeepEqual(c.Value, value) {
 			return
 		}
 	}

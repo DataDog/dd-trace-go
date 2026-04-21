@@ -6,10 +6,14 @@
 package net
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -67,7 +71,19 @@ type (
 	}
 )
 
+// GetTestManagementTests loads cached test-management data in manifest mode and otherwise queries the live endpoint for the selected commit.
 func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModules, error) {
+	if bazel.IsManifestModeEnabled() {
+		if cachedResponse, ok := loadTestManagementFromManifestCache(); ok {
+			return cachedResponse, nil
+		}
+		// Compatible with Bazel offline mode: missing or invalid cache means empty test management response.
+		log.Debug("civisibility.test_management: returning empty test management response because manifest cache is unavailable or invalid")
+		return &TestManagementTestsResponseDataModules{
+			Modules: map[string]TestManagementTestsResponseDataSuites{},
+		}, nil
+	}
+
 	if c.repositoryURL == "" {
 		return nil, fmt.Errorf("civisibility.GetTestManagementTests: repository URL is required")
 	}
@@ -144,4 +160,50 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 	}
 	telemetry.TestManagementTestsResponseTests(float64(testCount))
 	return &responseObject.Data.Attributes, nil
+}
+
+// loadTestManagementFromManifestCache reads and validates the Bazel manifest cache file for test-management data.
+// It returns the cached response only when the cache path resolves, the file can be read, and the JSON is valid.
+func loadTestManagementFromManifestCache() (*TestManagementTestsResponseDataModules, bool) {
+	cacheFile, ok := bazel.CacheHTTPFile("test_management.json")
+	if !ok {
+		log.Debug("civisibility.test_management: manifest mode enabled but test management cache path could not be resolved")
+		return nil, false
+	}
+
+	cacheFileForLog := bazel.TestOptimizationPathForLog(cacheFile)
+	log.Debug("civisibility.test_management: reading %s", cacheFileForLog)
+
+	raw, err := os.ReadFile(cacheFile)
+	if err != nil {
+		log.Debug("civisibility.test_management: cannot read test management file %s: %s", cacheFileForLog, err.Error())
+		return nil, false
+	}
+
+	log.Debug("civisibility.test_management: read %s (%d bytes)", cacheFileForLog, len(raw))
+
+	var cachedResponse testManagementTestsResponse
+	if err := json.Unmarshal(raw, &cachedResponse); err != nil {
+		log.Debug("civisibility.test_management: invalid test management file %s: %s", cacheFileForLog, err.Error())
+		return nil, false
+	}
+
+	moduleCount := 0
+	suiteCount := 0
+	testCount := 0
+	for _, module := range cachedResponse.Data.Attributes.Modules {
+		moduleCount++
+		if module.Suites == nil {
+			continue
+		}
+		for _, suite := range module.Suites {
+			suiteCount++
+			if suite.Tests == nil {
+				continue
+			}
+			testCount += len(suite.Tests)
+		}
+	}
+	log.Debug("civisibility.test_management: loaded test management tests from %s [modules:%d suites:%d tests:%d]", cacheFileForLog, moduleCount, suiteCount, testCount)
+	return &cachedResponse.Data.Attributes, true
 }

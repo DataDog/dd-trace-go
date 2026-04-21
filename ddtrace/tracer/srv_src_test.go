@@ -50,8 +50,9 @@ func TestServiceSource(t *testing.T) {
 
 		span.mu.RLock()
 		defer span.mu.RUnlock()
+		kss, _ := span.meta.Get(ext.KeyServiceSource)
 		assert.Equal(t, "custom-service", span.service)
-		assert.Equal(t, serviceSourceManual, span.meta[ext.KeyServiceSource])
+		assert.Equal(t, serviceSourceManual, kss)
 	})
 
 	t.Run("ServiceOverrideTag", func(t *testing.T) {
@@ -65,8 +66,9 @@ func TestServiceSource(t *testing.T) {
 
 		span.mu.RLock()
 		defer span.mu.RUnlock()
+		kss, _ := span.meta.Get(ext.KeyServiceSource)
 		assert.Equal(t, "my-service", span.service)
-		assert.Equal(t, serviceSourceManual, span.meta[ext.KeyServiceSource])
+		assert.Equal(t, serviceSourceManual, kss)
 	})
 
 	t.Run("ChildInheritsSrvSrcFromParent", func(t *testing.T) {
@@ -82,24 +84,8 @@ func TestServiceSource(t *testing.T) {
 
 		child.mu.RLock()
 		defer child.mu.RUnlock()
-		assert.Equal(t, serviceSourceManual, child.meta[ext.KeyServiceSource])
-	})
-
-	t.Run("ChildWithExplicitServiceGetsSrvSrc", func(t *testing.T) {
-		// A child span that explicitly sets its own service name gets _dd.svc_src.
-		tracer, err := newTracer()
-		require.NoError(t, err)
-		defer tracer.Stop()
-
-		parent := tracer.StartSpan("parent", Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "parent-service", Source: serviceSourceManual}))
-		child := tracer.StartSpan("child", ChildOf(parent.Context()), Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "child-service", Source: serviceSourceManual}))
-		child.Finish()
-		parent.Finish()
-
-		child.mu.RLock()
-		defer child.mu.RUnlock()
-		assert.Equal(t, "child-service", child.service)
-		assert.Equal(t, serviceSourceManual, child.meta[ext.KeyServiceSource])
+		v, _ := child.meta.Get(ext.KeyServiceSource)
+		assert.Equal(t, "m", v)
 	})
 
 	t.Run("NoExplicitServiceNoSrvSrc", func(t *testing.T) {
@@ -113,12 +99,29 @@ func TestServiceSource(t *testing.T) {
 
 		span.mu.RLock()
 		defer span.mu.RUnlock()
-		_, hasSrvSrc := span.meta[ext.KeyServiceSource]
+		_, hasSrvSrc := span.meta.Get(ext.KeyServiceSource)
 		assert.False(t, hasSrvSrc, "_dd.svc_src should not be set when no service is explicitly set")
 	})
 
-	t.Run("ServiceMappingOverridesSrvSrc", func(t *testing.T) {
-		// When a service mapping renames a span's service, _dd.svc_src becomes ext.ServiceSourceMapping.
+	t.Run("ChildWithExplicitServiceGetsSrvSrc", func(t *testing.T) {
+		// A child span that explicitly sets its own service name gets _dd.svc_src = "m".
+		tracer, err := newTracer()
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		parent := tracer.StartSpan("parent", Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "parent-service", Source: "m"}))
+		child := tracer.StartSpan("child", ChildOf(parent.Context()), Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "child-service", Source: "m"}))
+		child.Finish()
+		parent.Finish()
+
+		child.mu.RLock()
+		defer child.mu.RUnlock()
+		v, _ := child.meta.Get(ext.KeyServiceSource)
+		assert.Equal(t, "m", v)
+	})
+
+	t.Run("ServiceMappingSetsSrvSrc", func(t *testing.T) {
+		// When a service mapping renames a span's service, _dd.svc_src = "opt.mapping".
 		tracer, err := newTracer(WithServiceMapping("original", "remapped"))
 		require.NoError(t, err)
 		defer tracer.Stop()
@@ -129,7 +132,8 @@ func TestServiceSource(t *testing.T) {
 		span.mu.RLock()
 		defer span.mu.RUnlock()
 		assert.Equal(t, "remapped", span.service)
-		assert.Equal(t, ext.ServiceSourceMapping, span.meta[ext.KeyServiceSource])
+		v, _ := span.meta.Get(ext.KeyServiceSource)
+		assert.Equal(t, ext.ServiceSourceMapping, v)
 	})
 
 	t.Run("SetMetaInitServiceName", func(t *testing.T) {
@@ -146,7 +150,8 @@ func TestServiceSource(t *testing.T) {
 
 		span.mu.RLock()
 		defer span.mu.RUnlock()
+		kss, _ := span.meta.Get(ext.KeyServiceSource)
 		assert.Equal(t, "from-meta-init", span.service)
-		assert.Equal(t, serviceSourceManual, span.meta[ext.KeyServiceSource])
+		assert.Equal(t, serviceSourceManual, kss)
 	})
 }
