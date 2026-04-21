@@ -450,7 +450,11 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 		err error
 	)
 
-	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), e.id, illmobs.StartSpanConfig{})
+	span, ctx := llmobs.StartExperimentSpan(ctx, e.task.Name(), illmobs.ExperimentInfo{
+		ID:           e.id,
+		RunID:        run.ID,
+		RunIteration: run.Iteration,
+	}, illmobs.StartSpanConfig{})
 	defer func() { span.Finish(illmobs.FinishSpanConfig{Error: err}) }()
 
 	tags := make(map[string]string)
