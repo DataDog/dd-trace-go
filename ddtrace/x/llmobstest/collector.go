@@ -54,9 +54,10 @@ type LLMObsMetric = llmobstransport.LLMObsMetric
 type Collector struct {
 	mux *http.ServeMux
 
-	mu      sync.Mutex
-	spans   []LLMObsSpan
-	metrics []LLMObsMetric
+	mu         sync.Mutex
+	spans      []LLMObsSpan
+	metrics    []LLMObsMetric
+	batchSizes []int // raw body byte-lengths, one entry per span batch HTTP request
 }
 
 // New creates a Collector that routes LLMObs requests via an in-process
@@ -131,6 +132,18 @@ func (c *Collector) SpanCount() int {
 	return len(c.spans)
 }
 
+// SpanBatchSizes returns the raw body byte-length of each span batch HTTP
+// request received so far, in order. Each entry corresponds to one call to
+// the /api/v2/llmobs endpoint. Use this to verify size-based flushing
+// behaviour: with correct flushing, no single entry should exceed 5 MB.
+func (c *Collector) SpanBatchSizes() []int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]int, len(c.batchSizes))
+	copy(out, c.batchSizes)
+	return out
+}
+
 // FindMetric returns the first collected evaluation metric whose Label equals
 // label, or nil if none is found.
 func (c *Collector) FindMetric(label string) *LLMObsMetric {
@@ -174,6 +187,7 @@ func (c *Collector) handleSpans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.mu.Lock()
+	c.batchSizes = append(c.batchSizes, len(body))
 	for _, p := range payload {
 		for _, span := range p.Spans {
 			if span != nil {

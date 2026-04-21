@@ -6,16 +6,13 @@
 package llmobs_test
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -2105,36 +2102,7 @@ func assertAPMTraceID(t *testing.T, apmSpan agenttest.Span, llmSpan llmobstransp
 // The fix (PR #4524) adds size-based flushing: before appending a new event to the buffer, if the
 // cumulative size would exceed sizeLimitEVPEvent (5MB), the current buffer is flushed first.
 func TestSpanEventsSizeBasedFlushing(t *testing.T) {
-	var mu sync.Mutex
-	var batchSizes []int
-
-	tt := testtracer.Start(t,
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp(mlApp),
-			tracer.WithLogStartup(false),
-			tracer.WithLLMObsAgentlessEnabled(false),
-		),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
-		testtracer.WithMockResponses(func(r *http.Request) *http.Response {
-			if r.URL.Path == "/evp_proxy/v2/api/v2/llmobs" {
-				// Read, record size, and restore the body so the default handler can also process it.
-				body, err := io.ReadAll(r.Body)
-				if err == nil {
-					r.Body = io.NopCloser(bytes.NewReader(body))
-					mu.Lock()
-					batchSizes = append(batchSizes, len(body))
-					mu.Unlock()
-				}
-			}
-			return nil // fall through to default handling
-		}),
-	)
-
-	ll, err := llmobs.ActiveLLMObs()
-	require.NoError(t, err)
+	_, coll, ll := testTracer(t, tracer.WithLLMObsAgentlessEnabled(false))
 
 	// Each span has ~1.7MB of input text. Four spans total ~6.8MB, which exceeds the 5MB limit.
 	// Without size-based flushing, all four are buffered and sent in a single HTTP request that
@@ -2149,12 +2117,10 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 		span.Finish(llmobs.FinishSpanConfig{})
 	}
 
-	tt.WaitForLLMObsSpans(t, numSpans)
+	tracer.Flush()
+	require.Equal(t, numSpans, coll.SpanCount())
 
-	mu.Lock()
-	sizes := append([]int(nil), batchSizes...)
-	mu.Unlock()
-
+	sizes := coll.SpanBatchSizes()
 	require.NotEmpty(t, sizes, "expected at least one HTTP request to the LLMObs endpoint")
 	for _, size := range sizes {
 		assert.LessOrEqual(t, size, 5_000_000,

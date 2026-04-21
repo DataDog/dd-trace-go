@@ -1524,22 +1524,19 @@ func TestLargeDatasetPushChunking(t *testing.T) {
 	var bulkUploadCalled bool
 	var batchUpdateSizes []int
 
-	mockHandler := func(r *http.Request) *http.Response {
-		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
-		path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
+	agent, err := tracertest.StartAgent(t)
+	require.NoError(t, err)
+	coll := llmobstest.New(t)
+	coll.HandleFunc("/api/unstable/llm-obs/v1/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/unstable/llm-obs/v1")
 
 		// Simulate the EVP proxy rejecting bulk uploads with a 502.
 		if strings.Contains(path, "/records/upload") {
 			mu.Lock()
 			bulkUploadCalled = true
 			mu.Unlock()
-			return &http.Response{
-				Status:     "502 Bad Gateway",
-				StatusCode: http.StatusBadGateway,
-				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader("read limit reached")),
-				Request:    r,
-			}
+			http.Error(w, "read limit reached", http.StatusBadGateway)
+			return
 		}
 
 		// Track the body size of each batch_update request.
@@ -1553,11 +1550,18 @@ func TestLargeDatasetPushChunking(t *testing.T) {
 			}
 		}
 
-		return createMockHandler()(r)
-	}
-
-	tt := testTracer(t, testtracer.WithMockResponses(mockHandler))
-	defer tt.Stop()
+		createMockHandler()(w, r)
+	}))
+	_, err = tracertest.Start(t, agent,
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-app"),
+		tracer.WithLLMObsAgentlessEnabled(false),
+		tracer.WithLLMObsProjectName("test-project"),
+		tracer.WithService("test-service"),
+		tracer.WithLogStartup(false),
+		coll.TracerOption(),
+	)
+	require.NoError(t, err)
 
 	// Build records whose total JSON size exceeds batchUpdateThreshold (5MB) so that
 	// the current code would attempt a bulk upload. Each record is ~900KB:

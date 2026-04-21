@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -808,24 +807,9 @@ func TestExperimentLargeDatasetSizeBasedFlushing(t *testing.T) {
 	// forcing at least one early flush. A small count is used to keep the test fast.
 	const numRecords = 12
 
-	var mu sync.Mutex
-	var batchSizes []int
-
-	mockHandler := func(r *http.Request) *http.Response {
-		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
-
-		// Intercept LLMObs span event payloads to record their batch sizes.
-		// Restore the body so the testtracer's default handler can still process the spans.
-		if path == "/api/v2/llmobs" {
-			body, err := io.ReadAll(r.Body)
-			if err == nil {
-				r.Body = io.NopCloser(bytes.NewReader(body))
-				mu.Lock()
-				batchSizes = append(batchSizes, len(body))
-				mu.Unlock()
-			}
-			return nil // fall through to testtracer default handler
-		}
+	coll := llmobstest.New(t)
+	coll.HandleFunc("/api/unstable/llm-obs/v1/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
 
 		// Return exactly numRecords entries for the dataset batch_update so that
 		// dataset.Push succeeds (it validates the response count matches the insert count).
@@ -841,20 +825,24 @@ func TestExperimentLargeDatasetSizeBasedFlushing(t *testing.T) {
 			}
 			resp := llmobstransport.BatchUpdateDatasetResponse{Data: data}
 			b, _ := json.Marshal(resp)
-			return &http.Response{
-				Status:     "200 OK",
-				StatusCode: http.StatusOK,
-				Header:     make(http.Header),
-				Body:       io.NopCloser(bytes.NewReader(b)),
-				Request:    r,
-			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write(b)
+			return
 		}
 
-		return createMockHandler()(r)
-	}
-
-	tt := testTracer(t, testtracer.WithMockResponses(mockHandler))
-	defer tt.Stop()
+		createMockHandler()(w, r)
+	}))
+	_, _, err := tracertest.Bootstrap(t,
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-app"),
+		tracer.WithLLMObsAgentlessEnabled(false),
+		tracer.WithLLMObsProjectName("test-project"),
+		tracer.WithService("test-service"),
+		tracer.WithLogStartup(false),
+		coll.TracerOption(),
+	)
+	require.NoError(t, err)
 
 	// Each record carries large input and expected output fields so that the combined span
 	// payload across all records exceeds the 5MB limit, triggering size-based flushing.
@@ -886,12 +874,10 @@ func TestExperimentLargeDatasetSizeBasedFlushing(t *testing.T) {
 	_, err = exp.Run(context.Background())
 	require.NoError(t, err)
 
-	tt.WaitForLLMObsSpans(t, numRecords)
+	tracer.Flush()
+	require.Equal(t, numRecords, coll.SpanCount())
 
-	mu.Lock()
-	sizes := append([]int(nil), batchSizes...)
-	mu.Unlock()
-
+	sizes := coll.SpanBatchSizes()
 	require.NotEmpty(t, sizes, "expected at least one HTTP request to the LLMObs endpoint")
 	for _, size := range sizes {
 		assert.LessOrEqual(t, size, 5_000_000,
