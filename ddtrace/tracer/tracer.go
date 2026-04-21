@@ -104,8 +104,8 @@ type tracer struct {
 	config *config
 
 	// stats specifies the concentrator used to compute statistics, when client-side
-	// stats are enabled.
-	stats *concentrator
+	// stats are enabled. In OTLP export mode this is a noopConcentrator.
+	stats statsConcentrator
 
 	// traceWriter is responsible for sending finished traces to their
 	// destination, such as the Trace Agent or Datadog Forwarder.
@@ -497,6 +497,10 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
+	var sc statsConcentrator = newConcentrator(c, defaultStatsBucketSize, statsd)
+	if c.internalConfig.OTLPExportMode() {
+		sc = &noopConcentrator{}
+	}
 	t = &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -507,7 +511,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		defaultSampler:   dfltSampler,
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
-		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
+		stats:            sc,
 		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
 		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(func() obfuscate.Config {
@@ -1163,13 +1167,7 @@ func (t *tracer) submit(s *Span) {
 	if !shouldCalc {
 		return
 	}
-	// the agent supports computed stats
-	select {
-	case t.stats.In <- statSpan:
-		// ok
-	default:
-		log.Error("Stats channel full, disregarding span.")
-	}
+	t.stats.trySendSpan(statSpan)
 }
 
 func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {

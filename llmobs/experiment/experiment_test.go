@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -824,5 +825,105 @@ func createTestEvaluators() []experiment.Evaluator {
 			}
 			return 0.5, nil
 		}),
+	}
+}
+
+// TestExperimentLargeDatasetSizeBasedFlushing verifies that span events are flushed in multiple
+// batches when the cumulative payload size exceeds the backend limit. Without size-based flushing,
+// all span events accumulate between periodic flushes and are sent as a single oversized request.
+func TestExperimentLargeDatasetSizeBasedFlushing(t *testing.T) {
+	// numRecords is chosen so that the total span payload exceeds the 5MB per-batch limit,
+	// forcing at least one early flush. A small count is used to keep the test fast.
+	const numRecords = 12
+
+	var mu sync.Mutex
+	var batchSizes []int
+
+	mockHandler := func(r *http.Request) *http.Response {
+		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+
+		// Intercept LLMObs span event payloads to record their batch sizes.
+		// Restore the body so the testtracer's default handler can still process the spans.
+		if path == "/api/v2/llmobs" {
+			body, err := io.ReadAll(r.Body)
+			if err == nil {
+				r.Body = io.NopCloser(bytes.NewReader(body))
+				mu.Lock()
+				batchSizes = append(batchSizes, len(body))
+				mu.Unlock()
+			}
+			return nil // fall through to testtracer default handler
+		}
+
+		// Return exactly numRecords entries for the dataset batch_update so that
+		// dataset.Push succeeds (it validates the response count matches the insert count).
+		if strings.Contains(path, "/datasets") && strings.HasSuffix(path, "/batch_update") {
+			data := make([]llmobstransport.ResponseData[llmobstransport.DatasetRecordView], numRecords)
+			for i := range data {
+				id := fmt.Sprintf("record-id-%d", i)
+				data[i] = llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
+					ID:         id,
+					Type:       "dataset_records",
+					Attributes: llmobstransport.DatasetRecordView{ID: id, Version: 1},
+				}
+			}
+			resp := llmobstransport.BatchUpdateDatasetResponse{Data: data}
+			b, _ := json.Marshal(resp)
+			return &http.Response{
+				Status:     "200 OK",
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(b)),
+				Request:    r,
+			}
+		}
+
+		return createMockHandler()(r)
+	}
+
+	tt := testTracer(t, testtracer.WithMockResponses(mockHandler))
+	defer tt.Stop()
+
+	// Each record carries large input and expected output fields so that the combined span
+	// payload across all records exceeds the 5MB limit, triggering size-based flushing.
+	largeContext := strings.Repeat("x", 200_000)  // ~200KB input field
+	largeExpected := strings.Repeat("z", 100_000) // ~100KB expected output field
+
+	records := make([]dataset.Record, numRecords)
+	for i := range records {
+		records[i] = dataset.Record{
+			Input: map[string]any{
+				"context":  largeContext,
+				"question": fmt.Sprintf("What is the answer for record %d?", i),
+			},
+			ExpectedOutput: largeExpected,
+		}
+	}
+
+	ds, err := dataset.Create(context.Background(), "large-dataset", records, dataset.WithProjectName("test-project"))
+	require.NoError(t, err)
+
+	// Task produces a large output so that each span payload is substantial (~500KB total).
+	task := experiment.NewTask("summarizer", func(_ context.Context, _ dataset.Record, _ map[string]any) (any, error) {
+		return strings.Repeat("y", 200_000), nil
+	})
+
+	exp, err := experiment.New("large-experiment", task, ds, nil, experiment.WithProjectName("test-project"))
+	require.NoError(t, err)
+
+	_, err = exp.Run(context.Background())
+	require.NoError(t, err)
+
+	tt.WaitForLLMObsSpans(t, numRecords)
+
+	mu.Lock()
+	sizes := append([]int(nil), batchSizes...)
+	mu.Unlock()
+
+	require.NotEmpty(t, sizes, "expected at least one HTTP request to the LLMObs endpoint")
+	for _, size := range sizes {
+		assert.LessOrEqual(t, size, 5_000_000,
+			"HTTP batch payload (%d bytes) exceeds the 5MB limit; without size-based flushing, "+
+				"all experiment spans accumulate in a single oversized batch", size)
 	}
 }

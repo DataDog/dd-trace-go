@@ -6,13 +6,16 @@
 package llmobs_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2184,4 +2187,69 @@ func assertAPMTraceID(t *testing.T, apmSpan testtracer.Span, llmSpan llmobstrans
 	low64HexUint, err := strconv.ParseUint(low64Hex, 16, 64)
 	require.NoError(t, err)
 	assert.Equal(t, apmSpan.TraceID, low64HexUint, "APM trace ID should match DDAttributes.APMTraceID")
+}
+
+// TestSpanEventsSizeBasedFlushing reproduces the issue where the span events buffer can grow beyond
+// the 5MB EVP event size limit before being flushed, causing a single HTTP request payload to exceed
+// the backend's size limit.
+//
+// The fix (PR #4524) adds size-based flushing: before appending a new event to the buffer, if the
+// cumulative size would exceed sizeLimitEVPEvent (5MB), the current buffer is flushed first.
+func TestSpanEventsSizeBasedFlushing(t *testing.T) {
+	var mu sync.Mutex
+	var batchSizes []int
+
+	tt := testtracer.Start(t,
+		testtracer.WithTracerStartOpts(
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp(mlApp),
+			tracer.WithLogStartup(false),
+			tracer.WithLLMObsAgentlessEnabled(false),
+		),
+		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+			Endpoints: []string{"/evp_proxy/v2/"},
+		}),
+		testtracer.WithMockResponses(func(r *http.Request) *http.Response {
+			if r.URL.Path == "/evp_proxy/v2/api/v2/llmobs" {
+				// Read, record size, and restore the body so the default handler can also process it.
+				body, err := io.ReadAll(r.Body)
+				if err == nil {
+					r.Body = io.NopCloser(bytes.NewReader(body))
+					mu.Lock()
+					batchSizes = append(batchSizes, len(body))
+					mu.Unlock()
+				}
+			}
+			return nil // fall through to default handling
+		}),
+	)
+
+	ll, err := llmobs.ActiveLLMObs()
+	require.NoError(t, err)
+
+	// Each span has ~1.7MB of input text. Four spans total ~6.8MB, which exceeds the 5MB limit.
+	// Without size-based flushing, all four are buffered and sent in a single HTTP request that
+	// is ~6.8MB — over the 5MB backend limit.
+	const numSpans = 4
+	largeContent := strings.Repeat("x", 1_700_000)
+
+	ctx := context.Background()
+	for i := range numSpans {
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindTask, fmt.Sprintf("span-%d", i), llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{InputText: largeContent})
+		span.Finish(llmobs.FinishSpanConfig{})
+	}
+
+	tt.WaitForLLMObsSpans(t, numSpans)
+
+	mu.Lock()
+	sizes := append([]int(nil), batchSizes...)
+	mu.Unlock()
+
+	require.NotEmpty(t, sizes, "expected at least one HTTP request to the LLMObs endpoint")
+	for _, size := range sizes {
+		assert.LessOrEqual(t, size, 5_000_000,
+			"HTTP batch payload (%d bytes) exceeds the 5MB limit; without size-based flushing, "+
+				"all spans accumulate in a single batch that is too large to send", size)
+	}
 }
