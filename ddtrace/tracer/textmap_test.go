@@ -1669,7 +1669,8 @@ func TestEnvVars(t *testing.T) {
 				checkSameElements(assert, tc.outHeaders[tracestateHeader], headers[tracestateHeader])
 
 				// NOTE: this will be set for phase 3
-				assert.Empty(root.meta["_dd.parent_id"], "extraction happened from DD headers, so _dd.parent_id mustn't be set")
+				v, _ := root.meta.Get("_dd.parent_id")
+				assert.Empty(v, "extraction happened from DD headers, so _dd.parent_id mustn't be set")
 
 				ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 				// -3 as we don't count dd= as part of the "value" length limit
@@ -1814,9 +1815,11 @@ func TestEnvVars(t *testing.T) {
 					}
 
 					if tc.lastParent == "" {
-						assert.Empty(s.meta["_dd.parent_id"])
+						v, _ := s.meta.Get("_dd.parent_id")
+						assert.Empty(v)
 					} else {
-						assert.Equal(s.meta["_dd.parent_id"], tc.lastParent)
+						v, _ := s.meta.Get("_dd.parent_id")
+						assert.Equal(v, tc.lastParent)
 					}
 
 					headers := TextMapCarrier(map[string]string{})
@@ -2516,7 +2519,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.Nil(err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
-		assert.NotContains(root.meta, keyTraceID128)
+		assert.False(root.meta.Has(keyTraceID128))
 	})
 
 	t.Run("datadog, malformed tid", func(_ *testing.T) {
@@ -2529,7 +2532,7 @@ func TestMalformedTID(t *testing.T) {
 		assert.Nil(err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
-		assert.NotContains(root.meta, keyTraceID128)
+		assert.False(root.meta.Has(keyTraceID128))
 	})
 
 	t.Run("datadog, valid tid", func(_ *testing.T) {
@@ -2542,7 +2545,8 @@ func TestMalformedTID(t *testing.T) {
 		assert.Nil(err)
 		root := tracer.StartSpan("web.request", ChildOf(sctx))
 		root.Finish()
-		assert.Equal("640cfd8d00000000", root.meta[keyTraceID128])
+		v, _ := root.meta.Get(keyTraceID128)
+		assert.Equal("640cfd8d00000000", v)
 	})
 }
 
