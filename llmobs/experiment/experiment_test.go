@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -811,10 +812,17 @@ func TestExperimentLargeDatasetSizeBasedFlushing(t *testing.T) {
 	coll.HandleFunc("/api/unstable/llm-obs/v1/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
-		// Return exactly numRecords entries for the dataset batch_update so that
-		// dataset.Push succeeds (it validates the response count matches the insert count).
+		// Return exactly as many entries as the request sent so that dataset.Push
+		// succeeds (transport validates response count == insert+update count).
 		if strings.Contains(path, "/datasets") && strings.HasSuffix(path, "/batch_update") {
-			data := make([]llmobstransport.ResponseData[llmobstransport.DatasetRecordView], numRecords)
+			body, _ := io.ReadAll(r.Body)
+			var req llmobstransport.BatchUpdateDatasetRequest
+			_ = json.Unmarshal(body, &req)
+			count := len(req.Data.Attributes.InsertRecords) + len(req.Data.Attributes.UpdateRecords)
+			if count == 0 {
+				count = numRecords // fallback for safety
+			}
+			data := make([]llmobstransport.ResponseData[llmobstransport.DatasetRecordView], count)
 			for i := range data {
 				id := fmt.Sprintf("record-id-%d", i)
 				data[i] = llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
