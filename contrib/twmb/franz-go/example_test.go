@@ -10,7 +10,6 @@ import (
 	"log"
 
 	kgotrace "github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2"
-	"github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2/internal/tracing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
@@ -19,9 +18,10 @@ import (
 
 func Example() {
 	// Create a traced client with default configuration
-	client, err := kgotrace.NewClient(
+	client, err := kgo.NewClient(
 		kgo.SeedBrokers("localhost:9092"),
 		kgo.ConsumeTopics("my-topic"),
+		kgotrace.WithTracing(),
 	)
 	if err != nil {
 		log.Fatal("Failed to create client:", err)
@@ -45,39 +45,12 @@ func Example() {
 	})
 }
 
-func Example_withTracingOptions() {
-	// Create a traced client with custom tracing options
-	client, err := kgotrace.NewClientWithTracing(
-		kgotrace.ClientOptions(
-			kgo.SeedBrokers("localhost:9092"),
-			kgo.ConsumeTopics("my-topic"),
-			kgo.ConsumerGroup("my-consumer-group"),
-		),
-		tracing.WithService("my-service"),
-		tracing.WithAnalytics(true),
-		tracing.WithDataStreams(),
-	)
-	if err != nil {
-		log.Fatal("Failed to create client:", err)
-	}
-	defer client.Close()
-
-	// Use the client normally - tracing options are applied automatically
-	ctx := context.Background()
-	record := &kgo.Record{
-		Topic: "my-topic",
-		Value: []byte("Hello, Kafka!"),
-	}
-	if err := client.ProduceSync(ctx, record).FirstErr(); err != nil {
-		log.Fatal("Failed to produce:", err)
-	}
-}
-
 func Example_manualChildSpan() {
 	// Create a traced client
-	client, err := kgotrace.NewClient(
+	client, err := kgo.NewClient(
 		kgo.SeedBrokers("localhost:9092"),
 		kgo.ConsumeTopics("my-topic"),
+		kgotrace.WithTracing(),
 	)
 	if err != nil {
 		log.Fatal("Failed to create client:", err)
