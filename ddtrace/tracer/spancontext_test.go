@@ -226,10 +226,9 @@ func testAsyncSpanRace(t *testing.T) {
 				finishes.Wait()
 
 				for range 500 {
-					for range root.meta {
+					for range root.meta.All() {
 						// this range simulates iterating over the meta map
 						// as we do when encoding msgpack upon flushing.
-						continue
 					}
 				}
 			})
@@ -314,9 +313,11 @@ func TestPartialFlush(t *testing.T) {
 		ts := transport.Traces()
 		require.Len(t, ts, 1)
 		require.Len(t, ts[0], 2)
-		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
+		v0, _ := ts[0][0].meta.Get("someTraceTag")
+		assert.Equal(t, "someValue", v0)
 		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
+		v1, _ := ts[0][1].meta.Get("someTraceTag")
+		assert.Empty(t, v1)                                         // the tag should only be on the first span in the chunk
 		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, children[0], ts[0][0])
 		comparePayloadSpans(t, children[1], ts[0][1])
@@ -330,9 +331,11 @@ func TestPartialFlush(t *testing.T) {
 		tsRoot := transport.Traces()
 		require.Len(t, tsRoot, 1)
 		require.Len(t, tsRoot[0], 2)
-		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
+		v0, _ = ts[0][0].meta.Get("someTraceTag")
+		assert.Equal(t, "someValue", v0)
 		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
+		v1, _ = ts[0][1].meta.Get("someTraceTag")
+		assert.Empty(t, v1)                                         // the tag should only be on the first span in the chunk
 		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, root, tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
@@ -787,19 +790,22 @@ func TestSpanPeerService(t *testing.T) {
 	for _, tc := range testCases {
 		assertSpan := func(t *testing.T, s *Span) {
 			if tc.wantPeerService == "" {
-				assert.NotContains(t, s.meta, "peer.service")
+				assert.False(t, s.meta.Has("peer.service"))
 			} else {
-				assert.Equal(t, tc.wantPeerService, s.meta["peer.service"])
+				v, _ := s.meta.Get("peer.service")
+				assert.Equal(t, tc.wantPeerService, v)
 			}
 			if tc.wantPeerServiceSource == "" {
-				assert.NotContains(t, s.meta, "_dd.peer.service.source")
+				assert.False(t, s.meta.Has("_dd.peer.service.source"))
 			} else {
-				assert.Equal(t, tc.wantPeerServiceSource, s.meta["_dd.peer.service.source"])
+				v, _ := s.meta.Get("_dd.peer.service.source")
+				assert.Equal(t, tc.wantPeerServiceSource, v)
 			}
 			if tc.wantPeerServiceRemappedFrom == "" {
-				assert.NotContains(t, s.meta, "_dd.peer.service.remapped_from")
+				assert.False(t, s.meta.Has("_dd.peer.service.remapped_from"))
 			} else {
-				assert.Equal(t, tc.wantPeerServiceRemappedFrom, s.meta["_dd.peer.service.remapped_from"])
+				v, _ := s.meta.Get("_dd.peer.service.remapped_from")
+				assert.Equal(t, tc.wantPeerServiceRemappedFrom, v)
 			}
 		}
 		t.Run(tc.name, func(t *testing.T) {
@@ -811,8 +817,8 @@ func TestSpanPeerService(t *testing.T) {
 			assert.Nil(t, err)
 			defer stop()
 
-			tracer.config.peerServiceDefaultsEnabled = tc.peerServiceDefaultsEnabled
-			tracer.config.peerServiceMappings = tc.peerServiceMappings
+			tracer.config.internalConfig.SetPeerServiceDefaultsEnabled(tc.peerServiceDefaultsEnabled, telemetry.OriginCode)
+			tracer.config.internalConfig.SetPeerServiceMappings(tc.peerServiceMappings, telemetry.OriginCode)
 
 			p := tracer.StartSpan("parent-span", tc.spanOpts...)
 			opts := append([]StartSpanOption{ChildOf(p.Context())}, tc.spanOpts...)
@@ -867,7 +873,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
 			assert.Equal(t, "span-service", s.service)
-			assert.Equal(t, "global-service", s.meta["_dd.base_service"])
+			v, _ := s.meta.Get("_dd.base_service")
+			assert.Equal(t, "global-service", v)
 		}
 	})
 	t.Run("span-service-equal-global-service", func(t *testing.T) {
@@ -880,7 +887,7 @@ func TestSpanDDBaseService(t *testing.T) {
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
 			assert.Equal(t, "global-service", s.service)
-			assert.NotContains(t, s.meta, "_dd.base_service")
+			assert.False(t, s.meta.Has("_dd.base_service"))
 		}
 	})
 	t.Run("span-service-equal-different-case", func(t *testing.T) {
@@ -893,7 +900,7 @@ func TestSpanDDBaseService(t *testing.T) {
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
 			assert.Equal(t, "GLOBAL-service", s.service)
-			assert.NotContains(t, s.meta, "_dd.base_service")
+			assert.False(t, s.meta.Has("_dd.base_service"))
 		}
 	})
 	t.Run("global-service-not-set", func(t *testing.T) {
@@ -905,7 +912,8 @@ func TestSpanDDBaseService(t *testing.T) {
 			assert.Equal(t, "span-service", s.service)
 			// in this case we don't assert to a concrete value because the default tracer service name is calculated
 			// based on the process name and might change depending on how tests are run.
-			assert.NotEmpty(t, s.meta["_dd.base_service"])
+			v, _ := s.meta.Get("_dd.base_service")
+			assert.NotEmpty(t, v)
 		}
 	})
 	t.Run("using-tag-option", func(t *testing.T) {
@@ -918,7 +926,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
 			assert.Equal(t, "span-service", s.service)
-			assert.Equal(t, "global-service", s.meta["_dd.base_service"])
+			v, _ := s.meta.Get("_dd.base_service")
+			assert.Equal(t, "global-service", v)
 		}
 	})
 }
@@ -1247,13 +1256,14 @@ func TestSpanProcessTags(t *testing.T) {
 			root := traces[0][0]
 			assert.Equal(t, "p", root.name)
 			if tc.enabled {
-				assert.NotEmpty(t, root.meta["_dd.tags.process"])
+				v, _ := root.meta.Get("_dd.tags.process")
+				assert.NotEmpty(t, v)
 			} else {
-				assert.NotContains(t, root.meta, "_dd.tags.process")
+				assert.False(t, root.meta.Has("_dd.tags.process"))
 			}
 
 			for _, s := range traces[0][1:] {
-				assert.NotContains(t, s.meta, "_dd.tags.process")
+				assert.False(t, s.meta.Has("_dd.tags.process"))
 			}
 		})
 	}
@@ -1339,10 +1349,17 @@ func BenchmarkUpdateTracerGitMetadataTags(b *testing.B) {
 }
 
 // genericCtxWithDM is a minimal ddtrace.SpanContext + spanContextV1Adapter that
-// carries a _dd.p.dm propagating tag, simulating a context arriving from an
-// external (non-native) integration.
+// simulates a context arriving from an external (non-native) integration.
+//   - propagatingTags: carries propagation metadata such as _dd.p.dm (decision maker),
+//     used to test that FromGenericCtx correctly caches the sampling mechanism.
+//   - decision: the sampling decision (decisionNone/Keep/Drop) from the external context,
+//     used to test how FromGenericCtx translates it into DD trace semantics.
+//   - priority: the numeric sampling priority (e.g. PriorityAutoKeep, PriorityAutoReject),
+//     used to test that FromGenericCtx sets and locks the priority on the trace.
 type genericCtxWithDM struct {
 	propagatingTags map[string]string
+	decision        uint32
+	priority        *float64
 }
 
 func (g *genericCtxWithDM) SpanID() uint64                              { return 1 }
@@ -1350,8 +1367,8 @@ func (g *genericCtxWithDM) TraceID() string                             { return
 func (g *genericCtxWithDM) TraceIDBytes() [16]byte                      { var b [16]byte; b[15] = 1; return b }
 func (g *genericCtxWithDM) TraceIDLower() uint64                        { return 1 }
 func (g *genericCtxWithDM) ForeachBaggageItem(_ func(k, v string) bool) {}
-func (g *genericCtxWithDM) SamplingDecision() uint32                    { return uint32(decisionKeep) }
-func (g *genericCtxWithDM) Priority() *float64                          { p := 1.0; return &p }
+func (g *genericCtxWithDM) SamplingDecision() uint32                    { return g.decision }
+func (g *genericCtxWithDM) Priority() *float64                          { return g.priority }
 func (g *genericCtxWithDM) Origin() string                              { return "" }
 func (g *genericCtxWithDM) PropagatingTags() map[string]string          { return g.propagatingTags }
 func (g *genericCtxWithDM) Tags() map[string]string                     { return nil }
@@ -1360,10 +1377,105 @@ func (g *genericCtxWithDM) Tags() map[string]string                     { return
 // t.dm so that trace.decisionMaker() returns the correct sampling mechanism for
 // traces arriving through generic (non-native) context adapters.
 func TestFromGenericCtxDecisionMakerCached(t *testing.T) {
+	keepPri := float64(ext.PriorityAutoKeep)
 	ctx := &genericCtxWithDM{
 		propagatingTags: map[string]string{keyDecisionMaker: "-4"},
+		decision:        uint32(decisionKeep),
+		priority:        &keepPri,
 	}
 	sc := FromGenericCtx(ctx)
 	require.NotNil(t, sc.trace)
 	assert.Equal(t, uint32(4), sc.trace.decisionMaker())
+}
+
+func TestFromGenericCtxSamplingDecision(t *testing.T) {
+	t.Run("drop_preserves_CAS", func(t *testing.T) {
+		// When an external context (e.g. OTel bridge) signals a drop decision,
+		// FromGenericCtx should NOT set samplingDecision to decisionDrop directly.
+		// It should leave it as decisionNone so that the keep()/drop() CAS flow
+		// works normally — allowing error spans to rescue the trace.
+		p := float64(ext.PriorityAutoReject)
+		ctx := &genericCtxWithDM{
+			decision: uint32(decisionDrop),
+			priority: &p,
+		}
+		sc := FromGenericCtx(ctx)
+		require.NotNil(t, sc.trace)
+
+		// samplingDecision must be decisionNone, not decisionDrop.
+		got := samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionNone, got,
+			"drop decision from external context should not be propagated directly; "+
+				"samplingDecision should remain decisionNone so keep()/drop() CAS works")
+
+		// Priority should still reflect the external intent (P0).
+		pri, ok := sc.SamplingPriority()
+		require.True(t, ok)
+		assert.Equal(t, int(ext.PriorityAutoReject), pri,
+			"priority should be set to AutoReject (P0) to preserve the external sampling intent")
+
+		// Trace should be locked to prevent the DD sampler from overriding P0.
+		assert.True(t, sc.trace.isLocked(),
+			"trace should be locked to prevent resampling")
+
+		// keep() CAS should succeed since samplingDecision is decisionNone.
+		sc.trace.keep()
+		got = samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, got,
+			"keep() should be able to CAS from decisionNone to decisionKeep, "+
+				"allowing error spans to rescue the trace")
+	})
+
+	t.Run("keep_propagated", func(t *testing.T) {
+		// When an external context signals a keep decision, FromGenericCtx
+		// should propagate decisionKeep directly so the trace is guaranteed
+		// to be sent.
+		p := float64(ext.PriorityAutoKeep)
+		ctx := &genericCtxWithDM{
+			decision: uint32(decisionKeep),
+			priority: &p,
+		}
+		sc := FromGenericCtx(ctx)
+		require.NotNil(t, sc.trace)
+
+		got := samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, got,
+			"keep decision from external context should be propagated directly")
+
+		pri, ok := sc.SamplingPriority()
+		require.True(t, ok)
+		assert.Equal(t, int(ext.PriorityAutoKeep), pri)
+
+		assert.True(t, sc.trace.isLocked(),
+			"trace should be locked to prevent resampling")
+	})
+
+	t.Run("drop_error_span_rescue", func(t *testing.T) {
+		// Simulate the OTel bridge scenario: unsampled parent produces a child
+		// span that has an error. The error span should rescue the trace via
+		// keep(), which only works if samplingDecision starts as decisionNone.
+		p := float64(ext.PriorityAutoReject)
+		ctx := &genericCtxWithDM{
+			decision: uint32(decisionDrop),
+			priority: &p,
+		}
+		sc := FromGenericCtx(ctx)
+		require.NotNil(t, sc.trace)
+
+		// Simulate an error on the trace (as setErrorFlagLocked would do).
+		sc.errors.Add(1)
+		assert.Greater(t, sc.errors.Load(), int32(0))
+
+		// keep() must succeed: CAS(decisionNone -> decisionKeep).
+		sc.trace.keep()
+		got := samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, got,
+			"error span should rescue the trace: keep() must CAS to decisionKeep")
+
+		// After keep(), drop() should be a no-op (CAS from decisionNone fails).
+		sc.trace.drop()
+		got = samplingDecision(sc.trace.samplingDecision)
+		assert.Equal(t, decisionKeep, got,
+			"drop() after keep() should be a no-op — the trace stays rescued")
+	})
 }

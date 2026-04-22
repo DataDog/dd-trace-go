@@ -25,7 +25,7 @@ const (
 
 var (
 	mu                     sync.Mutex
-	activeNamingSchema     int32
+	activeNamingSchema     atomic.Int32
 	removeFakeServiceNames bool
 )
 
@@ -69,11 +69,11 @@ func GetConfig() Config {
 }
 
 func GetVersion() Version {
-	return Version(atomic.LoadInt32(&activeNamingSchema))
+	return Version(activeNamingSchema.Load())
 }
 
 func setVersion(v Version) {
-	atomic.StoreInt32(&activeNamingSchema, int32(v))
+	activeNamingSchema.Store(int32(v))
 }
 
 func parseVersionString(v string) (Version, bool) {

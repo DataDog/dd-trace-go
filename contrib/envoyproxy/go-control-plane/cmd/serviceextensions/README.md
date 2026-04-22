@@ -32,6 +32,7 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 | `DD_SERVICE_EXTENSION_TLS`                | `true`          | Enable the gRPC TLS layer. Do not modify if you are using GCP.                                                |
 | `DD_SERVICE_EXTENSION_TLS_KEY_FILE`       | `localhost.key` | Change the default gRPC TLS layer key. Do not modify if you are using GCP.                                    |
 | `DD_SERVICE_EXTENSION_TLS_CERT_FILE`      | `localhost.crt` | Change the default gRPC TLS layer cert. Do not modify if you are using GCP.                                   |
+| `DD_SERVICE_EXTENSION_UDS_PATH`           | _(unset)_       | Path to a Unix domain socket for the gRPC server. When set, overrides `DD_SERVICE_EXTENSION_HOST`/`PORT` and TLS is disabled. Only for self-managed Envoy deployments. |
 
 > The Service Extension need to be connected to a deployed [Datadog agent](https://docs.datadoghq.com/agent).
 
@@ -45,3 +46,23 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 The Envoy of GCP is configured to communicate to the Service Extension with TLS.
 
 `localhost` self signed certificates are generated and bundled into the App & API Protection Service Extension docker image and loaded at the start of the gRPC server.
+
+### Unix Domain Socket
+
+When running alongside a self-managed Envoy on the same host, the gRPC server can listen on a Unix domain socket instead of a TCP port. This avoids the need for TLS and reduces network overhead.
+
+Set `DD_SERVICE_EXTENSION_UDS_PATH` to the desired socket path:
+
+```sh
+DD_SERVICE_EXTENSION_UDS_PATH=/var/run/dd-service-extension.sock ./service-extensions-callout
+```
+
+Configure Envoy to connect to the same socket:
+
+```yaml
+grpc_service:
+  google_grpc:
+    target_uri: "unix:///var/run/dd-service-extension.sock"
+```
+
+> **Note:** TLS (`DD_SERVICE_EXTENSION_TLS`) is ignored when a Unix domain socket is configured. Unix domain sockets are local to the host and do not require transport-layer encryption. This option is **not** supported with GCP Service Extensions.

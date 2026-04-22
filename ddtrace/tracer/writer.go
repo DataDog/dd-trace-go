@@ -139,7 +139,7 @@ func (h *agentTraceWriter) flush() {
 		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
 			log.Debug("Attempt to send payload: size: %d traces: %d\n", stats.size, stats.itemCount)
 			var rc io.ReadCloser
-			rc, err = h.config.transport.send(p)
+			rc, err = h.config.ddTransport.send(p)
 			if err == nil {
 				log.Debug("sent traces after %d attempts", attempt+1)
 				h.statsd.Count("datadog.tracer.flush_bytes", int64(stats.size), nil, 1)
@@ -245,11 +245,11 @@ func (h *logTraceWriter) encodeSpan(s *Span) {
 	h.buf.Write(strconv.AppendInt(scratch[:0], int64(s.error), 10))
 	h.buf.WriteString(`,"meta":{`)
 	first := true
-	for k, v := range s.meta {
+	for k, v := range s.meta.All() {
 		if first {
 			first = false
 		} else {
-			h.buf.WriteString(`,`)
+			h.buf.WriteString(",")
 		}
 		h.marshalString(k)
 		h.buf.WriteString(":")

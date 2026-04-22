@@ -13,6 +13,7 @@ import (
 	"time"
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
@@ -220,9 +221,12 @@ func defaultConfig(config ClientConfig) ClientConfig {
 		config.EarlyFlushPayloadSize = defaultEarlyFlushPayloadSize
 	}
 
-	if config.ExtendedHeartbeatInterval == 0 {
-		config.ExtendedHeartbeatInterval = defaultExtendedHeartbeatInterval
+	extendedHeartbeatInterval := defaultExtendedHeartbeatInterval
+	if config.ExtendedHeartbeatInterval != 0 {
+		extendedHeartbeatInterval = config.ExtendedHeartbeatInterval
 	}
+	envExtVal := globalinternal.FloatEnv("DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL", extendedHeartbeatInterval.Seconds())
+	config.ExtendedHeartbeatInterval = time.Duration(envExtVal * float64(time.Second))
 
 	if config.PayloadQueueSize.Min == 0 {
 		config.PayloadQueueSize.Min = defaultPayloadQueueSize.Min
@@ -274,7 +278,7 @@ func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (i
 		endpoints = append(endpoints, request)
 	}
 
-	if len(endpoints) == 0 {
+	if len(endpoints) == 0 && !bazel.IsPayloadFilesModeEnabled() {
 		return internal.WriterConfig{}, fmt.Errorf("telemetry: could not build any endpoint, please provide an AgentURL or an APIKey with an optional AgentlessURL")
 	}
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
@@ -60,6 +61,10 @@ type (
 )
 
 func (c *client) GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error) {
+	if bazel.IsManifestModeEnabled() {
+		return "", map[string]map[string][]SkippableResponseDataAttributes{}, nil
+	}
+
 	if c.repositoryURL == "" || c.commitSha == "" {
 		err = fmt.Errorf("civisibility.GetSkippableTests: repository URL and commit SHA are required")
 		return

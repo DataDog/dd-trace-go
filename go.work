@@ -6,6 +6,7 @@ use (
 	./contrib/99designs/gqlgen
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
+	./contrib/azure/apim-callout
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go-v2
 	./contrib/aws/datadog-lambda-go

@@ -10,18 +10,18 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-go/v5/statsd"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -36,20 +36,20 @@ func TestAlignTs(t *testing.T) {
 	assert.Equal(t, got, want)
 }
 
-func newTestConfigWithTransportAndEnv(t *testing.T, transport transport, env string) *config {
+func newTestConfigWithTransportAndEnv(t *testing.T, transport ddTransport, env string) *config {
 	assert := assert.New(t)
 	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
-		c.transport = transport
+		c.ddTransport = transport
 		c.internalConfig.SetEnv(env, internalconfig.OriginCode)
 	})
 	assert.NoError(err)
 	return cfg
 }
 
-func newTestConfigWithTransport(t *testing.T, transport transport) *config {
+func newTestConfigWithTransport(t *testing.T, transport ddTransport) *config {
 	assert := assert.New(t)
 	cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
-		c.transport = transport
+		c.ddTransport = transport
 	})
 	assert.NoError(err)
 	return cfg
@@ -289,7 +289,7 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 
 	t.Run("uses-agent-default-env-when-no-tracer-env", func(t *testing.T) {
 		cfg, err := newTestConfig(func(c *config) {
-			c.transport = newDummyTransport()
+			c.ddTransport = newDummyTransport()
 		})
 		assert.NoError(err)
 		af := cfg.agent.load()
@@ -326,10 +326,10 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 		start:    time.Now().UnixNano(),
 		duration: int64(time.Millisecond),
 		metrics:  map[string]float64{keyMeasured: 1},
-		meta: map[string]string{
+		meta: tinternal.NewSpanMetaFromMap(map[string]string{
 			ext.HTTPMethod:   uniqueMethod,
 			ext.HTTPEndpoint: uniqueEndpoint,
-		},
+		}),
 	}
 	transport := newDummyTransport()
 	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
@@ -359,9 +359,9 @@ func TestStatsIncludeServiceSource(t *testing.T) {
 		start:         time.Now().UnixNano(),
 		duration:      int64(time.Millisecond),
 		metrics:       map[string]float64{keyMeasured: 1},
-		meta: map[string]string{
+		meta: tinternal.NewSpanMetaFromMap(map[string]string{
 			ext.KeyServiceSource: "m",
-		},
+		}),
 	}
 	transport := newDummyTransport()
 	c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
@@ -457,7 +457,7 @@ func TestStatsFlushRetries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			p := &failingStatsTransport{failCount: test.failCount}
 			cfg, err := newTestConfig(func(c *config) {
-				c.transport = p
+				c.ddTransport = p
 				c.sendRetries = test.configRetries
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 				c.internalConfig.SetEnv("someEnv", internalconfig.OriginCode)
@@ -475,4 +475,38 @@ func TestStatsFlushRetries(t *testing.T) {
 			assert.Equal(t, test.statsSent, p.statsSent)
 		})
 	}
+}
+
+func TestNoopConcentrator(t *testing.T) {
+	var c statsConcentrator = &noopConcentrator{}
+
+	t.Run("Start", func(t *testing.T) {
+		assert.NotPanics(t, func() { c.Start() })
+	})
+
+	t.Run("Stop", func(t *testing.T) {
+		assert.NotPanics(t, func() { c.Stop() })
+	})
+
+	t.Run("flushAndSend", func(t *testing.T) {
+		assert.NotPanics(t, func() { c.flushAndSend(time.Now(), false) })
+	})
+
+	t.Run("newTracerStatSpan", func(t *testing.T) {
+		s := &Span{
+			name:     "test.op",
+			service:  "test-service",
+			resource: "/test",
+			spanType: "web",
+			start:    time.Now().UnixNano(),
+			duration: 1,
+		}
+		ss, ok := c.newTracerStatSpan(s, obfuscate.NewObfuscator(obfuscate.Config{}))
+		assert.Nil(t, ss)
+		assert.False(t, ok)
+	})
+
+	t.Run("trySendSpan", func(t *testing.T) {
+		assert.NotPanics(t, func() { c.trySendSpan(&tracerStatSpan{}) })
+	})
 }

@@ -122,7 +122,7 @@ func logStartup(t *tracer) {
 	if srcURL := t.config.internalConfig.RawAgentURL(); srcURL != nil && srcURL.Scheme == "unix" {
 		agentURL = srcURL.String()
 	} else {
-		agentURL = t.config.transport.endpoint()
+		agentURL = t.config.ddTransport.endpoint()
 	}
 	info := startupInfo{
 		Date:                        time.Now().Format(time.RFC3339),
@@ -170,7 +170,7 @@ func logStartup(t *tracer) {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.internalConfig.LogToStdout() {
-		if err := checkEndpoint(t.config.httpClient, t.config.transport.endpoint(), t.config.internalConfig.TraceProtocol()); err != nil {
+		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), t.config.internalConfig.TraceProtocol()); err != nil {
 			info.AgentError = err.Error()
 			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
 		}

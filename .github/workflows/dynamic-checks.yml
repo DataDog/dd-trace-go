@@ -27,6 +27,7 @@ on:
       - "scripts/**"
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
@@ -59,6 +60,13 @@ jobs:
       BUILD_TAGS: ${{ matrix.build_tags }}
       TEST_RESULT_PATH: /tmp/test-results
     steps:
+      - name: Get Datadog credentials
+        id: dd-sts
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        with:
+          policy: dd-trace-go
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -91,7 +99,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
-          dd-api-key: ${{ secrets.DD_CI_API_KEY }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ matrix.go-version }},package:internal/locking,analysis:${{ matrix.build_tags }},arch:${{ runner.arch }},os:${{ runner.os }}
 

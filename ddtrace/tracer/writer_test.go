@@ -18,15 +18,17 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,7 +44,7 @@ func makeSpan(n int) *Span {
 	s := newSpan("encodeName", "encodeService", "encodeResource", randUint64(), randUint64(), randUint64())
 	for i := range n {
 		istr := fmt.Sprintf("%0.10d", i)
-		s.meta[istr] = istr
+		s.meta.Set(istr, istr)
 		s.metrics[istr] = float64(i)
 	}
 	return s
@@ -186,10 +188,10 @@ func TestLogWriter(t *testing.T) {
 			name:     "basicName",
 			service:  "basicService",
 			resource: "basicResource",
-			meta: map[string]string{
-				"env":     "prod",
-				"version": "1.26.0",
-			},
+			meta: tinternal.NewSpanMetaFromMap(map[string]string{
+				ext.Environment: "prod",
+				ext.Version:     "1.26.0",
+			}),
 			metaStruct: map[string]any{
 				"_dd.stack": map[string]string{
 					"0": "github.com/DataDog/dd-trace-go/v1/internal/tracer.TestLogWriter",
@@ -247,7 +249,7 @@ func TestLogWriter(t *testing.T) {
 		assert := assert.New(t)
 		s := newSpan("name\n", "srv\t", `"res"`, 2, 1, 3)
 		s.start = 12
-		s.meta["query\n"] = "Select * from \n Where\nvalue"
+		s.meta.Set("query\n", "Select * from \n Where\nvalue")
 		s.metrics["version\n"] = 3
 
 		var w logTraceWriter
@@ -416,7 +418,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				assert:    assert,
 			}
 			c, err := newTestConfig(func(c *config) {
-				c.transport = p
+				c.ddTransport = p
 				c.sendRetries = test.configRetries
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 			})
@@ -668,7 +670,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 		var wg sync.WaitGroup
 
 		// Track traces added for verification
-		var tracesAdded int32
+		var tracesAdded atomic.Int32
 
 		// Spawn goroutines that add traces
 		for range numAddGoroutines {
@@ -678,7 +680,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 				for range numTracesPerGoroutine {
 					spans := []*Span{makeSpan(1)}
 					writer.add(spans)
-					atomic.AddInt32(&tracesAdded, 1)
+					tracesAdded.Add(1)
 				}
 			})
 		}
@@ -705,7 +707,7 @@ func TestAgentWriterTraceCountAccuracy(t *testing.T) {
 		writer.wg.Wait()
 
 		// Verify that the number of traces added matches our expectation
-		actualTracesAdded := atomic.LoadInt32(&tracesAdded)
+		actualTracesAdded := tracesAdded.Load()
 		assert.Equal(int32(expectedTotalTraces), actualTracesAdded,
 			"Expected %d traces to be added, but got %d", expectedTotalTraces, actualTracesAdded)
 
@@ -818,7 +820,7 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			cfg, err := newTestConfig(
 				withStatsdClient(&tg),
 				func(c *config) {
-					c.transport = &simpleTransport{}
+					c.ddTransport = &simpleTransport{}
 				},
 			)
 			require.NoError(t, err)
@@ -862,7 +864,7 @@ func TestAgentWriterV1FlushPayloadRecycling(t *testing.T) {
 		withStatsdClient(&tg),
 		func(c *config) {
 			c.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
-			c.transport = &simpleTransport{}
+			c.ddTransport = &simpleTransport{}
 		},
 	)
 	require.NoError(t, err)

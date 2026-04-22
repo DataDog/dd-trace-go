@@ -49,7 +49,6 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		tracerConfig: tracerConfig,
 		writer:       writer,
 		clientConfig: config,
-		flushMapper:  mapper.NewDefaultMapper(config.HeartbeatInterval, config.ExtendedHeartbeatInterval),
 		payloadQueue: internal.NewRingQueue[transport.Payload](config.PayloadQueueSize),
 
 		dependencies: dependencies{
@@ -68,6 +67,8 @@ func newClient(tracerConfig internal.TracerConfig, config ClientConfig) (*client
 		appEndpoints: appEndpoints{isFirst: true},
 		backend:      newLoggerBackend(config.MaxDistinctLogs),
 	}
+
+	client.flushMapper = mapper.NewDefaultMapper(config.HeartbeatInterval, config.ExtendedHeartbeatInterval, client.configuration.All)
 
 	client.dataSources = append(client.dataSources,
 		&client.integrations,
@@ -314,7 +315,7 @@ func (c *client) flush(payloads []transport.Payload) (int, error) {
 		failedCalls = append(failedCalls, results[:len(results)-1]...)
 		successfulCall := results[len(results)-1]
 
-		if !speedIncreased && successfulCall.PayloadByteSize > c.clientConfig.EarlyFlushPayloadSize {
+		if successfulCall.RequestAttempted && !speedIncreased && successfulCall.PayloadByteSize > c.clientConfig.EarlyFlushPayloadSize {
 			// We increase the speed of the flushTicker to try to flush the remaining bodies faster as we are at risk of sending too large bodies to the backend
 			c.flushTicker.CanIncreaseSpeed()
 			speedIncreased = true
@@ -353,6 +354,9 @@ func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, r
 	}
 
 	for i, result := range results {
+		if !result.RequestAttempted {
+			continue
+		}
 		endpoint := "endpoint:" + indexToEndpoint(i)
 		c.Count(transport.NamespaceTelemetry, "telemetry_api.requests", []string{endpoint}).Submit(1)
 		if result.StatusCode != 0 {
@@ -370,6 +374,14 @@ func (c *client) computeFlushMetrics(results []internal.EndpointRequestResult, r
 			}
 			c.Count(transport.NamespaceTelemetry, "telemetry_api.errors", []string{endpoint, typ}).Submit(1)
 		}
+	}
+
+	if len(results) == 0 {
+		return
+	}
+
+	if !results[len(results)-1].RequestAttempted {
+		return
 	}
 
 	if reason != nil {

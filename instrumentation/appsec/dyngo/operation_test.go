@@ -372,21 +372,19 @@ func TestUsage(t *testing.T) {
 		// The concurrency is maximized by using start barriers to sync the goroutine launches
 		var done, started, startBarrier sync.WaitGroup
 
-		done.Add(nbGoroutines)
 		started.Add(nbGoroutines)
 		startBarrier.Add(1)
 
-		var calls uint32
+		var calls atomic.Uint32
 		for range nbGoroutines {
 			// Start a goroutine that registers its event listeners to root.
 			// This allows to test the thread-safety of the underlying list of listeners.
-			go func() {
+			done.Go(func() {
 				started.Done()
 				startBarrier.Wait()
-				defer done.Done()
-				dyngo.On(root, func(operation, MyOperationArgs) { atomic.AddUint32(&calls, 1) })
-				dyngo.OnFinish(root, func(operation, MyOperationRes) { atomic.AddUint32(&calls, 1) })
-			}()
+				dyngo.On(root, func(operation, MyOperationArgs) { calls.Add(1) })
+				dyngo.OnFinish(root, func(operation, MyOperationRes) { calls.Add(1) })
+			})
 		}
 
 		// Wait for all the goroutines to be started
@@ -397,19 +395,17 @@ func TestUsage(t *testing.T) {
 		done.Wait()
 
 		// Create nbGoroutines emitting events concurrently
-		done.Add(nbGoroutines)
 		started.Add(nbGoroutines)
 		startBarrier.Add(1)
 		for range nbGoroutines {
 			// Start a goroutine that emits the events with a new operation. This allows to test the thread-safety of
 			// while emitting events.
-			go func() {
+			done.Go(func() {
 				started.Done()
 				startBarrier.Wait()
-				defer done.Done()
 				op := startOperation(MyOperationArgs{}, root)
 				defer dyngo.FinishOperation(op, MyOperationRes{})
-			}()
+			})
 		}
 
 		// Wait for all the goroutines to be started
@@ -420,7 +416,7 @@ func TestUsage(t *testing.T) {
 		done.Wait()
 
 		// The number of calls should be equal to the expected number of events
-		require.Equal(t, uint32(nbGoroutines*2*nbGoroutines), atomic.LoadUint32(&calls))
+		require.Equal(t, uint32(nbGoroutines*2*nbGoroutines), calls.Load())
 	})
 }
 

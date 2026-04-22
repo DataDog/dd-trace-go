@@ -49,13 +49,13 @@ func (c *client) Close() {
 
 // NewClient returns a new valkey.Client enhanced with tracing.
 func NewClient(clientOption valkey.ClientOption, opts ...Option) (valkey.Client, error) {
-	valkeyClient, err := valkey.NewClient(clientOption)
-	if err != nil {
-		return nil, err
-	}
 	cfg := defaultConfig()
 	for _, fn := range opts {
 		fn(cfg)
+	}
+	valkeyClient, err := cfg.createClientFunc(clientOption)
+	if err != nil {
+		return nil, err
 	}
 	tClient := &client{
 		client:  valkeyClient,
@@ -172,6 +172,10 @@ type dedicatedClient struct {
 
 func (c *dedicatedClient) SetPubSubHooks(hooks valkey.PubSubHooks) <-chan error {
 	return c.dedicatedClient.SetPubSubHooks(hooks)
+}
+
+func (c *dedicatedClient) SetOnInvalidations(fn func([]valkey.ValkeyMessage)) <-chan error {
+	return c.dedicatedClient.SetOnInvalidations(fn)
 }
 
 func (c *dedicatedClient) Do(ctx context.Context, cmd valkey.Completed) valkey.ValkeyResult {
