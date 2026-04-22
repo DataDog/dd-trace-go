@@ -261,7 +261,7 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, llmAgent1.ParentID, llmWorkflow1.SpanID, "agent-1 parent ID should be the workflow-1 span ID")
 	})
 	t.Run("distributed-context-propagation-experiment-baggage", func(t *testing.T) {
-		tt, ll := testTracer(t)
+		_, coll, ll := testTracer(t)
 
 		experimentID := "exp-dist-123"
 		experimentRunID := "run-uuid-xyz"
@@ -292,20 +292,9 @@ func TestStartSpan(t *testing.T) {
 		}
 		genSpans()
 
-		_ = tt.WaitForSpans(t, 4) // experiment + server-llm (LLMObs) + HTTP client + HTTP server (APM)
-		llmSpans := tt.WaitForLLMObsSpans(t, 2)
-
-		var experimentLLM, serverLLM *llmobstransport.LLMObsSpanEvent
-		for i := range llmSpans {
-			switch llmSpans[i].Name {
-			case "client-experiment":
-				experimentLLM = &llmSpans[i]
-			case "server-llm":
-				serverLLM = &llmSpans[i]
-			}
-		}
-		require.NotNil(t, experimentLLM, "client experiment span should exist")
-		require.NotNil(t, serverLLM, "server LLM span should exist")
+		tracer.Flush()
+		coll.RequireSpan(t, "client-experiment")
+		serverLLM := coll.RequireSpan(t, "server-llm")
 
 		assert.Equal(t, "experiments", serverLLM.DDAttributes.Scope, "server span should inherit experiments scope via baggage")
 		assert.Equal(t, experimentID, findTag(serverLLM.Tags, "experiment_id"), "server span should inherit experiment_id via baggage")
@@ -2110,7 +2099,7 @@ func TestDDAttributes(t *testing.T) {
 		assert.Contains(t, childLLM.Tags, "experiment_id:"+experimentID, "Child span should inherit experiment_id tag from baggage")
 	})
 	t.Run("child-span-inherits-run-id-and-run-iteration-from-baggage", func(t *testing.T) {
-		tt, ll := testTracer(t)
+		_, coll, ll := testTracer(t)
 		ctx := context.Background()
 
 		experimentID := "test-experiment-789"
@@ -2126,15 +2115,8 @@ func TestDDAttributes(t *testing.T) {
 		childSpan.Finish(llmobs.FinishSpanConfig{})
 		parentSpan.Finish(llmobs.FinishSpanConfig{})
 
-		llmSpans := tt.WaitForLLMObsSpans(t, 2)
-
-		var childLLM *llmobstransport.LLMObsSpanEvent
-		for i := range llmSpans {
-			if llmSpans[i].Name == "child-llm" {
-				childLLM = &llmSpans[i]
-			}
-		}
-		require.NotNil(t, childLLM, "Child LLM span should exist")
+		tracer.Flush()
+		childLLM := coll.RequireSpan(t, "child-llm")
 		assert.Contains(t, childLLM.Tags, "run_id:"+experimentRunID, "Child span should inherit run_id from baggage")
 		assert.Contains(t, childLLM.Tags, "run_iteration:2", "Child span should inherit run_iteration from baggage")
 	})
