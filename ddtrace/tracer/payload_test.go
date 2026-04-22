@@ -834,7 +834,7 @@ func BenchmarkPayloadPush(b *testing.B) {
 			spans := make(spanList, size.numSpans)
 			for i := 0; i < size.numSpans; i++ {
 				span := newBasicSpan("benchmark-span")
-				span.meta["data"] = strings.Repeat("x", size.spanSize*1024)
+				span.meta.Set("data", strings.Repeat("x", size.spanSize*1024))
 				spans[i] = span
 			}
 
