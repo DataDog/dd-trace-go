@@ -18,6 +18,16 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
+// Compile-time checks that tracingHook satisfies the hook interfaces it implements.
+var (
+	_ kgo.HookNewClient               = (*tracingHook)(nil)
+	_ kgo.HookClientClosed            = (*tracingHook)(nil)
+	_ kgo.HookProduceRecordBuffered   = (*tracingHook)(nil)
+	_ kgo.HookProduceRecordUnbuffered = (*tracingHook)(nil)
+	_ kgo.HookFetchRecordUnbuffered   = (*tracingHook)(nil)
+	_ kgo.HookPollStart               = (*tracingHook)(nil)
+)
+
 const componentName = "twmb/franz-go"
 
 var instr *instrumentation.Instrumentation
@@ -66,10 +76,10 @@ func (h *tracingHook) OnNewClient(c *kgo.Client) {
 	h.client = c
 }
 
-// OnPollRecordsStart is a kgo hook called at the start of every PollFetches or
+// OnPollStart is a kgo hook called at the start of every PollFetches or
 // PollRecords call. It finishes the active consume spans from the previous poll
 // before the new ones are created via OnFetchRecordUnbuffered.
-func (h *tracingHook) OnPollRecordsStart() {
+func (h *tracingHook) OnPollStart(_ context.Context) {
 	h.finishAndClearActiveSpans()
 }
 
