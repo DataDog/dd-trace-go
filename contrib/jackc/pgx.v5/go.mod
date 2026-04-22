@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
-	github.com/jackc/pgx/v5 v5.7.2
+	github.com/jackc/pgx/v5 v5.9.0
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -78,7 +78,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/exp v0.0.0-20260209203927-2842357ff358 // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect

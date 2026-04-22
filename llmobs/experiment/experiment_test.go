@@ -505,6 +505,226 @@ func TestExperimentRun(t *testing.T) {
 	})
 }
 
+func TestExperimentMultiRun(t *testing.T) {
+	t.Run("multiple-runs-produce-separate-run-results", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		ds := createTestDataset(t)
+		task := createTestTask()
+		evaluators := createTestEvaluators()
+
+		exp, err := experiment.New(
+			"test-experiment-multi-run",
+			task,
+			ds,
+			evaluators,
+			experiment.WithProjectName("test-project"),
+			experiment.WithRuns(3),
+		)
+		require.NoError(t, err)
+
+		results, err := exp.Run(context.Background())
+		require.NoError(t, err)
+
+		// Should have 3 runs
+		require.Len(t, results.Runs, 3)
+
+		// Each run should have a unique ID and the correct iteration number
+		seenIDs := make(map[string]bool)
+		for i, run := range results.Runs {
+			assert.NotEmpty(t, run.Run.ID, "run ID should be set")
+			assert.Equal(t, i+1, run.Run.Iteration, "run iteration should be 1-indexed")
+			assert.False(t, seenIDs[run.Run.ID], "run ID should be unique across runs")
+			seenIDs[run.Run.ID] = true
+
+			// Each run should have results for all dataset records
+			assert.Len(t, run.Results, 2)
+		}
+
+		// Backward compat: Results and SummaryEvaluations point to first run
+		assert.Equal(t, results.Runs[0].Results, results.Results)
+		assert.Equal(t, results.Runs[0].SummaryEvaluations, results.SummaryEvaluations)
+	})
+
+	t.Run("single-run-default-backward-compat", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		ds := createTestDataset(t)
+		task := createTestTask()
+		evaluators := createTestEvaluators()
+
+		exp, err := experiment.New(
+			"test-experiment-single-run",
+			task,
+			ds,
+			evaluators,
+			experiment.WithProjectName("test-project"),
+			// No WithRuns — defaults to 1
+		)
+		require.NoError(t, err)
+
+		results, err := exp.Run(context.Background())
+		require.NoError(t, err)
+
+		require.Len(t, results.Runs, 1)
+		assert.Equal(t, 1, results.Runs[0].Run.Iteration)
+		assert.NotEmpty(t, results.Runs[0].Run.ID)
+
+		// Legacy fields still populated
+		assert.Len(t, results.Results, 2)
+	})
+
+	t.Run("spans-carry-run-id-and-run-iteration-tags", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		ds := createTestDataset(t)
+		task := createTestTask()
+
+		exp, err := experiment.New(
+			"test-experiment-span-tags",
+			task,
+			ds,
+			nil,
+			experiment.WithProjectName("test-project"),
+			experiment.WithRuns(2),
+		)
+		require.NoError(t, err)
+
+		results, err := exp.Run(context.Background())
+		require.NoError(t, err)
+		require.Len(t, results.Runs, 2)
+
+		// 2 runs × 2 records = 4 spans
+		spans := tt.WaitForLLMObsSpans(t, 4)
+		require.Len(t, spans, 4)
+
+		// Collect all run_id and run_iteration values seen in span tags.
+		// Tags are []string in "key:value" format.
+		runIDs := make(map[string]bool)
+		runIterations := make(map[string]bool)
+		for _, span := range spans {
+			runID := spanTagValue(span.Tags, "run_id")
+			runIteration := spanTagValue(span.Tags, "run_iteration")
+			assert.NotEmpty(t, runID, "span should have run_id tag")
+			assert.NotEmpty(t, runIteration, "span should have run_iteration tag")
+			runIDs[runID] = true
+			runIterations[runIteration] = true
+		}
+
+		// Should have seen 2 distinct run IDs and iterations "1" and "2"
+		assert.Len(t, runIDs, 2, "should have 2 distinct run IDs across spans")
+		assert.True(t, runIterations["1"], "iteration 1 should appear in span tags")
+		assert.True(t, runIterations["2"], "iteration 2 should appear in span tags")
+
+		// Verify run IDs in results match span tags
+		resultRunIDs := make(map[string]bool)
+		for _, run := range results.Runs {
+			resultRunIDs[run.Run.ID] = true
+		}
+		assert.Equal(t, resultRunIDs, runIDs, "span run_id tags should match RunResult IDs")
+	})
+
+	t.Run("push-events-called-once-per-run", func(t *testing.T) {
+		var pushCount int
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+			if strings.HasSuffix(path, "/events") {
+				pushCount++
+			}
+			return createMockHandler()(r)
+		}
+
+		tt := testTracer(t, testtracer.WithMockResponses(h))
+		defer tt.Stop()
+
+		ds := createTestDataset(t)
+		task := createTestTask()
+		evaluators := createTestEvaluators()
+
+		const numRuns = 3
+		exp, err := experiment.New(
+			"test-experiment-push-count",
+			task,
+			ds,
+			evaluators,
+			experiment.WithProjectName("test-project"),
+			experiment.WithRuns(numRuns),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, numRuns, pushCount, "PushExperimentEvents should be called once per run")
+	})
+
+	t.Run("run-count-sent-to-backend", func(t *testing.T) {
+		var capturedRunCount int
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+			if path == "/api/unstable/llm-obs/v1/experiments" && r.Method == http.MethodPost {
+				var body struct {
+					Data struct {
+						Attributes struct {
+							RunCount int `json:"run_count"`
+						} `json:"attributes"`
+					} `json:"data"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+					capturedRunCount = body.Data.Attributes.RunCount
+				}
+			}
+			return createMockHandler()(r)
+		}
+
+		tt := testTracer(t, testtracer.WithMockResponses(h))
+		defer tt.Stop()
+
+		ds := createTestDataset(t)
+		task := createTestTask()
+
+		exp, err := experiment.New(
+			"test-experiment-run-count",
+			task,
+			ds,
+			nil,
+			experiment.WithProjectName("test-project"),
+			experiment.WithRuns(4),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background())
+		require.NoError(t, err)
+
+		assert.Equal(t, 4, capturedRunCount, "run_count should be sent to the backend")
+	})
+
+	t.Run("invalid-runs-value-ignored", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		ds := createTestDataset(t)
+		task := createTestTask()
+
+		exp, err := experiment.New(
+			"test-experiment-invalid-runs",
+			task,
+			ds,
+			nil,
+			experiment.WithProjectName("test-project"),
+			experiment.WithRuns(0), // should be ignored, defaulting to 1
+		)
+		require.NoError(t, err)
+
+		results, err := exp.Run(context.Background())
+		require.NoError(t, err)
+		assert.Len(t, results.Runs, 1)
+	})
+}
+
 func TestExperimentURL(t *testing.T) {
 	run := func(t *testing.T) string {
 		tt := testTracer(t)
@@ -627,10 +847,12 @@ func createMockHandler() testtracer.MockResponseFunc {
 		switch {
 		case path == "/api/unstable/llm-obs/v1/projects":
 			return handleMockProjects(r)
-		case path == "/api/unstable/llm-obs/v1/experiments":
+		case path == "/api/unstable/llm-obs/v1/experiments" && r.Method == http.MethodPost:
 			return handleMockExperiments(r)
 		case strings.HasPrefix(path, "/api/unstable/llm-obs/v1/experiments/") && strings.HasSuffix(path, "/events"):
 			return handleMockExperimentEvents(r)
+		case strings.HasPrefix(path, "/api/unstable/llm-obs/v1/experiments/") && r.Method == http.MethodPatch:
+			return handleMockExperimentStatusUpdate(r)
 		case strings.Contains(path, "/datasets") && strings.HasSuffix(path, "/batch_update"):
 			return handleMockDatasetBatchUpdate(r)
 		case strings.Contains(path, "/datasets"):
@@ -684,6 +906,16 @@ func handleMockExperiments(r *http.Request) *http.Response {
 		StatusCode: http.StatusOK,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(bytes.NewReader(respData)),
+		Request:    r,
+	}
+}
+
+func handleMockExperimentStatusUpdate(r *http.Request) *http.Response {
+	return &http.Response{
+		Status:     "200 OK",
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{}`)),
 		Request:    r,
 	}
 }
@@ -812,6 +1044,275 @@ func createTestTask() experiment.Task {
 			return "Unknown", nil
 		}
 	})
+}
+
+// statusUpdate captures a single PATCH status call to the backend.
+type statusUpdate struct {
+	Status string
+	Error  string
+}
+
+// captureStatusUpdates returns a mock handler that records every experiment status
+// PATCH alongside the default mock handler for all other requests.
+func captureStatusUpdates(updates *[]statusUpdate) testtracer.MockResponseFunc {
+	base := createMockHandler()
+	return func(r *http.Request) *http.Response {
+		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+		if strings.HasPrefix(path, "/api/unstable/llm-obs/v1/experiments/") && r.Method == http.MethodPatch {
+			var body struct {
+				Data struct {
+					Attributes struct {
+						Status string `json:"status"`
+						Error  string `json:"error"`
+					} `json:"attributes"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+				*updates = append(*updates, statusUpdate{
+					Status: body.Data.Attributes.Status,
+					Error:  body.Data.Attributes.Error,
+				})
+			}
+			return handleMockExperimentStatusUpdate(r)
+		}
+		return base(r)
+	}
+}
+
+func TestExperimentStatusUpdates(t *testing.T) {
+	t.Run("completed-on-success", func(t *testing.T) {
+		var updates []statusUpdate
+		tt := testTracer(t, testtracer.WithMockResponses(captureStatusUpdates(&updates)))
+		defer tt.Stop()
+
+		exp, err := experiment.New(
+			"test-status-completed",
+			createTestTask(),
+			createTestDataset(t),
+			createTestEvaluators(),
+			experiment.WithProjectName("test-project"),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background())
+		require.NoError(t, err)
+
+		require.Len(t, updates, 2)
+		assert.Equal(t, "running", updates[0].Status)
+		assert.Equal(t, "completed", updates[1].Status)
+		assert.Empty(t, updates[1].Error)
+	})
+
+	t.Run("failed-when-task-errors-occur", func(t *testing.T) {
+		var updates []statusUpdate
+		tt := testTracer(t, testtracer.WithMockResponses(captureStatusUpdates(&updates)))
+		defer tt.Stop()
+
+		task := experiment.NewTask("failing-task", func(ctx context.Context, rec dataset.Record, _ map[string]any) (any, error) {
+			return nil, errors.New("task boom")
+		})
+
+		exp, err := experiment.New(
+			"test-status-task-failed",
+			task,
+			createTestDataset(t),
+			nil,
+			experiment.WithProjectName("test-project"),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background(), experiment.WithAbortOnError(false))
+		require.NoError(t, err) // run itself succeeds; errors are in results
+
+		require.Len(t, updates, 2)
+		assert.Equal(t, "running", updates[0].Status)
+		assert.Equal(t, "failed", updates[1].Status)
+		assert.Contains(t, updates[1].Error, "task boom")
+	})
+
+	t.Run("failed-with-evaluator-errors", func(t *testing.T) {
+		var updates []statusUpdate
+		tt := testTracer(t, testtracer.WithMockResponses(captureStatusUpdates(&updates)))
+		defer tt.Stop()
+
+		evaluators := []experiment.Evaluator{
+			experiment.NewEvaluator("bad-eval", func(ctx context.Context, rec dataset.Record, output any) (any, error) {
+				return nil, errors.New("eval boom")
+			}),
+		}
+
+		exp, err := experiment.New(
+			"test-status-eval-failed",
+			createTestTask(),
+			createTestDataset(t),
+			evaluators,
+			experiment.WithProjectName("test-project"),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background(), experiment.WithAbortOnError(false))
+		require.NoError(t, err)
+
+		require.Len(t, updates, 2)
+		assert.Equal(t, "running", updates[0].Status)
+		assert.Equal(t, "failed", updates[1].Status)
+		assert.Contains(t, updates[1].Error, "bad-eval: eval boom")
+	})
+
+	t.Run("failed-with-summary-evaluator-errors", func(t *testing.T) {
+		var updates []statusUpdate
+		tt := testTracer(t, testtracer.WithMockResponses(captureStatusUpdates(&updates)))
+		defer tt.Stop()
+
+		exp, err := experiment.New(
+			"test-status-sumeval-failed",
+			createTestTask(),
+			createTestDataset(t),
+			nil,
+			experiment.WithProjectName("test-project"),
+			experiment.WithSummaryEvaluators(
+				experiment.NewSummaryEvaluator("bad-summary", func(ctx context.Context, results []*experiment.RecordResult) (any, error) {
+					return nil, errors.New("summary boom")
+				}),
+			),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background(), experiment.WithAbortOnError(false))
+		require.NoError(t, err)
+
+		require.Len(t, updates, 2)
+		assert.Equal(t, "running", updates[0].Status)
+		assert.Equal(t, "failed", updates[1].Status)
+		assert.Contains(t, updates[1].Error, "bad-summary: summary boom")
+	})
+
+	t.Run("failed-on-abort-error", func(t *testing.T) {
+		var updates []statusUpdate
+		tt := testTracer(t, testtracer.WithMockResponses(captureStatusUpdates(&updates)))
+		defer tt.Stop()
+
+		task := experiment.NewTask("failing-task", func(ctx context.Context, rec dataset.Record, _ map[string]any) (any, error) {
+			return nil, errors.New("hard abort")
+		})
+
+		exp, err := experiment.New(
+			"test-status-abort",
+			task,
+			createTestDataset(t),
+			nil,
+			experiment.WithProjectName("test-project"),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background(), experiment.WithAbortOnError(true))
+		require.Error(t, err)
+
+		require.Len(t, updates, 2)
+		assert.Equal(t, "running", updates[0].Status)
+		assert.Equal(t, "failed", updates[1].Status)
+		assert.Contains(t, updates[1].Error, "hard abort")
+	})
+
+	t.Run("interrupted-on-context-cancellation", func(t *testing.T) {
+		var updates []statusUpdate
+		tt := testTracer(t, testtracer.WithMockResponses(captureStatusUpdates(&updates)))
+		defer tt.Stop()
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		// Cancel the context as soon as the task starts running.
+		task := experiment.NewTask("cancelling-task", func(ctx context.Context, rec dataset.Record, _ map[string]any) (any, error) {
+			cancel()
+			return nil, ctx.Err()
+		})
+
+		exp, err := experiment.New(
+			"test-status-interrupted",
+			task,
+			createTestDataset(t),
+			nil,
+			experiment.WithProjectName("test-project"),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(ctx, experiment.WithAbortOnError(true))
+		require.Error(t, err)
+
+		require.Len(t, updates, 2)
+		assert.Equal(t, "running", updates[0].Status)
+		assert.Equal(t, "interrupted", updates[1].Status)
+	})
+
+	t.Run("no-status-sent-if-experiment-creation-fails", func(t *testing.T) {
+		var updates []statusUpdate
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+			if path == "/api/unstable/llm-obs/v1/experiments" && r.Method == http.MethodPost {
+				return &http.Response{
+					Status:     "500 Internal Server Error",
+					StatusCode: http.StatusInternalServerError,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(`{"error":"backend unavailable"}`)),
+					Request:    r,
+				}
+			}
+			return captureStatusUpdates(&updates)(r)
+		}
+
+		tt := testTracer(t, testtracer.WithMockResponses(h))
+		defer tt.Stop()
+
+		exp, err := experiment.New(
+			"test-status-no-creation",
+			createTestTask(),
+			createTestDataset(t),
+			nil,
+			experiment.WithProjectName("test-project"),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background())
+		require.Error(t, err)
+
+		assert.Empty(t, updates, "no status updates should be sent if experiment creation fails")
+	})
+
+	t.Run("running-sent-once-for-multi-run", func(t *testing.T) {
+		var updates []statusUpdate
+		tt := testTracer(t, testtracer.WithMockResponses(captureStatusUpdates(&updates)))
+		defer tt.Stop()
+
+		exp, err := experiment.New(
+			"test-status-multi-run",
+			createTestTask(),
+			createTestDataset(t),
+			nil,
+			experiment.WithProjectName("test-project"),
+			experiment.WithRuns(3),
+		)
+		require.NoError(t, err)
+
+		_, err = exp.Run(context.Background())
+		require.NoError(t, err)
+
+		// Status is experiment-level, not per-run: exactly one "running" and one "completed".
+		require.Len(t, updates, 2)
+		assert.Equal(t, "running", updates[0].Status)
+		assert.Equal(t, "completed", updates[1].Status)
+	})
+}
+
+// spanTagValue extracts the value for key from a []string tag slice where entries
+// are formatted as "key:value".
+func spanTagValue(tags []string, key string) string {
+	prefix := key + ":"
+	for _, t := range tags {
+		if strings.HasPrefix(t, prefix) {
+			return t[len(prefix):]
+		}
+	}
+	return ""
 }
 
 func createTestEvaluators() []experiment.Evaluator {
