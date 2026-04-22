@@ -113,6 +113,162 @@ func TestEnrichOperation(t *testing.T) {
 	}
 }
 
+func TestPublishSizeLimit(t *testing.T) {
+	t.Run("body at limit blocks injection", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+
+		input := middleware.InitializeInput{
+			Parameters: &sns.PublishInput{
+				Message:  aws.String(string(make([]byte, maxMessageSizeBytes))),
+				TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
+			},
+		}
+
+		EnrichOperation(span, input, "Publish")
+
+		params := input.Parameters.(*sns.PublishInput)
+		assert.NotContains(t, params.MessageAttributes, datadogKey)
+	})
+
+	t.Run("body plus existing attributes at limit blocks injection", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+		traceCtx, err := getTraceContext(span)
+		require.NoError(t, err)
+		ctxSize := attributeSize(datadogKey, traceCtx)
+
+		// Existing attribute eats into budget; body fills the rest.
+		existingAttr := types.MessageAttributeValue{
+			DataType:    aws.String("String"),
+			StringValue: aws.String("val"),
+		}
+		existingAttrSize := attributeSize("myattr", existingAttr)
+		bodyLen := maxMessageSizeBytes - existingAttrSize - ctxSize + 1 // +1 to go over
+		require.Positive(t, bodyLen)
+
+		input := middleware.InitializeInput{
+			Parameters: &sns.PublishInput{
+				Message:  aws.String(string(make([]byte, bodyLen))),
+				TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
+				MessageAttributes: map[string]types.MessageAttributeValue{
+					"myattr": existingAttr,
+				},
+			},
+		}
+
+		EnrichOperation(span, input, "Publish")
+
+		params := input.Parameters.(*sns.PublishInput)
+		assert.NotContains(t, params.MessageAttributes, datadogKey)
+	})
+}
+
+func TestPublishBatchSizeLimit(t *testing.T) {
+	t.Run("partial injection when budget exhausted", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+
+		traceCtx, err := getTraceContext(span)
+		require.NoError(t, err)
+		ctxSize := attributeSize(datadogKey, traceCtx)
+
+		// Layout: firstBody + secondBody + ctxSize = maxMessageSizeBytes.
+		// Injecting _datadog into entry 1 fills budget exactly;
+		// entry 2 would push over → skipped.
+		firstBody := "x"
+		secondBodyLen := maxMessageSizeBytes - len(firstBody) - ctxSize
+		require.Positive(t, secondBodyLen, "test setup: secondBodyLen must be positive")
+
+		input := middleware.InitializeInput{
+			Parameters: &sns.PublishBatchInput{
+				TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
+				PublishBatchRequestEntries: []types.PublishBatchRequestEntry{
+					{Id: aws.String("1"), Message: aws.String(firstBody)},
+					{Id: aws.String("2"), Message: aws.String(string(make([]byte, secondBodyLen)))},
+				},
+			},
+		}
+
+		EnrichOperation(span, input, "PublishBatch")
+
+		params := input.Parameters.(*sns.PublishBatchInput)
+		assert.Contains(t, params.PublishBatchRequestEntries[0].MessageAttributes, datadogKey)
+		assert.NotContains(t, params.PublishBatchRequestEntries[1].MessageAttributes, datadogKey)
+	})
+
+	t.Run("full-attribute entry does not inflate running size", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+
+		traceCtx, err := getTraceContext(span)
+		require.NoError(t, err)
+		ctxSize := attributeSize(datadogKey, traceCtx)
+
+		// entry[0] has max attributes so injection is skipped;
+		// entry[1] has room and must still receive _datadog.
+		fullAttrs := make(map[string]types.MessageAttributeValue)
+		for i := range maxMessageAttributes {
+			fullAttrs[fmt.Sprintf("attr%d", i)] = types.MessageAttributeValue{
+				DataType:    aws.String("String"),
+				StringValue: aws.String("v"),
+			}
+		}
+
+		smallBody := "small"
+		fullAttrsSize := sizeAttributes(fullAttrs)
+		bodyLen := maxMessageSizeBytes - fullAttrsSize - len(smallBody) - ctxSize
+		require.Positive(t, bodyLen, "test setup: bodyLen must leave room for one injection")
+
+		input := middleware.InitializeInput{
+			Parameters: &sns.PublishBatchInput{
+				TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
+				PublishBatchRequestEntries: []types.PublishBatchRequestEntry{
+					{Id: aws.String("1"), Message: aws.String(string(make([]byte, bodyLen))), MessageAttributes: fullAttrs},
+					{Id: aws.String("2"), Message: aws.String(smallBody)},
+				},
+			},
+		}
+
+		EnrichOperation(span, input, "PublishBatch")
+
+		params := input.Parameters.(*sns.PublishBatchInput)
+		assert.NotContains(t, params.PublishBatchRequestEntries[0].MessageAttributes, datadogKey,
+			"entry with max attributes should not get _datadog")
+		assert.Contains(t, params.PublishBatchRequestEntries[1].MessageAttributes, datadogKey,
+			"entry with room should still get _datadog when prior entry was skipped")
+	})
+
+	t.Run("single entry at limit blocks injection", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+
+		input := middleware.InitializeInput{
+			Parameters: &sns.PublishBatchInput{
+				TopicArn: aws.String("arn:aws:sns:us-east-1:123456789012:test-topic"),
+				PublishBatchRequestEntries: []types.PublishBatchRequestEntry{
+					{Id: aws.String("1"), Message: aws.String(string(make([]byte, maxMessageSizeBytes)))},
+				},
+			},
+		}
+
+		EnrichOperation(span, input, "PublishBatch")
+
+		params := input.Parameters.(*sns.PublishBatchInput)
+		assert.NotContains(t, params.PublishBatchRequestEntries[0].MessageAttributes, datadogKey)
+	})
+}
+
 func TestInjectTraceContext(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -153,7 +309,8 @@ func TestInjectTraceContext(t *testing.T) {
 
 			traceContext, err := getTraceContext(span)
 			assert.NoError(t, err)
-			injectTraceContext(traceContext, messageAttributes)
+			injected := injectTraceContext(traceContext, messageAttributes)
+			assert.Equal(t, tt.expectInjection, injected)
 
 			if tt.expectInjection {
 				assert.Contains(t, messageAttributes, datadogKey)
