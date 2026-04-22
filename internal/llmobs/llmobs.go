@@ -282,7 +282,9 @@ func (l *LLMObs) Run() {
 				if l.bufSpanEventsSize+evSize > sizeLimitEVPEvent {
 					log.Debug("llmobs: span events buffer size limit reached, flushing before adding new event")
 					params := l.clearBuffersNonLocked()
+					l.sendWg.Add(1)
 					l.wg.Go(func() {
+						defer l.sendWg.Done()
 						l.batchSend(params)
 					})
 				}
