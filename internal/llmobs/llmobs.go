@@ -47,7 +47,9 @@ var (
 )
 
 const (
-	baggageKeyExperimentID = "_ml_obs.experiment_id"
+	baggageKeyExperimentID           = "_ml_obs.experiment_id"
+	baggageKeyExperimentRunID        = "_ml_obs.experiment_run_id"
+	baggageKeyExperimentRunIteration = "_ml_obs.experiment_run_iteration"
 )
 
 const (
@@ -729,22 +731,51 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		}
 	}
 
-	if experimentID := apmSpan.BaggageItem(baggageKeyExperimentID); experimentID != "" {
-		span.scope = "experiments"
+	experimentID := apmSpan.BaggageItem(baggageKeyExperimentID)
+	experimentRunID := apmSpan.BaggageItem(baggageKeyExperimentRunID)
+	experimentRunIteration := apmSpan.BaggageItem(baggageKeyExperimentRunIteration)
+	if experimentID != "" || experimentRunID != "" || experimentRunIteration != "" {
+		if span.llmCtx.tags == nil {
+			span.llmCtx.tags = make(map[string]string)
+		}
+		if experimentID != "" {
+			span.scope = "experiments"
+			span.llmCtx.tags["experiment_id"] = experimentID
+		}
+		if experimentRunID != "" {
+			span.llmCtx.tags["run_id"] = experimentRunID
+		}
+		if experimentRunIteration != "" {
+			span.llmCtx.tags["run_iteration"] = experimentRunIteration
+		}
 	}
 
 	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", spanName, kind, span.mlApp)
 	return span, contextWithActiveLLMSpan(ctx, span)
 }
 
-// StartExperimentSpan starts a new experiment span with the given name, experiment ID, and configuration.
+// ExperimentInfo holds the experiment identifiers propagated via baggage to distributed child spans.
+type ExperimentInfo struct {
+	ID           string
+	RunID        string
+	RunIteration int
+}
+
+// StartExperimentSpan starts a new experiment span with the given name and configuration.
+// ExperimentInfo fields are propagated via baggage so distributed child spans inherit them.
 // Returns the created span and a context containing the span.
-func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, experimentID string, cfg StartSpanConfig) (*Span, context.Context) {
+func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, params ExperimentInfo, cfg StartSpanConfig) (*Span, context.Context) {
 	span, ctx := l.StartSpan(ctx, SpanKindExperiment, name, cfg)
 
-	if experimentID != "" {
-		span.apm.SetBaggageItem(baggageKeyExperimentID, experimentID)
+	if params.ID != "" {
+		span.apm.SetBaggageItem(baggageKeyExperimentID, params.ID)
 		span.scope = "experiments"
+	}
+	if params.RunID != "" {
+		span.apm.SetBaggageItem(baggageKeyExperimentRunID, params.RunID)
+	}
+	if params.RunIteration > 0 {
+		span.apm.SetBaggageItem(baggageKeyExperimentRunIteration, fmt.Sprintf("%d", params.RunIteration))
 	}
 	return span, ctx
 }
