@@ -142,6 +142,7 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 	o := append([]StartOption{
 		WithAgentAddr(agent.Addr()),
 		withAgentTransport(agent.Transport()),
+		withForceAgentWriter(),
 		withNoopStats(),
 	}, opts...)
 	tracer, err := newTracer(o...)

@@ -1520,6 +1520,17 @@ func withAgentTransport(rt http.RoundTripper) StartOption {
 	}
 }
 
+// withForceAgentWriter ensures the tracer uses agentTraceWriter regardless of
+// OTEL_TRACES_EXPORTER. Without this, a developer whose shell has
+// OTEL_TRACES_EXPORTER=otlp set (e.g. for Claude Code telemetry) would see
+// all test spans routed to the remote OTLP endpoint instead of the in-process
+// test agent, causing every span-assertion to fail. For use in test helpers only.
+func withForceAgentWriter() StartOption {
+	return func(c *config) {
+		c.internalConfig.SetOTLPExportMode(false, internalconfig.OriginCode)
+	}
+}
+
 // Mock Transport with a real Encoder
 type dummyTransport struct {
 	mu         locking.RWMutex
