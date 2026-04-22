@@ -31,6 +31,16 @@ var tracerObfuscationVersion = 1
 // covered in one stats bucket.
 var defaultStatsBucketSize = (10 * time.Second).Nanoseconds()
 
+// statsConcentrator abstracts the stats-computation lifecycle so that callers
+// don't need nil checks when stats are disabled (e.g. OTLP export mode).
+type statsConcentrator interface {
+	Start()
+	Stop()
+	flushAndSend(now time.Time, includeCurrent bool)
+	newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool)
+	trySendSpan(s *tracerStatSpan)
+}
+
 // concentrator aggregates and stores statistics on incoming spans in time buckets,
 // flushing them occasionally to the underlying transport located in the given
 // tracer config.
@@ -269,3 +279,25 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	}
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(flushedBuckets))
 }
+
+// trySendSpan attempts a non-blocking send of the stat span to the
+// concentrator's input channel.
+func (c *concentrator) trySendSpan(s *tracerStatSpan) {
+	select {
+	case c.In <- s:
+	default:
+		log.Error("Stats channel full, disregarding span.")
+	}
+}
+
+// noopConcentrator is a no-op implementation of statsConcentrator used when
+// client-side stats are disabled (e.g. OTLP export mode).
+type noopConcentrator struct{}
+
+func (c *noopConcentrator) Start()                           {}
+func (c *noopConcentrator) Stop()                            {}
+func (c *noopConcentrator) flushAndSend(_ time.Time, _ bool) {}
+func (c *noopConcentrator) newTracerStatSpan(_ *Span, _ *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	return nil, false
+}
+func (c *noopConcentrator) trySendSpan(_ *tracerStatSpan) {}

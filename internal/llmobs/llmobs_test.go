@@ -6,13 +6,16 @@
 package llmobs_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -257,6 +260,58 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, llmLLM1.ParentID, "undefined", "llm-1 parent ID should be undefined")
 		assert.Equal(t, llmWorkflow1.ParentID, llmLLM1.SpanID, "workflow-1 parent ID should be the llm-1 span ID")
 		assert.Equal(t, llmAgent1.ParentID, llmWorkflow1.SpanID, "agent-1 parent ID should be the workflow-1 span ID")
+	})
+	t.Run("distributed-context-propagation-experiment-baggage", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		experimentID := "exp-dist-123"
+		experimentRunID := "run-uuid-xyz"
+		experimentRunIteration := 3
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := req.Context()
+			serverSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "server-llm", llmobs.StartSpanConfig{})
+			defer serverSpan.Finish(llmobs.FinishSpanConfig{})
+			w.Write([]byte("ok"))
+		})
+		srv, cl := testClientServer(t, h)
+
+		genSpans := func() {
+			experimentSpan, ctx := ll.StartExperimentSpan(context.Background(), "client-experiment", llmobs.ExperimentInfo{
+				ID:           experimentID,
+				RunID:        experimentRunID,
+				RunIteration: experimentRunIteration,
+			}, llmobs.StartSpanConfig{})
+			defer experimentSpan.Finish(llmobs.FinishSpanConfig{})
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/", nil)
+			require.NoError(t, err)
+			resp, err := cl.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+
+		_ = tt.WaitForSpans(t, 4) // experiment + server-llm (LLMObs) + HTTP client + HTTP server (APM)
+		llmSpans := tt.WaitForLLMObsSpans(t, 2)
+
+		var experimentLLM, serverLLM *llmobstransport.LLMObsSpanEvent
+		for i := range llmSpans {
+			switch llmSpans[i].Name {
+			case "client-experiment":
+				experimentLLM = &llmSpans[i]
+			case "server-llm":
+				serverLLM = &llmSpans[i]
+			}
+		}
+		require.NotNil(t, experimentLLM, "client experiment span should exist")
+		require.NotNil(t, serverLLM, "server LLM span should exist")
+
+		assert.Equal(t, "experiments", serverLLM.DDAttributes.Scope, "server span should inherit experiments scope via baggage")
+		assert.Equal(t, experimentID, findTag(serverLLM.Tags, "experiment_id"), "server span should inherit experiment_id via baggage")
+		assert.Equal(t, experimentRunID, findTag(serverLLM.Tags, "run_id"), "server span should inherit run_id via baggage")
+		assert.Equal(t, fmt.Sprintf("%d", experimentRunIteration), findTag(serverLLM.Tags, "run_iteration"), "server span should inherit run_iteration via baggage")
 	})
 	t.Run("custom-start-and-finish-times", func(t *testing.T) {
 		tt, ll := testTracer(t)
@@ -2080,7 +2135,7 @@ func TestDDAttributes(t *testing.T) {
 		ctx := context.Background()
 
 		experimentID := "test-experiment-123"
-		span, _ := ll.StartExperimentSpan(ctx, "test-experiment", experimentID, llmobs.StartSpanConfig{})
+		span, _ := ll.StartExperimentSpan(ctx, "test-experiment", llmobs.ExperimentInfo{ID: experimentID}, llmobs.StartSpanConfig{})
 		span.Finish(llmobs.FinishSpanConfig{})
 
 		apmSpans := tt.WaitForSpans(t, 1)
@@ -2107,7 +2162,7 @@ func TestDDAttributes(t *testing.T) {
 		ctx := context.Background()
 
 		experimentID := "test-experiment-456"
-		parentSpan, ctx := ll.StartExperimentSpan(ctx, "parent-experiment", experimentID, llmobs.StartSpanConfig{})
+		parentSpan, ctx := ll.StartExperimentSpan(ctx, "parent-experiment", llmobs.ExperimentInfo{ID: experimentID}, llmobs.StartSpanConfig{})
 		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child-llm", llmobs.StartSpanConfig{})
 
 		childSpan.Finish(llmobs.FinishSpanConfig{})
@@ -2129,6 +2184,36 @@ func TestDDAttributes(t *testing.T) {
 
 		assert.Equal(t, "experiments", parentLLM.DDAttributes.Scope, "Parent scope should be 'experiments'")
 		assert.Equal(t, "experiments", childLLM.DDAttributes.Scope, "Child scope should be 'experiments' via baggage propagation")
+		assert.Contains(t, childLLM.Tags, "experiment_id:"+experimentID, "Child span should inherit experiment_id tag from baggage")
+	})
+	t.Run("child-span-inherits-run-id-and-run-iteration-from-baggage", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		ctx := context.Background()
+
+		experimentID := "test-experiment-789"
+		experimentRunID := "run-uuid-abc"
+		experimentRunIteration := 2
+		parentSpan, ctx := ll.StartExperimentSpan(ctx, "parent-experiment", llmobs.ExperimentInfo{
+			ID:           experimentID,
+			RunID:        experimentRunID,
+			RunIteration: experimentRunIteration,
+		}, llmobs.StartSpanConfig{})
+		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child-llm", llmobs.StartSpanConfig{})
+
+		childSpan.Finish(llmobs.FinishSpanConfig{})
+		parentSpan.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 2)
+
+		var childLLM *llmobstransport.LLMObsSpanEvent
+		for i := range llmSpans {
+			if llmSpans[i].Name == "child-llm" {
+				childLLM = &llmSpans[i]
+			}
+		}
+		require.NotNil(t, childLLM, "Child LLM span should exist")
+		assert.Contains(t, childLLM.Tags, "run_id:"+experimentRunID, "Child span should inherit run_id from baggage")
+		assert.Contains(t, childLLM.Tags, "run_iteration:2", "Child span should inherit run_iteration from baggage")
 	})
 	t.Run("child-span-trace-ids", func(t *testing.T) {
 		tt, ll := testTracer(t)
@@ -2184,4 +2269,69 @@ func assertAPMTraceID(t *testing.T, apmSpan testtracer.Span, llmSpan llmobstrans
 	low64HexUint, err := strconv.ParseUint(low64Hex, 16, 64)
 	require.NoError(t, err)
 	assert.Equal(t, apmSpan.TraceID, low64HexUint, "APM trace ID should match DDAttributes.APMTraceID")
+}
+
+// TestSpanEventsSizeBasedFlushing reproduces the issue where the span events buffer can grow beyond
+// the 5MB EVP event size limit before being flushed, causing a single HTTP request payload to exceed
+// the backend's size limit.
+//
+// The fix (PR #4524) adds size-based flushing: before appending a new event to the buffer, if the
+// cumulative size would exceed sizeLimitEVPEvent (5MB), the current buffer is flushed first.
+func TestSpanEventsSizeBasedFlushing(t *testing.T) {
+	var mu sync.Mutex
+	var batchSizes []int
+
+	tt := testtracer.Start(t,
+		testtracer.WithTracerStartOpts(
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp(mlApp),
+			tracer.WithLogStartup(false),
+			tracer.WithLLMObsAgentlessEnabled(false),
+		),
+		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+			Endpoints: []string{"/evp_proxy/v2/"},
+		}),
+		testtracer.WithMockResponses(func(r *http.Request) *http.Response {
+			if r.URL.Path == "/evp_proxy/v2/api/v2/llmobs" {
+				// Read, record size, and restore the body so the default handler can also process it.
+				body, err := io.ReadAll(r.Body)
+				if err == nil {
+					r.Body = io.NopCloser(bytes.NewReader(body))
+					mu.Lock()
+					batchSizes = append(batchSizes, len(body))
+					mu.Unlock()
+				}
+			}
+			return nil // fall through to default handling
+		}),
+	)
+
+	ll, err := llmobs.ActiveLLMObs()
+	require.NoError(t, err)
+
+	// Each span has ~1.7MB of input text. Four spans total ~6.8MB, which exceeds the 5MB limit.
+	// Without size-based flushing, all four are buffered and sent in a single HTTP request that
+	// is ~6.8MB — over the 5MB backend limit.
+	const numSpans = 4
+	largeContent := strings.Repeat("x", 1_700_000)
+
+	ctx := context.Background()
+	for i := range numSpans {
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindTask, fmt.Sprintf("span-%d", i), llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{InputText: largeContent})
+		span.Finish(llmobs.FinishSpanConfig{})
+	}
+
+	tt.WaitForLLMObsSpans(t, numSpans)
+
+	mu.Lock()
+	sizes := append([]int(nil), batchSizes...)
+	mu.Unlock()
+
+	require.NotEmpty(t, sizes, "expected at least one HTTP request to the LLMObs endpoint")
+	for _, size := range sizes {
+		assert.LessOrEqual(t, size, 5_000_000,
+			"HTTP batch payload (%d bytes) exceeds the 5MB limit; without size-based flushing, "+
+				"all spans accumulate in a single batch that is too large to send", size)
+	}
 }

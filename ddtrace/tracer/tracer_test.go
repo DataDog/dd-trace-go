@@ -28,7 +28,9 @@ import (
 	"testing/synctest"
 	"time"
 
+	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"go.uber.org/goleak"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -1495,6 +1497,7 @@ func TestOTLPExportMode(t *testing.T) {
 		assert.True(isOTLPWriter, "expected otlpTraceWriter in OTLP export mode")
 		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
 		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler in OTLP export mode")
+		assert.IsType(&noopConcentrator{}, tracer.stats, "expected noopConcentrator in OTLP export mode")
 	})
 
 	t.Run("OTEL_TRACES_EXPORTER=otlp env var enables OTLP mode", func(t *testing.T) {
@@ -1508,6 +1511,61 @@ func TestOTLPExportMode(t *testing.T) {
 		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
 		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler when OTEL_TRACES_EXPORTER=otlp")
 	})
+}
+
+func TestOTLPExportModeStatsSkipped(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+
+	tick := make(chan time.Time)
+	trc, err := newTracer(
+		func(c *config) {
+			c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+			c.ddTransport = newDummyTransport()
+			c.tickChan = tick
+		},
+	)
+	require.NoError(t, err)
+
+	w := trc.traceWriter.(*otlpTraceWriter)
+	w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+
+	// Enable canDropP0s so submit() reaches the noopConcentrator
+	// rather than short-circuiting.
+	af := trc.config.agent.load()
+	af.Stats = true
+	af.DropP0s = true
+	trc.config.agent.store(af)
+	trc.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
+
+	setGlobalTracer(trc)
+
+	assert.IsType(t, &noopConcentrator{}, trc.stats, "concentrator must be noop in OTLP mode")
+	assert.True(t, trc.config.canDropP0s(), "canDropP0s must be true for this test to exercise submit()")
+
+	const spanCount = 5
+	for range spanCount {
+		span := trc.newRootSpan("test.op", "test-service", "/test")
+		span.Finish()
+	}
+
+	// Stop drains t.out, flushes the writer, and waits for in-flight sends.
+	trc.Stop()
+
+	payloads := srv.getPayloads()
+	require.NotEmpty(t, payloads, "expected at least one OTLP payload")
+
+	totalSpans := 0
+	for _, p := range payloads {
+		var td otlptrace.TracesData
+		require.NoError(t, proto.Unmarshal(p, &td))
+		for _, rs := range td.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				totalSpans += len(ss.Spans)
+			}
+		}
+	}
+	assert.Equal(t, spanCount, totalSpans, "all spans should be retained in OTLP mode, not dropped by nil concentrator")
 }
 
 func TestTracerConcurrent(t *testing.T) {

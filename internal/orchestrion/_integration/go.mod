@@ -26,7 +26,7 @@ require (
 	github.com/elastic/go-elasticsearch/v7 v7.17.1
 	github.com/elastic/go-elasticsearch/v8 v8.12.1
 	github.com/gin-gonic/gin v1.10.1
-	github.com/go-chi/chi/v5 v5.2.2
+	github.com/go-chi/chi/v5 v5.2.4
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v7 v7.4.1
 	github.com/go-redis/redis/v8 v8.11.5
@@ -39,7 +39,7 @@ require (
 	github.com/graphql-go/graphql v0.8.1
 	github.com/graphql-go/handler v0.2.4
 	github.com/hashicorp/vault/api v1.15.0
-	github.com/jackc/pgx/v5 v5.7.2
+	github.com/jackc/pgx/v5 v5.9.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/mattn/go-sqlite3 v1.14.22
@@ -482,3 +482,5 @@ replace google.golang.org/grpc => google.golang.org/grpc v1.70.0
 replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 => ../../../contrib/go.mongodb.org/mongo-driver.v2
 
 replace github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 => ../../../instrumentation/testutils/containers
+
+replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../../instrumentation/testutils/grpc
