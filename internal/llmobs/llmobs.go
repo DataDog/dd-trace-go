@@ -147,8 +147,8 @@ type LLMObs struct {
 	mu            sync.Mutex
 	running       bool
 	wg            sync.WaitGroup // tracks in-flight async batchSend goroutines only (not the main loop)
-	stopCh        chan struct{}   // signal stop
-	stoppedCh     chan struct{}   // closed when the main run loop exits
+	stopCh        chan struct{}  // signal stop
+	stoppedCh     chan struct{}  // closed when the main run loop exits
 	flushNowCh    chan struct{}
 	flushSyncCh   chan chan struct{} // synchronous flush: send a done channel, blocks until flush completes
 	flushInterval time.Duration
