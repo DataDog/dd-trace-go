@@ -127,10 +127,22 @@ func resolveSourceLocation(metadata sourceFileMetadata, shortName string, runtim
 	resolution := sourceResolution{startLine: runtimeStartLine}
 
 	if functions := metadata.namedFunctions[shortName]; len(functions) > 0 {
+		matchedDeclaration := functions[0]
+		for _, function := range functions {
+			// When multiple methods share the same short name in the same file, disambiguate them by
+			// the runtime start line before falling back to the first declaration. This keeps the
+			// existing behavior for unambiguous cases while fixing collisions like SuiteA.TestFoo and
+			// SuiteB.TestFoo living in the same source file.
+			if function.bodyStartLine <= runtimeStartLine && runtimeStartLine <= function.endLine {
+				matchedDeclaration = function
+				break
+			}
+		}
+
 		// Named declarations keep the runtime-derived start line for compatibility with the old implementation.
-		resolution.endLine = functions[0].endLine
-		resolution.functionUnskippable = functions[0].testUnskippable
-		resolution.matchedDeclaration = &functions[0]
+		resolution.endLine = matchedDeclaration.endLine
+		resolution.functionUnskippable = matchedDeclaration.testUnskippable
+		resolution.matchedDeclaration = &matchedDeclaration
 		return resolution
 	}
 

@@ -102,6 +102,33 @@ func TestResolveSourceLocationUsesNamedDeclarationEndLine(t *testing.T) {
 	assert.Nil(t, resolution.matchedLiteral)
 }
 
+func TestResolveSourceLocationDisambiguatesSameNamedDeclarationsByRuntimeStartLine(t *testing.T) {
+	resolution := resolveSourceLocation(sourceFileMetadata{
+		namedFunctions: map[string][]namedFunctionMetadata{
+			"fixture": {
+				{
+					declStartLine:   10,
+					bodyStartLine:   12,
+					endLine:         15,
+					testUnskippable: false,
+				},
+				{
+					declStartLine:   20,
+					bodyStartLine:   22,
+					endLine:         28,
+					testUnskippable: true,
+				},
+			},
+		},
+	}, "fixture", 24)
+
+	assert.Equal(t, 24, resolution.startLine)
+	assert.Equal(t, 28, resolution.endLine)
+	assert.True(t, resolution.functionUnskippable)
+	require.NotNil(t, resolution.matchedDeclaration)
+	assert.Equal(t, 20, resolution.matchedDeclaration.declStartLine)
+}
+
 func TestResolveSourceLocationAdjustsLiteralStartLine(t *testing.T) {
 	resolution := resolveSourceLocation(sourceFileMetadata{
 		functionLiterals: []functionLiteralMetadata{{
@@ -274,6 +301,55 @@ func TestSetTestFuncPreservesDeclarationLevelUnskippable(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "true", unskippable)
 	assert.Equal(t, true, test.Context().Value(constants.TestUnskippable))
+}
+
+func TestSetTestFuncDisambiguatesSameNamedMethodsInTheSameFile(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	mockTracer.Reset()
+
+	now := time.Now()
+	session, module, suite, firstTest := createDDTest(now)
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+
+	secondTest := suite.CreateTest("my-second-test", WithTestStartTime(now))
+
+	firstFn := runtime.FuncForPC(reflect.ValueOf(sameNameFixtureSuiteA.TestSharedName).Pointer())
+	secondFn := runtime.FuncForPC(reflect.ValueOf(sameNameFixtureSuiteB.TestSharedName).Pointer())
+	require.NotNil(t, firstFn)
+	require.NotNil(t, secondFn)
+	firstFile, firstRuntimeStartLine := firstFn.FileLine(firstFn.Entry())
+	secondFile, secondRuntimeStartLine := secondFn.FileLine(secondFn.Entry())
+	require.Equal(t, firstFile, secondFile)
+	metadata := loadSourceFileMetadata(firstFile)
+	require.Len(t, metadata.namedFunctions["TestSharedName"], 2)
+
+	firstTest.SetTestFunc(firstFn)
+	secondTest.SetTestFunc(secondFn)
+
+	assert.Nil(t, firstTest.Context().Value(constants.TestUnskippable))
+
+	secondUnskippable, secondTagged := secondTest.GetTag(constants.TestUnskippable)
+	require.True(t, secondTagged)
+	assert.Equal(t, "true", secondUnskippable)
+	assert.Equal(t, true, secondTest.Context().Value(constants.TestUnskippable))
+
+	firstStartLine, firstStartOK := firstTest.GetTag(constants.TestSourceStartLine)
+	firstEndLine, firstEndOK := firstTest.GetTag(constants.TestSourceEndLine)
+	secondStartLine, secondStartOK := secondTest.GetTag(constants.TestSourceStartLine)
+	secondEndLine, secondEndOK := secondTest.GetTag(constants.TestSourceEndLine)
+	require.True(t, firstStartOK)
+	require.True(t, firstEndOK)
+	require.True(t, secondStartOK)
+	require.True(t, secondEndOK)
+	assert.Equal(t, float64(firstRuntimeStartLine), firstStartLine)
+	assert.Equal(t, float64(secondRuntimeStartLine), secondStartLine)
+	assert.Equal(t, float64(metadata.namedFunctions["TestSharedName"][0].endLine), firstEndLine)
+	assert.Equal(t, float64(metadata.namedFunctions["TestSharedName"][1].endLine), secondEndLine)
+	assert.NotEqual(t, firstEndLine, secondEndLine)
 }
 
 func countSourceResolutionLogLines(lines []string, want string) int {
