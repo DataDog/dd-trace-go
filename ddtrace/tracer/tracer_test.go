@@ -2512,6 +2512,18 @@ func newTestConfig(opts ...StartOption) (*config, error) {
 	return newConfig(opts...)
 }
 
+// newFreshInternalConfig returns a brand-new internal config singleton, bypassing
+// the process-wide cache. Use this in tests that want to exercise behaviour
+// against a config loaded fresh from env vars and defaults (e.g. URL resolution,
+// OTLP mode derivation) without inheriting overrides or values from prior tests.
+//
+// For tests that need a tracer-local *config wrapper, prefer newTestConfig.
+func newFreshInternalConfig() *internalconfig.Config {
+	internalconfig.SetUseFreshConfig(true)
+	defer internalconfig.SetUseFreshConfig(false)
+	return internalconfig.Get()
+}
+
 // comparePayloadSpans allows comparing two spans which might have been
 // read from the msgpack payload. In that case the private fields will
 // not be available and the maps (meta & metrics will be nil for lengths

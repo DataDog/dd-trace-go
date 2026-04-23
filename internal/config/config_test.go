@@ -75,30 +75,6 @@ func TestGet(t *testing.T) {
 		assert.Same(t, cfg4, cfg5, "With useFreshConfig=false, Get() should cache the same instance")
 	})
 
-	t.Run("GetNew forces new instance", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
-		// Get the first instance
-		cfg1 := Get()
-		require.NotNil(t, cfg1)
-
-		// Get should return the same instance
-		cfg2 := Get()
-		require.NotNil(t, cfg2)
-		assert.Same(t, cfg1, cfg2, "Get() should return the same instance")
-
-		// CreateNew should return a new instance
-		cfg3 := CreateNew()
-		require.NotNil(t, cfg3)
-		assert.NotSame(t, cfg2, cfg3, "CreateNew() should return a new instance")
-
-		// Now it should cache the same instance
-		cfg4 := Get()
-		assert.Same(t, cfg3, cfg4, "Get() should return the same instance")
-		assert.NotSame(t, cfg1, cfg4, "Get() should not return the same instance as the first one")
-	})
-
 	t.Run("concurrent access is safe", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
@@ -881,7 +857,7 @@ func TestUndoProduct(t *testing.T) {
 		cfg.SetEnv("staging", OriginCode, ProductTracer)
 		assert.Equal(t, "staging", cfg.Env())
 
-		cfg.UndoProduct(ProductTracer)
+		cfg.undoProduct(ProductTracer)
 		assert.Equal(t, before, cfg.Env(), "undo should revert to pre-code baseline")
 	})
 
@@ -896,7 +872,7 @@ func TestUndoProduct(t *testing.T) {
 		cfg.SetEnv("production", OriginCode, ProductTracer)
 		assert.Equal(t, "production", cfg.Env())
 
-		cfg.UndoProduct(ProductTracer)
+		cfg.undoProduct(ProductTracer)
 		assert.Equal(t, before, cfg.Env(),
 			"undo should revert all the way back to pre-any-code state, not to intermediate value")
 	})
@@ -913,7 +889,7 @@ func TestUndoProduct(t *testing.T) {
 		cfg.SetEnv("tracer-env", OriginCode, ProductTracer)
 		assert.Equal(t, "tracer-env", cfg.Env())
 
-		cfg.UndoProduct(ProductProfiler) // no-op: profiler owns nothing
+		cfg.undoProduct(ProductProfiler) // no-op: profiler owns nothing
 		assert.Equal(t, "tracer-env", cfg.Env(),
 			"undo on non-owner product must not touch field")
 	})
@@ -931,12 +907,12 @@ func TestUndoProduct(t *testing.T) {
 		assert.Equal(t, "tracer-env", cfg.Env())
 
 		// Undoing profiler should be a no-op for this field (profiler never claimed it).
-		cfg.UndoProduct(ProductProfiler)
+		cfg.undoProduct(ProductProfiler)
 		assert.Equal(t, "tracer-env", cfg.Env(),
 			"undo on non-owner product must not touch field")
 
 		// Undoing tracer restores the baseline.
-		cfg.UndoProduct(ProductTracer)
+		cfg.undoProduct(ProductTracer)
 		assert.Equal(t, before, cfg.Env())
 	})
 
@@ -948,8 +924,8 @@ func TestUndoProduct(t *testing.T) {
 		before := cfg.Env()
 
 		cfg.SetEnv("staging", OriginCode, ProductTracer)
-		cfg.UndoProduct(ProductTracer)
-		cfg.UndoProduct(ProductTracer) // second call must not panic or re-mutate
+		cfg.undoProduct(ProductTracer)
+		cfg.undoProduct(ProductTracer) // second call must not panic or re-mutate
 		assert.Equal(t, before, cfg.Env())
 	})
 
@@ -962,7 +938,7 @@ func TestUndoProduct(t *testing.T) {
 		cfg.SetEnv("from-env", telemetry.OriginEnvVar)
 		assert.Equal(t, "from-env", cfg.Env())
 
-		cfg.UndoProduct(ProductTracer)
+		cfg.undoProduct(ProductTracer)
 		assert.Equal(t, "from-env", cfg.Env(),
 			"env-origin values are not in the overrides map and must not be undone")
 	})
@@ -978,17 +954,17 @@ func TestUndoProduct(t *testing.T) {
 		cfg.SetEnv("first-env", OriginCode, ProductTracer)
 		assert.Equal(t, "first-env", cfg.Env())
 
-		// Simulate re-Start: undo then apply a new value. Because UndoProduct
+		// Simulate re-Start: undo then apply a new value. Because undoProduct
 		// restored the baseline, the new write is treated as the first code
 		// write — not a rewrite on top of the previous override.
-		cfg.UndoProduct(ProductTracer)
+		cfg.undoProduct(ProductTracer)
 		assert.Equal(t, before, cfg.Env(), "baseline should be restored before new Start")
 
 		cfg.SetEnv("second-env", OriginCode, ProductTracer)
 		assert.Equal(t, "second-env", cfg.Env())
 
 		// And a second undo should still roll all the way back to the true baseline.
-		cfg.UndoProduct(ProductTracer)
+		cfg.undoProduct(ProductTracer)
 		assert.Equal(t, before, cfg.Env())
 	})
 
@@ -999,7 +975,7 @@ func TestUndoProduct(t *testing.T) {
 		cfg := Get()
 
 		cfg.SetEnv("tracer-env", OriginCode, ProductTracer)
-		cfg.UndoProduct(ProductTracer)
+		cfg.undoProduct(ProductTracer)
 
 		// Profiler should now be free to claim the field since tracer released it.
 		cfg.SetEnv("profiler-env", OriginCode, ProductProfiler)
