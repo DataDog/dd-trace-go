@@ -22,11 +22,13 @@ import (
 	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
@@ -87,6 +89,9 @@ var defaultClient = &http.Client{
 var defaultProfileTypes = []ProfileType{MetricsProfile, CPUProfile, HeapProfile}
 
 type config struct {
+	// internalConfig holds a reference to the global configuration singleton.
+	internalConfig *internalconfig.Config
+
 	apiKey    string
 	agentless bool
 	// targetURL is the upload destination URL. It will be set by the profiler on start to either apiURL or agentURL
@@ -173,7 +178,11 @@ func (c *config) addProfileType(t ProfileType) {
 }
 
 func defaultConfig() (*config, error) {
+	cfg := internalconfig.Get()
+	cfg.PrepareForStart(internalconfig.ProductProfiler)
+
 	c := config{
+		internalConfig:       cfg,
 		apiURL:               defaultAPIURL,
 		service:              filepath.Base(os.Args[0]),
 		statsd:               &statsd.NoOpClient{},
@@ -370,9 +379,16 @@ func WithService(name string) Option {
 }
 
 // WithEnv specifies the environment to which these profiles should be registered.
-func WithEnv(env string) Option {
+//
+// This is the first profiler option to route through the shared Config singleton.
+// The origin-tagged write records the profiler's claim on DD_ENV so that:
+//   - cross-product conflicts are detected (e.g., tracer.WithEnv("a") already set)
+//   - profiler.Start's PrepareForStart(ProductProfiler) call can revert the write
+//     on a subsequent Start without disturbing other products' overrides.
+func WithEnv(e string) Option {
 	return func(cfg *config) {
-		cfg.env = env
+		cfg.env = e
+		cfg.internalConfig.SetEnv(e, telemetry.OriginCode, internalconfig.ProductProfiler)
 	}
 }
 
