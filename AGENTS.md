@@ -2,12 +2,7 @@
 
 ## Read CONTRIBUTING.md First
 
-**BEFORE making ANY code changes**, you MUST read [CONTRIBUTING.md](./CONTRIBUTING.md) for information about:
-
-* Creating new PRs and commits
-* Code cleanliness and style
-* Testing and linting mechanisms
-* Important Go conventions
+**BEFORE making ANY code changes**, you MUST read [CONTRIBUTING.md](./CONTRIBUTING.md) and [README.md](./README.md).
 
 Furthermore, be sure to follow [Effective Go guidelines](https://go.dev/doc/effective_go) when writing Go code.
 
@@ -23,4 +18,11 @@ Use the following AGENTS.md files when making specific changes:
 
 This file should be short. Only update this file if a new AGENTS.md file is added, so it must be added to the list with its purpose.
 
-When a significant new feature is being added, add a relevant section to [CONTRIBUTING.md](./CONTRIBUTING.md).
+[CONTRIBUTING.md](./CONTRIBUTING.md) should be updated with new, significant features. A feature may be considered significant when:
+
+1. It introduces a new method of interacting with and/or customizing the tracer (ie new scripts for generating files, options for configuration sources, etc)
+2. A new internal functionality is introduced that can replace a common, built-in Go library
+3. The `make` command supports a new flag that introduces new testing/linting/building functionality AND/OR
+4. A new CI workflow in GitHub or GitLab is created
+
+[README.md](./README.md) should be updated with new options to the `make` command and other important commands that are essential for testing or building the tracer.

@@ -1,8 +1,9 @@
-
 **BEFORE making ANY code changes**, you MUST read [README.md](./README.md) for information about API changes and how to handle them.
 
 For information about the tracer's abilities, you MUST read [doc.go](./doc.go).
 
 ## Updating AGENTS.md
 
-When a significant new feature or tooling is added, add a relevant section to [README.md](./README.md). If a new, significant function is added to the tracer API, add it to [doc.go](./doc.go).
+[doc.go](./doc.go) should be updated with new, significant features. A feature may be considered significant when it allows the user to change the behavior of the tracer (ie sampling changes, rate limiting, etc). 
+
+[README.md](./README.md) should be updated with important commands and scripts that enable tracer stability in CI.

@@ -2,4 +2,8 @@
 
 ## Updating AGENTS.md
 
-If a new feature is being supported in Orchestrion, update [README.md](./README.md).
+[README.md](./README.md) should be updated only if:
+
+1. New testing or build scripts are introduced
+2. A previously undocumented `text/template` variable was used
+3. A new orchestrion-related directory was created

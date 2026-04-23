@@ -2,4 +2,7 @@
 
 ## Updating AGENTS.md
 
-If a new, significant function is added to the tracer API, add it to [doc.go](./doc.go).
+[doc.go](./doc.go) should be updated with significant changes, including:
+
+1. New files with major functionality, which should be added to the list of files
+2. A new major step to the profiler's life cycle
