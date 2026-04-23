@@ -44,7 +44,12 @@ runs:
 
     - name: Add CodeOwners to JUnit files
       shell: bash
-      run: go run ./.github/actions/add-codeowners/codeowners.go "${{ inputs.path }}"
+      env:
+        RESULT_PATH: ${{ inputs.path }}
+      run: |
+        # Read the path from the environment instead of inlining it into the shell command so
+        # Windows paths ending in '\' do not escape the closing quote in bash.
+        go run ./.github/actions/add-codeowners/codeowners.go "$RESULT_PATH"
 
     - name: Upload the JUnit files
       shell: bash
