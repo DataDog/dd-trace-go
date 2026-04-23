@@ -13,13 +13,13 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kafkatest "github.com/testcontainers/testcontainers-go/modules/kafka"
-	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 const (
@@ -86,38 +86,6 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 	assert.Equal(t, "key1", string(records[0].Key))
 
 	client.Close()
-}
-
-func (tc *TestCase) createTopic(t *testing.T) {
-	t.Helper()
-
-	cl, err := kgo.NewClient(kgo.SeedBrokers(tc.addr))
-	require.NoError(t, err)
-	defer cl.Close()
-
-	admCl := kadm.NewClient(cl)
-	defer admCl.Close()
-
-	_, _ = admCl.DeleteTopics(context.Background(), topic)
-	_, err = admCl.CreateTopic(context.Background(), 1, 1, nil, topic)
-	require.NoError(t, err)
-
-	// Wait for topic to be ready.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	for {
-		metadata, err := admCl.Metadata(ctx, topic)
-		require.NoError(t, err)
-		topicMeta, ok := metadata.Topics[topic]
-		if ok && len(topicMeta.Partitions) > 0 && topicMeta.Err == nil {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatal("timed out waiting for topic to be ready")
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
 }
 
 func (*TestCase) ExpectedTraces() trace.Traces {
