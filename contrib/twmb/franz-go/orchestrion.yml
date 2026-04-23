@@ -1,0 +1,21 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2
+  description: Franz-Go Kafka client library for Go.
+
+aspects:
+  - id: Client
+    join-point:
+      function-call: github.com/twmb/franz-go/pkg/kgo.NewClient
+    advice:
+      - append-args:
+          type: github.com/twmb/franz-go/pkg/kgo.Opt
+          values:
+            - imports:
+                kgotrace: github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2
+              template: kgotrace.WithTracing()
