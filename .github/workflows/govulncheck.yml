@@ -63,6 +63,11 @@ jobs:
           output-format: sarif
           output-file: govulncheck.sarif
           go-version-input: stable
+          # Disable the action's implicit checkout — we already checked out the
+          # correct ref above with persist-credentials: false. Without this, the
+          # action re-runs actions/checkout with default credentials and the
+          # event ref, which can diverge from inputs.ref on workflow_call.
+          repo-checkout: false
       - name: Upload SARIF to GitHub Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1

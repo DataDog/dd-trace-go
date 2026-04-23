@@ -19,14 +19,33 @@ count=0
 # are not workspace members and cause govulncheck package-load errors.
 grep -E '^\s+\./contrib/' go.work | awk '{print $1}' | while read -r dir; do
   echo "Scanning $dir"
+  # Capture the module path (repo-root-relative) before any fallback rewrites
+  # $dir — used as the URI prefix when rewriting SARIF paths below.
+  module_dir="${dir#./}"  # strip leading "./" → "contrib/aws/aws-sdk-go"
+
   # govulncheck requires at least one .go file in the target directory;
   # fall back to the first subdirectory when the module root has none.
   go_files=$(find "$dir" -maxdepth 1 -type f -name '*.go' | wc -l)
   [[ $go_files -eq 0 ]] && dir=$(realpath "$(ls -d "$dir"/*/ | head -1)")
 
-  safe_name=$(printf '%s' "$dir" | tr '/' '_' | sed 's/^_//')
+  safe_name=$(printf '%s' "$module_dir" | tr '/' '_')
   # -format sarif exits 0 even when vulnerabilities are found.
   govulncheck -format sarif -C "$dir" . >"$SARIF_DIR/${safe_name}.sarif"
+
+  # Rewrite URIs to be repo-root-relative so Code Scanning annotations resolve
+  # correctly. govulncheck emits paths relative to the module dir with
+  # uriBaseId="%SRCROOT%". Prefix each with the module dir and drop uriBaseId
+  # so the merged single-run file has unambiguous repo-root-relative paths.
+  jq --arg prefix "${module_dir}/" '
+    walk(
+      if type == "object" and (.uriBaseId? == "%SRCROOT%") and has("uri")
+      then .uri = ($prefix + .uri) | del(.uriBaseId)
+      else .
+      end
+    )
+  ' "$SARIF_DIR/${safe_name}.sarif" >"$SARIF_DIR/${safe_name}.tmp"
+  mv "$SARIF_DIR/${safe_name}.tmp" "$SARIF_DIR/${safe_name}.sarif"
+
   count=$((count + 1))
 done
 
