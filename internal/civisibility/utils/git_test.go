@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -105,6 +106,19 @@ func TestFilterSensitiveInfo(t *testing.T) {
 		result := filterSensitiveInfo(test.input)
 		assert.Equal(t, test.expected, result, "Failed for input: %s", test.input)
 	}
+}
+
+func TestExecGitStringDisabledInPayloadFilesMode(t *testing.T) {
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	assert.Empty(t, out)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "git CLI is disabled in payload-file mode")
 }
 
 func TestGetLocalGitData(t *testing.T) {

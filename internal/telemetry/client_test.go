@@ -19,14 +19,15 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -102,14 +103,24 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
+func TestNewClient_FileSinkModeWithoutEndpoints(t *testing.T) {
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	defer c.Close()
+}
+
 func TestAutoFlush(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		config := defaultConfig(ClientConfig{
 			AgentURL: "http://localhost:8126",
 		})
-		config.DependencyLoader = nil
-
 		c, err := newClient(internal.TracerConfig{
 			Service: "test-service",
 			Env:     "test-env",
@@ -124,7 +135,7 @@ func TestAutoFlush(t *testing.T) {
 		c.writer = recordWriter
 		c.flushMu.Unlock()
 
-		time.Sleep(config.FlushInterval.Max + time.Nanosecond)
+		time.Sleep(config.FlushInterval.Max + time.Second)
 
 		c.flushMu.Lock()
 		require.Len(t, recordWriter.Payloads(), 1)
@@ -1397,21 +1408,6 @@ func TestHeartBeatInterval(t *testing.T) {
 	assert.InDelta(t, 2, sum/5, 0.1)
 }
 
-func TestExtendedHeartbeatIntervalEnv(t *testing.T) {
-	t.Setenv("DD_TELEMETRY_EXTENDED_HEARTBEAT_INTERVAL", "120")
-	cfg := defaultConfig(ClientConfig{
-		AgentURL: "http://localhost:8126",
-	})
-	assert.Equal(t, 120*time.Second, cfg.ExtendedHeartbeatInterval)
-}
-
-func TestExtendedHeartbeatIntervalDefault(t *testing.T) {
-	cfg := defaultConfig(ClientConfig{
-		AgentURL: "http://localhost:8126",
-	})
-	assert.Equal(t, defaultExtendedHeartbeatInterval, cfg.ExtendedHeartbeatInterval)
-}
-
 func TestSendingFailures(t *testing.T) {
 	cfg := ClientConfig{
 		AgentURL: "http://localhost:8126",
@@ -1426,14 +1422,15 @@ func TestSendingFailures(t *testing.T) {
 		},
 	}
 
-	clientCfg := defaultConfig(cfg)
-	clientCfg.DependencyLoader = nil
+	config := defaultConfig(cfg)
+	config.DependencyLoader = nil // prevent AppDependenciesLoaded from joining the flush and creating a MessageBatch
+	config.internalMetricsEnabled = false
 
 	c, err := newClient(internal.TracerConfig{
 		Service: "test-service",
 		Env:     "test-env",
 		Version: "1.0.0",
-	}, clientCfg)
+	}, config)
 
 	require.NoError(t, err)
 	defer c.Close()
@@ -1450,6 +1447,47 @@ func TestSendingFailures(t *testing.T) {
 	assert.Len(t, logs.Logs, 1)
 	assert.Equal(t, transport.LogLevelError, logs.Logs[0].Level)
 	assert.Equal(t, "test", logs.Logs[0].Message)
+}
+
+func TestComputeFlushMetrics_FileSinkSkipsMetrics(t *testing.T) {
+	c, err := newClient(internal.TracerConfig{
+		Service: "test-service",
+		Env:     "test-env",
+		Version: "1.0.0",
+	}, defaultConfig(ClientConfig{
+		AgentURL: "http://localhost:8126",
+	}))
+	require.NoError(t, err)
+	defer c.Close()
+
+	c.computeFlushMetrics([]internal.EndpointRequestResult{{
+		PayloadByteSize:  123,
+		CallDuration:     time.Second,
+		RequestAttempted: false,
+	}}, nil)
+
+	assert.Nil(t, c.metrics.Payload())
+	assert.Nil(t, c.distributions.Payload())
+}
+
+func TestComputeFlushMetrics_UnattemptedRequestSkipsMetrics(t *testing.T) {
+	c, err := newClient(internal.TracerConfig{
+		Service: "test-service",
+		Env:     "test-env",
+		Version: "1.0.0",
+	}, defaultConfig(ClientConfig{
+		AgentURL: "http://localhost:8126",
+	}))
+	require.NoError(t, err)
+	defer c.Close()
+
+	c.computeFlushMetrics([]internal.EndpointRequestResult{{
+		Error:            errors.New("encode failed"),
+		RequestAttempted: false,
+	}}, errors.New("encode failed"))
+
+	assert.Nil(t, c.metrics.Payload())
+	assert.Nil(t, c.distributions.Payload())
 }
 
 func BenchmarkLogs(b *testing.B) {

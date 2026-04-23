@@ -15,13 +15,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
@@ -59,10 +60,8 @@ func TestParseServiceEnvKey(t *testing.T) {
 func TestPrioritySampler(t *testing.T) {
 	// create a new span with given service/env
 	mkSpan := func(svc, env string) *Span {
-		s := &Span{service: svc, meta: map[string]string{}}
-		if env != "" {
-			s.meta["env"] = env
-		}
+		s := &Span{service: svc}
+		s.SetTag(ext.Environment, env)
 		return s
 	}
 
@@ -70,12 +69,17 @@ func TestPrioritySampler(t *testing.T) {
 		assert := assert.New(t)
 		s := mkSpan("my-service", "my-env")
 		assert.Equal("my-service", s.service)
-		assert.Equal("my-env", s.meta[ext.Environment])
+		v, _ := s.meta.Get(ext.Environment)
+		assert.Equal("my-env", v)
 
 		s = mkSpan("my-service2", "")
 		assert.Equal("my-service2", s.service)
-		_, ok := s.meta[ext.Environment]
-		assert.False(ok)
+		v, ok := s.meta.Get(ext.Environment)
+		assert.Equal("", v)
+		// SetTag always sets the presence bit, even for empty string, so ok=true.
+		// getRate uses only the string value, so "" and absent both fall through
+		// to the default rate — the behaviour is unchanged from the old code.
+		assert.True(ok)
 	})
 
 	t.Run("ops", func(t *testing.T) {
@@ -378,7 +382,8 @@ func BenchmarkPrioritySamplerGetRate(b *testing.B) {
 	}
 	oldGetRate := func(ops *oldPrioritySampler, spn *Span) float64 {
 		// Allocation doesn't escape to the heap.
-		key := "service:" + spn.service + ",env:" + spn.meta[ext.Environment]
+		v, _ := spn.meta.Get(ext.Environment)
+		key := "service:" + spn.service + ",env:" + v
 		if rate, ok := ops.rates[key]; ok {
 			return rate
 		}
@@ -395,10 +400,10 @@ func BenchmarkPrioritySamplerGetRate(b *testing.B) {
 	ps.rates[serviceEnvKey{service: "web", env: "prod"}] = 0.5
 
 	spnHit := newSpan("op", "web", "resource", 1, 1, 0)
-	spnHit.meta[ext.Environment] = "prod"
+	spnHit.SetTag(ext.Environment, "prod")
 
 	spnMiss := newSpan("op", "other", "resource", 1, 1, 0)
-	spnMiss.meta[ext.Environment] = "staging"
+	spnMiss.SetTag(ext.Environment, "staging")
 
 	b.ResetTimer()
 	b.Run("old/hit", func(b *testing.B) {
@@ -2121,8 +2126,9 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.Equal(0., root.metrics[keyRulesSamplerAppliedRate])
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
 		// Knuth sampling rate tag should be set even when rate is 0
-		assert.Contains(root.meta, keyKnuthSamplingRate)
-		assert.Equal("0", root.meta[keyKnuthSamplingRate])
+		assert.True(root.meta.Has(keyKnuthSamplingRate))
+		v, _ := root.meta.Get(keyKnuthSamplingRate)
+		assert.Equal("0", v)
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
@@ -2174,15 +2180,16 @@ func TestSampleTagsRootOnly(t *testing.T) {
 		assert.Contains(root.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(root.metrics, keyRulesSamplerLimiterRate)
 		// Knuth sampling rate tag should be set even when rate is 0
-		assert.Contains(root.meta, keyKnuthSamplingRate)
-		assert.Equal("0", root.meta[keyKnuthSamplingRate])
+		assert.True(root.meta.Has(keyKnuthSamplingRate))
+		v, _ := root.meta.Get(keyKnuthSamplingRate)
+		assert.Equal("0", v)
 
 		// neither"_dd.limit_psr", nor "_dd.rule_psr" should be present
 		// on the child span
 		assert.NotContains(child.metrics, keyRulesSamplerAppliedRate)
 		assert.NotContains(child.metrics, keyRulesSamplerLimiterRate)
 		// child span should not have Knuth sampling rate tag
-		assert.NotContains(child.meta, keyKnuthSamplingRate)
+		assert.False(child.meta.Has(keyKnuthSamplingRate))
 
 		// context propagation locks the span, so no re-sampling should occur
 		tr.Inject(root.Context(), TextMapCarrier(map[string]string{}))
@@ -2364,11 +2371,9 @@ func TestPrioritySamplerRampCooldownNoReset(t *testing.T) {
 		assert := assert.New(t)
 
 		mkSpan := func(svc, env string) *Span {
-			s := &Span{service: svc, meta: map[string]string{}}
-			if env != "" {
-				s.meta["env"] = env
-			}
-			return s
+			a := new(tinternal.SpanAttributes)
+			a.Set(tinternal.AttrEnv, env)
+			return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
 		}
 
 		// Set initial low rate.
@@ -2412,11 +2417,9 @@ func TestPrioritySamplerRampUp(t *testing.T) {
 		assert := assert.New(t)
 
 		mkSpan := func(svc, env string) *Span {
-			s := &Span{service: svc, meta: map[string]string{}}
-			if env != "" {
-				s.meta["env"] = env
-			}
-			return s
+			a := new(tinternal.SpanAttributes)
+			a.Set(tinternal.AttrEnv, env)
+			return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
 		}
 
 		// Set initial low rate (decrease from default 1.0, applied immediately).
@@ -2457,11 +2460,9 @@ func TestPrioritySamplerRampDown(t *testing.T) {
 	assert := assert.New(t)
 
 	mkSpan := func(svc, env string) *Span {
-		s := &Span{service: svc, meta: map[string]string{}}
-		if env != "" {
-			s.meta["env"] = env
-		}
-		return s
+		a := new(tinternal.SpanAttributes)
+		a.Set(tinternal.AttrEnv, env)
+		return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
 	}
 
 	// Set initial rate (decrease from default 1.0).
@@ -2483,11 +2484,9 @@ func TestPrioritySamplerRampConverges(t *testing.T) {
 		assert := assert.New(t)
 
 		mkSpan := func(svc, env string) *Span {
-			s := &Span{service: svc, meta: map[string]string{}}
-			if env != "" {
-				s.meta["env"] = env
-			}
-			return s
+			a := new(tinternal.SpanAttributes)
+			a.Set(tinternal.AttrEnv, env)
+			return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
 		}
 
 		// Start at 0.1, target 0.5.
@@ -2512,11 +2511,9 @@ func TestPrioritySamplerRampDefaultRate(t *testing.T) {
 		assert := assert.New(t)
 
 		mkSpan := func(svc, env string) *Span {
-			s := &Span{service: svc, meta: map[string]string{}}
-			if env != "" {
-				s.meta["env"] = env
-			}
-			return s
+			a := new(tinternal.SpanAttributes)
+			a.Set(tinternal.AttrEnv, env)
+			return &Span{service: svc, meta: tinternal.NewSpanMeta(a)}
 		}
 
 		// Set default rate to 0.1 (decrease from initial 1.0, applied immediately).

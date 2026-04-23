@@ -25,13 +25,17 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"go.uber.org/goleak"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -39,7 +43,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
-	"github.com/DataDog/dd-trace-go/v2/internal/synctest"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
@@ -324,10 +327,11 @@ func TestTracerStartSpan(t *testing.T) {
 		}, span.metrics[keySamplingPriority])
 		assert.Equal("-1", span.context.trace.propagatingTags[keyDecisionMaker])
 		// A span is not measured unless made so specifically
-		_, ok := span.meta[keyMeasured]
+		_, ok := span.meta.Get(keyMeasured)
 		assert.False(ok)
-		assert.Equal(globalconfig.RuntimeID(), span.meta[ext.RuntimeID])
-		assert.NotEqual("", span.meta[ext.RuntimeID])
+		v, _ := span.meta.Get(ext.RuntimeID)
+		assert.Equal(globalconfig.RuntimeID(), v)
+		assert.NotEqual("", v)
 	})
 
 	t.Run("priority", func(t *testing.T) {
@@ -818,7 +822,8 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		assert.Equal(uint64(987654), s.spanID)
 		assert.Equal(uint64(987654), s.traceID)
 		id := id128FromSpan(assert, s.Context())
-		assert.Empty(s.meta[keyTraceID128])
+		v, _ := s.meta.Get(keyTraceID128)
+		assert.Empty(v)
 		idBytes, err := hex.DecodeString(id)
 		assert.NoError(err)
 		assert.Equal(uint64(0), binary.BigEndian.Uint64(idBytes[:8])) // high 64 bits should be 0
@@ -840,7 +845,8 @@ func TestTracerStartSpanOptions128(t *testing.T) {
 		// 0001e240 (123456) + 00000000 (zeros) + 00000000000f1206 (987654)
 		assert.Equal("0001e2400000000000000000000f1206", id)
 		s.Finish()
-		assert.Equal(id[:16], s.meta[keyTraceID128])
+		v, _ := s.meta.Get(keyTraceID128)
+		assert.Equal(id[:16], v)
 	})
 }
 
@@ -916,11 +922,13 @@ func TestStartSpanOrigin(t *testing.T) {
 
 	// first child contains tag
 	child := tracer.StartSpan("child", ChildOf(ctx))
-	assert.Equal("synthetics", child.meta[keyOrigin])
+	v, _ := child.meta.Get(keyOrigin)
+	assert.Equal("synthetics", v)
 
 	// secondary child doesn't
 	child2 := tracer.StartSpan("child2", ChildOf(child.Context()))
-	assert.Empty(child2.meta[keyOrigin])
+	v, _ = child2.meta.Get(keyOrigin)
+	assert.Empty(v)
 
 	// but injecting its context marks origin
 	carrier2 := TextMapCarrier(map[string]string{})
@@ -1142,7 +1150,8 @@ func TestTracerSpanTags(t *testing.T) {
 	tag := Tag("key", "value")
 	span := tracer.StartSpan("web.request", tag)
 	assert := assert.New(t)
-	assert.Equal("value", span.meta["key"])
+	v, _ := span.meta.Get("key")
+	assert.Equal("value", v)
 }
 
 func TestTracerSpanGlobalTags(t *testing.T) {
@@ -1151,9 +1160,11 @@ func TestTracerSpanGlobalTags(t *testing.T) {
 	defer tracer.Stop()
 	assert.Nil(err)
 	s := tracer.StartSpan("web.request")
-	assert.Equal("value", s.meta["key"])
+	v, _ := s.meta.Get("key")
+	assert.Equal("value", v)
 	child := tracer.StartSpan("db.query", ChildOf(s.Context()))
-	assert.Equal("value", child.meta["key"])
+	v, _ = child.meta.Get("key")
+	assert.Equal("value", v)
 }
 
 func TestTracerSpanServiceMappings(t *testing.T) {
@@ -1212,7 +1223,8 @@ func TestTracerNoDebugStack(t *testing.T) {
 		s := tracer.StartSpan("web.request")
 		err = errors.New("test error")
 		s.Finish(WithError(err))
-		assert.Empty(t, s.meta[ext.ErrorStack])
+		v, _ := s.meta.Get(ext.ErrorStack)
+		assert.Empty(t, v)
 	})
 
 	t.Run("SetTag", func(t *testing.T) {
@@ -1222,7 +1234,8 @@ func TestTracerNoDebugStack(t *testing.T) {
 		s := tracer.StartSpan("web.request")
 		err = errors.New("error value with no trace")
 		s.SetTag(ext.Error, err)
-		assert.Empty(t, s.meta[ext.ErrorStack])
+		v, _ := s.meta.Get(ext.ErrorStack)
+		assert.Empty(t, v)
 	})
 }
 
@@ -1278,11 +1291,15 @@ func testNewSpanChild(t *testing.T, is128 bool) {
 		parent.Finish()
 		child.Finish()
 		if is128 {
-			assert.Equal(id[:16], parent.meta[keyTraceID128])
-			assert.Empty(child.meta[keyTraceID128])
+			v, _ := parent.meta.Get(keyTraceID128)
+			assert.Equal(id[:16], v)
+			v, _ = child.meta.Get(keyTraceID128)
+			assert.Empty(v)
 		} else {
-			assert.Empty(child.meta[keyTraceID128])
-			assert.Empty(parent.meta[keyTraceID128])
+			v, _ := child.meta.Get(keyTraceID128)
+			assert.Empty(v)
+			v, _ = parent.meta.Get(keyTraceID128)
+			assert.Empty(v)
 		}
 	})
 }
@@ -1307,7 +1324,8 @@ func TestNewChildHasNoPid(t *testing.T) {
 	root := tracer.newRootSpan("pylons.request", "pylons", "/")
 	child := tracer.newChildSpan("redis.command", root)
 
-	assert.Equal("", child.meta[ext.Pid])
+	v, _ := child.meta.Get(ext.Pid)
+	assert.Empty(v)
 }
 
 func TestTracerSampler(t *testing.T) {
@@ -1479,6 +1497,7 @@ func TestOTLPExportMode(t *testing.T) {
 		assert.True(isOTLPWriter, "expected otlpTraceWriter in OTLP export mode")
 		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
 		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler in OTLP export mode")
+		assert.IsType(&noopConcentrator{}, tracer.stats, "expected noopConcentrator in OTLP export mode")
 	})
 
 	t.Run("OTEL_TRACES_EXPORTER=otlp env var enables OTLP mode", func(t *testing.T) {
@@ -1492,6 +1511,61 @@ func TestOTLPExportMode(t *testing.T) {
 		_, isAlwaysOn := tracer.defaultSampler.(*otelParentBasedAlwaysOnSampler)
 		assert.True(isAlwaysOn, "expected otelParentBasedAlwaysOnSampler when OTEL_TRACES_EXPORTER=otlp")
 	})
+}
+
+func TestOTLPExportModeStatsSkipped(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+
+	tick := make(chan time.Time)
+	trc, err := newTracer(
+		func(c *config) {
+			c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+			c.ddTransport = newDummyTransport()
+			c.tickChan = tick
+		},
+	)
+	require.NoError(t, err)
+
+	w := trc.traceWriter.(*otlpTraceWriter)
+	w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+
+	// Enable canDropP0s so submit() reaches the noopConcentrator
+	// rather than short-circuiting.
+	af := trc.config.agent.load()
+	af.Stats = true
+	af.DropP0s = true
+	trc.config.agent.store(af)
+	trc.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
+
+	setGlobalTracer(trc)
+
+	assert.IsType(t, &noopConcentrator{}, trc.stats, "concentrator must be noop in OTLP mode")
+	assert.True(t, trc.config.canDropP0s(), "canDropP0s must be true for this test to exercise submit()")
+
+	const spanCount = 5
+	for range spanCount {
+		span := trc.newRootSpan("test.op", "test-service", "/test")
+		span.Finish()
+	}
+
+	// Stop drains t.out, flushes the writer, and waits for in-flight sends.
+	trc.Stop()
+
+	payloads := srv.getPayloads()
+	require.NotEmpty(t, payloads, "expected at least one OTLP payload")
+
+	totalSpans := 0
+	for _, p := range payloads {
+		var td otlptrace.TracesData
+		require.NoError(t, proto.Unmarshal(p, &td))
+		for _, rs := range td.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				totalSpans += len(ss.Spans)
+			}
+		}
+	}
+	assert.Equal(t, spanCount, totalSpans, "all spans should be retained in OTLP mode, not dropped by nil concentrator")
 }
 
 func TestTracerConcurrent(t *testing.T) {
@@ -1795,8 +1869,7 @@ func TestPushPayload(t *testing.T) {
 	defer stop()
 
 	s := newBasicSpan("3MB")
-	s.meta["key"] = strings.Repeat("X", payloadSizeLimit/2+10)
-
+	s.meta.Set("key", strings.Repeat("X", payloadSizeLimit/2+10))
 	// half payload size reached
 	tracer.pushChunk(&chunk{[]*Span{s}, true})
 	tracer.awaitPayload(t, 1)
@@ -1906,11 +1979,11 @@ func TestTracerReportsHostname(t *testing.T) {
 
 			assert := assert.New(t)
 
-			name, ok := root.meta[keyHostname]
+			name, ok := root.meta.Get(keyHostname)
 			assert.True(ok)
 			assert.Equal(name, tracer.config.internalConfig.Hostname())
 
-			name, ok = child.meta[keyHostname]
+			name, ok = child.meta.Get(keyHostname)
 			assert.True(ok)
 			assert.Equal(name, tracer.config.internalConfig.Hostname())
 		})
@@ -1932,9 +2005,9 @@ func TestTracerReportsHostname(t *testing.T) {
 
 			assert := assert.New(t)
 
-			_, ok := root.meta[keyHostname]
+			_, ok := root.meta.Get(keyHostname)
 			assert.False(ok)
-			_, ok = child.meta[keyHostname]
+			_, ok = child.meta.Get(keyHostname)
 			assert.False(ok)
 		})
 	}
@@ -1953,11 +2026,11 @@ func TestTracerReportsHostname(t *testing.T) {
 
 		assert := assert.New(t)
 
-		got, ok := root.meta[keyHostname]
+		got, ok := root.meta.Get(keyHostname)
 		assert.True(ok)
 		assert.Equal(got, hostname)
 
-		got, ok = child.meta[keyHostname]
+		got, ok = child.meta.Get(keyHostname)
 		assert.True(ok)
 		assert.Equal(got, hostname)
 	})
@@ -1976,11 +2049,11 @@ func TestTracerReportsHostname(t *testing.T) {
 
 		assert := assert.New(t)
 
-		got, ok := root.meta[keyHostname]
+		got, ok := root.meta.Get(keyHostname)
 		assert.True(ok)
 		assert.Equal(got, hostname)
 
-		got, ok = child.meta[keyHostname]
+		got, ok = child.meta.Get(keyHostname)
 		assert.True(ok)
 		assert.Equal(got, hostname)
 	})
@@ -1997,9 +2070,9 @@ func TestTracerReportsHostname(t *testing.T) {
 
 		assert := assert.New(t)
 
-		_, ok := root.meta[keyHostname]
+		_, ok := root.meta.Get(keyHostname)
 		assert.False(ok)
-		_, ok = child.meta[keyHostname]
+		_, ok = child.meta.Get(keyHostname)
 		assert.False(ok)
 	})
 }
@@ -2012,7 +2085,7 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		v := sp.meta[ext.Version]
+		v, _ := sp.meta.Get(ext.Version)
 		assert.Equal("4.5.6", v)
 	})
 	t.Run("service", func(t *testing.T) {
@@ -2023,7 +2096,8 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		_, ok := sp.meta[ext.Version]
+		v, ok := sp.meta.Get(ext.Version)
+		assert.Equal("", v)
 		assert.False(ok)
 	})
 	t.Run("universal", func(t *testing.T) {
@@ -2033,8 +2107,7 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		v, ok := sp.meta[ext.Version]
-		assert.True(ok)
+		v, _ := sp.meta.Get(ext.Version)
 		assert.Equal("4.5.6", v)
 	})
 	t.Run("service/universal", func(t *testing.T) {
@@ -2045,8 +2118,7 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		v, ok := sp.meta[ext.Version]
-		assert.True(ok)
+		v, _ := sp.meta.Get(ext.Version)
 		assert.Equal("1.2.3", v)
 	})
 	t.Run("universal/service", func(t *testing.T) {
@@ -2057,7 +2129,8 @@ func TestVersion(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
-		_, ok := sp.meta[ext.Version]
+		v, ok := sp.meta.Get(ext.Version)
+		assert.Equal("", v)
 		assert.False(ok)
 	})
 }
@@ -2070,7 +2143,7 @@ func TestEnvironment(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		v := sp.meta[ext.Environment]
+		v, _ := sp.meta.Get(ext.Environment)
 		assert.Equal("test", v)
 	})
 
@@ -2081,7 +2154,8 @@ func TestEnvironment(t *testing.T) {
 
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
-		_, ok := sp.meta[ext.Environment]
+		v, ok := sp.meta.Get(ext.Environment)
+		assert.Equal("", v)
 		assert.False(ok)
 	})
 }
@@ -2099,9 +2173,12 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
-		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
-		assert.Equal("github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
-		assert.Equal("somepath", sp.meta[internal.TraceTagGoPath])
+		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
+		assert.Equal("123456789ABCD", v)
+		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
+		assert.Equal("github.com/user/repo", v)
+		v, _ = sp.meta.Get(internal.TraceTagGoPath)
+		assert.Equal("somepath", v)
 	})
 
 	t.Run("git-metadata-from-dd-tags-with-credentials", func(t *testing.T) {
@@ -2116,9 +2193,12 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
-		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
-		assert.Equal("https://github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
-		assert.Equal("somepath", sp.meta[internal.TraceTagGoPath])
+		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
+		assert.Equal("123456789ABCD", v)
+		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
+		assert.Equal("https://github.com/user/repo", v)
+		v, _ = sp.meta.Get(internal.TraceTagGoPath)
+		assert.Equal("somepath", v)
 	})
 
 	t.Run("git-metadata-from-env", func(t *testing.T) {
@@ -2137,8 +2217,10 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
-		assert.Equal("123456789ABCDE", sp.meta[internal.TraceTagCommitSha])
-		assert.Equal("github.com/user/repo_new", sp.meta[internal.TraceTagRepositoryURL])
+		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
+		assert.Equal("123456789ABCDE", v)
+		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
+		assert.Equal("github.com/user/repo_new", v)
 	})
 
 	t.Run("git-metadata-from-env-with-credentials", func(t *testing.T) {
@@ -2154,8 +2236,10 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
-		assert.Equal("123456789ABCDE", sp.meta[internal.TraceTagCommitSha])
-		assert.Equal("https://github.com/user/repo_new", sp.meta[internal.TraceTagRepositoryURL])
+		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
+		assert.Equal("123456789ABCDE", v)
+		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
+		assert.Equal("https://github.com/user/repo_new", v)
 	})
 
 	t.Run("git-metadata-from-env-and-tags", func(t *testing.T) {
@@ -2171,8 +2255,10 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
-		assert.Equal("123456789ABCD", sp.meta[internal.TraceTagCommitSha])
-		assert.Equal("github.com/user/repo", sp.meta[internal.TraceTagRepositoryURL])
+		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
+		assert.Equal("123456789ABCD", v)
+		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
+		assert.Equal("github.com/user/repo", v)
 	})
 
 	t.Run("git-metadata-disabled", func(t *testing.T) {
@@ -2191,8 +2277,10 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
-		assert.Equal("", sp.meta[internal.TraceTagCommitSha])
-		assert.Equal("", sp.meta[internal.TraceTagRepositoryURL])
+		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
+		assert.Empty(v)
+		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
+		assert.Empty(v)
 	})
 }
 
@@ -2436,9 +2524,7 @@ func cpspan(s *Span) *Span {
 	if len(s.metrics) == 0 {
 		s.metrics = nil
 	}
-	if len(s.meta) == 0 {
-		s.meta = nil
-	}
+	s.meta.Normalize()
 	return &Span{
 		name:     s.name,
 		service:  s.service,
@@ -2446,7 +2532,7 @@ func cpspan(s *Span) *Span {
 		spanType: s.spanType,
 		start:    s.start,
 		duration: s.duration,
-		meta:     s.meta,
+		meta:     traceinternal.NewSpanMetaFromMap(s.meta.Map(true)), // flatten to plain map for comparison
 		metrics:  s.metrics,
 		spanID:   s.spanID,
 		traceID:  s.traceID,
@@ -2608,7 +2694,8 @@ func TestUserMonitoring(t *testing.T) {
 			WithUserRole(role), WithUserSessionID(sessionID))
 		s.Finish()
 		for _, pair := range expected {
-			assert.Equal(t, pair.value, s.meta[pair.key])
+			v, _ := s.meta.Get(pair.key)
+			assert.Equal(t, pair.value, v)
 		}
 	})
 
@@ -2620,7 +2707,8 @@ func TestUserMonitoring(t *testing.T) {
 		child.Finish()
 		root.Finish()
 		for _, pair := range expected {
-			assert.Equal(t, pair.value, root.meta[pair.key])
+			v, _ := root.meta.Get(pair.key)
+			assert.Equal(t, pair.value, v)
 		}
 	})
 
@@ -2628,19 +2716,21 @@ func TestUserMonitoring(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
 		SetUser(s, id, WithPropagation())
 		s.Finish()
-		assert.Equal(t, id, s.meta[keyUserID])
+		v, _ := s.meta.Get(keyUserID)
+		assert.Equal(t, id, v)
 		encoded := base64.StdEncoding.EncodeToString([]byte(id))
 		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
-		assert.Equal(t, encoded, s.meta[keyPropagatedUserID])
+		v, _ = s.meta.Get(keyPropagatedUserID)
+		assert.Equal(t, encoded, v)
 	})
 
 	t.Run("no-propagation", func(t *testing.T) {
 		s := tr.newRootSpan("root", "test", "test")
 		SetUser(s, id)
 		s.Finish()
-		_, ok := s.meta[keyUserID]
+		_, ok := s.meta.Get(keyUserID)
 		assert.True(t, ok)
-		_, ok = s.meta[keyPropagatedUserID]
+		_, ok = s.meta.Get(keyPropagatedUserID)
 		assert.False(t, ok)
 		_, ok = s.context.trace.propagatingTags[keyPropagatedUserID]
 		assert.False(t, ok)
@@ -2775,9 +2865,11 @@ func TestExecutionTraceSpanTagged(t *testing.T) {
 	untracedSpan := tracer.StartSpan("untraced")
 	untracedSpan.Finish()
 
-	assert.Equal(t, tracedSpan.meta["go_execution_traced"], "yes")
-	assert.Equal(t, partialSpan.meta["go_execution_traced"], "partial")
-	assert.NotContains(t, untracedSpan.meta, "go_execution_traced")
+	v, _ := tracedSpan.meta.Get("go_execution_traced")
+	assert.Equal(t, v, "yes")
+	v, _ = partialSpan.meta.Get("go_execution_traced")
+	assert.Equal(t, v, "partial")
+	assert.False(t, untracedSpan.meta.Has("go_execution_traced"))
 }
 
 func wasteA(d time.Duration) {
@@ -3211,7 +3303,8 @@ func TestStartSpanFromPropagatedContext(t *testing.T) {
 
 		span, _ := StartSpanFromPropagatedContext(context.Background(), "child-with-tags", carrier, Tag("custom.tag", "hello"))
 		assert.Equal(t, root.spanID, span.parentID)
-		assert.Equal(t, "hello", span.meta["custom.tag"])
+		v, _ := span.meta.Get("custom.tag")
+		assert.Equal(t, "hello", v)
 	})
 	t.Run("http headers carrier", func(t *testing.T) {
 		httpCarrier := HTTPHeadersCarrier{}

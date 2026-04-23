@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -93,6 +94,9 @@ var (
 
 	// safeDirectoryValue holds the cached repository root path for safe.directory config.
 	safeDirectoryValue string
+
+	// errGitCLIDisabledInPayloadFilesMode reports that payload-file mode must avoid invoking the Git CLI.
+	errGitCLIDisabledInPayloadFilesMode = errors.New("git CLI is disabled in payload-file mode")
 )
 
 // branchMetrics holds metrics for evaluating base branch candidates
@@ -185,6 +189,10 @@ func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err
 			}
 		}()
 	}
+	if bazel.IsGitCLIDisabled() {
+		log.Debug("civisibility.git: skipping git command in payload-file mode: git %s", strings.Join(args, " "))
+		return nil, errGitCLIDisabledInPayloadFilesMode
+	}
 	if !isGitFound() {
 		return nil, errors.New("git executable not found")
 	}
@@ -246,6 +254,10 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 				log.Debug("civisibility.git.command(input) [%s][%dms]: git %s\n%s", commandType, durationInMs, strings.Join(args, " "), val)
 			}
 		}()
+	}
+	if bazel.IsGitCLIDisabled() {
+		log.Debug("civisibility.git: skipping git command with stdin in payload-file mode: git %s", strings.Join(args, " "))
+		return "", errGitCLIDisabledInPayloadFilesMode
 	}
 	gitCommandMutex.Lock()
 	defer gitCommandMutex.Unlock()

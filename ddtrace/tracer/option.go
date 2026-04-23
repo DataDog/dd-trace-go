@@ -224,9 +224,6 @@ type config struct {
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
 
-	// traceSampleRate holds the trace sample rate.
-	traceSampleRate dynamicConfig[float64]
-
 	// traceSampleRules holds the trace sampling rules
 	traceSampleRules dynamicConfig[[]SamplingRule]
 

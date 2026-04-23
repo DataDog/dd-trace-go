@@ -457,9 +457,7 @@ func (d *Dataset) estimateDeltaSize() (int, error) {
 	return len(encoded), nil
 }
 
-// Push pushes the Dataset changes to DataDog.
-// For large changes (>5MB), it uses bulk upload via CSV.
-// For smaller changes, it uses batch update API.
+// Push pushes the pending Dataset changes to Datadog.
 func (d *Dataset) Push(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -473,46 +471,12 @@ func (d *Dataset) Push(ctx context.Context) error {
 	}
 	d.initialize()
 
-	// Estimate delta size to choose between bulk upload and batch update
 	deltaSize, err := d.estimateDeltaSize()
 	if err != nil {
 		return err
 	}
 
-	// If delta is large, use bulk upload
-	if deltaSize > batchUpdateThreshold {
-		log.Debug("llmobs: dataset delta is %d bytes, using bulk upload", deltaSize)
-
-		// Convert all current records to transport format
-		allRecords := make([]transport.DatasetRecordView, 0, len(d.records))
-		for _, rec := range d.records {
-			allRecords = append(allRecords, transport.DatasetRecordView{
-				ID:             rec.id,
-				Input:          rec.Input,
-				ExpectedOutput: rec.ExpectedOutput,
-				Metadata:       rec.Metadata,
-				Version:        rec.version,
-			})
-		}
-
-		if err := ll.Transport.BulkUploadDataset(ctx, d.id, allRecords); err != nil {
-			return fmt.Errorf("failed to bulk upload dataset: %w", err)
-		}
-
-		// TODO: Backend doesn't return version from bulk upload yet
-		d.version++
-
-		// Clear pending changes
-		d.appendRecords = make(map[string]*Record)
-		d.updateRecords = make(map[string]*RecordUpdate)
-		d.deleteRecords = make(map[string]struct{})
-
-		return nil
-	}
-
-	// Use batch update for smaller changes
-	log.Debug("llmobs: dataset delta is %d bytes, using batch update", deltaSize)
-
+	// Build slices for inserts, updates, and deletes from the pending maps.
 	insertOldIDs := make([]string, 0, len(d.appendRecords))
 	insert := make([]transport.DatasetRecordCreate, 0, len(d.appendRecords))
 	for id, rec := range d.appendRecords {
@@ -536,6 +500,63 @@ func (d *Dataset) Push(ctx context.Context) error {
 	for id := range d.deleteRecords {
 		del = append(del, id)
 	}
+
+	// When the delta exceeds the threshold, chunk inserts across multiple batch_update
+	// requests instead of falling back to bulk CSV upload. Bulk upload is a single large
+	// multipart request that is rejected by the Datadog Agent EVP proxy with
+	// "read limit reached" (502) on large payloads.
+	if deltaSize > batchUpdateThreshold && len(insert) > 0 {
+		log.Debug("llmobs: dataset delta is %d bytes, chunking inserts across multiple batch_update calls", deltaSize)
+
+		numBatches := (deltaSize + batchUpdateThreshold - 1) / batchUpdateThreshold
+		chunkSize := (len(insert) + numBatches - 1) / numBatches
+
+		var lastVersion int
+		for i := 0; i < len(insert); i += chunkSize {
+			end := min(i+chunkSize, len(insert))
+			chunkInsert := insert[i:end]
+			chunkOldIDs := insertOldIDs[i:end]
+			chunkNum := (i / chunkSize) + 1
+
+			log.Debug("llmobs: uploading dataset chunk %d/%d (%d records)", chunkNum, numBatches, len(chunkInsert))
+
+			// Attach updates and deletes to the last chunk only.
+			var chunkUpdate []transport.DatasetRecordUpdate
+			var chunkDel []string
+			if end == len(insert) {
+				chunkUpdate = update
+				chunkDel = del
+			}
+
+			newVersion, newRecordIDs, err := ll.Transport.BatchUpdateDataset(ctx, d.id, chunkInsert, chunkUpdate, chunkDel)
+			if err != nil {
+				return fmt.Errorf("failed to batch update dataset (chunk %d): %w", chunkNum, err)
+			}
+			log.Debug("llmobs: successfully uploaded dataset chunk %d/%d", chunkNum, numBatches)
+			if len(chunkOldIDs) != len(newRecordIDs) {
+				return fmt.Errorf("received a different number of new records than what it was sent (want: %d, got: %d)", len(chunkOldIDs), len(newRecordIDs))
+			}
+			for j, newID := range newRecordIDs {
+				d.appendRecords[chunkOldIDs[j]].id = newID
+			}
+			if newVersion > 0 {
+				lastVersion = newVersion
+			}
+		}
+
+		if lastVersion > 0 {
+			d.version = lastVersion
+		} else {
+			d.version++
+		}
+		d.appendRecords = make(map[string]*Record)
+		d.updateRecords = make(map[string]*RecordUpdate)
+		d.deleteRecords = make(map[string]struct{})
+		return nil
+	}
+
+	// Small delta: a single batch_update request is sufficient.
+	log.Debug("llmobs: dataset delta is %d bytes, using batch update", deltaSize)
 
 	// newRecordIDs should go in the same order
 	newVersion, newRecordIDs, err := ll.Transport.BatchUpdateDataset(ctx, d.id, insert, update, del)
@@ -563,7 +584,6 @@ func (d *Dataset) Push(ctx context.Context) error {
 	d.appendRecords = make(map[string]*Record)
 	d.updateRecords = make(map[string]*RecordUpdate)
 	d.deleteRecords = make(map[string]struct{})
-
 	return nil
 }
 
