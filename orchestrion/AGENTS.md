@@ -1,4 +1,9 @@
-**BEFORE making ANY code changes**, you MUST read [README.md](./README.md) for information about how the profiler works. 
+**BEFORE making ANY code changes**, you MUST read [README.md](./README.md) for information about:
+
+1. Orchestrion directories within the repo
+2. Sites to find more documentation and instructions
+3. Common functions for join points and advices that can be used in orchestrion.yml files
+4. Testing and upgrading instructions
 
 ## Updating AGENTS.md
 

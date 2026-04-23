@@ -1,4 +1,8 @@
-**BEFORE making ANY code changes**, you MUST read [README.md](./README.md).
+**BEFORE making ANY code changes**, you MUST read [README.md](./README.md) for information about:
+
+* Naming conventions
+* Testing
+* Steps for creating new contribs
 
 ## Updating AGENTS.md
 
