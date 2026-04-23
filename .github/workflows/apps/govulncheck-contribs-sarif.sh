@@ -36,13 +36,18 @@ if [[ ! -e "${sarif_files[0]}" ]]; then
   exit 0
 fi
 
-# Merge all per-module SARIF runs into one file.
-# All runs share the same govulncheck schema version, so the first file's
-# version and $schema fields are representative for the merged output.
+# Merge all per-module SARIF files into one file with a single run.
+# CodeQL upload-sarif rejects files with multiple runs under the same category
+# (https://github.blog/changelog/2025-07-21-code-scanning-will-stop-combining-multiple-sarif-runs-uploaded-in-the-same-sarif-file/).
+# govulncheck uses URI-based artifact locations (not index-based), so merging
+# results across runs is safe — no artifact re-indexing required.
 jq -s '{
   "version": .[0].version,
   "$schema": (.[0]."$schema" // ""),
-  "runs": [.[].runs[]]
+  "runs": [{
+    "tool": .[0].runs[0].tool,
+    "results": [.[].runs[].results[]?]
+  }]
 }' "$SARIF_DIR"/*.sarif >"$OUTPUT"
 
 echo "Merged $(echo "$SARIF_DIR"/*.sarif | wc -w) SARIF files into $OUTPUT"
