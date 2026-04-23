@@ -14,7 +14,10 @@ SARIF_DIR=$(mktemp -d)
 trap 'rm -rf "$SARIF_DIR"' EXIT
 
 count=0
-find ./contrib -mindepth 2 -type f -name go.mod -exec dirname {} \; | while read -r dir; do
+# Use go.work as the authoritative module list — avoids picking up nested
+# test-only go.mod files (e.g. contrib/aws/datadog-lambda-go/test/...) that
+# are not workspace members and cause govulncheck package-load errors.
+grep -E '^\s+\./contrib/' go.work | awk '{print $1}' | while read -r dir; do
   echo "Scanning $dir"
   # govulncheck requires at least one .go file in the target directory;
   # fall back to the first subdirectory when the module root has none.
