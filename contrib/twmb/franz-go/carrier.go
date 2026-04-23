@@ -27,7 +27,7 @@ func newKafkaHeadersCarrier(r *kgo.Record) *kafkaHeadersCarrier {
 }
 
 // ForeachKey implements tracer.TextMapReader.
-// When multiple headers share a key, the handler is applied only to the 
+// When multiple headers share a key, the handler is applied only to the
 // first occurrence.
 func (c kafkaHeadersCarrier) ForeachKey(handler func(key, val string) error) error {
 	seen := make(map[string]struct{}, len(c.record.Headers))
@@ -44,7 +44,7 @@ func (c kafkaHeadersCarrier) ForeachKey(handler func(key, val string) error) err
 }
 
 // Set implements tracer.TextMapWriter.
-// When multiple headers share a key, the new value is applied to 
+// When multiple headers share a key, the new value is applied to
 // all occurrences.
 func (c *kafkaHeadersCarrier) Set(key, val string) {
 	found := false
