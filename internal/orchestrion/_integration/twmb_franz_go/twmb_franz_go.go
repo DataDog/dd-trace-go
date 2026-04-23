@@ -125,3 +125,90 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 		},
 	}
 }
+
+// TestCaseEllipsis verifies orchestrion's append-args aspect correctly
+// transforms kgo.NewClient(opts...) calls where options are spread from a
+// []kgo.Opt slice. The transformation is non-trivial for this form since
+// kgo.NewClient(opts..., extra) is invalid Go.
+type TestCaseEllipsis struct {
+	TestCase
+}
+
+func (tc *TestCaseEllipsis) Run(ctx context.Context, t *testing.T) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	defer span.Finish()
+
+	produceOpts := []kgo.Opt{kgo.SeedBrokers(tc.addr)}
+	producer, err := kgo.NewClient(produceOpts...)
+	require.NoError(t, err)
+	defer producer.Close()
+
+	record := &kgo.Record{Topic: topic, Key: []byte("key1"), Value: []byte("Hello World!")}
+	require.NoError(t, producer.ProduceSync(ctx, record).FirstErr())
+
+	consumeOpts := []kgo.Opt{
+		kgo.SeedBrokers(tc.addr),
+		kgo.ConsumeTopics(topic),
+		kgo.ConsumerGroup(consumerGroup),
+	}
+	consumer, err := kgo.NewClient(consumeOpts...)
+	require.NoError(t, err)
+
+	fetchCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	fetches := consumer.PollFetches(fetchCtx)
+	require.NoError(t, fetches.Err())
+
+	records := fetches.Records()
+	require.Len(t, records, 1)
+	assert.Equal(t, "Hello World!", string(records[0].Value))
+
+	consumer.Close()
+}
+
+// TestCaseNoArgs verifies orchestrion's append-args aspect correctly
+// injects WithTracing() into kgo.NewClient() calls with no arguments.
+// Brokers are configured post-creation via UpdateSeedBrokers so we can
+// still exercise a real produce and observe the resulting span.
+type TestCaseNoArgs struct {
+	TestCase
+}
+
+func (tc *TestCaseNoArgs) Run(ctx context.Context, t *testing.T) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	defer span.Finish()
+
+	producer, err := kgo.NewClient()
+	require.NoError(t, err)
+	defer producer.Close()
+
+	require.NoError(t, producer.UpdateSeedBrokers(tc.addr))
+
+	record := &kgo.Record{Topic: topic, Key: []byte("key1"), Value: []byte("Hello World!")}
+	require.NoError(t, producer.ProduceSync(ctx, record).FirstErr())
+}
+
+func (*TestCaseNoArgs) ExpectedTraces() trace.Traces {
+	return trace.Traces{
+		{
+			Tags: map[string]any{
+				"name": "test.root",
+			},
+			Children: trace.Traces{
+				{
+					Tags: map[string]any{
+						"name":     "kafka.produce",
+						"type":     "queue",
+						"service":  "kafka",
+						"resource": "Produce Topic " + topic,
+					},
+					Meta: map[string]string{
+						"span.kind": "producer",
+						"component": "twmb/franz-go",
+					},
+				},
+			},
+		},
+	}
+}
