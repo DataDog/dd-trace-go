@@ -52,10 +52,14 @@ const (
 	ProductProfiler Product = "profiler"
 )
 
-// programmaticOverride records which product claimed a field via programmatic API.
+// programmaticOverride records which product claimed a field via programmatic API
+// and, for the first code-origin write per (field, product), the closure that reverts
+// the field to its pre-code state. restore is captured exactly once and preserved
+// across same-product rewrites so UndoProduct always restores to the true baseline.
 type programmaticOverride struct {
 	product Product
 	value   any
+	restore func()
 }
 
 // Config represents global configuration properties.
@@ -65,7 +69,7 @@ type Config struct {
 	mu sync.RWMutex
 
 	// overrides tracks which product claimed each field via programmatic API (OriginCode).
-	// Used by checkOverrideConflict to enforce the cross-product gate.
+	// Used by snapshotAndCheck to enforce the cross-product gate and to record undo baselines.
 	overrides map[string]programmaticOverride
 
 	// Config fields are protected by the mutex.
@@ -144,34 +148,86 @@ type Config struct {
 	traceID128BitEnabled bool
 }
 
-// checkProductConflict enforces the cross-product gate for programmatic API calls.
+// snapshotAndCheck enforces the cross-product gate for programmatic API calls and,
+// on the first code-origin write to a field by a given product, records the baseline
+// restore closure so the override can later be reverted via UndoProduct.
+//
 // Returns true if the caller should abort the update (a different product already
 // claimed this field). No-op when product is not supplied or origin is not OriginCode.
 // The product parameter is variadic for ergonomic pass-through from Set* methods;
 // only the first value is used and callers should pass at most one.
+//
+// restore is the closure the caller passes on every invocation; it is stored only
+// on the first write per (field, product). Subsequent writes from the same product
+// update the current value but preserve the original restore closure, so the baseline
+// always reflects the true pre-any-code state.
+//
 // Must be called while c.mu is held.
-func (c *Config) checkProductConflict(field string, origin telemetry.Origin, value any, product ...Product) bool {
+func (c *Config) snapshotAndCheck(field string, origin telemetry.Origin, value any, restore func(), product ...Product) bool {
 	if origin != telemetry.OriginCode || len(product) == 0 {
 		return false
 	}
 	p := product[0]
-	if prev, exists := c.overrides[field]; exists && prev.product != p {
-		if reflect.DeepEqual(prev.value, value) {
-			return false
+	if prev, exists := c.overrides[field]; exists {
+		if prev.product != p {
+			if reflect.DeepEqual(prev.value, value) {
+				return false
+			}
+			telemetry.Count(telemetry.NamespaceGeneral, "config.product_conflict", []string{
+				"name:" + field,
+				"first_product:" + string(prev.product),
+				"second_product:" + string(p),
+				"first_value:" + fmt.Sprint(prev.value),
+				"second_value:" + fmt.Sprint(value),
+			}).Submit(1)
+			log.Warn("config: %s already set %s via programmatic API; ignoring %s's attempt to override it",
+				prev.product, field, p)
+			return true
 		}
-		telemetry.Count(telemetry.NamespaceGeneral, "config.product_conflict", []string{
-			"name:" + field,
-			"first_product:" + string(prev.product),
-			"second_product:" + string(p),
-			"first_value:" + fmt.Sprint(prev.value),
-			"second_value:" + fmt.Sprint(value),
-		}).Submit(1)
-		log.Warn("config: %s already set %s via programmatic API; ignoring %s's attempt to override it",
-			prev.product, field, p)
-		return true
+		// Same-product rewrite: update the current value but preserve the
+		// original restore closure so undo still reverts to the pre-any-code baseline.
+		prev.value = value
+		c.overrides[field] = prev
+		return false
 	}
-	c.overrides[field] = programmaticOverride{product: p, value: value}
+	c.overrides[field] = programmaticOverride{product: p, value: value, restore: restore}
 	return false
+}
+
+// checkProductConflict is a thin wrapper around snapshotAndCheck for setters
+// that have not yet been migrated to capture undo baselines. It enforces the
+// same first-product-wins gate, but fields updated through this path will NOT
+// participate in UndoProduct — their entries remain in the overrides map to
+// preserve ownership, but no restore closure is recorded.
+//
+// Must be called while c.mu is held.
+func (c *Config) checkProductConflict(field string, origin telemetry.Origin, value any, product ...Product) bool {
+	return c.snapshotAndCheck(field, origin, value, nil, product...)
+}
+
+// UndoProduct reverts every programmatic (OriginCode) override recorded for the
+// given product back to the value it held before the first code-origin write.
+// Only overrides registered with a non-nil restore closure are undone; setters
+// that still use the legacy checkProductConflict path retain their values, but
+// their ownership entry is released so a subsequent code write can claim the
+// field. Overrides owned by other products and values written via non-code
+// origins (env vars, defaults, remote config) are left untouched.
+//
+// Intended to be called by a product's Start() before applying new options, so
+// that repeat Start calls yield last-Start-wins semantics without wiping other
+// products' overrides.
+func (c *Config) UndoProduct(p Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for field, ov := range c.overrides {
+		if ov.product != p {
+			continue
+		}
+		if ov.restore != nil {
+			ov.restore()
+		}
+		delete(c.overrides, field)
+	}
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -697,7 +753,13 @@ func (c *Config) Env() string {
 func (c *Config) SetEnv(env string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.checkProductConflict("DD_ENV", origin, env, product...) {
+	priorVal := c.env
+	// Silent restore — telemetry is re-reported by the next RefreshFromEnv
+	// (called from each product's Start) or by a subsequent code write.
+	restore := func() {
+		c.env = priorVal
+	}
+	if c.snapshotAndCheck("DD_ENV", origin, env, restore, product...) {
 		return
 	}
 	c.env = env

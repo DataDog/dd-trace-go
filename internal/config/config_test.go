@@ -867,3 +867,142 @@ func TestAdditiveConfigs(t *testing.T) {
 		assert.Equal(t, "frontend-v2", to, "last write wins for same mapping key")
 	})
 }
+
+func TestUndoProduct(t *testing.T) {
+	t.Run("restores prior value to default baseline", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		// Baseline is the zero value loaded from env/defaults (empty string here,
+		// since no DD_ENV is set in the test env).
+		before := cfg.Env()
+
+		cfg.SetEnv("staging", OriginCode, ProductTracer)
+		assert.Equal(t, "staging", cfg.Env())
+
+		cfg.UndoProduct(ProductTracer)
+		assert.Equal(t, before, cfg.Env(), "undo should revert to pre-code baseline")
+	})
+
+	t.Run("same-product rewrite preserves original baseline", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		before := cfg.Env()
+
+		cfg.SetEnv("staging", OriginCode, ProductTracer)
+		cfg.SetEnv("production", OriginCode, ProductTracer)
+		assert.Equal(t, "production", cfg.Env())
+
+		cfg.UndoProduct(ProductTracer)
+		assert.Equal(t, before, cfg.Env(),
+			"undo should revert all the way back to pre-any-code state, not to intermediate value")
+	})
+
+	t.Run("leaves other product's overrides intact", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		// Tracer and profiler each set DD_ENV via their own product tag. The first
+		// Start wins the field; the losing product's attempt is rejected by the
+		// conflict gate. Here we test that undoing the winner cleanly releases it.
+		cfg.SetEnv("tracer-env", OriginCode, ProductTracer)
+		assert.Equal(t, "tracer-env", cfg.Env())
+
+		cfg.UndoProduct(ProductProfiler) // no-op: profiler owns nothing
+		assert.Equal(t, "tracer-env", cfg.Env(),
+			"undo on non-owner product must not touch field")
+	})
+
+	t.Run("conflict-rejected writes are not recorded and not undone", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		before := cfg.Env()
+
+		cfg.SetEnv("tracer-env", OriginCode, ProductTracer)
+		// Conflict: different product trying to override same field. Rejected.
+		cfg.SetEnv("profiler-env", OriginCode, ProductProfiler)
+		assert.Equal(t, "tracer-env", cfg.Env())
+
+		// Undoing profiler should be a no-op for this field (profiler never claimed it).
+		cfg.UndoProduct(ProductProfiler)
+		assert.Equal(t, "tracer-env", cfg.Env(),
+			"undo on non-owner product must not touch field")
+
+		// Undoing tracer restores the baseline.
+		cfg.UndoProduct(ProductTracer)
+		assert.Equal(t, before, cfg.Env())
+	})
+
+	t.Run("is idempotent", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		before := cfg.Env()
+
+		cfg.SetEnv("staging", OriginCode, ProductTracer)
+		cfg.UndoProduct(ProductTracer)
+		cfg.UndoProduct(ProductTracer) // second call must not panic or re-mutate
+		assert.Equal(t, before, cfg.Env())
+	})
+
+	t.Run("does not touch non-code-origin values", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		// Simulate an env-var-origin write (no product, no override recorded).
+		cfg.SetEnv("from-env", telemetry.OriginEnvVar)
+		assert.Equal(t, "from-env", cfg.Env())
+
+		cfg.UndoProduct(ProductTracer)
+		assert.Equal(t, "from-env", cfg.Env(),
+			"env-origin values are not in the overrides map and must not be undone")
+	})
+
+	t.Run("re-Start pattern: undo then apply new options", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		before := cfg.Env()
+
+		// First Start with an env override.
+		cfg.SetEnv("first-env", OriginCode, ProductTracer)
+		assert.Equal(t, "first-env", cfg.Env())
+
+		// Simulate re-Start: undo then apply a new value. Because UndoProduct
+		// restored the baseline, the new write is treated as the first code
+		// write — not a rewrite on top of the previous override.
+		cfg.UndoProduct(ProductTracer)
+		assert.Equal(t, before, cfg.Env(), "baseline should be restored before new Start")
+
+		cfg.SetEnv("second-env", OriginCode, ProductTracer)
+		assert.Equal(t, "second-env", cfg.Env())
+
+		// And a second undo should still roll all the way back to the true baseline.
+		cfg.UndoProduct(ProductTracer)
+		assert.Equal(t, before, cfg.Env())
+	})
+
+	t.Run("after undo, other product can now claim the field", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetEnv("tracer-env", OriginCode, ProductTracer)
+		cfg.UndoProduct(ProductTracer)
+
+		// Profiler should now be free to claim the field since tracer released it.
+		cfg.SetEnv("profiler-env", OriginCode, ProductProfiler)
+		assert.Equal(t, "profiler-env", cfg.Env())
+	})
+}
