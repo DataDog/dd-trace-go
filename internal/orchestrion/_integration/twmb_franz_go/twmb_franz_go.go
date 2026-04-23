@@ -22,19 +22,26 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
-const (
-	topic         = "twmb_franz_go_topic"
-	consumerGroup = "twmb_franz_go_group"
-)
+// The Kafka testcontainer is shared across all tests in this package (Reuse:
+// true in StartKafkaTestContainer), so each TestCase* must use its own topic
+// and consumer group to avoid cross-test pollution.
 
 type TestCase struct {
 	kafka *kafkatest.KafkaContainer
 	addr  string
+	topic string
+	group string
+}
+
+func (tc *TestCase) setup(t *testing.T, topic, group string) {
+	containers.SkipIfProviderIsNotHealthy(t)
+	tc.topic = topic
+	tc.group = group
+	tc.kafka, tc.addr = containers.StartKafkaTestContainer(t, []string{topic})
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
-	containers.SkipIfProviderIsNotHealthy(t)
-	tc.kafka, tc.addr = containers.StartKafkaTestContainer(t, []string{topic})
+	tc.setup(t, "twmb_franz_go_topic", "twmb_franz_go_group")
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
@@ -53,7 +60,7 @@ func (tc *TestCase) produce(ctx context.Context, t *testing.T) {
 	defer client.Close()
 
 	record := &kgo.Record{
-		Topic: topic,
+		Topic: tc.topic,
 		Key:   []byte("key1"),
 		Value: []byte("Hello World!"),
 	}
@@ -69,8 +76,8 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(tc.addr),
-		kgo.ConsumeTopics(topic),
-		kgo.ConsumerGroup(consumerGroup),
+		kgo.ConsumeTopics(tc.topic),
+		kgo.ConsumerGroup(tc.group),
 	)
 	require.NoError(t, err)
 
@@ -88,7 +95,7 @@ func (tc *TestCase) consume(_ context.Context, t *testing.T) {
 	client.Close()
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -100,7 +107,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"name":     "kafka.produce",
 						"type":     "queue",
 						"service":  "kafka",
-						"resource": "Produce Topic " + topic,
+						"resource": "Produce Topic " + tc.topic,
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
@@ -112,7 +119,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 								"name":     "kafka.consume",
 								"type":     "queue",
 								"service":  "kafka",
-								"resource": "Consume Topic " + topic,
+								"resource": "Consume Topic " + tc.topic,
 							},
 							Meta: map[string]string{
 								"span.kind": "consumer",
@@ -134,6 +141,10 @@ type TestCaseEllipsis struct {
 	TestCase
 }
 
+func (tc *TestCaseEllipsis) Setup(_ context.Context, t *testing.T) {
+	tc.setup(t, "twmb_franz_go_ellipsis_topic", "twmb_franz_go_ellipsis_group")
+}
+
 func (tc *TestCaseEllipsis) Run(ctx context.Context, t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
@@ -143,13 +154,13 @@ func (tc *TestCaseEllipsis) Run(ctx context.Context, t *testing.T) {
 	require.NoError(t, err)
 	defer producer.Close()
 
-	record := &kgo.Record{Topic: topic, Key: []byte("key1"), Value: []byte("Hello World!")}
+	record := &kgo.Record{Topic: tc.topic, Key: []byte("key1"), Value: []byte("Hello World!")}
 	require.NoError(t, producer.ProduceSync(ctx, record).FirstErr())
 
 	consumeOpts := []kgo.Opt{
 		kgo.SeedBrokers(tc.addr),
-		kgo.ConsumeTopics(topic),
-		kgo.ConsumerGroup(consumerGroup),
+		kgo.ConsumeTopics(tc.topic),
+		kgo.ConsumerGroup(tc.group),
 	}
 	consumer, err := kgo.NewClient(consumeOpts...)
 	require.NoError(t, err)
@@ -175,6 +186,10 @@ type TestCaseNoArgs struct {
 	TestCase
 }
 
+func (tc *TestCaseNoArgs) Setup(_ context.Context, t *testing.T) {
+	tc.setup(t, "twmb_franz_go_noargs_topic", "twmb_franz_go_noargs_group")
+}
+
 func (tc *TestCaseNoArgs) Run(ctx context.Context, t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
@@ -185,11 +200,11 @@ func (tc *TestCaseNoArgs) Run(ctx context.Context, t *testing.T) {
 
 	require.NoError(t, producer.UpdateSeedBrokers(tc.addr))
 
-	record := &kgo.Record{Topic: topic, Key: []byte("key1"), Value: []byte("Hello World!")}
+	record := &kgo.Record{Topic: tc.topic, Key: []byte("key1"), Value: []byte("Hello World!")}
 	require.NoError(t, producer.ProduceSync(ctx, record).FirstErr())
 }
 
-func (*TestCaseNoArgs) ExpectedTraces() trace.Traces {
+func (tc *TestCaseNoArgs) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -201,7 +216,7 @@ func (*TestCaseNoArgs) ExpectedTraces() trace.Traces {
 						"name":     "kafka.produce",
 						"type":     "queue",
 						"service":  "kafka",
-						"resource": "Produce Topic " + topic,
+						"resource": "Produce Topic " + tc.topic,
 					},
 					Meta: map[string]string{
 						"span.kind": "producer",
