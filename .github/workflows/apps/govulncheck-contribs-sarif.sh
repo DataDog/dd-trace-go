@@ -60,13 +60,23 @@ fi
 # (https://github.blog/changelog/2025-07-21-code-scanning-will-stop-combining-multiple-sarif-runs-uploaded-in-the-same-sarif-file/).
 # govulncheck uses URI-based artifact locations (not index-based), so merging
 # results across runs is safe — no artifact re-indexing required.
-jq -s '{
-  "version": .[0].version,
-  "$schema": (.[0]."$schema" // ""),
-  "runs": [{
-    "tool": .[0].runs[0].tool,
-    "results": [.[].runs[].results[]?]
-  }]
-}' "$SARIF_DIR"/*.sarif >"$OUTPUT"
+#
+# tool.driver.rules is merged and deduplicated across all runs: each run only
+# carries the rules referenced by its own results, so a naïve first-wins merge
+# would lose rule descriptors (title, help) for vulns found in later modules.
+jq -s '
+  . as $all |
+  {
+    "version": .[0].version,
+    "$schema": (.[0]."$schema" // ""),
+    "runs": [{
+      "tool": (
+        .[0].runs[0].tool |
+        .driver.rules = ([$all[].runs[].tool.driver.rules[]?] | unique_by(.id))
+      ),
+      "results": [$all[].runs[].results[]?]
+    }]
+  }
+' "$SARIF_DIR"/*.sarif >"$OUTPUT"
 
 echo "Merged $(echo "$SARIF_DIR"/*.sarif | wc -w) SARIF files into $OUTPUT"
