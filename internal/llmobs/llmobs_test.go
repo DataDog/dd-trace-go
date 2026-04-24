@@ -2335,3 +2335,49 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 				"all spans accumulate in a single batch that is too large to send", size)
 	}
 }
+
+func TestFlushSync(t *testing.T) {
+	t.Run("does-not-hang-with-empty-buffer", func(t *testing.T) {
+		// FlushSync must return promptly even when there is nothing to flush.
+		_, ll := testTracer(t)
+
+		done := make(chan struct{})
+		go func() {
+			ll.FlushSync()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("FlushSync hung with empty buffer")
+		}
+	})
+	t.Run("waits-for-slow-transport", func(t *testing.T) {
+		// FlushSync must block the caller until the HTTP send completes.
+		// Verify by timing: if FlushSync returned before the request delay,
+		// the blocking guarantee would be violated.
+		const delay = 200 * time.Millisecond
+
+		tt, ll := testTracer(t, testtracer.WithRequestDelay(delay))
+
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "slow-span", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		start := time.Now()
+		ll.FlushSync()
+		elapsed := time.Since(start)
+
+		// Must have waited at least the request delay.
+		assert.GreaterOrEqual(t, elapsed, delay, "FlushSync should block until the slow HTTP send completes")
+
+		payloads := tt.SentPayloads()
+		require.Len(t, payloads.LLMSpans, 1)
+		assert.Equal(t, "slow-span", payloads.LLMSpans[0].Name)
+	})
+	t.Run("no-panic-without-active-llmobs", func(t *testing.T) {
+		// Package-level FlushSync should be safe when no active LLMObs.
+		assert.NotPanics(t, func() {
+			llmobs.FlushSync()
+		})
+	})
+}

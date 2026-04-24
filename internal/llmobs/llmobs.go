@@ -148,7 +148,7 @@ type LLMObs struct {
 	running       bool
 	wg            sync.WaitGroup
 	stopCh        chan struct{} // signal stop
-	flushNowCh    chan struct{}
+	flushNowCh    chan chan struct{}
 	flushInterval time.Duration
 }
 
@@ -188,7 +188,7 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 		spanEventsCh:  make(chan *transport.LLMObsSpanEvent),
 		evalMetricsCh: make(chan *transport.LLMObsMetric),
 		stopCh:        make(chan struct{}),
-		flushNowCh:    make(chan struct{}, 1),
+		flushNowCh:    make(chan chan struct{}, 1),
 		flushInterval: defaultFlushInterval,
 	}, nil
 }
@@ -245,6 +245,13 @@ func Flush() {
 	}
 }
 
+// FlushSync forces a flush of all buffered LLMObs data and blocks until the flush completes.
+func FlushSync() {
+	if activeLLMObs != nil {
+		activeLLMObs.FlushSync()
+	}
+}
+
 // Run starts the worker loop that processes span events and metrics.
 func (l *LLMObs) Run() {
 	l.mu.Lock()
@@ -284,11 +291,14 @@ func (l *LLMObs) Run() {
 					l.batchSend(params)
 				})
 
-			case <-l.flushNowCh:
+			case done := <-l.flushNowCh:
 				log.Debug("llmobs: on-demand flush signal")
 				params := l.clearBuffersNonLocked()
 				l.wg.Go(func() {
 					l.batchSend(params)
+					if done != nil {
+						close(done)
+					}
 				})
 
 			case <-l.stopCh:
@@ -320,8 +330,18 @@ func (l *LLMObs) clearBuffersNonLocked() batchSendParams {
 func (l *LLMObs) Flush() {
 	// non-blocking edge trigger so multiple calls coalesce
 	select {
-	case l.flushNowCh <- struct{}{}:
+	case l.flushNowCh <- nil:
 	default:
+	}
+}
+
+// FlushSync forces an immediate flush and blocks until the flush completes.
+func (l *LLMObs) FlushSync() {
+	done := make(chan struct{})
+	select {
+	case l.flushNowCh <- done:
+		<-done
+	case <-l.stopCh:
 	}
 }
 
