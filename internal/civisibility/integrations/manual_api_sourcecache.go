@@ -198,19 +198,37 @@ func findLineConfirmedDeclaration(functions []namedFunctionMetadata, runtimeStar
 	return namedFunctionMetadata{}, false
 }
 
-// findMatchingFunctionLiteral returns the first literal matching the existing approximate line heuristic.
+// findMatchingFunctionLiteral returns the exact line match when present, otherwise the closest tolerated literal.
 func findMatchingFunctionLiteral(literals []functionLiteralMetadata, runtimeStartLine int) (functionLiteralMetadata, []functionLiteralMetadata, bool) {
 	inspectedLiterals := make([]functionLiteralMetadata, 0, len(literals))
+	var fallback functionLiteralMetadata
+	var fallbackDelta int
+	fallbackFound := false
 	for idx := range literals {
 		literal := literals[idx]
 		inspectedLiterals = append(inspectedLiterals, literal)
 
 		delta := literal.bodyStartLine - runtimeStartLine
+		if delta == 0 {
+			return literal, inspectedLiterals, true
+		}
 		if delta < -1 || delta > 1 {
 			continue
 		}
 
-		return literal, inspectedLiterals, true
+		absDelta := delta
+		if absDelta < 0 {
+			absDelta = -absDelta
+		}
+		if !fallbackFound || absDelta < fallbackDelta {
+			fallback = literal
+			fallbackDelta = absDelta
+			fallbackFound = true
+		}
+	}
+
+	if fallbackFound {
+		return fallback, inspectedLiterals, true
 	}
 
 	return functionLiteralMetadata{}, inspectedLiterals, false

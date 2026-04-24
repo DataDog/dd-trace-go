@@ -6,6 +6,7 @@
 package integrations
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -147,7 +148,39 @@ func TestFindMatchingFunctionLiteral(t *testing.T) {
 	literal, inspectedLiterals, ok := findMatchingFunctionLiteral(literals, 19)
 	require.True(t, ok)
 	assert.Equal(t, 20, literal.bodyStartLine)
-	assert.Equal(t, []functionLiteralMetadata{literals[0], literals[1]}, inspectedLiterals)
+	assert.Equal(t, literals, inspectedLiterals)
+
+	literal, inspectedLiterals, ok = findMatchingFunctionLiteral([]functionLiteralMetadata{
+		{
+			bodyStartLine: 10,
+			endLine:       12,
+		},
+		{
+			bodyStartLine: 11,
+			endLine:       13,
+		},
+		{
+			bodyStartLine: 30,
+			endLine:       32,
+		},
+	}, 11)
+	require.True(t, ok)
+	assert.Equal(t, 11, literal.bodyStartLine)
+	assert.Equal(t, []functionLiteralMetadata{
+		{
+			bodyStartLine: 10,
+			endLine:       12,
+		},
+		{
+			bodyStartLine: 11,
+			endLine:       13,
+		},
+	}, inspectedLiterals)
+
+	literal, inspectedLiterals, ok = findMatchingFunctionLiteral(literals, 10)
+	require.True(t, ok)
+	assert.Equal(t, 10, literal.bodyStartLine)
+	assert.Equal(t, []functionLiteralMetadata{literals[0]}, inspectedLiterals)
 
 	_, inspectedLiterals, ok = findMatchingFunctionLiteral(literals, 50)
 	assert.False(t, ok)
@@ -273,6 +306,38 @@ func TestResolveSourceLocationMatchesFunc1LiteralWhenDeclarationIsUnrelated(t *t
 	assert.Nil(t, resolution.matchedDeclaration)
 	require.NotNil(t, resolution.matchedLiteral)
 	assert.Len(t, resolution.inspectedLiterals, 1)
+}
+
+// TestResolveSourceLocationPrefersExactFuncNLiteralOverEarlierTolerated verifies generated closures use exact line matches first.
+func TestResolveSourceLocationPrefersExactFuncNLiteralOverEarlierTolerated(t *testing.T) {
+	resolution := resolveSourceLocation(sourceFileMetadata{
+		functionLiterals: []functionLiteralMetadata{
+			{
+				bodyStartLine: 10,
+				endLine:       12,
+			},
+			{
+				bodyStartLine: 11,
+				endLine:       13,
+			},
+		},
+	}, "func2", 11)
+
+	assert.Equal(t, 11, resolution.startLine)
+	assert.Equal(t, 13, resolution.endLine)
+	assert.Nil(t, resolution.matchedDeclaration)
+	require.NotNil(t, resolution.matchedLiteral)
+	assert.Equal(t, 11, resolution.matchedLiteral.bodyStartLine)
+	assert.Equal(t, []functionLiteralMetadata{
+		{
+			bodyStartLine: 10,
+			endLine:       12,
+		},
+		{
+			bodyStartLine: 11,
+			endLine:       13,
+		},
+	}, resolution.inspectedLiterals)
 }
 
 func TestResolveSourceLocationMatchesFunc1LiteralWhenDeclarationHasNoBody(t *testing.T) {
@@ -479,6 +544,60 @@ func TestSetTestFuncResolvesGeneratedFunc1LiteralWhenDeclarationExists(t *testin
 	assert.Equal(t, 0, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "matched AST function declaration"))
 	assert.Equal(t, 0, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "test source range incomplete"))
 	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "resolved test source range"))
+}
+
+// TestSetTestFuncResolvesAdjacentFuncNLiteralToExactSourceRange verifies adjacent closures resolve to their own source ranges.
+func TestSetTestFuncResolvesAdjacentFuncNLiteralToExactSourceRange(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	mockTracer.Reset()
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	now := time.Now()
+	session, module, suite, test := createDDTest(now)
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+
+	firstFn, secondFn := adjacentLiteralRuntimeFuncs()
+	require.NotNil(t, firstFn)
+	require.NotNil(t, secondFn)
+	require.True(t, isFuncNShortName(secondFn.Name()[strings.LastIndex(secondFn.Name(), ".")+1:]), secondFn.Name())
+
+	file, secondRuntimeStartLine := secondFn.FileLine(secondFn.Entry())
+	require.Equal(t, "manual_api_sourcecache_adjacent_literal_fixture_test.go", filepath.Base(file))
+
+	metadata := loadSourceFileMetadata(file)
+	require.True(t, metadata.parseOK)
+	require.Len(t, metadata.functionLiterals, 2)
+	firstLiteral := metadata.functionLiterals[0]
+	secondLiteral := metadata.functionLiterals[1]
+	require.Equal(t, firstLiteral.bodyStartLine+1, secondLiteral.bodyStartLine)
+	require.Equal(t, secondLiteral.bodyStartLine, secondRuntimeStartLine)
+
+	test.SetTestFunc(secondFn)
+
+	startLine, startOK := test.GetTag(constants.TestSourceStartLine)
+	endLine, endOK := test.GetTag(constants.TestSourceEndLine)
+	require.True(t, startOK)
+	require.True(t, endOK)
+	assert.Equal(t, float64(secondLiteral.bodyStartLine), startLine)
+	assert.Equal(t, float64(secondLiteral.endLine), endLine)
+	assert.NotEqual(t, float64(firstLiteral.bodyStartLine), startLine)
+	assert.NotEqual(t, float64(firstLiteral.endLine), endLine)
+
+	logs := recordLogger.Logs()
+	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, secondFn.Name(), fmt.Sprintf("literal_start_line:%d", firstLiteral.bodyStartLine)))
+	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, secondFn.Name(), fmt.Sprintf("literal_start_line:%d", secondLiteral.bodyStartLine)))
+	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, secondFn.Name(), "matched AST function literal"))
+	assert.Equal(t, 0, countSourceResolutionLogLinesForFunction(logs, secondFn.Name(), "matched AST function declaration"))
+	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, secondFn.Name(), "resolved test source range"))
 }
 
 func TestLoadSourceFileMetadataIsConcurrentSafe(t *testing.T) {
