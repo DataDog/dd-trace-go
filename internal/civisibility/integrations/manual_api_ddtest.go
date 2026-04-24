@@ -282,7 +282,8 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		}
 
 		// Only publish the AST-derived range when it is complete. Otherwise keep the runtime start
-		// line that was already tagged above and preserve the old "incomplete range" behavior.
+		// line that was already tagged above; this does not clear any previous end-line tag if the
+		// same test object is reused.
 		if endLine >= startLine {
 			t.SetTag(constants.TestSourceStartLine, startLine)
 			t.SetTag(constants.TestSourceEndLine, endLine)

@@ -7,6 +7,7 @@ package integrations
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -83,6 +84,76 @@ func TestLoadSourceFileMetadataHandlesDeclarationsWithoutBody(t *testing.T) {
 	assert.NotZero(t, metadata.namedFunctions["real"][0].endLine)
 }
 
+func TestIsFuncNShortName(t *testing.T) {
+	for _, name := range []string{"func1", "func12"} {
+		assert.True(t, isFuncNShortName(name), name)
+	}
+
+	for _, name := range []string{"func", "Func1", "func1x", "TestFunc1", "func1-fm", "func1[...]"} {
+		assert.False(t, isFuncNShortName(name), name)
+	}
+}
+
+func TestFindLineConfirmedDeclaration(t *testing.T) {
+	functions := []namedFunctionMetadata{
+		{
+			declStartLine: 10,
+			bodyStartLine: 12,
+			endLine:       20,
+		},
+		{
+			declStartLine: 30,
+			bodyStartLine: 32,
+			endLine:       40,
+		},
+	}
+
+	for _, runtimeStartLine := range []int{10, 15, 20} {
+		function, ok := findLineConfirmedDeclaration(functions, runtimeStartLine)
+		require.True(t, ok)
+		assert.Equal(t, 10, function.declStartLine)
+	}
+
+	function, ok := findLineConfirmedDeclaration(functions, 35)
+	require.True(t, ok)
+	assert.Equal(t, 30, function.declStartLine)
+
+	_, ok = findLineConfirmedDeclaration([]namedFunctionMetadata{{
+		declStartLine: 50,
+		endLine:       0,
+	}}, 50)
+	assert.False(t, ok)
+
+	_, ok = findLineConfirmedDeclaration(functions, 25)
+	assert.False(t, ok)
+}
+
+func TestFindMatchingFunctionLiteral(t *testing.T) {
+	literals := []functionLiteralMetadata{
+		{
+			bodyStartLine: 10,
+			endLine:       12,
+		},
+		{
+			bodyStartLine: 20,
+			endLine:       22,
+		},
+		{
+			bodyStartLine: 30,
+			endLine:       32,
+		},
+	}
+
+	literal, inspectedLiterals, ok := findMatchingFunctionLiteral(literals, 19)
+	require.True(t, ok)
+	assert.Equal(t, 20, literal.bodyStartLine)
+	assert.Equal(t, []functionLiteralMetadata{literals[0], literals[1]}, inspectedLiterals)
+
+	_, inspectedLiterals, ok = findMatchingFunctionLiteral(literals, 50)
+	assert.False(t, ok)
+	assert.Equal(t, literals, inspectedLiterals)
+}
+
 func TestResolveSourceLocationUsesNamedDeclarationEndLine(t *testing.T) {
 	resolution := resolveSourceLocation(sourceFileMetadata{
 		namedFunctions: map[string][]namedFunctionMetadata{
@@ -129,6 +200,151 @@ func TestResolveSourceLocationDisambiguatesSameNamedDeclarationsByRuntimeStartLi
 	assert.Equal(t, 20, resolution.matchedDeclaration.declStartLine)
 }
 
+func TestResolveSourceLocationUsesLineConfirmedFunc1Declaration(t *testing.T) {
+	resolution := resolveSourceLocation(sourceFileMetadata{
+		namedFunctions: map[string][]namedFunctionMetadata{
+			"func1": {{
+				declStartLine:   10,
+				bodyStartLine:   12,
+				endLine:         20,
+				testUnskippable: true,
+			}},
+		},
+		functionLiterals: []functionLiteralMetadata{{
+			bodyStartLine: 14,
+			endLine:       99,
+		}},
+	}, "func1", 14)
+
+	assert.Equal(t, 14, resolution.startLine)
+	assert.Equal(t, 20, resolution.endLine)
+	assert.True(t, resolution.functionUnskippable)
+	require.NotNil(t, resolution.matchedDeclaration)
+	assert.Nil(t, resolution.matchedLiteral)
+	assert.Empty(t, resolution.inspectedLiterals)
+}
+
+func TestResolveSourceLocationDisambiguatesFunc1MethodsByRuntimeStartLine(t *testing.T) {
+	resolution := resolveSourceLocation(sourceFileMetadata{
+		namedFunctions: map[string][]namedFunctionMetadata{
+			"func1": {
+				{
+					declStartLine:   10,
+					bodyStartLine:   12,
+					endLine:         15,
+					testUnskippable: false,
+				},
+				{
+					declStartLine:   20,
+					bodyStartLine:   22,
+					endLine:         28,
+					testUnskippable: true,
+				},
+			},
+		},
+	}, "func1", 24)
+
+	assert.Equal(t, 24, resolution.startLine)
+	assert.Equal(t, 28, resolution.endLine)
+	assert.True(t, resolution.functionUnskippable)
+	require.NotNil(t, resolution.matchedDeclaration)
+	assert.Equal(t, 20, resolution.matchedDeclaration.declStartLine)
+}
+
+func TestResolveSourceLocationMatchesFunc1LiteralWhenDeclarationIsUnrelated(t *testing.T) {
+	resolution := resolveSourceLocation(sourceFileMetadata{
+		namedFunctions: map[string][]namedFunctionMetadata{
+			"func1": {{
+				declStartLine:   10,
+				bodyStartLine:   12,
+				endLine:         20,
+				testUnskippable: true,
+			}},
+		},
+		functionLiterals: []functionLiteralMetadata{{
+			bodyStartLine: 50,
+			endLine:       60,
+		}},
+	}, "func1", 49)
+
+	assert.Equal(t, 50, resolution.startLine)
+	assert.Equal(t, 60, resolution.endLine)
+	assert.False(t, resolution.functionUnskippable)
+	assert.Nil(t, resolution.matchedDeclaration)
+	require.NotNil(t, resolution.matchedLiteral)
+	assert.Len(t, resolution.inspectedLiterals, 1)
+}
+
+func TestResolveSourceLocationMatchesFunc1LiteralWhenDeclarationHasNoBody(t *testing.T) {
+	resolution := resolveSourceLocation(sourceFileMetadata{
+		namedFunctions: map[string][]namedFunctionMetadata{
+			"func1": {{
+				declStartLine:   10,
+				testUnskippable: true,
+			}},
+		},
+		functionLiterals: []functionLiteralMetadata{{
+			bodyStartLine: 30,
+			endLine:       35,
+		}},
+	}, "func1", 31)
+
+	assert.Equal(t, 30, resolution.startLine)
+	assert.Equal(t, 35, resolution.endLine)
+	assert.False(t, resolution.functionUnskippable)
+	assert.Nil(t, resolution.matchedDeclaration)
+	require.NotNil(t, resolution.matchedLiteral)
+	assert.Len(t, resolution.inspectedLiterals, 1)
+}
+
+func TestResolveSourceLocationLeavesUnmatchedFunc1Unresolved(t *testing.T) {
+	resolution := resolveSourceLocation(sourceFileMetadata{
+		namedFunctions: map[string][]namedFunctionMetadata{
+			"func1": {{
+				declStartLine:   10,
+				bodyStartLine:   12,
+				endLine:         20,
+				testUnskippable: true,
+			}},
+		},
+		functionLiterals: []functionLiteralMetadata{{
+			bodyStartLine: 80,
+			endLine:       90,
+		}},
+	}, "func1", 50)
+
+	assert.Equal(t, 50, resolution.startLine)
+	assert.Zero(t, resolution.endLine)
+	assert.False(t, resolution.functionUnskippable)
+	assert.Nil(t, resolution.matchedDeclaration)
+	assert.Nil(t, resolution.matchedLiteral)
+	assert.Len(t, resolution.inspectedLiterals, 1)
+}
+
+func TestResolveSourceLocationKeepsNonFuncNDeclarationFallback(t *testing.T) {
+	resolution := resolveSourceLocation(sourceFileMetadata{
+		namedFunctions: map[string][]namedFunctionMetadata{
+			"fixture": {{
+				declStartLine:   10,
+				bodyStartLine:   12,
+				endLine:         20,
+				testUnskippable: true,
+			}},
+		},
+		functionLiterals: []functionLiteralMetadata{{
+			bodyStartLine: 50,
+			endLine:       60,
+		}},
+	}, "fixture", 49)
+
+	assert.Equal(t, 49, resolution.startLine)
+	assert.Equal(t, 20, resolution.endLine)
+	assert.True(t, resolution.functionUnskippable)
+	require.NotNil(t, resolution.matchedDeclaration)
+	assert.Nil(t, resolution.matchedLiteral)
+	assert.Empty(t, resolution.inspectedLiterals)
+}
+
 func TestResolveSourceLocationAdjustsLiteralStartLine(t *testing.T) {
 	resolution := resolveSourceLocation(sourceFileMetadata{
 		functionLiterals: []functionLiteralMetadata{{
@@ -158,6 +374,111 @@ func TestResolveSourceLocationLeavesNoMatchUnchanged(t *testing.T) {
 	assert.Nil(t, resolution.matchedDeclaration)
 	assert.Nil(t, resolution.matchedLiteral)
 	assert.Len(t, resolution.inspectedLiterals, 1)
+}
+
+func TestSetTestFuncKeepsRealFunc1DeclarationWhenLineConfirmed(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	mockTracer.Reset()
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	now := time.Now()
+	session, module, suite, test := createDDTest(now)
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+
+	fn := runtime.FuncForPC(reflect.ValueOf(func1).Pointer())
+	require.NotNil(t, fn)
+	file, runtimeStartLine := fn.FileLine(fn.Entry())
+	require.Equal(t, "manual_api_sourcecache_funcn_fixture_test.go", filepath.Base(file))
+
+	metadata := loadSourceFileMetadata(file)
+	require.True(t, metadata.parseOK)
+	require.Len(t, metadata.namedFunctions["func1"], 1)
+	declaration := metadata.namedFunctions["func1"][0]
+
+	test.SetTestFunc(fn)
+
+	startLine, startOK := test.GetTag(constants.TestSourceStartLine)
+	endLine, endOK := test.GetTag(constants.TestSourceEndLine)
+	require.True(t, startOK)
+	require.True(t, endOK)
+	assert.Equal(t, float64(runtimeStartLine), startLine)
+	assert.Equal(t, float64(declaration.endLine), endLine)
+
+	unskippable, ok := test.GetTag(constants.TestUnskippable)
+	require.True(t, ok)
+	assert.Equal(t, "true", unskippable)
+	assert.Equal(t, true, test.Context().Value(constants.TestUnskippable))
+
+	logs := recordLogger.Logs()
+	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "matched AST function declaration"))
+	assert.Equal(t, 0, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "matched AST function literal"))
+	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "resolved test source range"))
+}
+
+func TestSetTestFuncResolvesGeneratedFunc1LiteralWhenDeclarationExists(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	mockTracer.Reset()
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	now := time.Now()
+	session, module, suite, test := createDDTest(now)
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+
+	fn := func1ShadowClosureRuntimeFunc()
+	require.NotNil(t, fn)
+	require.True(t, strings.HasSuffix(fn.Name(), ".func1"), fn.Name())
+	file, runtimeStartLine := fn.FileLine(fn.Entry())
+	require.Equal(t, "manual_api_sourcecache_funcn_fixture_test.go", filepath.Base(file))
+
+	metadata := loadSourceFileMetadata(file)
+	require.True(t, metadata.parseOK)
+	require.Len(t, metadata.namedFunctions["func1"], 1)
+	require.Len(t, metadata.functionLiterals, 1)
+
+	declaration := metadata.namedFunctions["func1"][0]
+	literal := metadata.functionLiterals[0]
+	delta := literal.bodyStartLine - runtimeStartLine
+	require.GreaterOrEqual(t, delta, -1)
+	require.LessOrEqual(t, delta, 1)
+
+	test.SetTestFunc(fn)
+
+	startLine, startOK := test.GetTag(constants.TestSourceStartLine)
+	endLine, endOK := test.GetTag(constants.TestSourceEndLine)
+	require.True(t, startOK)
+	require.True(t, endOK)
+	assert.Equal(t, float64(literal.bodyStartLine), startLine)
+	assert.Equal(t, float64(literal.endLine), endLine)
+	assert.NotEqual(t, float64(declaration.endLine), endLine)
+
+	_, unskippableTagged := test.GetTag(constants.TestUnskippable)
+	assert.False(t, unskippableTagged)
+	assert.Nil(t, test.Context().Value(constants.TestUnskippable))
+
+	logs := recordLogger.Logs()
+	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "inspecting AST function literal candidate"))
+	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "matched AST function literal"))
+	assert.Equal(t, 0, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "matched AST function declaration"))
+	assert.Equal(t, 0, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "test source range incomplete"))
+	assert.Equal(t, 1, countSourceResolutionLogLinesForFunction(logs, fn.Name(), "resolved test source range"))
 }
 
 func TestLoadSourceFileMetadataIsConcurrentSafe(t *testing.T) {
@@ -356,6 +677,18 @@ func countSourceResolutionLogLines(lines []string, want string) int {
 	count := 0
 	for _, line := range lines {
 		if strings.Contains(line, want) {
+			count++
+		}
+	}
+	return count
+}
+
+// countSourceResolutionLogLinesForFunction counts source-resolution logs for one runtime function name.
+func countSourceResolutionLogLinesForFunction(lines []string, functionName, want string) int {
+	count := 0
+	functionToken := "function:" + functionName + " "
+	for _, line := range lines {
+		if strings.Contains(line, want) && strings.Contains(line, functionToken) {
 			count++
 		}
 	}

@@ -125,21 +125,33 @@ func parseSourceFileMetadata(absolutePath string) sourceFileMetadata {
 // resolveSourceLocation matches a runtime function against cached source metadata.
 func resolveSourceLocation(metadata sourceFileMetadata, shortName string, runtimeStartLine int) sourceResolution {
 	resolution := sourceResolution{startLine: runtimeStartLine}
+	functions := metadata.namedFunctions[shortName]
 
-	if functions := metadata.namedFunctions[shortName]; len(functions) > 0 {
-		matchedDeclaration := functions[0]
-		for _, function := range functions {
-			// When multiple methods share the same short name in the same file, disambiguate them by
-			// the runtime start line before falling back to the first declaration. This keeps the
-			// existing behavior for unambiguous cases while fixing collisions like SuiteA.TestFoo and
-			// SuiteB.TestFoo living in the same source file.
-			if function.bodyStartLine <= runtimeStartLine && runtimeStartLine <= function.endLine {
-				matchedDeclaration = function
-				break
-			}
+	if matchedDeclaration, ok := findLineConfirmedDeclaration(functions, runtimeStartLine); ok {
+		// Named declarations keep the runtime-derived start line for compatibility with the old implementation.
+		resolution.endLine = matchedDeclaration.endLine
+		resolution.functionUnskippable = matchedDeclaration.testUnskippable
+		resolution.matchedDeclaration = &matchedDeclaration
+		return resolution
+	}
+
+	if isFuncNShortName(shortName) {
+		matchedLiteral, inspectedLiterals, ok := findMatchingFunctionLiteral(metadata.functionLiterals, runtimeStartLine)
+		resolution.inspectedLiterals = inspectedLiterals
+		if !ok {
+			return resolution
 		}
 
-		// Named declarations keep the runtime-derived start line for compatibility with the old implementation.
+		resolution.startLine = matchedLiteral.bodyStartLine
+		resolution.endLine = matchedLiteral.endLine
+		resolution.matchedLiteral = &matchedLiteral
+		return resolution
+	}
+
+	if len(functions) > 0 {
+		// Preserve the original fallback for non-generated names: if no declaration contains the
+		// runtime line, use the first declaration in source order rather than switching to literals.
+		matchedDeclaration := functions[0]
 		resolution.endLine = matchedDeclaration.endLine
 		resolution.functionUnskippable = matchedDeclaration.testUnskippable
 		resolution.matchedDeclaration = &matchedDeclaration
@@ -148,23 +160,60 @@ func resolveSourceLocation(metadata sourceFileMetadata, shortName string, runtim
 
 	// Preserve the old "first literal within one line" heuristic because runtime line numbers for
 	// literals point at the first instruction rather than the literal declaration itself.
-	resolution.inspectedLiterals = make([]functionLiteralMetadata, 0, len(metadata.functionLiterals))
-	for idx := range metadata.functionLiterals {
-		literal := metadata.functionLiterals[idx]
-		resolution.inspectedLiterals = append(resolution.inspectedLiterals, literal)
+	matchedLiteral, inspectedLiterals, ok := findMatchingFunctionLiteral(metadata.functionLiterals, runtimeStartLine)
+	resolution.inspectedLiterals = inspectedLiterals
+	if ok {
+		resolution.startLine = matchedLiteral.bodyStartLine
+		resolution.endLine = matchedLiteral.endLine
+		resolution.matchedLiteral = &matchedLiteral
+		return resolution
+	}
+
+	return resolution
+}
+
+// isFuncNShortName reports whether a runtime short name has Go's generated closure shape funcN.
+func isFuncNShortName(shortName string) bool {
+	if len(shortName) <= len("func") || !strings.HasPrefix(shortName, "func") {
+		return false
+	}
+	for idx := len("func"); idx < len(shortName); idx++ {
+		if shortName[idx] < '0' || shortName[idx] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// findLineConfirmedDeclaration returns the first declaration whose source range contains the runtime line.
+func findLineConfirmedDeclaration(functions []namedFunctionMetadata, runtimeStartLine int) (namedFunctionMetadata, bool) {
+	for _, function := range functions {
+		if function.declStartLine > 0 &&
+			function.endLine >= function.declStartLine &&
+			function.declStartLine <= runtimeStartLine &&
+			runtimeStartLine <= function.endLine {
+			return function, true
+		}
+	}
+	return namedFunctionMetadata{}, false
+}
+
+// findMatchingFunctionLiteral returns the first literal matching the existing approximate line heuristic.
+func findMatchingFunctionLiteral(literals []functionLiteralMetadata, runtimeStartLine int) (functionLiteralMetadata, []functionLiteralMetadata, bool) {
+	inspectedLiterals := make([]functionLiteralMetadata, 0, len(literals))
+	for idx := range literals {
+		literal := literals[idx]
+		inspectedLiterals = append(inspectedLiterals, literal)
 
 		delta := literal.bodyStartLine - runtimeStartLine
 		if delta < -1 || delta > 1 {
 			continue
 		}
 
-		resolution.startLine = literal.bodyStartLine
-		resolution.endLine = literal.endLine
-		resolution.matchedLiteral = &literal
-		return resolution
+		return literal, inspectedLiterals, true
 	}
 
-	return resolution
+	return functionLiteralMetadata{}, inspectedLiterals, false
 }
 
 func commentGroupsContain(commentGroups []*ast.CommentGroup, needle string) bool {
