@@ -8,6 +8,7 @@ package grpc
 import (
 	"context"
 	"net"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2/internal/grpcutil"
 
@@ -21,52 +22,92 @@ import (
 
 type clientStream struct {
 	grpc.ClientStream
-	ctx    context.Context
 	cfg    *config
 	method string
+	// span is the stream-level span, nil when call-level tracing is disabled.
+	// readyOnce guards one-time peer tagging and finish-goroutine launch that
+	// depend on span being non-nil and ClientStream.Context() being safe.
+	span      *tracer.Span
+	readyOnce sync.Once
+}
+
+// onStreamReady performs work that depends on ClientStream.Context() being
+// safe to call (i.e. after Header or RecvMsg has returned): peer tagging and
+// launching the goroutine that finishes the stream-level span on completion.
+func (cs *clientStream) onStreamReady() {
+	if cs.span == nil {
+		return
+	}
+	cs.readyOnce.Do(func() {
+		ctx := cs.ClientStream.Context()
+		if p, ok := peer.FromContext(ctx); ok {
+			setSpanTargetFromPeer(cs.span, *p)
+		}
+		go func() {
+			<-ctx.Done()
+			finishWithError(cs.span, ctx.Err(), cs.cfg)
+		}()
+	})
 }
 
 func (cs *clientStream) Context() context.Context {
-	return cs.ctx
+	ctx := cs.ClientStream.Context()
+	cs.onStreamReady()
+	return ctx
+}
+
+func (cs *clientStream) Header() (metadata.MD, error) {
+	md, err := cs.ClientStream.Header()
+	cs.onStreamReady()
+	return md, err
+}
+
+func (cs *clientStream) CloseSend() error {
+	err := cs.ClientStream.CloseSend()
+	cs.onStreamReady()
+	return err
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) (err error) {
-	if _, ok := cs.cfg.untracedMethods[cs.method]; cs.cfg.traceStreamMessages && !ok {
-		span, _ := startSpanFromContext(
-			cs.Context(),
-			cs.method,
-			"grpc.message",
-			cs.cfg.serviceName.String(),
-			cs.cfg.serviceSource,
-			cs.cfg.startSpanOptions()...,
-		)
-		span.SetTag(ext.Component, componentName)
-		if p, ok := peer.FromContext(cs.Context()); ok {
-			setSpanTargetFromPeer(span, *p)
-		}
-		defer func() { finishWithError(span, err, cs.cfg) }()
-	}
 	err = cs.ClientStream.RecvMsg(m)
+	cs.onStreamReady()
+	if !cs.cfg.traceStreamMessages {
+		return err
+	}
+	if _, ok := cs.cfg.untracedMethods[cs.method]; ok {
+		return err
+	}
+	span, _ := startSpanFromContext(
+		cs.ClientStream.Context(),
+		cs.method,
+		"grpc.message",
+		cs.cfg.serviceName.String(),
+		cs.cfg.serviceSource,
+		cs.cfg.startSpanOptions()...,
+	)
+	span.SetTag(ext.Component, componentName)
+	finishWithError(span, err, cs.cfg)
 	return err
 }
 
 func (cs *clientStream) SendMsg(m interface{}) (err error) {
-	if _, ok := cs.cfg.untracedMethods[cs.method]; cs.cfg.traceStreamMessages && !ok {
-		span, _ := startSpanFromContext(
-			cs.Context(),
-			cs.method,
-			"grpc.message",
-			cs.cfg.serviceName.String(),
-			cs.cfg.serviceSource,
-			cs.cfg.startSpanOptions()...,
-		)
-		span.SetTag(ext.Component, componentName)
-		if p, ok := peer.FromContext(cs.Context()); ok {
-			setSpanTargetFromPeer(span, *p)
-		}
-		defer func() { finishWithError(span, err, cs.cfg) }()
+	if !cs.cfg.traceStreamMessages {
+		return cs.ClientStream.SendMsg(m)
 	}
+	if _, ok := cs.cfg.untracedMethods[cs.method]; ok {
+		return cs.ClientStream.SendMsg(m)
+	}
+	span, _ := startSpanFromContext(
+		cs.ClientStream.Context(),
+		cs.method,
+		"grpc.message",
+		cs.cfg.serviceName.String(),
+		cs.cfg.serviceSource,
+		cs.cfg.startSpanOptions()...,
+	)
+	span.SetTag(ext.Component, componentName)
 	err = cs.ClientStream.SendMsg(m)
+	finishWithError(span, err, cs.cfg)
 	return err
 }
 
@@ -91,12 +132,12 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 				methodKind = methodKindClientStream
 			}
 		}
-		var stream grpc.ClientStream
+		var (
+			stream grpc.ClientStream
+			span   *tracer.Span
+		)
 		if _, ok := cfg.untracedMethods[method]; cfg.traceStreamCalls && !ok {
-			var (
-				span *tracer.Span
-				err  error
-			)
+			var err error
 			span, ctx, err = doClientRequest(ctx, cfg, method, methodKind, cc, opts,
 				func(ctx context.Context, opts []grpc.CallOption) error {
 					var err error
@@ -107,17 +148,6 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 				finishWithError(span, err, cfg)
 				return nil, err
 			}
-
-			// the Peer call option only works with unary calls, so for streams
-			// we need to set it via FromContext
-			if p, ok := peer.FromContext(stream.Context()); ok {
-				setSpanTargetFromPeer(span, *p)
-			}
-
-			go func() {
-				<-stream.Context().Done()
-				finishWithError(span, stream.Context().Err(), cfg)
-			}()
 		} else {
 			// if call tracing is disabled, just call streamer, but still return
 			// a clientStream so that messages can be traced if enabled
@@ -136,7 +166,7 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 			ClientStream: stream,
 			cfg:          cfg,
 			method:       method,
-			ctx:          ctx,
+			span:         span,
 		}, nil
 	}
 }

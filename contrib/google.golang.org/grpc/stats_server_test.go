@@ -61,7 +61,7 @@ func TestServerStatsHandler(t *testing.T) {
 }
 
 func newServerStatsHandlerTestServer(statsHandler stats.Handler) (*rig, error) {
-	return newRigWithInterceptors(
+	return newRigWithOptions(
 		[]grpc.ServerOption{
 			grpc.StatsHandler(statsHandler),
 		},
