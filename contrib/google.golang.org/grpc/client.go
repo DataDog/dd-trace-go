@@ -29,9 +29,6 @@ type clientStream struct {
 	// depend on span being non-nil and ClientStream.Context() being safe.
 	span      *tracer.Span
 	readyOnce sync.Once
-	// parentCtx is the interceptor context, allowing us to complete the stream-level
-	// span if it's canceled before callers interact with the stream.
-	parentCtx context.Context
 }
 
 // onStreamReady performs work that depends on ClientStream.Context() being
@@ -47,17 +44,8 @@ func (cs *clientStream) onStreamReady() {
 			setSpanTargetFromPeer(cs.span, *p)
 		}
 		go func() {
-			var err error
-
-			// Finish the span based on the first context to complete. Protects against
-			// a client establishing a stream without ever receiving a message.
-			select {
-			case <-ctx.Done():
-				err = ctx.Err()
-			case <-cs.parentCtx.Done():
-				err = cs.parentCtx.Err()
-			}
-			finishWithError(cs.span, err, cs.cfg)
+			<-ctx.Done()
+			finishWithError(cs.span, ctx.Err(), cs.cfg)
 		}()
 	})
 }
@@ -160,6 +148,16 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 				finishWithError(span, err, cfg)
 				return nil, err
 			}
+
+			// Span will be closed based on which of the following happens first:
+			//
+			// - Client interacts with the stream, and the stream's context finishes
+			// - Client never interacts with the stream, and the interceptor context
+			//   finishes
+			go func() {
+				<-ctx.Done()
+				finishWithError(span, ctx.Err(), cfg)
+			}()
 		} else {
 			// if call tracing is disabled, just call streamer, but still return
 			// a clientStream so that messages can be traced if enabled
@@ -179,7 +177,6 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 			cfg:          cfg,
 			method:       method,
 			span:         span,
-			parentCtx:    ctx,
 		}, nil
 	}
 }
