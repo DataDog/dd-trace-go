@@ -107,12 +107,11 @@ func Start(t testing.TB, opts ...Option) *TestTracer {
 		opt(cfg)
 	}
 
-	payloadChan := make(chan any)
 	payloads := &Payloads{}
 
 	rt := &mockTransport{
 		T:            t,
-		payloadChan:  payloadChan,
+		payloads:     payloads,
 		agentInfo:    cfg.AgentInfoResponse,
 		mockResponse: cfg.MockResponse,
 		requestDelay: cfg.RequestDelay,
@@ -125,8 +124,6 @@ func Start(t testing.TB, opts ...Option) *TestTracer {
 		roundTripper: rt,
 	}
 
-	// Start payload collector goroutine
-	go tt.collectPayloads(payloadChan)
 	t.Cleanup(tt.Stop)
 
 	startOpts := append([]tracer.StartOption{
@@ -201,22 +198,6 @@ func WithMockResponses(mr MockResponseFunc) Option {
 func WithRequireNoTracerStartError(requireNoErr bool) Option {
 	return func(cfg *config) {
 		cfg.RequireNoError = requireNoErr
-	}
-}
-
-// collectPayloads runs in a goroutine and collects payloads from the channel
-func (tt *TestTracer) collectPayloads(payloadChan <-chan any) {
-	for payload := range payloadChan {
-		tt.payloads.mu.Lock()
-		switch p := payload.(type) {
-		case Span:
-			tt.payloads.Spans = append(tt.payloads.Spans, p)
-		case LLMObsSpan:
-			tt.payloads.LLMSpans = append(tt.payloads.LLMSpans, p)
-		case LLMObsMetric:
-			tt.payloads.LLMMetrics = append(tt.payloads.LLMMetrics, p)
-		}
-		tt.payloads.mu.Unlock()
 	}
 }
 
@@ -311,7 +292,7 @@ func (tt *TestTracer) SentPayloads() Payloads {
 
 type mockTransport struct {
 	T            testing.TB
-	payloadChan  chan<- any
+	payloads     *Payloads
 	mu           sync.RWMutex
 	finished     bool
 	agentInfo    AgentInfo
@@ -331,7 +312,6 @@ func (rt *mockTransport) Stop() {
 		return
 	}
 	rt.finished = true
-	close(rt.payloadChan)
 }
 
 var noLogPaths = []string{
@@ -426,11 +406,13 @@ func (rt *mockTransport) handleTraces(r *http.Request) {
 	if len(traces) == 0 {
 		return
 	}
+	rt.payloads.mu.Lock()
 	for _, spans := range traces {
 		for _, span := range spans {
-			rt.payloadChan <- span
+			rt.payloads.Spans = append(rt.payloads.Spans, span)
 		}
 	}
+	rt.payloads.mu.Unlock()
 }
 
 func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) {
@@ -444,11 +426,13 @@ func (rt *mockTransport) handleLLMObsSpanEvents(r *http.Request) {
 	err = json.Unmarshal(buf, &payload)
 	require.NoError(rt.T, err)
 
+	rt.payloads.mu.Lock()
 	for _, p := range payload {
 		for _, span := range p.Spans {
-			rt.payloadChan <- *span
+			rt.payloads.LLMSpans = append(rt.payloads.LLMSpans, *span)
 		}
 	}
+	rt.payloads.mu.Unlock()
 }
 
 func (rt *mockTransport) handleLLMObsEvalMetrics(r *http.Request) {
@@ -462,9 +446,11 @@ func (rt *mockTransport) handleLLMObsEvalMetrics(r *http.Request) {
 	err = json.Unmarshal(buf, &payload)
 	require.NoError(rt.T, err)
 
+	rt.payloads.mu.Lock()
 	for _, metric := range payload.Data.Attributes.Metrics {
-		rt.payloadChan <- *metric
+		rt.payloads.LLMMetrics = append(rt.payloads.LLMMetrics, *metric)
 	}
+	rt.payloads.mu.Unlock()
 }
 
 type testLogger struct {

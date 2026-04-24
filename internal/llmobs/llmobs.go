@@ -146,9 +146,11 @@ type LLMObs struct {
 	// lifecycle
 	mu            sync.Mutex
 	running       bool
-	wg            sync.WaitGroup
-	stopCh        chan struct{} // signal stop
+	wg            sync.WaitGroup // tracks in-flight async batchSend goroutines only (not the main loop)
+	stopCh        chan struct{}  // signal stop
+	stoppedCh     chan struct{}  // closed when the main run loop exits
 	flushNowCh    chan struct{}
+	flushSyncCh   chan chan struct{} // synchronous flush: send a done channel, blocks until flush completes
 	flushInterval time.Duration
 }
 
@@ -188,7 +190,9 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 		spanEventsCh:  make(chan *transport.LLMObsSpanEvent),
 		evalMetricsCh: make(chan *transport.LLMObsMetric),
 		stopCh:        make(chan struct{}),
+		stoppedCh:     make(chan struct{}),
 		flushNowCh:    make(chan struct{}, 1),
+		flushSyncCh:   make(chan chan struct{}),
 		flushInterval: defaultFlushInterval,
 	}, nil
 }
@@ -245,6 +249,14 @@ func Flush() {
 	}
 }
 
+// FlushSync flushes all buffered LLMObs data and blocks until the send completes.
+func FlushSync() {
+	if activeLLMObs == nil {
+		return
+	}
+	activeLLMObs.FlushSync()
+}
+
 // Run starts the worker loop that processes span events and metrics.
 func (l *LLMObs) Run() {
 	l.mu.Lock()
@@ -255,8 +267,9 @@ func (l *LLMObs) Run() {
 	l.running = true
 	l.mu.Unlock()
 
-	l.wg.Go(func() {
+	go func() {
 		// this goroutine should be the only one writing to the internal buffers
+		defer close(l.stoppedCh)
 
 		ticker := time.NewTicker(l.flushInterval)
 		defer ticker.Stop()
@@ -267,10 +280,7 @@ func (l *LLMObs) Run() {
 				evSize := jsonSize(ev)
 				if l.bufSpanEventsSize+evSize > sizeLimitEVPEvent {
 					log.Debug("llmobs: span events buffer size limit reached, flushing before adding new event")
-					params := l.clearBuffersNonLocked()
-					l.wg.Go(func() {
-						l.batchSend(params)
-					})
+					l.sendAsync(l.clearBuffersNonLocked())
 				}
 				l.bufSpanEvents = append(l.bufSpanEvents, ev)
 				l.bufSpanEventsSize += evSize
@@ -279,27 +289,44 @@ func (l *LLMObs) Run() {
 				l.bufEvalMetrics = append(l.bufEvalMetrics, evalMetric)
 
 			case <-ticker.C:
-				params := l.clearBuffersNonLocked()
-				l.wg.Go(func() {
-					l.batchSend(params)
-				})
+				l.sendAsync(l.clearBuffersNonLocked())
 
 			case <-l.flushNowCh:
 				log.Debug("llmobs: on-demand flush signal")
-				params := l.clearBuffersNonLocked()
-				l.wg.Go(func() {
-					l.batchSend(params)
-				})
+				l.sendAsync(l.clearBuffersNonLocked())
+
+			case done := <-l.flushSyncCh:
+				log.Debug("llmobs: synchronous flush signal")
+				// wg tracks only async batchSend goroutines (not this main loop),
+				// so Wait() here cannot deadlock.
+				l.wg.Wait()
+				l.batchSend(l.clearBuffersNonLocked())
+				close(done)
 
 			case <-l.stopCh:
 				log.Debug("llmobs: stop signal")
 				l.drainChannels()
-				params := l.clearBuffersNonLocked()
-				l.batchSend(params)
+				l.batchSend(l.clearBuffersNonLocked())
 				return
 			}
 		}
+	}()
+}
+
+// sendAsync dispatches params to batchSend in a new goroutine tracked by wg,
+// so FlushSync can wait for all in-flight sends via wg.Wait(). Must be called
+// only from the main Run worker goroutine.
+func (l *LLMObs) sendAsync(params batchSendParams) {
+	l.wg.Go(func() {
+		l.batchSend(params)
 	})
+}
+
+// FlushSync flushes all currently buffered data and blocks until the HTTP send completes.
+func (l *LLMObs) FlushSync() {
+	done := make(chan struct{})
+	l.flushSyncCh <- done
+	<-done
 }
 
 // clearBuffersNonLocked clears the internal buffers and returns the corresponding batchSendParams to send to the backend.
@@ -342,7 +369,9 @@ func (l *LLMObs) Stop() {
 		close(l.stopCh)
 	}
 
-	// Wait for the main worker to exit (it will do a final flush)
+	// Wait for the main loop to exit (it does a final synchronous flush before returning).
+	<-l.stoppedCh
+	// Wait for any async batchSend goroutines that were in flight when the loop stopped.
 	l.wg.Wait()
 }
 
