@@ -172,11 +172,11 @@ func exerciseTestingInternalsOffsetLayout(t *testing.T) {
 		t.Fatalf("expected core layout sections to be enabled: %+v", layout)
 	}
 
-	invalid := buildTestingInternalsLayout(reflect.TypeOf(struct{}{}), reflect.TypeOf(struct{}{}))
+	invalid := buildTestingInternalsLayout(reflect.TypeFor[struct{}](), reflect.TypeFor[struct{}]())
 	if invalid == nil || !invalid.disabled {
 		t.Fatal("expected an invalid layout to be disabled")
 	}
-	if scalarWord, ok := wordField(reflect.TypeOf(struct{ parent uintptr }{}), "parent", false); ok || scalarWord.available {
+	if scalarWord, ok := wordField(reflect.TypeFor[struct{ parent uintptr }](), "parent", false); ok || scalarWord.available {
 		t.Fatal("expected pointer-sized scalar fields to be rejected as pointer-word fields")
 	}
 
@@ -261,7 +261,7 @@ func exerciseTestingInternalsPrivatePointerAssignment(t *testing.T) {
 		ptr *int
 	}
 
-	field, ok := exactField(reflect.TypeOf(localPrivatePointer{}), "ptr", reflect.TypeFor[*int](), false)
+	field, ok := exactField(reflect.TypeFor[localPrivatePointer](), "ptr", reflect.TypeFor[*int](), false)
 	if !ok {
 		t.Fatal("expected local pointer field layout")
 	}
@@ -279,7 +279,7 @@ func exerciseTestingInternalsPrivatePointerAssignment(t *testing.T) {
 	targetWord := struct {
 		ptr unsafe.Pointer
 	}{}
-	word, ok := wordField(reflect.TypeOf(sourceWord), "ptr", false)
+	word, ok := wordField(reflect.TypeFor[struct{ ptr unsafe.Pointer }](), "ptr", false)
 	if !ok {
 		t.Fatal("expected word field layout")
 	}
