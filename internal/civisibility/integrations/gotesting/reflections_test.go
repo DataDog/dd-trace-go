@@ -6,8 +6,10 @@
 package gotesting
 
 import (
+	"reflect"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -50,6 +52,10 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	if err == nil {
 		t.Fatal("Expected an error for non-existent field, got nil")
 	}
+
+	exerciseTestingInternalsOffsetLayout(t)
+	exerciseTestingInternalsCopyEquivalence(t)
+	exerciseTestingInternalsPrivatePointerAssignment(t)
 }
 
 // TestGetInternalTestArray tests the getInternalTestArray function.
@@ -150,3 +156,170 @@ func TestGetBenchmarkPrivateFields(t *testing.T) {
 }
 
 func BenchmarkDummy(*testing.B) {}
+
+func exerciseTestingInternalsOffsetLayout(t *testing.T) {
+	layout := getTestingInternalsLayout()
+	if layout == nil {
+		t.Fatal("expected a testing internals layout")
+	}
+	if layout.disabled {
+		t.Fatal("expected the runtime testing layout to enable fast paths")
+	}
+	if layout.tCommon.offset != 0 || layout.bCommon.offset != 0 {
+		t.Fatalf("expected embedded testing.common offsets to be zero, got T=%d B=%d", layout.tCommon.offset, layout.bCommon.offset)
+	}
+	if !layout.testFieldsOK || !layout.parentFieldsOK || !layout.copyTestOK || !layout.createTestOK || !layout.benchmarkFieldsOK {
+		t.Fatalf("expected core layout sections to be enabled: %+v", layout)
+	}
+
+	invalid := buildTestingInternalsLayout(reflect.TypeOf(struct{}{}), reflect.TypeOf(struct{}{}))
+	if invalid == nil || !invalid.disabled {
+		t.Fatal("expected an invalid layout to be disabled")
+	}
+	if scalarWord, ok := wordField(reflect.TypeOf(struct{ parent uintptr }{}), "parent", false); ok || scalarWord.available {
+		t.Fatal("expected pointer-sized scalar fields to be rejected as pointer-word fields")
+	}
+
+	localT := createNewTestFast(layout)
+	localFields := getTestPrivateFieldsReflect(localT)
+	if localFields == nil || localFields.barrier == nil || *localFields.barrier == nil {
+		t.Fatal("expected createNewTestFast to initialize barrier")
+	}
+	if localFields.signal == nil || *localFields.signal == nil {
+		t.Fatal("expected createNewTestFast to initialize signal")
+	}
+
+	parentT := &testing.T{}
+	*localFields.parent = unsafe.Pointer(parentT)
+	createTestMetadata(parentT, parentT)
+	defer deleteTestMetadata(parentT)
+	if getTestMetadataFromPointer(*localFields.parent) == nil {
+		t.Fatal("expected parent metadata lookup through parent pointer to work")
+	}
+
+	parentFields := getTestParentPrivateFieldsFast(localT, layout)
+	if parentFields == nil {
+		t.Fatal("expected fast parent fields")
+	}
+	parentFields.SetFailed(true)
+	parentReflectFields := getTestPrivateFieldsReflect(parentT)
+	if parentReflectFields == nil || parentReflectFields.failed == nil || !*parentReflectFields.failed {
+		t.Fatal("expected fast parent fields to update parent failure state")
+	}
+
+	_ = getTestContextMatcherPrivateFieldsFast(t, layout)
+	if layout.outputWriterOK {
+		outputT := createNewTestReflect()
+		reinitOutputWriterFast(outputT, layout)
+		commonBase := commonBaseForTest(outputT, layout)
+		outputWriterBase := *fieldPtr[unsafe.Pointer](commonBase, layout.common.o)
+		if outputWriterBase == nil {
+			t.Fatal("expected fast output writer initialization to set common.o")
+		}
+		if gotCommon := *fieldPtr[unsafe.Pointer](outputWriterBase, layout.outputWriter.c); gotCommon != commonBase {
+			t.Fatal("expected output writer to point back to the test common")
+		}
+		flushOutputWriterPartialFast(outputT, layout)
+	}
+	if layout.chattyOK {
+		_ = getTestChattyPrinterFast(t, layout)
+	}
+}
+
+func exerciseTestingInternalsCopyEquivalence(t *testing.T) {
+	layout := getTestingInternalsLayout()
+	if layout == nil || layout.disabled || !layout.copyTestOK {
+		t.Fatal("expected copy fast path to be available")
+	}
+
+	source := createNewTestReflect()
+	sourceFields := getTestPrivateFieldsReflect(source)
+	*sourceFields.name = "copy-equivalence"
+	*sourceFields.level = 7
+	*sourceFields.failed = true
+	*sourceFields.skipped = true
+	*sourceFields.output = []byte("copy-output")
+
+	fastTarget := &testing.T{}
+	reflectTarget := &testing.T{}
+	copyTestWithoutParentFast(source, fastTarget, layout)
+	copyTestWithoutParentReflect(source, reflectTarget)
+
+	fastFields := getTestPrivateFieldsReflect(fastTarget)
+	reflectFields := getTestPrivateFieldsReflect(reflectTarget)
+	if *fastFields.name != *reflectFields.name ||
+		*fastFields.level != *reflectFields.level ||
+		*fastFields.failed != *reflectFields.failed ||
+		*fastFields.skipped != *reflectFields.skipped ||
+		string(*fastFields.output) != string(*reflectFields.output) {
+		t.Fatal("expected fast copy to match reflection fallback for representative fields")
+	}
+}
+
+func exerciseTestingInternalsPrivatePointerAssignment(t *testing.T) {
+	type localPrivatePointer struct {
+		ptr *int
+	}
+
+	field, ok := exactField(reflect.TypeOf(localPrivatePointer{}), "ptr", reflect.TypeFor[*int](), false)
+	if !ok {
+		t.Fatal("expected local pointer field layout")
+	}
+
+	value := 42
+	target := localPrivatePointer{}
+	setPrivatePointerField(field.typ, unsafe.Pointer(&target.ptr), unsafe.Pointer(&value))
+	if target.ptr != &value {
+		t.Fatal("expected private pointer assignment to set the target pointer")
+	}
+
+	sourceWord := struct {
+		ptr unsafe.Pointer
+	}{ptr: unsafe.Pointer(&value)}
+	targetWord := struct {
+		ptr unsafe.Pointer
+	}{}
+	word, ok := wordField(reflect.TypeOf(sourceWord), "ptr", false)
+	if !ok {
+		t.Fatal("expected word field layout")
+	}
+	copyWordField(unsafe.Pointer(&sourceWord), unsafe.Pointer(&targetWord), word)
+	if targetWord.ptr != sourceWord.ptr {
+		t.Fatal("expected pointer-word copy to preserve the pointer value")
+	}
+}
+
+func BenchmarkGetTestPrivateFields(b *testing.B) {
+	t := createNewTest()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = getTestPrivateFields(t)
+	}
+}
+
+func BenchmarkGetTestParentPrivateFields(b *testing.B) {
+	t := createNewTest()
+	parent := &testing.T{}
+	fields := getTestPrivateFields(t)
+	*fields.parent = unsafe.Pointer(parent)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = getTestParentPrivateFields(t)
+	}
+}
+
+func BenchmarkCopyTestWithoutParent(b *testing.B) {
+	source := createNewTest()
+	target := &testing.T{}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		copyTestWithoutParent(source, target)
+	}
+}
+
+func BenchmarkCreateNewTest(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = createNewTest()
+	}
+}
