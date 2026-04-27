@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -93,6 +94,9 @@ var (
 
 	// safeDirectoryValue holds the cached repository root path for safe.directory config.
 	safeDirectoryValue string
+
+	// errGitCLIDisabledInPayloadFilesMode reports that payload-file mode must avoid invoking the Git CLI.
+	errGitCLIDisabledInPayloadFilesMode = errors.New("git CLI is disabled in payload-file mode")
 )
 
 // branchMetrics holds metrics for evaluating base branch candidates
@@ -185,6 +189,10 @@ func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err
 			}
 		}()
 	}
+	if bazel.IsGitCLIDisabled() {
+		log.Debug("civisibility.git: skipping git command in payload-file mode: git %s", strings.Join(args, " "))
+		return nil, errGitCLIDisabledInPayloadFilesMode
+	}
 	if !isGitFound() {
 		return nil, errors.New("git executable not found")
 	}
@@ -246,6 +254,10 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 				log.Debug("civisibility.git.command(input) [%s][%dms]: git %s\n%s", commandType, durationInMs, strings.Join(args, " "), val)
 			}
 		}()
+	}
+	if bazel.IsGitCLIDisabled() {
+		log.Debug("civisibility.git: skipping git command with stdin in payload-file mode: git %s", strings.Join(args, " "))
+		return "", errGitCLIDisabledInPayloadFilesMode
 	}
 	gitCommandMutex.Lock()
 	defer gitCommandMutex.Unlock()
@@ -966,7 +978,9 @@ func checkAndFetchBranch(branch, remoteName string) {
 	}
 }
 
-// getRemoteBranches gets list of remote tracking branches only (for Step 2a in algorithm)
+// getRemoteBranches gets the list of remote tracking branches only (for Step 2a in algorithm).
+// It returns an empty slice when the current checkout has no local remote refs yet, which can
+// happen in CI jobs that fetch a detached commit SHA instead of a named branch.
 func getRemoteBranches(remoteName string) ([]string, error) {
 	// Get remote tracking branches as per algorithm update
 	remoteOut, err := execGitString(telemetry.ForEachRefCommandType, "for-each-ref", "--format=%(refname:short)", "refs/remotes/"+remoteName)
@@ -974,7 +988,7 @@ func getRemoteBranches(remoteName string) ([]string, error) {
 		return nil, fmt.Errorf("failed to get remote branches: %w", err)
 	}
 
-	var branches []string
+	branches := make([]string, 0)
 	if remoteOut != "" {
 		remoteBranches := strings.SplitSeq(strings.TrimSpace(remoteOut), "\n")
 		for branch := range remoteBranches {

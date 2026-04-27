@@ -31,7 +31,9 @@ var (
 	TravisCiTestSessionType       TestSessionType = []string{"provider:travisci"}
 	BuddyCiTestSessionType        TestSessionType = []string{"provider:buddyci"}
 	AwsCodePipelineSessionType    TestSessionType = []string{"provider:aws"}
-	UnsupportedTestSessionType    TestSessionType = []string{"provider:unsupported"}
+	// BazelTestSessionType tags test-session telemetry emitted when Bazel mode is the only detected CI context.
+	BazelTestSessionType       TestSessionType = []string{"provider:bazel"}
+	UnsupportedTestSessionType TestSessionType = []string{"provider:unsupported"}
 
 	IsAutoInstrumentationTestSessionType TestSessionType = []string{"auto_injected:true"}
 )

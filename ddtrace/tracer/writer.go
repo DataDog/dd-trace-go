@@ -245,11 +245,11 @@ func (h *logTraceWriter) encodeSpan(s *Span) {
 	h.buf.Write(strconv.AppendInt(scratch[:0], int64(s.error), 10))
 	h.buf.WriteString(`,"meta":{`)
 	first := true
-	for k, v := range s.meta {
+	for k, v := range s.meta.All() {
 		if first {
 			first = false
 		} else {
-			h.buf.WriteString(`,`)
+			h.buf.WriteString(",")
 		}
 		h.marshalString(k)
 		h.buf.WriteString(":")

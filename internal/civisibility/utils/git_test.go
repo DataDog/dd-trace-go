@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -105,6 +106,19 @@ func TestFilterSensitiveInfo(t *testing.T) {
 		result := filterSensitiveInfo(test.input)
 		assert.Equal(t, test.expected, result, "Failed for input: %s", test.input)
 	}
+}
+
+func TestExecGitStringDisabledInPayloadFilesMode(t *testing.T) {
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	assert.Empty(t, out)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "git CLI is disabled in payload-file mode")
 }
 
 func TestGetLocalGitData(t *testing.T) {
@@ -681,7 +695,12 @@ func TestGetBaseBranchShaWithCIBaseBranch(t *testing.T) {
 func acceptableError(err error) bool {
 	errMessage := strings.ToLower(err.Error())
 	// if the error is related to a shallow.lock file, we will skip the test;
-	// if the error is to a github connection error, we will skip the test;
+	// if the error is due to transient GitHub connectivity or transport failures, we will skip the test;
 	// the test is flaky in the CI due to multiple git commands running at the same time.
-	return strings.Contains(errMessage, "shallow.lock") || strings.Contains(errMessage, "couldn't connect to server")
+	return strings.Contains(errMessage, "shallow.lock") ||
+		strings.Contains(errMessage, "couldn't connect to server") ||
+		strings.Contains(errMessage, "the requested url returned error: 500") ||
+		strings.Contains(errMessage, "rpc failed; http 500") ||
+		strings.Contains(errMessage, "fatal: expected flush after ref listing") ||
+		strings.Contains(errMessage, "fatal: expected 'packfile'")
 }

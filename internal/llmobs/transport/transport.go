@@ -241,7 +241,6 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			if readErr != nil {
 				return requestResult{}, fmt.Errorf("failed to read response body: %w", readErr)
 			}
-			log.Debug("llmobs: got success response: %s", string(b))
 			return requestResult{statusCode: code, body: b}, nil
 		}
 		if isRetriableStatus(code) {

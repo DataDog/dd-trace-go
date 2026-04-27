@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
@@ -32,6 +33,10 @@ type (
 )
 
 func (c *client) GetCommits(localCommits []string) ([]string, error) {
+	if bazel.IsManifestModeEnabled() {
+		return []string{}, nil
+	}
+
 	if c.repositoryURL == "" {
 		return nil, fmt.Errorf("civisibility.GetCommits: repository URL is required")
 	}

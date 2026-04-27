@@ -6,16 +6,22 @@
 package integrations
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -79,6 +85,91 @@ func commonAssertions(assert *assert.Assertions, sessionSpan *mocktracer.Span) {
 	assert.Contains(spanTags, constants.RuntimeName)
 	assert.Contains(spanTags, constants.GitRepositoryURL)
 	assert.Contains(spanTags, constants.GitCommitSHA)
+}
+
+func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+
+	utils.ResetCITags()
+	utils.ResetCIMetrics()
+	bazel.ResetForTesting()
+	t.Cleanup(func() {
+		utils.ResetCITags()
+		utils.ResetCIMetrics()
+		bazel.ResetForTesting()
+	})
+
+	now := time.Now()
+	session := createDDTestSession(now)
+	session.Close(0)
+
+	finishedSpans := mockTracer.FinishedSpans()
+	assert.NotEmpty(finishedSpans)
+	spanTags := finishedSpans[0].Tags()
+
+	for key := range spanTags {
+		assert.False(strings.HasPrefix(key, "ci."), "unexpected ci tag key %q", key)
+		assert.False(strings.HasPrefix(key, "git."), "unexpected git tag key %q", key)
+		assert.False(strings.HasPrefix(key, "os."), "unexpected os tag key %q", key)
+		assert.False(strings.HasPrefix(key, "runtime."), "unexpected runtime tag key %q", key)
+		assert.NotEqual(constants.CIEnvVars, key, "unexpected env vars tag")
+	}
+
+	assert.Contains(spanTags, constants.TestCommand)
+	assert.Contains(spanTags, constants.Origin)
+}
+
+func TestPayloadFilesModeUsesAvailableWorkspaceMetadataForWorkingDirectory(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	workspaceDir := t.TempDir()
+	subDir := filepath.Join(workspaceDir, "pkg")
+	assert.NoError(os.MkdirAll(subDir, 0o755))
+	t.Chdir(subDir)
+
+	envDataPath := filepath.Join(t.TempDir(), "env.json")
+	envData := map[string]string{
+		constants.CIWorkspacePath:  workspaceDir,
+		constants.GitRepositoryURL: "https://github.com/acme/repo.git",
+	}
+	rawEnvData, err := json.Marshal(envData)
+	assert.NoError(err)
+	assert.NoError(os.WriteFile(envDataPath, rawEnvData, 0o644))
+
+	t.Setenv(bazel.PayloadsInFilesEnv, "true")
+	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+	t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, envDataPath)
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_WORKSPACE", workspaceDir)
+	t.Setenv("GITHUB_REPOSITORY", "acme/repo")
+	t.Setenv("GITHUB_SERVER_URL", "https://github.com")
+	t.Setenv("GITHUB_SHA", "commit-sha")
+
+	utils.ResetCITags()
+	utils.ResetCIMetrics()
+	bazel.ResetForTesting()
+	t.Cleanup(func() {
+		utils.ResetCITags()
+		utils.ResetCIMetrics()
+		bazel.ResetForTesting()
+	})
+
+	now := time.Now()
+	session := CreateTestSession(
+		WithTestSessionCommand("my-command"),
+		WithTestSessionFramework("my-testing-framework", "framework-version"),
+		WithTestSessionStartTime(now),
+	)
+	assert.Equal("pkg", session.WorkingDirectory())
+	assert.Equal("https://github.com/acme/repo.git", utils.GetCITags()[constants.GitRepositoryURL])
+	assert.Equal(workspaceDir, utils.GetCITags()[constants.CIWorkspacePath])
+
+	session.Close(0)
 }
 
 func TestTestSession(t *testing.T) {
@@ -283,6 +374,63 @@ func TestWithInnerFunc(t *testing.T) {
 	test.Close(ResultStatusSkip)
 }
 
+func TestSetTestFuncLogsFunctionDeclarationSourceRange(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	now := time.Now()
+	session, module, suite, test := createDDTest(now)
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+
+	pc, _, _, _ := runtime.Caller(0)
+	test.SetTestFunc(runtime.FuncForPC(pc))
+
+	logs := recordLogger.Logs()
+	assert.True(containsSourceResolutionLogLine(logs, "resolving test source location"))
+	assert.True(containsSourceResolutionLogLine(logs, "matched AST function declaration"))
+	assert.True(containsSourceResolutionLogLine(logs, "resolved test source range"))
+}
+
+func TestSetTestFuncLogsFunctionLiteralSourceRange(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	recordLogger := new(log.RecordLogger)
+	oldLevel := log.GetLevel()
+	defer log.UseLogger(recordLogger)()
+	log.SetLevel(log.LevelDebug)
+	defer log.SetLevel(oldLevel)
+
+	now := time.Now()
+	session, module, suite, test := createDDTest(now)
+	defer func() {
+		session.Close(0)
+		module.Close()
+		suite.Close()
+	}()
+
+	func() {
+		pc, _, _, _ := runtime.Caller(0)
+		test.SetTestFunc(runtime.FuncForPC(pc))
+	}()
+
+	logs := recordLogger.Logs()
+	assert.True(containsSourceResolutionLogLine(logs, "resolving test source location"))
+	assert.True(containsSourceResolutionLogLine(logs, "inspecting AST function literal candidate"))
+	assert.True(containsSourceResolutionLogLine(logs, "matched AST function literal"))
+	assert.True(containsSourceResolutionLogLine(logs, "resolved test source range"))
+}
+
 func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktracer.Span) {
 	assert.Equal(now.Unix(), testSpan.StartTime().Unix())
 	assert.Equal("my-module-framework.test", testSpan.OperationName())
@@ -319,4 +467,14 @@ func testAssertions(assert *assert.Assertions, now time.Time, testSpan *mocktrac
 	}
 
 	commonAssertions(assert, testSpan)
+}
+
+// containsSourceResolutionLogLine reports whether any recorded log line contains the expected source-resolution fragment.
+func containsSourceResolutionLogLine(lines []string, want string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, want) {
+			return true
+		}
+	}
+	return false
 }

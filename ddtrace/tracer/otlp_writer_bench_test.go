@@ -98,7 +98,7 @@ func BenchmarkOTLPProtoMarshal(b *testing.B) {
 			spans := make([]*otlptrace.Span, sc.n)
 			for i := range sc.n {
 				s := newBasicSpan("bench-span")
-				s.meta["key"] = "value"
+				s.meta.Set("key", "value")
 				spans[i] = convertSpan(s, "bench-svc")
 			}
 			tracesData := buildTracesData(spans)
@@ -117,7 +117,7 @@ func BenchmarkOTLPProtoMarshal(b *testing.B) {
 		for i := range 100 {
 			s := newSpan("op", "svc", "res", uint64(i+1), 1, 0)
 			for j := range 20 {
-				s.meta[fmt.Sprintf("key-%d", j)] = fmt.Sprintf("value-%d", j)
+				s.meta.Set(fmt.Sprintf("key-%d", j), fmt.Sprintf("value-%d", j))
 			}
 			for j := range 5 {
 				s.metrics[fmt.Sprintf("metric-%d", j)] = float64(j) * 1.5

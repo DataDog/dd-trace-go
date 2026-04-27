@@ -114,6 +114,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/syndtr/goleveldb":                   {"LevelDB", false},
 	"github.com/tidwall/buntdb":                     {"BuntDB", false},
 	"github.com/twitchtv/twirp":                     {"Twirp", false},
+	"github.com/twmb/franz-go":                      {"franz-go", false},
 	"github.com/uptrace/bun":                        {"Bun", false},
 	"github.com/urfave/negroni":                     {"Negroni", false},
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
@@ -223,9 +224,6 @@ type config struct {
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
-
-	// traceSampleRate holds the trace sample rate.
-	traceSampleRate dynamicConfig[float64]
 
 	// traceSampleRules holds the trace sampling rules
 	traceSampleRules dynamicConfig[[]SamplingRule]

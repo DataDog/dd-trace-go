@@ -334,7 +334,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 56, len(cfg.integrations))
+		assert.Equal(t, 57, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -1913,7 +1913,8 @@ func TestWithStartSpanConfig(t *testing.T) {
 	s := tracer.StartSpan("test", WithStartSpanConfig(cfg))
 	defer s.Finish()
 	assert.Equal(float64(1), s.metrics[keyMeasured])
-	assert.Equal("value", s.meta["key"])
+	v, _ := s.meta.Get("key")
+	assert.Equal("value", v)
 	assert.Equal(parent.Context().SpanID(), s.parentID)
 	assert.Equal(parent.Context().TraceID(), s.Context().TraceID())
 	assert.Equal("resource", s.resource)
@@ -1962,8 +1963,10 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 		Tag("key", "after_start_span_config"),
 	)
 	defer s.Finish()
-	assert.Equal("should_override", s.meta["k2"])
-	assert.Equal("after_start_span_config", s.meta["key"])
+	v, _ := s.meta.Get("k2")
+	assert.Equal("should_override", v)
+	v, _ = s.meta.Get("key")
+	assert.Equal("after_start_span_config", v)
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {

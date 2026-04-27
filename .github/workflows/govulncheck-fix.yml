@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   govulncheck-fix:
@@ -26,25 +25,45 @@ jobs:
       - name: Scan and fix vulnerabilities
         id: fix
         run: ./.github/workflows/apps/govulncheck-fix.sh
-      - name: Configure git
+      - name: Notify Slack
         if: steps.fix.outputs.has_fixes == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          gh auth setup-git
+        uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
+        with:
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "dependency_list": "${{ steps.fix.outputs.dependency_list }}",
+              "text": "Found Vulnerabilities",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ":x: Found Vulnerabilities"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow:*\n${{ github.workflow }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Dependencies to upgrade:*\n${{ steps.fix.outputs.dependency_list }}"
+                    }
+                  ]
+                }
+              ]
+            }
         env:
-          GH_TOKEN: ${{ github.token }}
-      - name: Create Pull Request
-        if: steps.fix.outputs.has_fixes == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          branch="automation/govulncheck-fix/${{ github.run_id }}"
-          git checkout -b "${branch}"
-          git add -- '**/go.mod' '**/go.sum'
-          git commit -F /tmp/govulncheck-fix-commit.txt
-          git push origin "${branch}"
-          gh pr create \
-            --title "fix(deps): update dependencies with reachable vulnerabilities" \
-            --body-file /tmp/govulncheck-fix-body.md \
-            --head="${branch}"
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_GOVULNCHECK_WEBHOOK_URL }}

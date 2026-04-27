@@ -352,13 +352,12 @@ jobs:
 
   tracer-release:
     if: github.event_name == 'schedule'
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@1e5d6b7096279ca43ce4826fda3cc805635b63c1
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@main
     permissions:
       contents: read
       id-token: write
     with:
       library: golang
-      ref: 1e5d6b7096279ca43ce4826fda3cc805635b63c1
       scenarios_groups: tracer-release
       skip_empty_scenarios: true
       _system_tests_dev_mode: true

@@ -164,7 +164,6 @@ type ciVisibilityEvent struct {
 // +checklocksignore — CI visibility event: reads span fields after SetTag releases lock.
 func (e *ciVisibilityEvent) SetTag(key string, value any) {
 	e.span.SetTag(key, value)
-	e.Content.Meta = e.span.meta
 	e.Content.Metrics = e.span.metrics
 }
 
@@ -210,6 +209,12 @@ func (e *ciVisibilityEvent) SetBaggageItem(key, val string) {
 //	opts - Optional finish options.
 func (e *ciVisibilityEvent) Finish(opts ...FinishOption) {
 	e.span.Finish(opts...)
+	// Rebuild Content.Meta once with the final span state, under the span
+	// lock to avoid racing with the serialization worker.
+	e.span.mu.Lock()
+	e.Content.Meta = e.span.meta.Map(true)
+	e.Content.Metrics = e.span.metrics
+	e.span.mu.Unlock()
 }
 
 // Context returns the span context of the event's span.
@@ -411,7 +416,7 @@ func createTslvSpan(span *Span) tslvSpan {
 		Duration: span.duration,
 		ParentID: span.parentID,
 		Error:    span.error,
-		Meta:     span.meta,
+		Meta:     span.meta.Map(true),
 		Metrics:  span.metrics,
 	}
 }

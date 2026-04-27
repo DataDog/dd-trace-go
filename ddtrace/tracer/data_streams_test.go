@@ -47,9 +47,10 @@ func TestTrackDataStreamsTransactionTagsSpan(t *testing.T) {
 
 	s, ok := SpanFromContext(ctx)
 	require.True(t, ok)
-	meta := s.getMetadata()
-	assert.Equal(t, "tx-span-tag", meta[ext.DSMTransactionID])
-	assert.Equal(t, "processed", meta[ext.DSMTransactionCheckpoint])
+	v, _ := s.meta.Get(ext.DSMTransactionID)
+	assert.Equal(t, "tx-span-tag", v)
+	v, _ = s.meta.Get(ext.DSMTransactionCheckpoint)
+	assert.Equal(t, "processed", v)
 }
 
 // TestTrackDataStreamsTransactionNoSpanInContextNoops verifies that when the context
@@ -95,7 +96,8 @@ func TestTrackDataStreamsTransactionAtTagsSpan(t *testing.T) {
 
 	s, ok := SpanFromContext(ctx)
 	require.True(t, ok)
-	meta := s.getMetadata()
-	assert.Equal(t, "tx-at-span", meta[ext.DSMTransactionID])
-	assert.Equal(t, "delivered", meta[ext.DSMTransactionCheckpoint])
+	v, _ := s.meta.Get(ext.DSMTransactionID)
+	assert.Equal(t, "tx-at-span", v)
+	v, _ = s.meta.Get(ext.DSMTransactionCheckpoint)
+	assert.Equal(t, "delivered", v)
 }
