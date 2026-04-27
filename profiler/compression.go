@@ -248,14 +248,23 @@ func (r *gzipDecodingRecompressor) Reset(w io.Writer) {
 	r.out.Reset(w)
 	pr, pw := io.Pipe()
 	go func() {
+		// Always close pr with the resulting error so any pending
+		// or future pw.Write call returns it instead of blocking on
+		// a reader that has gone away.
+		var finalErr error
+		defer func() {
+			pr.CloseWithError(finalErr)
+			r.err <- finalErr
+		}()
+
 		gzr, err := kgzip.NewReader(pr)
 		if err != nil {
-			r.err <- err
+			finalErr = err
 			return
 		}
 		_, copyErr := io.Copy(r.out, gzr)
 		closeErr := gzr.Close()
-		r.err <- cmp.Or(copyErr, closeErr)
+		finalErr = cmp.Or(copyErr, closeErr)
 	}()
 	r.pw = pw
 }

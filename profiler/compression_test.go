@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	kgzip "github.com/klauspost/compress/gzip"
@@ -56,6 +57,59 @@ func TestNewCompressionPipeline(t *testing.T) {
 			require.Equal(t, test.want, buf.Bytes())
 		})
 	}
+}
+
+// TestGzipDecodingRecompressorInvalidInput verifies that the recompressor
+// surfaces an error (instead of deadlocking) when its input is not a valid
+// gzip stream. A naive implementation spawns a goroutine that calls
+// kgzip.NewReader, which fails on a bad header. Without explicitly closing
+// the read end of the pipe, the goroutine exits while the caller's pw.Write
+// blocks forever waiting for a reader that no longer exists.
+//
+// The test runs inside a testing/synctest bubble so that deadlock detection
+// is deterministic instead of relying on a wall-clock timeout: synctest.Wait
+// returns once every goroutine in the bubble is durably blocked or has
+// exited, and we then assert that Write actually returned.
+func TestGzipDecodingRecompressorInvalidInput(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		gzipOut, err := kgzip.NewWriterLevel(nil, gzip6Compression.level)
+		require.NoError(t, err)
+		r := newGzipDecodingRecompressor(gzipOut)
+		r.Reset(io.Discard)
+		// Always close so the synctest bubble drains cleanly even
+		// when the recompressor is deadlocked: pw.Close unblocks
+		// any pending Write, and <-r.err unblocks the goroutine
+		// started by Reset.
+		defer r.Close()
+
+		// Non-gzip data large enough to overflow whatever buffer
+		// kgzip.NewReader uses internally for header parsing. With
+		// io.Pipe being unbuffered, any write left over after the
+		// recompressor's goroutine errors out will block forever
+		// absent a fix.
+		data := bytes.Repeat([]byte("not a gzip stream\n"), 4096)
+
+		writeDone := make(chan error, 1)
+		go func() {
+			_, werr := r.Write(data)
+			writeDone <- werr
+		}()
+
+		// Block until every goroutine in the bubble is either
+		// durably blocked or has exited. With the fix in place,
+		// the recompressor's goroutine closes pr with an error,
+		// Write returns that error, and writeDone receives a
+		// value. Without the fix, Write stays blocked on the
+		// pipe and writeDone is empty.
+		synctest.Wait()
+
+		select {
+		case werr := <-writeDone:
+			require.Error(t, werr, "expected an error for non-gzip input")
+		default:
+			t.Error("deadlock: Write did not return after recompressor goroutine exited")
+		}
+	})
 }
 
 // checkZstdLevel checks that data is zstd-compressed with the given level
