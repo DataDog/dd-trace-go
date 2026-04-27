@@ -2370,9 +2370,9 @@ func TestFlushSync(t *testing.T) {
 		// Must have waited at least the request delay.
 		assert.GreaterOrEqual(t, elapsed, delay, "FlushSync should block until the slow HTTP send completes")
 
-		payloads := tt.SentPayloads()
-		require.Len(t, payloads.LLMSpans, 1)
-		assert.Equal(t, "slow-span", payloads.LLMSpans[0].Name)
+		spans := tt.WaitForLLMObsSpans(t, 1)
+		require.Len(t, spans, 1)
+		assert.Equal(t, "slow-span", spans[0].Name)
 	})
 	t.Run("no-panic-without-active-llmobs", func(t *testing.T) {
 		// Package-level FlushSync should be safe when no active LLMObs.
