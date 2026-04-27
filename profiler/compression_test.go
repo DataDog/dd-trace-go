@@ -7,7 +7,6 @@ package profiler
 
 import (
 	"bytes"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -112,7 +111,26 @@ func TestGzipDecodingRecompressorInvalidInput(t *testing.T) {
 	})
 }
 
-// checkZstdLevel checks that data is zstd-compressed with the given level
+// checkGzipLevel checks that data is gzip-compressed with the given level.
+func checkGzipLevel(t *testing.T, data []byte, level int) {
+	t.Helper()
+	require.NotEmpty(t, data)
+	gr, err := kgzip.NewReader(bytes.NewReader(data))
+	require.NoError(t, err)
+	in := new(bytes.Buffer)
+	_, err = io.Copy(in, gr)
+	require.NoError(t, err)
+	require.NoError(t, gr.Close())
+	out := new(bytes.Buffer)
+	gw, err := kgzip.NewWriterLevel(out, level)
+	require.NoError(t, err)
+	_, err = io.Copy(gw, in)
+	require.NoError(t, err)
+	require.NoError(t, gw.Close())
+	require.Equal(t, data, out.Bytes())
+}
+
+// checkZstdLevel checks that data is zstd-compressed with the given level.
 func checkZstdLevel(t *testing.T, data []byte, level zstd.EncoderLevel) {
 	t.Helper()
 	require.NotEmpty(t, data)
@@ -149,19 +167,19 @@ func TestDebugCompressionEnv(t *testing.T) {
 	t.Run("explicit-gzip", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "gzip")
 		p := startTestProfiler(t, 1, WithProfileTypes(HeapProfile, BlockProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
-		r, err := gzip.NewReader(bytes.NewReader(p.attachments["delta-heap.pprof"]))
-		require.NoError(t, err)
-		_, err = io.Copy(io.Discard, r)
-		require.NoError(t, err)
+		checkGzipLevel(t, p.attachments["delta-heap.pprof"], gzip6Compression.level)
 	})
 
 	t.Run("explicit-gzip-already-gzipped-input", func(t *testing.T) {
 		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "gzip")
 		p := startTestProfiler(t, 1, WithProfileTypes(CPUProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
-		r, err := gzip.NewReader(bytes.NewReader(p.attachments["cpu.pprof"]))
-		require.NoError(t, err)
-		_, err = io.Copy(io.Discard, r)
-		require.NoError(t, err)
+		checkGzipLevel(t, p.attachments["cpu.pprof"], gzip6Compression.level)
+	})
+
+	t.Run("gzip-1", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "gzip-1")
+		p := startTestProfiler(t, 1, WithProfileTypes(HeapProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
+		checkGzipLevel(t, p.attachments["delta-heap.pprof"], gzip1Compression.level)
 	})
 
 	t.Run("zstd-delta", func(t *testing.T) {
