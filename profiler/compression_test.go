@@ -192,7 +192,7 @@ func BenchmarkRecompression(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				z := newZstdRecompressor(encoder)
+				z := newGzipDecodingRecompressor(encoder)
 				z.Reset(io.Discard)
 				if _, err := z.Write(data); err != nil {
 					b.Fatal(err)

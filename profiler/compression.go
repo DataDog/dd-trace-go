@@ -184,7 +184,7 @@ func (b *compressionPipelineBuilder) Build(in compression, out compression) (com
 		if err != nil {
 			return nil, err
 		}
-		return newGzipRecompressor(gzipOut), nil
+		return newGzipDecodingRecompressor(gzipOut), nil
 	}
 
 	if in.algorithm == compressionAlgorithmGzip && out.algorithm == compressionAlgorithmZstd {
@@ -192,7 +192,7 @@ func (b *compressionPipelineBuilder) Build(in compression, out compression) (com
 		if err != nil {
 			return nil, err
 		}
-		return newZstdRecompressor(encoder), nil
+		return newGzipDecodingRecompressor(encoder), nil
 	}
 
 	return nil, fmt.Errorf("unsupported recompression: %s -> %s", in, out)
@@ -228,20 +228,24 @@ func (r *passthroughCompressor) Close() error {
 	return nil
 }
 
-func newGzipRecompressor(gzipOut *kgzip.Writer) *gzipRecompressor {
-	return &gzipRecompressor{gzipOut: gzipOut, err: make(chan error)}
+// newGzipDecodingRecompressor returns a recompressor that decompresses
+// gzip-compressed input and re-encodes it using the supplied output
+// compressor (e.g. a gzip writer at a different level, or a zstd encoder).
+// Callers must always pair Reset with Close.
+func newGzipDecodingRecompressor(out compressor) *gzipDecodingRecompressor {
+	return &gzipDecodingRecompressor{out: out, err: make(chan error)}
 }
 
-type gzipRecompressor struct {
+type gzipDecodingRecompressor struct {
 	// err synchronizes finishing writes after closing pw and reports any
 	// error during recompression
-	err     chan error
-	pw      io.WriteCloser
-	gzipOut *kgzip.Writer
+	err chan error
+	pw  io.WriteCloser
+	out compressor
 }
 
-func (r *gzipRecompressor) Reset(w io.Writer) {
-	r.gzipOut.Reset(w)
+func (r *gzipDecodingRecompressor) Reset(w io.Writer) {
+	r.out.Reset(w)
 	pr, pw := io.Pipe()
 	go func() {
 		gzr, err := kgzip.NewReader(pr)
@@ -249,59 +253,20 @@ func (r *gzipRecompressor) Reset(w io.Writer) {
 			r.err <- err
 			return
 		}
-		_, copyErr := io.Copy(r.gzipOut, gzr)
+		_, copyErr := io.Copy(r.out, gzr)
 		closeErr := gzr.Close()
 		r.err <- cmp.Or(copyErr, closeErr)
 	}()
 	r.pw = pw
 }
 
-func (r *gzipRecompressor) Write(p []byte) (int, error) {
+func (r *gzipDecodingRecompressor) Write(p []byte) (int, error) {
 	return r.pw.Write(p)
 }
 
-func (r *gzipRecompressor) Close() error {
+func (r *gzipDecodingRecompressor) Close() error {
 	r.pw.Close()
-	err := <-r.err
-	return cmp.Or(err, r.gzipOut.Close())
-}
-
-func newZstdRecompressor(encoder *sharedZstdEncoder) *zstdRecompressor {
-	return &zstdRecompressor{zstdOut: encoder, err: make(chan error)}
-}
-
-type zstdRecompressor struct {
-	// err synchronizes finishing writes after closing pw and reports any
-	// error during recompression
-	err     chan error
-	pw      io.WriteCloser
-	zstdOut *sharedZstdEncoder
-}
-
-func (r *zstdRecompressor) Reset(w io.Writer) {
-	r.zstdOut.Reset(w)
-	pr, pw := io.Pipe()
-	go func() {
-		gzr, err := kgzip.NewReader(pr)
-		if err != nil {
-			r.err <- err
-			return
-		}
-		_, copyErr := io.Copy(r.zstdOut, gzr)
-		closeErr := gzr.Close()
-		r.err <- cmp.Or(copyErr, closeErr)
-	}()
-	r.pw = pw
-}
-
-func (r *zstdRecompressor) Write(p []byte) (int, error) {
-	return r.pw.Write(p)
-}
-
-func (r *zstdRecompressor) Close() error {
-	r.pw.Close()
-	err := <-r.err
-	return cmp.Or(err, r.zstdOut.Close())
+	return cmp.Or(<-r.err, r.out.Close())
 }
 
 // newSharedZstdEncoder creates a new shared Zstd encoder with the given level.
