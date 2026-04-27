@@ -35,7 +35,7 @@ When adding new code in an advice, strive to keep it as minimal as possible and 
 
 ### Aspects
 
-`orchestrion.yaml` files contain aspects in the following format:
+`orchestrion.yml` files contain aspects in the following format:
 
 ```yaml
 aspects:
