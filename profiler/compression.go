@@ -249,8 +249,9 @@ func (r *gzipRecompressor) Reset(w io.Writer) {
 			r.err <- err
 			return
 		}
-		_, err = io.Copy(r.gzipOut, gzr)
-		r.err <- err
+		_, copyErr := io.Copy(r.gzipOut, gzr)
+		closeErr := gzr.Close()
+		r.err <- cmp.Or(copyErr, closeErr)
 	}()
 	r.pw = pw
 }
@@ -286,8 +287,9 @@ func (r *zstdRecompressor) Reset(w io.Writer) {
 			r.err <- err
 			return
 		}
-		_, err = io.Copy(r.zstdOut, gzr)
-		r.err <- err
+		_, copyErr := io.Copy(r.zstdOut, gzr)
+		closeErr := gzr.Close()
+		r.err <- cmp.Or(copyErr, closeErr)
 	}()
 	r.pw = pw
 }
