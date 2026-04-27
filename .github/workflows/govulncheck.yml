@@ -84,10 +84,9 @@ jobs:
         if: always() && hashFiles('govulncheck-raw.vex') != ''
         run: |-
           MODULE_PATH=$(go list -m -f '{{ .Path }}' github.com/DataDog/dd-trace-go/v2)
-          PRODUCT="pkg:golang/${MODULE_PATH}"
-          if [[ "${GITHUB_REF_TYPE:-}" == "tag" && -n "${GITHUB_REF_NAME:-}" ]]; then
-            PRODUCT="${PRODUCT}@${GITHUB_REF_NAME}"
-          fi
+          COMMIT=$(git rev-parse HEAD)
+          VERSION=$(GOPROXY=direct GONOSUMDB="${MODULE_PATH}" go list -m -json "${MODULE_PATH}@${COMMIT}" | jq -r .Version)
+          PRODUCT="pkg:golang/${MODULE_PATH}@${VERSION}"
           jq --arg author "security@datadoghq.com" \
             --arg product "${PRODUCT}" \
             '.author = $author | (.statements[]?.products[]?["@id"]) = $product' \
