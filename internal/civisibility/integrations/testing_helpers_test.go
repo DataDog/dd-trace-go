@@ -31,5 +31,6 @@ func resetCIVisibilityStateForTesting() {
 
 	utils.ResetCITags()
 	utils.ResetCIMetrics()
+	utils.ResetCodeOwnersForTesting()
 	bazel.ResetForTesting()
 }

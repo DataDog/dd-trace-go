@@ -7,11 +7,33 @@ package utils
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func resetCodeOwnersTestState(t *testing.T, workspaceDir string) {
+	t.Helper()
+
+	ResetCodeOwnersForTesting()
+	ResetCITags()
+	originalCiTags = map[string]string{constants.CIWorkspacePath: workspaceDir}
+	t.Cleanup(func() {
+		ResetCodeOwnersForTesting()
+		ResetCITags()
+	})
+}
+
+func writeCodeOwnersFile(t *testing.T, path string, content string) {
+	t.Helper()
+
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+}
 
 func TestNewCodeOwners(t *testing.T) {
 	// Create a temporary file for testing
@@ -44,6 +66,86 @@ func TestNewCodeOwners(t *testing.T) {
 	// Test empty file path
 	_, err = NewCodeOwners("")
 	assert.Error(t, err)
+}
+
+func TestGetCodeOwnersCachesMissingDiscovery(t *testing.T) {
+	workspaceDir := t.TempDir()
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	resetCodeOwnersTestState(t, workspaceDir)
+
+	assert.Nil(t, GetCodeOwners())
+
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), "/cached/miss @owner\n")
+	assert.Nil(t, GetCodeOwners())
+
+	ResetCodeOwnersForTesting()
+	codeOwners := GetCodeOwners()
+	require.NotNil(t, codeOwners)
+
+	match, ok := codeOwners.Match("/cached/miss")
+	require.True(t, ok)
+	assert.Equal(t, "[\"@owner\"]", match.GetOwnersString())
+}
+
+func TestGetCodeOwnersCachesSuccessfulDiscovery(t *testing.T) {
+	workspaceDir := t.TempDir()
+	otherWorkspaceDir := t.TempDir()
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	resetCodeOwnersTestState(t, workspaceDir)
+
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), "/cached/success @first\n")
+	writeCodeOwnersFile(t, filepath.Join(otherWorkspaceDir, "CODEOWNERS"), "/cached/success @second\n")
+
+	codeOwners := GetCodeOwners()
+	require.NotNil(t, codeOwners)
+
+	ResetCITags()
+	originalCiTags = map[string]string{constants.CIWorkspacePath: otherWorkspaceDir}
+
+	cachedCodeOwners := GetCodeOwners()
+	require.True(t, codeOwners == cachedCodeOwners)
+	match, ok := cachedCodeOwners.Match("/cached/success")
+	require.True(t, ok)
+	assert.Equal(t, "[\"@first\"]", match.GetOwnersString())
+}
+
+func TestGetCodeOwnersDoesNotCacheMalformedFileAsMissing(t *testing.T) {
+	workspaceDir := t.TempDir()
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	resetCodeOwnersTestState(t, workspaceDir)
+
+	codeOwnersPath := filepath.Join(workspaceDir, "CODEOWNERS")
+	writeCodeOwnersFile(t, codeOwnersPath, strings.Repeat("x", 70*1024))
+	assert.Nil(t, GetCodeOwners())
+
+	writeCodeOwnersFile(t, codeOwnersPath, "/fixed @owner\n")
+	codeOwners := GetCodeOwners()
+	require.NotNil(t, codeOwners)
+
+	match, ok := codeOwners.Match("/fixed")
+	require.True(t, ok)
+	assert.Equal(t, "[\"@owner\"]", match.GetOwnersString())
+}
+
+func TestGetCodeOwnersMalformedCandidateDoesNotBlockLaterCandidate(t *testing.T) {
+	workspaceDir := t.TempDir()
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	resetCodeOwnersTestState(t, workspaceDir)
+
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), strings.Repeat("x", 70*1024))
+	require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, ".github"), 0o700))
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, ".github", "CODEOWNERS"), "/fallback @owner\n")
+
+	codeOwners := GetCodeOwners()
+	require.NotNil(t, codeOwners)
+
+	match, ok := codeOwners.Match("/fallback")
+	require.True(t, ok)
+	assert.Equal(t, "[\"@owner\"]", match.GetOwnersString())
 }
 
 func TestFindSectionIgnoreCase(t *testing.T) {
