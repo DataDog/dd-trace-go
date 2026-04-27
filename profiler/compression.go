@@ -48,14 +48,20 @@ func compressionStrategy(pt ProfileType, isDelta bool, config string) (compressi
 	if config == "" || config == "legacy" {
 		return legacyCompressionStrategy(pt, isDelta)
 	}
-	algorithm, levelStr, _ := strings.Cut(config, "-")
+	algorithmStr, levelStr, _ := strings.Cut(config, "-")
+	algorithm := compressionAlgorithm(algorithmStr)
 	// Don't bother checking the error. We'll get zero which represents the
 	// default, and we we assume this is only going to get used internally
 	level, _ := strconv.Atoi(levelStr)
-	if algorithm == string(compressionAlgorithmGzip) && levelStr == "" {
-		level = gzip6Compression.level
+	if levelStr == "" {
+		switch algorithm {
+		case compressionAlgorithmGzip:
+			level = gzip6Compression.level
+		case compressionAlgorithmZstd:
+			level = zstdCompression.level
+		}
 	}
-	return inputCompression(pt, isDelta), compression{algorithm: compressionAlgorithm(algorithm), level: level}
+	return inputCompression(pt, isDelta), compression{algorithm: algorithm, level: level}
 }
 
 // inputCompression maps the given profile type and isDelta flavor to the
