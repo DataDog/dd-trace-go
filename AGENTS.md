@@ -2,7 +2,7 @@
 
 ## Read CONTRIBUTING.md First
 
-**BEFORE making ANY code changes**, you MUST read [CONTRIBUTING.md](./CONTRIBUTING.md) and [README.md](./README.md).
+**BEFORE writing or editing ANY code**, you MUST read [CONTRIBUTING.md](./CONTRIBUTING.md) and [README.md](./README.md).
 
 Furthermore, be sure to follow [Effective Go guidelines](https://go.dev/doc/effective_go) when writing Go code.
 

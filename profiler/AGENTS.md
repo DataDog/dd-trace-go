@@ -1,4 +1,4 @@
-**BEFORE making ANY code changes**, you MUST read [doc.go](./doc.go) for information about:
+**BEFORE writing or editing ANY code**, you MUST read [doc.go](./doc.go) for information about:
 
 1. The lifecycle of the profiler
 2. Functionality and customizability that the profiler supports

@@ -1,4 +1,4 @@
-**BEFORE making ANY code changes**, you MUST read [README.md](./README.md) for information about API changes and how to handle them.
+**BEFORE writing or editing ANY code**, you MUST read [README.md](./README.md) for information about API changes and how to handle them.
 
 For information about the tracer's abilities, you MUST read [doc.go](./doc.go).
 

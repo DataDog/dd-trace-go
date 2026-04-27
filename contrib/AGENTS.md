@@ -1,4 +1,4 @@
-**BEFORE making ANY code changes**, you MUST read [README.md](./README.md) for information about:
+**BEFORE writing or editing ANY code**, you MUST read [README.md](./README.md) for information about:
 
 * Naming conventions
 * Testing

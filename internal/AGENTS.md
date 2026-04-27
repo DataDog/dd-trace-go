@@ -1,4 +1,4 @@
-**BEFORE making ANY code changes**, you MUST read [README.md](./README.md) for information about each internal package and their functionalities.
+**BEFORE writing or editing ANY code**, you MUST read [README.md](./README.md) for information about each internal package and their functionalities.
 
 ## Updating AGENTS.md
 
