@@ -25,6 +25,7 @@ func resetCIVisibilityStateForTesting() {
 	ciVisibilitySkippables = nil
 	ciVisibilityTestManagementTests = net.TestManagementTestsResponseDataModules{}
 	ciVisibilityImpactedTestsAnalyzer = nil
+	sourceFileMetadataCache = sync.Map{}
 
 	uploadRepositoryChangesFunc = uploadRepositoryChanges
 
