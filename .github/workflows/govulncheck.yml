@@ -74,6 +74,31 @@ jobs:
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
+      - name: Run govulncheck (OpenVEX)
+        if: always()
+        run: |-
+          govulncheck -format openvex \
+            ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
+            > govulncheck-raw.vex || true
+      - name: Patch OpenVEX author and product
+        if: always() && hashFiles('govulncheck-raw.vex') != ''
+        run: |-
+          MODULE_PATH=$(go list -m -f '{{ .Path }}' github.com/DataDog/dd-trace-go/v2)
+          PRODUCT="pkg:golang/${MODULE_PATH}"
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" && -n "${GITHUB_REF_NAME:-}" ]]; then
+            PRODUCT="${PRODUCT}@${GITHUB_REF_NAME}"
+          fi
+          jq --arg author "security@datadoghq.com" \
+            --arg product "${PRODUCT}" \
+            '.author = $author | (.statements[]?.products[]?["@id"]) = $product' \
+            govulncheck-raw.vex > govulncheck.vex
+      - name: Upload OpenVEX artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: govulncheck-openvex
+          path: govulncheck.vex
+          if-no-files-found: warn
 
   # Non-blocking: scans all contrib modules for vulnerabilities and uploads
   # the merged SARIF to GitHub Code Scanning for Security tab visibility.
