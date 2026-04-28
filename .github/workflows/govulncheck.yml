@@ -9,6 +9,7 @@ on:
       - "go.work.sum"
       - ".github/workflows/govulncheck.yml"
       - ".github/workflows/apps/govulncheck-contribs-v2.sh"
+      - ".github/workflows/apps/govulncheck-contribs-sarif.sh"
   workflow_call: # allows to reuse this workflow
     inputs:
       ref:
@@ -40,12 +41,68 @@ permissions:
 jobs:
   # Non-blocking: generates SARIF and uploads to GitHub Code Scanning.
   # Replaces Dependabot Security Alerts with reachability-aware findings.
-  # Uses govulncheck@latest installed directly (golang/govulncheck-action is
-  # not in the DataDog enterprise action allowlist).
-  # NOTE: Only core packages are scanned here. Contrib modules (each with
-  # their own go.mod) are scanned in govulncheck-tests, which blocks merges,
-  # but contrib vulnerabilities do not appear in GitHub Code Scanning alerts.
+  # Uses the official golang/govulncheck-action — see PR description for
+  # the enterprise allowlist request context.
+  # NOTE: Only core packages are scanned here. Contrib modules are scanned
+  # separately in govulncheck-contribs-analysis (SARIF, non-blocking) and
+  # in govulncheck-tests (blocking, sandboxed).
   govulncheck-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref }}
+          persist-credentials: false
+      - name: Run govulncheck
+        # golang/govulncheck-action is the official Go Security Team action.
+        # It handles Go setup internally and always uses the latest govulncheck.
+        # -format sarif exits 0 even when vulnerabilities are found, so the
+        # upload step always runs. The blocking check is in govulncheck-tests.
+        uses: golang/govulncheck-action@31f7c5463448f83528bd771c2d978d940080c9fd # master @ 2026-02-26
+        with:
+          output-format: sarif
+          output-file: govulncheck.sarif
+          go-version-input: stable
+          # Disable the action's implicit checkout — we already checked out the
+          # correct ref above with persist-credentials: false. Without this, the
+          # action re-runs actions/checkout with default credentials and the
+          # event ref, which can diverge from inputs.ref on workflow_call.
+          repo-checkout: false
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
+        with:
+          sarif_file: govulncheck.sarif
+          category: govulncheck
+      - name: Run govulncheck (OpenVEX)
+        if: always()
+        run: |-
+          govulncheck -format openvex \
+            ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
+            > govulncheck-raw.vex || true
+      - name: Patch OpenVEX author and product
+        if: always() && hashFiles('govulncheck-raw.vex') != ''
+        run: |-
+          MODULE_PATH=$(go list -m -f '{{ .Path }}' github.com/DataDog/dd-trace-go/v2)
+          COMMIT=$(git rev-parse HEAD)
+          VERSION=$(GOPROXY=direct GONOSUMDB="${MODULE_PATH}" go list -m -json "${MODULE_PATH}@${COMMIT}" | jq -r .Version)
+          PRODUCT="pkg:golang/${MODULE_PATH}@${VERSION}"
+          jq --arg author "security@datadoghq.com" \
+            --arg product "${PRODUCT}" \
+            '.author = $author | (.statements[]?.products[]?["@id"]) = $product' \
+            govulncheck-raw.vex > govulncheck.vex
+      - name: Upload OpenVEX artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: govulncheck-openvex
+          path: govulncheck.vex
+          if-no-files-found: warn
+
+  # Non-blocking: scans all contrib modules for vulnerabilities and uploads
+  # the merged SARIF to GitHub Code Scanning for Security tab visibility.
+  # Contrib vulns are also caught by govulncheck-tests (blocking, sandboxed).
+  govulncheck-contribs-analysis:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -57,21 +114,19 @@ jobs:
         with:
           go-version: stable
           cache-dependency-path: '**/go.sum'
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run govulncheck (SARIF)
-        # -format sarif exits 0 even when vulnerabilities are found, so the
-        # upload step always runs. The blocking check is in govulncheck-tests.
-        run: |-
-          govulncheck -format sarif \
-            ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
-            > govulncheck.sarif || true
-      - name: Upload SARIF to GitHub Code Scanning
+      - name: Run govulncheck on contrib modules (SARIF)
+        # Installs govulncheck and runs govulncheck-contribs-sarif.sh, which
+        # scans each contrib module and merges results into one SARIF file.
+        # -format sarif exits 0 even when vulnerabilities are found.
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          ./.github/workflows/apps/govulncheck-contribs-sarif.sh govulncheck-contribs.sarif
+      - name: Upload contrib SARIF to GitHub Code Scanning
         if: always()
         uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         with:
-          sarif_file: govulncheck.sarif
-          category: govulncheck
+          sarif_file: govulncheck-contribs.sarif
+          category: govulncheck-contribs
 
   # Blocking: fails the build if any reachable vulnerability is found.
   # Scans both core packages and all contrib modules (each with its own go.mod).
