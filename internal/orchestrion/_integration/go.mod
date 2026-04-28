@@ -6,7 +6,6 @@ require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/99designs/gqlgen v0.17.83
-	github.com/DataDog/datadog-agent/pkg/proto v0.77.0
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.9.0-dev
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.9.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
@@ -87,6 +86,7 @@ require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.77.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.77.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.77.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/proto v0.77.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.77.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/template v0.77.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace v0.77.0 // indirect

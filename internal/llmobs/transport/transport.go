@@ -74,6 +74,7 @@ type Transport struct {
 	agentURL       *url.URL
 	agentless      bool
 	appKey         string
+	testBaseURL    string // overrides all URL construction when non-empty
 }
 
 // New builds a new Transport for LLM Observability endpoints.
@@ -104,6 +105,7 @@ func New(cfg *config.Config) *Transport {
 		agentURL:       cfg.TracerConfig.AgentURL,
 		agentless:      cfg.ResolvedAgentlessEnabled,
 		appKey:         cfg.TracerConfig.APPKey,
+		testBaseURL:    cfg.TestBaseURL,
 	}
 }
 
@@ -144,6 +146,9 @@ func errStackTrace(err error) string {
 }
 
 func (c *Transport) baseURL(subdomain string) string {
+	if c.testBaseURL != "" {
+		return c.testBaseURL
+	}
 	if c.agentless {
 		return fmt.Sprintf("https://%s.%s", subdomain, c.site)
 	}

@@ -14,13 +14,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
 
 func TestIntentCapture(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	ctx := context.Background()
 
@@ -124,17 +123,8 @@ func TestIntentCapture(t *testing.T) {
 	// Received request also does not contain telemetry
 	assert.NotContains(t, receivedRequest.Params.Arguments, "telemetry")
 
-	spans := tt.WaitForLLMObsSpans(t, 2)
-	require.Len(t, spans, 2)
-
-	var toolSpan *testtracer.LLMObsSpan
-	for i := range spans {
-		if spans[i].Name == "calculator" {
-			toolSpan = &spans[i]
-		}
-	}
-
-	require.NotNil(t, toolSpan, "tool span not found")
+	tracer.Flush()
+	toolSpan := tt.RequireSpan(t, "calculator")
 
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 	assert.Equal(t, "calculator", toolSpan.Name)
