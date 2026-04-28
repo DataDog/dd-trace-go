@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
-	github.com/99designs/gqlgen v0.17.83
+	github.com/99designs/gqlgen v0.17.90
 	github.com/DataDog/datadog-agent/pkg/proto v0.77.0
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.9.0-dev
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.9.0-dev
@@ -62,7 +62,7 @@ require (
 	github.com/twmb/franz-go v1.21.0
 	github.com/valkey-io/valkey-go v1.0.74
 	github.com/valyala/fasthttp v1.58.0
-	github.com/vektah/gqlparser/v2 v2.5.31
+	github.com/vektah/gqlparser/v2 v2.5.33
 	github.com/xlab/treeprint v1.2.0
 	go.mongodb.org/mongo-driver v1.17.1
 	go.mongodb.org/mongo-driver/v2 v2.3.0
@@ -271,7 +271,7 @@ require (
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/mdelapenya/tlscert v0.2.0 // indirect
 	github.com/minio/highwayhash v1.0.4 // indirect
@@ -317,7 +317,7 @@ require (
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.10.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.3 // indirect
-	github.com/sosodev/duration v1.3.1 // indirect
+	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.42.0 // indirect
