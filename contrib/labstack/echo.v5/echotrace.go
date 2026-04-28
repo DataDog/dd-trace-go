@@ -27,16 +27,22 @@ func init() {
 }
 
 // Wrap configures the provided [echo.Echo] and returns it. This is a
-// convenience function that calls [echo.Echo.Use] with the [Middleware] and
-// overwrites [echo.Echo.OnAddRoute] to [OnAddRoute]. It is recommended
-// to use this if you want to benefit from future tracer features that require
-// additional properties to be configured without having to update your code.
+// convenience function that:
+//   - registers [Middleware] via [echo.Echo.Use],
+//   - sets [echo.Echo.OnAddRoute] to [OnAddRoute] for API Catalog reporting,
+//   - wraps [echo.Echo.Binder] to enable AppSec request-body monitoring.
+//
+// The Binder wrap is always applied so that AppSec body monitoring activates
+// correctly if AppSec is later enabled at runtime (e.g. via remote config).
+// When AppSec is disabled, the wrap is effectively a no-op.
+//
+// It is recommended to use this if you want to benefit from future tracer
+// features that require additional properties to be configured without having
+// to update your code.
 func Wrap(e *echo.Echo, opts ...Option) *echo.Echo {
 	e.Use(Middleware(opts...))
 	e.OnAddRoute = OnAddRoute
-	if instr.AppSecEnabled() {
-		e.Binder = &appsecBinder{inner: e.Binder}
-	}
+	e.Binder = &appsecBinder{inner: e.Binder}
 	return e
 }
 
