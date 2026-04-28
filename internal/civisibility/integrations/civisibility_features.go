@@ -71,6 +71,15 @@ var (
 
 	// uploadRepositoryChangesFunc is a must-not-call test seam used to prove offline/file modes suppress git upload.
 	uploadRepositoryChangesFunc = uploadRepositoryChanges
+
+	// getSearchCommitsFunc allows tests to exercise repository upload control flow without reading local git state.
+	getSearchCommitsFunc = getSearchCommits
+
+	// unshallowGitRepositoryFunc allows tests to control the fallback branch without mutating the local repository.
+	unshallowGitRepositoryFunc = utils.UnshallowGitRepository
+
+	// sendObjectsPackFileFunc allows tests to inspect the upload request without creating or sending real pack files.
+	sendObjectsPackFileFunc = sendObjectsPackFile
 )
 
 // ensureSettingsInitialization performs the one-time settings bootstrap, including any git upload work required before a final settings read.
@@ -380,7 +389,7 @@ func GetImpactedTestsAnalyzer() *impactedtests.ImpactedTestAnalyzer {
 // uploadRepositoryChanges discovers the commits and packfiles that must be uploaded so backend features can reason about the current repo state.
 func uploadRepositoryChanges() (bytes int64, err error) {
 	// get the search commits response
-	initialCommitData, err := getSearchCommits()
+	initialCommitData, err := getSearchCommitsFunc()
 	if err != nil {
 		return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err)
 	}
@@ -409,7 +418,7 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 	}
 
 	// there's some missing commits on the backend, first we need to check if we need to unshallow before sending anything...
-	hasBeenUnshallowed, err := utils.UnshallowGitRepository()
+	hasBeenUnshallowed, err := unshallowGitRepositoryFunc()
 	if err != nil || !hasBeenUnshallowed {
 		if err != nil {
 			log.Warn("%s", err.Error())
@@ -418,11 +427,11 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 		// the initial commit data
 
 		// send the pack file with the missing commits
-		return sendObjectsPackFile(initialCommitData.LocalCommits[0], initialMissingCommits, initialCommitData.RemoteCommits)
+		return sendObjectsPackFileFunc(initialCommitData.LocalCommits[0], initialMissingCommits, initialCommitData.RemoteCommits)
 	}
 
 	// after unshallowing the repository we need to get the search commits to calculate the missing commits again
-	commitsData, err := getSearchCommits()
+	commitsData, err := getSearchCommitsFunc()
 	if err != nil {
 		return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err)
 	}
@@ -433,7 +442,7 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 	}
 
 	// send the pack file with the missing commits
-	return sendObjectsPackFile(commitsData.LocalCommits[0], commitsData.missingCommits(), commitsData.RemoteCommits)
+	return sendObjectsPackFileFunc(commitsData.LocalCommits[0], commitsData.missingCommits(), commitsData.RemoteCommits)
 }
 
 // getSearchCommits gets the search commits response with the local and remote commits
