@@ -786,9 +786,9 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 			span := spans[0]
 
 			if tc.wantSameTraceID {
-				assert.Equal(t, root.Context().TraceIDLower(), span.TraceID())
+				assert.Equal(t, root.Context().TraceID(), span.Context().TraceID())
 			} else {
-				assert.NotEqual(t, root.Context().TraceIDLower(), span.TraceID())
+				assert.NotEqual(t, root.Context().TraceID(), span.Context().TraceID())
 			}
 
 			if tc.wantParentID {
