@@ -659,6 +659,7 @@ func benchmarkPayloadThroughput(count int, p float64) func(*testing.B) {
 	return func(b *testing.B) {
 		p := newPayload(p)
 		s := newBasicSpan("X")
+		spanCount := 0
 		s.meta.Set("key", strings.Repeat("X", 10*1024))
 		trace := make(spanList, count)
 		for i := range count {
@@ -667,11 +668,13 @@ func benchmarkPayloadThroughput(count int, p float64) func(*testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for b.Loop() {
-			p.reset()
+			p.clear()
 			for p.stats().size < payloadMaxLimit {
 				_, _ = p.push(trace)
+				spanCount += count
 			}
 		}
+		b.ReportMetric(float64(spanCount)/float64(b.N), "spans/op")
 	}
 }
 
