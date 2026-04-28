@@ -63,12 +63,12 @@ func newLowCardinalitySpanList(n int) spanList {
 	for i := range n {
 		list[i] = newBasicSpan("span.list." + itoa[i%5+1])
 		list[i].start = fixedTime
-		list[i].service = "high-cardinality-string-value"
+		list[i].service = "low-cardinality-string-value"
 		list[i].resource = "resource." + itoa[i%5+1]
-		list[i].SetTag("tag.1", "high-cardinality-string-value")
-		list[i].SetTag("tag.2", "high-cardinality-string-value")
-		list[i].SetTag("tag.3", "high-cardinality-string-value")
-		list[i].SetTag("tag.4", "high-cardinality-string-value")
+		list[i].SetTag("tag.1", "low-cardinality-string-value")
+		list[i].SetTag("tag.2", "low-cardinality-string-value")
+		list[i].SetTag("tag.3", "low-cardinality-string-value")
+		list[i].SetTag("tag.4", "low-cardinality-string-value")
 	}
 	return list
 }
