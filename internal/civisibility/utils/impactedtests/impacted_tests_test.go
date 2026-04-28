@@ -557,7 +557,7 @@ func TestIsImpactedConcurrentAccess(t *testing.T) {
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		wg.Go(func() {
 			assert.True(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 12, 14))
 			assert.False(t, analyzer.IsImpacted("test", "/workspace/pkg/source_test.go", 1, 2))
