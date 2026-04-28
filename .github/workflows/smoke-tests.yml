@@ -27,6 +27,7 @@ on:
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+  GOPROXY: "proxy.golang.org|direct" # fall back to `direct` in case of proxy issues
 
 permissions:
   id-token: write
