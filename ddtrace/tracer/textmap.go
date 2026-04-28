@@ -433,7 +433,6 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 				link := SpanLink{TraceID: extractedCtx.TraceIDLower(), SpanID: extractedCtx.SpanID(), TraceIDHigh: extractedCtx.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
 				if trace := extractedCtx.trace; trace != nil {
 					if p := trace.priority.Load(); p != nil && uint32(*p) > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
-
 						link.Flags = 1
 					} else {
 						link.Flags = 0
