@@ -474,7 +474,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		Service:    c.internalConfig.ServiceName(),
 		Version:    c.internalConfig.Version(),
 		AgentURL:   c.internalConfig.AgentURL(),
-		APIKey:     env.Get("DD_API_KEY"),
+		APIKey:     c.internalConfig.APIKey(),
 		APPKey:     env.Get("DD_APP_KEY"),
 		HTTPClient: c.httpClient,
 		Site:       env.Get("DD_SITE"),
