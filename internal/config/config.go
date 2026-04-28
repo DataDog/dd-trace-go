@@ -280,7 +280,7 @@ func loadConfig() *Config {
 	}
 
 	// Datadog API key for agentless endpoints (LLM Obs, telemetry, etc.).
-	cfg.apiKey = p.GetString("DD_API_KEY", "")
+	cfg.apiKey = env.Get("DD_API_KEY")
 
 	return cfg
 }
