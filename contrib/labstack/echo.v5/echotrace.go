@@ -40,11 +40,10 @@ func Wrap(e *echo.Echo, opts ...Option) *echo.Echo {
 	return e
 }
 
-// Middleware returns echo middleware which will trace incoming requests.
-//
-// Deprecated: Use of the [Wrap] function is recommended instead of directly calling
-// [echo.Echo.Use] with this middleware function, as [Wrap] activates all
-// available features automatically.
+// Middleware returns echo middleware that traces incoming requests. Prefer
+// [Wrap] for typical setups — it also enables route registration tracking and
+// AppSec body monitoring. Use Middleware directly when you need scoped tracing
+// (e.g. on a sub-group) or when those features should not be enabled globally.
 func Middleware(opts ...Option) echo.MiddlewareFunc {
 	cfg := new(config)
 	defaults(cfg)
