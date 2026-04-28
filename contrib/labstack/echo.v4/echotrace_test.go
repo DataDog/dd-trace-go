@@ -721,7 +721,7 @@ func TestWithErrorCheck(t *testing.T) {
 }
 
 // TestPropagationBehaviorExtract is an integration test verifying DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT
-// through a real HTTP middleware stack. 
+// through a real HTTP middleware stack.
 // Echotrace was used because it was
 // already available; any HTTP middleware integration would work equivalently.
 func TestPropagationBehaviorExtract(t *testing.T) {
