@@ -396,11 +396,14 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 		return 0, nil
 	}
 
-	// If:
-	//   - we have local commits
-	//   - there are not missing commits (backend has the total number of local commits already)
-	// then we are good to go with it, we don't need to check if we need to unshallow or anything and just go with that.
-	if initialCommitData.hasCommits() && len(initialCommitData.missingCommits()) == 0 {
+	// Calculate the initial missing commits once and reuse the same ordered list if
+	// the repository cannot be unshallowed. missingCommits walks the local and
+	// remote commit lists, so calling it twice here would repeat identical work.
+	initialMissingCommits := initialCommitData.missingCommits()
+
+	// If there are not missing commits (backend has the total number of local commits already), then we are good to go
+	// with it, we don't need to check if we need to unshallow or anything and just go with that.
+	if len(initialMissingCommits) == 0 {
 		log.Debug("civisibility: initial commit data has everything already, we don't need to upload anything")
 		return 0, nil
 	}
@@ -415,7 +418,7 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 		// the initial commit data
 
 		// send the pack file with the missing commits
-		return sendObjectsPackFile(initialCommitData.LocalCommits[0], initialCommitData.missingCommits(), initialCommitData.RemoteCommits)
+		return sendObjectsPackFile(initialCommitData.LocalCommits[0], initialMissingCommits, initialCommitData.RemoteCommits)
 	}
 
 	// after unshallowing the repository we need to get the search commits to calculate the missing commits again
