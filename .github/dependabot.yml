@@ -8,7 +8,11 @@ updates:
   - package-ecosystem: "github-actions"
     directories:
       - "/"
-      - "/.github/actions/*"
+      - "/.github/actions/codecov-upload"
+      - "/.github/actions/dd-ci-upload"
+      - "/.github/actions/pr-status-updater"
+      - "/.github/actions/setup-go"
+      - "/.github/actions/supported_configurations_validation"
     schedule:
       interval: "weekly"
       day: "monday"
