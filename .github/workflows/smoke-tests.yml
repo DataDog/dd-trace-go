@@ -55,24 +55,29 @@ jobs:
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
-      - name: go get -u
-        run: |-
-          mkdir -p "$TEST_RESULTS"
-          # shellcheck disable=SC2086
-          go get -u -t $PACKAGES
-          go mod tidy
-          find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
-
-      - name: Install requested go-libddwaf version
-        if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
-        run: |-
-          go get -u -t github.com/DataDog/go-libddwaf/v4@${{ inputs.go-libddwaf-ref }}
-          go mod tidy
-
-      - name: Compile dd-trace-go
-        run: |
-          # shellcheck disable=SC2086
-          go build $PACKAGES
+      - name: Compile dd-trace-go with updated dependencies (sandboxed)
+        # go get -u executes dependency code from the network. Keep those
+        # changes inside the gVisor sandbox; this setup job only needs to prove
+        # the updated dependency graph still compiles.
+        uses: geomys/sandboxed-step@v1.2.1
+        with:
+          env: |
+            GOPROXY=${{ env.GOPROXY }}
+            GO_LIBDDWAF_REF=${{ inputs.go-libddwaf-ref }}
+            PACKAGES=${{ env.PACKAGES }}
+            TEST_RESULTS=${{ env.TEST_RESULTS }}
+          run: |-
+            mkdir -p "$TEST_RESULTS"
+            # shellcheck disable=SC2086
+            go get -u -t $PACKAGES
+            go mod tidy
+            find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
+            if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
+              go get -u -t "github.com/DataDog/go-libddwaf/v4@${GO_LIBDDWAF_REF}"
+              go mod tidy
+            fi
+            # shellcheck disable=SC2086
+            go build $PACKAGES
 
       - name: Compute Matrix
         id: matrix
@@ -92,6 +97,8 @@ jobs:
         chunk: ${{ fromJson(needs.setup-env.outputs.matrix) }}
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
+    env:
+      TEST_RESULTS: ${{ github.workspace }}/test-results
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -108,19 +115,50 @@ jobs:
           go-version: stable
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
-      - name: Test contribs
+      - name: Test contribs (sandboxed)
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
+        # The smoke script runs go get -u inside each contrib module, so run it
+        # in gVisor and persist only the generated reports/coverage for uploads.
+        uses: geomys/sandboxed-step@v1.2.1
+        with:
+          persist-workspace-changes: 'true'
+          env: |
+            GOPROXY=${{ env.GOPROXY }}
+            TEST_RESULTS=${{ env.TEST_RESULTS }}
+          run: |-
+            export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
+            ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+      - name: Restore workspace after sandbox
+        id: restore
+        if: always()
         run: |-
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+          artifacts=$(mktemp -d)
+          if [ -d "${TEST_RESULTS}" ]; then
+            cp -a "${TEST_RESULTS}" "${artifacts}/test-results"
+          fi
+          coverage_list="${artifacts}/coverage-files.txt"
+          find . -type f \( -name 'coverage*.txt' -o -name 'profile.cov' \) -print > "${coverage_list}"
+          if [ -s "${coverage_list}" ]; then
+            tar -cf "${artifacts}/coverage.tar" -T "${coverage_list}"
+          fi
+          git reset --hard HEAD
+          git clean -fdx
+          if [ -d "${artifacts}/test-results" ]; then
+            mkdir -p "$(dirname "${TEST_RESULTS}")"
+            cp -a "${artifacts}/test-results" "${TEST_RESULTS}"
+          fi
+          if [ -f "${artifacts}/coverage.tar" ]; then
+            tar -xf "${artifacts}/coverage.tar"
+          fi
       - name: Get Datadog credentials
         id: dd-sts
+        if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
-        if: always()
+        if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
@@ -128,7 +166,7 @@ jobs:
           path: ${{ env.TEST_RESULTS }}
           tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
       - name: Upload Coverage
-        if: always()
+        if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
         uses: ./.github/actions/codecov-upload
         with:
