@@ -179,10 +179,12 @@ type ContextMetrics struct {
 
 	// SumRASPCalls is the sum of all the RASP calls made by the WAF whatever the rasp rule type it is.
 	SumRASPCalls atomic.Uint32
-	// SumWAFErrors is the sum of all the WAF errors that happened not in the RASP scope.
-	SumWAFErrors atomic.Uint32
-	// SumRASPErrors is the sum of all the RASP errors that happened in the RASP scope.
-	SumRASPErrors atomic.Uint32
+	// WAFErrorCode is the closest-to-zero (least-negative) ddwaf_run error code seen in the WAF scope.
+	// Zero means no error occurred. See RFC-1012.
+	WAFErrorCode atomic.Int32
+	// RASPErrorCodes holds the closest-to-zero ddwaf_run error code per RASP rule type.
+	// Zero means no error occurred for that rule type. See RFC-1012.
+	RASPErrorCodes [len(addresses.RASPRuleTypes)]atomic.Int32
 
 	// SumWAFTimeouts is the sum of all the WAF timeouts that happened not in the RASP scope.
 	SumWAFTimeouts atomic.Uint32
@@ -375,16 +377,30 @@ func (m *ContextMetrics) IncWafError(addrs libddwaf.RunAddressData, in error) {
 // meaning if the error actual come for the bindings and not from the WAF itself
 const defaultWafErrorCode = -127
 
+// updateClosestToZero atomically sets target to the closer-to-zero of its current
+// value and code. Codes are always ≤ 0; zero is the sentinel "no error".
+func updateClosestToZero(target *atomic.Int32, code int32) {
+	for {
+		current := target.Load()
+		if current != 0 && code <= current {
+			return // current is already closer to (or as close as) zero
+		}
+		if target.CompareAndSwap(current, code) {
+			return
+		}
+	}
+}
+
 func (m *ContextMetrics) wafError(in error) {
-	m.SumWAFErrors.Add(1)
 	errCode := defaultWafErrorCode
 	if code := waferrors.ToWafErrorCode(in); code != 0 {
 		errCode = code
 	}
+	updateClosestToZero(&m.WAFErrorCode, int32(errCode))
 
 	handle, _ := m.wafErrorCount.LoadOrCompute(errCode, func() telemetry.MetricHandle {
 		return telemetry.Count(telemetry.NamespaceAppSec, "waf.error", append([]string{
-			"error_code:" + strconv.Itoa(errCode),
+			"waf_error:" + strconv.Itoa(errCode),
 		}, m.baseTags...))
 	})
 
@@ -392,15 +408,15 @@ func (m *ContextMetrics) wafError(in error) {
 }
 
 func (m *ContextMetrics) raspError(in error, ruleType addresses.RASPRuleType) {
-	m.SumRASPErrors.Add(1)
 	errCode := defaultWafErrorCode
 	if code := waferrors.ToWafErrorCode(in); code != 0 {
 		errCode = code
 	}
+	updateClosestToZero(&m.RASPErrorCodes[ruleType], int32(errCode))
 
 	handle, _ := m.raspErrorCount.LoadOrCompute(raspMetricKey[int]{typ: ruleType, additionalTag: errCode}, func() telemetry.MetricHandle {
 		return telemetry.Count(telemetry.NamespaceAppSec, "rasp.error", append([]string{
-			"error_code:" + strconv.Itoa(errCode),
+			"waf_error:" + strconv.Itoa(errCode),
 		}, m.baseRASPTags[ruleType]...))
 	})
 
