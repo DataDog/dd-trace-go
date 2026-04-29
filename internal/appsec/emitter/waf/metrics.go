@@ -70,6 +70,8 @@ type HandleMetrics struct {
 	raspTimeout [len(addresses.RASPRuleTypes)]telemetry.MetricHandle
 	// raspRuleEval holds the telemetry metrics for the `rasp.rule_eval` metric by rule type
 	raspRuleEval [len(addresses.RASPRuleTypes)]telemetry.MetricHandle
+	// raspRuleSkipped holds the `rasp.rule.skipped` count metric, lazily filled by rule_type+reason
+	raspRuleSkipped *xsync.MapOf[raspMetricKey[string], telemetry.MetricHandle]
 
 	// Rare metric types
 
@@ -132,6 +134,7 @@ func NewMetricsInstance(newHandle *libddwaf.Handle, eventRulesVersion string) Ha
 		wafErrorCount:           xsync.NewMapOf[int, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(2^3)),
 		raspErrorCount:          xsync.NewMapOf[raspMetricKey[int], telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(2^3)),
 		raspRuleMatch:           xsync.NewMapOf[raspMetricKey[string], telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(2^3)),
+		raspRuleSkipped:         xsync.NewMapOf[raspMetricKey[string], telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(2^3)),
 	}
 
 	for ruleType := range metrics.baseRASPTags {
@@ -388,6 +391,17 @@ func (m *ContextMetrics) wafError(in error) {
 		}, m.baseTags...))
 	})
 
+	handle.Submit(1)
+}
+
+// SkipRASPRule records a skipped RASP rule evaluation for the given rule type and reason.
+// Valid reasons per RFC-1012: "app-startup", "before-request", "after-request", "out-of-request".
+func (m *ContextMetrics) SkipRASPRule(ruleType addresses.RASPRuleType, reason string) {
+	handle, _ := m.raspRuleSkipped.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: reason}, func() telemetry.MetricHandle {
+		return telemetry.Count(telemetry.NamespaceAppSec, "rasp.rule.skipped", append([]string{
+			"reason:" + reason,
+		}, m.baseRASPTags[ruleType]...))
+	})
 	handle.Submit(1)
 }
 
