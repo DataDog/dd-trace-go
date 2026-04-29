@@ -15,7 +15,6 @@ on:
     branches:
       - release-v*
       - main
-      - hannahkm/silence-smoke-tests
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -157,7 +156,6 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           # shellcheck disable=SC2086
           gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-smoke-tracer.xml" -- -v $PACKAGES
-          exit 1
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
         if: always()
