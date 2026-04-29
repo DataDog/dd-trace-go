@@ -37,9 +37,12 @@ const (
 )
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
-func AddRulesMonitoringTags(th trace.TagSetter) {
+func AddRulesMonitoringTags(th trace.TagSetter, rcClientID string) {
 	th.SetTag(wafVersionTag, libddwaf.Version())
 	th.SetTag(ext.ManualKeep, samplernames.AppSec)
+	if rcClientID != "" {
+		th.SetTag("_dd.rc.client_id", rcClientID)
+	}
 }
 
 func addDownwardRequestTag(th trace.TagSetter, value int) {

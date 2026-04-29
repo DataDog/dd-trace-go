@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/limiter"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
@@ -36,6 +37,7 @@ type Feature struct {
 	supportedAddrs  config.AddressSet
 	rulesVersion    string
 	reportRulesTags sync.Once
+	rcClientID      string
 
 	telemetryMetrics waf.HandleMetrics
 
@@ -83,6 +85,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		telemetryMetrics:    telemetryMetrics,
 		metaStructAvailable: cfg.MetaStructAvailable,
 		rulesVersion:        rulesVersion,
+		rcClientID:          remoteconfig.ClientID(),
 	}
 
 	dyngo.On(rootOp, feature.onStart)
@@ -93,7 +96,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 
 func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	waf.reportRulesTags.Do(func() {
-		AddRulesMonitoringTags(op)
+		AddRulesMonitoringTags(op, waf.rcClientID)
 	})
 
 	ctx, err := waf.handle.NewContext(timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))

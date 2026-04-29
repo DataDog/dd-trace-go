@@ -32,7 +32,7 @@ const (
 // Test that internal functions used to set span tags use the correct types
 func TestTagsTypes(t *testing.T) {
 	th := make(trace.TestTagSetter)
-	AddRulesMonitoringTags(&th)
+	AddRulesMonitoringTags(&th, "")
 
 	metrics := &emitter.ContextMetrics{
 		SumDurations: map[addresses.Scope]map[timer.Key]*atomic.Int64{
@@ -70,4 +70,18 @@ func TestTagsTypes(t *testing.T) {
 	slices.Sort(expectedTags)
 
 	require.Equal(t, expectedTags, slices.Sorted(maps.Keys(tags)))
+}
+
+func TestAddRulesMonitoringTagsRCClientID(t *testing.T) {
+	t.Run("with_client_id", func(t *testing.T) {
+		th := make(trace.TestTagSetter)
+		AddRulesMonitoringTags(&th, "test-client-id")
+		require.Equal(t, "test-client-id", th.Tags()["_dd.rc.client_id"])
+	})
+	t.Run("without_client_id", func(t *testing.T) {
+		th := make(trace.TestTagSetter)
+		AddRulesMonitoringTags(&th, "")
+		_, ok := th.Tags()["_dd.rc.client_id"]
+		require.False(t, ok)
+	})
 }
