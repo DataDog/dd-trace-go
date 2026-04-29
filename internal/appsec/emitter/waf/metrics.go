@@ -184,6 +184,11 @@ type ContextMetrics struct {
 	// SumRASPErrors is the sum of all the RASP errors that happened in the RASP scope.
 	SumRASPErrors atomic.Uint32
 
+	// exceptionOnce ensures the first exception type/message wins for the span tags.
+	exceptionOnce sync.Once
+	exceptionType string
+	exceptionMsg  string
+
 	// SumWAFTimeouts is the sum of all the WAF timeouts that happened not in the RASP scope.
 	SumWAFTimeouts atomic.Uint32
 
@@ -351,29 +356,65 @@ func (m *ContextMetrics) IncWafError(addrs libddwaf.RunAddressData, in error) {
 	}
 
 	if !errors.Is(in, waferrors.ErrTimeout) {
-		logger := m.logger.With(telemetry.WithTags(m.baseTags))
-		// This a known error origin all the ways to the tip of the error chain and since it impact WAF
-		// behavior we really want to log it so we can investigate it so we don't wrap it in a safe error
-		logger.Error("unexpected WAF error", slog.Any("error", telemetrylog.NewSafeError(in)))
+		switch addrs.TimerKey {
+		case addresses.RASPScope:
+			m.RecordException(ExceptionTypeRASP, in)
+		default:
+			m.RecordException(ExceptionTypeWAF, in)
+		}
 	}
 
 	switch addrs.TimerKey {
 	case addresses.RASPScope:
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
-			m.logger.Error("unexpected call to RASPRuleTypeFromAddressSet", slog.Any("error", telemetrylog.NewSafeError(in)))
+			m.RecordException(ExceptionTypeInstrumentation, in)
 		}
 		m.raspError(in, ruleType)
 	case addresses.WAFScope, "":
 		m.wafError(in)
 	default:
-		m.logger.Error("unexpected scope name", slog.String("scope", string(addrs.TimerKey)))
+		m.RecordException(ExceptionTypeInstrumentation, in)
 	}
 }
 
 // defaultWafErrorCode is the default error code if the error does not implement [libddwaf.RunError]
 // meaning if the error actual come for the bindings and not from the WAF itself
 const defaultWafErrorCode = -127
+
+// Exception log_type constants per RFC-1012.
+const (
+	ExceptionTypeWAF             = "appsec::waf::exception"
+	ExceptionTypeRASP            = "appsec::rasp::exception"
+	ExceptionTypeInstrumentation = "appsec::instrumentation::exception"
+)
+
+const maxExceptionMsgBytes = 512
+
+// RecordException records the first exception that occurred during a request's WAF execution.
+// The span tags _dd.appsec.error.type and _dd.appsec.error.message are set once per request
+// (first-error-wins). All calls emit a telemetry log with the RFC-1012 log_type and a stack trace.
+func (m *ContextMetrics) RecordException(errType string, err error) {
+	m.exceptionOnce.Do(func() {
+		m.exceptionType = errType
+		msg := err.Error()
+		if len(msg) > maxExceptionMsgBytes {
+			msg = string([]byte(msg)[:maxExceptionMsgBytes])
+		}
+		m.exceptionMsg = msg
+	})
+	logger := m.logger.With(
+		telemetry.WithTags([]string{"log_type:" + errType}),
+		telemetry.WithStacktrace(),
+	)
+	logger.Error("appsec exception", slog.Any("error", telemetrylog.NewSafeError(err)))
+}
+
+// ExceptionType returns the errType from the first RecordException call, or empty string if none.
+func (m *ContextMetrics) ExceptionType() string { return m.exceptionType }
+
+// ExceptionMsg returns the (truncated) error message from the first RecordException call.
+func (m *ContextMetrics) ExceptionMsg() string { return m.exceptionMsg }
 
 func (m *ContextMetrics) wafError(in error) {
 	m.SumWAFErrors.Add(1)

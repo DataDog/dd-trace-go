@@ -67,6 +67,11 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 		th.SetTag(wafErrorTag, wafErrorsCount)
 	}
 
+	if errType := metrics.ExceptionType(); errType != "" {
+		th.SetTag("_dd.appsec.error.type", errType)
+		th.SetTag("_dd.appsec.error.message", metrics.ExceptionMsg())
+	}
+
 	// Add metrics like `waf.duration` and `rasp.duration_ext`
 	for scope, value := range timerStats {
 		th.SetTag(wafSpanTagPrefix+string(scope)+durationExtSuffix, float64(value.Nanoseconds())/float64(time.Microsecond.Nanoseconds()))
