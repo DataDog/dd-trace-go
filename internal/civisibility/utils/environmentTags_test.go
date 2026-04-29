@@ -108,6 +108,7 @@ func TestAddCIMetricsMap(t *testing.T) {
 
 func TestGetRelativePathFromCITagsSourceRoot(t *testing.T) {
 	ResetCITags()
+	t.Cleanup(ResetCITags)
 	originalCiTags = map[string]string{constants.CIWorkspacePath: "/ci/workspace"}
 
 	absPath := "/ci/workspace/subdir/file.txt"
@@ -115,6 +116,16 @@ func TestGetRelativePathFromCITagsSourceRoot(t *testing.T) {
 
 	relPath := GetRelativePathFromCITagsSourceRoot(absPath)
 	assert.Equal(t, expectedRelPath, relPath)
+
+	outsidePath := "/tmp/build/file.txt"
+	expectedOutsideRelPath, err := filepath.Rel("/ci/workspace", outsidePath)
+	assert.NoError(t, err)
+	relPath = GetRelativePathFromCITagsSourceRoot(outsidePath)
+	assert.Equal(t, filepath.ToSlash(expectedOutsideRelPath), relPath)
+
+	modulePath := "github.com/myorg/myrepo/pkg/file_test.go"
+	relPath = GetRelativePathFromCITagsSourceRoot(modulePath)
+	assert.Equal(t, modulePath, relPath)
 
 	// Test case when CIWorkspacePath is not set in ciTags
 	originalCiTags = map[string]string{}
