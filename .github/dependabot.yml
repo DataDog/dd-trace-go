@@ -27,8 +27,6 @@ updates:
       prefix: "chore(deps)"
     labels:
       - "dependencies"
-    # Deny running untrusted code from external actions during Dependabot PRs.
-    insecure-external-code-execution: deny
     cooldown:
       default-days: 2
 
