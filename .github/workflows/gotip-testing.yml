@@ -52,7 +52,7 @@ jobs:
       - name: Run tests with gotip (sandboxed)
         # gotip pulls and runs the latest Go toolchain. Keep that toolchain and
         # the test process inside gVisor, persisting only reports/coverage.
-        uses: geomys/sandboxed-step@v1.2.1
+        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
         with:
           persist-workspace-changes: 'true'
           env: |

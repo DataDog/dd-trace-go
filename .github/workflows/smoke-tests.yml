@@ -59,7 +59,7 @@ jobs:
         # go get -u executes dependency code from the network. Keep those
         # changes inside the gVisor sandbox; this setup job only needs to prove
         # the updated dependency graph still compiles.
-        uses: geomys/sandboxed-step@v1.2.1
+        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
         with:
           env: |
             GOPROXY=${{ env.GOPROXY }}
@@ -119,7 +119,7 @@ jobs:
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
         # The smoke script runs go get -u inside each contrib module, so run it
         # in gVisor and persist only the generated reports/coverage for uploads.
-        uses: geomys/sandboxed-step@v1.2.1
+        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
         with:
           persist-workspace-changes: 'true'
           env: |

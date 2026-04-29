@@ -120,7 +120,7 @@ jobs:
         # Installs govulncheck and runs govulncheck-contribs-sarif.sh, which
         # scans each contrib module and merges results into one SARIF file.
         # -format sarif exits 0 even when vulnerabilities are found.
-        uses: geomys/sandboxed-step@v1.2.1
+        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
         with:
           run: |-
             go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -150,7 +150,7 @@ jobs:
       - name: Run govulncheck (sandboxed)
         # geomys/sandboxed-step uses gVisor to confine execution, preventing
         # supply chain attacks from exfiltrating tokens or making network calls.
-        uses: geomys/sandboxed-step@v1.2.1
+        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
         with:
           run: |
             go install golang.org/x/vuln/cmd/govulncheck@latest
