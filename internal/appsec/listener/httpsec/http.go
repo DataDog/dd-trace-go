@@ -102,6 +102,10 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 		}
 	}
 	telemetry.Count(telemetry.NamespaceAppSec, "api_security.request."+metric, []string{"framework:" + op.Framework()}).Submit(1)
+
+	if feature.APISec.Enabled && op.Route() == "" {
+		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + op.Framework()}).Submit(1)
+	}
 }
 
 // shouldExtractShema checks that API Security is enabled and that sampling rate
