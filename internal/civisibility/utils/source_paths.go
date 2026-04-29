@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -123,8 +124,8 @@ func trimLogicalPrefix(logicalPath, prefix string) (string, bool) {
 	if logicalPath == prefix {
 		return "", true
 	}
-	if strings.HasPrefix(logicalPath, prefix+"/") {
-		return strings.TrimPrefix(logicalPath, prefix+"/"), true
+	if suffix, ok := strings.CutPrefix(logicalPath, prefix+"/"); ok {
+		return suffix, true
 	}
 	return "", false
 }
@@ -158,8 +159,8 @@ func stripConfirmedSemanticImportVersion(relativePath, repoPrefix, mainModulePat
 		return relativePath
 	}
 	if moduleDir == "" {
-		if strings.HasPrefix(relativePath, version+"/") {
-			return strings.TrimPrefix(relativePath, version+"/")
+		if suffix, ok := strings.CutPrefix(relativePath, version+"/"); ok {
+			return suffix
 		}
 		return relativePath
 	}
@@ -219,12 +220,10 @@ func parseSCPStyleRepositoryURL(repositoryURL string) (host string, repositoryPa
 	if strings.Contains(repositoryURL, "://") {
 		return "", "", false
 	}
-	colonIndex := strings.Index(repositoryURL, ":")
-	if colonIndex == -1 {
+	hostPart, repositoryPath, ok := strings.Cut(repositoryURL, ":")
+	if !ok {
 		return "", "", false
 	}
-	hostPart := repositoryURL[:colonIndex]
-	repositoryPath = repositoryURL[colonIndex+1:]
 	if atIndex := strings.LastIndex(hostPart, "@"); atIndex != -1 {
 		hostPart = hostPart[atIndex+1:]
 	}
@@ -257,12 +256,10 @@ func isWorkspaceRelativeLogicalPath(logicalPath string) bool {
 	if logicalPath == "" || strings.HasPrefix(logicalPath, "../") || logicalPath == ".." {
 		return false
 	}
-	for _, segment := range strings.Split(logicalPath, "/") {
-		if segment == ".." {
-			return false
-		}
-	}
 	segments := strings.Split(logicalPath, "/")
+	if slices.Contains(segments, "..") {
+		return false
+	}
 	if len(segments) >= 3 && strings.ContainsAny(segments[0], ".:@") {
 		return false
 	}
