@@ -339,7 +339,7 @@ jobs:
               "text": "Smoke Tests Failed",
               "linux_result": "${{ needs.setup-requirements-linux.result }}",
               "core_result": "${{ needs.smoke-test-tracer.result }}",
-              "contrib_result": "${{ needs.setup-env.result }}",
+              "contrib_result": "${{ needs.go-get-u.result }}",
               "blocks": [
                 {
                   "type": "header",
