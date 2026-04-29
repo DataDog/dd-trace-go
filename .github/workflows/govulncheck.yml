@@ -123,7 +123,9 @@ jobs:
         uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
         with:
           run: |-
-            go install golang.org/x/vuln/cmd/govulncheck@latest
+            mkdir -p "${GITHUB_WORKSPACE}/bin"
+            GOBIN="${GITHUB_WORKSPACE}/bin" go install golang.org/x/vuln/cmd/govulncheck@latest
+            export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
             ./.github/workflows/apps/govulncheck-contribs-sarif.sh govulncheck-contribs.sarif
       - name: Upload contrib SARIF to GitHub Code Scanning
         if: always()
@@ -153,6 +155,8 @@ jobs:
         uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
         with:
           run: |
-            go install golang.org/x/vuln/cmd/govulncheck@latest
+            mkdir -p "${GITHUB_WORKSPACE}/bin"
+            GOBIN="${GITHUB_WORKSPACE}/bin" go install golang.org/x/vuln/cmd/govulncheck@latest
+            export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
             govulncheck ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/...
             ./.github/workflows/apps/govulncheck-contribs-v2.sh
