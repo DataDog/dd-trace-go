@@ -51,6 +51,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs libddwaf.Ru
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
 	rateLimited := op.AddEvents(result.Events...)
 	blocking := actions.SendActionEvents(eventReceiver, result.Actions)
+	blockFailed := op.IsBlockFailed()
 	op.AbsorbDerivatives(result.Derivatives)
 
 	// Set the trace to ManualKeep if the WAF instructed us to keep it.
@@ -63,7 +64,8 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs libddwaf.Ru
 	}
 
 	op.metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
-		requestBlocked: blocking,
+		requestBlocked: blocking && !blockFailed,
+		blockFailed:    blockFailed,
 		ruleTriggered:  result.HasEvents(),
 		wafTimeout:     wafTimeout,
 		rateLimited:    rateLimited,

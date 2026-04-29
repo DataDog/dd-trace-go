@@ -31,7 +31,7 @@ var changeToWafUpdates sync.Once
 // RequestMilestones is a list of things that can happen as a result of a waf call. They are stacked for each requests
 // and used as tags to the telemetry metric `waf.requests`.
 // this struct can be modified concurrently.
-// TODO: add request_excluded and block_failure to the mix once we have the capability to track them
+// TODO: add request_excluded to the mix once we have the capability to track it (blocked on libddwaf)
 type RequestMilestones struct {
 	requestBlocked bool
 	ruleTriggered  bool
@@ -39,7 +39,11 @@ type RequestMilestones struct {
 	rateLimited    bool
 	wafError       bool
 	inputTruncated bool
+	blockFailed    bool
 }
+
+// BlockFailed reports whether a WAF-requested block could not be honoured by the framework.
+func (m RequestMilestones) BlockFailed() bool { return m.blockFailed }
 
 // raspMetricKey is used as a cache key for the metrics having tags depending on the RASP rule type
 type raspMetricKey[T any] struct {
@@ -272,6 +276,7 @@ func (m *ContextMetrics) incWafRequestsCounts() {
 			"rate_limited:" + strconv.FormatBool(m.Milestones.rateLimited),
 			"waf_error:" + strconv.FormatBool(m.Milestones.wafError),
 			"input_truncated:" + strconv.FormatBool(m.Milestones.inputTruncated),
+			"block_failure:" + strconv.FormatBool(m.Milestones.blockFailed),
 		}, m.baseTags...))
 	})
 
@@ -304,8 +309,10 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, timerStat
 		}
 		if tags.ruleTriggered {
 			blockTag := "block:irrelevant"
-			if tags.requestBlocked { // TODO: add block:failure to the mix
+			if tags.requestBlocked {
 				blockTag = "block:success"
+			} else if tags.blockFailed {
+				blockTag = "block:failure"
 			}
 
 			handle, _ := m.raspRuleMatch.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: blockTag}, func() telemetry.MetricHandle {
@@ -322,6 +329,9 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, timerStat
 	case addresses.WAFScope, "":
 		if tags.requestBlocked {
 			m.Milestones.requestBlocked = true
+		}
+		if tags.blockFailed {
+			m.Milestones.blockFailed = true
 		}
 		if tags.ruleTriggered {
 			m.Milestones.ruleTriggered = true
