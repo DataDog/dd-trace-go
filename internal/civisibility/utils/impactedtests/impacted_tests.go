@@ -8,9 +8,9 @@ package impactedtests
 import (
 	"fmt"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
@@ -25,18 +25,69 @@ type (
 		bitmap []byte // coverage bitmap
 	}
 
-	// ImpactedTestAnalyzer is a struct that holds information about impacted tests.
+	// ImpactedTestAnalyzer is a struct that holds information about impacted tests. It caches
+	// prepared diff data and impacted decisions, so analyzers should be used by pointer and must
+	// not be copied after first use.
 	ImpactedTestAnalyzer struct {
-		modifiedFiles    []fileWithBitmap
+		modifiedFiles []fileWithBitmap
+
+		// modifiedFilesOnce protects preparation of modifiedFiles. modifiedFiles remains the
+		// source of truth until this preparation runs; after that, preparedModifiedFiles is the
+		// analyzer-local snapshot used by IsImpacted.
+		modifiedFilesOnce sync.Once
+
+		// preparedModifiedFiles preserves the original modifiedFiles order because impacted-test
+		// matching is suffix-based and first-match-wins. Bitmap byte slices are referenced, not
+		// deep-copied, because diff data is immutable after analyzer creation in production.
+		preparedModifiedFiles []preparedModifiedFile
+
+		// decisionCache stores per-analyzer impacted decisions. testName is intentionally not part
+		// of the cache key because it only affects debug logging, not the decision.
+		decisionCache sync.Map
+
 		currentCommitSha string
 		baseCommitSha    string
 	}
+
+	// preparedModifiedFile is the per-analyzer representation used by IsImpacted after modified
+	// file preparation has run. The bitmap field shares the original immutable bitmap bytes.
+	preparedModifiedFile struct {
+		file   string
+		bitmap []byte
+	}
+
+	// impactCacheKey identifies an impacted-test decision for one source range.
+	impactCacheKey struct {
+		sourceFile string
+		startLine  int
+		endLine    int
+	}
+
+	// impactCacheEntry stores a cached impacted-test decision plus enough context to replay
+	// observable debug log fragments on cache hits.
+	impactCacheEntry struct {
+		impacted    bool
+		matchedFile string
+		reason      impactDecisionReason
+	}
+
+	// impactDecisionReason explains which branch produced a cached impacted-test decision.
+	impactDecisionReason uint8
 
 	// lineRange represents a tuple of start and end line numbers.
 	lineRange struct {
 		start int
 		end   int
 	}
+)
+
+const (
+	// impactDecisionNoMatch means either no file matched or a matched file had no intersecting lines.
+	impactDecisionNoMatch impactDecisionReason = iota
+	// impactDecisionNoLineInfo means the file matched but either side lacked usable line details.
+	impactDecisionNoLineInfo
+	// impactDecisionLineIntersection means the test range intersects modified lines.
+	impactDecisionLineIntersection
 )
 
 // Precompiled regex for diff header and line changes.
@@ -91,60 +142,82 @@ func NewImpactedTestAnalyzer() (*ImpactedTestAnalyzer, error) {
 	}
 
 	logger.Debug("civisibility.ImpactedTests: loaded [from: %s to %s]: %v", baseCommitSha, currentCommitSha, modifiedFiles) //nolint:gocritic // File list debug logging
-	return &ImpactedTestAnalyzer{
+	analyzer := &ImpactedTestAnalyzer{
 		modifiedFiles:    modifiedFiles,
 		currentCommitSha: currentCommitSha,
 		baseCommitSha:    baseCommitSha,
-	}, nil
+	}
+	analyzer.getPreparedModifiedFiles()
+	return analyzer, nil
 }
 
 // IsImpacted checks if a test is impacted based on the modified files and their line ranges.
 func (a *ImpactedTestAnalyzer) IsImpacted(testName string, sourceFile string, startLine int, endLine int) bool {
-	if len(a.modifiedFiles) == 0 {
+	if sourceFile == "" {
 		return false
 	}
 
-	// Has the test been modified?
-	modified := false
-
-	// Get the test impact information
-	testFiles := getTestImpactInfo(sourceFile, startLine, endLine)
-	if len(testFiles) == 0 {
+	modifiedFiles := a.getPreparedModifiedFiles()
+	if len(modifiedFiles) == 0 {
 		return false
 	}
+	validateImpactedLineRange(startLine, endLine)
 
-	for _, testFile := range testFiles {
-		if testFile == nil || testFile.file == "" {
+	cacheKey := impactCacheKey{
+		sourceFile: sourceFile,
+		startLine:  startLine,
+		endLine:    endLine,
+	}
+	if cached, ok := a.decisionCache.Load(cacheKey); ok {
+		entry := cached.(impactCacheEntry)
+		logImpactDecision(testName, entry)
+		return entry.impacted
+	}
+
+	for _, modifiedFile := range modifiedFiles {
+		if modifiedFile.file == "" {
 			continue
 		}
 
-		modifiedFileIndex := slices.IndexFunc(a.modifiedFiles, func(file fileWithBitmap) bool {
-			if file.file == "" {
-				return false
-			}
-			return strings.HasSuffix(testFile.file, file.file)
-		})
-		if modifiedFileIndex >= 0 {
-			modifiedFile := a.modifiedFiles[modifiedFileIndex]
-			logger.Debug("civisibility.ImpactedTests: DiffFile found: %s...", modifiedFile.file)
-			if testFile.bitmap == nil || modifiedFile.bitmap == nil {
-				logger.Debug("civisibility.ImpactedTests: No line info found")
-				modified = true
-				break
+		if strings.HasSuffix(sourceFile, modifiedFile.file) {
+			logDiffFileFound(modifiedFile.file)
+			if startLine == 0 || endLine == 0 || modifiedFile.bitmap == nil {
+				logNoLineInfo()
+				entry := impactCacheEntry{
+					impacted:    true,
+					matchedFile: modifiedFile.file,
+					reason:      impactDecisionNoLineInfo,
+				}
+				a.decisionCache.Store(cacheKey, entry)
+				return true
 			}
 
-			testFileBitmap := filebitmap.NewFileBitmapFromBytes(testFile.bitmap)
-			modifiedFileBitmap := filebitmap.NewFileBitmapFromBytes(modifiedFile.bitmap)
-
-			if testFileBitmap.IntersectsWith(modifiedFileBitmap) {
-				logger.Debug("civisibility.ImpactedTests: Intersecting lines. Marking test %s as modified.", testName)
-				modified = true
-				break
+			if bitmapIntersectsLineRange(modifiedFile.bitmap, startLine, endLine) {
+				logLineIntersection(testName)
+				entry := impactCacheEntry{
+					impacted:    true,
+					matchedFile: modifiedFile.file,
+					reason:      impactDecisionLineIntersection,
+				}
+				a.decisionCache.Store(cacheKey, entry)
+				return true
 			}
+
+			entry := impactCacheEntry{
+				impacted:    false,
+				matchedFile: modifiedFile.file,
+				reason:      impactDecisionNoMatch,
+			}
+			a.decisionCache.Store(cacheKey, entry)
+			return false
 		}
 	}
 
-	return modified
+	a.decisionCache.Store(cacheKey, impactCacheEntry{
+		impacted: false,
+		reason:   impactDecisionNoMatch,
+	})
+	return false
 }
 
 // getGitDiffFrom retrieves the diff files and lines from the Git CLI.
@@ -161,28 +234,6 @@ func getGitDiffFrom(baseCommitSha string, currentCommitSha string) []fileWithBit
 		logger.Debug("civisibility.ImpactedTests: No diff files found from Git CLI")
 	}
 	return modifiedFiles
-}
-
-// getTestImpactInfo returns the test impact information based on the tags.
-func getTestImpactInfo(sourceFile string, startLine int, endLine int) []*fileWithBitmap {
-	result := make([]*fileWithBitmap, 0)
-	if sourceFile == "" {
-		return result
-	}
-
-	// Milestone 1: Return only the test definition file
-	file := &fileWithBitmap{file: sourceFile}
-	result = append(result, file)
-
-	// Milestone 1.5: Return the test definition lines
-	if startLine == 0 || endLine == 0 {
-		return result
-	}
-
-	bitmap := filebitmap.FromActiveRange(startLine, endLine)
-	file.bitmap = bitmap.GetBuffer()
-
-	return result
 }
 
 // parseGitDiffOutput parses the git diff output to extract modified files and their changed lines.
@@ -259,6 +310,114 @@ func parseGitDiffOutput(output string) []fileWithBitmap {
 	}
 
 	return fileChanges
+}
+
+// prepareModifiedFiles creates the analyzer-local modified-file snapshot used by IsImpacted.
+func prepareModifiedFiles(files []fileWithBitmap) []preparedModifiedFile {
+	prepared := make([]preparedModifiedFile, len(files))
+	for i, file := range files {
+		prepared[i] = preparedModifiedFile{
+			file:   file.file,
+			bitmap: file.bitmap,
+		}
+	}
+	return prepared
+}
+
+// getPreparedModifiedFiles returns the analyzer-local modified-file snapshot.
+func (a *ImpactedTestAnalyzer) getPreparedModifiedFiles() []preparedModifiedFile {
+	a.modifiedFilesOnce.Do(func() {
+		a.preparedModifiedFiles = prepareModifiedFiles(a.modifiedFiles)
+	})
+	return a.preparedModifiedFiles
+}
+
+// logImpactDecision replays the debug log fragments that are observable from IsImpacted.
+func logImpactDecision(testName string, entry impactCacheEntry) {
+	if entry.matchedFile != "" {
+		logDiffFileFound(entry.matchedFile)
+	}
+	switch entry.reason {
+	case impactDecisionNoLineInfo:
+		logNoLineInfo()
+	case impactDecisionLineIntersection:
+		logLineIntersection(testName)
+	}
+}
+
+// logDiffFileFound emits the existing diff-match debug log without allocating when debug logs
+// are disabled.
+func logDiffFileFound(file string) {
+	if logger.DebugEnabled() {
+		logger.Debug("civisibility.ImpactedTests: DiffFile found: %s...", file)
+	}
+}
+
+// logNoLineInfo emits the existing missing-line-info debug log without allocating when debug
+// logs are disabled.
+func logNoLineInfo() {
+	if logger.DebugEnabled() {
+		logger.Debug("civisibility.ImpactedTests: No line info found")
+	}
+}
+
+// logLineIntersection emits the existing line-intersection debug log without allocating when
+// debug logs are disabled.
+func logLineIntersection(testName string) {
+	if logger.DebugEnabled() {
+		logger.Debug("civisibility.ImpactedTests: Intersecting lines. Marking test %s as modified.", testName)
+	}
+}
+
+// bitmapIntersectsLineRange reports whether bitmap has any active bit in the inclusive
+// 1-indexed line range. It uses the same MSB-first byte layout as filebitmap.Set.
+func bitmapIntersectsLineRange(bitmap []byte, startLine int, endLine int) bool {
+	if startLine == 0 || endLine == 0 {
+		return false
+	}
+	validateImpactedLineRange(startLine, endLine)
+	if len(bitmap) == 0 {
+		return false
+	}
+
+	maxLine := len(bitmap) * 8
+	if startLine > maxLine {
+		return false
+	}
+	if endLine > maxLine {
+		endLine = maxLine
+	}
+
+	startBit := startLine - 1
+	endBit := endLine - 1
+	startByte := startBit / 8
+	endByte := endBit / 8
+	startOffset := startBit % 8
+	endOffset := endBit % 8
+
+	firstMask := byte(0xff >> startOffset)
+	lastMask := byte(0xff << (7 - endOffset))
+	if startByte == endByte {
+		return bitmap[startByte]&(firstMask&lastMask) != 0
+	}
+
+	if bitmap[startByte]&firstMask != 0 {
+		return true
+	}
+	for i := startByte + 1; i < endByte; i++ {
+		if bitmap[i] != 0 {
+			return true
+		}
+	}
+	return bitmap[endByte]&lastMask != 0
+}
+
+// validateImpactedLineRange preserves the range validation behavior previously
+// provided by filebitmap.FromActiveRange for non-zero line ranges.
+func validateImpactedLineRange(startLine int, endLine int) {
+	if startLine != 0 && endLine != 0 && (startLine <= 0 || endLine < startLine) {
+		panic("Invalid range")
+	}
 }
 
 // splitLines splits the text into lines, ignoring empty lines.

@@ -28,8 +28,12 @@ func resetCIVisibilityStateForTesting() {
 	sourceFileMetadataCache = sync.Map{}
 
 	uploadRepositoryChangesFunc = uploadRepositoryChanges
+	getSearchCommitsFunc = getSearchCommits
+	unshallowGitRepositoryFunc = utils.UnshallowGitRepository
+	sendObjectsPackFileFunc = sendObjectsPackFile
 
 	utils.ResetCITags()
 	utils.ResetCIMetrics()
+	utils.ResetCodeOwnersForTesting()
 	bazel.ResetForTesting()
 }
