@@ -48,11 +48,20 @@ func compressionStrategy(pt ProfileType, isDelta bool, config string) (compressi
 	if config == "" || config == "legacy" {
 		return legacyCompressionStrategy(pt, isDelta)
 	}
-	algorithm, levelStr, _ := strings.Cut(config, "-")
+	algorithmStr, levelStr, _ := strings.Cut(config, "-")
+	algorithm := compressionAlgorithm(algorithmStr)
 	// Don't bother checking the error. We'll get zero which represents the
 	// default, and we we assume this is only going to get used internally
 	level, _ := strconv.Atoi(levelStr)
-	return inputCompression(pt, isDelta), compression{algorithm: compressionAlgorithm(algorithm), level: level}
+	if levelStr == "" {
+		switch algorithm {
+		case compressionAlgorithmGzip:
+			level = gzip6Compression.level
+		case compressionAlgorithmZstd:
+			level = zstdCompression.level
+		}
+	}
+	return inputCompression(pt, isDelta), compression{algorithm: algorithm, level: level}
 }
 
 // inputCompression maps the given profile type and isDelta flavor to the
@@ -170,6 +179,14 @@ func (b *compressionPipelineBuilder) Build(in compression, out compression) (com
 		return b.getZstdEncoder(getZstdLevelOrDefault(out.level))
 	}
 
+	if in.algorithm == compressionAlgorithmGzip && out.algorithm == compressionAlgorithmGzip {
+		gzipOut, err := kgzip.NewWriterLevel(nil, out.level)
+		if err != nil {
+			return nil, err
+		}
+		return newGzipRecompressor(gzipOut), nil
+	}
+
 	if in.algorithm == compressionAlgorithmGzip && out.algorithm == compressionAlgorithmZstd {
 		encoder, err := b.getZstdEncoder(getZstdLevelOrDefault(out.level))
 		if err != nil {
@@ -209,6 +226,43 @@ func (r *passthroughCompressor) Reset(w io.Writer) {
 
 func (r *passthroughCompressor) Close() error {
 	return nil
+}
+
+func newGzipRecompressor(gzipOut *kgzip.Writer) *gzipRecompressor {
+	return &gzipRecompressor{gzipOut: gzipOut, err: make(chan error)}
+}
+
+type gzipRecompressor struct {
+	// err synchronizes finishing writes after closing pw and reports any
+	// error during recompression
+	err     chan error
+	pw      io.WriteCloser
+	gzipOut *kgzip.Writer
+}
+
+func (r *gzipRecompressor) Reset(w io.Writer) {
+	r.gzipOut.Reset(w)
+	pr, pw := io.Pipe()
+	go func() {
+		gzr, err := kgzip.NewReader(pr)
+		if err != nil {
+			r.err <- err
+			return
+		}
+		_, err = io.Copy(r.gzipOut, gzr)
+		r.err <- err
+	}()
+	r.pw = pw
+}
+
+func (r *gzipRecompressor) Write(p []byte) (int, error) {
+	return r.pw.Write(p)
+}
+
+func (r *gzipRecompressor) Close() error {
+	r.pw.Close()
+	err := <-r.err
+	return cmp.Or(err, r.gzipOut.Close())
 }
 
 func newZstdRecompressor(encoder *sharedZstdEncoder) *zstdRecompressor {
