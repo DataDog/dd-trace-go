@@ -31,13 +31,14 @@ import (
 )
 
 type Feature struct {
-	timeout         time.Duration
-	limiter         *limiter.TokenTicker
-	handle          *libddwaf.Handle
-	supportedAddrs  config.AddressSet
-	rulesVersion    string
-	reportRulesTags sync.Once
-	rcClientID      string
+	timeout             time.Duration
+	limiter             *limiter.TokenTicker
+	handle              *libddwaf.Handle
+	supportedAddrs      config.AddressSet
+	rulesVersion        string
+	reportRulesTags     sync.Once
+	rcClientID          string
+	blockingUnavailable bool
 
 	telemetryMetrics waf.HandleMetrics
 
@@ -55,7 +56,10 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 			return nil, fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		logger := telemetrylog.With(telemetry.WithTags([]string{"product:appsec"}))
+		logger := telemetrylog.With(
+			telemetry.WithTags([]string{"product:appsec", "log_type:" + waf.ExceptionTypeWAF}),
+			telemetry.WithStacktrace(),
+		)
 		logger.Warn("appsec: non-critical error while loading libddwaf", slog.Any("error", telemetrylog.NewSafeError(err)))
 	}
 
@@ -86,6 +90,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		metaStructAvailable: cfg.MetaStructAvailable,
 		rulesVersion:        rulesVersion,
 		rcClientID:          remoteconfig.ClientID(),
+		blockingUnavailable: cfg.BlockingUnavailable,
 	}
 
 	dyngo.On(rootOp, feature.onStart)
@@ -115,12 +120,19 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	waf.SetupActionHandlers(op)
 }
 
-func (*Feature) SetupActionHandlers(op *waf.ContextOperation) {
-	// Set the blocking tag on the operation when a blocking event is received
+func (f *Feature) SetupActionHandlers(op *waf.ContextOperation) {
+	// Set the blocking tag on the operation when a blocking event is received.
+	// When blocking is unavailable the framework cannot honour the block: record it as
+	// a block failure instead so the backend knows blocking was attempted but failed.
 	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
-		log.Debug("appsec: blocking event detected")
-		op.SetTag(blockedRequestTag, true)
-		op.SetRequestBlocked()
+		if f.blockingUnavailable {
+			log.Debug("appsec: blocking event detected but blocking is unavailable")
+			op.SetBlockFailed()
+		} else {
+			log.Debug("appsec: blocking event detected")
+			op.SetTag(blockedRequestTag, true)
+			op.SetRequestBlocked()
+		}
 	})
 
 	// Register the stacktrace if one is requested by a WAF action

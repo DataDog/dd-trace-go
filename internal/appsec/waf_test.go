@@ -90,6 +90,7 @@ func TestCustomRules(t *testing.T) {
 				"waf_version:" + libddwaf.Version(),
 				"event_rules_version:1.4.2",
 				"input_truncated:false",
+				"block_failure:false",
 			}
 			countBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get()
 
@@ -439,6 +440,7 @@ func TestBlocking(t *testing.T) {
 				"waf_version:" + libddwaf.Version(),
 				"event_rules_version:1.4.2",
 				"input_truncated:false",
+				"block_failure:false",
 			}
 			countBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get()
 
