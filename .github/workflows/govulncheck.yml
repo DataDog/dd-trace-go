@@ -122,13 +122,20 @@ jobs:
         # -format sarif exits 0 even when vulnerabilities are found.
         uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
         with:
+          persist-workspace-changes: 'true'
           run: |-
             mkdir -p "${GITHUB_WORKSPACE}/bin"
             GOBIN="${GITHUB_WORKSPACE}/bin" go install golang.org/x/vuln/cmd/govulncheck@latest
             export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
             ./.github/workflows/apps/govulncheck-contribs-sarif.sh govulncheck-contribs.sarif
-      - name: Upload contrib SARIF to GitHub Code Scanning
+      - name: Restore workspace after sandbox
+        id: restore
         if: always()
+        run: |-
+          git reset --hard HEAD
+          git clean -fdx -e govulncheck-contribs.sarif
+      - name: Upload contrib SARIF to GitHub Code Scanning
+        if: always() && steps.restore.outcome == 'success' && hashFiles('govulncheck-contribs.sarif') != ''
         uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         with:
           sarif_file: govulncheck-contribs.sarif
