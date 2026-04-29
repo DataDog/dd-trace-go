@@ -337,6 +337,7 @@ jobs:
           payload: |
             {
               "text": "Smoke Tests Failed",
+              "linux_result": "${{ needs.setup-requirements-linux.result }}",
               "core_result": "${{ needs.smoke-test-tracer.result }}",
               "contrib_result": "${{ needs.setup-env.result }}",
               "blocks": [
@@ -372,7 +373,7 @@ jobs:
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "*Setup Env Result:*\n${{ needs.setup-env.result }}"
+                      "text": "*Contrib Test Result:*\n${{ needs.go-get-u.result }}"
                     },
                   ]
                 }
