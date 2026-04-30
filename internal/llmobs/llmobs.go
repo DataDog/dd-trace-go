@@ -144,12 +144,12 @@ type LLMObs struct {
 	bufEvalMetrics    []*transport.LLMObsMetric
 
 	// lifecycle
-	mu          sync.Mutex
-	running     bool
-	sendWg      sync.WaitGroup // tracks in-flight batchSend goroutines
-	workerDone  chan struct{}   // closed when the worker loop exits
-	stopCh      chan struct{}   // signal stop
-	flushNowCh  chan chan struct{}
+	mu            sync.Mutex
+	running       bool
+	sendWg        sync.WaitGroup // tracks in-flight batchSend goroutines
+	workerDone    chan struct{}  // closed when the worker loop exits
+	stopCh        chan struct{}  // signal stop
+	flushNowCh    chan chan struct{}
 	flushInterval time.Duration
 }
 
@@ -295,12 +295,14 @@ func (l *LLMObs) Run() {
 				params := l.clearBuffersNonLocked()
 				l.sendWg.Add(1)
 				go func() {
+					defer func() {
+						l.sendWg.Done()
+						if done != nil {
+							l.sendWg.Wait()
+							close(done)
+						}
+					}()
 					l.batchSend(params)
-					l.sendWg.Done()
-					if done != nil {
-						l.sendWg.Wait()
-						close(done)
-					}
 				}()
 
 			case <-l.stopCh:

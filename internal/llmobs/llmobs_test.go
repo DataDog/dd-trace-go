@@ -2410,7 +2410,7 @@ func TestFlushSync(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			for i := 0; i < 20; i++ {
+			for range 20 {
 				ll.FlushSync()
 			}
 		}()
