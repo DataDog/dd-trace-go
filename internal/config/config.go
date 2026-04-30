@@ -279,7 +279,6 @@ func loadConfig() *Config {
 		cfg.reportHostname = true
 	}
 
-	// Datadog API key for agentless endpoints (LLM Obs, telemetry, etc.).
 	cfg.apiKey = env.Get("DD_API_KEY")
 
 	return cfg

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	// "github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
