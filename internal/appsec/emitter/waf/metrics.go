@@ -7,6 +7,7 @@ package waf
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -190,10 +191,12 @@ type ContextMetrics struct {
 	// Zero means no error occurred for that rule type. See RFC-1012.
 	RASPErrorCodes [len(addresses.RASPRuleTypes)]atomic.Int32
 
-	// exceptionOnce ensures the first exception type/message wins for the span tags.
+	// exceptionOnce + exception store the first exception atomically.
+	// sync.Once serialises the write; atomic.Pointer makes the stored value
+	// visible to readers (e.g. AddWAFMonitoringTags) without a happens-before
+	// relationship to the Once.Do call.
 	exceptionOnce sync.Once
-	exceptionType string
-	exceptionMsg  string
+	exception     atomic.Pointer[exceptionRecord]
 
 	// SumWAFTimeouts is the sum of all the WAF timeouts that happened not in the RASP scope.
 	SumWAFTimeouts atomic.Uint32
@@ -374,14 +377,14 @@ func (m *ContextMetrics) IncWafError(addrs libddwaf.RunAddressData, in error) {
 	case addresses.RASPScope:
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
-			m.RecordException(ExceptionTypeInstrumentation, in)
+			m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unknown RASP rule type for addresses %v: %w", addrs, in))
 			return
 		}
 		m.raspError(in, ruleType)
 	case addresses.WAFScope, "":
 		m.wafError(in)
 	default:
-		m.RecordException(ExceptionTypeInstrumentation, in)
+		m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unexpected WAF error scope %q: %w", addrs.TimerKey, in))
 	}
 }
 
@@ -412,17 +415,18 @@ const (
 
 const maxExceptionMsgBytes = 512
 
+type exceptionRecord struct{ typ, msg string }
+
 // RecordException records the first exception that occurred during a request's WAF execution.
 // The span tags _dd.appsec.error.type and _dd.appsec.error.message are set once per request
 // (first-error-wins). All calls emit a telemetry log with the RFC-1012 log_type and a stack trace.
 func (m *ContextMetrics) RecordException(errType string, err error) {
 	m.exceptionOnce.Do(func() {
-		m.exceptionType = errType
 		msg := err.Error()
 		if len(msg) > maxExceptionMsgBytes {
 			msg = strings.ToValidUTF8(msg[:maxExceptionMsgBytes], "")
 		}
-		m.exceptionMsg = msg
+		m.exception.Store(&exceptionRecord{typ: errType, msg: msg})
 	})
 	logger := m.logger.With(
 		telemetry.WithTags([]string{"log_type:" + errType}),
@@ -432,10 +436,20 @@ func (m *ContextMetrics) RecordException(errType string, err error) {
 }
 
 // ExceptionType returns the errType from the first RecordException call, or empty string if none.
-func (m *ContextMetrics) ExceptionType() string { return m.exceptionType }
+func (m *ContextMetrics) ExceptionType() string {
+	if r := m.exception.Load(); r != nil {
+		return r.typ
+	}
+	return ""
+}
 
 // ExceptionMsg returns the (truncated) error message from the first RecordException call.
-func (m *ContextMetrics) ExceptionMsg() string { return m.exceptionMsg }
+func (m *ContextMetrics) ExceptionMsg() string {
+	if r := m.exception.Load(); r != nil {
+		return r.msg
+	}
+	return ""
+}
 func (m *ContextMetrics) wafError(in error) {
 	errCode := defaultWafErrorCode
 	if code := waferrors.ToWafErrorCode(in); code != 0 {
