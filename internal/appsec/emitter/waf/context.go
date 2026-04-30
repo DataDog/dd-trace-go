@@ -45,8 +45,6 @@ type (
 		metrics *ContextMetrics
 		// requestBlocked is used to track if the request has been requestBlocked by the WAF or not.
 		requestBlocked bool
-		// blockFailed is set when the WAF requested a block but the framework could not honour it.
-		blockFailed bool
 		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices, and requestBlocked.
 		mu sync.Mutex
 		// logOnce is used to log a warning once when a request has too many WAF events via the built-in limiter or the max value.
@@ -104,20 +102,6 @@ func (op *ContextOperation) SetRequestBlocked() {
 	op.mu.Lock()
 	defer op.mu.Unlock()
 	op.requestBlocked = true
-}
-
-// SetBlockFailed records that the WAF requested a block but the framework could not honour it.
-func (op *ContextOperation) SetBlockFailed() {
-	op.mu.Lock()
-	defer op.mu.Unlock()
-	op.blockFailed = true
-}
-
-// IsBlockFailed reports whether the WAF requested a block that the framework could not honour.
-func (op *ContextOperation) IsBlockFailed() bool {
-	op.mu.Lock()
-	defer op.mu.Unlock()
-	return op.blockFailed
 }
 
 // AddEvents adds WAF events to the operation and returns true if the operation has reached the maximum number of events, by the limiter or the max value.

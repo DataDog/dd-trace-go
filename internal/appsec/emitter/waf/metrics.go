@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,11 +40,7 @@ type RequestMilestones struct {
 	rateLimited    bool
 	wafError       bool
 	inputTruncated bool
-	blockFailed    bool
 }
-
-// BlockFailed reports whether a WAF-requested block could not be honoured by the framework.
-func (m RequestMilestones) BlockFailed() bool { return m.blockFailed }
 
 // raspMetricKey is used as a cache key for the metrics having tags depending on the RASP rule type
 type raspMetricKey[T any] struct {
@@ -286,7 +283,6 @@ func (m *ContextMetrics) incWafRequestsCounts() {
 			"rate_limited:" + strconv.FormatBool(m.Milestones.rateLimited),
 			"waf_error:" + strconv.FormatBool(m.Milestones.wafError),
 			"input_truncated:" + strconv.FormatBool(m.Milestones.inputTruncated),
-			"block_failure:" + strconv.FormatBool(m.Milestones.blockFailed),
 		}, m.baseTags...))
 	})
 
@@ -321,8 +317,6 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, timerStat
 			blockTag := "block:irrelevant"
 			if tags.requestBlocked {
 				blockTag = "block:success"
-			} else if tags.blockFailed {
-				blockTag = "block:failure"
 			}
 
 			handle, _ := m.raspRuleMatch.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: blockTag}, func() telemetry.MetricHandle {
@@ -339,9 +333,6 @@ func (m *ContextMetrics) RegisterWafRun(addrs libddwaf.RunAddressData, timerStat
 	case addresses.WAFScope, "":
 		if tags.requestBlocked {
 			m.Milestones.requestBlocked = true
-		}
-		if tags.blockFailed {
-			m.Milestones.blockFailed = true
 		}
 		if tags.ruleTriggered {
 			m.Milestones.ruleTriggered = true
@@ -384,6 +375,7 @@ func (m *ContextMetrics) IncWafError(addrs libddwaf.RunAddressData, in error) {
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
 			m.RecordException(ExceptionTypeInstrumentation, in)
+			return
 		}
 		m.raspError(in, ruleType)
 	case addresses.WAFScope, "":
@@ -428,7 +420,7 @@ func (m *ContextMetrics) RecordException(errType string, err error) {
 		m.exceptionType = errType
 		msg := err.Error()
 		if len(msg) > maxExceptionMsgBytes {
-			msg = string([]byte(msg)[:maxExceptionMsgBytes])
+			msg = strings.ToValidUTF8(msg[:maxExceptionMsgBytes], "")
 		}
 		m.exceptionMsg = msg
 	})

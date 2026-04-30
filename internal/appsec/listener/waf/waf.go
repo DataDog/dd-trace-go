@@ -31,14 +31,12 @@ import (
 )
 
 type Feature struct {
-	timeout             time.Duration
-	limiter             *limiter.TokenTicker
-	handle              *libddwaf.Handle
-	supportedAddrs      config.AddressSet
-	rulesVersion        string
-	reportRulesTags     sync.Once
-	rcClientID          string
-	blockingUnavailable bool
+	timeout         time.Duration
+	limiter         *limiter.TokenTicker
+	handle          *libddwaf.Handle
+	supportedAddrs  config.AddressSet
+	rulesVersion    string
+	reportRulesTags sync.Once
 
 	telemetryMetrics waf.HandleMetrics
 
@@ -89,8 +87,6 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 		telemetryMetrics:    telemetryMetrics,
 		metaStructAvailable: cfg.MetaStructAvailable,
 		rulesVersion:        rulesVersion,
-		rcClientID:          remoteconfig.ClientID(),
-		blockingUnavailable: cfg.BlockingUnavailable,
 	}
 
 	dyngo.On(rootOp, feature.onStart)
@@ -101,7 +97,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 
 func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	waf.reportRulesTags.Do(func() {
-		AddRulesMonitoringTags(op, waf.rcClientID)
+		AddRulesMonitoringTags(op, remoteconfig.ClientID())
 	})
 
 	ctx, err := waf.handle.NewContext(timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))
@@ -121,18 +117,10 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 }
 
 func (f *Feature) SetupActionHandlers(op *waf.ContextOperation) {
-	// Set the blocking tag on the operation when a blocking event is received.
-	// When blocking is unavailable the framework cannot honour the block: record it as
-	// a block failure instead so the backend knows blocking was attempted but failed.
 	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
-		if f.blockingUnavailable {
-			log.Debug("appsec: blocking event detected but blocking is unavailable")
-			op.SetBlockFailed()
-		} else {
-			log.Debug("appsec: blocking event detected")
-			op.SetTag(blockedRequestTag, true)
-			op.SetRequestBlocked()
-		}
+		log.Debug("appsec: blocking event detected")
+		op.SetTag(blockedRequestTag, true)
+		op.SetRequestBlocked()
 	})
 
 	// Register the stacktrace if one is requested by a WAF action

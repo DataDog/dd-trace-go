@@ -103,7 +103,7 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 	}
 	telemetry.Count(telemetry.NamespaceAppSec, "api_security.request."+metric, []string{"framework:" + op.Framework()}).Submit(1)
 
-	if feature.APISec.Enabled && op.Route() == "" {
+	if feature.APISec.Enabled && op.Route() == "" && resp.StatusCode != 404 {
 		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + op.Framework()}).Submit(1)
 	}
 }
