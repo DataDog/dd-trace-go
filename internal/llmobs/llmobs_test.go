@@ -2380,4 +2380,44 @@ func TestFlushSync(t *testing.T) {
 			llmobs.FlushSync()
 		})
 	})
+	t.Run("waits-for-data-queued-by-flush", func(t *testing.T) {
+		// Flush() triggers batchSend asynchronously. If FlushSync() is called
+		// right after, it should still block until that batchSend completes.
+		// Without a fix, FlushSync gets an already-empty buffer (Flush cleared
+		// it) and returns immediately while the in-flight batchSend is still running.
+		const delay = 200 * time.Millisecond
+		_, ll := testTracer(t, testtracer.WithRequestDelay(delay))
+
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "test-span", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		ll.Flush()
+		start := time.Now()
+		ll.FlushSync()
+		elapsed := time.Since(start)
+
+		assert.GreaterOrEqual(t, elapsed, delay-20*time.Millisecond,
+			"FlushSync should block until the batchSend triggered by the preceding Flush completes")
+	})
+	t.Run("does-not-hang-after-stop", func(t *testing.T) {
+		_, ll := testTracer(t)
+		ll.Stop()
+
+		// After Stop, stopCh is closed and the worker is gone. FlushSync's select
+		// has two ready cases: <-stopCh and flushNowCh<-done (buffered, empty).
+		// Go picks randomly, so loop to reliably hit the flushNowCh branch —
+		// without the fix that branch blocks forever on <-done.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for i := 0; i < 20; i++ {
+				ll.FlushSync()
+			}
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("FlushSync hung after Stop")
+		}
+	})
 }
