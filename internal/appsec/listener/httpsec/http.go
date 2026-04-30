@@ -103,7 +103,11 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 	}
 	telemetry.Count(telemetry.NamespaceAppSec, "api_security.request."+metric, []string{"framework:" + op.Framework()}).Submit(1)
 
-	if feature.APISec.Enabled && op.Route() == "" && resp.StatusCode != 404 {
+	// Only emit for 2xx: redirects (3xx) and errors (4xx/5xx) legitimately have
+	// no route in routing-capable frameworks (e.g. gin trailing-slash redirects,
+	// 404 no-match).  A framework that genuinely lacks routing will still trigger
+	// this metric for its successful responses.
+	if feature.APISec.Enabled && op.Route() == "" && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + op.Framework()}).Submit(1)
 	}
 }
