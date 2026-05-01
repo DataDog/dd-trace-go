@@ -971,38 +971,3 @@ func (c *Config) TraceID128BitEnabled() bool {
 	defer c.mu.RUnlock()
 	return c.traceID128BitEnabled
 }
-
-// SpanStartSnapshot bundles the config fields read by tracer.StartSpan so a single
-// RLock can fetch them all, instead of one RLock per field. The savings are not
-// from blocking — these are all readers — but from cache-line contention on the
-// RWMutex's reader counter at high concurrency.
-type SpanStartSnapshot struct {
-	ServiceName             string
-	Env                     string
-	Version                 string
-	Hostname                string
-	ReportHostname          bool
-	DebugStack              bool
-	DebugAbandonedSpans     bool
-	ProfilerHotspotsEnabled bool
-	ProfilerEndpoints       bool
-}
-
-// SpanStartSnapshot returns a snapshot of the config fields read by tracer.StartSpan.
-// Captured under a single RLock; service mappings are not included because the lookup
-// key (the resolved span service) isn't known until after this snapshot is read.
-func (c *Config) SpanStartSnapshot() SpanStartSnapshot {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return SpanStartSnapshot{
-		ServiceName:             c.serviceName,
-		Env:                     c.env,
-		Version:                 c.version,
-		Hostname:                c.hostname,
-		ReportHostname:          c.reportHostname,
-		DebugStack:              c.debugStack,
-		DebugAbandonedSpans:     c.debugAbandonedSpans,
-		ProfilerHotspotsEnabled: c.profilerHotspots,
-		ProfilerEndpoints:       c.profilerEndpoints,
-	}
-}
