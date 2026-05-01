@@ -37,6 +37,8 @@ func TestNewCompressionPipeline(t *testing.T) {
 		{noCompression, noCompression, plainData, plainData},
 		{gzip1Compression, gzip1Compression, gzip1Data, gzip1Data},
 		{gzip6Compression, gzip6Compression, gzip6Data, gzip6Data},
+		{gzip1Compression, gzip6Compression, gzip1Data, gzip6Data},
+		{gzip6Compression, gzip1Compression, gzip6Data, gzip1Data},
 		{gzip1Compression, zstdCompression, gzip1Data, zstdData},
 		{gzip6Compression, zstdCompression, gzip6Data, zstdData},
 	}
@@ -94,6 +96,15 @@ func TestDebugCompressionEnv(t *testing.T) {
 		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "gzip")
 		p := startTestProfiler(t, 1, WithProfileTypes(HeapProfile, BlockProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
 		r, err := gzip.NewReader(bytes.NewReader(p.attachments["delta-heap.pprof"]))
+		require.NoError(t, err)
+		_, err = io.Copy(io.Discard, r)
+		require.NoError(t, err)
+	})
+
+	t.Run("explicit-gzip-already-gzipped-input", func(t *testing.T) {
+		t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "gzip")
+		p := startTestProfiler(t, 1, WithProfileTypes(CPUProfile), WithPeriod(time.Millisecond)).ReceiveProfile(t)
+		r, err := gzip.NewReader(bytes.NewReader(p.attachments["cpu.pprof"]))
 		require.NoError(t, err)
 		_, err = io.Copy(io.Discard, r)
 		require.NoError(t, err)
