@@ -123,6 +123,8 @@ func (p *payloadV04) reset() {
 func (p *payloadV04) clear() {
 	p.buf = bytes.Buffer{}
 	p.reader = nil
+	atomic.StoreUint32(&p.count, 0)
+	p.off = 8
 }
 
 // grow grows the buffer to ensure it can accommodate n more bytes.
