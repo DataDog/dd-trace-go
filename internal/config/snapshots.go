@@ -9,15 +9,11 @@
 // on the RWMutex's reader counter when many goroutines call the hot path
 // concurrently.
 //
-// Convention: one bespoke struct + method per caller. A generic
-// Snapshot(fields...) API would either box values through interface{} (costly
-// in a hot path) or expose unexported fields through a callback (no win over
-// adding a method here directly). Add a new struct + method below when a new
-// hot path needs more than ~3 fields under lock.
+// Add a new struct + method below when a new hot path needs more than ~3 fields
+// under the lock.
 
 package config
 
-// SpanStartSnapshot holds the config fields read by tracer.StartSpan.
 type SpanStartSnapshot struct {
 	ServiceName             string
 	Env                     string

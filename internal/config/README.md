@@ -62,6 +62,6 @@ for attempt := 0; attempt <= sendRetries; attempt++ {
 When a hot path reads ~3+ `Config` fields, define a snapshot struct + method in `snapshots.go` and have the caller read from the local copy.
 
 - **Why**: at high concurrency the bottleneck isn't blocking — readers don't block each other — but cache-line contention on `sync.RWMutex`'s reader counter. Folding N `RLock` pairs into 1 collapses N atomic ops on a shared cache line into 1.
-- **Convention**: one bespoke struct per caller. Don't build a generic `Snapshot(fields...)` API — see the comment at the top of `snapshots.go` for the reasoning.
+- **Convention**: one bespoke struct per caller (e.g, a calling function `StartSpan` gets a snapshot API called `SpanStartSnapshot`).
 - **Prior art**: `SpanStartSnapshot` for `tracer.StartSpan` (13 → 1 RLock acquisitions, ~60% speedup on `BenchmarkStartSpanConcurrent-8`).
 

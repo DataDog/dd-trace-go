@@ -926,24 +926,24 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	span := spanStart(operationName, &t.sharedAttrs, options...)
 
-	// Snapshot all stable config fields needed below under a single RLock to avoid
+	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
-	snap := t.config.internalConfig.SpanStartSnapshot()
+	cSnap := t.config.internalConfig.SpanStartSnapshot()
 
 	if span.service == "" {
-		span.service = snap.ServiceName
+		span.service = cSnap.ServiceName
 	}
 
 	// For non-universal version, promote main-service spans to the version-inclusive
 	// shared attrs before applying any tags. This makes the subsequent version write
 	// (from config or global tags) a COW no-op instead of triggering a Clone.
-	if !t.config.universalVersion && span.service == snap.ServiceName {
+	if !t.config.universalVersion && span.service == cSnap.ServiceName {
 		span.meta.ReplaceSharedAttrs(&t.sharedAttrs, &t.sharedAttrsForMainSvc)
 	}
 
-	span.noDebugStack = !snap.DebugStack
-	if snap.Hostname != "" && snap.ReportHostname {
-		span.setMetaInit(keyHostname, snap.Hostname)
+	span.noDebugStack = !cSnap.DebugStack
+	if cSnap.Hostname != "" && cSnap.ReportHostname {
+		span.setMetaInit(keyHostname, cSnap.Hostname)
 	}
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable
 
@@ -955,15 +955,15 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		span.serviceSource = ext.ServiceSourceMapping
 	}
 
-	if snap.Version != "" {
-		if t.config.universalVersion || span.service == snap.ServiceName {
+	if cSnap.Version != "" {
+		if t.config.universalVersion || span.service == cSnap.ServiceName {
 			delete(span.metrics, ext.Version)
-			span.meta.Set(ext.Version, snap.Version)
+			span.meta.Set(ext.Version, cSnap.Version)
 		}
 	}
-	if snap.Env != "" {
+	if cSnap.Env != "" {
 		delete(span.metrics, ext.Environment)
-		span.meta.Set(ext.Environment, snap.Env)
+		span.meta.Set(ext.Environment, cSnap.Env)
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -974,12 +974,12 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, &span.meta, span.metrics)
 	}
-	if snap.ProfilerHotspotsEnabled || snap.ProfilerEndpoints {
-		t.applyPPROFLabels(span.pprofCtxRestore, span, snap)
+	if cSnap.ProfilerHotspotsEnabled || cSnap.ProfilerEndpoints {
+		t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
 	} else {
 		span.pprofCtxRestore = nil
 	}
-	if snap.DebugAbandonedSpans {
+	if cSnap.DebugAbandonedSpans {
 		select {
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
 			// ok

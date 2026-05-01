@@ -61,7 +61,7 @@ type programmaticOverride struct {
 // Config represents global configuration properties.
 // Config instances should be obtained via Get() which always returns a non-nil value.
 // Methods on Config assume a non-nil receiver and will panic if called on nil.
-// Hot paths that read many fields should use a snapshot (see snapshots.go) to
+// Hot paths that read many fields within a single function should use a snapshot (see snapshots.go) to
 // avoid per-field RLock contention on the reader counter.
 type Config struct {
 	mu sync.RWMutex
