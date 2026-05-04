@@ -1449,7 +1449,12 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		if ctr > 0 {
 			itemBytes++ // comma separator
 		}
-		if ctr >= baggageMaxItems || byteCount+itemBytes > baggageMaxBytes {
+		if ctr >= baggageMaxItems {
+			log.Warn("baggage item count exceeded limit (%d), dropping remaining items", baggageMaxItems)
+			break
+		}
+		if byteCount+itemBytes > baggageMaxBytes {
+			log.Warn("baggage byte limit exceeded (%d), dropping remaining items", baggageMaxBytes)
 			break
 		}
 		k, v, ok := strings.Cut(kv, "=")
