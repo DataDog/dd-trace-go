@@ -2892,6 +2892,127 @@ func TestExtractBaggagePropagatorMalformedHeader(t *testing.T) {
 	})
 }
 
+func TestExtractBaggagePropagatorMaxItems(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	var b strings.Builder
+	for i := 0; i < baggageMaxItems+5; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		iStr := strconv.Itoa(i)
+		b.WriteString("key" + iStr + "=val" + iStr)
+	}
+
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  b.String(),
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, baggageMaxItems)
+	for i := 0; i < baggageMaxItems; i++ {
+		iStr := strconv.Itoa(i)
+		assert.Equal(t, "val"+iStr, got["key"+iStr])
+	}
+	for i := baggageMaxItems; i < baggageMaxItems+5; i++ {
+		iStr := strconv.Itoa(i)
+		_, present := got["key"+iStr]
+		assert.False(t, present, "key%s should not be present", iStr)
+	}
+}
+
+func TestExtractBaggagePropagatorMaxBytes(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	// 12 items, each "keyN=" + 1000 'a's = 1005 wire bytes. Including comma
+	// separators, the first 8 fit under baggageMaxBytes (8192); the 9th would
+	// push the running total to 9053 > 8192, so items 8..11 are dropped.
+	const itemValLen = 1000
+	const numItems = 12
+	const expectedKept = 8
+	val := strings.Repeat("a", itemValLen)
+
+	var b strings.Builder
+	for i := 0; i < numItems; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString("key" + strconv.Itoa(i) + "=" + val)
+	}
+
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  b.String(),
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, expectedKept)
+	for i := 0; i < expectedKept; i++ {
+		assert.Equal(t, val, got["key"+strconv.Itoa(i)])
+	}
+	for i := expectedKept; i < numItems; i++ {
+		_, present := got["key"+strconv.Itoa(i)]
+		assert.False(t, present, "key%d should not be present", i)
+	}
+}
+
+func TestExtractBaggagePropagatorMalformedPastLimit(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	// baggageMaxItems valid entries followed by a malformed entry. Because
+	// the malformed entry sits past the items limit it is never inspected,
+	// so the valid prefix is kept (regression check on the single-pass design).
+	var b strings.Builder
+	for i := 0; i < baggageMaxItems; i++ {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		iStr := strconv.Itoa(i)
+		b.WriteString("key" + iStr + "=val" + iStr)
+	}
+	b.WriteString(",malformed_no_equals_sign")
+
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  b.String(),
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, baggageMaxItems)
+	for i := 0; i < baggageMaxItems; i++ {
+		iStr := strconv.Itoa(i)
+		assert.Equal(t, "val"+iStr, got["key"+iStr])
+	}
+}
+
 func TestExtractOnlyBaggage(t *testing.T) {
 	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "baggage")
 	headers := TextMapCarrier(map[string]string{

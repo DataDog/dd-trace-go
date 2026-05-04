@@ -1441,27 +1441,29 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 		return &ctx, nil
 	}
 
-	parts := strings.Split(baggageHeader, ",")
-
-	// 1) validation & single-trim pass
-	for i, kv := range parts {
+	// Single pass: enforce baggageMaxItems and baggageMaxBytes, validate, and apply.
+	ctr := 0
+	byteCount := 0
+	for kv := range strings.SplitSeq(baggageHeader, ",") {
+		itemBytes := len(kv)
+		if ctr > 0 {
+			itemBytes++ // comma separator
+		}
+		if ctr >= baggageMaxItems || byteCount+itemBytes > baggageMaxBytes {
+			break
+		}
 		k, v, ok := strings.Cut(kv, "=")
 		trimmedK := strings.TrimSpace(k)
 		trimmedV := strings.TrimSpace(v)
 		if !ok || trimmedK == "" || trimmedV == "" {
 			log.Warn("invalid baggage item: %q, dropping entire header", kv)
-			return &ctx, nil
+			return &SpanContext{}, nil
 		}
-		// store back the trimmed pair so we don't re-trim below
-		parts[i] = trimmedK + "=" + trimmedV
-	}
-
-	// 2) safe to URL-decode & apply
-	for _, kv := range parts {
-		rawK, rawV, _ := strings.Cut(kv, "=")
-		key, _ := url.QueryUnescape(rawK)
-		val, _ := url.QueryUnescape(rawV)
+		key, _ := url.QueryUnescape(trimmedK)
+		val, _ := url.QueryUnescape(trimmedV)
 		ctx.setBaggageItem(key, val)
+		byteCount += itemBytes
+		ctr++
 	}
 
 	return &ctx, nil
