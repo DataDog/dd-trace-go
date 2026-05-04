@@ -330,13 +330,11 @@ func exerciseParallelForwardedDuplicateGate(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 32 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if !meta.parallelForwarded.Swap(true) {
 				firstForwarders.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
