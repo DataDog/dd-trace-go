@@ -871,7 +871,7 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
 		traceID = ctx.TraceID()
 	} else {
-		traceID = ctx.TraceID()
+		traceID = fmt.Sprintf("%032x", ctx.traceID)
 		if ctx.trace != nil {
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		}

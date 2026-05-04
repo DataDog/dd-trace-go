@@ -1078,7 +1078,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	defer stop()
 	root := newBasicSpan("web.request")
 	spanCtx := &SpanContext{
-		traceID: root.context.traceID,
+		traceID: root.context.TraceIDBytes(),
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}
@@ -1094,7 +1094,7 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	assert.Nil(err)
 	root := newBasicSpan("web.request")
 	spanCtx := &SpanContext{
-		traceID: root.context.traceID,
+		traceID: root.context.TraceIDBytes(),
 		spanID:  root.context.SpanID(),
 		trace:   &trace{},
 	}
