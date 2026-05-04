@@ -137,7 +137,10 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 				if data, err := json.Marshal(errs); err == nil {
 					errMsg = string(data)
 				} else {
-					telemetrylog.Error("appsec: remote config: failed to marshal error details", slog.Any("error", telemetrylog.NewSafeError(err)))
+					telemetrylog.With(
+						telemetry.WithTags([]string{"log_type:rc::asm::exception"}),
+						telemetry.WithStacktrace(),
+					).Error("appsec: remote config: failed to marshal error details", slog.Any("error", telemetrylog.NewSafeError(err)))
 				}
 			}
 
@@ -151,7 +154,10 @@ func (a *appsec) onRCRulesUpdate(updates map[string]remoteconfig.ProductUpdate) 
 	if len(a.cfg.WAFManager.ConfigPaths(`^(?:datadog/\d+|employee)/ASM_DD/.+`)) == 0 {
 		log.Debug("appsec: remote config: no ASM_DD config loaded; restoring default config if available")
 		if err := a.cfg.WAFManager.RestoreDefaultConfig(); err != nil {
-			telemetrylog.Error("appsec: RC could not restore default config", slog.Any("error", telemetrylog.NewSafeError(err)))
+			telemetrylog.With(
+				telemetry.WithTags([]string{"log_type:rc::asm::exception"}),
+				telemetry.WithStacktrace(),
+			).Error("appsec: RC could not restore default config", slog.Any("error", telemetrylog.NewSafeError(err)))
 		}
 	}
 

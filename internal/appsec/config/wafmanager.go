@@ -176,7 +176,7 @@ func (m *WAFManager) RestoreDefaultConfig() error {
 }
 
 func logLocalDiagnosticMessages(name string, feature *libddwaf.Feature) {
-	logger := telemetryLog.With(telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:local::diagnostic"}))
+	logger := telemetryLog.With(telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:appsec::waf::ruleset::diagnostic"}))
 
 	if feature.Error != "" {
 		logger.Error("feature error", slog.String("message", feature.Error))
