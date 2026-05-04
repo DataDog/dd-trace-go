@@ -20,6 +20,7 @@ import (
 	"github.com/tinylib/msgp/msgp"
 
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	ddenv "github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 // MockServerOption configures the CI Visibility mock server.
@@ -435,7 +436,7 @@ type envSnapshot struct {
 func applyEnvUpdates(updates []envUpdate) func() {
 	snapshots := make([]envSnapshot, 0, len(updates))
 	for _, update := range updates {
-		old, had := os.LookupEnv(update.key)
+		old, had := ddenv.Lookup(update.key)
 		snapshots = append(snapshots, envSnapshot{key: update.key, value: old, had: had})
 		if update.unset {
 			_ = os.Unsetenv(update.key)

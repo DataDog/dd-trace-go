@@ -153,10 +153,7 @@ func scenarioEnvForChild(environ []string, cfg scenarioConfig) []string {
 		constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled:           {},
 	}
 	for _, entry := range environ {
-		key := entry
-		if idx := strings.IndexByte(entry, '='); idx >= 0 {
-			key = entry[:idx]
-		}
+		key, _, _ := strings.Cut(entry, "=")
 		if _, ok := blocked[key]; ok {
 			continue
 		}
@@ -413,12 +410,10 @@ func TestConcurrentDuplicateParallel(t *testing.T) {
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			t.Parallel()
-		}()
+		})
 	}
 	go func() {
 		wg.Wait()
