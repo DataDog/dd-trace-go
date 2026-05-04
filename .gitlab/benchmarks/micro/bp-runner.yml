@@ -1,0 +1,91 @@
+# Setup benchmarks to be run using bp-runner. There are 48 available cores, the first
+# 24 of which are reserved for setup. We use the remaining 24 to allocate resources
+# to run our benchmarks.
+
+global_setup:
+  - name: Capture hardware/software info
+    run: collect_hardware_software_info
+
+experiments:
+  - name: Microbenchmarks
+    steps:
+      - name: Run benchmarks
+        run: run_microbenchmarks
+        cpus: 24-47
+        parallelize:
+          items: $BENCHMARKS
+          cpus_per_item: $CPUS_PER_BENCHMARK
+        repo: DataDog/dd-trace-go
+        how_to_fetch_release: |
+          git clone --branch $BRANCH https://github.com/DataDog/dd-trace-go "$CODE_SRC"
+          cd "$CODE_SRC" && git checkout $COMMIT_SHA
+        how_to_run_benchmarks: |
+          # Build the list of directories that we might want to benchmark
+          # At time of writing, our longest running benchmark is in `internal/telemetry`. By adding the -r flag, we can
+          # ensure that this benchmark starts up as fast as possible (since `internal/telemetry` is near last in our list of directories)
+          output=$(find . -type f -name '*_test.go' -exec dirname {} \; | grep -Ev '/(orchestrion|civisibility|scripts|tools)' | sort -u -r)
+          oneline=$(echo "$output" | tr '\n' ',')
+          IFS=, read -r -a DIRS <<< "$oneline"
+  
+          bench_loop_x10 () {
+            if [ -d 'v2' ]; then
+              bench_loop_x10_v2 $1
+              return
+            fi
+          
+            for run in $(seq 1 $REPETITIONS); do
+              go test -run=XXX -bench ^$PARALLEL_ITEM$ -benchmem -count 1 -benchtime 2s ./ddtrace/... ./contrib/net/http/... ./contrib/internal/... ./internal/appsec/... ./contrib/graphql-go/... | tee -a $1
+            done
+          }
+            
+          bench_loop_x10_v2 () {
+            for dir in "${DIRS[@]}"; do
+              [ -d "$dir" ] || { echo "skipping: $dir is not a valid directory"; continue; } # skip if the directory is invalid
+              # skip if the test isn't found in this directory (NOT using recursive search)
+              # this saves us a few seconds of runtime from searching irrelevant directories
+              grep -q "func ${TEST_NAME}(b \*testing.B)" $dir/*.go || continue
+              cd $dir
+              for run in $(seq 1 $REPETITIONS); do
+                go test -run=XXX -bench ^$PARALLEL_ITEM$ -benchmem -count 1 -benchtime 2s | tee -a $1
+              done
+              cd - &> /dev/null
+              
+              # we can break after testing so that we do not need to check every other directory
+              break
+            done
+          }
+          
+          bench_loop_x10 "${ARTIFACTS_DIR}/$BASELINE_OR_CANDIDATE-$GROUP_ID-go-bench.txt"
+
+      - name: Analyze results
+        run: analyze_microbenchmarks
+        framework: GoBench
+        group_by_pattern: "^(.+)-go-bench.txt$"
+        env:
+          DISABLE_NHST: "1"
+          CI_TYPE: "theoretical"
+          MD_REPORT_ONLY_CHANGES: "1"
+          GO_VERSION: $GO_VERSION
+
+global_teardown:
+  - name: Upload to S3
+    run: upload_to_s3
+    env:
+      S3_URL: s3://relenv-benchmarking-data/${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}/${PARENT_PIPELINE_ID}/${CI_JOB_ID}/
+
+  - name: Upload to BP API
+    run: upload_to_bp_api
+    retries_on_failure: 2
+    project: dd-trace-go
+
+docker_config_for_local_runs:
+  image_name: bp_microbenchmarks_go
+  env:
+    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans"
+    CPUS_PER_BENCHMARK: 1
+    REPETITIONS: 1
+    GROUP_ID: "group-1"
+
+    CI_COMMIT_REF_NAME: main # Branch to use during local run
+    CI_COMMIT_SHA: main # A commit to use during local run, specifying a branch name will checkout the latest commit from that branch
+  command: bp-runner bp-runner.yml --debug

@@ -72,8 +72,12 @@
 /contrib/modelcontextprotocol/go-sdk       @DataDog/ml-observability @DataDog/apm-idm-go
 
 # Gitlab configuration
-.gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
+.gitlab-ci.yml                  @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability @DataDog/ecosystems-performance
 /.gitlab-ci                     @DataDog/dd-trace-go-guild @DataDog/apm-ecosystems-reliability
+/.gitlab/benchmarks             @DataDog/ecosystems-performance @DataDog/dd-trace-go-guild
+/.gitlab/benchmarks/macro       @DataDog/ecosystems-performance @DataDog/dd-trace-go-guild
+/.gitlab/benchmarks/micro       @DataDog/ecosystems-performance @DataDog/dd-trace-go-guild
+/.gitlab/benchmarks/test-apps   @DataDog/dd-trace-go-guild
 
 # Orchestrion
 /internal/orchestrion           @DataDog/apm-orchestrion
