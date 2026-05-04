@@ -502,6 +502,33 @@ func TestExtractTracestateKeepsDDAtBoundary(t *testing.T) {
 	assert.True(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
 }
 
+func TestExtractTracestateDropsOversizedDDWithWhitespace(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// Same as the basic oversized-dd case but with leading OWS on the dd entry.
+	// W3C list-member parsing allows surrounding whitespace, so the prefix and
+	// length check must trim each entry before evaluating it.
+	ddEntry := " dd=s:1;o:rum;p:0000000000000001;t.foo:" + strings.Repeat("a", tracestateDDMaxSize)
+	rawTracestate := "vendor1=v1," + ddEntry + ",vendor2=v2"
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  rawTracestate,
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.Contains(t, stored, "vendor2=v2")
+	assert.Empty(t, sctx.origin)
+	assert.False(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
+}
+
 func TestTextMapPropagator(t *testing.T) {
 	bigMap := make(map[string]string)
 	for i := range 100 {

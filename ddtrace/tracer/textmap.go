@@ -1245,7 +1245,8 @@ func parseTracestate(ctx *SpanContext, header string) {
 		return
 	}
 	hasOversizedDD := false
-	for group := range strings.SplitSeq(strings.Trim(header, "\t "), ",") {
+	for group := range strings.SplitSeq(header, ",") {
+		group = strings.Trim(group, "\t ")
 		if !strings.HasPrefix(group, "dd=") {
 			continue
 		}
@@ -1313,7 +1314,8 @@ func parseTracestate(ctx *SpanContext, header string) {
 	cleaned.Grow(len(header))
 	first := true
 	for entry := range strings.SplitSeq(header, ",") {
-		if strings.HasPrefix(entry, "dd=") && len(entry) > tracestateDDMaxSize {
+		trimmed := strings.Trim(entry, "\t ")
+		if strings.HasPrefix(trimmed, "dd=") && len(trimmed) > tracestateDDMaxSize {
 			continue
 		}
 		if !first {
