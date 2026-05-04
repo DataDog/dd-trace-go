@@ -218,9 +218,6 @@ type config struct {
 	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
 	enableHostnameDetection bool
 
-	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
-	spanAttributeSchemaVersion int
-
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
@@ -339,7 +336,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.dynamicInstrumentationEnabled.setOrigin(origin)
 
 	namingschema.LoadFromEnv()
-	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
 
 	// LLM Observability config
 	c.llmobs = llmobsconfig.Config{

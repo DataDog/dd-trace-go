@@ -37,9 +37,12 @@ const (
 )
 
 // AddRulesMonitoringTags adds the tags related to security rules monitoring
-func AddRulesMonitoringTags(th trace.TagSetter) {
+func AddRulesMonitoringTags(th trace.TagSetter, rcClientID string) {
 	th.SetTag(wafVersionTag, libddwaf.Version())
 	th.SetTag(ext.ManualKeep, samplernames.AppSec)
+	if rcClientID != "" {
+		th.SetTag("_dd.rc.client_id", rcClientID)
+	}
 }
 
 func addDownwardRequestTag(th trace.TagSetter, value int) {
@@ -59,12 +62,25 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 		th.SetTag(raspRuleEvalTag, raspCallsCount)
 	}
 
-	if raspErrorsCount := metrics.SumRASPErrors.Load(); raspErrorsCount > 0 {
-		th.SetTag(raspErrorTag, raspErrorsCount)
+	if errCode := metrics.WAFErrorCode.Load(); errCode != 0 {
+		th.SetTag(wafErrorTag, errCode)
 	}
 
-	if wafErrorsCount := metrics.SumWAFErrors.Load(); wafErrorsCount > 0 {
-		th.SetTag(wafErrorTag, wafErrorsCount)
+	var raspErrCode int32
+	for i := range metrics.RASPErrorCodes {
+		if c := metrics.RASPErrorCodes[i].Load(); c != 0 {
+			if raspErrCode == 0 || c > raspErrCode {
+				raspErrCode = c
+			}
+		}
+	}
+	if raspErrCode != 0 {
+		th.SetTag(raspErrorTag, raspErrCode)
+	}
+
+	if errType := metrics.ExceptionType(); errType != "" {
+		th.SetTag("_dd.appsec.error.type", errType)
+		th.SetTag("_dd.appsec.error.message", metrics.ExceptionMsg())
 	}
 
 	// Add metrics like `waf.duration` and `rasp.duration_ext`
