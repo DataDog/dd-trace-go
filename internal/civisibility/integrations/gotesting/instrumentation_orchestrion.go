@@ -257,7 +257,10 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					}
 					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 					test.Close(integrations.ResultStatusFail)
-					checkModuleAndSuite(module, suite)
+					if !execMeta.hasAdditionalFeatureWrapper {
+						// Additional-feature wrappers own module and suite closure after all retry attempts finish.
+						checkModuleAndSuite(module, suite)
+					}
 					if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
 						integrations.ExitCiVisibility()
 					}
@@ -329,7 +332,10 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					}
 					test.Close(integrations.ResultStatusPass)
 				}
-				checkModuleAndSuite(module, suite)
+				if !execMeta.hasAdditionalFeatureWrapper {
+					// Additional-feature wrappers own module and suite closure after all retry attempts finish.
+					checkModuleAndSuite(module, suite)
+				}
 			}()
 
 			f(currentT)
@@ -364,6 +370,18 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 			ciTestItem.test.Close(integrations.ResultStatusFail)
 		})
 	}
+}
+
+// instrumentShouldExitOnFailNow reports whether FailNow should stop CI Visibility immediately.
+// Retry wrappers keep CI Visibility alive until every attempt has created and flushed its test event.
+//
+//go:linkname instrumentShouldExitOnFailNow
+func instrumentShouldExitOnFailNow(tb testing.TB) bool {
+	if !isCiVisibilityEnabled() {
+		return false
+	}
+	ciTestItem := getTestMetadata(tb)
+	return ciTestItem == nil || !ciTestItem.hasAdditionalFeatureWrapper
 }
 
 // instrumentCloseAndSkip helper function to close and skip with a reason a `*testing.T, *testing.B, *testing.common` CI Visibility span
@@ -628,9 +646,22 @@ func instrumentTestingParallel(t *testing.T) bool {
 
 	meta := getTestMetadata(t)
 	if meta != nil && meta.originalTest != nil {
-		// if we have an original test, we call parallel on it
-		log.Debug("instrumentTestingParallel: calling Parallel on original test")
-		meta.originalTest.Parallel()
+		if meta.parallelForwarded.Swap(true) {
+			log.Debug("instrumentTestingParallel: calling duplicate Parallel on original test")
+			if state := meta.parallelForwardState; state != nil {
+				state.callDuplicate(meta.originalTest)
+			} else {
+				meta.originalTest.Parallel()
+			}
+			return true
+		}
+
+		log.Debug("instrumentTestingParallel: forwarding Parallel to original test")
+		if state := meta.parallelForwardState; state != nil {
+			state.forward(meta.originalTest)
+		} else {
+			meta.originalTest.Parallel()
+		}
 		return true
 	}
 

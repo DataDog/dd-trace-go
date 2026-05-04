@@ -8,6 +8,7 @@ package gotesting
 import (
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"unsafe"
 
@@ -56,6 +57,8 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseTestingInternalsOffsetLayout(t)
 	exerciseTestingInternalsCopyEquivalence(t)
 	exerciseTestingInternalsPrivatePointerAssignment(t)
+	exerciseParallelForwardMetadataIsolation(t)
+	exerciseParallelForwardedDuplicateGate(t)
 }
 
 // TestGetInternalTestArray tests the getInternalTestArray function.
@@ -286,6 +289,59 @@ func exerciseTestingInternalsPrivatePointerAssignment(t *testing.T) {
 	copyWordField(unsafe.Pointer(&sourceWord), unsafe.Pointer(&targetWord), word)
 	if targetWord.ptr != sourceWord.ptr {
 		t.Fatal("expected pointer-word copy to preserve the pointer value")
+	}
+}
+
+// exerciseParallelForwardMetadataIsolation verifies retry-local Parallel state never leaks
+// through generic execution metadata propagation.
+func exerciseParallelForwardMetadataIsolation(t *testing.T) {
+	parentState := newParallelForwardState()
+	childState := newParallelForwardState()
+
+	parentMeta := &testExecutionMetadata{
+		parallelForwardState: parentState,
+	}
+	parentMeta.parallelForwarded.Store(true)
+
+	childMeta := &testExecutionMetadata{
+		parallelForwardState: childState,
+	}
+	propagateTestExecutionMetadataFlags(childMeta, parentMeta)
+
+	if childMeta.parallelForwardState != childState {
+		t.Fatal("expected child metadata to keep its own parallel forwarding state")
+	}
+	if childMeta.parallelForwarded.Load() {
+		t.Fatal("expected child metadata not to inherit the parent's forwarded Parallel flag")
+	}
+
+	subtestMeta := &testExecutionMetadata{}
+	propagateTestExecutionMetadataFlags(subtestMeta, parentMeta)
+	if subtestMeta.parallelForwardState != nil {
+		t.Fatal("expected subtest metadata not to inherit parent parallel forwarding state")
+	}
+}
+
+// exerciseParallelForwardedDuplicateGate verifies concurrent duplicate checks still leave
+// exactly one execution responsible for the real Parallel forward.
+func exerciseParallelForwardedDuplicateGate(t *testing.T) {
+	meta := &testExecutionMetadata{}
+	var firstForwarders atomic.Int32
+
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if !meta.parallelForwarded.Swap(true) {
+				firstForwarders.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if firstForwarders.Load() != 1 {
+		t.Fatalf("expected exactly one first Parallel forwarder, got %d", firstForwarders.Load())
 	}
 }
 

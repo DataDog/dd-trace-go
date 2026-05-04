@@ -54,7 +54,9 @@ func (ddt *T) Fail() { ddt.getTWithError("Fail", "failed test").Fail() }
 // those other goroutines.
 func (ddt *T) FailNow() {
 	t := ddt.getTWithError("FailNow", "failed test")
-	integrations.ExitCiVisibility()
+	if instrumentShouldExitOnFailNow(t) {
+		integrations.ExitCiVisibility()
+	}
 	t.FailNow()
 }
 
