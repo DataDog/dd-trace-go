@@ -2898,7 +2898,7 @@ func TestExtractBaggagePropagatorMaxItems(t *testing.T) {
 	defer tracer.Stop()
 
 	var b strings.Builder
-	for i := 0; i < baggageMaxItems+5; i++ {
+	for i := range baggageMaxItems + 5 {
 		if i > 0 {
 			b.WriteByte(',')
 		}
@@ -2920,7 +2920,7 @@ func TestExtractBaggagePropagatorMaxItems(t *testing.T) {
 		return true
 	})
 	assert.Len(t, got, baggageMaxItems)
-	for i := 0; i < baggageMaxItems; i++ {
+	for i := range baggageMaxItems {
 		iStr := strconv.Itoa(i)
 		assert.Equal(t, "val"+iStr, got["key"+iStr])
 	}
@@ -2945,7 +2945,7 @@ func TestExtractBaggagePropagatorMaxBytes(t *testing.T) {
 	val := strings.Repeat("a", itemValLen)
 
 	var b strings.Builder
-	for i := 0; i < numItems; i++ {
+	for i := range numItems {
 		if i > 0 {
 			b.WriteByte(',')
 		}
@@ -2966,7 +2966,7 @@ func TestExtractBaggagePropagatorMaxBytes(t *testing.T) {
 		return true
 	})
 	assert.Len(t, got, expectedKept)
-	for i := 0; i < expectedKept; i++ {
+	for i := range expectedKept {
 		assert.Equal(t, val, got["key"+strconv.Itoa(i)])
 	}
 	for i := expectedKept; i < numItems; i++ {
@@ -2984,7 +2984,7 @@ func TestExtractBaggagePropagatorMalformedPastLimit(t *testing.T) {
 	// the malformed entry sits past the items limit it is never inspected,
 	// so the valid prefix is kept (regression check on the single-pass design).
 	var b strings.Builder
-	for i := 0; i < baggageMaxItems; i++ {
+	for i := range baggageMaxItems {
 		if i > 0 {
 			b.WriteByte(',')
 		}
@@ -3007,7 +3007,7 @@ func TestExtractBaggagePropagatorMalformedPastLimit(t *testing.T) {
 		return true
 	})
 	assert.Len(t, got, baggageMaxItems)
-	for i := 0; i < baggageMaxItems; i++ {
+	for i := range baggageMaxItems {
 		iStr := strconv.Itoa(i)
 		assert.Equal(t, "val"+iStr, got["key"+iStr])
 	}
