@@ -26,6 +26,9 @@ var (
 
 	// metricsHandleSwappablePointers contains all the swappableMetricHandle, used to replay actions done before the actual MetricHandle is set
 	metricsHandleSwappablePointers = xsync.NewMapOf[metricKey, *swappableMetricHandle](xsync.WithPresize(knownmetrics.Size()))
+
+	// startAppFlushWg tracks the goroutine launched by StartApp so StopApp can wait for it to finish.
+	startAppFlushWg sync.WaitGroup
 )
 
 // GlobalClient returns the global telemetry client.
@@ -50,7 +53,7 @@ func StartApp(client Client) {
 	}
 
 	client.AppStart()
-	go client.Flush()
+	startAppFlushWg.Go(client.Flush)
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).
@@ -99,6 +102,7 @@ func MockClient(client Client) func() {
 func StopApp() {
 	if client := globalClient.Swap(nil); client != nil && *client != nil {
 		(*client).AppStop()
+		startAppFlushWg.Wait()
 		(*client).Flush()
 		(*client).Close()
 	}
