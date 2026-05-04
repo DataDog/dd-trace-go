@@ -27,7 +27,8 @@ var (
 	// metricsHandleSwappablePointers contains all the swappableMetricHandle, used to replay actions done before the actual MetricHandle is set
 	metricsHandleSwappablePointers = xsync.NewMapOf[metricKey, *swappableMetricHandle](xsync.WithPresize(knownmetrics.Size()))
 
-	// startAppFlushWg tracks the goroutine launched by StartApp so StopApp can wait for it to finish.
+	// startAppFlushWg tracks the goroutine launched by StartApp so StopApp can
+	// wait for it to finish before proceeding with the shutdown flush.
 	startAppFlushWg sync.WaitGroup
 )
 
@@ -47,13 +48,26 @@ func StartApp(client Client) {
 		return
 	}
 
-	if GlobalClient() != nil || SwapClient(client) != nil {
+	if GlobalClient() != nil {
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
 
 	client.AppStart()
-	startAppFlushWg.Go(client.Flush)
+	// Increment the WaitGroup before SwapClient makes the client visible so
+	// StopApp cannot observe a zero counter and return before the flush goroutine runs.
+	startAppFlushWg.Add(1)
+	if SwapClient(client) != nil {
+		// A concurrent StartApp call already set the client; undo the Add.
+		startAppFlushWg.Done()
+		log.Debug("telemetry: StartApp called multiple times, ignoring")
+		return
+	}
+
+	go func() {
+		defer startAppFlushWg.Done()
+		client.Flush()
+	}()
 }
 
 // SwapClient swaps the global client with the given client and Flush the old (*client).

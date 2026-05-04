@@ -52,9 +52,9 @@ func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDis
 	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, true, true))
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
-	// StopApp must be registered AFTER TempDir so it runs before TempDir cleanup.
-	// This drains the async Flush goroutine started by telemetry.StartApp and prevents
-	// a race where that goroutine writes to payloads/telemetry while RemoveAll is running.
+	// Registered after TempDir so it executes before TempDir's RemoveAll (LIFO).
+	// Drains the async Flush goroutine started by telemetry.StartApp, preventing
+	// a race where that goroutine writes to payloads/telemetry while RemoveAll runs.
 	t.Cleanup(telemetry.StopApp)
 	bazel.ResetForTesting()
 
