@@ -304,6 +304,17 @@ func Reset() {
 	started = false
 }
 
+// ClientID returns the client ID of the RC singleton, or an empty string if the
+// client has not been started yet.
+func ClientID() string {
+	clientMux.Lock()
+	defer clientMux.Unlock()
+	if client == nil {
+		return ""
+	}
+	return client.clientID
+}
+
 func (c *Client) updateState() {
 	data, err := c.newUpdateRequest()
 	if err != nil {

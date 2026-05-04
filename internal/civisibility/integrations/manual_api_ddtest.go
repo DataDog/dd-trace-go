@@ -229,20 +229,22 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		return
 	}
 
-	// let's get the file path and the start line of the function
-	absolutePath, runtimeStartLine := fn.FileLine(fn.Entry())
-	file := utils.GetRelativePathFromCITagsSourceRoot(absolutePath)
-	log.Debug("civisibility: resolving test source location [function:%s file:%s start_line:%d relative_file:%s entry:%#x]",
-		fn.Name(), absolutePath, runtimeStartLine, file, fn.Entry())
+	// Resolve the runtime file into separate tag and filesystem paths. Go -trimpath can
+	// return a logical module path here, while source parsing still needs a local file path.
+	runtimePath, runtimeStartLine := fn.FileLine(fn.Entry())
+	sourcePath := resolveTestSourcePath(runtimePath)
+	file := sourcePath.RelativePath
+	log.Debug("civisibility: resolving test source location [function:%s file:%s start_line:%d relative_file:%s runtime_file:%s filesystem_file:%s filesystem_known:%t entry:%#x]",
+		fn.Name(), runtimePath, runtimeStartLine, file, sourcePath.RuntimePath, sourcePath.FilesystemPath, sourcePath.FilesystemKnown, fn.Entry())
 	t.SetTag(constants.TestSourceFile, file)
 	t.SetTag(constants.TestSourceStartLine, runtimeStartLine)
 	t.suite.SetTag(constants.TestSourceFile, file)
 
 	// Source inspection is cached per file so repeated retries/subtests do not reparse the same file.
-	metadata := loadSourceFileMetadata(absolutePath)
+	metadata := loadSourceFileMetadata(sourcePath.FilesystemPath)
 	if !metadata.parseOK {
-		log.Debug("civisibility: failed parsing test source file [function:%s file:%s start_line:%d error:%v]",
-			fn.Name(), absolutePath, runtimeStartLine, metadata.parseErr)
+		log.Debug("civisibility: failed parsing test source file [function:%s file:%s runtime_file:%s relative_file:%s start_line:%d error:%v]",
+			fn.Name(), sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine, metadata.parseErr)
 	}
 	if metadata.parseOK {
 		// let's check if the suite was marked as unskippable before
@@ -256,8 +258,8 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		fullName := fn.Name()
 		firstDot := strings.LastIndex(fullName, ".") + 1
 		name := fullName[firstDot:]
-		log.Debug("civisibility: scanning AST for test source range [function:%s short_name:%s file:%s runtime_start_line:%d]",
-			fullName, name, absolutePath, runtimeStartLine)
+		log.Debug("civisibility: scanning AST for test source range [function:%s short_name:%s file:%s runtime_file:%s relative_file:%s runtime_start_line:%d]",
+			fullName, name, sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine)
 
 		// Resolve the source range from cached metadata but keep the existing declaration/literal
 		// matching rules and the same debug logs the tests already assert.
@@ -321,6 +323,11 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 			t.suite.SetTag(constants.TestCodeOwners, ownerString)
 		}
 	}
+}
+
+// resolveTestSourcePath resolves a runtime source path using the production CI tag context.
+func resolveTestSourcePath(runtimePath string) utils.SourceFilePath {
+	return utils.ResolveSourceFilePathFromCITags(runtimePath)
 }
 
 // SetBenchmarkData sets benchmark data for the test.
