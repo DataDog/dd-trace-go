@@ -13,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 )
 
 var (
@@ -73,7 +71,6 @@ func (ddb *B) Fail() { ddb.getBWithError("Fail", "failed test").Fail() }
 // those other goroutines.
 func (ddb *B) FailNow() {
 	b := ddb.getBWithError("FailNow", "failed test")
-	integrations.ExitCiVisibility()
 	b.FailNow()
 }
 
