@@ -272,7 +272,8 @@ const maxPropagatedTagsLength = 512
 // and passed user opts.
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
-	c.internalConfig = internalconfig.CreateNew()
+	c.internalConfig = internalconfig.Get()
+	c.internalConfig.PrepareForStart(internalconfig.ProductTracer)
 
 	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
 	// the baked-in values. We do this early so that opts can be used to override the baked-in values,

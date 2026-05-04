@@ -30,7 +30,7 @@ func TestBuildResource(t *testing.T) {
 	})
 
 	t.Run("populated", func(t *testing.T) {
-		cfg := internalconfig.CreateNew()
+		cfg := newFreshInternalConfig()
 		cfg.SetServiceName("my-service", internalconfig.OriginCode)
 		cfg.SetEnv("prod", internalconfig.OriginCode)
 		cfg.SetVersion("1.2.3", internalconfig.OriginCode)
@@ -47,7 +47,7 @@ func TestBuildResource(t *testing.T) {
 	})
 
 	t.Run("optional fields omitted when empty", func(t *testing.T) {
-		cfg := internalconfig.CreateNew()
+		cfg := newFreshInternalConfig()
 		cfg.SetServiceName("svc", internalconfig.OriginCode)
 
 		r := buildResource(cfg)

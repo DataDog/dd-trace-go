@@ -170,8 +170,9 @@ func TestOptions(t *testing.T) {
 	})
 
 	t.Run("WithEnv", func(t *testing.T) {
-		var cfg config
-		WithEnv("envName")(&cfg)
+		cfg, err := defaultConfig()
+		require.NoError(t, err)
+		WithEnv("envName")(cfg)
 		assert.Equal(t, "envName", cfg.env)
 	})
 

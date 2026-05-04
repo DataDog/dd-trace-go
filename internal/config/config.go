@@ -52,10 +52,14 @@ const (
 	ProductProfiler Product = "profiler"
 )
 
-// programmaticOverride records which product claimed a field via programmatic API.
+// programmaticOverride records which product claimed a field via programmatic API
+// and, for the first code-origin write per (field, product), the closure that reverts
+// the field to its pre-code state. restore is captured exactly once and preserved
+// across same-product rewrites so undoProduct always restores to the true baseline.
 type programmaticOverride struct {
 	product Product
 	value   any
+	restore func()
 }
 
 // Config represents global configuration properties.
@@ -65,7 +69,7 @@ type Config struct {
 	mu sync.RWMutex
 
 	// overrides tracks which product claimed each field via programmatic API (OriginCode).
-	// Used by checkOverrideConflict to enforce the cross-product gate.
+	// Used by snapshotAndCheck to enforce the cross-product gate and to record undo baselines.
 	overrides map[string]programmaticOverride
 
 	// Config fields are protected by the mutex.
@@ -144,34 +148,276 @@ type Config struct {
 	traceID128BitEnabled bool
 }
 
-// checkProductConflict enforces the cross-product gate for programmatic API calls.
+// snapshotAndCheck enforces the cross-product gate for programmatic API calls and,
+// on the first code-origin write to a field by a given product, records the baseline
+// restore closure so the override can later be reverted by undoProduct (invoked
+// as part of PrepareForStart).
+//
 // Returns true if the caller should abort the update (a different product already
 // claimed this field). No-op when product is not supplied or origin is not OriginCode.
 // The product parameter is variadic for ergonomic pass-through from Set* methods;
 // only the first value is used and callers should pass at most one.
+//
+// restore is the closure the caller passes on every invocation; it is stored only
+// on the first write per (field, product). Subsequent writes from the same product
+// update the current value but preserve the original restore closure, so the baseline
+// always reflects the true pre-any-code state.
+//
 // Must be called while c.mu is held.
-func (c *Config) checkProductConflict(field string, origin telemetry.Origin, value any, product ...Product) bool {
+func (c *Config) snapshotAndCheck(field string, origin telemetry.Origin, value any, restore func(), product ...Product) bool {
 	if origin != telemetry.OriginCode || len(product) == 0 {
 		return false
 	}
 	p := product[0]
-	if prev, exists := c.overrides[field]; exists && prev.product != p {
-		if reflect.DeepEqual(prev.value, value) {
-			return false
+	if prev, exists := c.overrides[field]; exists {
+		if prev.product != p {
+			if reflect.DeepEqual(prev.value, value) {
+				return false
+			}
+			telemetry.Count(telemetry.NamespaceGeneral, "config.product_conflict", []string{
+				"name:" + field,
+				"first_product:" + string(prev.product),
+				"second_product:" + string(p),
+				"first_value:" + fmt.Sprint(prev.value),
+				"second_value:" + fmt.Sprint(value),
+			}).Submit(1)
+			log.Warn("config: %s already set %s via programmatic API; ignoring %s's attempt to override it",
+				prev.product, field, p)
+			return true
 		}
-		telemetry.Count(telemetry.NamespaceGeneral, "config.product_conflict", []string{
-			"name:" + field,
-			"first_product:" + string(prev.product),
-			"second_product:" + string(p),
-			"first_value:" + fmt.Sprint(prev.value),
-			"second_value:" + fmt.Sprint(value),
-		}).Submit(1)
-		log.Warn("config: %s already set %s via programmatic API; ignoring %s's attempt to override it",
-			prev.product, field, p)
-		return true
+		// Same-product rewrite: update the current value but preserve the
+		// original restore closure so undo still reverts to the pre-any-code baseline.
+		prev.value = value
+		c.overrides[field] = prev
+		return false
 	}
-	c.overrides[field] = programmaticOverride{product: p, value: value}
+	c.overrides[field] = programmaticOverride{product: p, value: value, restore: restore}
 	return false
+}
+
+// checkProductConflict is a thin wrapper around snapshotAndCheck for setters
+// that have not yet been migrated to capture undo baselines. It enforces the
+// same first-product-wins gate, but fields updated through this path will NOT
+// participate in PrepareForStart's undo step — their entries remain in the
+// overrides map to preserve ownership, but no restore closure is recorded.
+//
+// Must be called while c.mu is held.
+func (c *Config) checkProductConflict(field string, origin telemetry.Origin, value any, product ...Product) bool {
+	return c.snapshotAndCheck(field, origin, value, nil, product...)
+}
+
+// undoProduct reverts every programmatic (OriginCode) override recorded for the
+// given product back to the value it held before the first code-origin write.
+// Only overrides registered with a non-nil restore closure are undone; setters
+// that still use the legacy checkProductConflict path retain their values, but
+// their ownership entry is released so a subsequent code write can claim the
+// field. Overrides owned by other products and values written via non-code
+// origins (env vars, defaults, remote config) are left untouched.
+//
+// Not intended to be called directly by products — PrepareForStart runs this
+// as part of the Start ceremony. Unexported to keep the product-facing API
+// narrow; same-package tests access it directly.
+func (c *Config) undoProduct(p Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for field, ov := range c.overrides {
+		if ov.product != p {
+			continue
+		}
+		if ov.restore != nil {
+			ov.restore()
+		}
+		delete(c.overrides, field)
+	}
+}
+
+// loadEnvInto reads env-backed config values from the provider into c. Fields
+// currently claimed by an OriginCode override (tracked in c.overrides) are left
+// alone — they represent programmatic writes that outrank env.
+//
+// Called by loadConfig on initial load and by refreshFromEnv (via
+// PrepareForStart) on subsequent product Starts. Callers must hold c.mu.
+//
+// Telemetry reporting: fields whose setters participate in the new undo path
+// (currently DD_ENV) also emit configtelemetry.Report so that post-undo the
+// reported value matches the restored in-memory value. Other fields keep their
+// current behavior — no configtelemetry.Report on load, only on setter writes.
+// That asymmetry is intentional and scoped to the POC; migrating more setters
+// to the undo path will add the corresponding reports here.
+//
+// Env-source coverage: the provider's own internal telemetry reports which
+// source (OTEL env, DD env, stable/declarative config, default) produced each
+// lookup; that is the authoritative per-source record. Our configtelemetry.Report
+// calls record the effective (winning) value+origin after layering.
+//
+// Edge case: if an env var's value changes between two product Starts while a
+// code override is active for that field, the override guard above skips the
+// re-read and we do not emit fresh env telemetry. The effective value does not
+// change (the code override still wins), so no behavioral regression — only a
+// stale env-source report in telemetry until the override is released. Not
+// considered a realistic operator workflow, but documented here as a known
+// limitation.
+func (c *Config) loadEnvInto() {
+	p := provider.New()
+
+	// Resolve agent URL from DD_TRACE_AGENT_URL, DD_AGENT_HOST, DD_TRACE_AGENT_PORT.
+	// All three are read through the provider so telemetry is reported for each.
+	// Guarded as one unit under DD_TRACE_AGENT_URL since that's the field's canonical key.
+	if _, ov := c.overrides["DD_TRACE_AGENT_URL"]; !ov {
+		agentURLStr := p.GetString("DD_TRACE_AGENT_URL", "")
+		agentHost := p.GetString("DD_AGENT_HOST", "")
+		agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
+		c.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+	}
+
+	if _, ov := c.overrides["DD_TRACE_DEBUG"]; !ov {
+		c.debug = p.GetBool("DD_TRACE_DEBUG", false)
+	}
+	if _, ov := c.overrides["DD_TRACE_STARTUP_LOGS"]; !ov {
+		c.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
+	}
+	if _, ov := c.overrides["DD_SERVICE"]; !ov {
+		c.serviceName = p.GetString("DD_SERVICE", "")
+	}
+	if _, ov := c.overrides["DD_VERSION"]; !ov {
+		c.version = p.GetString("DD_VERSION", "")
+	}
+	// DD_ENV participates in the new undo path: report telemetry here so that
+	// post-undo, the backend sees the restored env/default value with its
+	// correct origin, not the stale OriginCode value from the last setter write.
+	if _, ov := c.overrides["DD_ENV"]; !ov {
+		c.env = p.GetString("DD_ENV", "")
+		configtelemetry.Report("DD_ENV", c.env, envOrigin(p, "DD_ENV"))
+	}
+	if _, ov := c.overrides["DD_SERVICE_MAPPING"]; !ov {
+		c.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
+	}
+	if _, ov := c.overrides["DD_RUNTIME_METRICS_ENABLED"]; !ov {
+		c.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
+	}
+	if _, ov := c.overrides["DD_RUNTIME_METRICS_V2_ENABLED"]; !ov {
+		c.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
+	}
+	if _, ov := c.overrides[traceprof.CodeHotspotsEnvVar]; !ov {
+		c.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
+	}
+	if _, ov := c.overrides["DD_PROFILING_ENDPOINT_COLLECTION_ENABLED"]; !ov {
+		c.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
+	}
+	if _, ov := c.overrides["DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED"]; !ov {
+		c.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	}
+	if _, ov := c.overrides["DD_TRACE_PEER_SERVICE_MAPPING"]; !ov {
+		c.peerServiceMappings = p.GetMap("DD_TRACE_PEER_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
+	}
+	if _, ov := c.overrides["DD_TRACE_DEBUG_ABANDONED_SPANS"]; !ov {
+		c.debugAbandonedSpans = p.GetBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+	}
+	if _, ov := c.overrides["DD_TRACE_ABANDONED_SPAN_TIMEOUT"]; !ov {
+		c.spanTimeout = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
+	}
+	if _, ov := c.overrides["DD_TRACE_PARTIAL_FLUSH_MIN_SPANS"]; !ov {
+		c.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
+	}
+	if _, ov := c.overrides["DD_TRACE_PARTIAL_FLUSH_ENABLED"]; !ov {
+		c.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+	}
+	if _, ov := c.overrides["DD_TRACE_STATS_COMPUTATION_ENABLED"]; !ov {
+		c.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
+	}
+	if _, ov := c.overrides["DD_DATA_STREAMS_ENABLED"]; !ov {
+		c.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
+	}
+	if _, ov := c.overrides["DD_DYNAMIC_INSTRUMENTATION_ENABLED"]; !ov {
+		c.dynamicInstrumentationEnabled = p.GetBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	}
+	if _, ov := c.overrides[constants.CIVisibilityEnabledEnvironmentVariable]; !ov {
+		c.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
+	}
+	if _, ov := c.overrides["DD_CIVISIBILITY_AGENTLESS_ENABLED"]; !ov {
+		c.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
+	}
+	if _, ov := c.overrides["DD_TRACE_LOG_DIRECTORY"]; !ov {
+		c.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
+	}
+	if _, ov := c.overrides["DD_TRACE_RATE_LIMIT"]; !ov {
+		c.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
+	}
+	if _, ov := c.overrides["DD_TRACE_DEBUG_STACK"]; !ov {
+		c.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
+	}
+	if _, ov := c.overrides["DD_TRACE_RETRY_INTERVAL"]; !ov {
+		c.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
+	}
+	if _, ov := c.overrides["DD_LOGS_OTEL_ENABLED"]; !ov {
+		c.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	}
+	if _, ov := c.overrides["DD_TRACE_AGENT_PROTOCOL_VERSION"]; !ov {
+		c.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV04, validateTraceProtocolVersion))
+	}
+	if _, ov := c.overrides["OTEL_TRACES_EXPORTER"]; !ov {
+		c.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
+		// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
+		if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
+			c.otlpExportMode = false
+		}
+	}
+	// otlpTraceURL and otlpHeaders have no setter / no override key — always refresh.
+	c.otlpTraceURL = resolveOTLPTraceURL(c.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
+	c.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
+	c.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
+}
+
+// envOrigin returns OriginEnvVar if key is set in the environment, else OriginDefault.
+func envOrigin(p *provider.Provider, key string) telemetry.Origin {
+	if p.IsSet(key) {
+		return telemetry.OriginEnvVar
+	}
+	return telemetry.OriginDefault
+}
+
+// refreshFromEnv re-reads env-backed config values into the singleton,
+// skipping fields currently claimed by code-origin overrides (tracked in
+// c.overrides). Called by PrepareForStart after undoProduct so env changes
+// between Start invocations are picked up on restart.
+//
+// Not intended to be called directly by products — PrepareForStart runs this
+// as part of the Start ceremony. Unexported to keep the product-facing API
+// narrow; same-package tests access it directly.
+//
+// TODO(perf): PrepareForStart currently invokes this on every product Start,
+// which re-reads env vars even on cold startup where Get's lazy loadConfig
+// already did the work. A per-product `initialized atomic.Bool` in each
+// product's package would let Start gate the undo+refresh behind
+// `started.Swap(true)`, so cold first-Starts skip both and only re-inits pay
+// the refresh cost. Not done here to keep the POC scope small.
+func (c *Config) refreshFromEnv() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loadEnvInto()
+}
+
+// PrepareForStart resets and refreshes the Config so that the given product
+// can apply its Start options on top. It:
+//
+//  1. Rolls back any programmatic (OriginCode) overrides this product recorded
+//     on a previous Start, leaving other products' overrides intact.
+//  2. Re-reads env-backed values so env changes between Starts are picked up.
+//
+// Products should call this at the top of their Start, after obtaining the
+// singleton via Get. Callers that only need to read the current configuration
+// (e.g. contribs) should use Get alone and not invoke this method.
+//
+//	c := internalconfig.Get()
+//	c.PrepareForStart(internalconfig.ProductTracer)
+//	// ... apply product Start options on top of c
+//
+// The underlying undo and refresh steps are internal details; they are not
+// exported so products cannot accidentally invoke only one half of the
+// ceremony or misorder them.
+func (c *Config) PrepareForStart(product Product) {
+	c.undoProduct(product)
+	c.refreshFromEnv()
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -180,50 +426,8 @@ func loadConfig() *Config {
 	cfg := &Config{
 		overrides: make(map[string]programmaticOverride),
 	}
+	cfg.loadEnvInto()
 	p := provider.New()
-
-	// Resolve agent URL from DD_TRACE_AGENT_URL, DD_AGENT_HOST, DD_TRACE_AGENT_PORT.
-	// All three are read through the provider so telemetry is reported for each.
-	agentURLStr := p.GetString("DD_TRACE_AGENT_URL", "")
-	agentHost := p.GetString("DD_AGENT_HOST", "")
-	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
-	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
-
-	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
-	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
-	cfg.serviceName = p.GetString("DD_SERVICE", "")
-	cfg.version = p.GetString("DD_VERSION", "")
-	cfg.env = p.GetString("DD_ENV", "")
-	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
-	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
-	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
-	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
-	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
-	cfg.peerServiceMappings = p.GetMap("DD_TRACE_PEER_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
-	cfg.debugAbandonedSpans = p.GetBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
-	cfg.spanTimeout = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
-	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
-	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
-	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
-	cfg.dynamicInstrumentationEnabled = p.GetBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
-	cfg.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
-	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
-	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
-	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
-	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
-	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
-	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV04, validateTraceProtocolVersion))
-	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
-	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
-	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
-		cfg.otlpExportMode = false
-	}
-	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
-	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
-	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat)
@@ -290,27 +494,6 @@ func Get() *Config {
 	if useFreshConfig || instance == nil {
 		instance = loadConfig()
 	}
-
-	return instance
-}
-
-// CreateNew returns a new global configuration instance.
-// This function should be used when we need to create a new configuration instance.
-// It build a new configuration instance and override the existing one
-// loosing any programmatic configuration that would have been applied to the existing instance.
-//
-// It shouldn't be used to get the global configuration instance to manipulate it but
-// should be used when there is a need to reset the global configuration instance.
-//
-// This is useful when we need to create a new configuration instance when a new product is initialized.
-// Each product should have its own configuration instance and apply its own programmatic configuration to it.
-//
-// If a customer starts multiple tracer with different programmatic configuration only the latest one will be used
-// and available globally.
-func CreateNew() *Config {
-	mu.Lock()
-	defer mu.Unlock()
-	instance = loadConfig()
 
 	return instance
 }
@@ -697,7 +880,14 @@ func (c *Config) Env() string {
 func (c *Config) SetEnv(env string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.checkProductConflict("DD_ENV", origin, env, product...) {
+	priorVal := c.env
+	// Silent restore — telemetry is re-reported by the next refreshFromEnv
+	// (invoked via PrepareForStart on each product Start) or by a subsequent
+	// code write.
+	restore := func() {
+		c.env = priorVal
+	}
+	if c.snapshotAndCheck("DD_ENV", origin, env, restore, product...) {
 		return
 	}
 	c.env = env

@@ -25,7 +25,6 @@ import (
 
 	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
 	"github.com/stretchr/testify/assert"
@@ -122,10 +121,10 @@ func TestResolveAgentAddr(t *testing.T) {
 			if tt.envPort != "" {
 				t.Setenv("DD_TRACE_AGENT_PORT", tt.envPort)
 			}
-			// Use CreateNew directly to test URL resolution without triggering
+			// Fetch a fresh singleton to test URL resolution without triggering
 			// loadAgentFeatures, which would make real HTTP calls to the configured URL.
 			c := new(config)
-			c.internalConfig = internalconfig.CreateNew()
+			c.internalConfig = newFreshInternalConfig()
 			if tt.inOpt != nil {
 				tt.inOpt(c)
 			}
@@ -140,7 +139,7 @@ func TestResolveAgentAddr(t *testing.T) {
 		internal.DefaultTraceAgentUDSPath = d // Choose a file we know will exist
 		defer func() { internal.DefaultTraceAgentUDSPath = old }()
 		c := new(config)
-		c.internalConfig = internalconfig.CreateNew()
+		c.internalConfig = newFreshInternalConfig()
 		assert.Equal(t, &url.URL{Scheme: "unix", Path: d}, c.internalConfig.RawAgentURL())
 	})
 }
