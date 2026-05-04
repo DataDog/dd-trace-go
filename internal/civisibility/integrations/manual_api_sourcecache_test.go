@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
@@ -35,21 +36,39 @@ func literalSourceFixtureRuntimeFunc() *runtime.Func {
 	return runtime.FuncForPC(reflect.ValueOf(literal).Pointer())
 }
 
-func TestLoadSourceFileMetadataCachesValidFiles(t *testing.T) {
+// resetSourceCacheTestState installs repository metadata so sourcecache tests also work with -trimpath.
+func resetSourceCacheTestState(t *testing.T) {
+	t.Helper()
+
 	resetCIVisibilityStateForTesting()
+	utils.AddCITagsMap(map[string]string{
+		constants.CIWorkspacePath:  sourcePathRepositoryRoot(t),
+		constants.GitRepositoryURL: "https://github.com/DataDog/dd-trace-go.git",
+	})
+	t.Cleanup(resetCIVisibilityStateForTesting)
+}
+
+// filesystemPathForRuntimeSource resolves a runtime source path into the file path used by source parsing.
+func filesystemPathForRuntimeSource(runtimePath string) string {
+	return resolveTestSourcePath(runtimePath).FilesystemPath
+}
+
+func TestLoadSourceFileMetadataCachesValidFiles(t *testing.T) {
+	resetSourceCacheTestState(t)
 
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok)
+	filesystemPath := filesystemPathForRuntimeSource(file)
 
-	first := loadSourceFileMetadata(file)
-	second := loadSourceFileMetadata(file)
+	first := loadSourceFileMetadata(filesystemPath)
+	second := loadSourceFileMetadata(filesystemPath)
 
 	require.True(t, first.parseOK)
 	assert.Equal(t, first, second)
 }
 
 func TestLoadSourceFileMetadataNegativeCachesParseFailures(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 
 	tmpFile, err := os.CreateTemp(t.TempDir(), "sourcecache-invalid-*.go")
 	require.NoError(t, err)
@@ -66,7 +85,7 @@ func TestLoadSourceFileMetadataNegativeCachesParseFailures(t *testing.T) {
 }
 
 func TestLoadSourceFileMetadataHandlesDeclarationsWithoutBody(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 
 	tmpFile, err := os.CreateTemp(t.TempDir(), "sourcecache-decl-*.go")
 	require.NoError(t, err)
@@ -442,7 +461,7 @@ func TestResolveSourceLocationLeavesNoMatchUnchanged(t *testing.T) {
 }
 
 func TestSetTestFuncKeepsRealFunc1DeclarationWhenLineConfirmed(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 	mockTracer.Reset()
 
 	recordLogger := new(log.RecordLogger)
@@ -464,7 +483,7 @@ func TestSetTestFuncKeepsRealFunc1DeclarationWhenLineConfirmed(t *testing.T) {
 	file, runtimeStartLine := fn.FileLine(fn.Entry())
 	require.Equal(t, "manual_api_sourcecache_funcn_fixture_test.go", filepath.Base(file))
 
-	metadata := loadSourceFileMetadata(file)
+	metadata := loadSourceFileMetadata(filesystemPathForRuntimeSource(file))
 	require.True(t, metadata.parseOK)
 	require.Len(t, metadata.namedFunctions["func1"], 1)
 	declaration := metadata.namedFunctions["func1"][0]
@@ -490,7 +509,7 @@ func TestSetTestFuncKeepsRealFunc1DeclarationWhenLineConfirmed(t *testing.T) {
 }
 
 func TestSetTestFuncResolvesGeneratedFunc1LiteralWhenDeclarationExists(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 	mockTracer.Reset()
 
 	recordLogger := new(log.RecordLogger)
@@ -513,7 +532,7 @@ func TestSetTestFuncResolvesGeneratedFunc1LiteralWhenDeclarationExists(t *testin
 	file, runtimeStartLine := fn.FileLine(fn.Entry())
 	require.Equal(t, "manual_api_sourcecache_funcn_fixture_test.go", filepath.Base(file))
 
-	metadata := loadSourceFileMetadata(file)
+	metadata := loadSourceFileMetadata(filesystemPathForRuntimeSource(file))
 	require.True(t, metadata.parseOK)
 	require.Len(t, metadata.namedFunctions["func1"], 1)
 	require.Len(t, metadata.functionLiterals, 1)
@@ -548,7 +567,7 @@ func TestSetTestFuncResolvesGeneratedFunc1LiteralWhenDeclarationExists(t *testin
 
 // TestSetTestFuncResolvesAdjacentFuncNLiteralToExactSourceRange verifies adjacent closures resolve to their own source ranges.
 func TestSetTestFuncResolvesAdjacentFuncNLiteralToExactSourceRange(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 	mockTracer.Reset()
 
 	recordLogger := new(log.RecordLogger)
@@ -573,7 +592,7 @@ func TestSetTestFuncResolvesAdjacentFuncNLiteralToExactSourceRange(t *testing.T)
 	file, secondRuntimeStartLine := secondFn.FileLine(secondFn.Entry())
 	require.Equal(t, "manual_api_sourcecache_adjacent_literal_fixture_test.go", filepath.Base(file))
 
-	metadata := loadSourceFileMetadata(file)
+	metadata := loadSourceFileMetadata(filesystemPathForRuntimeSource(file))
 	require.True(t, metadata.parseOK)
 	require.Len(t, metadata.functionLiterals, 2)
 	firstLiteral := metadata.functionLiterals[0]
@@ -601,10 +620,11 @@ func TestSetTestFuncResolvesAdjacentFuncNLiteralToExactSourceRange(t *testing.T)
 }
 
 func TestLoadSourceFileMetadataIsConcurrentSafe(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok)
+	filesystemPath := filesystemPathForRuntimeSource(file)
 
 	results := make([]sourceFileMetadata, 16)
 	var wg sync.WaitGroup
@@ -612,7 +632,7 @@ func TestLoadSourceFileMetadataIsConcurrentSafe(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i] = loadSourceFileMetadata(file)
+			results[i] = loadSourceFileMetadata(filesystemPath)
 		}(idx)
 	}
 	wg.Wait()
@@ -623,7 +643,7 @@ func TestLoadSourceFileMetadataIsConcurrentSafe(t *testing.T) {
 }
 
 func TestSetTestFuncCachesNamedFunctionSourceTagsAndLogs(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 	mockTracer.Reset()
 
 	recordLogger := new(log.RecordLogger)
@@ -663,7 +683,7 @@ func TestSetTestFuncCachesNamedFunctionSourceTagsAndLogs(t *testing.T) {
 }
 
 func TestSetTestFuncCachesFunctionLiteralSourceTagsAndLogs(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 	mockTracer.Reset()
 
 	recordLogger := new(log.RecordLogger)
@@ -704,7 +724,7 @@ func TestSetTestFuncCachesFunctionLiteralSourceTagsAndLogs(t *testing.T) {
 }
 
 func TestSetTestFuncPreservesSuiteLevelUnskippable(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 	mockTracer.Reset()
 
 	now := time.Now()
@@ -724,7 +744,7 @@ func TestSetTestFuncPreservesSuiteLevelUnskippable(t *testing.T) {
 }
 
 func TestSetTestFuncPreservesDeclarationLevelUnskippable(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 	mockTracer.Reset()
 
 	now := time.Now()
@@ -744,7 +764,7 @@ func TestSetTestFuncPreservesDeclarationLevelUnskippable(t *testing.T) {
 }
 
 func TestSetTestFuncDisambiguatesSameNamedMethodsInTheSameFile(t *testing.T) {
-	resetCIVisibilityStateForTesting()
+	resetSourceCacheTestState(t)
 	mockTracer.Reset()
 
 	now := time.Now()
@@ -764,7 +784,7 @@ func TestSetTestFuncDisambiguatesSameNamedMethodsInTheSameFile(t *testing.T) {
 	firstFile, firstRuntimeStartLine := firstFn.FileLine(firstFn.Entry())
 	secondFile, secondRuntimeStartLine := secondFn.FileLine(secondFn.Entry())
 	require.Equal(t, firstFile, secondFile)
-	metadata := loadSourceFileMetadata(firstFile)
+	metadata := loadSourceFileMetadata(filesystemPathForRuntimeSource(firstFile))
 	require.Len(t, metadata.namedFunctions["TestSharedName"], 2)
 
 	firstTest.SetTestFunc(firstFn)

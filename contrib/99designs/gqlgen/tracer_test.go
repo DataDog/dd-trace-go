@@ -458,6 +458,7 @@ func TestErrorsAsSpanEvents(t *testing.T) {
 
 	wantAttrs := map[string]any{
 		"message":          "test error",
+		"locations":        []any{"1:3"},
 		"path":             []any{"withError"},
 		"stacktrace":       evt.Attributes["stacktrace"],
 		"type":             "*gqlerror.Error",
