@@ -23,8 +23,7 @@ const (
 
 	// DefaultMaxTagsHeaderLen is the default value for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	DefaultMaxTagsHeaderLen = 512
-	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH;
-	// values above this are clamped down to prevent HTTP 413 responses from the agent.
+	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a
 	// single trace. This is to avoid memory leaks. If more spans than this
