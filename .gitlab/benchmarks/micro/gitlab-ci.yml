@@ -13,15 +13,24 @@ variables:
   # Changes smaller than SIGNIFICANT_IMPACT_THRESHOLD will be treated as a noise
   SIGNIFICANT_IMPACT_THRESHOLD: 2.0
 
+.benchmark-rules: &benchmark-rules
+  - if: '$CI_COMMIT_TAG =~ /^.*\/v\d+\.\d+\.\d+(?:-.*\.\d+)?$/'
+    when: never
+  - if: '$CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/'
+    when: never
+  - if: '$CI_COMMIT_BRANCH =~ /^mq-working-branch-.*$/'
+    when: never
+  - if: '$CI_COMMIT_BRANCH == "main"'
+    when: always
+    interruptible: false
+  - when: always
+    interruptible: true
+
 .benchmark:
   stage: microbenchmarks
   image: $BENCHMARKS_CI_IMAGE
-  when: on_success
+  rules: *benchmark-rules
   timeout: 45m
-  rules:
-    - if: $CI_COMMIT_REF_NAME == "main"
-      interruptible: false
-    - interruptible: true
   tags: ["runner:apm-k8s-m8g-metal"]
   needs: []
   variables:
