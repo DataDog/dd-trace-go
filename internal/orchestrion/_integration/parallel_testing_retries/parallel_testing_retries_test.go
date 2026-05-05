@@ -77,6 +77,7 @@ type scenarioConfig struct {
 }
 
 var flakyAttempts atomic.Int32
+var subtestPanicAttempts atomic.Int32
 
 func TestMain(m *testing.M) {
 	if !built.WithOrchestrion {
@@ -341,6 +342,7 @@ func scenarioOrder() []string {
 		"TestParallelEFDParallel",
 		"TestParallelFlakyRetry",
 		"TestParallelAttemptToFix",
+		"TestSubtestPanicFlakyRetry",
 		"TestFailNowSingleExecution",
 		"TestManualFailNowSingleExecution",
 		"BenchmarkManualFailNow",
@@ -447,6 +449,29 @@ func scenariosByName() map[string]scenarioConfig {
 				events.CheckEventsByTagAndValue(constants.TestHasFailedAllRetries, "true", 0)
 			},
 		},
+		"TestSubtestPanicFlakyRetry": {
+			testName: "TestSubtestPanicFlakyRetry",
+			settings: flakyRetrySettings(),
+			env: map[string]string{
+				constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable:    "true",
+				constants.CIVisibilityFlakyRetryCountEnvironmentVariable:      "1",
+				constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable: "1",
+			},
+			expectedTestEvents:     4,
+			expectedSuiteEvents:    1,
+			expectedModuleEvents:   1,
+			expectedSessionEvents:  1,
+			expectedTotalEvents:    7,
+			expectedRetryEvents:    2,
+			retryReason:            constants.AutoTestRetriesRetryReason,
+			expectedResourceEvents: 2,
+			resourceName:           suiteName + ".TestSubtestPanicFlakyRetry/child",
+			validate: func(events civisibilitytest.Events, _ string) {
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 2)
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 2)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 2)
+			},
+		},
 		"TestFailNowSingleExecution": {
 			testName:                "TestFailNowSingleExecution",
 			expectedTestEvents:      1,
@@ -520,20 +545,22 @@ func scenariosByName() map[string]scenarioConfig {
 				constants.CIVisibilityFlakyRetryCountEnvironmentVariable:      "1",
 				constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable: "1",
 			},
-			expectedTestEvents:      2,
+			expectedTestEvents:      4,
 			expectedSuiteEvents:     1,
 			expectedModuleEvents:    1,
 			expectedSessionEvents:   1,
-			expectedTotalEvents:     5,
-			expectedFailureOutput:   parallelPanic,
-			expectedResourceEvents:  1,
+			expectedTotalEvents:     7,
+			expectedRetryEvents:     2,
+			retryReason:             constants.AutoTestRetriesRetryReason,
+			expectedResourceEvents:  2,
 			resourceName:            suiteName + ".TestSubtestDuplicateParallel/child",
 			expectFailure:           true,
 			validateFailureInParent: true,
 			validate: func(events civisibilitytest.Events, _ string) {
-				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 1)
-				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 1)
-				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 1)
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 2)
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 2)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusFail, 1)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 2)
 			},
 		},
 	}
@@ -623,6 +650,15 @@ func TestParallelFlakyRetry(t *testing.T) {
 func TestParallelAttemptToFix(t *testing.T) {
 	skipUnlessScenario(t, "TestParallelAttemptToFix")
 	t.Parallel()
+}
+
+func TestSubtestPanicFlakyRetry(t *testing.T) {
+	skipUnlessScenario(t, "TestSubtestPanicFlakyRetry")
+	t.Run("child", func(t *testing.T) {
+		if subtestPanicAttempts.Add(1) == 1 {
+			panic("subtest panic on first attempt")
+		}
+	})
 }
 
 func TestFailNowSingleExecution(t *testing.T) {

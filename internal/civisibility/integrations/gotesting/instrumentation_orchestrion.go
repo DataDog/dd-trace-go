@@ -237,6 +237,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				collectAndWriteLogs(currentT, test)
 
 				if r := recover(); r != nil {
+					stacktrace := utils.GetStacktrace(1)
 					// Compute whether this is the final execution.
 					finalExec := isFinalExecution(true, false, execMeta, duration)
 
@@ -256,8 +257,17 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 							test.SetTag(constants.TestAttemptToFixPassed, "false")
 						}
 					}
-					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
+					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), stacktrace))
 					test.Close(integrations.ResultStatusFail)
+					if execMeta.hasAdditionalFeatureWrapper {
+						// Retry wrappers own panic propagation. Record the panic as this
+						// attempt's failure and let runTestWithRetry decide whether to
+						// retry or re-panic after the final execution.
+						currentT.Fail()
+						execMeta.panicData = r
+						execMeta.panicStacktrace = stacktrace
+						return
+					}
 					// This branch re-panics immediately, so retry wrappers cannot run their normal
 					// end-of-attempt cleanup. Close suite/module counters and flush CI Visibility
 					// before handing the panic back to the Go test runner.
