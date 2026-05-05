@@ -28,8 +28,6 @@ experiments:
           cpus_per_item: $CPUS_PER_BENCHMARK
           items_separator: "|"
         how_to_run_benchmarks: |
-          set +x
-          
           bench_loop_x10_v2 () {
             for dir in "${DIRS[@]}"; do
               [ -d "$dir" ] || { echo "skipping: $dir is not a valid directory"; continue; } # skip if the directory is invalid
