@@ -788,6 +788,15 @@ func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin, pro
 	configtelemetry.Report("DD_SERVICE_MAPPING", strings.Join(all, ","), origin)
 }
 
+// SpanAttributeSchemaVersion returns the configured DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
+// Read on the span-creation hot path; avoids defer to minimise lock cost.
+func (c *Config) SpanAttributeSchemaVersion() int {
+	c.mu.RLock()
+	v := c.spanAttributeSchemaVersion
+	c.mu.RUnlock()
+	return v
+}
+
 func (c *Config) PeerServiceDefaultsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

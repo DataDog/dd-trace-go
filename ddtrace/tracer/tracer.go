@@ -984,7 +984,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	if span.metrics[keyTopLevel] == 1 {
 		// The span is the local root span.
-		span.setMetricInit(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+		span.setMetricInit(keySpanAttributeSchemaVersion, float64(t.config.internalConfig.SpanAttributeSchemaVersion()))
 	}
 	span.setMetricInit(ext.Pid, float64(t.pid))
 	t.spansStarted.Inc(span.integration)
