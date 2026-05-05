@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -156,11 +157,8 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 
 	// Check if the test is going to be skipped by ITR
 	if settings.ItrEnabled {
-		if settings.CodeCoverage && coverage.CanCollect() {
-			session.SetTag(constants.CodeCoverageEnabled, "true")
-		} else {
-			session.SetTag(constants.CodeCoverageEnabled, "true")
-		}
+		coverageEnabled := settings.CodeCoverage && coverage.CanCollect()
+		session.SetTag(constants.CodeCoverageEnabled, strconv.FormatBool(coverageEnabled))
 
 		if settings.TestsSkipping {
 			session.SetTag(constants.ITRTestsSkippingEnabled, "true")
