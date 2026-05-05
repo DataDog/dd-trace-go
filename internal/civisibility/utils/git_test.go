@@ -6,6 +6,8 @@
 package utils
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -159,6 +161,48 @@ func TestPackFiles(t *testing.T) {
 	shas = shas[:min(len(shas), 5)]
 	packfiles := CreatePackFiles(shas, []string{})
 	assert.NotEmpty(t, packfiles)
+}
+
+func TestCreatePackFilesMissingPackFile(t *testing.T) {
+	dir := t.TempDir()
+	gitPath := filepath.Join(dir, "git")
+	script := `#!/bin/sh
+if [ "$1" = "-c" ]; then
+	shift 2
+fi
+case "$1" in
+	rev-list)
+		printf 'abc123\n'
+		;;
+	pack-objects)
+		printf 'packhash\n'
+		;;
+	*)
+		exit 0
+		;;
+esac
+`
+	assert.NoError(t, os.WriteFile(gitPath, []byte(script), 0o755))
+	gitBatPath := filepath.Join(dir, "git.bat")
+	batchScript := `@echo off
+if "%1"=="-c" (
+	shift
+	shift
+)
+if "%1"=="rev-list" (
+	echo abc123
+	exit /b 0
+)
+if "%1"=="pack-objects" (
+	echo packhash
+	exit /b 0
+)
+exit /b 0
+`
+	assert.NoError(t, os.WriteFile(gitBatPath, []byte(batchScript), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	assert.Empty(t, CreatePackFiles([]string{"HEAD"}, nil))
 }
 
 func TestFetchCommitData(t *testing.T) {
