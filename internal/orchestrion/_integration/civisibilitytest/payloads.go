@@ -300,6 +300,22 @@ func (p *Payloads) Events() Events {
 	return events
 }
 
+// PayloadCount returns the number of CI Visibility test-cycle payloads received.
+func (p *Payloads) PayloadCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.payloads)
+}
+
+// CheckPayloadCountAtLeast panics if fewer than count payloads were received.
+func (p *Payloads) CheckPayloadCountAtLeast(count int) *Payloads {
+	actual := p.PayloadCount()
+	if actual < count {
+		panic(fmt.Sprintf("expected at least %d payload(s), got %d", count, actual))
+	}
+	return p
+}
+
 // CheckEventsByType returns events with the given type and panics if the count does not match.
 func (e Events) CheckEventsByType(eventType string, count int) Events {
 	var result Events

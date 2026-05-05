@@ -41,7 +41,6 @@ aspects:
       - inject-declarations:
           links:
             - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
-            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations
           template: |-
             //go:linkname __dd_civisibility_instrumentTestingTFunc github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingTFunc
             func __dd_civisibility_instrumentTestingTFunc(func(*T)) func(*T)
@@ -57,12 +56,6 @@ aspects:
             
             //go:linkname __dd_civisibility_instrumentTestingParallel github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingParallel
             func __dd_civisibility_instrumentTestingParallel(t *T) bool
-
-            //go:linkname __dd_civisibility_instrumentShouldExitOnFailNow github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentShouldExitOnFailNow
-            func __dd_civisibility_instrumentShouldExitOnFailNow(tb TB) bool
-
-            //go:linkname __dd_civisibility_ExitCiVisibility github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations.ExitCiVisibility
-            func __dd_civisibility_ExitCiVisibility()
 
       - prepend-statements:
           template: |-
@@ -112,9 +105,6 @@ aspects:
       - prepend-statements:
           template: |-
             __dd_civisibility_instrumentSetErrorInfo({{ .Function.Receiver }}, "FailNow", "failed test", 0)
-            if __dd_civisibility_instrumentShouldExitOnFailNow({{ .Function.Receiver }}) {
-              defer __dd_civisibility_ExitCiVisibility()
-            }
 
   - id: common.Error
     join-point:

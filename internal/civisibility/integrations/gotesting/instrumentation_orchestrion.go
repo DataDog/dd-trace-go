@@ -370,18 +370,6 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 	}
 }
 
-// instrumentShouldExitOnFailNow reports whether FailNow should stop CI Visibility immediately.
-// Retry wrappers keep CI Visibility alive until every attempt has created and flushed its test event.
-//
-//go:linkname instrumentShouldExitOnFailNow
-func instrumentShouldExitOnFailNow(tb testing.TB) bool {
-	if !isCiVisibilityEnabled() {
-		return false
-	}
-	ciTestItem := getTestMetadata(tb)
-	return ciTestItem == nil || !ciTestItem.hasAdditionalFeatureWrapper
-}
-
 // instrumentCloseAndSkip helper function to close and skip with a reason a `*testing.T, *testing.B, *testing.common` CI Visibility span
 //
 //go:linkname instrumentCloseAndSkip

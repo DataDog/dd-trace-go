@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/orchestrion/runtime/built"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	gotesting "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/civisibilitytest"
 )
@@ -34,18 +35,45 @@ const (
 	parallelPanic = "testing: t.Parallel called multiple times"
 )
 
+// scenarioConfig describes one subprocess scenario and the exact CI Visibility
+// lifecycle data it must emit.
 type scenarioConfig struct {
-	testName                string
-	settings                civisibilitynet.SettingsResponseData
-	env                     map[string]string
-	knownTests              *civisibilitynet.KnownTestsResponseData
-	testManagement          *civisibilitynet.TestManagementTestsResponseDataModules
-	expectedTestEvents      int
-	expectedRetryEvents     int
-	retryReason             string
+	testName       string
+	settings       civisibilitynet.SettingsResponseData
+	env            map[string]string
+	knownTests     *civisibilitynet.KnownTestsResponseData
+	testManagement *civisibilitynet.TestManagementTestsResponseDataModules
+	// expectedTestEvents is the exact number of test events expected after
+	// finalization.
+	expectedTestEvents int
+	// expectedSuiteEvents is the exact number of suite-end events expected after
+	// finalization.
+	expectedSuiteEvents int
+	// expectedModuleEvents is the exact number of module-end events expected after
+	// finalization.
+	expectedModuleEvents int
+	// expectedSessionEvents is the exact number of session-end events expected
+	// after finalization.
+	expectedSessionEvents int
+	// expectedTotalEvents is the exact number of CI Visibility lifecycle events
+	// expected after filtering out internal HTTP spans.
+	expectedTotalEvents int
+	// expectedRetryEvents is the exact number of test events marked as retries.
+	expectedRetryEvents int
+	// expectedFailureOutput is required in subprocess output when a scenario is
+	// expected to fail for a specific reason.
+	expectedFailureOutput string
+	// expectedResourceEvents overrides the expected number of test events for
+	// resourceName when a scenario emits both parent and child test events.
+	expectedResourceEvents int
+	retryReason            string
+	// resourceName overrides the default test resource asserted for the scenario.
+	resourceName            string
 	validate                func(events civisibilitytest.Events, resource string)
 	expectFailure           bool
 	validateFailureInParent bool
+	// runBenchmark switches subprocess selection from a test run to a benchmark run.
+	runBenchmark bool
 }
 
 var flakyAttempts atomic.Int32
@@ -73,8 +101,12 @@ func TestMain(m *testing.M) {
 		}
 
 		if cfg.expectFailure {
-			if exitCode == 0 || !strings.Contains(output, parallelPanic) {
-				fmt.Printf("scenario %s expected duplicate Parallel panic, exit=%d\n%s\n", name, exitCode, output)
+			if exitCode == 0 {
+				fmt.Printf("scenario %s expected failure, exit=%d\n%s\n", name, exitCode, output)
+				os.Exit(1)
+			}
+			if cfg.expectedFailureOutput != "" && !strings.Contains(output, cfg.expectedFailureOutput) {
+				fmt.Printf("scenario %s expected output %q, exit=%d\n%s\n", name, cfg.expectedFailureOutput, exitCode, output)
 				os.Exit(1)
 			}
 			continue
@@ -110,14 +142,7 @@ func runScenarioChild(m *testing.M, cfg scenarioConfig) int {
 		return code
 	}
 
-	events := payloads.Events().CheckEventsByType("test", cfg.expectedTestEvents).CheckEventsByResourceName(resource, cfg.expectedTestEvents)
-	events.CheckEventsByTagAndValue(constants.TestIsRetry, "true", cfg.expectedRetryEvents)
-	if cfg.retryReason != "" {
-		events.CheckEventsByTagAndValue(constants.TestRetryReason, cfg.retryReason, cfg.expectedRetryEvents)
-	} else {
-		events.CheckEventsWithoutTag(constants.TestRetryReason, cfg.expectedTestEvents)
-	}
-	cfg.validate(events, resource)
+	validateScenarioPayloads(payloads, cfg, resource)
 	return 0
 }
 
@@ -145,9 +170,8 @@ func runScenarioProcess(cfg scenarioConfig) (string, int, error) {
 		childCfg.env = cloneEnvMap(cfg.env)
 		childCfg.env[externalMockServerEnv] = "true"
 		output, exitCode, err := runScenarioProcessWithEnv(childCfg)
-		if err == nil && cfg.validate != nil {
-			resource := suiteName + "." + cfg.testName
-			cfg.validate(payloads.Events(), resource)
+		if err == nil && hasPayloadExpectations(cfg) {
+			validateScenarioPayloads(payloads, cfg, resourceForScenario(cfg))
 		}
 		return output, exitCode, err
 	}
@@ -161,7 +185,7 @@ func cloneEnvMap(env map[string]string) map[string]string {
 }
 
 func runScenarioProcessWithEnv(cfg scenarioConfig) (string, int, error) {
-	cmd := exec.Command(os.Args[0], childArgsForScenario(os.Args[1:], cfg.testName)...)
+	cmd := exec.Command(os.Args[0], childArgsForScenario(os.Args[1:], cfg)...)
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
@@ -203,7 +227,7 @@ func scenarioEnvForChild(environ []string, cfg scenarioConfig) []string {
 	return filtered
 }
 
-func childArgsForScenario(args []string, testName string) []string {
+func childArgsForScenario(args []string, cfg scenarioConfig) []string {
 	filtered := make([]string, 0, len(args)+1)
 	skipNext := false
 	for _, arg := range args {
@@ -211,7 +235,7 @@ func childArgsForScenario(args []string, testName string) []string {
 			skipNext = false
 			continue
 		}
-		if shouldDropTestFlag(arg) {
+		if shouldDropTestFlag(arg) || cfg.runBenchmark && shouldDropBenchmarkFlag(arg) {
 			if !strings.Contains(arg, "=") {
 				skipNext = true
 			}
@@ -219,7 +243,10 @@ func childArgsForScenario(args []string, testName string) []string {
 		}
 		filtered = append(filtered, arg)
 	}
-	return append(filtered, "-test.run=^"+testName+"$")
+	if cfg.runBenchmark {
+		return append(filtered, "-test.run=^$", "-test.bench=^"+cfg.testName+"$", "-test.benchtime=1x")
+	}
+	return append(filtered, "-test.run=^"+cfg.testName+"$")
 }
 
 func shouldDropTestFlag(arg string) bool {
@@ -235,6 +262,78 @@ func shouldDropTestFlag(arg string) bool {
 		strings.HasPrefix(arg, "-list=")
 }
 
+// shouldDropBenchmarkFlag reports whether an inherited benchmark selector
+// would conflict with the scenario-specific benchmark invocation.
+func shouldDropBenchmarkFlag(arg string) bool {
+	switch arg {
+	case "-test.bench", "-bench", "-test.benchtime", "-benchtime":
+		return true
+	}
+	return strings.HasPrefix(arg, "-test.bench=") ||
+		strings.HasPrefix(arg, "-bench=") ||
+		strings.HasPrefix(arg, "-test.benchtime=") ||
+		strings.HasPrefix(arg, "-benchtime=")
+}
+
+// resourceForScenario returns the test resource whose event count should be
+// asserted for the scenario.
+func resourceForScenario(cfg scenarioConfig) string {
+	if cfg.resourceName != "" {
+		return cfg.resourceName
+	}
+	return suiteName + "." + cfg.testName
+}
+
+// hasPayloadExpectations reports whether a scenario should validate CI
+// Visibility payload contents after its subprocess exits.
+func hasPayloadExpectations(cfg scenarioConfig) bool {
+	return cfg.expectedTotalEvents > 0 ||
+		cfg.expectedTestEvents > 0 ||
+		cfg.expectedSuiteEvents > 0 ||
+		cfg.expectedModuleEvents > 0 ||
+		cfg.expectedSessionEvents > 0
+}
+
+// testCycleEvents returns only CI Visibility lifecycle events and excludes
+// internal HTTP spans emitted while the mock intake is active.
+func testCycleEvents(events civisibilitytest.Events) civisibilitytest.Events {
+	var result civisibilitytest.Events
+	for _, event := range events {
+		switch event.Type {
+		case constants.SpanTypeTest, constants.SpanTypeTestSuite, constants.SpanTypeTestModule, constants.SpanTypeTestSession:
+			result = append(result, event)
+		}
+	}
+	return result
+}
+
+// validateScenarioPayloads checks that a scenario flushed at least one payload
+// and exactly the CI Visibility lifecycle events expected by its configuration.
+func validateScenarioPayloads(payloads *civisibilitytest.Payloads, cfg scenarioConfig, resource string) {
+	payloads.CheckPayloadCountAtLeast(1)
+	events := testCycleEvents(payloads.Events()).HasCount(cfg.expectedTotalEvents)
+	testEvents := events.CheckEventsByType(constants.SpanTypeTest, cfg.expectedTestEvents)
+	expectedResourceEvents := cfg.expectedResourceEvents
+	if expectedResourceEvents == 0 {
+		expectedResourceEvents = cfg.expectedTestEvents
+	}
+	testEvents.CheckEventsByResourceName(resource, expectedResourceEvents)
+	events.CheckEventsByType(constants.SpanTypeTestSuite, cfg.expectedSuiteEvents).CheckEventsByResourceName(suiteName, cfg.expectedSuiteEvents)
+	events.CheckEventsByType(constants.SpanTypeTestModule, cfg.expectedModuleEvents).CheckEventsByResourceName(moduleName, cfg.expectedModuleEvents)
+	events.CheckEventsByType(constants.SpanTypeTestSession, cfg.expectedSessionEvents)
+	if cfg.expectedRetryEvents > 0 || cfg.retryReason != "" {
+		testEvents.CheckEventsByTagAndValue(constants.TestIsRetry, "true", cfg.expectedRetryEvents)
+		if cfg.retryReason != "" {
+			testEvents.CheckEventsByTagAndValue(constants.TestRetryReason, cfg.retryReason, cfg.expectedRetryEvents)
+		}
+	} else {
+		testEvents.CheckEventsWithoutTag(constants.TestRetryReason, cfg.expectedTestEvents)
+	}
+	if cfg.validate != nil {
+		cfg.validate(testEvents, resource)
+	}
+}
+
 func scenarioOrder() []string {
 	return []string{
 		"TestParallelWrapperNoRetry",
@@ -242,6 +341,9 @@ func scenarioOrder() []string {
 		"TestParallelEFDParallel",
 		"TestParallelFlakyRetry",
 		"TestParallelAttemptToFix",
+		"TestFailNowSingleExecution",
+		"TestManualFailNowSingleExecution",
+		"BenchmarkManualFailNow",
 		"TestDuplicateParallel",
 		"TestConcurrentDuplicateParallel",
 		"TestSubtestDuplicateParallel",
@@ -251,11 +353,15 @@ func scenarioOrder() []string {
 func scenariosByName() map[string]scenarioConfig {
 	return map[string]scenarioConfig{
 		"TestParallelWrapperNoRetry": {
-			testName:            "TestParallelWrapperNoRetry",
-			settings:            efdSettings(),
-			knownTests:          knownTests("TestParallelWrapperNoRetry"),
-			expectedTestEvents:  1,
-			expectedRetryEvents: 0,
+			testName:              "TestParallelWrapperNoRetry",
+			settings:              efdSettings(),
+			knownTests:            knownTests("TestParallelWrapperNoRetry"),
+			expectedTestEvents:    1,
+			expectedSuiteEvents:   1,
+			expectedModuleEvents:  1,
+			expectedSessionEvents: 1,
+			expectedTotalEvents:   4,
+			expectedRetryEvents:   0,
 			validate: func(events civisibilitytest.Events, _ string) {
 				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 1)
 				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 1)
@@ -263,12 +369,16 @@ func scenariosByName() map[string]scenarioConfig {
 			},
 		},
 		"TestParallelEFDSequential": {
-			testName:            "TestParallelEFDSequential",
-			settings:            efdSettings(),
-			knownTests:          knownTests("TestKnownBaseline"),
-			expectedTestEvents:  2,
-			expectedRetryEvents: 1,
-			retryReason:         constants.EarlyFlakeDetectionRetryReason,
+			testName:              "TestParallelEFDSequential",
+			settings:              efdSettings(),
+			knownTests:            knownTests("TestKnownBaseline"),
+			expectedTestEvents:    2,
+			expectedSuiteEvents:   1,
+			expectedModuleEvents:  1,
+			expectedSessionEvents: 1,
+			expectedTotalEvents:   5,
+			expectedRetryEvents:   1,
+			retryReason:           constants.EarlyFlakeDetectionRetryReason,
 			validate: func(events civisibilitytest.Events, _ string) {
 				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 2)
 				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 1)
@@ -276,13 +386,17 @@ func scenariosByName() map[string]scenarioConfig {
 			},
 		},
 		"TestParallelEFDParallel": {
-			testName:            "TestParallelEFDParallel",
-			settings:            efdSettings(),
-			env:                 map[string]string{constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled: "true"},
-			knownTests:          knownTests("TestKnownBaseline"),
-			expectedTestEvents:  2,
-			expectedRetryEvents: 1,
-			retryReason:         constants.EarlyFlakeDetectionRetryReason,
+			testName:              "TestParallelEFDParallel",
+			settings:              efdSettings(),
+			env:                   map[string]string{constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled: "true"},
+			knownTests:            knownTests("TestKnownBaseline"),
+			expectedTestEvents:    2,
+			expectedSuiteEvents:   1,
+			expectedModuleEvents:  1,
+			expectedSessionEvents: 1,
+			expectedTotalEvents:   5,
+			expectedRetryEvents:   1,
+			retryReason:           constants.EarlyFlakeDetectionRetryReason,
 			validate: func(events civisibilitytest.Events, _ string) {
 				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 2)
 				events.CheckEventsWithoutTag(constants.TestFinalStatus, 2)
@@ -297,9 +411,13 @@ func scenariosByName() map[string]scenarioConfig {
 				constants.CIVisibilityFlakyRetryCountEnvironmentVariable:      "1",
 				constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable: "1",
 			},
-			expectedTestEvents:  2,
-			expectedRetryEvents: 1,
-			retryReason:         constants.AutoTestRetriesRetryReason,
+			expectedTestEvents:    2,
+			expectedSuiteEvents:   1,
+			expectedModuleEvents:  1,
+			expectedSessionEvents: 1,
+			expectedTotalEvents:   5,
+			expectedRetryEvents:   1,
+			retryReason:           constants.AutoTestRetriesRetryReason,
 			validate: func(events civisibilitytest.Events, _ string) {
 				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 1)
 				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 1)
@@ -313,16 +431,63 @@ func scenariosByName() map[string]scenarioConfig {
 				constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable: "2",
 				constants.CIVisibilityTestManagementEnabledEnvironmentVariable:             "true",
 			},
-			testManagement:      attemptToFixTests(),
-			expectedTestEvents:  2,
-			expectedRetryEvents: 1,
-			retryReason:         constants.AttemptToFixRetryReason,
+			testManagement:        attemptToFixTests(),
+			expectedTestEvents:    2,
+			expectedSuiteEvents:   1,
+			expectedModuleEvents:  1,
+			expectedSessionEvents: 1,
+			expectedTotalEvents:   5,
+			expectedRetryEvents:   1,
+			retryReason:           constants.AttemptToFixRetryReason,
 			validate: func(events civisibilitytest.Events, _ string) {
 				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 2)
 				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 1)
 				events.CheckEventsByTagAndValue(constants.TestIsAttempToFix, "true", 2)
 				events.CheckEventsByTagAndValue(constants.TestAttemptToFixPassed, "true", 1)
 				events.CheckEventsByTagAndValue(constants.TestHasFailedAllRetries, "true", 0)
+			},
+		},
+		"TestFailNowSingleExecution": {
+			testName:                "TestFailNowSingleExecution",
+			expectedTestEvents:      1,
+			expectedSuiteEvents:     1,
+			expectedModuleEvents:    1,
+			expectedSessionEvents:   1,
+			expectedTotalEvents:     4,
+			expectFailure:           true,
+			validateFailureInParent: true,
+			validate: func(events civisibilitytest.Events, _ string) {
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 1)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusFail, 1)
+			},
+		},
+		"TestManualFailNowSingleExecution": {
+			testName:                "TestManualFailNowSingleExecution",
+			expectedTestEvents:      1,
+			expectedSuiteEvents:     1,
+			expectedModuleEvents:    1,
+			expectedSessionEvents:   1,
+			expectedTotalEvents:     4,
+			expectFailure:           true,
+			validateFailureInParent: true,
+			validate: func(events civisibilitytest.Events, _ string) {
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 1)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusFail, 1)
+			},
+		},
+		"BenchmarkManualFailNow": {
+			testName:                "BenchmarkManualFailNow",
+			expectedTestEvents:      1,
+			expectedSuiteEvents:     1,
+			expectedModuleEvents:    1,
+			expectedSessionEvents:   1,
+			expectedTotalEvents:     4,
+			expectFailure:           true,
+			validateFailureInParent: true,
+			runBenchmark:            true,
+			validate: func(events civisibilitytest.Events, _ string) {
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 1)
+				events.CheckEventsByTagAndValue(constants.TestType, constants.TestTypeBenchmark, 1)
 			},
 		},
 		"TestDuplicateParallel": {
@@ -333,7 +498,8 @@ func scenariosByName() map[string]scenarioConfig {
 				constants.CIVisibilityFlakyRetryCountEnvironmentVariable:      "1",
 				constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable: "1",
 			},
-			expectFailure: true,
+			expectFailure:         true,
+			expectedFailureOutput: parallelPanic,
 		},
 		"TestConcurrentDuplicateParallel": {
 			testName: "TestConcurrentDuplicateParallel",
@@ -343,7 +509,8 @@ func scenariosByName() map[string]scenarioConfig {
 				constants.CIVisibilityFlakyRetryCountEnvironmentVariable:      "1",
 				constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable: "1",
 			},
-			expectFailure: true,
+			expectFailure:         true,
+			expectedFailureOutput: parallelPanic,
 		},
 		"TestSubtestDuplicateParallel": {
 			testName: "TestSubtestDuplicateParallel",
@@ -353,11 +520,20 @@ func scenariosByName() map[string]scenarioConfig {
 				constants.CIVisibilityFlakyRetryCountEnvironmentVariable:      "1",
 				constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable: "1",
 			},
+			expectedTestEvents:      2,
+			expectedSuiteEvents:     1,
+			expectedModuleEvents:    1,
+			expectedSessionEvents:   1,
+			expectedTotalEvents:     5,
+			expectedFailureOutput:   parallelPanic,
+			expectedResourceEvents:  1,
+			resourceName:            suiteName + ".TestSubtestDuplicateParallel/child",
 			expectFailure:           true,
 			validateFailureInParent: true,
 			validate: func(events civisibilitytest.Events, _ string) {
-				events.CheckEventsByType(constants.SpanTypeTestSuite, 1).CheckEventsByResourceName(suiteName, 1)
-				events.CheckEventsByType(constants.SpanTypeTestModule, 1).CheckEventsByResourceName(moduleName, 1)
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 1)
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 1)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 1)
 			},
 		},
 	}
@@ -449,6 +625,16 @@ func TestParallelAttemptToFix(t *testing.T) {
 	t.Parallel()
 }
 
+func TestFailNowSingleExecution(t *testing.T) {
+	skipUnlessScenario(t, "TestFailNowSingleExecution")
+	t.FailNow()
+}
+
+func TestManualFailNowSingleExecution(t *testing.T) {
+	skipUnlessScenario(t, "TestManualFailNowSingleExecution")
+	gotesting.GetTest(t).FailNow()
+}
+
 func TestDuplicateParallel(t *testing.T) {
 	skipUnlessScenario(t, "TestDuplicateParallel")
 	t.Parallel()
@@ -488,4 +674,11 @@ func TestSubtestDuplicateParallel(t *testing.T) {
 		t.Parallel()
 		t.Parallel()
 	})
+}
+
+func BenchmarkManualFailNow(b *testing.B) {
+	if os.Getenv(scenarioEnv) != "BenchmarkManualFailNow" {
+		b.Skip("scenario not selected")
+	}
+	gotesting.GetBenchmark(b).FailNow()
 }
