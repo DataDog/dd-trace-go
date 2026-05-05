@@ -54,6 +54,16 @@ func TestSetServiceNameTag(t *testing.T) {
 		assert.NotContains(t, tags.String(), "svc.user")
 	})
 
+	t.Run("works when tags map not yet initialised", func(t *testing.T) {
+		t.Cleanup(Reload)
+		// Simulate collect() returning empty (e.g. os.Executable fails):
+		// Reload creates pTags but Add is never called, leaving pTags.tags nil.
+		pTags = &ProcessTags{}
+		SetServiceNameTag("myapp", false)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.auto:myapp")
+	})
+
 	t.Run("no-op when disabled", func(t *testing.T) {
 		t.Cleanup(Reload) // register before t.Setenv so it runs after env is restored
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
