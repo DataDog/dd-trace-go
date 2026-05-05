@@ -96,6 +96,7 @@ type llmobsContext struct {
 	metadata map[string]any
 	metrics  map[string]float64
 	tags     map[string]string
+	costTags []string
 
 	// agent specific
 	agentManifest string
@@ -491,11 +492,16 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 
 	metadata := span.llmCtx.metadata
-	if metadata == nil {
+	if len(metadata) > 0 {
+		metadata = maps.Clone(metadata)
+	} else {
 		metadata = make(map[string]any)
 	}
 	if spanKind == SpanKindAgent && span.llmCtx.agentManifest != "" {
 		metadata["agent_manifest"] = span.llmCtx.agentManifest
+	}
+	if len(span.llmCtx.costTags) > 0 {
+		setMetadataCostTags(metadata, span.llmCtx.costTags)
 	}
 	if len(metadata) > 0 {
 		meta["metadata"] = metadata
@@ -673,6 +679,21 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		trackSpanEventSize(ev, actualSize, truncated)
 	}
 	return ev
+}
+
+func setMetadataCostTags(metadata map[string]any, costTags []string) {
+	if len(costTags) == 0 {
+		return
+	}
+
+	ddMetadata, ok := metadata["_dd"].(map[string]any)
+	if ok {
+		ddMetadata = maps.Clone(ddMetadata)
+	} else {
+		ddMetadata = make(map[string]any)
+	}
+	ddMetadata["cost_tags"] = append([]string(nil), costTags...)
+	metadata["_dd"] = ddMetadata
 }
 
 func dropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {

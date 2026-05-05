@@ -115,6 +115,17 @@ func WithAnnotatedTags(tags map[string]string) AnnotateOption {
 	}
 }
 
+// WithAnnotatedCostTags marks existing span tag keys for propagation to LLMObs cost and token metrics.
+// Each key must already be present in tags from this annotation or a previous annotation on the same span.
+func WithAnnotatedCostTags(costTags []string) AnnotateOption {
+	return func(a *illmobs.SpanAnnotations) {
+		if a.CostTags == nil {
+			a.CostTags = make([]string, 0, len(costTags))
+		}
+		a.CostTags = append(a.CostTags, costTags...)
+	}
+}
+
 // WithAnnotatedSessionID sets the session ID tag for the span annotation.
 // This is a convenience function for setting the session ID tag specifically.
 func WithAnnotatedSessionID(sessionID string) AnnotateOption {

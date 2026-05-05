@@ -866,6 +866,104 @@ func TestSpanAnnotate(t *testing.T) {
 	}
 }
 
+func TestSpanAnnotateCostTags(t *testing.T) {
+	t.Run("sets-cost-tags-on-span-event-metadata", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml", "feature": "chatbot", "debug_id": "abc"},
+			CostTags: []string{"team", "feature"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"team", "feature"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("dedupes-cost-tags-across-annotations", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml", "feature": "chatbot"},
+			CostTags: []string{"team", "feature", "team"},
+		})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"project": "alpha"},
+			CostTags: []string{"feature", "project"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"team", "feature", "project"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("skips-cost-tags-that-do-not-reference-span-tags", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml"},
+			CostTags: []string{"team", "missing"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"team"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("references-tags-from-a-prior-annotation", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{Tags: map[string]string{"team": "ml"}})
+		span.Annotate(llmobs.SpanAnnotations{CostTags: []string{"team"}})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"team"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("empty-list-does-not-create-metadata-dd", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml"},
+			CostTags: []string{},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.NotContains(t, llmSpans[0].Meta, "metadata")
+	})
+
+	t.Run("preserves-existing-metadata-dd-fields", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Metadata: map[string]any{"_dd": map[string]any{"existing": "value"}},
+			Tags:     map[string]string{"team": "ml"},
+			CostTags: []string{"team"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		metadata := llmSpans[0].Meta["metadata"].(map[string]any)
+		ddMetadata := metadata["_dd"].(map[string]any)
+		assert.Equal(t, "value", ddMetadata["existing"])
+		assert.Equal(t, []any{"team"}, ddMetadata["cost_tags"])
+	})
+}
+
+func costTagsFromSpan(t *testing.T, span llmobstransport.LLMObsSpanEvent) []any {
+	t.Helper()
+
+	metadata, ok := span.Meta["metadata"].(map[string]any)
+	require.True(t, ok, "metadata should be present")
+	ddMetadata, ok := metadata["_dd"].(map[string]any)
+	require.True(t, ok, "metadata._dd should be present")
+	costTags, ok := ddMetadata["cost_tags"].([]any)
+	require.True(t, ok, "metadata._dd.cost_tags should be present")
+	return costTags
+}
+
 func TestSpanTruncation(t *testing.T) {
 	t.Run("text-input", func(t *testing.T) {
 		tt, ll := testTracer(t)
