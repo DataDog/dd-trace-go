@@ -26,7 +26,7 @@ variables:
   - when: always
     interruptible: true
 
-.benchmark:
+.microbenchmarks:
   stage: microbenchmarks
   image: $BENCHMARKS_CI_IMAGE
   rules: *benchmark-rules
@@ -54,7 +54,7 @@ variables:
     expire_in: "30 days"
 
 microbenchmarks:
-  extends: .benchmarks
+  extends: .microbenchmarks
   parallel:
     matrix:
       # Please set maximum 24 scenarios per group!
@@ -70,7 +70,7 @@ microbenchmarks:
         GROUP_ID: "group-2"
 
 pr-performance-gates:
-  stage: benchmarks
+  stage: microbenchmarks
   needs:
     - job: microbenchmarks
   when: on_success
