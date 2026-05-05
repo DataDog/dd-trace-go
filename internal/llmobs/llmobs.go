@@ -500,9 +500,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	if spanKind == SpanKindAgent && span.llmCtx.agentManifest != "" {
 		metadata["agent_manifest"] = span.llmCtx.agentManifest
 	}
-	if len(span.llmCtx.costTags) > 0 {
-		setMetadataCostTags(metadata, span.llmCtx.costTags)
-	}
+	setMetadataCostTags(metadata, span.llmCtx.costTags)
 	if len(metadata) > 0 {
 		meta["metadata"] = metadata
 	}
