@@ -1573,17 +1573,38 @@ func TestStatsTags(t *testing.T) {
 	assert.Contains(tags, "service:serviceName")
 	assert.Contains(tags, "env:envName")
 	assert.Contains(tags, "host:hostName")
+	assert.Contains(tags, ext.RuntimeID+":"+globalconfig.RuntimeID())
+	assertTagPrefix(t, tags, "entrypoint.name:")
+	assertTagPrefix(t, tags, "entrypoint.workdir:")
 	assert.Contains(tags, "tracer_version:"+version.Tag)
 
 	st := globalconfig.StatsTags()
-	// all of the tracer tags except `service` and `version` should be on `st`
-	assert.Len(st, len(tags)-2)
 	assert.Contains(st, "env:envName")
 	assert.Contains(st, "host:hostName")
 	assert.Contains(st, "lang:go")
 	assert.Contains(st, "lang_version:"+runtime.Version())
+	assert.Contains(st, ext.RuntimeID+":"+globalconfig.RuntimeID())
+	assertNoTagPrefix(t, st, "entrypoint.name:")
+	assertNoTagPrefix(t, st, "entrypoint.workdir:")
 	assert.NotContains(st, "tracer_version:"+version.Tag)
 	assert.NotContains(st, "service:serviceName")
+}
+
+func assertTagPrefix(t *testing.T, tags []string, prefix string) {
+	t.Helper()
+	for _, tag := range tags {
+		if strings.HasPrefix(tag, prefix) {
+			return
+		}
+	}
+	assert.Failf(t, "missing tag", "expected a tag with prefix %q in %v", prefix, tags)
+}
+
+func assertNoTagPrefix(t *testing.T, tags []string, prefix string) {
+	t.Helper()
+	for _, tag := range tags {
+		assert.Falsef(t, strings.HasPrefix(tag, prefix), "unexpected tag with prefix %q in %v", prefix, tags)
+	}
 }
 
 func TestGlobalTag(t *testing.T) {

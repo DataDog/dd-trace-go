@@ -44,6 +44,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -850,6 +851,7 @@ func statsTags(c *config) []string {
 	}
 	globalconfig.SetStatsTags(tags)
 	tags = append(tags, "tracer_version:"+version.Tag)
+	tags = append(tags, processtags.GlobalTags().Slice()...)
 	if v := c.internalConfig.ServiceName(); v != "" {
 		tags = append(tags, "service:"+v)
 	}
