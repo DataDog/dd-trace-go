@@ -84,7 +84,7 @@ experiments:
       - name: Analyze results
         run: analyze_microbenchmarks
         framework: GoBench
-        input_filter_pattern: "^(.+)-go-bench\\.txt$"
+        input_filter_pattern: "$ARTIFACTS_DIR/$BASELINE_OR_CANDIDATE*go-bench.txt"
         env:
           DISABLE_NHST: "1"
           CI_TYPE: "theoretical"
