@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 
@@ -650,7 +651,7 @@ func TestTextMapPropagator(t *testing.T) {
 			BaggagePrefix:    "bg-",
 			TraceHeader:      "tid",
 			ParentHeader:     "pid",
-			MaxTagsHeaderLen: defaultMaxTagsHeaderLen,
+			MaxTagsHeaderLen: internalconfig.DefaultMaxTagsHeaderLen,
 		})
 		tracer, err := newTracer(WithPropagator(propagator))
 		defer tracer.Stop()
