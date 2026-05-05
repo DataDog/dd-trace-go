@@ -563,6 +563,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		return nil, ErrSpanContextNotFound
 	}
+	ctx.traceID.cacheHex()
 	return &ctx, nil
 }
 
@@ -1324,6 +1325,7 @@ func extractTraceID128(ctx *SpanContext, v string) error {
 	if err != nil {
 		return ErrSpanContextCorrupted
 	}
+	ctx.traceID.cacheHex()
 	return nil
 }
 

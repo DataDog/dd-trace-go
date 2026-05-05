@@ -31,6 +31,7 @@ const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
 func traceIDFrom64Bits(i uint64) traceID {
 	t := traceID{}
 	t.SetLower(i)
+	t.cacheHex()
 	return t
 }
 
@@ -38,6 +39,7 @@ func traceIDFrom128Bits(u, l uint64) traceID {
 	t := traceID{}
 	t.SetLower(l)
 	t.SetUpper(u)
+	t.cacheHex()
 	return t
 }
 
@@ -3162,7 +3164,11 @@ func TestConcurrentInjectTraceIDHex(t *testing.T) {
 	spanCtx := span.Context()
 
 	require.True(t, spanCtx.traceID.HasUpper(), "test requires a 128-bit traceID so injectTextMap calls UpperHex()")
-	require.Empty(t, spanCtx.traceID.hexEncoded, "test requires an unpopulated hex cache so goroutines race on the lazy init")
+	// Force the lazy/fallback path: clear the cache populated at construction
+	// so concurrent UpperHex() callers all see hexEncoded=="" and exercise the
+	// non-caching fallback. With the buggy lazy-write implementation this also
+	// reproduces the original race (write at hexEncoded= vs. read at "==").
+	spanCtx.traceID.hexEncoded = ""
 
 	const goroutines = 64
 	const iterations = 200

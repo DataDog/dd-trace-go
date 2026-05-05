@@ -232,6 +232,7 @@ func spanContextFromTraceComment(c string) (*SpanContext, error) {
 		default:
 		}
 	}
+	ctx.traceID.cacheHex()
 	return &ctx, nil
 }
 
