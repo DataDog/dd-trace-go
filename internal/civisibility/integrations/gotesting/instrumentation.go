@@ -586,9 +586,12 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				}
 
 				if execMeta.isFlakyTestRetriesEnabled {
-					// For flaky test retries, retry if the test failed and remaining retries >= 0.
-					return ptrToLocalT.Failed() && remainingRetries >= 0 &&
-						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) >= 0
+					return willRetryAfterExecution(
+						ptrToLocalT.Failed(),
+						execMeta,
+						remainingRetries,
+						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount),
+					)
 				}
 
 				// No retries for other cases.
@@ -655,7 +658,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 							status = "skipped"
 						}
 						fmt.Printf("    [ %v after %v retries by Datadog's auto test retries ]\n", status, executionIndex)
-						if atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) < 1 {
+						if atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) < 0 {
 							fmt.Println("    the maximum number of total retries was exceeded.")
 						}
 					}

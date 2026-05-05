@@ -76,6 +76,10 @@ func TestCleanupSkipDoesNotRetry(t *testing.T) {
 	runTestScenario(t, "test-cleanup-skip-does-not-retry", "^TestCleanupSkipDoesNotRetryFixture$")
 }
 
+func TestFlakyRetryGlobalBudget(t *testing.T) {
+	runTestScenario(t, "test-flaky-retry-global-budget", "^TestFlakyRetryGlobalBudgetFixture$")
+}
+
 func TestManualBenchmarkFailNow(t *testing.T) {
 	runBenchmarkScenario(t, "benchmark-failnow", "^BenchmarkManualFailNowFixture$")
 }
@@ -158,6 +162,11 @@ func TestCleanupSkipDoesNotRetryFixture(t *testing.T) {
 	})
 }
 
+func TestFlakyRetryGlobalBudgetFixture(t *testing.T) {
+	skipUnlessScenario(t, "test-flaky-retry-global-budget")
+	gotesting.GetTest(t).Fail()
+}
+
 func BenchmarkManualFailNowFixture(b *testing.B) {
 	skipUnlessScenario(b, "benchmark-failnow")
 	gb := gotesting.GetBenchmark(b)
@@ -191,6 +200,11 @@ func runScenario(m *testing.M) int {
 		settings.FlakyTestRetriesEnabled = true
 		_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "2")
 		_ = os.Setenv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, "10")
+	}
+	if scenario == "test-flaky-retry-global-budget" {
+		settings.FlakyTestRetriesEnabled = true
+		_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "10")
+		_ = os.Setenv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, "1")
 	}
 	server, restore := startManualMockServer(settings)
 	defer restore()
@@ -298,6 +312,8 @@ func validateScenario(scenario string, spans []*mocktracer.Span, exitCode int) {
 		validateCleanupRetryPassScenario(spans, exitCode, "failnow_test.go.TestCleanupFatalRetryPassesFixture")
 	case "test-cleanup-skip-does-not-retry":
 		validateCleanupSkipDoesNotRetryScenario(spans, exitCode)
+	case "test-flaky-retry-global-budget":
+		validateGlobalBudgetScenario(spans, exitCode)
 	default:
 		panic(fmt.Sprintf("unknown scenario %s", scenario))
 	}
@@ -409,6 +425,26 @@ func validateCleanupSkipDoesNotRetryScenario(spans []*mocktracer.Span, exitCode 
 	assertTag(testSpans[0], constants.TestStatus, constants.TestStatusSkip)
 	assertTag(testSpans[0], constants.TestFinalStatus, constants.TestStatusSkip)
 	assertTagCount(testSpans, constants.TestIsRetry, "true", 0)
+}
+
+func validateGlobalBudgetScenario(spans []*mocktracer.Span, exitCode int) {
+	assertEqual("exit code", exitCode, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSession, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestModule, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSuite, 1)
+
+	session := spansByType(spans, constants.SpanTypeTestSession)[0]
+	assertTag(session, constants.TestStatus, constants.TestStatusFail)
+	assertNumericTag(session, constants.TestCommandExitCode, 1)
+
+	resource := "failnow_test.go.TestFlakyRetryGlobalBudgetFixture"
+	testSpans := spansByResource(spansByType(spans, constants.SpanTypeTest), resource)
+	assertEqual("test span count", len(testSpans), 2)
+	assertTagCount(testSpans, constants.TestIsRetry, "true", 1)
+	assertTagCount(testSpans, constants.TestRetryReason, constants.AutoTestRetriesRetryReason, 1)
+	assertTagCount(testSpans, constants.TestStatus, constants.TestStatusFail, 2)
+	assertTagCount(testSpans, constants.TestFinalStatus, constants.TestStatusFail, 1)
+	assertTagCount(testSpans, constants.TestHasFailedAllRetries, "true", 1)
 }
 
 func spansByType(spans []*mocktracer.Span, spanType string) []*mocktracer.Span {
