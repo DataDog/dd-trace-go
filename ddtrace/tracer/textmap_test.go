@@ -445,7 +445,88 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 	assert.Contains(ddTag, "s:2")
 	assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
-	assert.LessOrEqual(len(ddTag), 256) // one of the propagated tags will not be propagated
+	assert.LessOrEqual(len(ddTag), tracestateDDMaxSize) // one of the propagated tags will not be propagated
+}
+
+func TestExtractTracestateDropsOversizedDD(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// Build a dd= entry that exceeds tracestateDDMaxSize.
+	ddEntry := "dd=s:1;o:rum;p:0000000000000001;t.foo:" + strings.Repeat("a", tracestateDDMaxSize)
+	require.Greater(t, len(ddEntry), tracestateDDMaxSize)
+	rawTracestate := ddEntry + ",vendor1=v1,vendor2=v2"
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  rawTracestate,
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	// Oversized dd entry must not appear in the stored propagating tag.
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.Contains(t, stored, "vendor2=v2")
+	// dd entry was not parsed, so its origin/reparentID were not extracted.
+	assert.Empty(t, sctx.origin)
+	assert.Empty(t, sctx.reparentID)
+	// And no _dd.p.foo propagating tag was created from t.foo.
+	assert.False(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
+}
+
+func TestExtractTracestateKeepsDDAtBoundary(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// dd= entry exactly at the limit should be kept and parsed.
+	prefix := "dd=s:1;t.foo:"
+	ddEntry := prefix + strings.Repeat("a", tracestateDDMaxSize-len(prefix))
+	require.Equal(t, tracestateDDMaxSize, len(ddEntry))
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  ddEntry + ",vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.Contains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.True(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
+}
+
+func TestExtractTracestateDropsOversizedDDWithWhitespace(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// Same as the basic oversized-dd case but with leading OWS on the dd entry.
+	// W3C list-member parsing allows surrounding whitespace, so the prefix and
+	// length check must trim each entry before evaluating it.
+	ddEntry := " dd=s:1;o:rum;p:0000000000000001;t.foo:" + strings.Repeat("a", tracestateDDMaxSize)
+	rawTracestate := "vendor1=v1," + ddEntry + ",vendor2=v2"
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  rawTracestate,
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.Contains(t, stored, "vendor2=v2")
+	assert.Empty(t, sctx.origin)
+	assert.False(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
 }
 
 func TestTextMapPropagator(t *testing.T) {
