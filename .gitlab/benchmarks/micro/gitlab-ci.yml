@@ -6,6 +6,7 @@ include:
 variables:
   # Image suffix that is used for building dd-trace-go microbenchmarks Docker image. Don't change!
   BASE_CI_IMAGE_SUFFIX: dd-trace-go-${CI_PIPELINE_ID}
+  BASE_CI_IMAGE_CONTAINER_DIR: .gitlab/benchmarks/micro/container
 
   # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/jobs/1422209418
   BENCHMARKS_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-96166511
