@@ -53,26 +53,31 @@ variables:
       - artifacts/
     expire_in: "30 days"
 
-microbenchmarks:
-  extends: .microbenchmarks
-  parallel:
-    matrix:
-      # Please set maximum 24 scenarios per group!
-      # One single CI job has up to 24 CPU cores, thus 24 benchmarks per group is max.
-      - BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
-        CPUS_PER_BENCHMARK: 1
-        REPETITIONS: 1
-        GROUP_ID: "group-1"
 
-      - BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
-        CPUS_PER_BENCHMARK: 1
-        REPETITIONS: 1
-        GROUP_ID: "group-2"
+# Please set maximum 24 scenarios per group!
+# One single CI job has up to 24 CPU cores, thus 24 benchmarks per group is max.
+#
+# parallel:matrix can't be used, because of bug https://gitlab.com/gitlab-org/gitlab/-/work_items/285853#note_2781385941
+# i.e. CI job names can't be larger than 255 characters.
+microbenchmarks-1:
+  extends: .microbenchmarks
+  variables:
+    BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
+    CPUS_PER_BENCHMARK: 1
+    REPETITIONS: 1
+    GROUP_ID: "group-1"
+
+microbenchmarks-2:
+  extends: .microbenchmarks
+  variables:
+    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
+    CPUS_PER_BENCHMARK: 1
+    REPETITIONS: 1
+    GROUP_ID: "group-2"
 
 pr-performance-gates:
   stage: microbenchmarks
-  needs:
-    - job: microbenchmarks
+  needs: [microbenchmarks-1, microbenchmarks-2]
   when: on_success
   tags:
     - "arch:amd64"
