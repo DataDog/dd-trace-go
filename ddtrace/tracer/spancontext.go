@@ -306,7 +306,6 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
 	context.updated = false
-	context.traceID.cacheHex()
 	return context
 }
 
