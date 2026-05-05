@@ -18,11 +18,12 @@ experiments:
           if [ ! -d "$CODE_SRC" ]; then
             git clone --branch $BRANCH https://github.com/DataDog/dd-trace-go "$CODE_SRC"
             cd "$CODE_SRC" && git checkout $COMMIT_SHA
-          else
-            cd "$CODE_SRC"
+          
+            # Dry run to install test dependencies
+            go test -run=XXX -bench ^BenchmarkStartRequestSpan$ -benchmem -count 1 -benchtime 2s ./ddtrace/... ./contrib/net/http/... ./contrib/internal/... ./internal/appsec/... ./contrib/graphql-go/...
           fi
 
-        cpus: 24-47
+        cpus: 4-47
         parallelize:
           items: $BENCHMARKS
           cpus_per_item: $CPUS_PER_BENCHMARK
@@ -88,13 +89,12 @@ experiments:
           DISABLE_NHST: "1"
           CI_TYPE: "theoretical"
           MD_REPORT_ONLY_CHANGES: "1"
+        extra_params:
           GO_VERSION: $GO_VERSION
 
 global_teardown:
   - name: Upload to S3
     run: upload_to_s3
-    env:
-      S3_URL: s3://relenv-benchmarking-data/${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}/${PARENT_PIPELINE_ID}/${CI_JOB_ID}/
 
   - name: Upload to BP API
     run: upload_to_bp_api
