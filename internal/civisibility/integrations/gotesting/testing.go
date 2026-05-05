@@ -401,7 +401,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 							test.SetTag(constants.TestAttemptToFixPassed, "false")
 						}
 					}
-					test.SetTag(ext.Error, true)
+					if execMeta.panicData != nil {
+						test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(execMeta.panicData), execMeta.panicStacktrace))
+					} else {
+						test.SetTag(ext.Error, true)
+					}
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)

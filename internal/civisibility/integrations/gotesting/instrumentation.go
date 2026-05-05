@@ -833,20 +833,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 			*cn <- struct{}{}
 		}()
 		defer func() {
-			// handle parallel sub tests execution
-			if localTPrivateFields.sub != nil {
-				if len(*localTPrivateFields.sub) > 0 {
-					if localTPrivateFields.barrier != nil {
-						close(*localTPrivateFields.barrier)
-					}
-					for _, sub := range *localTPrivateFields.sub {
-						pvSub := getTestPrivateFields(sub)
-						if pvSub.signal != nil {
-							<-*pvSub.signal
-						}
-					}
-				}
-			}
+			completeParallelSubtests(localTPrivateFields)
 		}()
 		defer func() {
 			duration = time.Since(startTime)
@@ -925,6 +912,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 // cleanup Goexit in a helper goroutine so retry orchestration can treat cleanup
 // failures as attempt failures instead of letting them escape the retry loop.
 func runTestCleanup(t *testing.T, result *testCleanupResult) {
+	completeParallelSubtests(getTestPrivateFields(t))
 	result.ran = true
 	done := make(chan struct{})
 	go func() {
@@ -942,6 +930,27 @@ func runTestCleanup(t *testing.T, result *testCleanupResult) {
 		completed = true
 	}()
 	<-done
+}
+
+// completeParallelSubtests releases and waits for parallel subtests owned by a
+// Datadog-managed clone. It clears the subtest queue before releasing the
+// barrier so later cleanup paths cannot close the same barrier twice.
+func completeParallelSubtests(localTPrivateFields *commonPrivateFields) {
+	if localTPrivateFields == nil || localTPrivateFields.sub == nil || len(*localTPrivateFields.sub) == 0 {
+		return
+	}
+
+	subtests := *localTPrivateFields.sub
+	*localTPrivateFields.sub = nil
+	if localTPrivateFields.barrier != nil && *localTPrivateFields.barrier != nil {
+		close(*localTPrivateFields.barrier)
+	}
+	for _, sub := range subtests {
+		pvSub := getTestPrivateFields(sub)
+		if pvSub != nil && pvSub.signal != nil {
+			<-*pvSub.signal
+		}
+	}
 }
 
 // runAndApplyTestCleanup runs a retry attempt's cleanups before its span is

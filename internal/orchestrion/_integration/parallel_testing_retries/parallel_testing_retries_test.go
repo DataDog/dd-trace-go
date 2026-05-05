@@ -557,10 +557,10 @@ func scenariosByName() map[string]scenarioConfig {
 			expectFailure:           true,
 			validateFailureInParent: true,
 			validate: func(events civisibilitytest.Events, _ string) {
-				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 2)
-				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 2)
-				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusFail, 1)
-				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 2)
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusFail, 4)
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 0)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusFail, 2)
+				events.CheckEventsByTagAndValue(constants.TestFinalStatus, constants.TestStatusPass, 0)
 			},
 		},
 	}
