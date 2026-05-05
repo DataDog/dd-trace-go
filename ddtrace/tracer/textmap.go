@@ -820,6 +820,8 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (*SpanCont
 const (
 	traceparentHeader = "traceparent"
 	tracestateHeader  = "tracestate"
+	// tracestateDDMaxSize bounds the length of a `dd=` list-entry in tracestate.
+	tracestateDDMaxSize = 256
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts
@@ -1076,7 +1078,7 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
 		key := sm.Mutate(keyDisallowedFn, k[len("_dd.p."):])
 		value := sm.Mutate(valueDisallowedFn, v)
-		if b.Len()+len(key)+len(value)+4 > 256 { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
+		if b.Len()+len(key)+len(value)+4 > tracestateDDMaxSize { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
 			return false
 		}
 		b.WriteString(";t.")
@@ -1242,12 +1244,15 @@ func parseTracestate(ctx *SpanContext, header string) {
 		// https://www.w3.org/TR/trace-context-1/#tracestate-header-field-values
 		return
 	}
-	// if multiple headers are present, they must be combined and stored
-	setPropagatingTag(ctx, tracestateHeader, header)
-	combined := strings.SplitSeq(strings.Trim(header, "\t "), ",")
-	for group := range combined {
+	hasOversizedDD := false
+	for group := range strings.SplitSeq(header, ",") {
+		group = strings.Trim(group, "\t ")
 		if !strings.HasPrefix(group, "dd=") {
 			continue
+		}
+		if len(group) > tracestateDDMaxSize {
+			hasOversizedDD = true
+			break
 		}
 		ddMembers := strings.Split(group[len("dd="):], ";")
 		dropDM := false
@@ -1299,6 +1304,30 @@ func parseTracestate(ctx *SpanContext, header string) {
 			}
 		}
 	}
+	// Store the propagating tag, rebuilding the header to exclude oversized
+	// dd= entries when present.
+	if !hasOversizedDD {
+		setPropagatingTag(ctx, tracestateHeader, header)
+		return
+	}
+	var cleaned strings.Builder
+	cleaned.Grow(len(header))
+	first := true
+	for entry := range strings.SplitSeq(header, ",") {
+		trimmed := strings.Trim(entry, "\t ")
+		if strings.HasPrefix(trimmed, "dd=") && len(trimmed) > tracestateDDMaxSize {
+			continue
+		}
+		if !first {
+			cleaned.WriteByte(',')
+		}
+		cleaned.WriteString(entry)
+		first = false
+	}
+	if cleaned.Len() == 0 {
+		return
+	}
+	setPropagatingTag(ctx, tracestateHeader, cleaned.String())
 }
 
 // extractTraceID128 extracts the trace id from v and populates the traceID
