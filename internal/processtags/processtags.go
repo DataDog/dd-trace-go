@@ -44,9 +44,12 @@ func init() {
 }
 
 type ProcessTags struct {
-	mu    sync.RWMutex
-	tags  map[string]string
-	str   string
+	mu sync.RWMutex
+	// +checklocks:mu
+	tags map[string]string
+	// +checklocks:mu
+	str string
+	// +checklocks:mu
 	slice []string
 }
 
@@ -86,6 +89,7 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 
 // rebuild re-serializes p.tags into p.str and p.slice.
 // Must be called with p.mu held for writing.
+// +checklocks:p.mu
 func (p *ProcessTags) rebuild() {
 	// loop over the sorted map keys so the resulting string and slice versions are created consistently.
 	keys := make([]string, 0, len(p.tags))
