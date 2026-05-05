@@ -17,4 +17,4 @@ RUN --mount=type=ssh source ./install-base-deps.sh
 
 COPY install-bp-tools.sh ./install-bp-tools.sh
 RUN --mount=type=ssh source ./install-bp-tools.sh
-RUN --mount=type=ssh source bp-install bp-analyzer bp-github bp-runner
+RUN --mount=type=ssh source bp-install bp-runner bp-analyzer bp-github

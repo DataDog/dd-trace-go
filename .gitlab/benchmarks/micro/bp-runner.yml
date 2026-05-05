@@ -18,9 +18,9 @@ experiments:
           if [ ! -d "$CODE_SRC" ]; then
             git clone --branch $BRANCH https://github.com/DataDog/dd-trace-go "$CODE_SRC"
             cd "$CODE_SRC" && git checkout $COMMIT_SHA
-          
-            # Dry run to install test dependencies
-            cd ./instrumentation/httptrace && go test -run=XXX -bench ^BenchmarkStartRequestSpan$ -benchmem -count 1 -benchtime 2s
+
+            # Download module dependencies required by `go test -bench`
+            go mod download
           fi
 
         cpus: 4-47
@@ -84,7 +84,7 @@ experiments:
       - name: Analyze results
         run: analyze_microbenchmarks
         framework: GoBench
-        group_by_pattern: "^(.+)-go-bench\\.txt$"
+        input_filter_pattern: "^(.+)-go-bench\\.txt$"
         env:
           DISABLE_NHST: "1"
           CI_TYPE: "theoretical"
