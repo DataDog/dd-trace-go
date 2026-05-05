@@ -950,6 +950,31 @@ func TestSpanAnnotateCostTags(t *testing.T) {
 		assert.Equal(t, "value", ddMetadata["existing"])
 		assert.Equal(t, []any{"team"}, ddMetadata["cost_tags"])
 	})
+
+	t.Run("serializes-cost-tags-on-non-llm-span", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml"},
+			CostTags: []string{"team"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, "workflow", llmSpans[0].Meta["span.kind"])
+		assert.Equal(t, []any{"team"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("drops-cost-tags-annotated-after-finish", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{Tags: map[string]string{"team": "ml"}})
+		span.Finish(llmobs.FinishSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{CostTags: []string{"team"}})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.NotContains(t, llmSpans[0].Meta, "metadata")
+	})
 }
 
 func costTagsFromSpan(t *testing.T, span llmobstransport.LLMObsSpanEvent) []any {
