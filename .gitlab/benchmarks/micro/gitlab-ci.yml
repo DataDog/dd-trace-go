@@ -10,8 +10,8 @@ variables:
   # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/jobs/1422209418
   BENCHMARKS_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-96166511
 
-  # Changes smaller than UNCONFIDENCE_THRESHOLD will be treated as a noise
-  UNCONFIDENCE_THRESHOLD: 2.0
+  # Changes smaller than SIGNIFICANT_IMPACT_THRESHOLD will be treated as a noise
+  SIGNIFICANT_IMPACT_THRESHOLD: 2.0
 
 .benchmark:
   stage: microbenchmarks
@@ -48,10 +48,17 @@ microbenchmarks:
   extends: .benchmarks
   parallel:
     matrix:
-      - BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics"
+      # Please set maximum 24 scenarios per group!
+      # One single CI job has up to 24 CPU cores, thus 24 benchmarks per group is max.
+      - BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
         CPUS_PER_BENCHMARK: 1
         REPETITIONS: 1
         GROUP_ID: "group-1"
+
+      - BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
+        CPUS_PER_BENCHMARK: 1
+        REPETITIONS: 1
+        GROUP_ID: "group-2"
 
 pr-performance-gates:
   stage: benchmarks

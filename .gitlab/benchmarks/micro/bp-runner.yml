@@ -11,33 +11,40 @@ experiments:
     steps:
       - name: Run benchmarks
         run: run_microbenchmarks
+
+        repo: DataDog/dd-trace-go
+        how_to_fetch_release: |
+          echo "Cloning repository $BRANCH at commit $COMMIT_SHA into $CODE_SRC..."
+          if [ ! -d "$CODE_SRC" ]; then
+            git clone --branch $BRANCH https://github.com/DataDog/dd-trace-go "$CODE_SRC"
+            cd "$CODE_SRC" && git checkout $COMMIT_SHA
+          else
+            cd "$CODE_SRC"
+          fi
+          
+          if [ "$BASELINE_OR_CANDIDATE" == "baseline" ]; then
+            echo "Checking if the baseline branch exists on the remote before fetching..."
+          
+            # git ls-remote --exit-code returns 2 for missing refs, other non-zero for transport/auth errors.
+            # Only skip baseline comparison for a genuinely missing ref; fail hard on other errors.
+            ls_remote_rc=0
+            git ls-remote --exit-code --heads origin "refs/heads/$BASELINE_BRANCH" > /dev/null 2>&1 || ls_remote_rc=$?
+            if [ "$ls_remote_rc" -eq 2 ]; then
+              echo "Warning: Baseline branch '$BASELINE_BRANCH' not found on remote. Skipping baseline comparison."
+            elif [ "$ls_remote_rc" -ne 0 ]; then
+              echo "Error: git ls-remote failed with exit code $ls_remote_rc for branch '$BASELINE_BRANCH'"
+              exit "$ls_remote_rc"
+            fi
+          fi
+
         cpus: 24-47
         parallelize:
           items: $BENCHMARKS
           cpus_per_item: $CPUS_PER_BENCHMARK
-        repo: DataDog/dd-trace-go
-        how_to_fetch_release: |
-          git clone --branch $BRANCH https://github.com/DataDog/dd-trace-go "$CODE_SRC"
-          cd "$CODE_SRC" && git checkout $COMMIT_SHA
+          items_separator: "|"
         how_to_run_benchmarks: |
-          # Build the list of directories that we might want to benchmark
-          # At time of writing, our longest running benchmark is in `internal/telemetry`. By adding the -r flag, we can
-          # ensure that this benchmark starts up as fast as possible (since `internal/telemetry` is near last in our list of directories)
-          output=$(find . -type f -name '*_test.go' -exec dirname {} \; | grep -Ev '/(orchestrion|civisibility|scripts|tools)' | sort -u -r)
-          oneline=$(echo "$output" | tr '\n' ',')
-          IFS=, read -r -a DIRS <<< "$oneline"
-  
-          bench_loop_x10 () {
-            if [ -d 'v2' ]; then
-              bench_loop_x10_v2 $1
-              return
-            fi
+          set +x
           
-            for run in $(seq 1 $REPETITIONS); do
-              go test -run=XXX -bench ^$PARALLEL_ITEM$ -benchmem -count 1 -benchtime 2s ./ddtrace/... ./contrib/net/http/... ./contrib/internal/... ./internal/appsec/... ./contrib/graphql-go/... | tee -a $1
-            done
-          }
-            
           bench_loop_x10_v2 () {
             for dir in "${DIRS[@]}"; do
               [ -d "$dir" ] || { echo "skipping: $dir is not a valid directory"; continue; } # skip if the directory is invalid
@@ -46,21 +53,54 @@ experiments:
               grep -q "func ${TEST_NAME}(b \*testing.B)" $dir/*.go || continue
               cd $dir
               for run in $(seq 1 $REPETITIONS); do
-                go test -run=XXX -bench ^$PARALLEL_ITEM$ -benchmem -count 1 -benchtime 2s | tee -a $1
+                echo "Running benchmark $TEST_NAME (run $run / $REPETITIONS)"
+                go test -run=XXX -bench ^$TEST_NAME$ -benchmem -count 1 -benchtime 2s | tee -a $1
               done
               cd - &> /dev/null
-              
+          
               # we can break after testing so that we do not need to check every other directory
               break
             done
           }
           
-          bench_loop_x10 "${ARTIFACTS_DIR}/$BASELINE_OR_CANDIDATE-$GROUP_ID-go-bench.txt"
+          bench_loop_x10 () {
+            if [ -d 'v2' ]; then
+              bench_loop_x10_v2 $1
+              return
+            fi
+          
+            for run in $(seq 1 $REPETITIONS); do
+              echo "Running benchmark $TEST_NAME (run $run / $REPETITIONS)"
+              go test -run=XXX -bench ^$TEST_NAME$ -benchmem -count 1 -benchtime 2s ./ddtrace/... ./contrib/net/http/... ./contrib/internal/... ./internal/appsec/... ./contrib/graphql-go/... | tee -a $1
+            done
+          }
+          
+          # Build the list of directories that we might want to benchmark
+          # At time of writing, our longest running benchmark is in `internal/telemetry`. By adding the -r flag, we can
+          # ensure that this benchmark starts up as fast as possible (since `internal/telemetry` is near last in our list of directories)
+          output=$(find . -type f -name '*_test.go' -exec dirname {} \; | grep -Ev '/(orchestrion|civisibility|scripts|tools)' | sort -u -r)
+          oneline=$(echo "$output" | tr '\n' ',')
+          IFS=, read -r -a DIRS <<< "$oneline"
+
+          # $PARALLEL_ITEM contains single benchmark scenario name, e.g. "BenchmarkSpanSetOperationName"
+          export TEST_NAME=$PARALLEL_ITEM
+          bench_loop_x10 "${ARTIFACTS_DIR}/$BASELINE_OR_CANDIDATE-$GROUP_ID-$TEST_NAME-go-bench.txt"
+          
+          if [ "$BASELINE_OR_CANDIDATE" == "baseline" ]; then
+            if [ ! -f "${ARTIFACTS_DIR}/$BASELINE_OR_CANDIDATE-$GROUP_ID-$TEST_NAME-go-bench.txt" ]; then
+              if grep -rq "func ${TEST_NAME}(b \*testing.B)" "/app/baseline"; then
+                echo "FAIL! Benchmark $TEST_NAME exists in baseline but produced no output."
+                exit 1
+              else
+                echo "Benchmark $TEST_NAME is new and does not exist in baseline. Skipping baseline comparison."
+              fi
+            fi
+          fi
 
       - name: Analyze results
         run: analyze_microbenchmarks
         framework: GoBench
-        group_by_pattern: "^(.+)-go-bench.txt$"
+        group_by_pattern: "^(.+)-go-bench\\.txt$"
         env:
           DISABLE_NHST: "1"
           CI_TYPE: "theoretical"
@@ -81,11 +121,6 @@ global_teardown:
 docker_config_for_local_runs:
   image_name: bp_microbenchmarks_go
   env:
-    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans"
-    CPUS_PER_BENCHMARK: 1
-    REPETITIONS: 1
-    GROUP_ID: "group-1"
-
     CI_COMMIT_REF_NAME: main # Branch to use during local run
     CI_COMMIT_SHA: main # A commit to use during local run, specifying a branch name will checkout the latest commit from that branch
-  command: bp-runner bp-runner.yml --debug
+  command: export GO_VERSION=$(go version | sed 's/go version //') && bp-runner bp-runner.yml --debug

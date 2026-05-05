@@ -1,4 +1,4 @@
-FROM golang:1.25
+FROM golang:1.25@sha256:8a7adc288b77e9b787cd2695029eb54d10ae80571b21d44fed68d067ad0a9c96
 
 ARG CI_JOB_TOKEN
 
@@ -15,5 +15,6 @@ SHELL ["/bin/bash", "-c"]
 COPY install-base-deps.sh ./install-base-deps.sh
 RUN --mount=type=ssh source ./install-base-deps.sh
 
-RUN --mount=type=ssh bp-install bp-runner bp-analyze bp-github
-
+COPY install-bp-tools.sh ./install-bp-tools.sh
+RUN --mount=type=ssh source ./install-bp-tools.sh
+RUN --mount=type=ssh source bp-install bp-analyzer bp-github bp-runner
