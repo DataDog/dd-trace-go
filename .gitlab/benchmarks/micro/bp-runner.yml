@@ -20,7 +20,7 @@ experiments:
             cd "$CODE_SRC" && git checkout $COMMIT_SHA
           
             # Dry run to install test dependencies
-            go test -run=XXX -bench ^BenchmarkStartRequestSpan$ -benchmem -count 1 -benchtime 2s ./ddtrace/... ./contrib/net/http/... ./contrib/internal/... ./internal/appsec/... ./contrib/graphql-go/...
+            cd ./instrumentation/httptrace && go test -run=XXX -bench ^BenchmarkStartRequestSpan$ -benchmem -count 1 -benchtime 2s
           fi
 
         cpus: 4-47
