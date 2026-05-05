@@ -21,21 +21,6 @@ experiments:
           else
             cd "$CODE_SRC"
           fi
-          
-          if [ "$BASELINE_OR_CANDIDATE" == "baseline" ]; then
-            echo "Checking if the baseline branch exists on the remote before fetching..."
-          
-            # git ls-remote --exit-code returns 2 for missing refs, other non-zero for transport/auth errors.
-            # Only skip baseline comparison for a genuinely missing ref; fail hard on other errors.
-            ls_remote_rc=0
-            git ls-remote --exit-code --heads origin "refs/heads/$BASELINE_BRANCH" > /dev/null 2>&1 || ls_remote_rc=$?
-            if [ "$ls_remote_rc" -eq 2 ]; then
-              echo "Warning: Baseline branch '$BASELINE_BRANCH' not found on remote. Skipping baseline comparison."
-            elif [ "$ls_remote_rc" -ne 0 ]; then
-              echo "Error: git ls-remote failed with exit code $ls_remote_rc for branch '$BASELINE_BRANCH'"
-              exit "$ls_remote_rc"
-            fi
-          fi
 
         cpus: 24-47
         parallelize:
