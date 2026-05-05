@@ -1,0 +1,204 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+  description: Structured, leveled logging for Go.
+
+aspects:
+  - id: Logger.Debug|Info|Warn|Error|DPanic|Panic|Fatal
+    join-point:
+      all-of:
+        - not:
+            import-path: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+        - one-of:
+            - method-call:
+                receiver: "go.uber.org/zap.Logger"
+                name: Debug
+
+            - method-call:
+                receiver: "go.uber.org/zap.Logger"
+                name: Info
+
+            - method-call:
+                receiver: "go.uber.org/zap.Logger"
+                name: Warn
+
+            - method-call:
+                receiver: "go.uber.org/zap.Logger"
+                name: Error
+
+            - method-call:
+                receiver: "go.uber.org/zap.Logger"
+                name: DPanic
+
+            - method-call:
+                receiver: "go.uber.org/zap.Logger"
+                name: Panic
+
+            - method-call:
+                receiver: "go.uber.org/zap.Logger"
+                name: Fatal
+
+    advice:
+      - wrap-expression:
+          imports:
+            __ddzap: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+          template: |-
+            {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
+            {{- $req := .Function.ArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              {{ .AST.Fun.X }}.With(__ddzap.TraceFields({{ $ctx }})...).{{ .AST.Fun.Name }}(
+                {{ range .AST.Args }}{{ . }},
+                {{ end }}
+              )
+            {{- else if $req -}}
+              {{ .AST.Fun.X }}.With(__ddzap.TraceFields({{ $req }}.Context())...).{{ .AST.Fun.Name }}(
+                {{ range .AST.Args }}{{ . }},
+                {{ end }}
+              )
+            {{- else -}}
+              {{ . }}
+            {{- end -}}
+
+  - id: SugaredLogger.Debug|Info|Warn|Error|DPanic|Panic|Fatal
+    join-point:
+      all-of:
+        - not:
+            import-path: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+        - one-of:
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Debug
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Info
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Warn
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Error
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: DPanic
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Panic
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Fatal
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Debugf
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Infof
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Warnf
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Errorf
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: DPanicf
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Panicf
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Fatalf
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Debugw
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Infow
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Warnw
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Errorw
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: DPanicw
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Panicw
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Fatalw
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Debugln
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Infoln
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Warnln
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Errorln
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: DPanicln
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Panicln
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Fatalln
+
+    advice:
+      - wrap-expression:
+          imports:
+            __ddzap: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+          template: |-
+            {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
+            {{- $req := .Function.ArgumentOfType "*net/http.Request" -}}
+            {{- if $ctx -}}
+              {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFields({{ $ctx }})...).Sugar().{{ .AST.Fun.Name }}(
+                {{ range .AST.Args }}{{ . }},
+                {{ end }}
+              )
+            {{- else if $req -}}
+              {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFields({{ $req }}.Context())...).Sugar().{{ .AST.Fun.Name }}(
+                {{ range .AST.Args }}{{ . }},
+                {{ end }}
+              )
+            {{- else -}}
+              {{ . }}
+            {{- end -}}

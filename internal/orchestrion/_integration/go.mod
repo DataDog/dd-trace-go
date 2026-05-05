@@ -11,7 +11,7 @@ require (
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.9.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
 	github.com/DataDog/go-libddwaf/v4 v4.9.0
-	github.com/DataDog/orchestrion v1.9.0
+	github.com/DataDog/orchestrion v1.9.1-0.20260505153242-4960066dda04
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.55.5
@@ -66,6 +66,7 @@ require (
 	github.com/xlab/treeprint v1.2.0
 	go.mongodb.org/mongo-driver v1.17.1
 	go.mongodb.org/mongo-driver/v2 v2.3.0
+	go.uber.org/zap v1.27.1
 	google.golang.org/api v0.258.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/grpc/examples v0.0.0-20240521165117-aea78bdf9d13
@@ -117,6 +118,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.9.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.9.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.9.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 v2.9.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.9.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.9.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.9.0-dev // indirect
@@ -359,7 +361,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.8.0 // indirect
@@ -465,6 +466,8 @@ replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../../
 
 replace github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../../contrib/redis/rueidis
 
+replace github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 => ../../../contrib/go.uber.org/zap
+
 replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../../contrib/rs/zerolog
 
 replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../../contrib/segmentio/kafka-go
@@ -478,6 +481,8 @@ replace github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 => ../../../con
 replace github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../../contrib/valkey-io/valkey-go
 
 replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 => ../../../contrib/valyala/fasthttp
+
+replace github.com/DataDog/orchestrion => /Users/rodrigo.arguello/dd/orchestrion
 
 replace github.com/DataDog/dd-trace-go/orchestrion/all/v2 => ../../../orchestrion/all
 
