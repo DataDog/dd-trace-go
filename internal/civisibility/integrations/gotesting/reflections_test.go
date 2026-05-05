@@ -7,6 +7,7 @@ package gotesting
 
 import (
 	"reflect"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -59,6 +60,7 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseTestingInternalsPrivatePointerAssignment(t)
 	exerciseParallelForwardMetadataIsolation(t)
 	exerciseParallelForwardedDuplicateGate(t)
+	exerciseBenchmarkFuncInstrumentationConcurrentWrites(t)
 }
 
 // TestGetInternalTestArray tests the getInternalTestArray function.
@@ -341,6 +343,27 @@ func exerciseParallelForwardedDuplicateGate(t *testing.T) {
 	if firstForwarders.Load() != 1 {
 		t.Fatalf("expected exactly one first Parallel forwarder, got %d", firstForwarders.Load())
 	}
+}
+
+// exerciseBenchmarkFuncInstrumentationConcurrentWrites verifies benchmark
+// instrumentation tracking remains safe when multiple goroutines register the
+// same runtime function.
+func exerciseBenchmarkFuncInstrumentationConcurrentWrites(t *testing.T) {
+	pc, _, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("expected caller information")
+	}
+	fn := runtime.FuncForPC(pc)
+
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			for range 100 {
+				setCiVisibilityBenchmarkFunc(fn)
+			}
+		})
+	}
+	wg.Wait()
 }
 
 func BenchmarkGetTestPrivateFields(b *testing.B) {
