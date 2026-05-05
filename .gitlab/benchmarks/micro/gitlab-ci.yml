@@ -8,8 +8,8 @@ variables:
   BASE_CI_IMAGE_SUFFIX: dd-trace-go-${CI_PIPELINE_ID}
   BASE_CI_IMAGE_CONTAINER_DIR: .gitlab/benchmarks/micro/container
 
-  # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/benchmarking-platform/-/jobs/1422209418
-  BENCHMARKS_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:dd-trace-go-96166511
+  # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/dd-trace-go/-/jobs/1657729516
+  BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-111525540
 
   # Changes smaller than SIGNIFICANT_IMPACT_THRESHOLD will be treated as a noise
   SIGNIFICANT_IMPACT_THRESHOLD: 2.0
