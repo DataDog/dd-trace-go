@@ -44,6 +44,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -381,6 +382,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			}
 		}
 	}
+	svcIsUserDefined := true
 	if c.internalConfig.ServiceName() == "" {
 		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
@@ -391,10 +393,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 			// There is not an explicit service set, default to binary name.
 			// In this case, don't set a global service name so the contribs continue using their defaults.
 			c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), internalconfig.OriginDefault, internalconfig.ProductTracer)
+			svcIsUserDefined = false
 		}
 	} else {
 		globalconfig.SetServiceName(c.internalConfig.ServiceName())
 	}
+	processtags.SetServiceNameTag(c.internalConfig.ServiceName(), svcIsUserDefined)
 	if c.ddTransport == nil {
 		agentURL := c.internalConfig.AgentURL().String()
 		traceURL, headers := resolveTraceTransport(c.internalConfig)

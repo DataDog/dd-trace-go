@@ -13,6 +13,56 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestSetServiceNameTag(t *testing.T) {
+	t.Run("auto-assigned sets svc.auto", func(t *testing.T) {
+		t.Cleanup(Reload)
+		Reload()
+		SetServiceNameTag("myapp", false)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.auto:myapp")
+		assert.NotContains(t, tags.String(), "svc.user")
+		assert.Contains(t, tags.Slice(), "svc.auto:myapp")
+	})
+
+	t.Run("user-defined sets svc.user", func(t *testing.T) {
+		t.Cleanup(Reload)
+		Reload()
+		SetServiceNameTag("myapp", true)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+		assert.Contains(t, tags.Slice(), "svc.user:true")
+	})
+
+	t.Run("switching from auto to user removes svc.auto", func(t *testing.T) {
+		t.Cleanup(Reload)
+		Reload()
+		SetServiceNameTag("myapp", false)
+		SetServiceNameTag("myapp", true)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("switching from user to auto removes svc.user", func(t *testing.T) {
+		t.Cleanup(Reload)
+		Reload()
+		SetServiceNameTag("myapp", true)
+		SetServiceNameTag("otherapp", false)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.auto:otherapp")
+		assert.NotContains(t, tags.String(), "svc.user")
+	})
+
+	t.Run("no-op when disabled", func(t *testing.T) {
+		t.Cleanup(Reload) // register before t.Setenv so it runs after env is restored
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		Reload()
+		SetServiceNameTag("myapp", false)
+		assert.Nil(t, GlobalTags())
+	})
+}
+
 func TestProcessTags(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		wantTagsRe := regexp.MustCompile(`^entrypoint\.basedir:[a-zA-Z0-9._-]+,entrypoint\.name:[a-zA-Z0-9._-]+,entrypoint.type:executable,entrypoint\.workdir:[a-zA-Z0-9._-]+$`)
