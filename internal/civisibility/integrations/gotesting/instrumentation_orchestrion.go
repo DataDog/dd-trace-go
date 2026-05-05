@@ -257,13 +257,11 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					}
 					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
 					test.Close(integrations.ResultStatusFail)
-					if !execMeta.hasAdditionalFeatureWrapper {
-						// Additional-feature wrappers own module and suite closure after all retry attempts finish.
-						checkModuleAndSuite(module, suite)
-					}
-					if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
-						integrations.ExitCiVisibility()
-					}
+					// This branch re-panics immediately, so retry wrappers cannot run their normal
+					// end-of-attempt cleanup. Close suite/module counters and flush CI Visibility
+					// before handing the panic back to the Go test runner.
+					checkModuleAndSuite(module, suite)
+					integrations.ExitCiVisibility()
 					panic(r)
 				}
 

@@ -8,6 +8,7 @@ package parallel_testing_retries
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,7 +25,8 @@ import (
 )
 
 const (
-	scenarioEnv = "PARALLEL_TESTING_RETRIES_SCENARIO"
+	scenarioEnv           = "PARALLEL_TESTING_RETRIES_SCENARIO"
+	externalMockServerEnv = "PARALLEL_TESTING_RETRIES_EXTERNAL_MOCK_SERVER"
 
 	moduleName = "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/parallel_testing_retries"
 	suiteName  = "parallel_testing_retries_test.go"
@@ -33,16 +35,17 @@ const (
 )
 
 type scenarioConfig struct {
-	testName            string
-	settings            civisibilitynet.SettingsResponseData
-	env                 map[string]string
-	knownTests          *civisibilitynet.KnownTestsResponseData
-	testManagement      *civisibilitynet.TestManagementTestsResponseDataModules
-	expectedTestEvents  int
-	expectedRetryEvents int
-	retryReason         string
-	validate            func(events civisibilitytest.Events, resource string)
-	expectFailure       bool
+	testName                string
+	settings                civisibilitynet.SettingsResponseData
+	env                     map[string]string
+	knownTests              *civisibilitynet.KnownTestsResponseData
+	testManagement          *civisibilitynet.TestManagementTestsResponseDataModules
+	expectedTestEvents      int
+	expectedRetryEvents     int
+	retryReason             string
+	validate                func(events civisibilitytest.Events, resource string)
+	expectFailure           bool
+	validateFailureInParent bool
 }
 
 var flakyAttempts atomic.Int32
@@ -91,20 +94,15 @@ func TestMain(m *testing.M) {
 }
 
 func runScenarioChild(m *testing.M, cfg scenarioConfig) int {
-	opts := []civisibilitytest.MockServerOption{
-		civisibilitytest.WithSettings(cfg.settings),
-	}
-	if cfg.knownTests != nil {
-		opts = append(opts, civisibilitytest.WithKnownTests(*cfg.knownTests))
-	}
-	if cfg.testManagement != nil {
-		opts = append(opts, civisibilitytest.WithTestManagement(*cfg.testManagement))
+	if os.Getenv(externalMockServerEnv) == "true" {
+		return m.Run()
 	}
 
-	_, payloads, restore := civisibilitytest.StartMockServerWithOptions(opts...)
+	payloads, restore := startScenarioMockServer(cfg)
 	defer restore()
 
 	code := m.Run()
+	resource := suiteName + "." + cfg.testName
 	if cfg.expectFailure {
 		return code
 	}
@@ -112,7 +110,6 @@ func runScenarioChild(m *testing.M, cfg scenarioConfig) int {
 		return code
 	}
 
-	resource := suiteName + "." + cfg.testName
 	events := payloads.Events().CheckEventsByType("test", cfg.expectedTestEvents).CheckEventsByResourceName(resource, cfg.expectedTestEvents)
 	events.CheckEventsByTagAndValue(constants.TestIsRetry, "true", cfg.expectedRetryEvents)
 	if cfg.retryReason != "" {
@@ -124,7 +121,46 @@ func runScenarioChild(m *testing.M, cfg scenarioConfig) int {
 	return 0
 }
 
+func startScenarioMockServer(cfg scenarioConfig) (*civisibilitytest.Payloads, func()) {
+	opts := []civisibilitytest.MockServerOption{
+		civisibilitytest.WithSettings(cfg.settings),
+	}
+	if cfg.knownTests != nil {
+		opts = append(opts, civisibilitytest.WithKnownTests(*cfg.knownTests))
+	}
+	if cfg.testManagement != nil {
+		opts = append(opts, civisibilitytest.WithTestManagement(*cfg.testManagement))
+	}
+
+	_, payloads, restore := civisibilitytest.StartMockServerWithOptions(opts...)
+	return payloads, restore
+}
+
 func runScenarioProcess(cfg scenarioConfig) (string, int, error) {
+	if cfg.validateFailureInParent {
+		payloads, restore := startScenarioMockServer(cfg)
+		defer restore()
+
+		childCfg := cfg
+		childCfg.env = cloneEnvMap(cfg.env)
+		childCfg.env[externalMockServerEnv] = "true"
+		output, exitCode, err := runScenarioProcessWithEnv(childCfg)
+		if err == nil && cfg.validate != nil {
+			resource := suiteName + "." + cfg.testName
+			cfg.validate(payloads.Events(), resource)
+		}
+		return output, exitCode, err
+	}
+	return runScenarioProcessWithEnv(cfg)
+}
+
+func cloneEnvMap(env map[string]string) map[string]string {
+	clone := make(map[string]string, len(env)+1)
+	maps.Copy(clone, env)
+	return clone
+}
+
+func runScenarioProcessWithEnv(cfg scenarioConfig) (string, int, error) {
 	cmd := exec.Command(os.Args[0], childArgsForScenario(os.Args[1:], cfg.testName)...)
 	var output bytes.Buffer
 	cmd.Stdout = &output
@@ -144,7 +180,8 @@ func runScenarioProcess(cfg scenarioConfig) (string, int, error) {
 func scenarioEnvForChild(environ []string, cfg scenarioConfig) []string {
 	filtered := make([]string, 0, len(environ)+len(cfg.env)+1)
 	blocked := map[string]struct{}{
-		scenarioEnv: {},
+		scenarioEnv:           {},
+		externalMockServerEnv: {},
 		constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable:                 {},
 		constants.CIVisibilityFlakyRetryCountEnvironmentVariable:                   {},
 		constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable:              {},
@@ -207,6 +244,7 @@ func scenarioOrder() []string {
 		"TestParallelAttemptToFix",
 		"TestDuplicateParallel",
 		"TestConcurrentDuplicateParallel",
+		"TestSubtestDuplicateParallel",
 	}
 }
 
@@ -306,6 +344,21 @@ func scenariosByName() map[string]scenarioConfig {
 				constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable: "1",
 			},
 			expectFailure: true,
+		},
+		"TestSubtestDuplicateParallel": {
+			testName: "TestSubtestDuplicateParallel",
+			settings: flakyRetrySettings(),
+			env: map[string]string{
+				constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable:    "true",
+				constants.CIVisibilityFlakyRetryCountEnvironmentVariable:      "1",
+				constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable: "1",
+			},
+			expectFailure:           true,
+			validateFailureInParent: true,
+			validate: func(events civisibilitytest.Events, _ string) {
+				events.CheckEventsByType(constants.SpanTypeTestSuite, 1).CheckEventsByResourceName(suiteName, 1)
+				events.CheckEventsByType(constants.SpanTypeTestModule, 1).CheckEventsByResourceName(moduleName, 1)
+			},
 		},
 	}
 }
@@ -427,4 +480,12 @@ func TestConcurrentDuplicateParallel(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("duplicate Parallel calls did not panic or complete")
 	}
+}
+
+func TestSubtestDuplicateParallel(t *testing.T) {
+	skipUnlessScenario(t, "TestSubtestDuplicateParallel")
+	t.Run("child", func(t *testing.T) {
+		t.Parallel()
+		t.Parallel()
+	})
 }
