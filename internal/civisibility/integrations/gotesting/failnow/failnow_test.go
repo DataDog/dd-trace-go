@@ -29,8 +29,10 @@ import (
 const scenarioEnv = "DD_FAILNOW_SCENARIO"
 
 var (
-	retryPassAttempts atomic.Int32
-	retryFailAttempts atomic.Int32
+	retryPassAttempts    atomic.Int32
+	retryFailAttempts    atomic.Int32
+	cleanupPanicAttempts atomic.Int32
+	cleanupFatalAttempts atomic.Int32
 )
 
 func TestMain(m *testing.M) {
@@ -58,6 +60,20 @@ func TestManualFailNowRetryPasses(t *testing.T) {
 
 func TestManualFailNowRetryFails(t *testing.T) {
 	runTestScenario(t, "test-failnow-retry-fails", "^TestManualFailNowRetryFailsFixture$")
+}
+
+func TestCleanupPanicRetryPasses(t *testing.T) {
+	runTestScenario(t, "test-cleanup-panic-retry-passes", "^TestCleanupPanicRetryPassesFixture$")
+}
+
+func TestCleanupFatalRetryPasses(t *testing.T) {
+	runTestScenario(t, "test-cleanup-fatal-retry-passes", "^TestCleanupFatalRetryPassesFixture$")
+}
+
+// TestCleanupSkipDoesNotRetry verifies cleanup skips stay skipped instead of
+// being converted into retryable failures.
+func TestCleanupSkipDoesNotRetry(t *testing.T) {
+	runTestScenario(t, "test-cleanup-skip-does-not-retry", "^TestCleanupSkipDoesNotRetryFixture$")
 }
 
 func TestManualBenchmarkFailNow(t *testing.T) {
@@ -115,6 +131,33 @@ func TestManualFailNowRetryFailsFixture(t *testing.T) {
 	gt.FailNow()
 }
 
+func TestCleanupPanicRetryPassesFixture(t *testing.T) {
+	skipUnlessScenario(t, "test-cleanup-panic-retry-passes")
+	if cleanupPanicAttempts.Add(1) == 1 {
+		t.Cleanup(func() {
+			panic("cleanup panic")
+		})
+	}
+}
+
+func TestCleanupFatalRetryPassesFixture(t *testing.T) {
+	skipUnlessScenario(t, "test-cleanup-fatal-retry-passes")
+	if cleanupFatalAttempts.Add(1) == 1 {
+		t.Cleanup(func() {
+			t.Fatal("cleanup fatal")
+		})
+	}
+}
+
+// TestCleanupSkipDoesNotRetryFixture skips from cleanup while flaky retries are
+// enabled; a clean skip should not consume retry attempts or fail the process.
+func TestCleanupSkipDoesNotRetryFixture(t *testing.T) {
+	skipUnlessScenario(t, "test-cleanup-skip-does-not-retry")
+	t.Cleanup(func() {
+		t.Skip("cleanup skip")
+	})
+}
+
 func BenchmarkManualFailNowFixture(b *testing.B) {
 	skipUnlessScenario(b, "benchmark-failnow")
 	gb := gotesting.GetBenchmark(b)
@@ -142,7 +185,9 @@ func BenchmarkManualFatalfFixture(b *testing.B) {
 func runScenario(m *testing.M) int {
 	scenario := os.Getenv(scenarioEnv)
 	settings := civisibilitynet.SettingsResponseData{}
-	if scenario == "test-failnow-retry-passes" || scenario == "test-failnow-retry-fails" {
+	if scenario == "test-failnow-retry-passes" || scenario == "test-failnow-retry-fails" ||
+		scenario == "test-cleanup-panic-retry-passes" || scenario == "test-cleanup-fatal-retry-passes" ||
+		scenario == "test-cleanup-skip-does-not-retry" {
 		settings.FlakyTestRetriesEnabled = true
 		_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "2")
 		_ = os.Setenv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, "10")
@@ -247,6 +292,12 @@ func validateScenario(scenario string, spans []*mocktracer.Span, exitCode int) {
 		validateRetryPassScenario(spans, exitCode)
 	case "test-failnow-retry-fails":
 		validateRetryFailScenario(spans, exitCode)
+	case "test-cleanup-panic-retry-passes":
+		validateCleanupRetryPassScenario(spans, exitCode, "failnow_test.go.TestCleanupPanicRetryPassesFixture")
+	case "test-cleanup-fatal-retry-passes":
+		validateCleanupRetryPassScenario(spans, exitCode, "failnow_test.go.TestCleanupFatalRetryPassesFixture")
+	case "test-cleanup-skip-does-not-retry":
+		validateCleanupSkipDoesNotRetryScenario(spans, exitCode)
 	default:
 		panic(fmt.Sprintf("unknown scenario %s", scenario))
 	}
@@ -318,6 +369,46 @@ func validateRetryFailScenario(spans []*mocktracer.Span, exitCode int) {
 	assertTagCount(testSpans, constants.TestStatus, constants.TestStatusFail, 3)
 	assertTagCount(testSpans, constants.TestFinalStatus, constants.TestStatusFail, 1)
 	assertTagCount(testSpans, constants.TestHasFailedAllRetries, "true", 1)
+}
+
+func validateCleanupRetryPassScenario(spans []*mocktracer.Span, exitCode int, resource string) {
+	assertEqual("exit code", exitCode, 0)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSession, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestModule, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSuite, 1)
+
+	session := spansByType(spans, constants.SpanTypeTestSession)[0]
+	assertTag(session, constants.TestStatus, constants.TestStatusPass)
+	assertNumericTag(session, constants.TestCommandExitCode, 0)
+
+	testSpans := spansByResource(spansByType(spans, constants.SpanTypeTest), resource)
+	assertEqual("test span count", len(testSpans), 2)
+	assertTagCount(testSpans, constants.TestIsRetry, "true", 1)
+	assertTagCount(testSpans, constants.TestRetryReason, constants.AutoTestRetriesRetryReason, 1)
+	assertTagCount(testSpans, constants.TestStatus, constants.TestStatusFail, 1)
+	assertTagCount(testSpans, constants.TestStatus, constants.TestStatusPass, 1)
+	assertTagCount(testSpans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+	assertTagCount(testSpans, constants.TestHasFailedAllRetries, "true", 0)
+}
+
+// validateCleanupSkipDoesNotRetryScenario confirms cleanup Skip is reported as
+// a single skipped attempt even when flaky retries are available.
+func validateCleanupSkipDoesNotRetryScenario(spans []*mocktracer.Span, exitCode int) {
+	assertEqual("exit code", exitCode, 0)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSession, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestModule, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSuite, 1)
+
+	session := spansByType(spans, constants.SpanTypeTestSession)[0]
+	assertTag(session, constants.TestStatus, constants.TestStatusPass)
+	assertNumericTag(session, constants.TestCommandExitCode, 0)
+
+	resource := "failnow_test.go.TestCleanupSkipDoesNotRetryFixture"
+	testSpans := spansByResource(spansByType(spans, constants.SpanTypeTest), resource)
+	assertEqual("test span count", len(testSpans), 1)
+	assertTag(testSpans[0], constants.TestStatus, constants.TestStatusSkip)
+	assertTag(testSpans[0], constants.TestFinalStatus, constants.TestStatusSkip)
+	assertTagCount(testSpans, constants.TestIsRetry, "true", 0)
 }
 
 func spansByType(spans []*mocktracer.Span, spanType string) []*mocktracer.Span {

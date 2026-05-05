@@ -331,6 +331,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 					*tParent.barrier = tParentOldBarrier
 				}
 			}
+			runAndApplyTestCleanup(t, execMeta)
 
 			// check if is a new EFD test and the duration >= 5 min
 			if execMeta.isANewTest && duration.Minutes() >= 5 {

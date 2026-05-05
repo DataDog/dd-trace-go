@@ -233,6 +233,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 			defer func() {
 				duration := time.Since(startTime)
+				runAndApplyTestCleanup(currentT, execMeta)
 				collectAndWriteLogs(currentT, test)
 
 				if r := recover(); r != nil {
