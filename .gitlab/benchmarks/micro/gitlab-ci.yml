@@ -14,6 +14,9 @@ variables:
   # Changes smaller than SIGNIFICANT_IMPACT_THRESHOLD will be treated as a noise
   SIGNIFICANT_IMPACT_THRESHOLD: 2.0
 
+  # Known flaky benchmarks
+  FLAKY_BENCHMARKS_REGEX: "BenchmarkOTLPTraceWriterFlush"
+
 .benchmark-rules: &benchmark-rules
   - if: '$CI_COMMIT_TAG =~ /^.*\/v\d+\.\d+\.\d+(?:-.*\.\d+)?$/'
     when: never
