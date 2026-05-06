@@ -142,6 +142,8 @@ type Config struct {
 	otlpHeaders map[string]string
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
+	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
+	apiKey string
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -276,6 +278,8 @@ func loadConfig() *Config {
 		cfg.hostname = sourceHostname
 		cfg.reportHostname = true
 	}
+
+	cfg.apiKey = env.Get("DD_API_KEY")
 
 	return cfg
 }
@@ -979,4 +983,11 @@ func (c *Config) TraceID128BitEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.traceID128BitEnabled
+}
+
+// APIKey returns the configured Datadog API key (DD_API_KEY).
+func (c *Config) APIKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.apiKey
 }
