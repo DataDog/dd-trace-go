@@ -14,7 +14,11 @@ import (
 )
 
 func resetCIVisibilityStateForTesting() {
+	additionalFeaturesInitializationMu.Lock()
+	defer additionalFeaturesInitializationMu.Unlock()
+
 	settingsInitializationOnce = sync.Once{}
+	additionalFeaturesInitializationOnce = sync.Once{}
 
 	closeActions = nil
 
@@ -28,6 +32,7 @@ func resetCIVisibilityStateForTesting() {
 	sourceFileMetadataCache = sync.Map{}
 
 	uploadRepositoryChangesFunc = uploadRepositoryChanges
+	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
 	getSearchCommitsFunc = getSearchCommits
 	unshallowGitRepositoryFunc = utils.UnshallowGitRepository
 	sendObjectsPackFileFunc = sendObjectsPackFile
