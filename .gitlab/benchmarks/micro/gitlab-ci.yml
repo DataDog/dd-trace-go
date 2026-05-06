@@ -86,7 +86,7 @@ pr-performance-gates:
   when: on_success
   tags:
     - "arch:amd64"
-  image: $BASE_CI_IMAGE
+  image: $BENCHMARKS_CI_IMAGE
   script:
     - bp-runner .gitlab/benchmarks/pr-gate.thresholds.yml --debug
   artifacts:
