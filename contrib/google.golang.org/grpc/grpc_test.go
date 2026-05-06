@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -934,6 +935,85 @@ func TestWithErrorDetailTags(t *testing.T) {
 		assert.Equal(t, c.details2, serverSpan.Tag("grpc.status_details._2"))
 		rig.Close()
 		mt.Reset()
+	}
+}
+
+// statusOnlyError implements `Status() *status.Status` but not the standard
+// gRPC `GRPCStatus() *status.Status`. This mirrors libraries (e.g.
+// go.temporal.io/api/serviceerror) whose typed errors expose their gRPC code
+// via a non-standard method, causing status.Code(err) to fall back to
+// codes.Unknown unless something maps them first.
+type statusOnlyError struct {
+	st *status.Status
+}
+
+func (e *statusOnlyError) Error() string         { return e.st.Message() }
+func (e *statusOnlyError) Status() *status.Status { return e.st }
+
+func TestWithErrorMapper(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	for _, tc := range []struct {
+		name     string
+		opts     []Option
+		wantCode string
+		wantErr  bool
+	}{
+		{
+			name:     "no mapper falls back to Unknown",
+			opts:     nil,
+			wantCode: codes.Unknown.String(),
+			wantErr:  true,
+		},
+		{
+			name: "mapper recovers real code",
+			opts: []Option{WithErrorMapper(func(err error) error {
+				var soe *statusOnlyError
+				if errors.As(err, &soe) {
+					return soe.st.Err()
+				}
+				return err
+			})},
+			wantCode: codes.NotFound.String(),
+			wantErr:  true,
+		},
+		{
+			name: "mapper combined with NonErrorCodes drops error tag",
+			opts: []Option{
+				WithErrorMapper(func(err error) error {
+					var soe *statusOnlyError
+					if errors.As(err, &soe) {
+						return soe.st.Err()
+					}
+					return err
+				}),
+				NonErrorCodes(codes.NotFound),
+			},
+			wantCode: codes.NotFound.String(),
+			wantErr:  false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer mt.Reset()
+
+			interceptor := UnaryServerInterceptor(tc.opts...)
+			handler := func(_ context.Context, _ interface{}) (interface{}, error) {
+				return nil, &statusOnlyError{st: status.New(codes.NotFound, "not found")}
+			}
+			info := &grpc.UnaryServerInfo{FullMethod: "/pkg.Svc/Method"}
+			_, _ = interceptor(context.Background(), nil, info, handler)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			s := spans[0]
+			assert.Equal(t, tc.wantCode, s.Tag(tagCode))
+			if tc.wantErr {
+				assert.NotNil(t, s.Tag(ext.ErrorMsg))
+			} else {
+				assert.Nil(t, s.Tag(ext.ErrorMsg))
+			}
+		})
 	}
 }
 

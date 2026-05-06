@@ -84,6 +84,9 @@ func finishWithError(span *tracer.Span, err error, cfg *config) {
 	if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 		err = nil
 	}
+	if err != nil && cfg.errorMapper != nil {
+		err = cfg.errorMapper(err)
+	}
 	errcode := status.Code(err)
 	if errcode == codes.OK || cfg.nonErrorCodes[errcode] {
 		err = nil

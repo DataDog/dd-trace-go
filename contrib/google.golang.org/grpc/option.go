@@ -65,6 +65,7 @@ type config struct {
 	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
 	withErrorDetailTags bool
+	errorMapper         ErrorMapper
 	spanOpts            []tracer.StartSpanOption
 	tags                map[string]interface{}
 }
@@ -205,6 +206,33 @@ func WithRequestTags() OptionFn {
 func WithErrorDetailTags() OptionFn {
 	return func(cfg *config) {
 		cfg.withErrorDetailTags = true
+	}
+}
+
+// ErrorMapper translates a handler/call error into a different error before the
+// gRPC integration extracts its status code. It is intended for libraries whose
+// typed errors do not implement the standard `GRPCStatus() *status.Status`
+// interface — for example go.temporal.io/api/serviceerror.*, which exposes
+// `Status() *status.Status` only. Returning err unchanged (or nil) is a safe
+// no-op; returning a *status.Error (or any error implementing GRPCStatus) lets
+// the tracer record the real gRPC code instead of falling back to Unknown.
+type ErrorMapper func(err error) error
+
+// WithErrorMapper installs a custom mapper invoked on every non-nil handler
+// error before the integration reads its gRPC status code. The mapper runs
+// after the io.EOF / context.Canceled short-circuits and before
+// status.Code(err) / status.FromError(err) are called.
+//
+// Example, integrating with go.temporal.io/api/serviceerror:
+//
+//	import "go.temporal.io/api/serviceerror"
+//
+//	grpctrace.WithErrorMapper(func(err error) error {
+//	    return serviceerror.ToStatus(err).Err()
+//	})
+func WithErrorMapper(m ErrorMapper) OptionFn {
+	return func(cfg *config) {
+		cfg.errorMapper = m
 	}
 }
 
