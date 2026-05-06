@@ -733,12 +733,12 @@ func CreatePackFiles(commitsToInclude []string, commitsToExclude []string) []str
 
 	// construct the full path to the pack files
 	var packFiles []string
-	for i, packFile := range strings.Split(out, "\n") {
+	for packFile := range strings.SplitSeq(out, "\n") {
 		file := filepath.Join(temporaryPath, fmt.Sprintf("-%s.pack", packFile))
 
 		// check if the pack file exists
 		if _, err := os.Stat(file); os.IsNotExist(err) {
-			log.Warn("civisibility: pack file not found: %s", packFiles[i])
+			log.Warn("civisibility: pack file not found: %s", file)
 			continue
 		}
 

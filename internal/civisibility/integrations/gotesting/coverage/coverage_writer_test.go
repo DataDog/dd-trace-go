@@ -8,6 +8,7 @@ package coverage
 import (
 	"fmt"
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,6 +68,25 @@ func TestCoverageWriterFlushError(t *testing.T) {
 	writer.add(coverage)
 	writer.flush()
 	assert.Equal(t, 0, writer.payload.itemCount())
+}
+
+func TestCoverageWriterConcurrentAddAndFlush(t *testing.T) {
+	writer := newCoverageWriter()
+	writer.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
+		return nil
+	}}
+
+	var wg sync.WaitGroup
+	for range 64 {
+		wg.Go(func() {
+			writer.add(&testCoverage{})
+		})
+		wg.Go(func() {
+			writer.flush()
+		})
+	}
+	wg.Wait()
+	writer.stop()
 }
 
 // MockClient is a mock implementation of the Client interface for testing purposes.

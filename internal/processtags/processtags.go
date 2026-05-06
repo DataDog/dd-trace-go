@@ -26,6 +26,8 @@ const (
 	tagEntrypointBasedir = "entrypoint.basedir"
 	tagEntrypointWorkdir = "entrypoint.workdir"
 	tagEntrypointType    = "entrypoint.type"
+	tagSvcUser           = "svc.user"
+	tagSvcAuto           = "svc.auto"
 )
 
 const (
@@ -42,9 +44,12 @@ func init() {
 }
 
 type ProcessTags struct {
-	mu    sync.RWMutex
-	tags  map[string]string
-	str   string
+	mu sync.RWMutex
+	// +checklocks:mu
+	tags map[string]string
+	// +checklocks:mu
+	str string
+	// +checklocks:mu
 	slice []string
 }
 
@@ -79,7 +84,13 @@ func (p *ProcessTags) merge(newTags map[string]string) {
 		p.tags = make(map[string]string)
 	}
 	maps.Copy(p.tags, newTags)
+	p.rebuild()
+}
 
+// rebuild re-serializes p.tags into p.str and p.slice.
+// Must be called with p.mu held for writing.
+// +checklocks:p.mu
+func (p *ProcessTags) rebuild() {
 	// loop over the sorted map keys so the resulting string and slice versions are created consistently.
 	keys := make([]string, 0, len(p.tags))
 	for k := range p.tags {
@@ -151,4 +162,27 @@ func Add(tags map[string]string) {
 		return
 	}
 	pTags.merge(tags)
+}
+
+// SetServiceNameTag sets the appropriate process tag for the global service name.
+// svc.user and svc.auto are mutually exclusive: calling this function removes the
+// previously set tag before adding the new one.
+// If isUserDefined is true, sets svc.user:true; otherwise sets svc.auto:<name>.
+func SetServiceNameTag(name string, isUserDefined bool) {
+	if !enabled {
+		return
+	}
+	pTags.mu.Lock()
+	defer pTags.mu.Unlock()
+	if pTags.tags == nil {
+		pTags.tags = make(map[string]string)
+	}
+	delete(pTags.tags, tagSvcAuto)
+	delete(pTags.tags, tagSvcUser)
+	if isUserDefined {
+		pTags.tags[tagSvcUser] = "true"
+	} else {
+		pTags.tags[tagSvcAuto] = name
+	}
+	pTags.rebuild()
 }

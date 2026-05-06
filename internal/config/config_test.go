@@ -867,3 +867,21 @@ func TestAdditiveConfigs(t *testing.T) {
 		assert.Equal(t, "frontend-v2", to, "last write wins for same mapping key")
 	})
 }
+
+func TestAPIKey(t *testing.T) {
+	t.Run("from env", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_API_KEY", "test-api-key-32charslongfake12")
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "test-api-key-32charslongfake12", cfg.APIKey())
+	})
+	t.Run("default empty when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "", cfg.APIKey())
+	})
+}
