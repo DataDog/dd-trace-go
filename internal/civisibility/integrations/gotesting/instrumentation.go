@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -56,11 +57,12 @@ type (
 		hasExplicitAttemptToFix      bool                  // flag to mark if attempt-to-fix state comes from explicit configuration
 
 		// Fields for test.final_status computation
-		anyExecutionPassed            bool  // tracks if any prior execution passed (for final status calculation)
-		anyExecutionFailed            bool  // tracks if any prior execution failed (for final status calculation)
-		remainingRetries              int64 // remaining retries at the start of this execution
-		shouldOrchestrateAttemptToFix bool  // whether this wrapper controls ATF retries
-		isEfdInParallel               bool  // true only when parallel EFD path is active
+		anyExecutionPassed            bool               // tracks if any prior execution passed (for final status calculation)
+		anyExecutionFailed            bool               // tracks if any prior execution failed (for final status calculation)
+		remainingRetries              int64              // remaining retries at the start of this execution
+		shouldOrchestrateAttemptToFix bool               // whether this wrapper controls ATF retries
+		isEfdInParallel               bool               // true only when parallel EFD path is active
+		cleanupResult                 *testCleanupResult // records cleanup completion for this retry attempt.
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
@@ -101,6 +103,14 @@ type (
 		executionMetadata         *testExecutionMetadata   // current test execution metadata
 		module                    integrations.TestModule  // module associated with the test
 		suite                     integrations.TestSuite   // suite associated with the test
+	}
+
+	// testCleanupResult captures how testing cleanup execution completed for a retry attempt.
+	testCleanupResult struct {
+		panicData       any    // panic value returned by testing.common.runCleanup.
+		panicStacktrace string // stacktrace captured when cleanup returned a panic value.
+		goexit          bool   // true when cleanup called runtime.Goexit before runCleanup returned.
+		ran             bool   // true after this attempt has executed its testing cleanups.
 	}
 
 	// parallelForwardState coordinates t.Parallel forwarding for Datadog-managed
@@ -576,9 +586,12 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				}
 
 				if execMeta.isFlakyTestRetriesEnabled {
-					// For flaky test retries, retry if the test failed and remaining retries >= 0.
-					return ptrToLocalT.Failed() && remainingRetries >= 0 &&
-						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) >= 0
+					return willRetryAfterExecution(
+						ptrToLocalT.Failed(),
+						execMeta,
+						remainingRetries,
+						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount),
+					)
 				}
 
 				// No retries for other cases.
@@ -645,7 +658,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 							status = "skipped"
 						}
 						fmt.Printf("    [ %v after %v retries by Datadog's auto test retries ]\n", status, executionIndex)
-						if atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) < 1 {
+						if atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) < 0 {
 							fmt.Println("    the maximum number of total retries was exceeded.")
 						}
 					}
@@ -780,10 +793,13 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	reinitOutputWriter(dummyParent)
 	*localTPrivateFields.parent = unsafe.Pointer(dummyParent)
 
+	var cleanupResult testCleanupResult
+
 	// Create an execution metadata instance
 	execMeta := createTestMetadata(ptrToLocalT, execOpts.options.t)
 	execMeta.parallelForwardState = execOpts.parallelForwardState
 	execMeta.hasAdditionalFeatureWrapper = true
+	execMeta.cleanupResult = &cleanupResult
 
 	// Propagate set tags from a parent wrapper
 	propagateTestExecutionMetadataFlags(execMeta, execOpts.originalExecutionMetadata)
@@ -817,34 +833,21 @@ func executeTestIteration(execOpts *executionOptions) bool {
 			*cn <- struct{}{}
 		}()
 		defer func() {
-			// handle parallel sub tests execution
-			if localTPrivateFields.sub != nil {
-				if len(*localTPrivateFields.sub) > 0 {
-					if localTPrivateFields.barrier != nil {
-						close(*localTPrivateFields.barrier)
-					}
-					for _, sub := range *localTPrivateFields.sub {
-						pvSub := getTestPrivateFields(sub)
-						if pvSub.signal != nil {
-							<-*pvSub.signal
-						}
-					}
-				}
-			}
+			completeParallelSubtests(localTPrivateFields)
 		}()
 		defer func() {
 			duration = time.Since(startTime)
+		}()
+		defer func() {
+			if !cleanupResult.ran {
+				runTestCleanup(pLocalT, &cleanupResult)
+			}
 		}()
 		pLocalT.Helper()
 		opts.t.Helper()
 		opts.targetFunc(pLocalT)
 	}(ptrToLocalT, execOpts.options, &chn)
 	<-chn
-
-	// Call cleanup functions after this execution
-	if err := testingTRunCleanup(ptrToLocalT, 1); err != nil {
-		fmt.Printf("cleanup error: %v\n", err)
-	}
 
 	// Lock mutex
 	execOpts.mutex.Lock()
@@ -879,6 +882,10 @@ func executeTestIteration(execOpts *executionOptions) bool {
 			execOpts.panicExecutionMetadata = execMeta
 		}
 	}
+	applyTestCleanupResult(ptrToLocalT, execMeta, &cleanupResult)
+	if cleanupResult.panicData != nil && execOpts.panicExecutionMetadata == nil {
+		execOpts.panicExecutionMetadata = execMeta
+	}
 
 	// Adjust retry count after first execution if necessary
 	if execOpts.options.postAdjustRetryCount != nil && currentIndex == 0 {
@@ -899,6 +906,80 @@ func executeTestIteration(execOpts *executionOptions) bool {
 
 	// Decide whether to continue
 	return execOpts.options.postShouldRetry(ptrToLocalT, execMeta, currentIndex, execOpts.retryCount)
+}
+
+// runTestCleanup executes testing cleanups for a retry attempt. It isolates
+// cleanup Goexit in a helper goroutine so retry orchestration can treat cleanup
+// failures as attempt failures instead of letting them escape the retry loop.
+func runTestCleanup(t *testing.T, result *testCleanupResult) {
+	completeParallelSubtests(getTestPrivateFields(t))
+	result.ran = true
+	done := make(chan struct{})
+	go func() {
+		completed := false
+		defer func() {
+			if !completed {
+				result.goexit = true
+			}
+			close(done)
+		}()
+		result.panicData = testingTRunCleanup(t, 1)
+		if result.panicData != nil {
+			result.panicStacktrace = utils.GetStacktrace(1)
+		}
+		completed = true
+	}()
+	<-done
+}
+
+// completeParallelSubtests releases and waits for parallel subtests owned by a
+// Datadog-managed clone. It clears the subtest queue before releasing the
+// barrier so later cleanup paths cannot close the same barrier twice.
+func completeParallelSubtests(localTPrivateFields *commonPrivateFields) {
+	if localTPrivateFields == nil || localTPrivateFields.sub == nil || len(*localTPrivateFields.sub) == 0 {
+		return
+	}
+
+	subtests := *localTPrivateFields.sub
+	*localTPrivateFields.sub = nil
+	if localTPrivateFields.barrier != nil && *localTPrivateFields.barrier != nil {
+		close(*localTPrivateFields.barrier)
+	}
+	for _, sub := range subtests {
+		pvSub := getTestPrivateFields(sub)
+		if pvSub != nil && pvSub.signal != nil {
+			<-*pvSub.signal
+		}
+	}
+}
+
+// runAndApplyTestCleanup runs a retry attempt's cleanups before its span is
+// finalized, then applies any cleanup failure to the attempt metadata.
+func runAndApplyTestCleanup(t *testing.T, execMeta *testExecutionMetadata) {
+	if execMeta == nil || execMeta.cleanupResult == nil || execMeta.cleanupResult.ran {
+		return
+	}
+	runTestCleanup(t, execMeta.cleanupResult)
+	applyTestCleanupResult(t, execMeta, execMeta.cleanupResult)
+}
+
+// applyTestCleanupResult applies cleanup panics and failing Goexit results to
+// the test attempt so retry orchestration can make the normal retry decision.
+// Cleanup SkipNow also exits with Goexit, but testing treats that as a skipped
+// test when it is not already failed, so it must keep its skipped status.
+func applyTestCleanupResult(t *testing.T, execMeta *testExecutionMetadata, result *testCleanupResult) {
+	if result == nil || (result.panicData == nil && !result.goexit) {
+		return
+	}
+	if result.panicData == nil && result.goexit && t.Skipped() && !t.Failed() {
+		return
+	}
+	t.Fail()
+	if result.panicData == nil {
+		return
+	}
+	execMeta.panicData = result.panicData
+	execMeta.panicStacktrace = result.panicStacktrace
 }
 
 // propagateTestExecutionMetadataFlags propagates the test execution metadata flags from the original test execution metadata to the current one.
