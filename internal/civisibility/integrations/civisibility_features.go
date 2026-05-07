@@ -48,8 +48,14 @@ var (
 	// additionalFeaturesInitializationOnce ensures we do the additional features initialization just once
 	additionalFeaturesInitializationOnce sync.Once
 
+	// additionalFeaturesInitializationMu serializes additional feature initialization with test-only state resets.
+	additionalFeaturesInitializationMu sync.Mutex
+
 	// ciVisibilityRapidClient contains the http rapid client to do CI Visibility queries and upload to the rapid backend
 	ciVisibilityClient net.Client
+
+	// newCIVisibilityClientWithServiceNameFunc creates the CI Visibility client used during settings bootstrap.
+	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
 
 	// ciVisibilitySettings contains the CI Visibility settings for this session
 	ciVisibilitySettings net.SettingsResponseData
@@ -89,7 +95,7 @@ func ensureSettingsInitialization(serviceName string) {
 		defer log.Debug("civisibility: settings initialization complete")
 
 		// Create the CI Visibility client
-		ciVisibilityClient = net.NewClientWithServiceName(serviceName)
+		ciVisibilityClient = newCIVisibilityClientWithServiceNameFunc(serviceName)
 		if ciVisibilityClient == nil {
 			log.Error("civisibility: error getting the ci visibility http client")
 			return
@@ -138,7 +144,7 @@ func ensureSettingsInitialization(serviceName string) {
 		// Get the CI Visibility settings payload for this test session
 		ciSettings, err := ciVisibilityClient.GetSettings()
 		if err != nil || ciSettings == nil {
-			log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
+			logSettingsFetchError(err)
 			log.Debug("civisibility: no need to wait for the git upload to finish")
 			// Enqueue a close action to wait for the upload to finish before finishing the process
 			PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
@@ -153,8 +159,8 @@ func ensureSettingsInitialization(serviceName string) {
 				return
 			}
 			ciSettings, err = ciVisibilityClient.GetSettings()
-			if err != nil {
-				log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
+			if err != nil || ciSettings == nil {
+				logSettingsFetchError(err)
 				return
 			}
 		}
@@ -230,8 +236,20 @@ func ensureSettingsInitialization(serviceName string) {
 	})
 }
 
+// logSettingsFetchError reports a failed or empty CI Visibility settings response.
+func logSettingsFetchError(err error) {
+	if err != nil {
+		log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
+		return
+	}
+	log.Error("civisibility: error getting CI visibility settings: empty response")
+}
+
 // ensureAdditionalFeaturesInitialization loads CI Visibility features that depend on the previously fetched settings.
 func ensureAdditionalFeaturesInitialization(_ string) {
+	additionalFeaturesInitializationMu.Lock()
+	defer additionalFeaturesInitializationMu.Unlock()
+
 	additionalFeaturesInitializationOnce.Do(func() {
 		log.Debug("civisibility: initializing additional features")
 		defer log.Debug("civisibility: additional features initialization complete")

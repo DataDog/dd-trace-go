@@ -73,7 +73,7 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "runtime_metrics_enabled", true)
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "stats_computation_enabled", true)
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_enabled", true)
-		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_span_attribute_schema", 0)
+		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_span_attribute_schema", "")
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_peer_service_defaults_enabled", true)
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_peer_service_mapping", "key:val")
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "debug_stack_enabled", false)

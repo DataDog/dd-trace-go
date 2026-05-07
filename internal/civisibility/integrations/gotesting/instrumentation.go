@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -29,36 +30,39 @@ type (
 
 	// testExecutionMetadata contains metadata regarding an unique *testing.T or *testing.B execution
 	testExecutionMetadata struct {
-		test                         integrations.Test // internal CI Visibility test event
-		originalTest                 *testing.T        // original test that was executed
-		error                        atomic.Int32      // flag to check if the test event has error data already
-		skipped                      atomic.Int32      // flag to check if the test event has skipped data already
-		panicData                    any               // panic data recovered from an internal test execution when using an additional feature wrapper
-		panicStacktrace              string            // stacktrace from the panic recovered from an internal test
-		skipReason                   string            // skip reason captured from instrumentCloseAndSkip when hasAdditionalFeatureWrapper is true
-		isARetry                     bool              // flag to tag if a current test execution is a retry
-		isANewTest                   bool              // flag to tag if a current test a new test
-		isAModifiedTest              bool              // flag to tag if a current test a modified test
-		isEarlyFlakeDetectionEnabled bool              // flag to tag if Early Flake Detection is enabled for this execution
-		isFlakyTestRetriesEnabled    bool              // flag to tag if Flaky Test Retries is enabled for this execution
-		isQuarantined                bool              // flag to check if the test is quarantined
-		isDisabled                   bool              // flag to check if the test is disabled
-		isAttemptToFix               bool              // flag to check if the test is marked as attempt to fix
-		isLastRetry                  bool              // flag to check if the current execution is the last retry
-		allAttemptsPassed            bool              // flag to check if all attempts passed for a test marked as attempt to fix
-		allRetriesFailed             bool              // flag to check if all retries failed for a test
-		hasAdditionalFeatureWrapper  bool              // flag to check if the current execution is part of an additional feature wrapper
-		identity                     *testIdentity     // identity of the current execution (test or subtest)
-		hasExplicitQuarantined       bool              // flag to mark if quarantine state comes from explicit configuration
-		hasExplicitDisabled          bool              // flag to mark if disabled state comes from explicit configuration
-		hasExplicitAttemptToFix      bool              // flag to mark if attempt-to-fix state comes from explicit configuration
+		test                         integrations.Test     // internal CI Visibility test event
+		originalTest                 *testing.T            // original test that was executed
+		parallelForwardState         *parallelForwardState // shared state used to forward t.Parallel from retry clones to the original test
+		parallelForwarded            atomic.Bool           // tracks whether this execution already forwarded t.Parallel to the original test
+		error                        atomic.Int32          // flag to check if the test event has error data already
+		skipped                      atomic.Int32          // flag to check if the test event has skipped data already
+		panicData                    any                   // panic data recovered from an internal test execution when using an additional feature wrapper
+		panicStacktrace              string                // stacktrace from the panic recovered from an internal test
+		skipReason                   string                // skip reason captured from instrumentCloseAndSkip when hasAdditionalFeatureWrapper is true
+		isARetry                     bool                  // flag to tag if a current test execution is a retry
+		isANewTest                   bool                  // flag to tag if a current test a new test
+		isAModifiedTest              bool                  // flag to tag if a current test a modified test
+		isEarlyFlakeDetectionEnabled bool                  // flag to tag if Early Flake Detection is enabled for this execution
+		isFlakyTestRetriesEnabled    bool                  // flag to tag if Flaky Test Retries is enabled for this execution
+		isQuarantined                bool                  // flag to check if the test is quarantined
+		isDisabled                   bool                  // flag to check if the test is disabled
+		isAttemptToFix               bool                  // flag to check if the test is marked as attempt to fix
+		isLastRetry                  bool                  // flag to check if the current execution is the last retry
+		allAttemptsPassed            bool                  // flag to check if all attempts passed for a test marked as attempt to fix
+		allRetriesFailed             bool                  // flag to check if all retries failed for a test
+		hasAdditionalFeatureWrapper  bool                  // flag to check if the current execution is part of an additional feature wrapper
+		identity                     *testIdentity         // identity of the current execution (test or subtest)
+		hasExplicitQuarantined       bool                  // flag to mark if quarantine state comes from explicit configuration
+		hasExplicitDisabled          bool                  // flag to mark if disabled state comes from explicit configuration
+		hasExplicitAttemptToFix      bool                  // flag to mark if attempt-to-fix state comes from explicit configuration
 
 		// Fields for test.final_status computation
-		anyExecutionPassed            bool  // tracks if any prior execution passed (for final status calculation)
-		anyExecutionFailed            bool  // tracks if any prior execution failed (for final status calculation)
-		remainingRetries              int64 // remaining retries at the start of this execution
-		shouldOrchestrateAttemptToFix bool  // whether this wrapper controls ATF retries
-		isEfdInParallel               bool  // true only when parallel EFD path is active
+		anyExecutionPassed            bool               // tracks if any prior execution passed (for final status calculation)
+		anyExecutionFailed            bool               // tracks if any prior execution failed (for final status calculation)
+		remainingRetries              int64              // remaining retries at the start of this execution
+		shouldOrchestrateAttemptToFix bool               // whether this wrapper controls ATF retries
+		isEfdInParallel               bool               // true only when parallel EFD path is active
+		cleanupResult                 *testCleanupResult // records cleanup completion for this retry attempt.
 	}
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
@@ -90,6 +94,7 @@ type (
 	executionOptions struct {
 		mutex                     sync.Locker              // mutex for synchronizing test iterations
 		options                   *runTestWithRetryOptions // options for the test execution
+		parallelForwardState      *parallelForwardState    // shared t.Parallel forwarding state for all attempts in this retry group
 		executionIndex            int                      // current execution index
 		retryCount                int64                    // remaining retry count
 		originalExecutionMetadata *testExecutionMetadata   // original test execution metadata
@@ -98,6 +103,24 @@ type (
 		executionMetadata         *testExecutionMetadata   // current test execution metadata
 		module                    integrations.TestModule  // module associated with the test
 		suite                     integrations.TestSuite   // suite associated with the test
+	}
+
+	// testCleanupResult captures how testing cleanup execution completed for a retry attempt.
+	testCleanupResult struct {
+		panicData       any    // panic value returned by testing.common.runCleanup.
+		panicStacktrace string // stacktrace captured when cleanup returned a panic value.
+		goexit          bool   // true when cleanup called runtime.Goexit before runCleanup returned.
+		ran             bool   // true after this attempt has executed its testing cleanups.
+	}
+
+	// parallelForwardState coordinates t.Parallel forwarding for Datadog-managed
+	// test clones that all point at the same original *testing.T.
+	parallelForwardState struct {
+		mu          sync.Mutex // guards the forwarding and forwarded state
+		cond        *sync.Cond // wakes waiting retry attempts after an active forward finishes
+		forwarding  bool       // true while an attempt is inside the original testing.T.Parallel call
+		forwarded   bool       // true after the retry group has successfully forwarded Parallel once
+		duplicateMu sync.Mutex // serializes duplicate Parallel calls so the Go runtime produces the standard panic deterministically
 	}
 )
 
@@ -117,6 +140,68 @@ var (
 	// ciVisibilityTestMetadataMutex is a read-write mutex for synchronizing access to ciVisibilityTestMetadata.
 	ciVisibilityTestMetadataMutex sync.RWMutex
 )
+
+// newParallelForwardState creates the shared t.Parallel forwarding state for one
+// runTestWithRetry invocation. The returned value must be shared by pointer only.
+func newParallelForwardState() *parallelForwardState {
+	state := &parallelForwardState{}
+	state.cond = sync.NewCond(&state.mu)
+	return state
+}
+
+// forward calls Parallel on the original test at most once for a retry group.
+// It deliberately avoids sync.Once because testing.T.Parallel can block or panic,
+// and waiters must not proceed until the real Go scheduling barrier has returned.
+func (s *parallelForwardState) forward(original *testing.T) {
+	s.mu.Lock()
+	for s.forwarding {
+		s.cond.Wait()
+	}
+	if s.forwarded {
+		s.mu.Unlock()
+		return
+	}
+	s.forwarding = true
+	s.mu.Unlock()
+
+	completed := false
+	var panicValue any
+	defer func() {
+		if !completed {
+			panicValue = recover()
+		}
+
+		s.mu.Lock()
+		if completed {
+			s.forwarded = true
+		}
+		s.forwarding = false
+		s.cond.Broadcast()
+		s.mu.Unlock()
+
+		if panicValue != nil {
+			panic(panicValue)
+		}
+	}()
+
+	original.Parallel()
+	completed = true
+}
+
+// callDuplicate forwards a second Parallel call from the same execution to the
+// original test so the Go runtime preserves its standard duplicate-call panic.
+func (s *parallelForwardState) callDuplicate(original *testing.T) {
+	s.mu.Lock()
+	for s.forwarding {
+		s.cond.Wait()
+	}
+	s.mu.Unlock()
+
+	s.duplicateMu.Lock()
+	defer s.duplicateMu.Unlock()
+
+	original.Parallel()
+}
 
 // isCiVisibilityEnabled gets if CI Visibility has been enabled or disabled by the "DD_CIVISIBILITY_ENABLED" environment variable
 func isCiVisibilityEnabled() bool {
@@ -501,9 +586,12 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				}
 
 				if execMeta.isFlakyTestRetriesEnabled {
-					// For flaky test retries, retry if the test failed and remaining retries >= 0.
-					return ptrToLocalT.Failed() && remainingRetries >= 0 &&
-						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) >= 0
+					return willRetryAfterExecution(
+						ptrToLocalT.Failed(),
+						execMeta,
+						remainingRetries,
+						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount),
+					)
 				}
 
 				// No retries for other cases.
@@ -570,7 +658,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 							status = "skipped"
 						}
 						fmt.Printf("    [ %v after %v retries by Datadog's auto test retries ]\n", status, executionIndex)
-						if atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) < 1 {
+						if atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) < 0 {
 							fmt.Println("    the maximum number of total retries was exceeded.")
 						}
 					}
@@ -605,6 +693,7 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	execOpts := &executionOptions{
 		mutex:                     &noopMutex{},
 		options:                   options,
+		parallelForwardState:      newParallelForwardState(),
 		executionIndex:            -1,
 		retryCount:                int64(0),
 		originalExecutionMetadata: getTestMetadata(options.t),
@@ -704,9 +793,13 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	reinitOutputWriter(dummyParent)
 	*localTPrivateFields.parent = unsafe.Pointer(dummyParent)
 
+	var cleanupResult testCleanupResult
+
 	// Create an execution metadata instance
 	execMeta := createTestMetadata(ptrToLocalT, execOpts.options.t)
+	execMeta.parallelForwardState = execOpts.parallelForwardState
 	execMeta.hasAdditionalFeatureWrapper = true
+	execMeta.cleanupResult = &cleanupResult
 
 	// Propagate set tags from a parent wrapper
 	propagateTestExecutionMetadataFlags(execMeta, execOpts.originalExecutionMetadata)
@@ -740,34 +833,21 @@ func executeTestIteration(execOpts *executionOptions) bool {
 			*cn <- struct{}{}
 		}()
 		defer func() {
-			// handle parallel sub tests execution
-			if localTPrivateFields.sub != nil {
-				if len(*localTPrivateFields.sub) > 0 {
-					if localTPrivateFields.barrier != nil {
-						close(*localTPrivateFields.barrier)
-					}
-					for _, sub := range *localTPrivateFields.sub {
-						pvSub := getTestPrivateFields(sub)
-						if pvSub.signal != nil {
-							<-*pvSub.signal
-						}
-					}
-				}
-			}
+			completeParallelSubtests(pLocalT, localTPrivateFields)
 		}()
 		defer func() {
 			duration = time.Since(startTime)
+		}()
+		defer func() {
+			if !cleanupResult.ran {
+				runTestCleanup(pLocalT, &cleanupResult)
+			}
 		}()
 		pLocalT.Helper()
 		opts.t.Helper()
 		opts.targetFunc(pLocalT)
 	}(ptrToLocalT, execOpts.options, &chn)
 	<-chn
-
-	// Call cleanup functions after this execution
-	if err := testingTRunCleanup(ptrToLocalT, 1); err != nil {
-		fmt.Printf("cleanup error: %v\n", err)
-	}
 
 	// Lock mutex
 	execOpts.mutex.Lock()
@@ -802,6 +882,10 @@ func executeTestIteration(execOpts *executionOptions) bool {
 			execOpts.panicExecutionMetadata = execMeta
 		}
 	}
+	applyTestCleanupResult(ptrToLocalT, execMeta, &cleanupResult)
+	if cleanupResult.panicData != nil && execOpts.panicExecutionMetadata == nil {
+		execOpts.panicExecutionMetadata = execMeta
+	}
 
 	// Adjust retry count after first execution if necessary
 	if execOpts.options.postAdjustRetryCount != nil && currentIndex == 0 {
@@ -822,6 +906,103 @@ func executeTestIteration(execOpts *executionOptions) bool {
 
 	// Decide whether to continue
 	return execOpts.options.postShouldRetry(ptrToLocalT, execMeta, currentIndex, execOpts.retryCount)
+}
+
+// runTestCleanup executes testing cleanups for a retry attempt. It isolates
+// cleanup Goexit in a helper goroutine so retry orchestration can treat cleanup
+// failures as attempt failures instead of letting them escape the retry loop.
+func runTestCleanup(t *testing.T, result *testCleanupResult) {
+	completeParallelSubtests(t, getTestPrivateFields(t))
+	result.ran = true
+	done := make(chan struct{})
+	go func() {
+		completed := false
+		defer func() {
+			if !completed {
+				result.goexit = true
+			}
+			close(done)
+		}()
+		result.panicData = testingTRunCleanup(t, 1)
+		if result.panicData != nil {
+			result.panicStacktrace = utils.GetStacktrace(1)
+		}
+		completed = true
+	}()
+	<-done
+}
+
+// completeParallelSubtests releases and waits for parallel subtests owned by a
+// Datadog-managed clone. It mirrors testing.tRunner's scheduler accounting:
+// release the parent slot before unblocking children, then reacquire it for
+// sequential parents before running cleanup.
+func completeParallelSubtests(t *testing.T, localTPrivateFields *commonPrivateFields) {
+	if localTPrivateFields == nil || localTPrivateFields.sub == nil || len(*localTPrivateFields.sub) == 0 {
+		return
+	}
+
+	subtests := *localTPrivateFields.sub
+	*localTPrivateFields.sub = nil
+	testState := getTestState(t)
+	if testState != nil {
+		testingTestStateRelease(testState)
+	}
+	if localTPrivateFields.barrier != nil && *localTPrivateFields.barrier != nil {
+		close(*localTPrivateFields.barrier)
+	}
+	for _, sub := range subtests {
+		pvSub := getTestPrivateFields(sub)
+		if pvSub != nil && pvSub.signal != nil {
+			<-*pvSub.signal
+		}
+	}
+	if testState != nil && !isParallelTest(t, localTPrivateFields) {
+		testingTestStateWaitParallel(testState)
+	}
+}
+
+// isParallelTest reports whether the active test has entered Go's parallel-test
+// path. Datadog-managed retry clones forward Parallel to the original *testing.T,
+// so the original must also be checked before deciding whether to reacquire the
+// scheduler slot.
+func isParallelTest(t *testing.T, localTPrivateFields *commonPrivateFields) bool {
+	if localTPrivateFields != nil && localTPrivateFields.isParallel != nil && *localTPrivateFields.isParallel {
+		return true
+	}
+	if execMeta := getTestMetadata(t); execMeta != nil && execMeta.originalTest != nil {
+		originalFields := getTestPrivateFields(execMeta.originalTest)
+		return originalFields != nil && originalFields.isParallel != nil && *originalFields.isParallel
+	}
+	return false
+}
+
+// runAndApplyTestCleanup runs a retry attempt's cleanups before its span is
+// finalized, then applies any cleanup failure to the attempt metadata.
+func runAndApplyTestCleanup(t *testing.T, execMeta *testExecutionMetadata) {
+	if execMeta == nil || execMeta.cleanupResult == nil || execMeta.cleanupResult.ran {
+		return
+	}
+	runTestCleanup(t, execMeta.cleanupResult)
+	applyTestCleanupResult(t, execMeta, execMeta.cleanupResult)
+}
+
+// applyTestCleanupResult applies cleanup panics and failing Goexit results to
+// the test attempt so retry orchestration can make the normal retry decision.
+// Cleanup SkipNow also exits with Goexit, but testing treats that as a skipped
+// test when it is not already failed, so it must keep its skipped status.
+func applyTestCleanupResult(t *testing.T, execMeta *testExecutionMetadata, result *testCleanupResult) {
+	if result == nil || (result.panicData == nil && !result.goexit) {
+		return
+	}
+	if result.panicData == nil && result.goexit && t.Skipped() && !t.Failed() {
+		return
+	}
+	t.Fail()
+	if result.panicData == nil {
+		return
+	}
+	execMeta.panicData = result.panicData
+	execMeta.panicStacktrace = result.panicStacktrace
 }
 
 // propagateTestExecutionMetadataFlags propagates the test execution metadata flags from the original test execution metadata to the current one.
@@ -861,3 +1042,9 @@ func (m *noopMutex) TryLock() bool { return true }
 
 //go:linkname testingTRunCleanup testing.(*common).runCleanup
 func testingTRunCleanup(c *testing.T, ph int) (panicVal any)
+
+//go:linkname testingTestStateWaitParallel testing.(*testState).waitParallel
+func testingTestStateWaitParallel(s *testingTestState)
+
+//go:linkname testingTestStateRelease testing.(*testState).release
+func testingTestStateRelease(s *testingTestState)

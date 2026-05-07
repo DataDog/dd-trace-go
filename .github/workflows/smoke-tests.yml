@@ -230,6 +230,7 @@ jobs:
         uses: ./.github/actions/supported_configurations_validation
       - name: Get Datadog credentials
         id: dd-sts
+        if: always()
         continue-on-error: true
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
@@ -384,13 +385,65 @@ jobs:
 
   smoke-tests-done:
     name: Smoke Tests
-    needs: setup-requirements-linux
+    needs: 
+      - setup-requirements-linux
+      - smoke-test-tracer
+      - go-get-u
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.setup-requirements-linux.result == 'success'
+        if: needs.setup-requirements-linux.result == 'success' && needs.smoke-test-tracer.result == 'success' && needs.go-get-u.result == 'success'
         run: echo "Success!"
       - name: Failure
-        if: needs.setup-requirements-linux.result != 'success'
-        run: echo "Failure!" && exit 1
+        if: needs.setup-requirements-linux.result != 'success' || needs.smoke-test-tracer.result != 'success' || needs.go-get-u.result != 'success'
+        uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
+        with:
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Smoke Tests Failed",
+              "linux_result": "${{ needs.setup-requirements-linux.result }}",
+              "core_result": "${{ needs.smoke-test-tracer.result }}",
+              "contrib_result": "${{ needs.go-get-u.result }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ":x: Smoke Tests Failed on Main!"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow:*\n${{ github.workflow }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Linux Result:*\n${{ needs.setup-requirements-linux.result }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Tracer Result:*\n${{ needs.smoke-test-tracer.result }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Contrib Test Result:*\n${{ needs.go-get-u.result }}"
+                    },
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_SMOKE_TESTS_WEBHOOK_URL }}

@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -27,6 +28,11 @@ import (
 func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs libddwaf.RunAddressData) {
 	ctx := op.context.Load()
 	if ctx == nil { // Context was closed concurrently
+		if addrs.TimerKey == addresses.RASPScope && op.metrics != nil {
+			if ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs); ok {
+				op.metrics.SkipRASPRule(ruleType, "after-request")
+			}
+		}
 		return
 	}
 

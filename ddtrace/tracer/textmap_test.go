@@ -445,7 +445,88 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	ddTag := strings.SplitN(headers[tracestateHeader], ",", 2)[0]
 	assert.Contains(ddTag, "s:2")
 	assert.Regexp(regexp.MustCompile(`dd=[\w:,]+`), ddTag)
-	assert.LessOrEqual(len(ddTag), 256) // one of the propagated tags will not be propagated
+	assert.LessOrEqual(len(ddTag), tracestateDDMaxSize) // one of the propagated tags will not be propagated
+}
+
+func TestExtractTracestateDropsOversizedDD(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// Build a dd= entry that exceeds tracestateDDMaxSize.
+	ddEntry := "dd=s:1;o:rum;p:0000000000000001;t.foo:" + strings.Repeat("a", tracestateDDMaxSize)
+	require.Greater(t, len(ddEntry), tracestateDDMaxSize)
+	rawTracestate := ddEntry + ",vendor1=v1,vendor2=v2"
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  rawTracestate,
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	// Oversized dd entry must not appear in the stored propagating tag.
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.Contains(t, stored, "vendor2=v2")
+	// dd entry was not parsed, so its origin/reparentID were not extracted.
+	assert.Empty(t, sctx.origin)
+	assert.Empty(t, sctx.reparentID)
+	// And no _dd.p.foo propagating tag was created from t.foo.
+	assert.False(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
+}
+
+func TestExtractTracestateKeepsDDAtBoundary(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// dd= entry exactly at the limit should be kept and parsed.
+	prefix := "dd=s:1;t.foo:"
+	ddEntry := prefix + strings.Repeat("a", tracestateDDMaxSize-len(prefix))
+	require.Equal(t, tracestateDDMaxSize, len(ddEntry))
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  ddEntry + ",vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.Contains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.True(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
+}
+
+func TestExtractTracestateDropsOversizedDDWithWhitespace(t *testing.T) {
+	t.Setenv(headerPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// Same as the basic oversized-dd case but with leading OWS on the dd entry.
+	// W3C list-member parsing allows surrounding whitespace, so the prefix and
+	// length check must trim each entry before evaluating it.
+	ddEntry := " dd=s:1;o:rum;p:0000000000000001;t.foo:" + strings.Repeat("a", tracestateDDMaxSize)
+	rawTracestate := "vendor1=v1," + ddEntry + ",vendor2=v2"
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  rawTracestate,
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+	assert.Contains(t, stored, "vendor2=v2")
+	assert.Empty(t, sctx.origin)
+	assert.False(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
 }
 
 func TestTextMapPropagator(t *testing.T) {
@@ -2890,6 +2971,127 @@ func TestExtractBaggagePropagatorMalformedHeader(t *testing.T) {
 		})
 		assert.Len(t, got, 0)
 	})
+}
+
+func TestExtractBaggagePropagatorMaxItems(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	var b strings.Builder
+	for i := range baggageMaxItems + 5 {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		iStr := strconv.Itoa(i)
+		b.WriteString("key" + iStr + "=val" + iStr)
+	}
+
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  b.String(),
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, baggageMaxItems)
+	for i := range baggageMaxItems {
+		iStr := strconv.Itoa(i)
+		assert.Equal(t, "val"+iStr, got["key"+iStr])
+	}
+	for i := baggageMaxItems; i < baggageMaxItems+5; i++ {
+		iStr := strconv.Itoa(i)
+		_, present := got["key"+iStr]
+		assert.False(t, present, "key%s should not be present", iStr)
+	}
+}
+
+func TestExtractBaggagePropagatorMaxBytes(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	// 12 items, each "keyN=" + 1000 'a's = 1005 wire bytes. Including comma
+	// separators, the first 8 fit under baggageMaxBytes (8192); the 9th would
+	// push the running total to 9053 > 8192, so items 8..11 are dropped.
+	const itemValLen = 1000
+	const numItems = 12
+	const expectedKept = 8
+	val := strings.Repeat("a", itemValLen)
+
+	var b strings.Builder
+	for i := range numItems {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString("key" + strconv.Itoa(i) + "=" + val)
+	}
+
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  b.String(),
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, expectedKept)
+	for i := range expectedKept {
+		assert.Equal(t, val, got["key"+strconv.Itoa(i)])
+	}
+	for i := expectedKept; i < numItems; i++ {
+		_, present := got["key"+strconv.Itoa(i)]
+		assert.False(t, present, "key%d should not be present", i)
+	}
+}
+
+func TestExtractBaggagePropagatorMalformedPastLimit(t *testing.T) {
+	tracer, err := newTracer()
+	assert.NoError(t, err)
+	defer tracer.Stop()
+
+	// baggageMaxItems valid entries followed by a malformed entry. Because
+	// the malformed entry sits past the items limit it is never inspected,
+	// so the valid prefix is kept (regression check on the single-pass design).
+	var b strings.Builder
+	for i := range baggageMaxItems {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		iStr := strconv.Itoa(i)
+		b.WriteString("key" + iStr + "=val" + iStr)
+	}
+	b.WriteString(",malformed_no_equals_sign")
+
+	headers := TextMapCarrier{
+		DefaultTraceIDHeader:  "4",
+		DefaultParentIDHeader: "1",
+		DefaultBaggageHeader:  b.String(),
+	}
+	s, err := tracer.Extract(headers)
+	assert.NoError(t, err)
+
+	got := make(map[string]string)
+	s.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Len(t, got, baggageMaxItems)
+	for i := range baggageMaxItems {
+		iStr := strconv.Itoa(i)
+		assert.Equal(t, "val"+iStr, got["key"+iStr])
+	}
 }
 
 func TestExtractOnlyBaggage(t *testing.T) {

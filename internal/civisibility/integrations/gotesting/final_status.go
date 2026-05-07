@@ -85,8 +85,9 @@ func willRetryAfterExecution(failed bool, execMeta *testExecutionMetadata, remai
 	}
 
 	if execMeta.isFlakyTestRetriesEnabled {
-		// For flaky test retries, retry if the test failed and remaining retries >= 0.
-		return failed && remainingRetries >= 0 && remainingBudget >= 0
+		// For flaky test retries, the per-test retry counter and global retry
+		// budget must both reserve a retry before another attempt can run.
+		return failed && remainingRetries >= 0 && remainingBudget > 0
 	}
 
 	// No retries for other cases.
