@@ -72,6 +72,9 @@ func resetCIVisibilityBootstrapStateForTesting() {
 func restoreCIVisibilityMockModeForTesting() {
 	resetCIVisibilityBootstrapStateForTesting()
 	disableAdditionalFeaturesForBootstrapTest()
+	// Stop the existing mock before starting another one so its Stop hook cannot
+	// overwrite the newly installed global tracer with the noop tracer.
+	tracer.Stop()
 	mockTracer = InitializeCIVisibilityMock()
 }
 
