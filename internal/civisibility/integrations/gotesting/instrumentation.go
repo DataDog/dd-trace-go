@@ -956,12 +956,9 @@ func runBoundedParallelEFDIterations(execOpts *executionOptions, attempts, maxCo
 	if attempts <= 0 {
 		return
 	}
-	parallelism := maxConcurrency
-	if parallelism > attempts {
-		parallelism = attempts
-	}
+	parallelism := min(maxConcurrency, attempts)
 	if parallelism <= 1 {
-		for i := int64(0); i < attempts; i++ {
+		for range attempts {
 			executeTestIteration(execOpts)
 		}
 		return
@@ -970,7 +967,7 @@ func runBoundedParallelEFDIterations(execOpts *executionOptions, attempts, maxCo
 	sem := make(chan struct{}, int(parallelism))
 	var wg sync.WaitGroup
 	wg.Add(int(attempts))
-	for i := int64(0); i < attempts; i++ {
+	for range attempts {
 		sem <- struct{}{}
 		go func() {
 			defer wg.Done()
