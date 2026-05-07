@@ -782,7 +782,7 @@ func (t *simpleTransport) sendStats(s *pb.ClientStatsPayload, obfVersion int) er
 }
 
 func (t *simpleTransport) endpoint() string {
-	return "http://localhost:9/v0.4/traces"
+	return "http://localhost:9/v1.0/traces"
 }
 
 // TestAgentWriterFlushSizeMetrics validates that flush_bytes metrics are accurate
