@@ -2335,3 +2335,89 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 				"all spans accumulate in a single batch that is too large to send", size)
 	}
 }
+
+func TestFlushSync(t *testing.T) {
+	t.Run("does-not-hang-with-empty-buffer", func(t *testing.T) {
+		// FlushSync must return promptly even when there is nothing to flush.
+		_, ll := testTracer(t)
+
+		done := make(chan struct{})
+		go func() {
+			ll.FlushSync()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("FlushSync hung with empty buffer")
+		}
+	})
+	t.Run("waits-for-slow-transport", func(t *testing.T) {
+		// FlushSync must block the caller until the HTTP send completes.
+		// Verify by timing: if FlushSync returned before the request delay,
+		// the blocking guarantee would be violated.
+		const delay = 200 * time.Millisecond
+
+		tt, ll := testTracer(t, testtracer.WithRequestDelay(delay))
+
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "slow-span", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		start := time.Now()
+		ll.FlushSync()
+		elapsed := time.Since(start)
+
+		// Must have waited at least the request delay.
+		assert.GreaterOrEqual(t, elapsed, delay, "FlushSync should block until the slow HTTP send completes")
+
+		spans := tt.WaitForLLMObsSpans(t, 1)
+		require.Len(t, spans, 1)
+		assert.Equal(t, "slow-span", spans[0].Name)
+	})
+	t.Run("no-panic-without-active-llmobs", func(t *testing.T) {
+		// Package-level FlushSync should be safe when no active LLMObs.
+		assert.NotPanics(t, func() {
+			llmobs.FlushSync()
+		})
+	})
+	t.Run("waits-for-data-queued-by-flush", func(t *testing.T) {
+		// Flush() triggers batchSend asynchronously. If FlushSync() is called
+		// right after, it should still block until that batchSend completes.
+		// Without a fix, FlushSync gets an already-empty buffer (Flush cleared
+		// it) and returns immediately while the in-flight batchSend is still running.
+		const delay = 200 * time.Millisecond
+		_, ll := testTracer(t, testtracer.WithRequestDelay(delay))
+
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "test-span", llmobs.StartSpanConfig{})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		ll.Flush()
+		start := time.Now()
+		ll.FlushSync()
+		elapsed := time.Since(start)
+
+		assert.GreaterOrEqual(t, elapsed, delay-20*time.Millisecond,
+			"FlushSync should block until the batchSend triggered by the preceding Flush completes")
+	})
+	t.Run("does-not-hang-after-stop", func(t *testing.T) {
+		_, ll := testTracer(t)
+		ll.Stop()
+
+		// After Stop, stopCh is closed and the worker is gone. FlushSync's select
+		// has two ready cases: <-stopCh and flushNowCh<-done (buffered, empty).
+		// Go picks randomly, so loop to reliably hit the flushNowCh branch —
+		// without the fix that branch blocks forever on <-done.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for range 20 {
+				ll.FlushSync()
+			}
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("FlushSync hung after Stop")
+		}
+	})
+}

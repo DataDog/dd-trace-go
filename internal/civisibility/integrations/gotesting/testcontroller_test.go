@@ -780,6 +780,14 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
 
+	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	if len(sessionSpans) != 1 {
+		panic(fmt.Sprintf("expected exactly one session span, got %d", len(sessionSpans)))
+	}
+	if got := sessionSpans[0].Tag(constants.CodeCoverageEnabled); got != "false" {
+		panic(fmt.Sprintf("expected %s=false when ITR is enabled without coverage, got %v", constants.CodeCoverageEnabled, got))
+	}
+
 	fmt.Println("All tests passed.")
 	os.Exit(0)
 }

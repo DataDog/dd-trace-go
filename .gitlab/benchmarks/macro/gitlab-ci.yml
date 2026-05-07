@@ -256,7 +256,7 @@ check-slo-breaches:
   variables:
     DDOCTOSTS_POLICY: "gitlab.github-access.slo-change-tracking.contents-read"
     ARTIFACTS_DIR: "platform/artifacts"
-    SLO_FILE: ".gitlab/bp-runner.fail-on-breach.yml"
+    SLO_FILE: ".gitlab/benchmarks/pre-release-gate.slos.yml"
   artifacts:
     name: "artifacts"
     when: always

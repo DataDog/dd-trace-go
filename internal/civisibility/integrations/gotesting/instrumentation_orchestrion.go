@@ -233,9 +233,11 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 			defer func() {
 				duration := time.Since(startTime)
+				runAndApplyTestCleanup(currentT, execMeta)
 				collectAndWriteLogs(currentT, test)
 
 				if r := recover(); r != nil {
+					stacktrace := utils.GetStacktrace(1)
 					// Compute whether this is the final execution.
 					finalExec := isFinalExecution(true, false, execMeta, duration)
 
@@ -255,12 +257,22 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 							test.SetTag(constants.TestAttemptToFixPassed, "false")
 						}
 					}
-					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
+					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), stacktrace))
 					test.Close(integrations.ResultStatusFail)
-					checkModuleAndSuite(module, suite)
-					if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
-						integrations.ExitCiVisibility()
+					if execMeta.hasAdditionalFeatureWrapper {
+						// Retry wrappers own panic propagation. Record the panic as this
+						// attempt's failure and let runTestWithRetry decide whether to
+						// retry or re-panic after the final execution.
+						currentT.Fail()
+						execMeta.panicData = r
+						execMeta.panicStacktrace = stacktrace
+						return
 					}
+					// This branch re-panics immediately, so retry wrappers cannot run their normal
+					// end-of-attempt cleanup. Close suite/module counters and flush CI Visibility
+					// before handing the panic back to the Go test runner.
+					checkModuleAndSuite(module, suite)
+					integrations.ExitCiVisibility()
 					panic(r)
 				}
 
@@ -289,7 +301,11 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 							test.SetTag(constants.TestAttemptToFixPassed, "false")
 						}
 					}
-					test.SetTag(ext.Error, true)
+					if execMeta.panicData != nil {
+						test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(execMeta.panicData), execMeta.panicStacktrace))
+					} else {
+						test.SetTag(ext.Error, true)
+					}
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)
@@ -329,7 +345,10 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					}
 					test.Close(integrations.ResultStatusPass)
 				}
-				checkModuleAndSuite(module, suite)
+				if !execMeta.hasAdditionalFeatureWrapper {
+					// Additional-feature wrappers own module and suite closure after all retry attempts finish.
+					checkModuleAndSuite(module, suite)
+				}
 			}()
 
 			f(currentT)
@@ -628,9 +647,22 @@ func instrumentTestingParallel(t *testing.T) bool {
 
 	meta := getTestMetadata(t)
 	if meta != nil && meta.originalTest != nil {
-		// if we have an original test, we call parallel on it
-		log.Debug("instrumentTestingParallel: calling Parallel on original test")
-		meta.originalTest.Parallel()
+		if meta.parallelForwarded.Swap(true) {
+			log.Debug("instrumentTestingParallel: calling duplicate Parallel on original test")
+			if state := meta.parallelForwardState; state != nil {
+				state.callDuplicate(meta.originalTest)
+			} else {
+				meta.originalTest.Parallel()
+			}
+			return true
+		}
+
+		log.Debug("instrumentTestingParallel: forwarding Parallel to original test")
+		if state := meta.parallelForwardState; state != nil {
+			state.forward(meta.originalTest)
+		} else {
+			meta.originalTest.Parallel()
+		}
 		return true
 	}
 
