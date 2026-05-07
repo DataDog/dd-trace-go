@@ -833,7 +833,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 			*cn <- struct{}{}
 		}()
 		defer func() {
-			completeParallelSubtests(localTPrivateFields)
+			completeParallelSubtests(pLocalT, localTPrivateFields)
 		}()
 		defer func() {
 			duration = time.Since(startTime)
@@ -912,7 +912,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 // cleanup Goexit in a helper goroutine so retry orchestration can treat cleanup
 // failures as attempt failures instead of letting them escape the retry loop.
 func runTestCleanup(t *testing.T, result *testCleanupResult) {
-	completeParallelSubtests(getTestPrivateFields(t))
+	completeParallelSubtests(t, getTestPrivateFields(t))
 	result.ran = true
 	done := make(chan struct{})
 	go func() {
@@ -933,15 +933,20 @@ func runTestCleanup(t *testing.T, result *testCleanupResult) {
 }
 
 // completeParallelSubtests releases and waits for parallel subtests owned by a
-// Datadog-managed clone. It clears the subtest queue before releasing the
-// barrier so later cleanup paths cannot close the same barrier twice.
-func completeParallelSubtests(localTPrivateFields *commonPrivateFields) {
+// Datadog-managed clone. It mirrors testing.tRunner's scheduler accounting:
+// release the parent slot before unblocking children, then reacquire it for
+// sequential parents before running cleanup.
+func completeParallelSubtests(t *testing.T, localTPrivateFields *commonPrivateFields) {
 	if localTPrivateFields == nil || localTPrivateFields.sub == nil || len(*localTPrivateFields.sub) == 0 {
 		return
 	}
 
 	subtests := *localTPrivateFields.sub
 	*localTPrivateFields.sub = nil
+	testState := getTestState(t)
+	if testState != nil {
+		testingTestStateRelease(testState)
+	}
 	if localTPrivateFields.barrier != nil && *localTPrivateFields.barrier != nil {
 		close(*localTPrivateFields.barrier)
 	}
@@ -951,6 +956,24 @@ func completeParallelSubtests(localTPrivateFields *commonPrivateFields) {
 			<-*pvSub.signal
 		}
 	}
+	if testState != nil && !isParallelTest(t, localTPrivateFields) {
+		testingTestStateWaitParallel(testState)
+	}
+}
+
+// isParallelTest reports whether the active test has entered Go's parallel-test
+// path. Datadog-managed retry clones forward Parallel to the original *testing.T,
+// so the original must also be checked before deciding whether to reacquire the
+// scheduler slot.
+func isParallelTest(t *testing.T, localTPrivateFields *commonPrivateFields) bool {
+	if localTPrivateFields != nil && localTPrivateFields.isParallel != nil && *localTPrivateFields.isParallel {
+		return true
+	}
+	if execMeta := getTestMetadata(t); execMeta != nil && execMeta.originalTest != nil {
+		originalFields := getTestPrivateFields(execMeta.originalTest)
+		return originalFields != nil && originalFields.isParallel != nil && *originalFields.isParallel
+	}
+	return false
 }
 
 // runAndApplyTestCleanup runs a retry attempt's cleanups before its span is
@@ -1019,3 +1042,9 @@ func (m *noopMutex) TryLock() bool { return true }
 
 //go:linkname testingTRunCleanup testing.(*common).runCleanup
 func testingTRunCleanup(c *testing.T, ph int) (panicVal any)
+
+//go:linkname testingTestStateWaitParallel testing.(*testState).waitParallel
+func testingTestStateWaitParallel(s *testingTestState)
+
+//go:linkname testingTestStateRelease testing.(*testState).release
+func testingTestStateRelease(s *testingTestState)

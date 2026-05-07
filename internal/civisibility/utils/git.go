@@ -74,6 +74,12 @@ var (
 	// isGitFoundValue is a boolean flag indicating whether the Git executable is available on the system.
 	isGitFoundValue bool
 
+	// gitExecutable is the Git executable used for local repository commands.
+	gitExecutable = "git"
+
+	// gitExecutableArgs are prepended to every Git command invocation.
+	gitExecutableArgs []string
+
 	// gitFinder is a sync.Once instance used to ensure that the Git executable is only checked once.
 	gitFinderOnce sync.Once
 
@@ -109,7 +115,7 @@ type branchMetrics struct {
 // isGitFound checks if the Git executable is available on the system.
 func isGitFound() bool {
 	gitFinderOnce.Do(func() {
-		_, err := exec.LookPath("git")
+		_, err := exec.LookPath(gitExecutable)
 		isGitFoundValue = err == nil
 		if err != nil {
 			log.Debug("civisibility.git: git executable not found")
@@ -204,7 +210,8 @@ func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err
 		args = append([]string{"-c", "safe.directory=" + safeDir}, args...)
 	}
 
-	return exec.Command("git", args...).CombinedOutput()
+	cmdArgs := append(append([]string(nil), gitExecutableArgs...), args...)
+	return exec.Command(gitExecutable, cmdArgs...).CombinedOutput()
 }
 
 // execGitString executes a Git command with the given arguments and returns the output as a string.
@@ -267,7 +274,8 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 		args = append([]string{"-c", "safe.directory=" + safeDir}, args...)
 	}
 
-	cmd := exec.Command("git", args...)
+	cmdArgs := append(append([]string(nil), gitExecutableArgs...), args...)
+	cmd := exec.Command(gitExecutable, cmdArgs...)
 	cmd.Stdin = strings.NewReader(input)
 	out, err := cmd.CombinedOutput()
 	strOut := strings.TrimSpace(strings.Trim(string(out), "\n"))
@@ -535,7 +543,7 @@ func UnshallowGitRepository() (bool, error) {
 	fetchOutput, err := execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, headSha)
 
 	// let's check if the last command was unsuccessful
-	if err != nil || fetchOutput == "" {
+	if err != nil {
 		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %s", err.Error())
 		// ***
 		// The previous command has a drawback: if the local HEAD is a commit that has not been pushed to the remote, it will fail.
@@ -555,7 +563,7 @@ func UnshallowGitRepository() (bool, error) {
 	}
 
 	// let's check if the last command was unsuccessful
-	if err != nil || fetchOutput == "" {
+	if err != nil {
 		log.Debug("civisibility.unshallow: error fetching the missing commits and trees from the last month: %s", err.Error())
 		// ***
 		// It could be that the CI is working on a detached HEAD or maybe branch tracking hasn't been set up.
