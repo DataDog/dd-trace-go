@@ -80,6 +80,14 @@ func TestCleanupRunsAfterParallelSubtest(t *testing.T) {
 	runTestScenario(t, "test-cleanup-after-parallel-subtest", "^TestCleanupRunsAfterParallelSubtestFixture$")
 }
 
+// TestParallelSubtestSchedulerSlotIsReleased verifies Datadog-managed retry
+// clones release their parent scheduler slot before waiting for parallel
+// subtests. With -parallel=1, failing to release that slot deadlocks the child
+// in testing.(*testState).waitParallel until the package timeout fires.
+func TestParallelSubtestSchedulerSlotIsReleased(t *testing.T) {
+	runSubprocess(t, "test-cleanup-after-parallel-subtest", "-test.run", "^TestCleanupRunsAfterParallelSubtestFixture$", "-test.parallel=1", "-test.timeout=5s")
+}
+
 func TestFlakyRetryGlobalBudget(t *testing.T) {
 	runTestScenario(t, "test-flaky-retry-global-budget", "^TestFlakyRetryGlobalBudgetFixture$")
 }

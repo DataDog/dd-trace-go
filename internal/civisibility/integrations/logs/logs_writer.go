@@ -30,9 +30,11 @@ const (
 // logsWriter is responsible for writing logs to the agentless endpoint.
 type logsWriter struct {
 	client  net.Client     // http client
-	payload *logsPayload   // Encodes and buffers events in msgpack format.
+	payload *logsPayload   // Encodes and buffers events in JSON format.
 	climit  chan struct{}  // Limits the number of concurrent outgoing connections.
 	wg      sync.WaitGroup // Waits for all uploads to finish.
+	mu      sync.Mutex     // Guards payload rotation, stopped state, and upload reservations.
+	stopped bool           // Prevents new entries and reservations after shutdown starts.
 }
 
 // newLogsWriter creates a new instance of logsWriter.
@@ -45,31 +47,75 @@ func newLogsWriter() *logsWriter {
 	}
 }
 
-func (w *logsWriter) add(entry *logEntry) {
+func (w *logsWriter) add(entry *logEntry) bool {
+	var payloadToFlush *logsPayload
+
+	w.mu.Lock()
+	if w.stopped {
+		w.mu.Unlock()
+		return false
+	}
 	if err := w.payload.push(entry); err != nil {
-		log.Error("logsWriter: Error encoding msgpack: %s", err.Error())
+		log.Error("logsWriter: Error encoding JSON: %s", err.Error())
+		w.mu.Unlock()
+		return false
 	}
 	if w.payload.size() > agentlessPayloadSizeLimit {
-		w.flush()
+		payloadToFlush = w.rotateAndReserveLocked()
 	}
+	w.mu.Unlock()
+
+	if payloadToFlush != nil {
+		w.startUpload(payloadToFlush)
+	}
+	return true
 }
 
 func (w *logsWriter) stop() {
 	log.Debug("logsWriter: stopping writer")
-	w.flush()
+	w.mu.Lock()
+	var payloadToFlush *logsPayload
+	if !w.stopped {
+		w.stopped = true
+		payloadToFlush = w.rotateAndReserveLocked()
+	}
+	w.mu.Unlock()
+
+	if payloadToFlush != nil {
+		w.startUpload(payloadToFlush)
+	}
 	w.wg.Wait()
 }
 
 func (w *logsWriter) flush() {
-	if w.payload.itemCount() == 0 {
+	w.mu.Lock()
+	if w.stopped {
+		w.mu.Unlock()
 		return
 	}
+	payloadToFlush := w.rotateAndReserveLocked()
+	w.mu.Unlock()
 
-	w.wg.Add(1)
-	w.climit <- struct{}{}
+	if payloadToFlush != nil {
+		w.startUpload(payloadToFlush)
+	}
+}
+
+// rotateAndReserveLocked swaps the active payload and reserves an upload.
+// w.mu must be held by the caller.
+func (w *logsWriter) rotateAndReserveLocked() *logsPayload {
+	if w.payload.itemCount() == 0 {
+		return nil
+	}
+
 	oldp := w.payload
 	w.payload = newLogsPayload()
+	w.wg.Add(1)
+	return oldp
+}
 
+// startUpload sends a previously reserved payload asynchronously.
+func (w *logsWriter) startUpload(oldp *logsPayload) {
 	go func(p *logsPayload) {
 		defer func() {
 			// Once the payload has been used, clear the buffer for garbage
@@ -81,6 +127,8 @@ func (w *logsWriter) flush() {
 			<-w.climit
 			w.wg.Done()
 		}()
+
+		w.climit <- struct{}{}
 
 		size, count := p.size(), p.itemCount()
 		log.Debug("logsWriter: sending payload: size: %d logs entries: %d\n", size, count)

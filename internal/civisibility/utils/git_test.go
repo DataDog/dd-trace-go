@@ -156,6 +156,26 @@ func TestUnshallowGitRepository(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestUnshallowGitRepositoryTreatsEmptyFetchOutputAsSuccess(t *testing.T) {
+	_, fetchesFile := setupFakeGitForUnshallow(t, false)
+
+	ok, err := UnshallowGitRepository()
+
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, 1, countFakeGitFetches(t, fetchesFile))
+}
+
+func TestUnshallowGitRepositoryTreatsEmptyUpstreamFetchOutputAsSuccess(t *testing.T) {
+	_, fetchesFile := setupFakeGitForUnshallow(t, true)
+
+	ok, err := UnshallowGitRepository()
+
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, 2, countFakeGitFetches(t, fetchesFile))
+}
+
 func TestPackFiles(t *testing.T) {
 	shas := GetLastLocalGitCommitShas()
 	shas = shas[:min(len(shas), 5)]
@@ -203,6 +223,124 @@ exit /b 0
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	assert.Empty(t, CreatePackFiles([]string{"HEAD"}, nil))
+}
+
+func setupFakeGitForUnshallow(t *testing.T, failFirstFetch bool) (string, string) {
+	t.Helper()
+
+	resetGitCommandCachesForTesting(t)
+
+	dir := t.TempDir()
+	commandsFile := filepath.Join(dir, "commands.log")
+	fetchesFile := filepath.Join(dir, "fetches.log")
+	testBinary, err := os.Executable()
+	assert.NoError(t, err)
+	gitExecutable = testBinary
+	gitExecutableArgs = []string{"-test.run=TestFakeGitForUnshallowHelperProcess", "--"}
+	t.Setenv("DD_TEST_FAKE_GIT_HELPER", "1")
+	t.Setenv("DD_TEST_GIT_COMMANDS", commandsFile)
+	t.Setenv("DD_TEST_GIT_FETCHES", fetchesFile)
+	if failFirstFetch {
+		t.Setenv("DD_TEST_GIT_FAIL_FIRST_FETCH", "1")
+	} else {
+		t.Setenv("DD_TEST_GIT_FAIL_FIRST_FETCH", "")
+	}
+
+	return commandsFile, fetchesFile
+}
+
+func TestFakeGitForUnshallowHelperProcess(t *testing.T) {
+	if os.Getenv("DD_TEST_FAKE_GIT_HELPER") != "1" {
+		return
+	}
+
+	args := os.Args
+	for len(args) > 0 && args[0] != "--" {
+		args = args[1:]
+	}
+	if len(args) > 0 {
+		args = args[1:]
+	}
+	for len(args) >= 2 && args[0] == "-c" {
+		args = args[2:]
+	}
+
+	if commandsFile := os.Getenv("DD_TEST_GIT_COMMANDS"); commandsFile != "" {
+		_ = os.WriteFile(commandsFile, []byte(strings.Join(args, " ")+"\n"), 0o644)
+	}
+	if len(args) == 0 {
+		os.Exit(0)
+	}
+
+	switch args[0] {
+	case "--version":
+		_, _ = os.Stdout.WriteString("git version 2.39.0\n")
+	case "rev-parse":
+		switch {
+		case len(args) > 1 && args[1] == "--is-shallow-repository":
+			_, _ = os.Stdout.WriteString("true\n")
+		case len(args) > 1 && args[1] == "HEAD":
+			_, _ = os.Stdout.WriteString("0123456789012345678901234567890123456789\n")
+		case len(args) > 1 && args[1] == "--abbrev-ref":
+			_, _ = os.Stdout.WriteString("origin/main\n")
+		}
+	case "log":
+		_, _ = os.Stdout.WriteString("0123456789012345678901234567890123456789 first commit\n")
+	case "remote", "config":
+		_, _ = os.Stdout.WriteString("origin\n")
+	case "fetch":
+		fetchesFile := os.Getenv("DD_TEST_GIT_FETCHES")
+		if fetchesFile != "" {
+			f, _ := os.OpenFile(fetchesFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+			if f != nil {
+				_, _ = f.WriteString("fetch\n")
+				_ = f.Close()
+			}
+		}
+		if os.Getenv("DD_TEST_GIT_FAIL_FIRST_FETCH") == "1" && countFakeGitFetches(t, fetchesFile) == 1 {
+			_, _ = os.Stderr.WriteString("fetch failed\n")
+			os.Exit(1)
+		}
+	case "branch":
+		_, _ = os.Stdout.WriteString("main\n")
+	}
+	os.Exit(0)
+}
+
+func resetGitCommandCachesForTesting(t *testing.T) {
+	t.Helper()
+	originalGitExecutable := gitExecutable
+	originalGitExecutableArgs := append([]string(nil), gitExecutableArgs...)
+	reset := func() {
+		gitFinderOnce = sync.Once{}
+		gitExecutable = originalGitExecutable
+		gitExecutableArgs = append([]string(nil), originalGitExecutableArgs...)
+		isGitFoundValue = false
+		gitVersionOnce = sync.Once{}
+		gitVersionValue = gitVersionData{}
+		safeDirectoryOnce = sync.Once{}
+		safeDirectoryValue = ""
+		isAShallowCloneRepositoryOnce.Store(nil)
+		isAShallowCloneRepositoryValue = false
+	}
+	reset()
+	t.Cleanup(reset)
+}
+
+func countFakeGitFetches(t *testing.T, fetchesFile string) int {
+	t.Helper()
+	data, err := os.ReadFile(fetchesFile)
+	if os.IsNotExist(err) {
+		return 0
+	}
+	assert.NoError(t, err)
+	fetches := 0
+	for field := range strings.FieldsSeq(string(data)) {
+		if field == "fetch" {
+			fetches++
+		}
+	}
+	return fetches
 }
 
 func TestFetchCommitData(t *testing.T) {
