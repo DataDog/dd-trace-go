@@ -104,6 +104,7 @@ global_teardown:
 docker_config_for_local_runs:
   image_name: bp_microbenchmarks_go
   env:
+    GROUP_ID: local # Group ID to use during local run
     CI_COMMIT_REF_NAME: main # Branch to use during local run
     CI_COMMIT_SHA: main # A commit to use during local run, specifying a branch name will checkout the latest commit from that branch
   command: export GO_VERSION=$(go version | sed 's/go version //') && bp-runner bp-runner.yml --debug

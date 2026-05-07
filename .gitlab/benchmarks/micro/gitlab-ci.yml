@@ -62,11 +62,11 @@ variables:
     expire_in: "30 days"
 
 
-# Please set maximum 24 scenarios per group!
-# One single CI job has up to 24 CPU cores, thus 24 benchmarks per group is max.
+# Please set maximum 44 / $CPUS_PER_BENCHMARK scenarios per group!
+# One single CI job has up to 48 CPU cores. Keep cores 0-3 reserved for kernel & background tasks; cores 4-47 can be used for benchmarks as specified in bp-runner.yml.
 #
 # parallel:matrix can't be used, because of bug https://gitlab.com/gitlab-org/gitlab/-/work_items/285853#note_2781385941
-# i.e. CI job names can't be larger than 255 characters.
+# Because CI job names can't be larger than 255 characters, Gitlab pipeline generation will fail.
 microbenchmarks-1:
   extends: .microbenchmarks
   variables:
