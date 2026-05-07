@@ -947,7 +947,7 @@ type statusOnlyError struct {
 	st *status.Status
 }
 
-func (e *statusOnlyError) Error() string         { return e.st.Message() }
+func (e *statusOnlyError) Error() string          { return e.st.Message() }
 func (e *statusOnlyError) Status() *status.Status { return e.st }
 
 func TestWithErrorMapper(t *testing.T) {
