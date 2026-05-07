@@ -173,7 +173,7 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 
 		// If we haven't seen the service yet, we set it blindly assuming that all the spans created by
 		// a service must share the same value.
-		if _, ok := p.chunkAttr["service"]; !ok {
+		if _, ok := p.chunkAttr["service"]; !ok && span.Root() != nil {
 			p.chunkAttr["service"] = anyValue{valueType: StringValueType, value: span.Root().service}
 		}
 
