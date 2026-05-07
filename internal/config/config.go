@@ -142,6 +142,8 @@ type Config struct {
 	otlpHeaders map[string]string
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
+	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
+	apiKey string
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -276,6 +278,8 @@ func loadConfig() *Config {
 		cfg.hostname = sourceHostname
 		cfg.reportHostname = true
 	}
+
+	cfg.apiKey = env.Get("DD_API_KEY")
 
 	return cfg
 }
@@ -788,6 +792,15 @@ func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin, pro
 	configtelemetry.Report("DD_SERVICE_MAPPING", strings.Join(all, ","), origin)
 }
 
+// SpanAttributeSchemaVersion returns the configured DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
+// Read on the span-creation hot path; avoids defer to minimise lock cost.
+func (c *Config) SpanAttributeSchemaVersion() int {
+	c.mu.RLock()
+	v := c.spanAttributeSchemaVersion
+	c.mu.RUnlock()
+	return v
+}
+
 func (c *Config) PeerServiceDefaultsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -970,4 +983,11 @@ func (c *Config) TraceID128BitEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.traceID128BitEnabled
+}
+
+// APIKey returns the configured Datadog API key (DD_API_KEY).
+func (c *Config) APIKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.apiKey
 }
