@@ -52,7 +52,7 @@ experiments:
               bench_loop_x10_v2 $1
               return
             fi
-          
+          # To deprecate once `v1.74.x` is removed from internal deployments and usage by external customers is low.
             for run in $(seq 1 $REPETITIONS); do
               echo "Running benchmark $TEST_NAME (run $run / $REPETITIONS)"
               go test -run=XXX -bench ^$TEST_NAME$ -benchmem -count 1 -benchtime 2s ./ddtrace/... ./contrib/net/http/... ./contrib/internal/... ./internal/appsec/... ./contrib/graphql-go/... | tee -a $1
