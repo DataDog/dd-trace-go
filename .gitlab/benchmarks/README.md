@@ -64,14 +64,14 @@ configuration for this suite, open a PR against
 4. The `go-go-prof-app-parallel` and `go-go-prof-app-parallel-slo` stages run the next-generation parallel `go-prof-app`
    macrobenchmarks alongside the legacy `macro/` suite.
 
-Each suite pins its own `BENCHMARKS_CI_IMAGE` and runs on dedicated
+Each suite pins its own CI image and runs on dedicated
 bare-metal GitLab runners to keep results stable:
 
-- **Microbenchmarks** and **test-apps** use
+- **Microbenchmarks** use `MICROBENCHMARKS_CI_IMAGE` and **test-apps** use `TESTAPPS_BENCHMARKS_CI_IMAGE`:
   `registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-<job-id>`,
   built from `micro/container/` (a `golang` base plus `bp-runner` tooling
   installed via `bp-install`).
-- **Macrobenchmarks** use a separate image:
+- **Macrobenchmarks** use `MACROBENCHMARKS_CI_IMAGE`:
   `486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/benchmarking-platform:go-go-prof-app-and-serviceextensions-and-haproxy-<rev>`,
   which bundles the `go-prof-app` SUT, the Envoy service-extensions and
   HAProxy SPOA harnesses.
