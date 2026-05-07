@@ -105,11 +105,16 @@ Steps:
    - `.gitlab/benchmarks/micro/gitlab-ci.yml`
    - `.gitlab/benchmarks/test-apps/test-apps.yml`
 
+   In micro/gitlab-ci.yml the variable is named MICROBENCHMARKS_CI_IMAGE:
    ```yaml
    # Benchmarks image is created here: <paste build-base-ci-image job URL>
-   # In micro/gitlab-ci.yml the variable is named MICROBENCHMARKS_CI_IMAGE;
-   # in test-apps/test-apps.yml it is named TESTAPPS_BENCHMARKS_CI_IMAGE.
-   <VAR_NAME>: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-<NEW_PIPELINE_ID>
+   MICROBENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-<NEW_PIPELINE_ID>
+   ```
+   
+   In test-apps/test-apps.yml it is named TESTAPPS_BENCHMARKS_CI_IMAGE:
+   ```yaml
+   # Benchmarks image is created here: <paste build-base-ci-image job URL>
+   TESTAPPS_BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-<NEW_PIPELINE_ID>
    ```
 
 5. Push the update. The microbenchmarks will now run
