@@ -975,3 +975,40 @@ func TestAgentTimeout(t *testing.T) {
 		assert.Equal(t, 45*time.Second, cfg.AgentTimeout())
 	})
 }
+
+func TestSendRetries(t *testing.T) {
+	t.Run("default_zero", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SendRetries())
+	})
+	t.Run("setter_updates_value", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		cfg.SetSendRetries(5, telemetry.OriginCode)
+		assert.Equal(t, 5, cfg.SendRetries())
+	})
+	t.Run("from env", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_SEND_RETRIES", "3")
+		cfg := Get()
+		assert.Equal(t, 3, cfg.SendRetries())
+	})
+	t.Run("invalid negative uses default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_SEND_RETRIES", "-1")
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SendRetries())
+	})
+	t.Run("invalid value uses default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_TRACE_SEND_RETRIES", "not-a-number")
+		cfg := Get()
+		assert.Equal(t, 0, cfg.SendRetries())
+	})
+}

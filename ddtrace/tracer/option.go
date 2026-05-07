@@ -158,10 +158,6 @@ type config struct {
 	// if they have a version of the library available to integrate.
 	integrations map[string]integrationConfig
 
-	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
-	// failure.
-	sendRetries int
-
 	// universalVersion, reports whether span service name and config service name
 	// should match to set application version tag. False by default
 	universalVersion bool
@@ -888,7 +884,7 @@ func WithLambdaMode(enabled bool) StartOption {
 // most `retries` times.
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
-		c.sendRetries = retries
+		c.internalConfig.SetSendRetries(retries, telemetry.OriginCode)
 	}
 }
 
