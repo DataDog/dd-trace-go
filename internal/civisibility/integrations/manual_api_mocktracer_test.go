@@ -341,6 +341,74 @@ func TestTest(t *testing.T) {
 	test.Close(ResultStatusSkip)
 }
 
+func TestITRTestsSkippingEnabledPropagation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		setTag    bool
+		want      string
+		wantFound bool
+	}{
+		{
+			name:      "enabled",
+			setTag:    true,
+			want:      "true",
+			wantFound: true,
+		},
+		{
+			name:      "disabled_tests_skipping",
+			setTag:    true,
+			want:      "false",
+			wantFound: true,
+		},
+		{
+			name:      "disabled_itr",
+			setTag:    false,
+			wantFound: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockTracer.Reset()
+			assert := assert.New(t)
+			t.Cleanup(func() {
+				utils.ResetCITags()
+				utils.ResetCIMetrics()
+			})
+
+			now := time.Now()
+			session := createDDTestSession(now)
+			if tc.setTag {
+				session.SetTag(constants.ITRTestsSkippingEnabled, tc.want)
+				utils.AddCITagsMap(map[string]string{constants.ITRTestsSkippingEnabled: tc.want})
+			}
+			module := session.GetOrCreateModule("my-module", WithTestModuleFramework("my-module-framework", "framework-version"), WithTestModuleStartTime(now))
+			suite := module.GetOrCreateSuite("my-suite", WithTestSuiteStartTime(now))
+			test := suite.CreateTest("my-test", WithTestStartTime(now))
+			test.Close(ResultStatusPass)
+			suite.Close()
+			module.Close()
+			session.Close(0)
+
+			finishedSpans := mockTracer.FinishedSpans()
+			assert.Len(finishedSpans, 4)
+			for _, spanType := range []string{
+				constants.SpanTypeTestSession,
+				constants.SpanTypeTestModule,
+				constants.SpanTypeTestSuite,
+				constants.SpanTypeTest,
+			} {
+				spans := manualAPISpansWithType(finishedSpans, spanType)
+				if assert.Len(spans, 1) {
+					if tc.wantFound {
+						assert.Equal(tc.want, spans[0].Tag(constants.ITRTestsSkippingEnabled))
+					} else {
+						assert.NotContains(spans[0].Tags(), constants.ITRTestsSkippingEnabled)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestWithInnerFunc(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
@@ -477,4 +545,14 @@ func containsSourceResolutionLogLine(lines []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func manualAPISpansWithType(spans []*mocktracer.Span, spanType string) []*mocktracer.Span {
+	var result []*mocktracer.Span
+	for _, span := range spans {
+		if span.Tag(ext.SpanType) == spanType {
+			result = append(result, span)
+		}
+	}
+	return result
 }

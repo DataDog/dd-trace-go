@@ -787,6 +787,7 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	if got := sessionSpans[0].Tag(constants.CodeCoverageEnabled); got != "false" {
 		panic(fmt.Sprintf("expected %s=false when ITR is enabled without coverage, got %v", constants.CodeCoverageEnabled, got))
 	}
+	checkITRTestsSkippingEnabledTag(finishedSpans, "true")
 
 	fmt.Println("All tests passed.")
 	os.Exit(0)
@@ -1040,6 +1041,29 @@ func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 	}
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestManagementAttemptToFix)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestManagementAttemptToFix))
+	}
+}
+
+func checkITRTestsSkippingEnabledTag(finishedSpans []*mocktracer.Span, tagValue string) {
+	for _, spanType := range []struct {
+		name string
+		typ  string
+	}{
+		{name: "session", typ: constants.SpanTypeTestSession},
+		{name: "module", typ: constants.SpanTypeTestModule},
+		{name: "suite", typ: constants.SpanTypeTestSuite},
+		{name: "test", typ: constants.SpanTypeTest},
+	} {
+		for _, sp := range getSpansWithType(finishedSpans, spanType.typ) {
+			if got := sp.Tag(constants.ITRTestsSkippingEnabled); got != tagValue {
+				panic(fmt.Sprintf("expected %s %s=%s on %s, got %v",
+					spanType.name,
+					constants.ITRTestsSkippingEnabled,
+					tagValue,
+					sp.Tag(ext.ResourceName),
+					got))
+			}
+		}
 	}
 }
 
