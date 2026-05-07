@@ -86,7 +86,7 @@ microbenchmarks-2:
 pr-performance-gates:
   stage: microbenchmarks
   needs: [microbenchmarks-1, microbenchmarks-2]
-  when: on_success
+  rules: *benchmark-rules
   tags:
     - "arch:amd64"
   image: $BENCHMARKS_CI_IMAGE
