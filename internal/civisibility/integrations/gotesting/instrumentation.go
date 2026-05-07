@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -263,7 +264,7 @@ func (s *parallelForwardState) callDuplicate(original *testing.T) {
 	original.Parallel()
 }
 
-// isCiVisibilityEnabled gets if CI Visibility has been enabled or disabled by the "DD_CIVISIBILITY_ENABLED" environment variable
+// isCiVisibilityEnabled reports whether DD_CIVISIBILITY_ENABLED enables CI Visibility for this process.
 func isCiVisibilityEnabled() bool {
 	// let's check if the value has already been loaded from the env-vars
 	enabledValue := atomic.LoadInt32(&ciVisibilityEnabledValue)
@@ -273,7 +274,8 @@ func isCiVisibilityEnabled() bool {
 		// So effectively this env-var will act as a kill switch for cases where the code is instrumented, but
 		// we don't want the civisibility instrumentation to be enabled.
 		// *** For preview releases we will default to false, meaning that the use of ci visibility must be opt-in ***
-		if internal.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) {
+		mode, ok := envconfig.FromEnv()
+		if ok && envconfig.Enabled(mode) {
 			atomic.StoreInt32(&ciVisibilityEnabledValue, 1)
 			return true
 		}

@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -76,6 +77,9 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 
 		log.Debug("civisibility: initializing")
 
+		enabledMode, _ := envconfig.FromEnv()
+		parentOnly := enabledMode == envconfig.EnabledModeParent
+
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
 		_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 
@@ -111,6 +115,10 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		// Initialize the tracer
 		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
+
+		if parentOnly {
+			_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
+		}
 
 		initializeCiVisibilityLogs(serviceName)
 
