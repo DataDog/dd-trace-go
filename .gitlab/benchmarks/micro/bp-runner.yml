@@ -34,7 +34,7 @@ experiments:
               [ -d "$dir" ] || { echo "skipping: $dir is not a valid directory"; continue; } # skip if the directory is invalid
               # skip if the test isn't found in this directory (NOT using recursive search)
               # this saves us a few seconds of runtime from searching irrelevant directories
-              grep -q "func ${TEST_NAME}(b \*testing.B)" $dir/*.go || continue
+              grep -rq "func ${TEST_NAME}(b \*testing.B)" "$dir" || continue
               cd $dir
               for run in $(seq 1 $REPETITIONS); do
                 echo "Running benchmark $TEST_NAME (run $run / $REPETITIONS)"
@@ -107,4 +107,4 @@ docker_config_for_local_runs:
     GROUP_ID: local # Group ID to use during local run
     CI_COMMIT_REF_NAME: main # Branch to use during local run
     CI_COMMIT_SHA: main # A commit to use during local run, specifying a branch name will checkout the latest commit from that branch
-  command: export GO_VERSION=$(go version | sed 's/go version //') && bp-runner bp-runner.yml --debug
+  command: bash -c "export GO_VERSION=\"$(go version | sed 's/go version //')\" && bp-runner bp-runner.yml --debug"
