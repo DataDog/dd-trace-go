@@ -129,9 +129,6 @@ var (
 
 	// defaultStatsdPort specifies the default port to use for connecting to the statsd server.
 	defaultStatsdPort = "8125"
-
-	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
-	defaultMaxTagsHeaderLen = 512
 )
 
 // Supported trace protocols.
@@ -265,9 +262,6 @@ type (
 
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
-
-// maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
-const maxPropagatedTagsLength = 512
 
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
@@ -405,18 +399,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
 	}
 	if c.propagator == nil {
-		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
-		maxLen := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
-		if maxLen < 0 {
-			log.Warn("Invalid value %d for %s. Setting to 0.", maxLen, envKey)
-			maxLen = 0
-		}
-		if maxLen > maxPropagatedTagsLength {
-			log.Warn("Invalid value %d for %s. Maximum allowed is %d. Setting to %d.", maxLen, envKey, maxPropagatedTagsLength, maxPropagatedTagsLength)
-			maxLen = maxPropagatedTagsLength
-		}
 		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: maxLen,
+			MaxTagsHeaderLen: c.internalConfig.MaxTagsHeaderLen(),
 		})
 	}
 	if c.logger != nil {
