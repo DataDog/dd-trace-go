@@ -15,6 +15,8 @@ import (
 )
 
 func resetCIVisibilityStateForTesting() {
+	stopCIVisibilitySignalHandler()
+
 	additionalFeaturesInitializationMu.Lock()
 	defer additionalFeaturesInitializationMu.Unlock()
 
@@ -36,11 +38,14 @@ func resetCIVisibilityStateForTesting() {
 	ciVisibilityImpactedTestsAnalyzer = nil
 	sourceFileMetadataCache = sync.Map{}
 
-	uploadRepositoryChangesFunc = uploadRepositoryChanges
-	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
+	repositoryUploadHooksMu.Lock()
+	uploadRepositoryChangesFunc = nil
 	getSearchCommitsFunc = getSearchCommits
 	unshallowGitRepositoryFunc = utils.UnshallowGitRepository
 	sendObjectsPackFileFunc = sendObjectsPackFile
+	repositoryUploadHooksMu.Unlock()
+
+	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
 
 	utils.ResetCITags()
 	utils.ResetCIMetrics()
