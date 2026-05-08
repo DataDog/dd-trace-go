@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -237,9 +238,14 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 		sc.trace = newTrace()
 	}
 	sc.trace.tags = ctx.Tags()                                    // +checklocksignore - Initialization time, not shared yet.
-	sc.trace.propagatingTags = ctx.PropagatingTags()              // +checklocksignore - Initialization time, not shared yet.
-	if dm, ok := sc.trace.propagatingTags[keyDecisionMaker]; ok { // +checklocksignore - Initialization time, not shared yet.
-		sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
+	if pt := ctx.PropagatingTags(); len(pt) > 0 { // +checklocksignore - Initialization time, not shared yet.
+		// Clone the map so that the atomic.Pointer snapshot is immutable and
+		// independent of whatever the adapter holds internally.
+		cp := maps.Clone(pt)
+		sc.trace.propagatingTags.Store(&cp)
+		if dm, ok := cp[keyDecisionMaker]; ok {
+			sc.trace.dm = parseDecisionMaker(dm)
+		}
 	}
 	return &sc
 }
@@ -284,6 +290,13 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	if context.trace.root == nil {
 		// first span in the trace can safely be assumed to be the root
 		context.trace.root = span
+		// Pre-populate _dd.p.tid once at root-span creation so that Inject()
+		// finds it already written and skips the write lock on every outgoing
+		// call. Only add if not already present (extracted contexts may carry
+		// it from incoming headers).
+		if context.traceID.HasUpper() && !context.trace.hasPropagatingTag(keyTraceID128) {
+			context.trace.setPropagatingTag(keyTraceID128, context.traceID.UpperHex())
+		}
 	}
 	// put span in context's trace
 	context.trace.push(span)
@@ -490,9 +503,10 @@ type trace struct {
 	// trace level tags
 	// +checklocks:mu
 	tags map[string]string
-	// trace level tags that will be propagated across service boundaries
-	// +checklocks:mu
-	propagatingTags map[string]string
+	// trace level tags that will be propagated across service boundaries.
+	// Stored as an atomic.Pointer to an immutable snapshot so that readers
+	// (e.g. Inject) are lock-free. Writers hold mu and use copy-on-write.
+	propagatingTags atomic.Pointer[map[string]string]
 	// the number of finished spans
 	// +checklocks:mu
 	finished int
@@ -631,7 +645,8 @@ func (t *trace) setSamplingPriorityLockedWithForce(p int, sampler samplernames.S
 	updatedPriority := old == nil || *old != float64(p)
 
 	t.priority.Store(samplingPriorityPtr(p)) // +checklocksignore
-	curDM, existed := t.propagatingTags[keyDecisionMaker]
+	curDM := t.propagatingTag(keyDecisionMaker)
+	existed := curDM != ""
 	if p > 0 && sampler != samplernames.Unknown {
 		// We have a positive priority and the sampling mechanism isn't set.
 		// Send nothing when sampler is `Unknown` for RFC compliance.
@@ -711,8 +726,10 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	for k, v := range t.tags {
 		s.setMetaLocked(k, v)
 	}
-	for k, v := range t.propagatingTags {
-		s.setMetaLocked(k, v)
+	if m := t.propagatingTags.Load(); m != nil {
+		for k, v := range *m {
+			s.setMetaLocked(k, v)
+		}
 	}
 	updateTracerGitMetadataTags(s)
 	if s.context != nil && s.context.traceID.HasUpper() {

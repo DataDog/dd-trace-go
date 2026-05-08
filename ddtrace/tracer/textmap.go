@@ -435,10 +435,15 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 	if ctx.traceID.Empty() || ctx.spanID == 0 {
 		return ErrInvalidSpanContext
 	}
-	// propagate the TraceID and the current active SpanID
+	// propagate the TraceID and the current active SpanID.
+	// traceID.Upper is immutable after span creation, so check before writing
+	// to avoid a write lock on every Inject call (lock-free read path).
 	if ctx.traceID.HasUpper() {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
-	} else if ctx.trace != nil {
+		upper := ctx.traceID.UpperHex()
+		if ctx.trace == nil || ctx.trace.propagatingTag(keyTraceID128) != upper {
+			setPropagatingTag(ctx, keyTraceID128, upper)
+		}
+	} else if ctx.trace != nil && ctx.trace.hasPropagatingTag(keyTraceID128) {
 		ctx.trace.unsetPropagatingTag(keyTraceID128)
 	}
 	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID.Lower(), 10))
@@ -868,11 +873,14 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 
 	var traceID string
 	if ctx.traceID.HasUpper() {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
+		upper := ctx.traceID.UpperHex()
+		if ctx.trace == nil || ctx.trace.propagatingTag(keyTraceID128) != upper {
+			setPropagatingTag(ctx, keyTraceID128, upper)
+		}
 		traceID = ctx.TraceID()
 	} else {
 		traceID = ctx.TraceID()
-		if ctx.trace != nil {
+		if ctx.trace != nil && ctx.trace.hasPropagatingTag(keyTraceID128) {
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		}
 	}
