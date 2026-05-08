@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -29,6 +30,12 @@ import (
 
 // ciVisibilityCloseAction defines an action to be executed when CI visibility is closing.
 type ciVisibilityCloseAction func()
+
+// ciVisibilityIdleConnectionCloser closes idle HTTP connections owned by a CI
+// Visibility client implementation.
+type ciVisibilityIdleConnectionCloser interface {
+	CloseIdleConnections()
+}
 
 var (
 	// ciVisibilityInitializationOnce ensures we initialize the CI visibility tracer only once.
@@ -183,9 +190,19 @@ func ExitCiVisibility() {
 		tracer.Flush()
 		tracer.Stop()
 		telemetry.StopApp()
+		closeCIVisibilityIdleConnections()
 		log.Debug("civisibility: done.")
 	}()
 	for _, v := range closeActions {
 		v()
 	}
+}
+
+// closeCIVisibilityIdleConnections releases keep-alive connections after all CI
+// Visibility components have completed their shutdown flushes.
+func closeCIVisibilityIdleConnections() {
+	if closer, ok := ciVisibilityClient.(ciVisibilityIdleConnectionCloser); ok {
+		closer.CloseIdleConnections()
+	}
+	civisibilitynet.CloseIdleConnections()
 }

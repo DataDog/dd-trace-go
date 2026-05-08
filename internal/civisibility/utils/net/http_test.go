@@ -10,12 +10,14 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"io"
+	stdnet "net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const DefaultMultipartMemorySize = 10 << 20 // 10MB
@@ -121,6 +123,74 @@ func TestSendJSONRequest(t *testing.T) {
 	err = response.Unmarshal(&result)
 	assert.NoError(t, err)
 	assert.Equal(t, "value", result["received"].(map[string]any)["key"])
+}
+
+func TestCloseIdleConnectionsClosesDefaultHTTPClientIdleConnections(t *testing.T) {
+	originalDefaultHTTPClient := defaultHTTPClient
+	defaultHTTPClient = createNewHTTPClient()
+	t.Cleanup(func() {
+		CloseIdleConnections()
+		defaultHTTPClient = originalDefaultHTTPClient
+	})
+
+	idleConn := make(chan struct{}, 1)
+	closedConn := make(chan struct{}, 1)
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	server.Config.ConnState = func(_ stdnet.Conn, state http.ConnState) {
+		switch state {
+		case http.StateIdle:
+			signalConnectionState(idleConn)
+		case http.StateClosed:
+			signalConnectionState(closedConn)
+		}
+	}
+	server.Start()
+	t.Cleanup(server.Close)
+
+	response, err := NewRequestHandler().SendRequest(RequestConfig{
+		Method: "GET",
+		URL:    server.URL,
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	waitForConnectionState(t, idleConn, "idle")
+	CloseIdleConnections()
+	waitForConnectionState(t, closedConn, "closed")
+}
+
+func TestRequestHandlerCloseIdleConnectionsClosesCustomHTTPClientIdleConnections(t *testing.T) {
+	idleConn := make(chan struct{}, 1)
+	closedConn := make(chan struct{}, 1)
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	server.Config.ConnState = func(_ stdnet.Conn, state http.ConnState) {
+		switch state {
+		case http.StateIdle:
+			signalConnectionState(idleConn)
+		case http.StateClosed:
+			signalConnectionState(closedConn)
+		}
+	}
+	server.Start()
+	t.Cleanup(server.Close)
+
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
+	response, err := handler.SendRequest(RequestConfig{
+		Method: "GET",
+		URL:    server.URL,
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	waitForConnectionState(t, idleConn, "idle")
+	handler.CloseIdleConnections()
+	waitForConnectionState(t, closedConn, "closed")
 }
 
 func TestSendMultipartFormDataRequest(t *testing.T) {
@@ -326,6 +396,26 @@ func TestSendRequestWithInvalidURL(t *testing.T) {
 	response, err := handler.SendRequest(config)
 	assert.Error(t, err)
 	assert.Nil(t, response)
+}
+
+// signalConnectionState records a connection state transition without blocking
+// the HTTP server connection-state callback.
+func signalConnectionState(state chan<- struct{}) {
+	select {
+	case state <- struct{}{}:
+	default:
+	}
+}
+
+// waitForConnectionState waits for an expected server connection-state
+// transition produced by the HTTP transport under test.
+func waitForConnectionState(t *testing.T, state <-chan struct{}, stateName string) {
+	t.Helper()
+	select {
+	case <-state:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for connection to become %s", stateName)
+	}
 }
 
 func TestSendEmptyBodyWithGzipCompression(t *testing.T) {
