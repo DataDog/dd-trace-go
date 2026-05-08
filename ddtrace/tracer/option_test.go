@@ -78,7 +78,7 @@ func testStatsd(t *testing.T, cfg *config, addr string) {
 	client, err := newStatsdClient(cfg)
 	require.NoError(t, err)
 	defer client.Close()
-	require.Equal(t, addr, cfg.dogstatsdAddr)
+	require.Equal(t, addr, cfg.internalConfig.DogstatsdAddr())
 	_, err = net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
 
@@ -102,7 +102,7 @@ func TestStatsdUDPConnect(t *testing.T) {
 	client, err := newStatsdClient(cfg)
 	require.NoError(t, err)
 	defer client.Close()
-	require.Equal(t, addr, cfg.dogstatsdAddr)
+	require.Equal(t, addr, cfg.internalConfig.DogstatsdAddr())
 	udpaddr, err := net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
 	conn, err := net.ListenUDP("udp", udpaddr)
@@ -169,7 +169,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
 		defer statsd.Close()
-		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
+		require.Equal(t, cfg.internalConfig.DogstatsdAddr(), "unix://"+addr)
 		// Ensure globalconfig also gets the auto-detected UDS address
 		require.Equal(t, "unix://"+addr, globalconfig.DogstatsdAddr())
 		statsd.Count("name", 1, []string{"tag"}, 1)
@@ -408,7 +408,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(float64(1), c.sampler.Rate())
 		assert.Regexp(`tracer\.test(\.exe)?`, c.internalConfig.ServiceName())
 		assert.Equal(&url.URL{Scheme: "http", Host: "localhost:8126"}, c.internalConfig.RawAgentURL())
-		assert.Equal("localhost:8125", c.dogstatsdAddr)
+		assert.Equal("localhost:8125", c.internalConfig.DogstatsdAddr())
 		assert.Nil(nil, c.httpClient)
 		x := *c.httpClient
 		y := *internal.DefaultHTTPClient(defaultHTTPTimeout, false)
@@ -532,7 +532,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
@@ -542,7 +542,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
@@ -552,7 +552,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
@@ -562,7 +562,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 		})
 
@@ -573,7 +573,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 			fail = false
 		})
@@ -586,7 +586,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 		})
 
@@ -599,7 +599,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 			fail = false
 		})
@@ -612,7 +612,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "10.1.0.12:4002", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
 		})
 
@@ -625,7 +625,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "10.1.0.12:4002", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
 			fail = false
 		})
@@ -645,7 +645,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal("unix://"+addr, c.dogstatsdAddr)
+			assert.Equal("unix://"+addr, c.internalConfig.DogstatsdAddr())
 			assert.Equal("unix://"+addr, globalconfig.DogstatsdAddr())
 		})
 	})

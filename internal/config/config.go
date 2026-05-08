@@ -70,7 +70,12 @@ type Config struct {
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
-	debug    bool
+	// dogstatsdAddr is the address used to send DogStatsD metrics to the Datadog
+	// Agent. Resolved from DD_DOGSTATSD_HOST / DD_DOGSTATSD_PORT (with
+	// DD_AGENT_HOST as host fallback), the agent-reported statsd port, or a UDS
+	// socket auto-discovered at /var/run/datadog/dsd.socket.
+	dogstatsdAddr string
+	debug         bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
 	// serviceName specifies the name of this application.
@@ -363,6 +368,26 @@ func (c *Config) AgentURL() *url.URL {
 		return internal.UnixDataSocketURL(u.Path)
 	}
 	return u
+}
+
+// DogstatsdAddr returns the address used to send DogStatsD metrics to the
+// Datadog Agent. Empty until resolved by the tracer at startup.
+func (c *Config) DogstatsdAddr() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.dogstatsdAddr
+}
+
+func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_DOGSTATSD_HOST", origin, addr, product...) {
+		return
+	}
+	c.dogstatsdAddr = addr
+	if addr != "" {
+		configtelemetry.Report("DD_DOGSTATSD_HOST", addr, origin)
+	}
 }
 
 func (c *Config) Debug() bool {

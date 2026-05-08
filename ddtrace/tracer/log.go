@@ -160,7 +160,7 @@ func logStartup(t *tracer) {
 		PropagationStyleInject:      injectorNames,
 		PropagationStyleExtract:     extractorNames,
 		TracingAsTransport:          t.config.tracingAsTransport,
-		DogstatsdAddr:               t.config.dogstatsdAddr,
+		DogstatsdAddr:               t.config.internalConfig.DogstatsdAddr(),
 		DataStreamsEnabled:          t.config.internalConfig.DataStreamsMonitoringEnabled(),
 	}
 	if _, _, err := samplingRulesFromEnv(); err != nil {

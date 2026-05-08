@@ -189,11 +189,6 @@ type config struct {
 	// will be used.
 	logger Logger
 
-	// dogstatsdAddr specifies the address to connect for sending metrics to the
-	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
-	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
-	dogstatsdAddr string
-
 	// statsdClient is set when a user provides a custom statsd client for tracking metrics
 	// associated with the runtime and the tracer.
 	statsdClient internal.StatsdClient
@@ -440,9 +435,9 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if c.statsdClient == nil {
 		// configure statsd client
-		addr := resolveDogstatsdAddr(c.dogstatsdAddr, af, defaultSocketDSD)
+		addr := resolveDogstatsdAddr(c.internalConfig.DogstatsdAddr(), af, defaultSocketDSD)
 		globalconfig.SetDogstatsdAddr(addr)
-		c.dogstatsdAddr = addr
+		c.internalConfig.SetDogstatsdAddr(addr, internalconfig.OriginCalculated)
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
 	// This allows persisting the initial value of globalTags for future resets and updates.
@@ -567,7 +562,7 @@ func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
-	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
+	return internal.NewStatsdClient(c.internalConfig.DogstatsdAddr(), statsTags(c))
 }
 
 type integrationConfig struct {
@@ -1139,7 +1134,7 @@ func WithRuntimeMetrics() StartOption {
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddr(addr string) StartOption {
 	return func(cfg *config) {
-		cfg.dogstatsdAddr = addr
+		cfg.internalConfig.SetDogstatsdAddr(addr, telemetry.OriginCode)
 		globalconfig.SetDogstatsdAddr(addr)
 	}
 }
