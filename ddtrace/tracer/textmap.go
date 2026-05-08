@@ -436,9 +436,15 @@ func (p *propagator) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) e
 		return ErrInvalidSpanContext
 	}
 	// propagate the TraceID and the current active SpanID
+	// traceID.Upper is immutable after span creation, so check before writing:
+	// the read of propagatingTag is lock-free, and skipping the write avoids
+	// the CoW allocation on every Inject call.
 	if ctx.traceID.HasUpper() {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
-	} else if ctx.trace != nil {
+		upper := ctx.traceID.UpperHex()
+		if ctx.trace == nil || ctx.trace.propagatingTag(keyTraceID128) != upper {
+			setPropagatingTag(ctx, keyTraceID128, upper)
+		}
+	} else if ctx.trace != nil && ctx.trace.hasPropagatingTag(keyTraceID128) {
 		ctx.trace.unsetPropagatingTag(keyTraceID128)
 	}
 	writer.Set(p.cfg.TraceHeader, strconv.FormatUint(ctx.traceID.Lower(), 10))
@@ -631,6 +637,17 @@ func setPropagatingTag(ctx *SpanContext, k, v string) {
 		ctx.trace = newTrace()
 	}
 	ctx.trace.setPropagatingTag(k, v)
+}
+
+// setPropagatingTagUnsafe is like setPropagatingTag but writes directly into
+// the map without copy-on-write. Caller must guarantee the trace is not yet
+// shared with other goroutines (i.e. during extraction, before SpanContext is
+// returned to the caller).
+func setPropagatingTagUnsafe(ctx *SpanContext, k, v string) {
+	if ctx.trace == nil {
+		ctx.trace = newTrace()
+	}
+	ctx.trace.setPropagatingTagUnsafe(k, v)
 }
 
 const (
@@ -868,11 +885,14 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 
 	var traceID string
 	if ctx.traceID.HasUpper() {
-		setPropagatingTag(ctx, keyTraceID128, ctx.traceID.UpperHex())
+		upper := ctx.traceID.UpperHex()
+		if ctx.trace == nil || ctx.trace.propagatingTag(keyTraceID128) != upper {
+			setPropagatingTag(ctx, keyTraceID128, upper)
+		}
 		traceID = ctx.TraceID()
 	} else {
 		traceID = ctx.TraceID()
-		if ctx.trace != nil {
+		if ctx.trace != nil && ctx.trace.hasPropagatingTag(keyTraceID128) {
 			ctx.trace.unsetPropagatingTag(keyTraceID128)
 		}
 	}
@@ -1298,18 +1318,18 @@ func parseTracestate(ctx *SpanContext, header string) {
 				if ctx.trace.hasPropagatingTag(keyDecisionMaker) || dropDM {
 					continue
 				}
-				setPropagatingTag(ctx, keyDecisionMaker, val)
+				setPropagatingTagUnsafe(ctx, keyDecisionMaker, val)
 			} else if strings.HasPrefix(key, "t.") {
 				keySuffix := key[len("t."):]
 				val = strings.ReplaceAll(val, "~", "=")
-				setPropagatingTag(ctx, "_dd.p."+keySuffix, val)
+				setPropagatingTagUnsafe(ctx, "_dd.p."+keySuffix, val)
 			}
 		}
 	}
 	// Store the propagating tag, rebuilding the header to exclude oversized
 	// dd= entries when present.
 	if !hasOversizedDD {
-		setPropagatingTag(ctx, tracestateHeader, header)
+		setPropagatingTagUnsafe(ctx, tracestateHeader, header)
 		return
 	}
 	var cleaned strings.Builder
@@ -1329,7 +1349,7 @@ func parseTracestate(ctx *SpanContext, header string) {
 	if cleaned.Len() == 0 {
 		return
 	}
-	setPropagatingTag(ctx, tracestateHeader, cleaned.String())
+	setPropagatingTagUnsafe(ctx, tracestateHeader, cleaned.String())
 }
 
 // extractTraceID128 extracts the trace id from v and populates the traceID
