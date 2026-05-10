@@ -124,7 +124,7 @@ func Reload() {
 	pTags = &ProcessTags{}
 	tags := collect()
 	if len(tags) > 0 {
-		Add(tags)
+		add(tags)
 	}
 }
 
@@ -156,8 +156,7 @@ func GlobalTags() *ProcessTags {
 	return pTags
 }
 
-// Add merges the given tags into the global processTags map.
-func Add(tags map[string]string) {
+func add(tags map[string]string) {
 	if !enabled {
 		return
 	}

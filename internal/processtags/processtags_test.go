@@ -57,7 +57,7 @@ func TestSetServiceNameTag(t *testing.T) {
 	t.Run("works when tags map not yet initialised", func(t *testing.T) {
 		t.Cleanup(Reload)
 		// Simulate collect() returning empty (e.g. os.Executable fails):
-		// Reload creates pTags but Add is never called, leaving pTags.tags nil.
+		// Reload creates pTags but add is never called, leaving pTags.tags nil.
 		pTags = &ProcessTags{}
 		SetServiceNameTag("myapp", false)
 		tags := GlobalTags()
