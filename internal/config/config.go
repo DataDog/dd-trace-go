@@ -61,6 +61,8 @@ type programmaticOverride struct {
 // Config represents global configuration properties.
 // Config instances should be obtained via Get() which always returns a non-nil value.
 // Methods on Config assume a non-nil receiver and will panic if called on nil.
+// Hot paths that read many fields within a single function should use a snapshot (see snapshots.go) to
+// avoid per-field RLock contention on the reader counter.
 type Config struct {
 	mu sync.RWMutex
 
@@ -90,7 +92,9 @@ type Config struct {
 	profilerEndpoints          bool
 	spanAttributeSchemaVersion int
 	peerServiceDefaultsEnabled bool
-	peerServiceMappings        map[string]string
+	// maxTagsHeaderLen is the size cap on the x-datadog-tags header value
+	maxTagsHeaderLen    int
+	peerServiceMappings map[string]string
 	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
 	debugAbandonedSpans bool
 	// spanTimeout represents how old a span can be before it should be logged as a possible
@@ -142,6 +146,8 @@ type Config struct {
 	otlpHeaders map[string]string
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
+	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
+	apiKey string
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -247,6 +253,8 @@ func loadConfig() *Config {
 		cfg.peerServiceDefaultsEnabled = true
 	}
 
+	cfg.maxTagsHeaderLen = resolveMaxTagsHeaderLen(p.GetInt("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", DefaultMaxTagsHeaderLen))
+
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
 	// TODO: Is it possible that we can just use `v != ""` to configure one setting, `lambdaMode` instead
@@ -276,6 +284,8 @@ func loadConfig() *Config {
 		cfg.hostname = sourceHostname
 		cfg.reportHostname = true
 	}
+
+	cfg.apiKey = env.Get("DD_API_KEY")
 
 	return cfg
 }
@@ -788,6 +798,24 @@ func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin, pro
 	configtelemetry.Report("DD_SERVICE_MAPPING", strings.Join(all, ","), origin)
 }
 
+// SpanAttributeSchemaVersion returns the configured DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
+// Read on the span-creation hot path; avoids defer to minimise lock cost.
+func (c *Config) SpanAttributeSchemaVersion() int {
+	c.mu.RLock()
+	v := c.spanAttributeSchemaVersion
+	c.mu.RUnlock()
+	return v
+}
+
+// MaxTagsHeaderLen returns the configured cap on the x-datadog-tags header value
+// (DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH). A non-positive value disables tags propagation.
+func (c *Config) MaxTagsHeaderLen() int {
+	c.mu.RLock()
+	v := c.maxTagsHeaderLen
+	c.mu.RUnlock()
+	return v
+}
+
 func (c *Config) PeerServiceDefaultsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -970,4 +998,11 @@ func (c *Config) TraceID128BitEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.traceID128BitEnabled
+}
+
+// APIKey returns the configured Datadog API key (DD_API_KEY).
+func (c *Config) APIKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.apiKey
 }

@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -269,6 +270,49 @@ func TestBatch(t *testing.T) {
 	assert.Equal(t, "SELECT 3", s.Tag(ext.DBStatement))
 	assert.EqualValues(t, 1, s.Tag("db.result.rows_affected"))
 	assert.Equal(t, batchSpan.SpanID(), s.ParentID())
+}
+
+// TestConcurrentBatchRace asserts that concurrent batches executing on different
+// pool connections do not race on shared pgxTracer state. Run with -race.
+// Regression test for https://github.com/DataDog/dd-trace-go/issues/4668.
+func TestConcurrentBatchRace(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	opts := append(tracingAllDisabled(), WithTraceBatch(true))
+
+	parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent")
+	defer parent.Finish()
+
+	pool, err := NewPool(ctx, postgresDSN, opts...)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	const (
+		numGoroutines = 10
+		numIterations = 20
+	)
+
+	var wg sync.WaitGroup
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < numIterations; j++ {
+				batch := &pgx.Batch{}
+				batch.Queue(`SELECT 1`)
+				batch.Queue(`SELECT 2`)
+				batch.Queue(`SELECT 3`)
+				br := pool.SendBatch(ctx, batch)
+				var x int
+				_ = br.QueryRow().Scan(&x)
+				_ = br.QueryRow().Scan(&x)
+				_ = br.QueryRow().Scan(&x)
+				require.NoError(t, br.Close())
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestCopyFrom(t *testing.T) {

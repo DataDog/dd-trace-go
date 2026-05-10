@@ -33,6 +33,7 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -1287,6 +1288,81 @@ func TestServiceName(t *testing.T) {
 	})
 }
 
+func TestServiceNameProcessTag(t *testing.T) {
+	setup := func(t *testing.T) {
+		t.Helper()
+		internalconfig.SetUseFreshConfig(true)
+		t.Cleanup(func() {
+			internalconfig.SetUseFreshConfig(false)
+			processtags.Reload()
+		})
+		processtags.Reload()
+	}
+
+	t.Run("no DD_SERVICE defaults to binary name and sets svc.auto", func(t *testing.T) {
+		setup(t)
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig()
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.auto:"+filepath.Base(os.Args[0]))
+		assert.NotContains(t, tags.String(), "svc.user")
+	})
+
+	t.Run("DD_SERVICE set produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		t.Setenv("DD_SERVICE", "my-service")
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig()
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("WithService produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig(WithService("my-service"))
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("WithGlobalTag service produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig(WithGlobalTag("service", "my-service"))
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("OTEL_SERVICE_NAME produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		t.Setenv("OTEL_SERVICE_NAME", "my-service")
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig()
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("DD_TAGS service produces svc.user:true", func(t *testing.T) {
+		setup(t)
+		t.Setenv("DD_TAGS", "service:my-service")
+		defer globalconfig.SetServiceName("")
+		_, err := newTestConfig()
+		require.NoError(t, err)
+		tags := processtags.GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+}
+
 func TestStartWithLink(t *testing.T) {
 	assert := assert.New(t)
 
@@ -1913,7 +1989,8 @@ func TestWithStartSpanConfig(t *testing.T) {
 	s := tracer.StartSpan("test", WithStartSpanConfig(cfg))
 	defer s.Finish()
 	assert.Equal(float64(1), s.metrics[keyMeasured])
-	assert.Equal("value", s.meta["key"])
+	v, _ := s.meta.Get("key")
+	assert.Equal("value", v)
 	assert.Equal(parent.Context().SpanID(), s.parentID)
 	assert.Equal(parent.Context().TraceID(), s.Context().TraceID())
 	assert.Equal("resource", s.resource)
@@ -1962,8 +2039,10 @@ func TestWithStartSpanConfigNonEmptyTags(t *testing.T) {
 		Tag("key", "after_start_span_config"),
 	)
 	defer s.Finish()
-	assert.Equal("should_override", s.meta["k2"])
-	assert.Equal("after_start_span_config", s.meta["key"])
+	v, _ := s.meta.Get("k2")
+	assert.Equal("should_override", v)
+	v, _ = s.meta.Get("key")
+	assert.Equal("after_start_span_config", v)
 }
 
 func optsTestConsumer(opts ...StartSpanOption) {

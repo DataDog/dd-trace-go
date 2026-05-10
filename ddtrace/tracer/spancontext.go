@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -549,7 +550,8 @@ var samplingPriorityCache = func() [4]*float64 {
 }()
 
 // samplingPriorityPtr returns a *float64 for p without allocating for the
-// standard priority values (ext.PriorityUserReject through ext.PriorityUserKeep).
+// standard priority values (ext.PriorityUserReject through ext.PriorityUserKeep);
+// for any other value it allocates a new one.
 func samplingPriorityPtr(p int) *float64 {
 	if p >= -1 && p <= 2 {
 		return samplingPriorityCache[p+1]
@@ -873,15 +875,18 @@ func (t *trace) finishedOneLocked(s *Span) {
 // +checklocks:s.mu
 func setPeerService(s *Span, tc TracerConf) {
 	assert.RWMutexLocked(&s.mu)
-	spanKind := s.meta[ext.SpanKind]
+	// val() is used: only specific non-empty values ("client", "producer") qualify as
+	// outbound requests, so an unset and an explicitly-empty spanKind are both correctly
+	// treated as non-outbound.
+	spanKind, _ := s.meta.Get(ext.SpanKind)
 	isOutboundRequest := spanKind == ext.SpanKindClient || spanKind == ext.SpanKindProducer
 
-	if _, ok := s.meta[ext.PeerService]; ok { // peer.service already set on the span
+	if s.meta.Has(ext.PeerService) { // peer.service already set on the span
 		s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
 	} else if isServerless(tc) {
 		// Set peerService only in outbound Lambda requests
 		if isOutboundRequest {
-			if ps := deriveAWSPeerService(s.meta); ps != "" {
+			if ps := deriveAWSPeerService(&s.meta); ps != "" {
 				s.setMetaLocked(ext.PeerService, ps)
 				s.setMetaLocked(keyPeerServiceSource, ext.PeerService)
 			} else {
@@ -902,7 +907,7 @@ func setPeerService(s *Span, tc TracerConf) {
 	}
 	// Overwrite existing peer.service value if remapped by the user
 	if len(tc.PeerServiceMappings) > 0 {
-		ps := s.meta[ext.PeerService]
+		ps, _ := s.meta.Get(ext.PeerService)
 		if to, ok := tc.PeerServiceMappings[ps]; ok {
 			s.setMetaLocked(keyPeerServiceRemappedFrom, ps)
 			s.setMetaLocked(ext.PeerService, to)
@@ -933,24 +938,25 @@ The mapping is as follows:
   - s3:          <bucket>.s3.<region>.amazonaws.com (if Bucket param present)
     s3.<region>.amazonaws.com          (otherwise)
 */
-func deriveAWSPeerService(sm map[string]string) string {
-	service, region := sm[ext.AWSService], sm[ext.AWSRegion]
-	if service == "" || region == "" {
+func deriveAWSPeerService(sm *traceinternal.SpanMeta) string {
+	service, ok := sm.Get(ext.AWSService)
+	if !ok {
+		return ""
+	}
+	region, ok := sm.Get(ext.AWSRegion)
+	if !ok {
 		return ""
 	}
 
 	s := strings.ToLower(service)
 	switch s {
-
 	case "s3":
-		if bucket := sm[ext.S3BucketName]; bucket != "" {
+		if bucket, ok := sm.Get(ext.S3BucketName); ok {
 			return bucket + ".s3." + region + ".amazonaws.com"
 		}
 		return "s3." + region + ".amazonaws.com"
-
 	case "eventbridge":
 		return "events." + region + ".amazonaws.com"
-
 	case "sqs", "sns", "dynamodb", "kinesis":
 		return s + "." + region + ".amazonaws.com"
 	}
@@ -962,8 +968,7 @@ func deriveAWSPeerService(sm map[string]string) string {
 // +checklocks:s.mu
 func (s *Span) hasMetaKeyLocked(tag string) bool {
 	assert.RWMutexLocked(&s.mu)
-	_, ok := s.meta[tag]
-	return ok
+	return s.meta.Has(tag)
 }
 
 // setPeerServiceFromSource sets peer.service from the sources determined
@@ -975,6 +980,7 @@ func setPeerServiceFromSource(s *Span) string {
 	assert.RWMutexLocked(&s.mu)
 	var sources []string
 	useTargetHost := true
+	dbSys, _ := s.meta.Get(ext.DBSystem)
 	switch {
 	// order of the cases and their sources matters here. These are in priority order (highest to lowest)
 	case s.hasMetaKeyLocked("aws_service"):
@@ -985,7 +991,7 @@ func setPeerServiceFromSource(s *Span) string {
 			"tablename",
 			"bucketname",
 		}
-	case s.meta[ext.DBSystem] == ext.DBSystemCassandra:
+	case dbSys == ext.DBSystemCassandra:
 		sources = []string{
 			ext.CassandraContactPoints,
 		}
@@ -1013,7 +1019,7 @@ func setPeerServiceFromSource(s *Span) string {
 		}...)
 	}
 	for _, source := range sources {
-		if val, ok := s.meta[source]; ok {
+		if val, ok := s.meta.Get(source); ok {
 			s.setMetaLocked(ext.PeerService, val)
 			return source
 		}

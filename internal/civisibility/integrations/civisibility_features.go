@@ -39,6 +39,18 @@ type (
 		RemoteCommits []string
 		IsOk          bool
 	}
+
+	// repositoryUploadHooks captures repository upload test seams for a single upload attempt.
+	repositoryUploadHooks struct {
+		// uploadRepositoryChanges replaces the full upload path when tests need to bypass git operations.
+		uploadRepositoryChanges func() (int64, error)
+		// getSearchCommits retrieves the local/remote commit comparison for the current repository state.
+		getSearchCommits func() (*searchCommitsResponse, error)
+		// unshallowGitRepository expands shallow clones before computing the final missing commits.
+		unshallowGitRepository func() (bool, error)
+		// sendObjectsPackFile uploads a git packfile containing the missing commits.
+		sendObjectsPackFile func(string, []string, []string) (int64, error)
+	}
 )
 
 var (
@@ -48,8 +60,17 @@ var (
 	// additionalFeaturesInitializationOnce ensures we do the additional features initialization just once
 	additionalFeaturesInitializationOnce sync.Once
 
+	// additionalFeaturesInitializationMu serializes additional feature initialization with test-only state resets.
+	additionalFeaturesInitializationMu sync.Mutex
+
+	// repositoryUploadHooksMu protects repository upload hooks that tests replace while settings upload work may still be running.
+	repositoryUploadHooksMu sync.RWMutex
+
 	// ciVisibilityRapidClient contains the http rapid client to do CI Visibility queries and upload to the rapid backend
 	ciVisibilityClient net.Client
+
+	// newCIVisibilityClientWithServiceNameFunc creates the CI Visibility client used during settings bootstrap.
+	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
 
 	// ciVisibilitySettings contains the CI Visibility settings for this session
 	ciVisibilitySettings net.SettingsResponseData
@@ -69,8 +90,17 @@ var (
 	// ciVisibilityImpactedTestsAnalyzer contains the CI Visibility impacted tests analyzer
 	ciVisibilityImpactedTestsAnalyzer *impactedtests.ImpactedTestAnalyzer
 
-	// uploadRepositoryChangesFunc is a must-not-call test seam used to prove offline/file modes suppress git upload.
-	uploadRepositoryChangesFunc = uploadRepositoryChanges
+	// uploadRepositoryChangesFunc is a must-not-call test seam used to prove offline/file modes suppress git upload. A nil value uses the default git upload path.
+	uploadRepositoryChangesFunc func() (int64, error)
+
+	// getSearchCommitsFunc allows tests to exercise repository upload control flow without reading local git state.
+	getSearchCommitsFunc = getSearchCommits
+
+	// unshallowGitRepositoryFunc allows tests to control the fallback branch without mutating the local repository.
+	unshallowGitRepositoryFunc = utils.UnshallowGitRepository
+
+	// sendObjectsPackFileFunc allows tests to inspect the upload request without creating or sending real pack files.
+	sendObjectsPackFileFunc = sendObjectsPackFile
 )
 
 // ensureSettingsInitialization performs the one-time settings bootstrap, including any git upload work required before a final settings read.
@@ -80,7 +110,7 @@ func ensureSettingsInitialization(serviceName string) {
 		defer log.Debug("civisibility: settings initialization complete")
 
 		// Create the CI Visibility client
-		ciVisibilityClient = net.NewClientWithServiceName(serviceName)
+		ciVisibilityClient = newCIVisibilityClientWithServiceNameFunc(serviceName)
 		if ciVisibilityClient == nil {
 			log.Error("civisibility: error getting the ci visibility http client")
 			return
@@ -92,12 +122,14 @@ func ensureSettingsInitialization(serviceName string) {
 		log.Debug("civisibility: settings initialization mode [manifest:%t payload_files:%t manifest_file:%s payload_root:%s repository_upload_enabled:%t]",
 			testOptimizationMode.ManifestEnabled, testOptimizationMode.PayloadFilesEnabled, bazel.TestOptimizationPathForLog(testOptimizationMode.ManifestPath), testOptimizationMode.PayloadsRoot, uploadEnabled)
 		if uploadEnabled {
+			repositoryUpload := snapshotRepositoryUploadHooks()
+
 			// upload the repository changes
 			go func() {
 				defer func() {
 					close(uploadChannel)
 				}()
-				bytes, err := uploadRepositoryChangesFunc()
+				bytes, err := repositoryUpload.run()
 				if err != nil {
 					log.Error("civisibility: error uploading repository changes: %s", err.Error())
 				} else {
@@ -129,7 +161,7 @@ func ensureSettingsInitialization(serviceName string) {
 		// Get the CI Visibility settings payload for this test session
 		ciSettings, err := ciVisibilityClient.GetSettings()
 		if err != nil || ciSettings == nil {
-			log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
+			logSettingsFetchError(err)
 			log.Debug("civisibility: no need to wait for the git upload to finish")
 			// Enqueue a close action to wait for the upload to finish before finishing the process
 			PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
@@ -144,8 +176,8 @@ func ensureSettingsInitialization(serviceName string) {
 				return
 			}
 			ciSettings, err = ciVisibilityClient.GetSettings()
-			if err != nil {
-				log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
+			if err != nil || ciSettings == nil {
+				logSettingsFetchError(err)
 				return
 			}
 		}
@@ -221,8 +253,20 @@ func ensureSettingsInitialization(serviceName string) {
 	})
 }
 
+// logSettingsFetchError reports a failed or empty CI Visibility settings response.
+func logSettingsFetchError(err error) {
+	if err != nil {
+		log.Error("civisibility: error getting CI visibility settings: %s", err.Error())
+		return
+	}
+	log.Error("civisibility: error getting CI visibility settings: empty response")
+}
+
 // ensureAdditionalFeaturesInitialization loads CI Visibility features that depend on the previously fetched settings.
 func ensureAdditionalFeaturesInitialization(_ string) {
+	additionalFeaturesInitializationMu.Lock()
+	defer additionalFeaturesInitializationMu.Unlock()
+
 	additionalFeaturesInitializationOnce.Do(func() {
 		log.Debug("civisibility: initializing additional features")
 		defer log.Debug("civisibility: additional features initialization complete")
@@ -377,10 +421,36 @@ func GetImpactedTestsAnalyzer() *impactedtests.ImpactedTestAnalyzer {
 	return ciVisibilityImpactedTestsAnalyzer
 }
 
+// snapshotRepositoryUploadHooks returns a stable hook set so asynchronous upload work is isolated from test resets.
+func snapshotRepositoryUploadHooks() repositoryUploadHooks {
+	repositoryUploadHooksMu.RLock()
+	defer repositoryUploadHooksMu.RUnlock()
+
+	return repositoryUploadHooks{
+		uploadRepositoryChanges: uploadRepositoryChangesFunc,
+		getSearchCommits:        getSearchCommitsFunc,
+		unshallowGitRepository:  unshallowGitRepositoryFunc,
+		sendObjectsPackFile:     sendObjectsPackFileFunc,
+	}
+}
+
+// run executes either a full upload replacement hook or the default upload path with the captured hooks.
+func (hooks repositoryUploadHooks) run() (int64, error) {
+	if hooks.uploadRepositoryChanges != nil {
+		return hooks.uploadRepositoryChanges()
+	}
+	return uploadRepositoryChangesWithHooks(hooks)
+}
+
 // uploadRepositoryChanges discovers the commits and packfiles that must be uploaded so backend features can reason about the current repo state.
 func uploadRepositoryChanges() (bytes int64, err error) {
+	return uploadRepositoryChangesWithHooks(snapshotRepositoryUploadHooks())
+}
+
+// uploadRepositoryChangesWithHooks runs the default git upload flow against a stable hook snapshot.
+func uploadRepositoryChangesWithHooks(hooks repositoryUploadHooks) (bytes int64, err error) {
 	// get the search commits response
-	initialCommitData, err := getSearchCommits()
+	initialCommitData, err := hooks.getSearchCommits()
 	if err != nil {
 		return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err)
 	}
@@ -396,17 +466,20 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 		return 0, nil
 	}
 
-	// If:
-	//   - we have local commits
-	//   - there are not missing commits (backend has the total number of local commits already)
-	// then we are good to go with it, we don't need to check if we need to unshallow or anything and just go with that.
-	if initialCommitData.hasCommits() && len(initialCommitData.missingCommits()) == 0 {
+	// Calculate the initial missing commits once and reuse the same ordered list if
+	// the repository cannot be unshallowed. missingCommits walks the local and
+	// remote commit lists, so calling it twice here would repeat identical work.
+	initialMissingCommits := initialCommitData.missingCommits()
+
+	// If there are not missing commits (backend has the total number of local commits already), then we are good to go
+	// with it, we don't need to check if we need to unshallow or anything and just go with that.
+	if len(initialMissingCommits) == 0 {
 		log.Debug("civisibility: initial commit data has everything already, we don't need to upload anything")
 		return 0, nil
 	}
 
 	// there's some missing commits on the backend, first we need to check if we need to unshallow before sending anything...
-	hasBeenUnshallowed, err := utils.UnshallowGitRepository()
+	hasBeenUnshallowed, err := hooks.unshallowGitRepository()
 	if err != nil || !hasBeenUnshallowed {
 		if err != nil {
 			log.Warn("%s", err.Error())
@@ -415,11 +488,11 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 		// the initial commit data
 
 		// send the pack file with the missing commits
-		return sendObjectsPackFile(initialCommitData.LocalCommits[0], initialCommitData.missingCommits(), initialCommitData.RemoteCommits)
+		return hooks.sendObjectsPackFile(initialCommitData.LocalCommits[0], initialMissingCommits, initialCommitData.RemoteCommits)
 	}
 
 	// after unshallowing the repository we need to get the search commits to calculate the missing commits again
-	commitsData, err := getSearchCommits()
+	commitsData, err := hooks.getSearchCommits()
 	if err != nil {
 		return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err)
 	}
@@ -430,7 +503,7 @@ func uploadRepositoryChanges() (bytes int64, err error) {
 	}
 
 	// send the pack file with the missing commits
-	return sendObjectsPackFile(commitsData.LocalCommits[0], commitsData.missingCommits(), commitsData.RemoteCommits)
+	return hooks.sendObjectsPackFile(commitsData.LocalCommits[0], commitsData.missingCommits(), commitsData.RemoteCommits)
 }
 
 // getSearchCommits gets the search commits response with the local and remote commits

@@ -226,10 +226,9 @@ func testAsyncSpanRace(t *testing.T) {
 				finishes.Wait()
 
 				for range 500 {
-					for range root.meta {
+					for range root.meta.All() {
 						// this range simulates iterating over the meta map
 						// as we do when encoding msgpack upon flushing.
-						continue
 					}
 				}
 			})
@@ -314,9 +313,11 @@ func TestPartialFlush(t *testing.T) {
 		ts := transport.Traces()
 		require.Len(t, ts, 1)
 		require.Len(t, ts[0], 2)
-		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
+		v0, _ := ts[0][0].meta.Get("someTraceTag")
+		assert.Equal(t, "someValue", v0)
 		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
+		v1, _ := ts[0][1].meta.Get("someTraceTag")
+		assert.Empty(t, v1)                                         // the tag should only be on the first span in the chunk
 		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, children[0], ts[0][0])
 		comparePayloadSpans(t, children[1], ts[0][1])
@@ -330,9 +331,11 @@ func TestPartialFlush(t *testing.T) {
 		tsRoot := transport.Traces()
 		require.Len(t, tsRoot, 1)
 		require.Len(t, tsRoot[0], 2)
-		assert.Equal(t, "someValue", ts[0][0].meta["someTraceTag"])
+		v0, _ = ts[0][0].meta.Get("someTraceTag")
+		assert.Equal(t, "someValue", v0)
 		assert.Equal(t, 1.0, ts[0][0].metrics[keySamplingPriority])
-		assert.Empty(t, ts[0][1].meta["someTraceTag"])              // the tag should only be on the first span in the chunk
+		v1, _ = ts[0][1].meta.Get("someTraceTag")
+		assert.Empty(t, v1)                                         // the tag should only be on the first span in the chunk
 		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, root, tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
@@ -787,19 +790,22 @@ func TestSpanPeerService(t *testing.T) {
 	for _, tc := range testCases {
 		assertSpan := func(t *testing.T, s *Span) {
 			if tc.wantPeerService == "" {
-				assert.NotContains(t, s.meta, "peer.service")
+				assert.False(t, s.meta.Has("peer.service"))
 			} else {
-				assert.Equal(t, tc.wantPeerService, s.meta["peer.service"])
+				v, _ := s.meta.Get("peer.service")
+				assert.Equal(t, tc.wantPeerService, v)
 			}
 			if tc.wantPeerServiceSource == "" {
-				assert.NotContains(t, s.meta, "_dd.peer.service.source")
+				assert.False(t, s.meta.Has("_dd.peer.service.source"))
 			} else {
-				assert.Equal(t, tc.wantPeerServiceSource, s.meta["_dd.peer.service.source"])
+				v, _ := s.meta.Get("_dd.peer.service.source")
+				assert.Equal(t, tc.wantPeerServiceSource, v)
 			}
 			if tc.wantPeerServiceRemappedFrom == "" {
-				assert.NotContains(t, s.meta, "_dd.peer.service.remapped_from")
+				assert.False(t, s.meta.Has("_dd.peer.service.remapped_from"))
 			} else {
-				assert.Equal(t, tc.wantPeerServiceRemappedFrom, s.meta["_dd.peer.service.remapped_from"])
+				v, _ := s.meta.Get("_dd.peer.service.remapped_from")
+				assert.Equal(t, tc.wantPeerServiceRemappedFrom, v)
 			}
 		}
 		t.Run(tc.name, func(t *testing.T) {
@@ -867,7 +873,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
 			assert.Equal(t, "span-service", s.service)
-			assert.Equal(t, "global-service", s.meta["_dd.base_service"])
+			v, _ := s.meta.Get("_dd.base_service")
+			assert.Equal(t, "global-service", v)
 		}
 	})
 	t.Run("span-service-equal-global-service", func(t *testing.T) {
@@ -880,7 +887,7 @@ func TestSpanDDBaseService(t *testing.T) {
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
 			assert.Equal(t, "global-service", s.service)
-			assert.NotContains(t, s.meta, "_dd.base_service")
+			assert.False(t, s.meta.Has("_dd.base_service"))
 		}
 	})
 	t.Run("span-service-equal-different-case", func(t *testing.T) {
@@ -893,7 +900,7 @@ func TestSpanDDBaseService(t *testing.T) {
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
 			assert.Equal(t, "GLOBAL-service", s.service)
-			assert.NotContains(t, s.meta, "_dd.base_service")
+			assert.False(t, s.meta.Has("_dd.base_service"))
 		}
 	})
 	t.Run("global-service-not-set", func(t *testing.T) {
@@ -905,7 +912,8 @@ func TestSpanDDBaseService(t *testing.T) {
 			assert.Equal(t, "span-service", s.service)
 			// in this case we don't assert to a concrete value because the default tracer service name is calculated
 			// based on the process name and might change depending on how tests are run.
-			assert.NotEmpty(t, s.meta["_dd.base_service"])
+			v, _ := s.meta.Get("_dd.base_service")
+			assert.NotEmpty(t, v)
 		}
 	})
 	t.Run("using-tag-option", func(t *testing.T) {
@@ -918,7 +926,8 @@ func TestSpanDDBaseService(t *testing.T) {
 		spans := run(t, tracerOpts, spanOpts)
 		for _, s := range spans {
 			assert.Equal(t, "span-service", s.service)
-			assert.Equal(t, "global-service", s.meta["_dd.base_service"])
+			v, _ := s.meta.Get("_dd.base_service")
+			assert.Equal(t, "global-service", v)
 		}
 	})
 }
@@ -1247,13 +1256,14 @@ func TestSpanProcessTags(t *testing.T) {
 			root := traces[0][0]
 			assert.Equal(t, "p", root.name)
 			if tc.enabled {
-				assert.NotEmpty(t, root.meta["_dd.tags.process"])
+				v, _ := root.meta.Get("_dd.tags.process")
+				assert.NotEmpty(t, v)
 			} else {
-				assert.NotContains(t, root.meta, "_dd.tags.process")
+				assert.False(t, root.meta.Has("_dd.tags.process"))
 			}
 
 			for _, s := range traces[0][1:] {
-				assert.NotContains(t, s.meta, "_dd.tags.process")
+				assert.False(t, s.meta.Has("_dd.tags.process"))
 			}
 		})
 	}
