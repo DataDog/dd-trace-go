@@ -2516,28 +2516,42 @@ func newTestConfig(opts ...StartOption) (*config, error) {
 // not be available and the maps (meta & metrics will be nil for lengths
 // of 0). This function covers for those cases and correctly compares.
 func comparePayloadSpans(t *testing.T, a, b *Span) {
-	assert.Equal(t, cpspan(a), cpspan(b))
+	spanA, langA, spanKindA, traceIDA := cpspan(a)
+	spanB, langB, spanKindB, traceIDB := cpspan(b)
+	assert.Equal(t, langA, langB)
+	assert.Equal(t, spanKindA, spanKindB)
+	assert.Equal(t, traceIDA, traceIDB)
+	assert.Equal(t, spanA, spanB)
 }
 
-func cpspan(s *Span) *Span {
+func cpspan(s *Span) (sp *Span, lang string, spanKind string, traceID uint64) {
 	if len(s.metrics) == 0 {
 		s.metrics = nil
 	}
 	s.meta.Normalize()
-	return &Span{
+	m := s.meta.Map(true)
+
+	// Other fields that are not consistent between v0.4 and v1.0
+	lang = m["language"]
+	spanKind = m[ext.SpanKind]
+	traceID = s.traceID
+
+	delete(m, "language")
+	delete(m, ext.SpanKind)
+	sp = &Span{
 		name:     s.name,
 		service:  s.service,
 		resource: s.resource,
 		spanType: s.spanType,
 		start:    s.start,
 		duration: s.duration,
-		meta:     traceinternal.NewSpanMetaFromMap(s.meta.Map(true)), // flatten to plain map for comparison
+		meta:     traceinternal.NewSpanMetaFromMap(m), // flatten to plain map for comparison
 		metrics:  s.metrics,
 		spanID:   s.spanID,
-		traceID:  s.traceID,
 		parentID: s.parentID,
 		error:    s.error,
 	}
+	return sp, lang, spanKind, traceID
 }
 
 type testTraceWriter struct {
