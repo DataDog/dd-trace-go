@@ -24,6 +24,12 @@ func NewPoolWithConfig(ctx context.Context, config *pgxpool.Config, opts ...Opti
 	// is properly initialized, so it doesn't make sense to check for a nil config here.
 
 	tracer := wrapPgxTracer(config.ConnConfig.Tracer, opts...)
+	tracer.connInfo = connInfo{
+		host: config.ConnConfig.Host,
+		port: config.ConnConfig.Port,
+		db:   config.ConnConfig.Database,
+		user: config.ConnConfig.User,
+	}
 	config.ConnConfig.Tracer = tracer
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
