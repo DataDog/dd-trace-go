@@ -65,11 +65,13 @@ func withAppSec(next echo.HandlerFunc, span trace.TagSetter, e *echo.Echo) echo.
 			Route:       c.Path(),
 			RouteParams: params,
 		}).ServeHTTP(&statusResponseWriter{c.Response()}, c.Request())
-		// If an error occurred, wrap it under an echo.HTTPError. We need to do this so that APM doesn't override
-		// the response code tag with 500 in case it doesn't recognize the error type.
+		// If an error occurred, wrap it under an echo.HTTPError so APM doesn't
+		// override the response code tag with 500 when it doesn't recognize the
+		// error type. By this point the inner http.HandlerFunc has either
+		// committed the response (via e.HTTPErrorHandler or our JSON fallback)
+		// or the response was already committed by the handler, so the status
+		// recorded on the echo Response is final.
 		if _, ok := err.(*echo.HTTPError); !ok && err != nil {
-			// We call the echo error handlers in our wrapper when an error occurs, so we know that the response
-			// status won't change anymore at this point in the execution
 			status := responseStatus(c)
 			if status == 0 {
 				status = http.StatusInternalServerError

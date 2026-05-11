@@ -32,6 +32,10 @@ func init() {
 //   - lazily wraps [echo.Echo.Binder] on the first request, preserving any
 //     user-configured Binder as the inner delegate (see notes below).
 //
+// Wrap must be called before starting the server (e.g. [echo.Echo.Start]) and
+// before any concurrent access to the [echo.Echo] instance. Echo itself
+// forbids mutating Echo fields after the server has started.
+//
 // AppSec body monitoring — differences with the echo.v4 integration:
 //
 // In echo v4, AppSec wrapped the [echo.Context] interface at request time, so
