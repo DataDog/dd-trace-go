@@ -1532,7 +1532,9 @@ func decode(p payloadReader) (spanLists, []uint64, error) {
 		for _, t := range traces {
 			var id uint64
 			if len(t) > 0 && t[0] != nil {
+				t[0].mu.RLock()
 				id = t[0].traceID
+				t[0].mu.RUnlock()
 			}
 			ids = append(ids, id)
 		}
