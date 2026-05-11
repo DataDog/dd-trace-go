@@ -750,6 +750,16 @@ func TestWrapPreservesUserBinder(t *testing.T) {
 	require.Same(t, custom, wrapped.inner, "AppSec wrap must capture the user-set Binder")
 }
 
+// TestWrapWiresOnAddRoute asserts that Wrap sets [echo.Echo.OnAddRoute] to
+// our route-registration callback. Regression coverage for the wiring itself —
+// the callback's behavior is exercised by TestOnAddRoute in appsec_test.go.
+func TestWrapWiresOnAddRoute(t *testing.T) {
+	e := echo.New()
+	require.Nil(t, e.OnAddRoute, "fresh echo.New() should not have an OnAddRoute hook")
+	Wrap(e)
+	require.NotNil(t, e.OnAddRoute, "Wrap must set e.OnAddRoute")
+}
+
 func BenchmarkEchoWithTracing(b *testing.B) {
 	tracer.Start(tracer.WithLogger(testutils.DiscardLogger()))
 	defer tracer.Stop()
