@@ -360,7 +360,7 @@ type failingTransport struct {
 func (t *failingTransport) send(p payload) (io.ReadCloser, error) {
 	t.sendAttempts++
 
-	traces, err := decode(p)
+	traces, _, err := decode(p)
 	if err != nil {
 		return nil, err
 	}

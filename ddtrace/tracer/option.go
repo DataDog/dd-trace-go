@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1461,6 +1462,7 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 type dummyTransport struct {
 	mu         locking.RWMutex
 	traces     spanLists                // +checklocks:mu
+	traceIDs   []uint64                 // +checklocks:mu
 	stats      []*pb.ClientStatsPayload // +checklocks:mu
 	obfVersion int                      // +checklocks:mu
 }
@@ -1496,12 +1498,13 @@ func (t *dummyTransport) ObfuscationVersion() int {
 }
 
 func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
-	traces, err := decode(p)
+	traces, ids, err := decode(p)
 	if err != nil {
 		return nil, err
 	}
 	t.mu.Lock()
 	t.traces = append(t.traces, traces...)
+	t.traceIDs = append(t.traceIDs, ids...)
 	t.mu.Unlock()
 	ok := io.NopCloser(strings.NewReader("OK"))
 	return ok, nil
@@ -1511,36 +1514,53 @@ func (t *dummyTransport) endpoint() string {
 	return "http://localhost:9/v1.0/traces"
 }
 
-func decode(p payloadReader) (spanLists, error) {
+func decode(p payloadReader) (spanLists, []uint64, error) {
 	buf, err := io.ReadAll(p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(buf) == 0 {
-		return spanLists{}, nil
+		return spanLists{}, nil, nil
 	}
 	switch first := buf[0]; {
 	case first == msgpackArray16 || first == msgpackArray32 || first&0xf0 == msgpackArrayFix:
 		var traces spanLists
 		if err := msgp.Decode(bytes.NewReader(buf), &traces); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return traces, nil
+		ids := make([]uint64, 0, len(traces))
+		for _, t := range traces {
+			var id uint64
+			if len(t) > 0 && t[0] != nil {
+				id = t[0].traceID
+			}
+			ids = append(ids, id)
+		}
+		return traces, ids, nil
 	case first == msgpackMap16 || first == msgpackMap32 || first&0xf0 == msgpackMapFix:
 		payload := newPayloadV1()
 		payload.buf = buf
 		if _, err := payload.decodeBuffer(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return payload.traces(), nil
+		ids := make([]uint64, 0, len(payload.chunks))
+		for _, c := range payload.chunks {
+			var id uint64
+			if len(c.traceID) >= 16 {
+				id = binary.BigEndian.Uint64(c.traceID[8:16])
+			}
+			ids = append(ids, id)
+		}
+		return payload.traces(), ids, nil
 	default:
-		return nil, fmt.Errorf("decode: unrecognized msgpack prefix byte 0x%02x", first)
+		return nil, nil, fmt.Errorf("decode: unrecognized msgpack prefix byte 0x%02x", first)
 	}
 }
 
 func (t *dummyTransport) Reset() {
 	t.mu.Lock()
 	t.traces = t.traces[:0]
+	t.traceIDs = t.traceIDs[:0]
 	t.mu.Unlock()
 }
 
@@ -1551,6 +1571,14 @@ func (t *dummyTransport) Traces() spanLists {
 	traces := t.traces
 	t.traces = spanLists{}
 	return traces
+}
+
+func (t *dummyTransport) TraceIDs() []uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ids := t.traceIDs
+	t.traceIDs = nil
+	return ids
 }
 
 // setHeaderTags sets the global header tags.

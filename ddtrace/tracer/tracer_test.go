@@ -1808,8 +1808,9 @@ func TestTracerRace(t *testing.T) {
 
 	flush(total)
 	traces := transport.Traces()
+	ids := transport.TraceIDs()
 	assert.Len(traces, total, "we should have exactly as many traces as expected")
-	for _, trace := range traces {
+	for i, trace := range traces {
 		assert.Len(trace, 3, "each trace should have exactly 3 spans")
 		var parent, child, redis *Span
 		for _, span := range trace {
@@ -1828,14 +1829,12 @@ func TestTracerRace(t *testing.T) {
 		assert.NotNil(child)
 		assert.NotNil(redis)
 
+		tid := ids[i]
 		assert.Equal(uint64(0), parent.parentID)
-		assert.Equal(parent.traceID, parent.spanID)
+		assert.Equal(tid, parent.spanID)
 
-		assert.Equal(parent.traceID, redis.traceID)
-		assert.Equal(parent.traceID, child.traceID)
-
-		assert.Equal(parent.traceID, redis.parentID)
-		assert.Equal(parent.traceID, child.parentID)
+		assert.Equal(tid, redis.parentID)
+		assert.Equal(tid, child.parentID)
 	}
 }
 
