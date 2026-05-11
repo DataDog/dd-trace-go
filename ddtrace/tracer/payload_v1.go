@@ -797,6 +797,9 @@ func (p *payloadV1) traces() spanLists {
 			}
 			s.traceID = binary.BigEndian.Uint64(c.traceID[8:16])
 			s.setMetric(keySamplingPriority, float64(c.priority))
+			if s.context == nil {
+				continue
+			}
 			s.context.origin = c.origin
 			s.context.trace.setPropagatingTag(keyDecisionMaker, strconv.Itoa(int(c.samplingMechanism)))
 			for k, v := range c.attributes {
