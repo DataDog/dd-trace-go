@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1534,9 +1535,19 @@ func decode(p payloadReader) (spanLists, error) {
 		}
 		var traces spanLists
 		for _, chunk := range payload.chunks {
-			if len(chunk.spans) > 0 {
-				traces = append(traces, chunk.spans)
+			if len(chunk.spans) == 0 {
+				continue
 			}
+			var tid uint64
+			if len(chunk.traceID) >= 16 {
+				tid = binary.BigEndian.Uint64(chunk.traceID[8:16])
+			}
+			for _, s := range chunk.spans {
+				if s != nil {
+					s.traceID = tid
+				}
+			}
+			traces = append(traces, chunk.spans)
 		}
 		return traces, nil
 	default:
