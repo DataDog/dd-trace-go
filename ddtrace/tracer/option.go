@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -1511,9 +1512,36 @@ func (t *dummyTransport) endpoint() string {
 }
 
 func decode(p payloadReader) (spanLists, error) {
-	var traces spanLists
-	err := msgp.Decode(p, &traces)
-	return traces, err
+	buf, err := io.ReadAll(p)
+	if err != nil {
+		return nil, err
+	}
+	if len(buf) == 0 {
+		return spanLists{}, nil
+	}
+	switch first := buf[0]; {
+	case first == msgpackArray16 || first == msgpackArray32 || first&0xf0 == msgpackArrayFix:
+		var traces spanLists
+		if err := msgp.Decode(bytes.NewReader(buf), &traces); err != nil {
+			return nil, err
+		}
+		return traces, nil
+	case first == msgpackMap16 || first == msgpackMap32 || first&0xf0 == msgpackMapFix:
+		payload := newPayloadV1()
+		payload.buf = buf
+		if _, err := payload.decodeBuffer(); err != nil {
+			return nil, err
+		}
+		var traces spanLists
+		for _, chunk := range payload.chunks {
+			if len(chunk.spans) > 0 {
+				traces = append(traces, chunk.spans)
+			}
+		}
+		return traces, nil
+	default:
+		return nil, fmt.Errorf("decode: unrecognized msgpack prefix byte 0x%02x", first)
+	}
 }
 
 func (t *dummyTransport) Reset() {

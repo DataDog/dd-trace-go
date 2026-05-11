@@ -14,6 +14,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -417,10 +418,15 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
+			srv := mockAgentEndpoint(t, "/v1.0/traces")
+			srvURL, err := url.Parse(srv.URL)
+			require.NoError(t, err)
+			defer srv.Close()
 			c, err := newTestConfig(func(c *config) {
 				c.ddTransport = p
 				c.sendRetries = test.configRetries
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
+				c.internalConfig.SetAgentURL(srvURL, internalconfig.OriginCode)
 			})
 			assert.Nil(err)
 			var statsd statsdtest.TestStatsdClient
