@@ -40,6 +40,9 @@ func init() {
 // features that require additional properties to be configured without having
 // to update your code.
 func Wrap(e *echo.Echo, opts ...Option) *echo.Echo {
+	// Prepend the internal echo-instance option so user-provided opts can't
+	// override it (only Wrap should set this).
+	opts = append([]Option{withEchoInstance(e)}, opts...)
 	e.Use(Middleware(opts...))
 	e.OnAddRoute = OnAddRoute
 	e.Binder = &appsecBinder{inner: e.Binder}
@@ -97,7 +100,7 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			c.SetRequest(request.WithContext(ctx))
 
 			if instr.AppSecEnabled() {
-				next = withAppSec(next, span)
+				next = withAppSec(next, span, cfg.echoInstance)
 			}
 			// serve the request to the next middleware
 			err := next(c)

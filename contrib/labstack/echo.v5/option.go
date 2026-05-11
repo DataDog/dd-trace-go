@@ -30,6 +30,10 @@ type config struct {
 	headerTags        instrumentation.HeaderTags
 	errCheck          func(error) bool
 	tags              map[string]interface{}
+	// echoInstance, when set (via Wrap), gives the middleware access to the
+	// configured [echo.Echo.HTTPErrorHandler] so AppSec error paths can honor
+	// custom error renderers instead of writing a hardcoded JSON body.
+	echoInstance *echo.Echo
 }
 
 // Option describes options for the Echo.v5 integration.
@@ -162,5 +166,14 @@ func WithCustomTag(key string, value interface{}) OptionFn {
 			cfg.tags = make(map[string]interface{})
 		}
 		cfg.tags[key] = value
+	}
+}
+
+// withEchoInstance is an internal option used by [Wrap] to give the middleware
+// access to the configured [echo.Echo] so AppSec error paths can dispatch to
+// [echo.Echo.HTTPErrorHandler].
+func withEchoInstance(e *echo.Echo) OptionFn {
+	return func(cfg *config) {
+		cfg.echoInstance = e
 	}
 }

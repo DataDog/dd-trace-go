@@ -17,7 +17,7 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-func withAppSec(next echo.HandlerFunc, span trace.TagSetter) echo.HandlerFunc {
+func withAppSec(next echo.HandlerFunc, span trace.TagSetter, e *echo.Echo) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		params := make(map[string]string)
 		for _, pv := range c.PathValues() {
@@ -27,18 +27,25 @@ func withAppSec(next echo.HandlerFunc, span trace.TagSetter) echo.HandlerFunc {
 		handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			c.SetRequest(r)
 			err = next(c)
-			// If the error is a monitoring one, it means appsec actions will take care of writing the response
-			// and handling the error. Don't call the echo error handler in this case.
+			// If the error is a monitoring one, AppSec will take care of writing
+			// the response. Skip our error handling entirely.
 			if _, ok := err.(*events.BlockingSecurityEvent); ok {
 				return
 			}
-			if err != nil {
-				// In echo v5 there is no c.Error() method. We must write the error
-				// status code directly so httpsec sees the correct response status
-				// and the response is committed before echo's error handler runs.
-				// Only write if the response hasn't been committed yet (the handler
-				// or a middleware may have already written a response body).
-				if r, unwrapErr := echo.UnwrapResponse(c.Response()); unwrapErr == nil && !r.Committed {
+			if err == nil {
+				return
+			}
+			// In echo v5 there is no c.Error() method. We must commit the
+			// response with the correct status code before httpsec reads it.
+			// Only commit if the response hasn't already been written by the
+			// handler or a downstream middleware.
+			if r, unwrapErr := echo.UnwrapResponse(c.Response()); unwrapErr == nil && !r.Committed {
+				// Prefer the user-configured HTTPErrorHandler when available so
+				// custom error renderers are honored; fall back to a minimal
+				// JSON response otherwise.
+				if e != nil && e.HTTPErrorHandler != nil {
+					e.HTTPErrorHandler(c, err)
+				} else {
 					code := http.StatusInternalServerError
 					var sc echo.HTTPStatusCoder
 					if errors.As(err, &sc) {
@@ -46,9 +53,10 @@ func withAppSec(next echo.HandlerFunc, span trace.TagSetter) echo.HandlerFunc {
 							code = tmp
 						}
 					}
-					c.JSON(code, map[string]string{"message": http.StatusText(code)})
+					if jerr := c.JSON(code, map[string]string{"message": http.StatusText(code)}); jerr != nil {
+						instr.Logger().Debug("contrib/labstack/echo.v5: failed to write fallback error response: %v", jerr)
+					}
 				}
-				return
 			}
 		})
 		// Wrap the echo response to allow monitoring of the response status code in httpsec.WrapHandler()
