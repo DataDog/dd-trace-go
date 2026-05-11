@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -781,6 +782,34 @@ func (p *payloadV1) encodeSpanEventArrayValues(v *spanEventArrayAttributeValue, 
 		p.buf = st.serialize(serializationFailed, p.buf)
 	}
 	return true, nil
+}
+
+// Testing helping function to flatten payload traces into a list of spans
+func (p *payloadV1) traces() spanLists {
+	out := make(spanLists, 0, len(p.chunks))
+	for _, c := range p.chunks {
+		if len(c.spans) == 0 {
+			continue
+		}
+		for _, s := range c.spans {
+			if s == nil {
+				continue
+			}
+			s.traceID = binary.BigEndian.Uint64(c.traceID[8:16])
+			s.setMetric(keySamplingPriority, float64(c.priority))
+			s.context.origin = c.origin
+			s.context.trace.setPropagatingTag(keyDecisionMaker, strconv.Itoa(int(c.samplingMechanism)))
+			for k, v := range c.attributes {
+				if v.valueType == StringValueType {
+					s.setMeta(k, v.value.(string))
+				} else {
+					s.setMetric(k, v.value.(float64))
+				}
+			}
+		}
+		out = append(out, c.spans)
+	}
+	return out
 }
 
 // Getters for payloadV1 fields
