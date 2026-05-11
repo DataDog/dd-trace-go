@@ -918,6 +918,49 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 	return o, err
 }
 
+// A testing helper to decode payloads into a map[string]any
+// Empty strings and slices are omitted from the result.
+func decodeTestingPayload(buf []byte) (map[string]any, error) {
+	p := newPayloadV1()
+	p.buf = buf
+	if _, err := p.decodeBuffer(); err != nil {
+		return nil, err
+	}
+
+	out := map[string]any{}
+	if p.containerID != "" {
+		out["2"] = p.containerID
+	}
+	if p.languageName != "" {
+		out["3"] = p.languageName
+	}
+	if p.languageVersion != "" {
+		out["4"] = p.languageVersion
+	}
+	if p.tracerVersion != "" {
+		out["5"] = p.tracerVersion
+	}
+	if p.runtimeID != "" {
+		out["6"] = p.runtimeID
+	}
+	if p.env != "" {
+		out["7"] = p.env
+	}
+	if p.hostname != "" {
+		out["8"] = p.hostname
+	}
+	if p.appVersion != "" {
+		out["9"] = p.appVersion
+	}
+	if len(p.attributes) > 0 {
+		out["10"] = p.attributes
+	}
+	if len(p.chunks) > 0 {
+		out["11"] = p.chunks
+	}
+	return out, nil
+}
+
 // AnyValue is a representation of the `any` value. It can take the following types:
 // - uint32
 // - bool

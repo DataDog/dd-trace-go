@@ -1049,14 +1049,9 @@ func TestIssue2050(t *testing.T) {
 				buf, err := io.ReadAll(req.Body)
 				require.NoError(t, err)
 
-				var payload bytes.Buffer
-				_, err = msgp.UnmarshalAsJSON(&payload, buf)
-				require.NoError(t, err)
-
 				if r.URL.Path == "/v1.0/traces" {
 					var trace map[string]interface{}
-					err = json.Unmarshal(payload.Bytes(), &trace)
-					require.NoError(t, err)
+					trace = testutils.DecodeV1Traces(t, buf)
 					chunks, ok := trace["11"].([]interface{})
 					if !ok || len(chunks) == 0 {
 						return
@@ -1073,6 +1068,10 @@ func TestIssue2050(t *testing.T) {
 					assert.EqualValues(t, 3, s1["16"]) // client
 				} else {
 					// allow fallback to v0.4
+					var payload bytes.Buffer
+					_, err = msgp.UnmarshalAsJSON(&payload, buf)
+					require.NoError(t, err)
+
 					var trace [][]map[string]interface{}
 					err = json.Unmarshal(payload.Bytes(), &trace)
 					require.NoError(t, err)
