@@ -113,12 +113,16 @@ func (t *civisibilitymocktracer) SentDSMBacklogs() []datastreams.Backlog {
 }
 
 // Stop deactivates the CI Visibility mock tracer by setting it to noop mode and stopping
-// the Data Streams Monitoring processor. This should be called when testing has finished.
+// the Data Streams Monitoring processor. If this wrapper has already been removed from
+// the global tracer slot, it also stops the real delegate because CI Visibility shutdown
+// can no longer reach it through the global tracer.
 func (t *civisibilitymocktracer) Stop() {
 	var realToStop tracer.Tracer
+	removedFromGlobalTracer := getGlobalTracer() != t
+
 	t.realMu.Lock()
 	t.isnoop.Store(true)
-	if civisibility.GetState() == civisibility.StateExiting {
+	if removedFromGlobalTracer || civisibility.GetState() == civisibility.StateExiting {
 		realToStop = t.real
 		t.real = &tracer.NoopTracer{}
 	}

@@ -519,6 +519,7 @@ func TestCIVisibilityMockTracer_SecondStopDuringCIVisibilityExitStopsRealTracer(
 	resetCIVisibilityMockTracerTestState(t)
 
 	cmt := newCIVisibilityMockTracer()
+	internal.StoreGlobalTracer[Tracer, tracer.Tracer](cmt)
 	real := &countingTracer{}
 	require.True(t, cmt.SetCIVisibilityTracer(real))
 
@@ -528,4 +529,18 @@ func TestCIVisibilityMockTracer_SecondStopDuringCIVisibilityExitStopsRealTracer(
 	civisibility.SetState(civisibility.StateExiting)
 	cmt.Stop()
 	assert.Equal(t, int32(1), real.stopCount.Load())
+}
+
+func TestCIVisibilityMockTracer_GlobalStopStopsRealTracerDelegate(t *testing.T) {
+	resetCIVisibilityMockTracerTestState(t)
+
+	cmt := newCIVisibilityMockTracer()
+	internal.StoreGlobalTracer[Tracer, tracer.Tracer](cmt)
+	real := &countingTracer{}
+	require.True(t, cmt.SetCIVisibilityTracer(real))
+
+	tracer.Stop()
+
+	assert.Equal(t, int32(1), real.stopCount.Load())
+	assert.IsType(t, &tracer.NoopTracer{}, cmt.realTracer())
 }
