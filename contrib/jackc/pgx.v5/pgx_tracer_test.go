@@ -104,8 +104,7 @@ func TestConnect(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			opts := append(tracingAllDisabled(), WithTraceConnect(true))
-			runAllOperations(t, newPoolCreator(nil, opts...))
+			runAllOperations(t, tc.newConnCreator(t, nil))
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 2)
