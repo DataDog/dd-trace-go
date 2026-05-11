@@ -19,9 +19,12 @@ import (
 
 func withAppSec(next echo.HandlerFunc, span trace.TagSetter, e *echo.Echo) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		params := make(map[string]string)
-		for _, pv := range c.PathValues() {
-			params[pv.Name] = pv.Value
+		var params map[string]string
+		if pvs := c.PathValues(); len(pvs) > 0 {
+			params = make(map[string]string, len(pvs))
+			for _, pv := range pvs {
+				params[pv.Name] = pv.Value
+			}
 		}
 		var err error
 		handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
