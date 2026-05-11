@@ -59,6 +59,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_DBM_PROPAGATION_MODE":                                         {},
 	"DD_DOGSTATSD_HOST":                                               {},
 	"DD_DOGSTATSD_PORT":                                               {},
+	"DD_DOGSTATSD_URL":                                                {},
 	"DD_DYNAMIC_INSTRUMENTATION_ENABLED":                              {},
 	"DD_ENV":                                                          {},
 	"DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED":                       {},

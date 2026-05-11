@@ -71,9 +71,7 @@ type Config struct {
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
 	// dogstatsdAddr is the address used to send DogStatsD metrics to the Datadog
-	// Agent. Resolved from DD_DOGSTATSD_HOST / DD_DOGSTATSD_PORT (with
-	// DD_AGENT_HOST as host fallback), the agent-reported statsd port, or a UDS
-	// socket auto-discovered at /var/run/datadog/dsd.socket.
+	// Agent.
 	dogstatsdAddr string
 	debug         bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
@@ -370,8 +368,6 @@ func (c *Config) AgentURL() *url.URL {
 	return u
 }
 
-// DogstatsdAddr returns the address used to send DogStatsD metrics to the
-// Datadog Agent. Empty until resolved by the tracer at startup.
 func (c *Config) DogstatsdAddr() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -381,13 +377,29 @@ func (c *Config) DogstatsdAddr() string {
 func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.checkProductConflict("DD_DOGSTATSD_HOST", origin, addr, product...) {
+	if c.checkProductConflict("DD_DOGSTATSD_URL", origin, addr, product...) {
 		return
 	}
 	c.dogstatsdAddr = addr
 	if addr != "" {
-		configtelemetry.Report("DD_DOGSTATSD_HOST", addr, origin)
+		configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
 	}
+}
+
+// ResolveDogstatsdAddr resolves and stores the DogStatsD address from the
+// user-configured value (set via WithDogstatsdAddr), env vars, and the
+// agent-reported statsd port (0 when unknown). socketDSDPath is the UDS
+// socket path to probe for auto-discovery. The resolved address is reported
+// to config telemetry with OriginCalculated. Returns the resolved address.
+func (c *Config) ResolveDogstatsdAddr(agentStatsdPort int, socketDSDPath string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	addr := resolveDogstatsdAddr(c.dogstatsdAddr, agentStatsdPort, socketDSDPath)
+	c.dogstatsdAddr = addr
+	if addr != "" {
+		configtelemetry.Report("DD_DOGSTATSD_URL", addr, telemetry.OriginCalculated)
+	}
+	return addr
 }
 
 func (c *Config) Debug() bool {

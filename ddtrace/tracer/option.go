@@ -14,14 +14,12 @@ import (
 	"io"
 	"maps"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -126,9 +124,6 @@ var (
 	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
 	// Replaced in tests
 	defaultSocketDSD = "/var/run/datadog/dsd.socket"
-
-	// defaultStatsdPort specifies the default port to use for connecting to the statsd server.
-	defaultStatsdPort = "8125"
 )
 
 // Supported trace protocols.
@@ -435,9 +430,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 	if c.statsdClient == nil {
 		// configure statsd client
-		addr := resolveDogstatsdAddr(c.internalConfig.DogstatsdAddr(), af, defaultSocketDSD)
+		addr := c.internalConfig.ResolveDogstatsdAddr(af.StatsdPort, defaultSocketDSD)
 		globalconfig.SetDogstatsdAddr(addr)
-		c.internalConfig.SetDogstatsdAddr(addr, internalconfig.OriginCalculated)
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
 	// This allows persisting the initial value of globalTags for future resets and updates.
@@ -501,61 +495,6 @@ func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers
 		traceURL = agentURL + tracesAPIPathV1
 	}
 	return traceURL, datadogHeaders()
-}
-
-// resolveDogstatsdAddr resolves the Dogstatsd address to use with the following
-// priority order:
-//  1. Explicitly configured address via WithDogstatsdAddr.
-//  2. Environment variables DD_DOGSTATSD_HOST (or DD_AGENT_HOST) and DD_DOGSTATSD_PORT.
-//  3. Auto-discovery: UDS socket at /var/run/datadog/dsd.socket, agent-reported port,
-//     or the default localhost:8125.
-func resolveDogstatsdAddr(configAddr string, af agentFeatures, socketDSDPath string) string {
-	// 1. User explicitly set address via WithDogstatsdAddr; honor it as-is.
-	if configAddr != "" {
-		return configAddr
-	}
-
-	// 2. Build address from dogstatsd-specific environment variables.
-	// DD_AGENT_HOST is only used as a host fallback when DD_DOGSTATSD_HOST or
-	// DD_DOGSTATSD_PORT is set — on its own it does not trigger this path.
-	envHost := env.Get("DD_DOGSTATSD_HOST")
-	envPort := env.Get("DD_DOGSTATSD_PORT")
-	if envHost != "" || envPort != "" {
-		host := envHost
-		if host == "" {
-			host = env.Get("DD_AGENT_HOST")
-		}
-		if host == "" {
-			host = defaultHostname
-		}
-		// For the port, prefer the env var, then the agent-reported port
-		// (loaded from the trace-agent /info endpoint), then the default.
-		port := envPort
-		if port == "" && af.StatsdPort != 0 {
-			port = strconv.Itoa(af.StatsdPort)
-		} else if port == "" {
-			port = defaultStatsdPort
-		}
-		return net.JoinHostPort(host, port)
-	}
-
-	// 3. No user configuration at all — auto-discover.
-	// Check for the UDS socket first; this is the preferred transport when available.
-	if _, err := os.Stat(socketDSDPath); err == nil {
-		return "unix://" + socketDSDPath
-	}
-	// For TCP, use DD_AGENT_HOST as the hostname if available, otherwise localhost.
-	host := env.Get("DD_AGENT_HOST")
-	if host == "" {
-		host = defaultHostname
-	}
-	// Use the agent-reported port if available. Agent features are loaded from
-	// the trace-agent, which may not be running — in that case StatsdPort is 0.
-	if af.StatsdPort != 0 {
-		return net.JoinHostPort(host, strconv.Itoa(af.StatsdPort))
-	}
-	// Fall back to default port 8125.
-	return net.JoinHostPort(host, defaultStatsdPort)
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
