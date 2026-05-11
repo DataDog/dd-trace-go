@@ -10,7 +10,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -788,29 +787,9 @@ func (p *payloadV1) encodeSpanEventArrayValues(v *spanEventArrayAttributeValue, 
 func (p *payloadV1) traces() spanLists {
 	out := make(spanLists, 0, len(p.chunks))
 	for _, c := range p.chunks {
-		if len(c.spans) == 0 {
-			continue
+		if len(c.spans) > 0 {
+			out = append(out, c.spans)
 		}
-		for _, s := range c.spans {
-			if s == nil {
-				continue
-			}
-			s.traceID = binary.BigEndian.Uint64(c.traceID[8:16])
-			s.setMetric(keySamplingPriority, float64(c.priority))
-			if s.context == nil {
-				continue
-			}
-			s.context.origin = c.origin
-			s.context.trace.setPropagatingTag(keyDecisionMaker, strconv.Itoa(int(c.samplingMechanism)))
-			for k, v := range c.attributes {
-				if v.valueType == StringValueType {
-					s.setMeta(k, v.value.(string))
-				} else {
-					s.setMetric(k, v.value.(float64))
-				}
-			}
-		}
-		out = append(out, c.spans)
 	}
 	return out
 }
@@ -987,8 +966,20 @@ func decodeTestingPayload(buf []byte) (map[string]any, error) {
 	if len(p.attributes) > 0 {
 		out["10"] = p.attributes
 	}
-	if len(p.chunks) > 0 {
-		out["11"] = p.chunks
+	chunks := make([]any, len(p.chunks))
+	for i, c := range p.chunks {
+		spans := make([]any, len(c.spans))
+		for j, s := range c.spans {
+			sk, _ := s.meta.Get(ext.SpanKind)
+			spans[j] = map[string]any{
+				"1":  s.service,
+				"16": getSpanKindValue(sk),
+			}
+		}
+		chunks[i] = map[string]any{"4": spans}
+	}
+	if len(chunks) > 0 {
+		out["11"] = chunks
 	}
 	return out, nil
 }
