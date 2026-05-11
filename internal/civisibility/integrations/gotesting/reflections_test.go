@@ -61,6 +61,11 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseParallelForwardMetadataIsolation(t)
 	exerciseParallelForwardedDuplicateGate(t)
 	exerciseBenchmarkFuncInstrumentationConcurrentWrites(t)
+	// These pure instrumentation assertions run under this existing top-level test
+	// so the subprocess span-count scenarios do not gain extra test spans.
+	exerciseAdditionalFeaturePathSelection(t)
+	exerciseParallelEFDSelection(t)
+	exerciseMetadataOnlyPropagationSuppression(t)
 }
 
 // TestGetInternalTestArray tests the getInternalTestArray function.

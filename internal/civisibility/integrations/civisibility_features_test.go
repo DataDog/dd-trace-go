@@ -103,6 +103,48 @@ func TestUploadRepositoryChangesReusesInitialMissingCommitsWhenUnshallowIsUnavai
 	assert.Equal(t, []string{"remote-1"}, uploadedExcludes)
 }
 
+func TestUploadRepositoryChangesUsesHookSnapshot(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
+
+	uploadStarted := make(chan struct{})
+	uploadRelease := make(chan struct{})
+	getSearchCalls := 0
+
+	getSearchCommitsFunc = func() (*searchCommitsResponse, error) {
+		getSearchCalls++
+		if getSearchCalls == 1 {
+			close(uploadStarted)
+			<-uploadRelease
+			return newSearchCommitsResponse([]string{"local-1"}, nil, true), nil
+		}
+		return newSearchCommitsResponse([]string{"local-1"}, []string{"local-1"}, true), nil
+	}
+	unshallowGitRepositoryFunc = func() (bool, error) {
+		return true, nil
+	}
+	sendObjectsPackFileFunc = func(_ string, _ []string, _ []string) (int64, error) {
+		return 42, nil
+	}
+
+	done := make(chan struct{})
+	var bytes int64
+	var err error
+	go func() {
+		defer close(done)
+		bytes, err = uploadRepositoryChanges()
+	}()
+
+	<-uploadStarted
+	resetCIVisibilityStateForTesting()
+	close(uploadRelease)
+	<-done
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), bytes)
+	assert.Equal(t, 2, getSearchCalls)
+}
+
 func TestEnsureSettingsInitializationNilClientFactoryDoesNotStartUpload(t *testing.T) {
 	resetCIVisibilityStateForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)

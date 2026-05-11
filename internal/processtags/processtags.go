@@ -124,7 +124,7 @@ func Reload() {
 	pTags = &ProcessTags{}
 	tags := collect()
 	if len(tags) > 0 {
-		Add(tags)
+		add(tags)
 	}
 }
 
@@ -134,18 +134,32 @@ func collect() map[string]string {
 	if err != nil {
 		log.Debug("failed to get binary path: %s", err.Error())
 	} else {
-		baseDirName := filepath.Base(filepath.Dir(execPath))
 		tags[tagEntrypointName] = filepath.Base(execPath)
-		tags[tagEntrypointBasedir] = baseDirName
+		if baseDirName, ok := directoryTagValue(filepath.Dir(execPath)); ok {
+			tags[tagEntrypointBasedir] = baseDirName
+		}
 		tags[tagEntrypointType] = entrypointTypeExecutable
 	}
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Debug("failed to get working directory: %s", err.Error())
 	} else {
-		tags[tagEntrypointWorkdir] = filepath.Base(wd)
+		if workDirName, ok := directoryTagValue(wd); ok {
+			tags[tagEntrypointWorkdir] = workDirName
+		}
 	}
 	return tags
+}
+
+func directoryTagValue(dir string) (string, bool) {
+	if dir == "" {
+		return "", false
+	}
+	name := filepath.Base(dir)
+	if name == "" || name == "bin" || name == string(os.PathSeparator) {
+		return "", false
+	}
+	return name, true
 }
 
 // GlobalTags returns the global process tags.
@@ -156,8 +170,7 @@ func GlobalTags() *ProcessTags {
 	return pTags
 }
 
-// Add merges the given tags into the global processTags map.
-func Add(tags map[string]string) {
+func add(tags map[string]string) {
 	if !enabled {
 		return
 	}
