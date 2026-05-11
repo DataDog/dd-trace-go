@@ -970,11 +970,13 @@ func decodeTestingPayload(buf []byte) (map[string]any, error) {
 	for i, c := range p.chunks {
 		spans := make([]any, len(c.spans))
 		for j, s := range c.spans {
+			s.mu.RLock()
 			sk, _ := s.meta.Get(ext.SpanKind)
 			spans[j] = map[string]any{
 				"1":  s.service,
 				"16": getSpanKindValue(sk),
 			}
+			s.mu.RUnlock()
 		}
 		chunks[i] = map[string]any{"4": spans}
 	}
