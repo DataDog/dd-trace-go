@@ -68,6 +68,9 @@ func (w *coverageWriter) stop() {
 	log.Debug("coverageWriter: stopping writer")
 	w.flush()
 	w.wg.Wait()
+	if closer, ok := w.client.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
 }
 
 func (w *coverageWriter) flush() {

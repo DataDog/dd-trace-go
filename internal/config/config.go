@@ -61,6 +61,8 @@ type programmaticOverride struct {
 // Config represents global configuration properties.
 // Config instances should be obtained via Get() which always returns a non-nil value.
 // Methods on Config assume a non-nil receiver and will panic if called on nil.
+// Hot paths that read many fields within a single function should use a snapshot (see snapshots.go) to
+// avoid per-field RLock contention on the reader counter.
 type Config struct {
 	mu sync.RWMutex
 
@@ -90,7 +92,9 @@ type Config struct {
 	profilerEndpoints          bool
 	spanAttributeSchemaVersion int
 	peerServiceDefaultsEnabled bool
-	peerServiceMappings        map[string]string
+	// maxTagsHeaderLen is the size cap on the x-datadog-tags header value
+	maxTagsHeaderLen    int
+	peerServiceMappings map[string]string
 	// debugAbandonedSpans controls if the tracer should log when old, open spans are found
 	debugAbandonedSpans bool
 	// spanTimeout represents how old a span can be before it should be logged as a possible
@@ -248,6 +252,8 @@ func loadConfig() *Config {
 	if cfg.spanAttributeSchemaVersion >= 1 {
 		cfg.peerServiceDefaultsEnabled = true
 	}
+
+	cfg.maxTagsHeaderLen = resolveMaxTagsHeaderLen(p.GetInt("DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH", DefaultMaxTagsHeaderLen))
 
 	// AWS_LAMBDA_FUNCTION_NAME being set indicates that we're running in an AWS Lambda environment.
 	// See: https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
@@ -797,6 +803,15 @@ func (c *Config) SetServiceMapping(from, to string, origin telemetry.Origin, pro
 func (c *Config) SpanAttributeSchemaVersion() int {
 	c.mu.RLock()
 	v := c.spanAttributeSchemaVersion
+	c.mu.RUnlock()
+	return v
+}
+
+// MaxTagsHeaderLen returns the configured cap on the x-datadog-tags header value
+// (DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH). A non-positive value disables tags propagation.
+func (c *Config) MaxTagsHeaderLen() int {
+	c.mu.RLock()
+	v := c.maxTagsHeaderLen
 	c.mu.RUnlock()
 	return v
 }

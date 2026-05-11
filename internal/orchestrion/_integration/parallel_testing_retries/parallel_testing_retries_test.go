@@ -356,7 +356,7 @@ func scenariosByName() map[string]scenarioConfig {
 	return map[string]scenarioConfig{
 		"TestParallelWrapperNoRetry": {
 			testName:              "TestParallelWrapperNoRetry",
-			settings:              efdSettings(),
+			settings:              efdSettings(1),
 			knownTests:            knownTests("TestParallelWrapperNoRetry"),
 			expectedTestEvents:    1,
 			expectedSuiteEvents:   1,
@@ -372,7 +372,7 @@ func scenariosByName() map[string]scenarioConfig {
 		},
 		"TestParallelEFDSequential": {
 			testName:              "TestParallelEFDSequential",
-			settings:              efdSettings(),
+			settings:              efdSettings(1),
 			knownTests:            knownTests("TestKnownBaseline"),
 			expectedTestEvents:    2,
 			expectedSuiteEvents:   1,
@@ -389,20 +389,20 @@ func scenariosByName() map[string]scenarioConfig {
 		},
 		"TestParallelEFDParallel": {
 			testName:              "TestParallelEFDParallel",
-			settings:              efdSettings(),
+			settings:              efdSettings(2),
 			env:                   map[string]string{constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled: "true"},
 			knownTests:            knownTests("TestKnownBaseline"),
-			expectedTestEvents:    2,
+			expectedTestEvents:    3,
 			expectedSuiteEvents:   1,
 			expectedModuleEvents:  1,
 			expectedSessionEvents: 1,
-			expectedTotalEvents:   5,
-			expectedRetryEvents:   1,
+			expectedTotalEvents:   6,
+			expectedRetryEvents:   2,
 			retryReason:           constants.EarlyFlakeDetectionRetryReason,
 			validate: func(events civisibilitytest.Events, _ string) {
-				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 2)
-				events.CheckEventsWithoutTag(constants.TestFinalStatus, 2)
-				events.CheckEventsByTagAndValue(constants.TestIsNew, "true", 2)
+				events.CheckEventsByTagAndValue(constants.TestStatus, constants.TestStatusPass, 3)
+				events.CheckEventsWithoutTag(constants.TestFinalStatus, 3)
+				events.CheckEventsByTagAndValue(constants.TestIsNew, "true", 3)
 			},
 		},
 		"TestParallelFlakyRetry": {
@@ -566,11 +566,12 @@ func scenariosByName() map[string]scenarioConfig {
 	}
 }
 
-func efdSettings() civisibilitynet.SettingsResponseData {
+// efdSettings returns EFD settings with the requested retry count for tests shorter than five seconds.
+func efdSettings(fiveSecondRetries int) civisibilitynet.SettingsResponseData {
 	var settings civisibilitynet.SettingsResponseData
 	settings.KnownTestsEnabled = true
 	settings.EarlyFlakeDetection.Enabled = true
-	settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 1
+	settings.EarlyFlakeDetection.SlowTestRetries.FiveS = fiveSecondRetries
 	return settings
 }
 
