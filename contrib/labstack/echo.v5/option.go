@@ -29,7 +29,7 @@ type config struct {
 	translateError    func(err error) (*echo.HTTPError, bool)
 	headerTags        instrumentation.HeaderTags
 	errCheck          func(error) bool
-	tags              map[string]interface{}
+	tags              map[string]any
 	// echoInstance, when set (via Wrap), gives the middleware access to the
 	// configured [echo.Echo.HTTPErrorHandler] so AppSec error paths can honor
 	// custom error renderers instead of writing a hardcoded JSON body.
@@ -61,7 +61,7 @@ func defaults(cfg *config) {
 		cfg.isStatusError = isServerError
 	}
 	cfg.headerTags = instr.HTTPHeadersAsTags()
-	cfg.tags = make(map[string]interface{})
+	cfg.tags = make(map[string]any)
 	cfg.translateError = func(err error) (*echo.HTTPError, bool) {
 		var echoErr *echo.HTTPError
 		if errors.As(err, &echoErr) {
@@ -160,10 +160,10 @@ func WithErrorCheck(errCheck func(error) bool) OptionFn {
 
 // WithCustomTag will attach the value to the span tagged by the key. Standard
 // span tags cannot be replaced.
-func WithCustomTag(key string, value interface{}) OptionFn {
+func WithCustomTag(key string, value any) OptionFn {
 	return func(cfg *config) {
 		if cfg.tags == nil {
-			cfg.tags = make(map[string]interface{})
+			cfg.tags = make(map[string]any)
 		}
 		cfg.tags[key] = value
 	}
