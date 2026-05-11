@@ -103,9 +103,6 @@ const originHeader = "x-datadog-origin"
 // traceTagsHeader holds the propagated trace tags
 const traceTagsHeader = "x-datadog-tags"
 
-// propagationExtractMaxSize limits the total size of incoming propagated tags to parse
-const propagationExtractMaxSize = 512
-
 // PropagatorConfig defines the configuration for initializing a propagator.
 type PropagatorConfig struct {
 	// BaggagePrefix specifies the prefix that will be used to store baggage
@@ -539,7 +536,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 		case originHeader:
 			ctx.origin = v // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		case traceTagsHeader:
-			unmarshalPropagatingTags(&ctx, v)
+			unmarshalPropagatingTags(&ctx, v, p.cfg.MaxTagsHeaderLen)
 		default:
 			if after, ok := strings.CutPrefix(key, p.cfg.BaggagePrefix); ok {
 				ctx.setBaggageItem(after, v)
@@ -603,13 +600,18 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 	}
 }
 
-// unmarshalPropagatingTags unmarshals tags from v into ctx
-func unmarshalPropagatingTags(ctx *SpanContext, v string) {
+// unmarshalPropagatingTags unmarshals tags from v into ctx, dropping the
+// entire header if its length exceeds maxLen. A non-positive maxLen disables
+// extraction (mirroring the inject side).
+func unmarshalPropagatingTags(ctx *SpanContext, v string, maxLen int) {
 	if ctx.trace == nil {
 		ctx.trace = newTrace()
 	}
-	if len(v) > propagationExtractMaxSize {
-		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, propagationExtractMaxSize)
+	if maxLen <= 0 {
+		return
+	}
+	if len(v) > maxLen {
+		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, maxLen)
 		ctx.trace.setTag(keyPropagationError, "extract_max_size")
 		return
 	}

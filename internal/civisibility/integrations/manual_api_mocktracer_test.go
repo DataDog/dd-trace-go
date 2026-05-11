@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var mockTracer mocktracer.Tracer
@@ -108,7 +109,7 @@ func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
 	session.Close(0)
 
 	finishedSpans := mockTracer.FinishedSpans()
-	assert.NotEmpty(finishedSpans)
+	require.NotEmpty(t, finishedSpans)
 	spanTags := finishedSpans[0].Tags()
 
 	for key := range spanTags {

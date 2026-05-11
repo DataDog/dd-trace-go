@@ -11,11 +11,18 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internaltelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func resetCIVisibilityStateForTesting() {
+	stopCIVisibilitySignalHandler()
+
 	additionalFeaturesInitializationMu.Lock()
 	defer additionalFeaturesInitializationMu.Unlock()
+
+	// Payload-file tests can start a telemetry client that writes files
+	// asynchronously, so stop it before temporary output directories are cleaned.
+	internaltelemetry.StopApp()
 
 	settingsInitializationOnce = sync.Once{}
 	additionalFeaturesInitializationOnce = sync.Once{}
@@ -31,11 +38,14 @@ func resetCIVisibilityStateForTesting() {
 	ciVisibilityImpactedTestsAnalyzer = nil
 	sourceFileMetadataCache = sync.Map{}
 
-	uploadRepositoryChangesFunc = uploadRepositoryChanges
-	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
+	repositoryUploadHooksMu.Lock()
+	uploadRepositoryChangesFunc = nil
 	getSearchCommitsFunc = getSearchCommits
 	unshallowGitRepositoryFunc = utils.UnshallowGitRepository
 	sendObjectsPackFileFunc = sendObjectsPackFile
+	repositoryUploadHooksMu.Unlock()
+
+	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
 
 	utils.ResetCITags()
 	utils.ResetCIMetrics()

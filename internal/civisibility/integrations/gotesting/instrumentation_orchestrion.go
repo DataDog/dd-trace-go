@@ -227,7 +227,10 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 			cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
 			if cancelExecution {
-				checkModuleAndSuite(module, suite)
+				if !execMeta.hasAdditionalFeatureWrapper {
+					// Disabled fast-path subtests close their test event before normal finalization is registered.
+					checkModuleAndSuite(module, suite)
+				}
 				return
 			}
 
