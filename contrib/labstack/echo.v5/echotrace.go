@@ -26,17 +26,29 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageLabstackEchoV5)
 }
 
-// Wrap configures the provided [echo.Echo] and returns it. This is a
-// convenience function that:
+// Wrap configures the provided [echo.Echo] and returns it. It:
 //   - registers [Middleware] via [echo.Echo.Use],
 //   - sets [echo.Echo.OnAddRoute] to [OnAddRoute] for API Catalog reporting,
-//   - wraps [echo.Echo.Binder] to enable AppSec request-body monitoring.
+//   - lazily wraps [echo.Echo.Binder] on the first request, preserving any
+//     user-configured Binder as the inner delegate (see notes below).
 //
-// The Binder wrap is always applied so that AppSec body monitoring activates
-// correctly if AppSec is later enabled at runtime (e.g. via remote config).
-// When AppSec is disabled, the wrap is effectively a no-op.
+// AppSec body monitoring — differences with the echo.v4 integration:
 //
-// It is recommended to use this if you want to benefit from future tracer
+// In echo v4, AppSec wrapped the [echo.Context] interface at request time, so
+// it was independent of [echo.Echo.Binder] reassignment. [echo.Context] in
+// echo v5 is a concrete struct that cannot be wrapped, so AppSec must
+// intercept body parsing via [echo.Echo.Binder] instead. To preserve
+// flexibility, Wrap installs the AppSec Binder wrap lazily on the first
+// request: any custom Binder assigned to [echo.Echo.Binder] between Wrap and
+// the first request is captured as the inner delegate, and both run on every
+// Bind call (your Binder first, then AppSec monitoring).
+//
+// Caveat: reassigning [echo.Echo.Binder] after the first request has been
+// served will silently disable AppSec body monitoring. Echo itself forbids
+// mutating Echo instance fields after the server has started; this falls
+// under that same restriction.
+//
+// It is recommended to use Wrap if you want to benefit from future tracer
 // features that require additional properties to be configured without having
 // to update your code.
 func Wrap(e *echo.Echo, opts ...Option) *echo.Echo {
@@ -45,7 +57,9 @@ func Wrap(e *echo.Echo, opts ...Option) *echo.Echo {
 	opts = append([]Option{withEchoInstance(e)}, opts...)
 	e.Use(Middleware(opts...))
 	e.OnAddRoute = OnAddRoute
-	e.Binder = &appsecBinder{inner: e.Binder}
+	// Binder is intentionally NOT wrapped here. The wrap is applied lazily on
+	// the first request (see the per-request closure in Middleware) so that
+	// any user-configured Binder assigned after Wrap is still preserved.
 	return e
 }
 
@@ -72,6 +86,23 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
+			// Lazily install the AppSec Binder wrap on the first request. This
+			// preserves any user-set Binder assigned after Wrap as the inner
+			// delegate. Only Wrap sets cfg.echoInstance; Middleware used
+			// stand-alone (e.g. for scoped tracing) leaves it nil.
+			//
+			// Safety: sync.Once provides a happens-before barrier, and the
+			// echo middleware chain ensures no handler calls c.Bind() before
+			// our middleware runs for that request — so concurrent first
+			// requests synchronize correctly through bindOnce.
+			if cfg.echoInstance != nil {
+				cfg.bindOnce.Do(func() {
+					if _, ok := cfg.echoInstance.Binder.(*appsecBinder); !ok {
+						cfg.echoInstance.Binder = &appsecBinder{inner: cfg.echoInstance.Binder}
+					}
+				})
+			}
+
 			// If we have an ignoreRequestFunc, use it to see if we proceed with tracing
 			if cfg.ignoreRequestFunc != nil && cfg.ignoreRequestFunc(c) {
 				return next(c)

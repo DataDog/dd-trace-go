@@ -700,6 +700,56 @@ func TestWithErrorCheck(t *testing.T) {
 	}
 }
 
+// countingBinder is a test-only echo.Binder that records how many times
+// Bind was called on it. Used to assert that the lazy AppSec Binder wrap
+// preserves a user-configured Binder as the inner delegate.
+type countingBinder struct {
+	inner echo.Binder
+	count int
+}
+
+func (b *countingBinder) Bind(c *echo.Context, target any) error {
+	b.count++
+	return b.inner.Bind(c, target)
+}
+
+// TestWrapPreservesUserBinder verifies that assigning a custom Binder after
+// Wrap() does not silently disable it: the first request lazily wraps the
+// user's Binder as the inner delegate of the AppSec Binder wrap.
+func TestWrapPreservesUserBinder(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	e := echo.New()
+	custom := &countingBinder{inner: e.Binder}
+	Wrap(e)
+	e.Binder = custom // assigned AFTER Wrap — must still be reachable
+
+	type body struct {
+		Name string `json:"name"`
+	}
+	e.POST("/echo", func(c *echo.Context) error {
+		var b body
+		if err := c.Bind(&b); err != nil {
+			return err
+		}
+		return c.String(http.StatusOK, b.Name)
+	})
+
+	r := httptest.NewRequest("POST", "/echo", nil)
+	r.Body = http.NoBody
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	e.ServeHTTP(w, r)
+
+	require.Equal(t, 1, custom.count, "user-set Binder should still run after Wrap+reassignment")
+
+	// Sanity: e.Binder is now the AppSec wrap, and its inner is the user's binder.
+	wrapped, ok := e.Binder.(*appsecBinder)
+	require.True(t, ok, "expected e.Binder to be the AppSec wrap after first request")
+	require.Same(t, custom, wrapped.inner, "AppSec wrap must capture the user-set Binder")
+}
+
 func BenchmarkEchoWithTracing(b *testing.B) {
 	tracer.Start(tracer.WithLogger(testutils.DiscardLogger()))
 	defer tracer.Stop()

@@ -100,16 +100,28 @@ func (w *statusResponseWriter) Unwrap() http.ResponseWriter {
 }
 
 // appsecBinder wraps an echo.Binder to monitor parsed request bodies for AppSec.
-// In echo v5, Context is a struct (not an interface), so we can't override Bind()
-// on the context itself. Instead, we wrap the Binder at the Echo instance level.
+//
+// In echo v5, Context is a concrete struct (not an interface), so we cannot
+// override Bind() at the Context layer like the v4 integration did. The
+// Binder is the only hook point left for body interception, so AppSec wraps
+// it at the Echo instance level. The previously-installed Binder is captured
+// as `inner` and runs first on every Bind call; the chain is preserved so
+// users can keep their custom Binder logic.
+//
+// Breakage: this wrap is order-sensitive — if [echo.Echo.Binder] is reassigned
+// after the wrap has been installed (e.g. after the first request), the
+// captured `inner` is orphaned and AppSec body monitoring stops. Echo itself
+// forbids mutating instance fields after the server has started, so this
+// falls under the same restriction.
 type appsecBinder struct {
 	inner echo.Binder
 }
 
 func (b *appsecBinder) Bind(c *echo.Context, target any) error {
-	err := b.inner.Bind(c, target)
-	if err == nil {
-		err = appsec.MonitorParsedHTTPBody(c.Request().Context(), target)
+	if b.inner != nil {
+		if err := b.inner.Bind(c, target); err != nil {
+			return err
+		}
 	}
-	return err
+	return appsec.MonitorParsedHTTPBody(c.Request().Context(), target)
 }

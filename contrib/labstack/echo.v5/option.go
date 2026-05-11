@@ -8,6 +8,7 @@ package echo
 import (
 	"errors"
 	"math"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
@@ -32,8 +33,12 @@ type config struct {
 	tags              map[string]any
 	// echoInstance, when set (via Wrap), gives the middleware access to the
 	// configured [echo.Echo.HTTPErrorHandler] so AppSec error paths can honor
-	// custom error renderers instead of writing a hardcoded JSON body.
+	// custom error renderers instead of writing a hardcoded JSON body. It is
+	// also used to lazily install the AppSec Binder wrap on the first request
+	// (see Wrap for details).
 	echoInstance *echo.Echo
+	// bindOnce guards lazy installation of the AppSec Binder wrap.
+	bindOnce sync.Once
 }
 
 // Option describes options for the Echo.v5 integration.
