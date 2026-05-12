@@ -29,8 +29,10 @@ import (
 const scenarioEnv = "DD_FAILNOW_SCENARIO"
 
 var (
-	retryPassAttempts atomic.Int32
-	retryFailAttempts atomic.Int32
+	retryPassAttempts    atomic.Int32
+	retryFailAttempts    atomic.Int32
+	cleanupPanicAttempts atomic.Int32
+	cleanupFatalAttempts atomic.Int32
 )
 
 func TestMain(m *testing.M) {
@@ -58,6 +60,36 @@ func TestManualFailNowRetryPasses(t *testing.T) {
 
 func TestManualFailNowRetryFails(t *testing.T) {
 	runTestScenario(t, "test-failnow-retry-fails", "^TestManualFailNowRetryFailsFixture$")
+}
+
+func TestCleanupPanicRetryPasses(t *testing.T) {
+	runTestScenario(t, "test-cleanup-panic-retry-passes", "^TestCleanupPanicRetryPassesFixture$")
+}
+
+func TestCleanupFatalRetryPasses(t *testing.T) {
+	runTestScenario(t, "test-cleanup-fatal-retry-passes", "^TestCleanupFatalRetryPassesFixture$")
+}
+
+// TestCleanupSkipDoesNotRetry verifies cleanup skips stay skipped instead of
+// being converted into retryable failures.
+func TestCleanupSkipDoesNotRetry(t *testing.T) {
+	runTestScenario(t, "test-cleanup-skip-does-not-retry", "^TestCleanupSkipDoesNotRetryFixture$")
+}
+
+func TestCleanupRunsAfterParallelSubtest(t *testing.T) {
+	runTestScenario(t, "test-cleanup-after-parallel-subtest", "^TestCleanupRunsAfterParallelSubtestFixture$")
+}
+
+// TestParallelSubtestSchedulerSlotIsReleased verifies Datadog-managed retry
+// clones release their parent scheduler slot before waiting for parallel
+// subtests. With -parallel=1, failing to release that slot deadlocks the child
+// in testing.(*testState).waitParallel until the package timeout fires.
+func TestParallelSubtestSchedulerSlotIsReleased(t *testing.T) {
+	runSubprocess(t, "test-cleanup-after-parallel-subtest", "-test.run", "^TestCleanupRunsAfterParallelSubtestFixture$", "-test.parallel=1", "-test.timeout=5s")
+}
+
+func TestFlakyRetryGlobalBudget(t *testing.T) {
+	runTestScenario(t, "test-flaky-retry-global-budget", "^TestFlakyRetryGlobalBudgetFixture$")
 }
 
 func TestManualBenchmarkFailNow(t *testing.T) {
@@ -115,6 +147,54 @@ func TestManualFailNowRetryFailsFixture(t *testing.T) {
 	gt.FailNow()
 }
 
+func TestCleanupPanicRetryPassesFixture(t *testing.T) {
+	skipUnlessScenario(t, "test-cleanup-panic-retry-passes")
+	if cleanupPanicAttempts.Add(1) == 1 {
+		t.Cleanup(func() {
+			panic("cleanup panic")
+		})
+	}
+}
+
+func TestCleanupFatalRetryPassesFixture(t *testing.T) {
+	skipUnlessScenario(t, "test-cleanup-fatal-retry-passes")
+	if cleanupFatalAttempts.Add(1) == 1 {
+		t.Cleanup(func() {
+			t.Fatal("cleanup fatal")
+		})
+	}
+}
+
+// TestCleanupSkipDoesNotRetryFixture skips from cleanup while flaky retries are
+// enabled; a clean skip should not consume retry attempts or fail the process.
+func TestCleanupSkipDoesNotRetryFixture(t *testing.T) {
+	skipUnlessScenario(t, "test-cleanup-skip-does-not-retry")
+	t.Cleanup(func() {
+		t.Skip("cleanup skip")
+	})
+}
+
+func TestCleanupRunsAfterParallelSubtestFixture(t *testing.T) {
+	skipUnlessScenario(t, "test-cleanup-after-parallel-subtest")
+
+	var childFinished atomic.Bool
+	t.Cleanup(func() {
+		if !childFinished.Load() {
+			t.Fatal("cleanup ran before the parallel subtest completed")
+		}
+	})
+
+	gotesting.GetTest(t).Run("child", func(t *testing.T) {
+		gotesting.GetTest(t).Parallel()
+		childFinished.Store(true)
+	})
+}
+
+func TestFlakyRetryGlobalBudgetFixture(t *testing.T) {
+	skipUnlessScenario(t, "test-flaky-retry-global-budget")
+	gotesting.GetTest(t).Fail()
+}
+
 func BenchmarkManualFailNowFixture(b *testing.B) {
 	skipUnlessScenario(b, "benchmark-failnow")
 	gb := gotesting.GetBenchmark(b)
@@ -142,10 +222,17 @@ func BenchmarkManualFatalfFixture(b *testing.B) {
 func runScenario(m *testing.M) int {
 	scenario := os.Getenv(scenarioEnv)
 	settings := civisibilitynet.SettingsResponseData{}
-	if scenario == "test-failnow-retry-passes" || scenario == "test-failnow-retry-fails" {
+	if scenario == "test-failnow-retry-passes" || scenario == "test-failnow-retry-fails" ||
+		scenario == "test-cleanup-panic-retry-passes" || scenario == "test-cleanup-fatal-retry-passes" ||
+		scenario == "test-cleanup-skip-does-not-retry" || scenario == "test-cleanup-after-parallel-subtest" {
 		settings.FlakyTestRetriesEnabled = true
 		_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "2")
 		_ = os.Setenv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, "10")
+	}
+	if scenario == "test-flaky-retry-global-budget" {
+		settings.FlakyTestRetriesEnabled = true
+		_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "10")
+		_ = os.Setenv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, "1")
 	}
 	server, restore := startManualMockServer(settings)
 	defer restore()
@@ -247,6 +334,16 @@ func validateScenario(scenario string, spans []*mocktracer.Span, exitCode int) {
 		validateRetryPassScenario(spans, exitCode)
 	case "test-failnow-retry-fails":
 		validateRetryFailScenario(spans, exitCode)
+	case "test-cleanup-panic-retry-passes":
+		validateCleanupRetryPassScenario(spans, exitCode, "failnow_test.go.TestCleanupPanicRetryPassesFixture", "cleanup panic")
+	case "test-cleanup-fatal-retry-passes":
+		validateCleanupRetryPassScenario(spans, exitCode, "failnow_test.go.TestCleanupFatalRetryPassesFixture", "")
+	case "test-cleanup-skip-does-not-retry":
+		validateCleanupSkipDoesNotRetryScenario(spans, exitCode)
+	case "test-cleanup-after-parallel-subtest":
+		validateCleanupAfterParallelSubtestScenario(spans, exitCode)
+	case "test-flaky-retry-global-budget":
+		validateGlobalBudgetScenario(spans, exitCode)
 	default:
 		panic(fmt.Sprintf("unknown scenario %s", scenario))
 	}
@@ -316,6 +413,93 @@ func validateRetryFailScenario(spans []*mocktracer.Span, exitCode int) {
 	assertTagCount(testSpans, constants.TestIsRetry, "true", 2)
 	assertTagCount(testSpans, constants.TestRetryReason, constants.AutoTestRetriesRetryReason, 2)
 	assertTagCount(testSpans, constants.TestStatus, constants.TestStatusFail, 3)
+	assertTagCount(testSpans, constants.TestFinalStatus, constants.TestStatusFail, 1)
+	assertTagCount(testSpans, constants.TestHasFailedAllRetries, "true", 1)
+}
+
+func validateCleanupRetryPassScenario(spans []*mocktracer.Span, exitCode int, resource, expectedPanicMessage string) {
+	assertEqual("exit code", exitCode, 0)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSession, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestModule, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSuite, 1)
+
+	session := spansByType(spans, constants.SpanTypeTestSession)[0]
+	assertTag(session, constants.TestStatus, constants.TestStatusPass)
+	assertNumericTag(session, constants.TestCommandExitCode, 0)
+
+	testSpans := spansByResource(spansByType(spans, constants.SpanTypeTest), resource)
+	assertEqual("test span count", len(testSpans), 2)
+	assertTagCount(testSpans, constants.TestIsRetry, "true", 1)
+	assertTagCount(testSpans, constants.TestRetryReason, constants.AutoTestRetriesRetryReason, 1)
+	assertTagCount(testSpans, constants.TestStatus, constants.TestStatusFail, 1)
+	assertTagCount(testSpans, constants.TestStatus, constants.TestStatusPass, 1)
+	assertTagCount(testSpans, constants.TestFinalStatus, constants.TestStatusPass, 1)
+	assertTagCount(testSpans, constants.TestHasFailedAllRetries, "true", 0)
+	if expectedPanicMessage != "" {
+		for _, span := range testSpans {
+			if span.Tag(constants.TestStatus) == constants.TestStatusFail {
+				assertTag(span, ext.ErrorType, "panic")
+				assertTag(span, ext.ErrorMsg, expectedPanicMessage)
+				return
+			}
+		}
+		panic("expected one failed cleanup panic span")
+	}
+}
+
+func validateCleanupAfterParallelSubtestScenario(spans []*mocktracer.Span, exitCode int) {
+	assertEqual("exit code", exitCode, 0)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSession, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestModule, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSuite, 1)
+
+	session := spansByType(spans, constants.SpanTypeTestSession)[0]
+	assertTag(session, constants.TestStatus, constants.TestStatusPass)
+	assertNumericTag(session, constants.TestCommandExitCode, 0)
+
+	resource := "failnow_test.go.TestCleanupRunsAfterParallelSubtestFixture"
+	testSpans := spansByResource(spansByType(spans, constants.SpanTypeTest), resource)
+	assertEqual("test span count", len(testSpans), 1)
+	assertTag(testSpans[0], constants.TestStatus, constants.TestStatusPass)
+	assertTag(testSpans[0], constants.TestFinalStatus, constants.TestStatusPass)
+}
+
+// validateCleanupSkipDoesNotRetryScenario confirms cleanup Skip is reported as
+// a single skipped attempt even when flaky retries are available.
+func validateCleanupSkipDoesNotRetryScenario(spans []*mocktracer.Span, exitCode int) {
+	assertEqual("exit code", exitCode, 0)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSession, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestModule, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSuite, 1)
+
+	session := spansByType(spans, constants.SpanTypeTestSession)[0]
+	assertTag(session, constants.TestStatus, constants.TestStatusPass)
+	assertNumericTag(session, constants.TestCommandExitCode, 0)
+
+	resource := "failnow_test.go.TestCleanupSkipDoesNotRetryFixture"
+	testSpans := spansByResource(spansByType(spans, constants.SpanTypeTest), resource)
+	assertEqual("test span count", len(testSpans), 1)
+	assertTag(testSpans[0], constants.TestStatus, constants.TestStatusSkip)
+	assertTag(testSpans[0], constants.TestFinalStatus, constants.TestStatusSkip)
+	assertTagCount(testSpans, constants.TestIsRetry, "true", 0)
+}
+
+func validateGlobalBudgetScenario(spans []*mocktracer.Span, exitCode int) {
+	assertEqual("exit code", exitCode, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSession, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestModule, 1)
+	assertSpanTypeCount(spans, constants.SpanTypeTestSuite, 1)
+
+	session := spansByType(spans, constants.SpanTypeTestSession)[0]
+	assertTag(session, constants.TestStatus, constants.TestStatusFail)
+	assertNumericTag(session, constants.TestCommandExitCode, 1)
+
+	resource := "failnow_test.go.TestFlakyRetryGlobalBudgetFixture"
+	testSpans := spansByResource(spansByType(spans, constants.SpanTypeTest), resource)
+	assertEqual("test span count", len(testSpans), 2)
+	assertTagCount(testSpans, constants.TestIsRetry, "true", 1)
+	assertTagCount(testSpans, constants.TestRetryReason, constants.AutoTestRetriesRetryReason, 1)
+	assertTagCount(testSpans, constants.TestStatus, constants.TestStatusFail, 2)
 	assertTagCount(testSpans, constants.TestFinalStatus, constants.TestStatusFail, 1)
 	assertTagCount(testSpans, constants.TestHasFailedAllRetries, "true", 1)
 }

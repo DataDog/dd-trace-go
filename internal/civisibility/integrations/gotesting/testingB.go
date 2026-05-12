@@ -195,7 +195,7 @@ func hasCiVisibilityBenchmarkFunc(fn *runtime.Func) bool {
 
 // setCiVisibilityBenchmarkFunc tracks a *runtime.Func as instrumented benchmark.
 func setCiVisibilityBenchmarkFunc(fn *runtime.Func) {
-	civisibilityBenchmarksFuncsMutex.RLock()
-	defer civisibilityBenchmarksFuncsMutex.RUnlock()
+	civisibilityBenchmarksFuncsMutex.Lock()
+	defer civisibilityBenchmarksFuncsMutex.Unlock()
 	civisibilityBenchmarksFuncs[fn] = struct{}{}
 }

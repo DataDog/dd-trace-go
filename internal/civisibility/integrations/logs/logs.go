@@ -8,6 +8,7 @@ package logs
 import (
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -16,6 +17,9 @@ import (
 )
 
 var (
+	// logsMu protects process-wide log configuration and writer lifecycle state.
+	logsMu sync.Mutex
+
 	// logsWriterInstance is the singleton instance of logsWriter.
 	logsWriterInstance *logsWriter
 
@@ -30,6 +34,14 @@ var (
 )
 
 func IsEnabled() bool {
+	logsMu.Lock()
+	defer logsMu.Unlock()
+	return isEnabledLocked()
+}
+
+// isEnabledLocked reports whether CI Visibility logs are enabled.
+// logsMu must be held by the caller.
+func isEnabledLocked() bool {
 	if enabled == nil {
 		v, _, _ := stableconfig.Bool("DD_CIVISIBILITY_LOGS_ENABLED", false)
 		enabled = &v
@@ -40,7 +52,10 @@ func IsEnabled() bool {
 
 // Initialize initializes the logs writer for CI visibility.
 func Initialize(serviceName string) {
-	if !IsEnabled() || logsWriterInstance != nil {
+	logsMu.Lock()
+	defer logsMu.Unlock()
+
+	if !isEnabledLocked() || logsWriterInstance != nil {
 		return
 	}
 
@@ -54,17 +69,25 @@ func Initialize(serviceName string) {
 
 // Stop stops the logs writer and cleans up resources.
 func Stop() {
-	if !IsEnabled() || logsWriterInstance == nil {
+	logsMu.Lock()
+	if !isEnabledLocked() || logsWriterInstance == nil {
+		logsMu.Unlock()
 		return
 	}
 
-	logsWriterInstance.stop()
+	writer := logsWriterInstance
 	logsWriterInstance = nil
+	logsMu.Unlock()
+
+	writer.stop()
 }
 
 // WriteLog writes a log entry with the given message and tags.
 func WriteLog(testID uint64, moduleName string, suiteName string, testName string, message string, tags string) {
-	if !IsEnabled() || logsWriterInstance == nil {
+	logsMu.Lock()
+	defer logsMu.Unlock()
+
+	if !isEnabledLocked() || logsWriterInstance == nil {
 		return
 	}
 

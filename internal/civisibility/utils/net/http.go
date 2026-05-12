@@ -96,12 +96,31 @@ type RequestHandler struct {
 	Client *http.Client
 }
 
+// CloseIdleConnections closes idle connections owned by the request handler's
+// HTTP client. Active requests are left running by the standard library.
+func (rh *RequestHandler) CloseIdleConnections() {
+	if rh == nil || rh.Client == nil {
+		return
+	}
+	rh.Client.CloseIdleConnections()
+}
+
 // We copy the transport to avoid using the default one, as it might be
 // augmented with tracing and we don't want these calls to be recorded.
 // This also permits orchestrion to disable tracing on this client.
 // See https://golang.org/pkg/net/http/#DefaultTransport .
 // Except we use a higher timeout for this
 var defaultHTTPClient = createNewHTTPClient()
+
+// CloseIdleConnections closes idle connections owned by the shared CI
+// Visibility HTTP client. It is safe to call during shutdown after CI
+// Visibility components have finished sending their final payloads.
+func CloseIdleConnections() {
+	if defaultHTTPClient == nil {
+		return
+	}
+	defaultHTTPClient.CloseIdleConnections()
+}
 
 // createNewHTTPClient creates a new HTTP client with custom transport settings.
 func createNewHTTPClient() *http.Client {

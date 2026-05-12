@@ -7,6 +7,7 @@ package civisibility_failnow_retry
 
 import (
 	"os"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DataDog/orchestrion/runtime/built"
@@ -16,6 +17,13 @@ import (
 )
 
 var ciVisibilityPayloads *civisibilitytest.Payloads
+
+var (
+	// cleanupPanicAttempts tracks executions for the cleanup panic retry scenario.
+	cleanupPanicAttempts atomic.Int32
+	// cleanupFatalAttempts tracks executions for the cleanup fatal retry scenario.
+	cleanupFatalAttempts atomic.Int32
+)
 
 func TestMain(m *testing.M) {
 	if !built.WithOrchestrion {
@@ -43,6 +51,30 @@ func TestRetryFatalAlwaysFails(t *testing.T) {
 	t.Fatal("retry fatal")
 }
 
+func TestCleanupPanicRetryPasses(t *testing.T) {
+	attempt := cleanupPanicAttempts.Add(1)
+	t.Cleanup(func() {
+		if attempt == 1 {
+			panic("cleanup panic")
+		}
+	})
+}
+
+func TestCleanupFatalRetryPasses(t *testing.T) {
+	attempt := cleanupFatalAttempts.Add(1)
+	t.Cleanup(func() {
+		if attempt == 1 {
+			t.Fatal("cleanup fatal")
+		}
+	})
+}
+
+func TestCleanupSkipDoesNotRetry(t *testing.T) {
+	t.Cleanup(func() {
+		t.Skip("cleanup skip")
+	})
+}
+
 func TestAfterRetryFatal(t *testing.T) {}
 
 func validateRetryEvents(events civisibilitytest.Events) {
@@ -54,7 +86,7 @@ func validateRetryEvents(events civisibilitytest.Events) {
 	events.CheckEventsByType("test_module_end", 1)
 	events.CheckEventsByType("test_suite_end", 1)
 
-	testEvents := events.CheckEventsByType("test", 4)
+	testEvents := events.CheckEventsByType("test", 9)
 	retries := testEvents.
 		CheckEventsByResourceName("testing_test.go.TestRetryFatalAlwaysFails", 3).
 		CheckEventsByTagAndValue("test.status", "fail", 3).
@@ -64,9 +96,31 @@ func validateRetryEvents(events civisibilitytest.Events) {
 	retries.CheckEventsByTagAndValue("test.retry_reason", "auto_test_retry", 2)
 	retries.CheckEventsByTagAndValue("test.has_failed_all_retries", "true", 1)
 	retries.CheckEventsByTagAndValue("test.final_status", "fail", 1)
+	cleanupPanic := testEvents.
+		CheckEventsByResourceName("testing_test.go.TestCleanupPanicRetryPasses", 2)
+	cleanupPanic.CheckEventsByTagAndValue("test.status", "fail", 1).
+		CheckEventsByTagAndValue("error.type", "panic", 1).
+		CheckEventsByTagAndValue("error.message", "cleanup panic", 1)
+	cleanupPanic.CheckEventsByTagAndValue("test.status", "pass", 1).
+		CheckEventsByTagAndValue("test.final_status", "pass", 1)
+	cleanupPanic.CheckEventsByTagAndValue("test.is_retry", "true", 1)
+	cleanupPanic.CheckEventsByTagAndValue("test.retry_reason", "auto_test_retry", 1)
+	cleanupFatal := testEvents.
+		CheckEventsByResourceName("testing_test.go.TestCleanupFatalRetryPasses", 2)
+	cleanupFatal.CheckEventsByTagAndValue("test.status", "fail", 1)
+	cleanupFatal.CheckEventsByTagAndValue("test.status", "pass", 1).
+		CheckEventsByTagAndValue("test.final_status", "pass", 1)
+	cleanupFatal.CheckEventsByTagAndValue("test.is_retry", "true", 1)
+	cleanupFatal.CheckEventsByTagAndValue("test.retry_reason", "auto_test_retry", 1)
+	cleanupSkip := testEvents.
+		CheckEventsByResourceName("testing_test.go.TestCleanupSkipDoesNotRetry", 1).
+		CheckEventsByTagAndValue("test.status", "skip", 1).
+		CheckEventsByTagAndValue("test.final_status", "skip", 1).
+		CheckEventsWithoutTag("test.is_retry", 1).
+		CheckEventsWithoutTag("test.retry_reason", 1)
 	after := testEvents.
 		CheckEventsByResourceName("testing_test.go.TestAfterRetryFatal", 1).
 		CheckEventsByTagAndValue("test.status", "pass", 1)
 
-	testEvents.Except(retries, after).HasCount(0)
+	testEvents.Except(retries, cleanupPanic, cleanupFatal, cleanupSkip, after).HasCount(0)
 }
