@@ -145,6 +145,11 @@ jobs:
   lint:
     runs-on:
       group: "APM Larger Runners"
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      checks: write
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -173,10 +178,17 @@ jobs:
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
 
+      - name: Get GitHub Token via dd-octo-sts
+        id: generate-token
+        uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.static-checks-shellcheck
+
       - name: shellcheck
         uses: reviewdog/action-shellcheck@4c07458293ac342d477251099501a718ae5ef86e # v1.32.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ steps.generate-token.outputs.token }}
           reporter: github-pr-review
           fail_level: error
           path: ./scripts

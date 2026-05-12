@@ -13,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 )
 
 var (
@@ -73,7 +71,6 @@ func (ddb *B) Fail() { ddb.getBWithError("Fail", "failed test").Fail() }
 // those other goroutines.
 func (ddb *B) FailNow() {
 	b := ddb.getBWithError("FailNow", "failed test")
-	integrations.ExitCiVisibility()
 	b.FailNow()
 }
 
@@ -198,7 +195,7 @@ func hasCiVisibilityBenchmarkFunc(fn *runtime.Func) bool {
 
 // setCiVisibilityBenchmarkFunc tracks a *runtime.Func as instrumented benchmark.
 func setCiVisibilityBenchmarkFunc(fn *runtime.Func) {
-	civisibilityBenchmarksFuncsMutex.RLock()
-	defer civisibilityBenchmarksFuncsMutex.RUnlock()
+	civisibilityBenchmarksFuncsMutex.Lock()
+	defer civisibilityBenchmarksFuncsMutex.Unlock()
 	civisibilityBenchmarksFuncs[fn] = struct{}{}
 }

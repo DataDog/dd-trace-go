@@ -72,21 +72,24 @@ func computeAdjustedRetryCount(execMeta *testExecutionMetadata, duration time.Du
 }
 
 // willRetryAfterExecution mirrors postShouldRetry logic to determine if another retry
-// will happen after the current execution.
-func willRetryAfterExecution(failed bool, execMeta *testExecutionMetadata, remainingRetries int64, remainingBudget int64) bool {
+// will happen after the current execution. The skipped state is needed because
+// clean skipped EFD executions are terminal even when retry budget remains.
+func willRetryAfterExecution(failed, skipped bool, execMeta *testExecutionMetadata, remainingRetries int64, remainingBudget int64) bool {
 	if execMeta.isAttemptToFix && execMeta.shouldOrchestrateAttemptToFix {
 		// For attempt-to-fix tests, retry if remaining retries > 0.
 		return remainingRetries > 0
 	}
 
 	if isAnEfdExecution(execMeta) {
-		// For EFD, retry if remaining retries >= 0.
-		return remainingRetries >= 0
+		// For EFD, retry executions that are not clean skips.
+		cleanSkip := skipped && !failed
+		return !cleanSkip && remainingRetries >= 0
 	}
 
 	if execMeta.isFlakyTestRetriesEnabled {
-		// For flaky test retries, retry if the test failed and remaining retries >= 0.
-		return failed && remainingRetries >= 0 && remainingBudget >= 0
+		// For flaky test retries, the per-test retry counter and global retry
+		// budget must both reserve a retry before another attempt can run.
+		return failed && remainingRetries >= 0 && remainingBudget > 0
 	}
 
 	// No retries for other cases.
@@ -140,6 +143,6 @@ func isFinalExecution(failed, skipped bool, execMeta *testExecutionMetadata, dur
 	}
 
 	// Check if another retry would happen.
-	willRetry := willRetryAfterExecution(failed, execMeta, remainingRetries, remainingBudget)
+	willRetry := willRetryAfterExecution(failed, skipped, execMeta, remainingRetries, remainingBudget)
 	return !willRetry
 }
