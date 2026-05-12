@@ -12,14 +12,17 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 type traceWriter interface {
@@ -99,7 +102,30 @@ func (h *agentTraceWriter) stop() {
 
 // newPayload returns a new payload based on the trace protocol.
 func (h *agentTraceWriter) newPayload() payload {
-	return newPayload(h.config.internalConfig.TraceProtocol())
+	payload := newPayload(h.config.internalConfig.TraceProtocol())
+	if payload.protocol() == traceProtocolV04 {
+		return payload
+	}
+	// pre-allocate payloadV1 with field values
+	payloadV1 := payload.(*safePayload).p.(*payloadV1)
+	payloadV1.SetLanguageName("go")
+	payloadV1.SetLanguageVersion(runtime.Version())
+	payloadV1.SetTracerVersion(version.Tag)
+	payloadV1.SetRuntimeID(globalconfig.RuntimeID())
+	if v := h.config.internalConfig.Env(); v != "" {
+		payloadV1.SetEnv(v)
+	}
+	if v := h.config.internalConfig.Hostname(); v != "" {
+		payloadV1.SetHostname(v)
+	}
+	if v := h.config.internalConfig.Version(); v != "" {
+		payloadV1.SetAppVersion(v)
+	}
+	if cid := globalinternal.ContainerID(); cid != "" {
+		payloadV1.SetContainerID(cid)
+	}
+
+	return payload
 }
 
 // flush will push any currently buffered traces to the server.
