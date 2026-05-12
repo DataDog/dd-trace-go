@@ -295,6 +295,7 @@ func (p *payloadV1) clear() {
 	p.staticBufLen = 0
 	p.chunksCountOff = 0
 	p.chunks = p.chunks[:0]
+	clear(p.attributes)
 	atomic.StoreUint32(&p.fields, 0)
 	atomic.StoreUint32(&p.count, 0)
 }
