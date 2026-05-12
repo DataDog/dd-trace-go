@@ -645,7 +645,7 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 	return true, nil
 }
 
-// translate a span kind string to its uint32 value
+// translate a span kind string to its uint32 value.
 func getSpanKindValue(sk string) uint32 {
 	switch sk {
 	case ext.SpanKindInternal:
@@ -925,6 +925,20 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 			err = fmt.Errorf("unexpected field ID %d", idx)
 		}
 		fieldCount++
+	}
+
+	for _, c := range p.chunks {
+		if len(c.traceID) >= 16 {
+			c.spans[0].traceID = binary.BigEndian.Uint64(c.traceID[8:16])
+		}
+		for _, s := range c.spans {
+			if p.languageName != "" {
+				s.SetTag("language", p.languageName)
+			}
+			if len(p.attributes) > 0 {
+				s.SetTag("_dd.tags.process", p.attributes[keyProcessTags].value)
+			}
+		}
 	}
 	return o, err
 }

@@ -315,7 +315,7 @@ func TestInvalidAgentURL(t *testing.T) {
 	// invalid socket URL
 	t.Setenv("DD_TRACE_AGENT_URL", "var/run/datadog/apm.socket")
 	tp := new(log.RecordLogger)
-	tracer, err := newTracer(WithLogger(tp))
+	tracer, err := newTracer(WithLogger(tp), withNoopInfoHTTPClient())
 	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
@@ -333,7 +333,7 @@ func TestAgentURLConflict(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
 	tp := new(log.RecordLogger)
-	tracer, err := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"))
+	tracer, err := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"), withNoopInfoHTTPClient())
 	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
