@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testing.T) {
@@ -50,6 +51,10 @@ func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDis
 	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, true, true))
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+	// Registered after TempDir so it executes before TempDir's RemoveAll (LIFO).
+	// Drains the async Flush goroutine started by telemetry.StartApp, preventing
+	// a race where that goroutine writes to payloads/telemetry while RemoveAll runs.
+	t.Cleanup(telemetry.StopApp)
 	bazel.ResetForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
 
