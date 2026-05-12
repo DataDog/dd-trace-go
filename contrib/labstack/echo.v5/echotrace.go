@@ -60,7 +60,19 @@ func Wrap(e *echo.Echo, opts ...Option) *echo.Echo {
 	// override it (only Wrap should set this).
 	opts = append([]Option{withEchoInstance(e)}, opts...)
 	e.Use(Middleware(opts...))
-	e.OnAddRoute = OnAddRoute
+	// Chain OnAddRoute with any user-set callback so we don't silently
+	// overwrite the user's hook. The user's callback runs first; if it
+	// returns an error, route registration aborts and ours is skipped.
+	if prev := e.OnAddRoute; prev != nil {
+		e.OnAddRoute = func(r echo.Route) error {
+			if err := prev(r); err != nil {
+				return err
+			}
+			return OnAddRoute(r)
+		}
+	} else {
+		e.OnAddRoute = OnAddRoute
+	}
 	// Binder is intentionally NOT wrapped here. The wrap is applied lazily on
 	// the first request (see the per-request closure in Middleware) so that
 	// any user-configured Binder assigned after Wrap is still preserved.

@@ -760,6 +760,45 @@ func TestWrapWiresOnAddRoute(t *testing.T) {
 	require.NotNil(t, e.OnAddRoute, "Wrap must set e.OnAddRoute")
 }
 
+// TestWrapChainsOnAddRoute asserts that a user-set OnAddRoute callback is
+// preserved by Wrap and runs before ours on every route registration.
+func TestWrapChainsOnAddRoute(t *testing.T) {
+	var userCalls int
+	e := echo.New()
+	e.OnAddRoute = func(_ echo.Route) error {
+		userCalls++
+		return nil
+	}
+	Wrap(e)
+	e.GET("/a", func(c *echo.Context) error { return c.NoContent(200) })
+	e.GET("/b", func(c *echo.Context) error { return c.NoContent(200) })
+	require.Equal(t, 2, userCalls, "user-set OnAddRoute must still run for every registered route")
+}
+
+// TestWrapOnAddRouteChainShortCircuitsOnUserError asserts that when the
+// user-set OnAddRoute returns an error, our callback is not invoked and the
+// error propagates to the route registration.
+func TestWrapOnAddRouteChainShortCircuitsOnUserError(t *testing.T) {
+	telemetry := testutils.StartTelemetryRecorder(t)
+
+	wantErr := errors.New("user rejected route")
+	e := echo.New()
+	e.OnAddRoute = func(_ echo.Route) error {
+		return wantErr
+	}
+	Wrap(e)
+	// Echo panics on AddRoute failure; assert the error message contains ours.
+	defer func() {
+		r := recover()
+		require.NotNil(t, r)
+		require.Contains(t, fmt.Sprint(r), wantErr.Error())
+	}()
+	e.GET("/should-fail", func(c *echo.Context) error { return c.NoContent(200) })
+	// If we get here, registration unexpectedly succeeded. The defer above
+	// won't observe a panic, so the test fails via require.NotNil(t, r=nil).
+	require.Nil(t, telemetry.AppEndpoints, "our OnAddRoute should not have recorded the route")
+}
+
 func BenchmarkEchoWithTracing(b *testing.B) {
 	tracer.Start(tracer.WithLogger(testutils.DiscardLogger()))
 	defer tracer.Stop()
