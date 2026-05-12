@@ -2172,6 +2172,9 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
+
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCD", v)
 		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
@@ -2191,6 +2194,9 @@ func TestGitMetadata(t *testing.T) {
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
+
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
 
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCD", v)
@@ -2216,6 +2222,9 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
+
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCDE", v)
 		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
@@ -2235,6 +2244,9 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
+
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCDE", v)
 		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
@@ -2253,6 +2265,9 @@ func TestGitMetadata(t *testing.T) {
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
+
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
 
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCD", v)
@@ -2275,6 +2290,9 @@ func TestGitMetadata(t *testing.T) {
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
+
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
 
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Empty(v)
