@@ -932,6 +932,9 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 			c.spans[0].traceID = binary.BigEndian.Uint64(c.traceID[8:16])
 		}
 		for _, s := range c.spans {
+			if s == nil {
+				continue
+			}
 			if p.languageName != "" {
 				s.SetTag("language", p.languageName)
 			}
