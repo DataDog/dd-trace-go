@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	ddinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -31,6 +34,79 @@ func TestTracerStop(t *testing.T) {
 	if _, ok := tr.(*tracer.NoopTracer); !ok {
 		t.Errorf("tracer is not a NoopTracer: %T", tr)
 	}
+}
+
+func TestStartCIVisibilityRouting(t *testing.T) {
+	tests := []struct {
+		name       string
+		envValue   string
+		state      civisibility.State
+		testMode   bool
+		wantCIType bool
+	}{
+		{
+			name:       "enabled env with uninitialized state selects CI Visibility mock tracer",
+			envValue:   "true",
+			state:      civisibility.StateUninitialized,
+			wantCIType: true,
+		},
+		{
+			name:       "disabled env with initialized state selects CI Visibility mock tracer",
+			envValue:   "false",
+			state:      civisibility.StateInitialized,
+			wantCIType: true,
+		},
+		{
+			name:     "disabled env with uninitialized state selects plain mock tracer",
+			envValue: "false",
+			state:    civisibility.StateUninitialized,
+		},
+		{
+			name:     "disabled env with exited state selects plain mock tracer",
+			envValue: "false",
+			state:    civisibility.StateExited,
+		},
+		{
+			name:     "test mode selects plain mock tracer even when CI Visibility state is initialized",
+			envValue: "false",
+			state:    civisibility.StateInitialized,
+			testMode: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetCIVisibilityMockTracerTestState(t)
+			t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, tt.envValue)
+			civisibility.SetState(tt.state)
+			if tt.testMode {
+				civisibility.SetTestMode()
+			}
+
+			mt := Start()
+			if tt.wantCIType {
+				assert.IsType(t, (*civisibilitymocktracer)(nil), mt)
+				return
+			}
+			assert.IsType(t, (*mocktracer)(nil), mt)
+		})
+	}
+}
+
+func resetCIVisibilityMockTracerTestState(t *testing.T) {
+	t.Helper()
+
+	civisibility.ResetForTesting()
+	setGlobalNoopTracer()
+	t.Cleanup(func() {
+		setGlobalNoopTracer()
+		civisibility.ResetForTesting()
+	})
+}
+
+func setGlobalNoopTracer() {
+	var noop tracer.Tracer = &tracer.NoopTracer{}
+	ddinternal.SetGlobalTracer(noop)
 }
 
 func TestTracerStartSpan(t *testing.T) {

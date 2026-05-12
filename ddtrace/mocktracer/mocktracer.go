@@ -19,9 +19,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	utils "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
@@ -61,7 +60,7 @@ type Tracer interface {
 // to activate the mock tracer. When your test runs, use the returned
 // interface to query the tracer's state.
 func Start() Tracer {
-	if utils.BoolEnv(constants.CIVisibilityEnabledEnvironmentVariable, false) && !civisibility.IsTestMode() {
+	if ciVisibilityActiveForMockTracer() && !civisibility.IsTestMode() {
 		// If CI Visibility is enabled (and we are not in a CI Visibility testing mode), we need to use the CIVisibilityMockTracer
 		// to bypass the CI Visibility spans from the mocktracer.
 		// This supports the scenario where the mocktracer is used in a test (we need to keep reporting test spans)
@@ -74,6 +73,21 @@ func Start() Tracer {
 	var t tracer.Tracer = newMockTracer()
 	internal.SetGlobalTracer(t)
 	return t.(Tracer)
+}
+
+// ciVisibilityActiveForMockTracer reports whether Start should preserve CI Visibility spans.
+func ciVisibilityActiveForMockTracer() bool {
+	mode, ok := envconfig.FromEnv()
+	if ok && envconfig.Enabled(mode) {
+		return true
+	}
+
+	switch civisibility.GetState() {
+	case civisibility.StateInitializing, civisibility.StateInitialized, civisibility.StateExiting:
+		return true
+	default:
+		return false
+	}
 }
 
 func getGlobalTracer() tracer.Tracer {
