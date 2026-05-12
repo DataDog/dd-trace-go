@@ -1,0 +1,11 @@
+issuer: https://token.actions.githubusercontent.com
+
+subject_pattern: "repo:DataDog/dd-trace-go:ref:refs/heads/dependabot/.*"
+
+claim_pattern:
+  event_name: push
+  repository: DataDog/dd-trace-go
+  job_workflow_ref: DataDog/dd-trace-go/\.github/workflows/sync-cue-actions\.yml@refs/heads/dependabot/.+
+
+permissions:
+  contents: write
