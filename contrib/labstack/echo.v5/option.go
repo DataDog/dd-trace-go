@@ -7,7 +7,9 @@ package echo
 
 import (
 	"errors"
+	"fmt"
 	"math"
+	"strings"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -39,6 +41,54 @@ type config struct {
 	echoInstance *echo.Echo
 	// bindOnce guards lazy installation of the AppSec Binder wrap.
 	bindOnce sync.Once
+}
+
+// String renders a debug-friendly view of the user-visible configuration,
+// hiding internal plumbing (echoInstance, bindOnce) and turning function
+// fields into a simple "set"/"unset" indicator. This is what appears in
+// Debug logs that format the config via %v / %s.
+func (c *config) String() string {
+	if c == nil {
+		return "<nil>"
+	}
+	setOrUnset := func(isSet bool) string {
+		if isSet {
+			return "set"
+		}
+		return "unset"
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "{serviceName:%q serviceSource:%q analyticsRate:%v noDebugStack:%v",
+		c.serviceName, c.serviceSource, c.analyticsRate, c.noDebugStack)
+	fmt.Fprintf(&sb, " ignoreRequestFunc:%s isStatusError:%s translateError:%s errCheck:%s",
+		setOrUnset(c.ignoreRequestFunc != nil),
+		setOrUnset(c.isStatusError != nil),
+		setOrUnset(c.translateError != nil),
+		setOrUnset(c.errCheck != nil))
+	sb.WriteString(" headerTags:")
+	formatHeaderTags(&sb, c.headerTags)
+	fmt.Fprintf(&sb, " tags:%v}", c.tags)
+	return sb.String()
+}
+
+// formatHeaderTags renders a [instrumentation.HeaderTags] as a map-style
+// "header→tag" listing for debug logs, avoiding the noisy internal struct
+// representation that the default %v formatter would produce.
+func formatHeaderTags(sb *strings.Builder, ht instrumentation.HeaderTags) {
+	if ht == nil {
+		sb.WriteString("nil")
+		return
+	}
+	sb.WriteByte('{')
+	first := true
+	ht.Iter(func(header, tag string) {
+		if !first {
+			sb.WriteByte(' ')
+		}
+		fmt.Fprintf(sb, "%s→%s", header, tag)
+		first = false
+	})
+	sb.WriteByte('}')
 }
 
 // Option describes options for the Echo.v5 integration.
