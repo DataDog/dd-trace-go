@@ -6,6 +6,7 @@
 package mocktracer
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -34,6 +35,9 @@ func newCIVisibilityMockTracerTestServer(t *testing.T) *ciVisibilityMockTracerTe
 
 	server := new(ciVisibilityMockTracerTestServer)
 	server.handler = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+
 		server.mu.Lock()
 		server.paths = append(server.paths, r.URL.Path)
 		server.mu.Unlock()
@@ -64,13 +68,17 @@ func setupCIVisibilityMockTracerIntegrationTest(t *testing.T, useNoop bool) *ciV
 	t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL())
 	t.Setenv(constants.APIKeyEnvironmentVariable, "dummy")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
-	t.Cleanup(func() {
-		civisibility.SetState(civisibility.StateExiting)
-		tracer.Stop()
-		civisibility.ResetForTesting()
-		setGlobalNoopTracer()
-	})
+	t.Cleanup(stopCIVisibilityMockTracerIntegrationTest)
 	return server
+}
+
+// stopCIVisibilityMockTracerIntegrationTest shuts down CI Visibility through the
+// same global tracer path used by these tests and waits for pending uploads.
+func stopCIVisibilityMockTracerIntegrationTest() {
+	civisibility.SetState(civisibility.StateExiting)
+	tracer.Stop()
+	civisibility.ResetForTesting()
+	setGlobalNoopTracer()
 }
 
 func boolString(v bool) string {
@@ -83,9 +91,10 @@ func boolString(v bool) string {
 func requireTestCycleRequest(t *testing.T, server *ciVisibilityMockTracerTestServer) {
 	t.Helper()
 
+	stopCIVisibilityMockTracerIntegrationTest()
 	require.Eventually(t, func() bool {
 		return server.hasPath("/api/v2/citestcycle")
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 type countingTracer struct {
