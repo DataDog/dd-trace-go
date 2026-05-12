@@ -229,6 +229,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_SAMPLING_RULES":                                         {},
 	"DD_TRACE_SAMPLING_RULES_FILE":                                    {},
 	"DD_TRACE_SARAMA_ANALYTICS_ENABLED":                               {},
+	"DD_TRACE_SECURE_RANDOM":                                          {},
 	"DD_TRACE_SOURCE_HOSTNAME":                                        {},
 	"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":                                  {},
 	"DD_TRACE_SQL_ANALYTICS_ENABLED":                                  {},
