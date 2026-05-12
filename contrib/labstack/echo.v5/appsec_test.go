@@ -689,3 +689,44 @@ func TestOnAddRoute(t *testing.T) {
 		assert.Equal(t, map[string]map[string][]instrumentation.AppEndpointAttributes{"http.request": expectedRoutes}, telemetry.AppEndpoints)
 	})
 }
+
+// TestAppSecDispatchesCustomHTTPErrorHandler verifies that, when a handler
+// returns a non-blocking error under AppSec, the user-configured
+// echo.Echo.HTTPErrorHandler is invoked from the AppSec middleware so custom
+// error renderers are honored (regression coverage for the dispatch path
+// introduced when c.Error() was removed in echo v5).
+func TestAppSecDispatchesCustomHTTPErrorHandler(t *testing.T) {
+	testutils.StartAppSec(t)
+
+	const wantBody = "custom-error-renderer\n"
+	var called int
+
+	e := Wrap(echo.New())
+	e.HTTPErrorHandler = func(c *echo.Context, _ error) {
+		called++
+		// Mirror the convention used by echo.DefaultHTTPErrorHandler: do not
+		// write again if the response is already committed (echo may invoke
+		// HTTPErrorHandler a second time after we return the wrapped error
+		// from the middleware chain).
+		if r, err := echo.UnwrapResponse(c.Response()); err == nil && r.Committed {
+			return
+		}
+		_ = c.String(http.StatusInternalServerError, wantBody)
+	}
+	e.GET("/err", func(_ *echo.Context) error {
+		return errors.New("boom")
+	})
+
+	srv := httptest.NewServer(e)
+	defer srv.Close()
+
+	res, err := srv.Client().Get(srv.URL + "/err")
+	require.NoError(t, err)
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusInternalServerError, res.StatusCode)
+	require.Equal(t, wantBody, string(body), "response must be rendered by the user's HTTPErrorHandler")
+	require.GreaterOrEqual(t, called, 1, "custom HTTPErrorHandler must be invoked at least once")
+}
