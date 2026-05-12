@@ -935,10 +935,9 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 			if len(c.traceID) < 16 {
 				continue
 			}
-			span := c.spans[0]
-			span.mu.Lock()
-			span.traceID = binary.BigEndian.Uint64(c.traceID[8:16])
-			span.mu.Unlock()
+			s.mu.Lock()
+			s.traceID = binary.BigEndian.Uint64(c.traceID[8:16])
+			s.mu.Unlock()
 			if p.languageName != "" {
 				s.SetTag("language", p.languageName)
 			}
@@ -1445,7 +1444,9 @@ func (span *Span) decode(b []byte, st *stringTable) ([]byte, error) {
 			if err != nil {
 				return o, err
 			}
-			span.SetTag(ext.SpanKind, getSpanKindString(sk))
+			if sk != 0 {
+				span.SetTag(ext.SpanKind, getSpanKindString(sk))
+			}
 		default:
 			return o, fmt.Errorf("unexpected field ID %d", idx)
 		}
