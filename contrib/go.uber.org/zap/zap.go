@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023-present Datadog, Inc.
 
-// Package ddzap provides Datadog trace/log correlation helpers for go.uber.org/zap.
+// Package zap provides Datadog trace/log correlation helpers for go.uber.org/zap.
 //
 // # Manual use
 //
@@ -19,8 +19,8 @@
 //
 // When built with Orchestrion, call sites of (*zap.Logger) and (*zap.SugaredLogger)
 // log methods are automatically rewritten to inject trace fields whenever a
-// context.Context (or *http.Request) is in scope.
-package ddzap
+// context.Context or any value with a Context() method (e.g. *http.Request) is in scope.
+package zap
 
 import (
 	"context"
