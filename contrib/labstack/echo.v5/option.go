@@ -167,6 +167,10 @@ func WithErrorCheck(errCheck func(error) bool) OptionFn {
 // span tags cannot be replaced.
 func WithCustomTag(key string, value any) OptionFn {
 	return func(cfg *config) {
+		// The nil check is redundant in practice because defaults() always
+		// initializes cfg.tags. It is kept here for parity with the echo.v4
+		// integration and as defensive coding against future refactors of
+		// defaults() that might drop the eager allocation.
 		if cfg.tags == nil {
 			cfg.tags = make(map[string]any)
 		}
