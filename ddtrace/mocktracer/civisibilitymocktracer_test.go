@@ -19,6 +19,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	internaltelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,6 +63,7 @@ func setupCIVisibilityMockTracerIntegrationTest(t *testing.T, useNoop bool) *ciV
 	t.Helper()
 
 	resetCIVisibilityMockTracerTestState(t)
+	t.Cleanup(internaltelemetry.MockClient(new(telemetrytest.RecordClient)))
 	server := newCIVisibilityMockTracerTestServer(t)
 	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "parent")
 	t.Setenv(constants.CIVisibilityUseNoopTracer, boolString(useNoop))
