@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -59,7 +58,6 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "profiling_endpoints_enabled", Value: c.internalConfig.ProfilerEndpoints()},
 		{Name: "debug_stack_enabled", Value: c.internalConfig.DebugStack()},
 		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspotsEnabled()},
-		{Name: "trace_span_attribute_schema", Value: c.spanAttributeSchemaVersion},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.internalConfig.PeerServiceDefaultsEnabled()},
 		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
 		{Name: "trace_enabled", Value: traceEnabled, Origin: traceEnabledOrigin},
@@ -122,7 +120,7 @@ func startTelemetry(c *config) telemetry.Client {
 		cfg.AgentURL = c.internalConfig.AgentURL().String()
 	}
 	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
-		cfg.APIKey = env.Get("DD_API_KEY")
+		cfg.APIKey = c.internalConfig.APIKey()
 	}
 	client, err := telemetry.NewClient(c.internalConfig.ServiceName(), c.internalConfig.Env(), c.internalConfig.Version(), cfg)
 	if err != nil {

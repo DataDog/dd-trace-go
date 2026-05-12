@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -156,11 +157,8 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 
 	// Check if the test is going to be skipped by ITR
 	if settings.ItrEnabled {
-		if settings.CodeCoverage && coverage.CanCollect() {
-			session.SetTag(constants.CodeCoverageEnabled, "true")
-		} else {
-			session.SetTag(constants.CodeCoverageEnabled, "true")
-		}
+		coverageEnabled := settings.CodeCoverage && coverage.CanCollect()
+		session.SetTag(constants.CodeCoverageEnabled, strconv.FormatBool(coverageEnabled))
 
 		if settings.TestsSkipping {
 			session.SetTag(constants.ITRTestsSkippingEnabled, "true")
@@ -271,6 +269,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Set some required tags from the execution metadata
 		cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
 		if cancelExecution {
+			if !execMeta.hasAdditionalFeatureWrapper {
+				// Disabled fast-path executions close their test event before the normal defer is registered.
+				checkModuleAndSuite(module, suite)
+			}
 			return
 		}
 
@@ -331,6 +333,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 					*tParent.barrier = tParentOldBarrier
 				}
 			}
+			runAndApplyTestCleanup(t, execMeta)
 
 			// check if is a new EFD test and the duration >= 5 min
 			if execMeta.isANewTest && duration.Minutes() >= 5 {
@@ -402,7 +405,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 							test.SetTag(constants.TestAttemptToFixPassed, "false")
 						}
 					}
-					test.SetTag(ext.Error, true)
+					if execMeta.panicData != nil {
+						test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(execMeta.panicData), execMeta.panicStacktrace))
+					} else {
+						test.SetTag(ext.Error, true)
+					}
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)

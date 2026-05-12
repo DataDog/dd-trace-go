@@ -286,6 +286,15 @@ func NewClient() Client {
 	return NewClientWithServiceName("")
 }
 
+// CloseIdleConnections closes idle HTTP connections owned by this CI
+// Visibility client.
+func (c *client) CloseIdleConnections() {
+	if c == nil || c.handler == nil {
+		return
+	}
+	c.handler.CloseIdleConnections()
+}
+
 // getURLPath returns the full URL path for the given URL path.
 func (c *client) getURLPath(urlPath string) string {
 	if c.agentless {

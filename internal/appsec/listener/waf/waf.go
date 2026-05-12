@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/limiter"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
@@ -53,7 +54,10 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 			return nil, fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		logger := telemetrylog.With(telemetry.WithTags([]string{"product:appsec"}))
+		logger := telemetrylog.With(
+			telemetry.WithTags([]string{"product:appsec", "log_type:" + waf.ExceptionTypeWAF}),
+			telemetry.WithStacktrace(),
+		)
 		logger.Warn("appsec: non-critical error while loading libddwaf", slog.Any("error", telemetrylog.NewSafeError(err)))
 	}
 
@@ -93,7 +97,7 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 
 func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	waf.reportRulesTags.Do(func() {
-		AddRulesMonitoringTags(op)
+		AddRulesMonitoringTags(op, remoteconfig.ClientID())
 	})
 
 	ctx, err := waf.handle.NewContext(timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))
@@ -112,8 +116,7 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 	waf.SetupActionHandlers(op)
 }
 
-func (*Feature) SetupActionHandlers(op *waf.ContextOperation) {
-	// Set the blocking tag on the operation when a blocking event is received
+func (f *Feature) SetupActionHandlers(op *waf.ContextOperation) {
 	dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
 		log.Debug("appsec: blocking event detected")
 		op.SetTag(blockedRequestTag, true)
