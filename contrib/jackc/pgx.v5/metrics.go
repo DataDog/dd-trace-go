@@ -59,5 +59,8 @@ func statsTags(c *config) []string {
 	if c.serviceName != "" {
 		tags = append(tags, "service:"+c.serviceName)
 	}
+	if c.poolName != "" {
+		tags = append(tags, "pool_name:"+c.poolName)
+	}
 	return tags
 }

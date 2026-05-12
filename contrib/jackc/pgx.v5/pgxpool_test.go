@@ -71,3 +71,32 @@ func withStatsdClient(s instrumentation.StatsdClient) Option {
 		c.statsdClient = s
 	}
 }
+
+func TestPoolWithPoolStatsAndPoolName(t *testing.T) {
+	originalInterval := interval
+	interval = 1 * time.Millisecond
+	t.Cleanup(func() {
+		interval = originalInterval
+	})
+
+	ctx := context.Background()
+	statsd := testutils.NewMockStatsdClient()
+	conn, err := NewPool(ctx, postgresDSN, withStatsdClient(statsd), WithPoolStats(), WithPoolName("test-pool"), WithService("test-service"))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	wantStats := []string{AcquireCount, AcquireDuration, AcquiredConns, CanceledAcquireCount, ConstructingConns, EmptyAcquireCount, IdleConns, MaxConns, TotalConns, NewConnsCount, MaxLifetimeDestroyCount, MaxIdleDestroyCount}
+
+	assert := assert.New(t)
+	if err := statsd.Wait(assert, len(wantStats), time.Second); err != nil {
+		t.Fatalf("statsd.Wait(): %v", err)
+	}
+	for _, name := range wantStats {
+		calls := statsd.GetCallsByName(name)
+		assert.NotEmpty(calls, "expected calls for %s", name)
+		for _, call := range calls {
+			assert.Contains(call.Tags(), "pool_name:test-pool", "metric %s missing pool_name tag", name)
+			assert.Contains(call.Tags(), "service:test-service", "metric %s missing service tag", name)
+		}
+	}
+}
