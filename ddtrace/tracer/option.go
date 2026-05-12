@@ -1531,11 +1531,13 @@ func decode(p payloadReader) (spanLists, []uint64, error) {
 		ids := make([]uint64, 0, len(traces))
 		for _, t := range traces {
 			var id uint64
-			if len(t) > 0 && t[0] != nil {
-				t[0].mu.Lock()
-				id = t[0].traceID
-				t[0].mu.Unlock()
+			if len(t) == 0 || t[0] != nil {
+				continue
 			}
+			span := t[0]
+			span.mu.Lock()
+			id = span.traceID
+			span.mu.Unlock()
 			ids = append(ids, id)
 		}
 		return traces, ids, nil
