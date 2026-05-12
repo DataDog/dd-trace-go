@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"io"
 	"sync"
 	"time"
 
@@ -117,7 +118,11 @@ func (w *ciVisibilityTraceWriter) flush() {
 			stats := p.stats()
 			size, count = stats.size, stats.itemCount
 			log.Debug("ciVisibilityTraceWriter: sending payload: size: %d events: %d\n", size, count)
-			_, err = w.config.ddTransport.send(p.payload)
+			var body io.ReadCloser
+			body, err = w.config.ddTransport.send(p.payload)
+			if body != nil {
+				closeCIVisibilityResponseBody(body)
+			}
 			if err == nil {
 				log.Debug("ciVisibilityTraceWriter: sent events after %d attempts", attempt+1)
 				return
@@ -129,4 +134,12 @@ func (w *ciVisibilityTraceWriter) flush() {
 		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err.Error())
 		telemetry.EndpointPayloadDropped(telemetry.TestCycleEndpointType)
 	}(oldp)
+}
+
+// closeCIVisibilityResponseBody drains and closes a body returned by ddTransport.send.
+// The CI Visibility writer owns returned response bodies and must release them
+// before shutdown so net/http can close or reuse the underlying connection.
+func closeCIVisibilityResponseBody(body io.ReadCloser) {
+	_, _ = io.Copy(io.Discard, body)
+	_ = body.Close()
 }
