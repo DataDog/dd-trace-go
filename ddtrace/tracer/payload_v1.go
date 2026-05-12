@@ -583,6 +583,14 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		off := len(p.buf)
 		count := 0
 		p.buf = append(p.buf, msgpackArray32, 0, 0, 0, 0)
+
+		if lang, ok := span.meta.Language(); ok {
+			count++
+			p.buf = st.serialize("language", p.buf)
+			p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
+			p.buf = st.serialize(lang, p.buf)
+		}
+
 		component, spanKind := "", ""
 		// Range iterates only flat-map entries (promoted attrs are excluded).
 		span.meta.Range(func(k, v string) bool {
@@ -622,7 +630,6 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			p.buf = msgp.AppendUint32(p.buf, uint32(BytesValueType))
 			p.buf = msgp.AppendBytes(p.buf, scratch)
 		}
-
 		elementCount := uint32(count) * 3
 		p.buf[off+1] = byte(elementCount >> 24)
 		p.buf[off+2] = byte(elementCount >> 16)
