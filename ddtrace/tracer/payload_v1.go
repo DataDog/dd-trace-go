@@ -659,7 +659,7 @@ func getSpanKindValue(sk string) uint32 {
 	case ext.SpanKindConsumer:
 		return 5
 	default:
-		return 1 // default to internal
+		return 0 // default to "unset"
 	}
 }
 
@@ -928,19 +928,19 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 	}
 
 	for _, c := range p.chunks {
-		if len(c.traceID) >= 16 {
-			c.spans[0].traceID = binary.BigEndian.Uint64(c.traceID[8:16])
-		}
 		for _, s := range c.spans {
 			if s == nil {
 				continue
 			}
+			if len(c.traceID) >= 16 {
+				c.spans[0].traceID = binary.BigEndian.Uint64(c.traceID[8:16])
+			}
 			if p.languageName != "" {
 				s.SetTag("language", p.languageName)
 			}
-			if len(p.attributes) > 0 {
-				s.SetTag("_dd.tags.process", p.attributes[keyProcessTags].value)
-			}
+		}
+		if pt, ok := p.attributes[keyProcessTags]; ok && pt.valueType == StringValueType && c.spans[0] != nil {
+			c.spans[0].SetTag(keyProcessTags, pt.value.(string))
 		}
 	}
 	return o, err
