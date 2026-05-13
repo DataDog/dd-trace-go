@@ -382,9 +382,7 @@ func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product 
 		return
 	}
 	c.dogstatsdAddr = addr
-	if addr != "" {
-		configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
-	}
+	configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
 }
 
 // ResolveDogstatsdAddr resolves and stores the DogStatsD address from the
