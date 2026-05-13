@@ -72,8 +72,7 @@ type Config struct {
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
-	// dogstatsdAddr is the address used to send DogStatsD metrics to the Datadog
-	// Agent.
+	// dogstatsdAddr is the address used to send DogStatsD metrics to the Datadog Agent.
 	dogstatsdAddr string
 	debug         bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
