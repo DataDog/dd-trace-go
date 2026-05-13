@@ -362,7 +362,8 @@ func (p *payloadV1) setProcessTags() {
 }
 
 func (p *payloadV1) Close() error {
-	p.clear()
+	// No-op: clear() is called by getPayloadV1() after pool.Get(), which provides
+	// the happens-before guarantee. Clearing here would race with pool reuse.
 	return nil
 }
 
