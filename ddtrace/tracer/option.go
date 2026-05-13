@@ -226,12 +226,6 @@ type config struct {
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
 
-	// dynamicInstrumentationEnabled controls whether the target application can
-	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
-	// explicitly set to false (as opposed to starting as false by default), then
-	// it is frozen -- it cannot be overwritten by Remote Config.
-	dynamicInstrumentationEnabled dynamicConfig[bool]
-
 	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
 	ciVisibilityAgentless bool
 
@@ -317,18 +311,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			log.Warn("ignoring DD_TRACE_CLIENT_HOSTNAME_COMPAT, invalid version %q", compatMode)
 		}
 	}
-
-	dynamicInstrumentationEnabledDefault, origin, _ := stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	c.dynamicInstrumentationEnabled = newDynamicConfig(
-		"dynamic_instrumentation_enabled",
-		dynamicInstrumentationEnabledDefault,
-		func(bool) bool {
-			// NOTE: the side effects of changes are performed in onRemoteConfigUpdate.
-			return true
-		}, /* apply */
-		equal[bool],
-	)
-	c.dynamicInstrumentationEnabled.setOrigin(origin)
 
 	namingschema.LoadFromEnv()
 
@@ -1273,12 +1255,7 @@ func WithStatsComputation(enabled bool) StartOption {
 // and Dynamic Instrumentation products.
 func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		apply := func(bool) bool {
-			// NOTE: the side effects of changes are performed in onRemoteConfigUpdate.
-			return true
-		}
-		c.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, apply, equal[bool])
-		c.dynamicInstrumentationEnabled.setOrigin(telemetry.OriginCode)
+		c.internalConfig.SetDynamicInstrumentationEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
