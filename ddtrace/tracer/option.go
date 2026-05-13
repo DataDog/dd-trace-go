@@ -691,6 +691,7 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	if err != nil {
 		return agentFeatures{}, fmt.Errorf("creating /info request: %w", err)
 	}
+	setContainerHeaders(req.Header)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return agentFeatures{}, fmt.Errorf("loading features: %w", err)
@@ -704,6 +705,7 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	if resp.StatusCode != http.StatusOK {
 		return agentFeatures{}, fmt.Errorf("unexpected /info status: %d", resp.StatusCode)
 	}
+	updateContainerTagsHash(resp.Header)
 	type infoResponse struct {
 		Endpoints          []string `json:"endpoints"`
 		ClientDropP0s      bool     `json:"client_drop_p0s"`
