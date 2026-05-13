@@ -130,6 +130,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 //
 //	An io.ReadCloser for reading the response body, and an error if the operation fails.
 func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) {
+	defer p.Close()
 	ciVisibilityPayload := &ciVisibilityPayload{payload: p, serializationTime: 0}
 	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {

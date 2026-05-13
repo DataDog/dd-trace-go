@@ -1498,6 +1498,7 @@ func (t *dummyTransport) ObfuscationVersion() int {
 }
 
 func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
 	traces, ids, err := decode(p)
 	if err != nil {
 		return nil, err
