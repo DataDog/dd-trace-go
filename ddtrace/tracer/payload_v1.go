@@ -244,8 +244,8 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 			p.st.reset()
 		}
 		// Pre-size buffer based on estimated span encoding size.
-		if estimatedSize := len(t) * 300; estimatedSize > cap(p.buf) {
-			p.buf = make([]byte, 0, estimatedSize)
+		if cap(p.buf) == 0 {
+			p.buf = make([]byte, 0, len(t)*300)
 		}
 		p.buf = encodeField(p.buf, p.bm, 2, p.containerID, p.st)
 		p.buf = encodeField(p.buf, p.bm, 3, p.languageName, p.st)
@@ -270,6 +270,8 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		p.encodeTraceChunk(tc, p.st)
 	}
 
+	// Clear the spans from the trace chunk to allow the spans to be garbage collected.
+	tc.spans = nil
 	p.chunks = append(p.chunks, tc)
 	p.recordItem()
 
