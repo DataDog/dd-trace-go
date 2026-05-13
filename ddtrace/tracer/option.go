@@ -26,6 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/mod/semver"
+
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/tinylib/msgp/msgp"
 
@@ -211,6 +213,9 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled dynamicConfig[bool]
 
+	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
+	enableHostnameDetection bool
+
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
@@ -304,6 +309,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
 		c.enabled.setOrigin(telemetry.OriginEnvVar)
+	}
+	if compatMode := env.Get("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
+		if semver.IsValid(compatMode) {
+			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
+		} else {
+			log.Warn("ignoring DD_TRACE_CLIENT_HOSTNAME_COMPAT, invalid version %q", compatMode)
+		}
 	}
 
 	dynamicInstrumentationEnabledDefault, origin, _ := stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
