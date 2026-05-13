@@ -270,6 +270,15 @@ docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.63.3 golangci-l
 
 ## Code quality
 
+### Favor using internal implementations over external
+
+When possible, prioritize creating or using internal implementations for repetitive work instead of importing a new dependency. The tracer already supports replacements for common Go packages. For example:
+
+1. Logging: [internal/log](./internal/log) instead of `fmt`.
+2. Locking: [internal/locking](./internal/locking) instead of `sync.mutex`.
+3. OS: [internal/env](./internal/env) instead of `os.Getenv`. This is also available at [instrumentation/env](./instrumentation/env/) for those packages that cannot import internal modules.
+4. Errors: [instrumentation/errortrace](./instrumentation/errortrace/) instead of `errors`.
+
 ### Favor string concatenation and string builders over fmt.Sprintf and its variants
 
 [fmt.Sprintf](https://pkg.go.dev/fmt#Sprintf) can introduce unnecessary overhead when building a string. Favor [string builders](https://pkg.go.dev/strings#Builder), or simple string concatenation, `a + "b" + c` over `fmt.Sprintf` when possible, especially in hot paths.
@@ -347,10 +356,11 @@ Then start by updating the main `go.mod` file, e.g. by running a `go get` comman
 go get <import-path>@<new-version>
 ```
 
-Then run the following command to update all `go.mod` and `go.sum` files in the repository:
+Then run the following commands to update all `go.mod` and `go.sum` files in the repository:
 
 ```
 make fix-modules
+make generate
 ```
 
 This is neccessary because dd-trace-go is a multi-module repository.
