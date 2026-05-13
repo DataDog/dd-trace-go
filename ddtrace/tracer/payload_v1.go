@@ -116,7 +116,18 @@ type payloadV1 struct {
 	// avoiding repeated boxing of the string into any.
 	processTagsCached anyValue
 	processTagsStr    string
+
+	// poolState coordinates returning this payload to the pool after all HTTP
+	// activity is done. roundTrip() can return before writeLoop calls body.Close(),
+	// so we use two bits — whoever sets both is responsible for pool return.
+	poolState atomic.Uint32
 }
+
+// Bits for payloadV1.poolState.
+const (
+	pv1StateFlushDone  uint32 = 1 << 0 // set by flush goroutine after all sends complete
+	pv1StateBodyClosed uint32 = 1 << 1 // set by payloadV1.Close() when HTTP is done
+)
 
 // Constant dummy value to represent a serialization failure. Used to prevent failures while
 // decoding the payload.
@@ -298,6 +309,7 @@ func (p *payloadV1) clear() {
 	clear(p.attributes)
 	atomic.StoreUint32(&p.fields, 0)
 	atomic.StoreUint32(&p.count, 0)
+	p.poolState.Store(0)
 }
 
 // recordItem records that a new chunk was added to the payload.
@@ -362,8 +374,11 @@ func (p *payloadV1) setProcessTags() {
 }
 
 func (p *payloadV1) Close() error {
-	// No-op: clear() is called by getPayloadV1() after pool.Get(), which provides
-	// the happens-before guarantee. Clearing here would race with pool reuse.
+	// Set the "body closed" bit. If the flush goroutine already set its bit,
+	// all HTTP activity (reads + close) is done — return to pool.
+	if old := p.poolState.Or(pv1StateBodyClosed); old == pv1StateFlushDone {
+		putPayloadV1(p)
+	}
 	return nil
 }
 
