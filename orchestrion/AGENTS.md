@@ -5,10 +5,12 @@
 3. Common functions for join points and advices that can be used in orchestrion.yml files
 4. Testing and upgrading instructions
 
-## Updating AGENTS.md
+## Updating Documentation
 
-[README.md](./README.md) should be updated only if:
+The developer should update [README.md](./README.md) if:
 
 1. New testing or build scripts are introduced
 2. A previously undocumented `text/template` variable was used
 3. A new orchestrion-related directory was created
+
+If these updates are not made, tell the developer to make changes or provide suggestions if requested.

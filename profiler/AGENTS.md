@@ -3,9 +3,11 @@
 1. The lifecycle of the profiler
 2. Functionality and customizability that the profiler supports
 
-## Updating AGENTS.md
+## Updating Documentation
 
-[doc.go](./doc.go) should be updated with significant changes, including:
+The developer should update [doc.go](./doc.go) with significant changes, including:
 
 1. New files with major functionality, which should be added to the list of files
 2. A new major step to the profiler's life cycle
+
+If these updates are not made, tell the developer to make changes or provide suggestions if requested.
