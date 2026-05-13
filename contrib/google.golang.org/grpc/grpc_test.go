@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/tap"
 )
 
 func TestUnary(t *testing.T) {
@@ -1097,4 +1099,447 @@ func TestIssue2050(t *testing.T) {
 	case <-spansFound:
 		return
 	}
+}
+
+// retryStreamSrv returns codes.Unavailable on the first StreamPing call and
+// sends a single successful reply on all subsequent calls.
+type retryStreamSrv struct {
+	fixturepb.UnimplementedFixtureServer
+	attempts atomic.Int32
+}
+
+func (s *retryStreamSrv) StreamPing(stream fixturepb.Fixture_StreamPingServer) error {
+	if s.attempts.Add(1) == 1 {
+		return status.Error(codes.Unavailable, "try again")
+	}
+	return stream.Send(&fixturepb.FixtureReply{Message: "passed"})
+}
+
+// TestStreamClientRetryPolicyRespected verifies that StreamClientInterceptor
+// does not disable gRPC client-side retries. Calling stream.Context() before
+// Header or RecvMsg commits the attempt and prevents retries; the interceptor
+// currently does this at stream creation time.
+func TestStreamClientRetryPolicyRespected(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	srv := &retryStreamSrv{}
+
+	const serviceConfig = `{"methodConfig":[{"name":[{"service":"grpc.Fixture"}],"retryPolicy":{"maxAttempts":3,"initialBackoff":"0.01s","maxBackoff":"0.1s","backoffMultiplier":2.0,"retryableStatusCodes":["UNAVAILABLE"]}}]}`
+
+	server := grpc.NewServer(
+		grpc.StreamInterceptor(StreamServerInterceptor(WithService("grpc"))),
+	)
+	fixturepb.RegisterFixtureServer(server, srv)
+
+	li, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	_, port, _ := net.SplitHostPort(li.Addr().String())
+	go server.Serve(li)
+	defer server.GracefulStop()
+
+	conn, err := grpc.NewClient("localhost:"+port,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultServiceConfig(serviceConfig),
+		grpc.WithStreamInterceptor(StreamClientInterceptor(WithService("grpc"))),
+	)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	stream, err := fixturepb.NewFixtureClient(conn).StreamPing(context.Background())
+	require.NoError(t, err)
+
+	// Calling Recv() without a prior Send() does not commit the bidi-stream
+	// attempt, so the gRPC runtime can retry it. Our interceptor's premature
+	// stream.Context() call is what commits and blocks the retry today.
+	resp, err := stream.Recv()
+	require.NoError(t, err,
+		"expected retry to succeed; if retries are disabled by a premature "+
+			"stream.Context() call the first Unavailable error propagates here")
+	assert.Equal(t, "passed", resp.Message)
+	assert.Equal(t, int32(2), srv.attempts.Load(),
+		"server should have been called twice: first attempt fails, retry succeeds")
+
+	// Drain to EOF so the gRPC runtime cancels the stream context and the
+	// interceptor's cleanup goroutine can finish the call span.
+	_, _ = stream.Recv()
+
+	// Spans:
+	//   - 1 grpc.client (interceptor is invoked once; retries are transparent)
+	//   - 2 grpc.server (one per server attempt)
+	//   - 3 grpc.message: 1 server SendMsg on the successful attempt and 2
+	//     client RecvMsg spans (one for "passed", one for the EOF drain).
+	waitForSpans(mt, 6)
+	var clientSpans, serverSpans, messageSpans int
+	for _, s := range mt.FinishedSpans() {
+		switch s.OperationName() {
+		case "grpc.client":
+			clientSpans++
+		case "grpc.server":
+			serverSpans++
+		case "grpc.message":
+			messageSpans++
+		}
+	}
+	assert.Equal(t, 1, clientSpans, "interceptor is called once; retries are transparent")
+	assert.Equal(t, 2, serverSpans, "one span per server attempt (failed + retried)")
+	assert.Equal(t, 3, messageSpans, "1 server SendMsg + 2 client RecvMsg (response + EOF drain)")
+}
+
+// TestStreamRetryable verifies that the StreamClientInterceptor does not
+// disable gRPC's retry policy. The server's tap handler rejects every attempt
+// with codes.Unavailable, and a retry policy is configured so that gRPC will
+// retry up to 3 times. Both the unary and stream RPCs must be retried 3 times.
+//
+// The test also asserts on the per-attempt spans emitted by the stats handler:
+// transparent retries are invisible to interceptors but visible to stats
+// handlers, so one parent span (from the interceptor) and one child span per
+// attempt (from the stats handler) are expected.
+func TestStreamRetryable(t *testing.T) {
+	serviceConfig := `{
+		"methodConfig": [{
+             "name": [
+               {"service": "grpc.Fixture", "method": "Ping"},
+               {"service": "grpc.Fixture", "method": "StreamPing"}
+             ],
+            "retryPolicy": {
+              "maxAttempts": 3,
+              "initialBackoff": "0.000000001s",
+              "maxBackoff": "0.000000001s",
+              "backoffMultiplier": 2,
+              "retryableStatusCodes": [
+                "UNAVAILABLE"
+              ]
+            }
+		}]
+    }`
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var unaryAttempts atomic.Int64
+	var streamAttempts atomic.Int64
+	serverOpts := []grpc.ServerOption{
+		grpc.UnaryInterceptor(UnaryServerInterceptor()),
+		grpc.StreamInterceptor(StreamServerInterceptor()),
+		grpc.InTapHandle(func(ctx context.Context, info *tap.Info) (context.Context, error) {
+			switch info.FullMethodName {
+			case fixturepb.Fixture_Ping_FullMethodName:
+				unaryAttempts.Add(1)
+			case fixturepb.Fixture_StreamPing_FullMethodName:
+				streamAttempts.Add(1)
+			}
+			return ctx, status.Error(codes.Unavailable, "not now")
+		}),
+	}
+	dialOpts := []grpc.DialOption{
+		grpc.WithDisableServiceConfig(),
+		grpc.WithDefaultServiceConfig(serviceConfig),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(StreamClientInterceptor()),
+		// Transparent retries are invisible to interceptors, but not stats handlers.
+		grpc.WithStatsHandler(NewClientStatsHandler()),
+	}
+
+	rig, err := newRigWithInterceptors(serverOpts, dialOpts)
+	require.NoError(t, err, "error setting up rig")
+	t.Cleanup(func() { _ = rig.Close() })
+
+	ctx := t.Context()
+	req := &fixturepb.FixtureRequest{Name: "pass"}
+
+	_, err = rig.client.Ping(ctx, req)
+	require.Error(t, err, "unary should return error")
+	require.EqualValues(t, 3, unaryAttempts.Load(), "unary should attempt more than once")
+
+	stream, err := rig.client.StreamPing(ctx)
+	require.NoError(t, err, "no error should be returned after creating stream client")
+
+	// Skip stream.Send() to avoid marking the request as ineligible for retry.
+	_, err = stream.Recv()
+	require.Error(t, err, "stream should return error")
+	require.EqualValues(t, 3, streamAttempts.Load(), "stream should attempt more than once")
+	require.NoError(t, rig.Close())
+
+	// One parent client span per RPC (unary, stream) and one child span per
+	// attempt (from the stats handler).
+	var parentSpans, childSpans []*mocktracer.Span
+	for _, s := range mt.FinishedSpans() {
+		if s.Tag(ext.SpanKind) != ext.SpanKindClient {
+			continue
+		}
+		if s.ParentID() == 0 {
+			parentSpans = append(parentSpans, s)
+		} else {
+			childSpans = append(childSpans, s)
+		}
+	}
+
+	wantChildren := int(unaryAttempts.Load() + streamAttempts.Load())
+	require.Len(t, parentSpans, 2, "should have a span for initiated request")
+	require.Len(t, childSpans, wantChildren, "should have a span for each attempt")
+}
+
+// TestStreamMessageSpanParentsWhenCallsDisabled verifies that when
+// WithStreamCalls(false) is set (no grpc.client or grpc.server call spans),
+// all grpc.message spans have the user's root span as their parent — not a
+// now-absent call span.
+func TestStreamMessageSpanParentsWhenCallsDisabled(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true, WithService("grpc"), WithStreamCalls(false))
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, rig.Close()) }()
+
+	rootSpan, ctx := tracer.StartSpanFromContext(context.Background(), "root")
+	ctx, cancel := context.WithCancel(ctx)
+
+	stream, err := rig.client.StreamPing(ctx)
+	require.NoError(t, err)
+
+	err = stream.Send(&fixturepb.FixtureRequest{Name: "pass"})
+	require.NoError(t, err)
+
+	resp, err := stream.Recv()
+	require.NoError(t, err)
+	assert.Equal(t, "passed", resp.Message)
+
+	stream.CloseSend()
+	cancel()
+	rootSpan.Finish()
+
+	// root + message spans: client send, client recv, server recv(pass),
+	// server send, server recv(EOF or ctx cancel)
+	waitForSpans(mt, 6)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 6)
+
+	var root *mocktracer.Span
+	for _, s := range spans {
+		if s.OperationName() == "root" {
+			root = s
+		}
+	}
+	require.NotNil(t, root)
+
+	for _, s := range spans {
+		if s.OperationName() != "grpc.message" {
+			continue
+		}
+		assert.Equal(t, root.SpanID(), s.ParentID(),
+			"grpc.message span should have root span as parent when call spans are disabled, got span: %v", s)
+	}
+}
+
+// TestStreamClientCallSpan verifies the grpc.client and grpc.server call span
+// behavior (tag set, finish status, no leaked open spans) across the different
+// ways a streaming RPC can end.
+func TestStreamClientCallSpan(t *testing.T) {
+	cases := []struct {
+		name           string // subtest name
+		request        string // request Name to send
+		drainEOF       bool   // whether to CloseSend + drain after the first Recv
+		wantRecvErr    bool   // whether the first stream.Recv() should return an error
+		wantServerCode string // expected tagCode on grpc.server
+		wantServerErr  bool   // whether grpc.server should carry an error tag
+	}{
+		{
+			name:           "FinishOnEOF",
+			request:        "break",
+			drainEOF:       true,
+			wantServerCode: codes.OK.String(),
+		},
+		{
+			name:           "FinishOnServerError",
+			request:        "invalid",
+			wantRecvErr:    true,
+			wantServerCode: codes.InvalidArgument.String(),
+			wantServerErr:  true,
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			rig, err := newRig(true, WithService("grpc"), WithStreamMessages(false))
+			require.NoError(t, err)
+			defer func() { assert.NoError(t, rig.Close()) }()
+
+			rootSpan, ctx := tracer.StartSpanFromContext(context.Background(), "root")
+			stream, err := rig.client.StreamPing(ctx)
+			require.NoError(t, err)
+
+			require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: tt.request}))
+
+			_, err = stream.Recv()
+			if tt.wantRecvErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			if tt.drainEOF {
+				require.NoError(t, stream.CloseSend())
+				_, _ = stream.Recv()
+			}
+			rootSpan.Finish()
+
+			waitForSpans(mt, 3) // root + grpc.client + grpc.server
+			assert.Empty(t, mt.OpenSpans(), "no spans should be left open")
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 3)
+
+			var clientSpan, serverSpan *mocktracer.Span
+			for _, s := range spans {
+				switch s.OperationName() {
+				case "grpc.client":
+					clientSpan = s
+				case "grpc.server":
+					serverSpan = s
+				}
+			}
+			require.NotNil(t, clientSpan, "grpc.client span must be finished")
+			require.NotNil(t, serverSpan, "grpc.server span must be finished")
+
+			// Client call span: full tag set, plus finishes with codes.OK
+			// regardless of the server-side outcome (the gRPC stream context
+			// reports context.Canceled when the stream ends, which
+			// finishWithError treats as a non-error).
+			assert.Equal(t, "127.0.0.1", clientSpan.Tag(ext.TargetHost))
+			assert.Equal(t, "localhost", clientSpan.Tag(ext.PeerHostname))
+			assert.Equal(t, rig.port, clientSpan.Tag(ext.TargetPort))
+			assert.Equal(t, codes.OK.String(), clientSpan.Tag(tagCode))
+			assert.Nil(t, clientSpan.Tag(ext.ErrorMsg))
+			assert.Equal(t, methodKindBidiStream, clientSpan.Tag(tagMethodKind))
+			assert.Equal(t, "google.golang.org/grpc", clientSpan.Tag(ext.Component))
+			assert.Equal(t, componentName, clientSpan.Integration())
+			assert.Equal(t, ext.SpanKindClient, clientSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "grpc", clientSpan.Tag(ext.RPCSystem))
+			assert.Equal(t, "grpc.Fixture", clientSpan.Tag(ext.RPCService))
+			assert.Equal(t, "/grpc.Fixture/StreamPing", clientSpan.Tag(ext.GRPCFullMethod))
+			assert.Equal(t, "/grpc.Fixture/StreamPing", clientSpan.Tag(ext.ResourceName))
+			assert.Equal(t, ext.AppTypeRPC, clientSpan.Tag(ext.SpanType))
+			assert.True(t, clientSpan.FinishTime().After(clientSpan.StartTime()))
+
+			// Server call span: full tag set, plus code/error reflecting the
+			// handler's outcome.
+			assert.Equal(t, "grpc", serverSpan.Tag(ext.ServiceName))
+			assert.Equal(t, "/grpc.Fixture/StreamPing", serverSpan.Tag(ext.ResourceName))
+			assert.Equal(t, tt.wantServerCode, serverSpan.Tag(tagCode))
+			if tt.wantServerErr {
+				assert.NotNil(t, serverSpan.Tag(ext.ErrorMsg))
+			} else {
+				assert.Nil(t, serverSpan.Tag(ext.ErrorMsg))
+			}
+			assert.Equal(t, methodKindBidiStream, serverSpan.Tag(tagMethodKind))
+			assert.Equal(t, "google.golang.org/grpc", serverSpan.Tag(ext.Component))
+			assert.Equal(t, ext.SpanKindServer, serverSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "grpc", serverSpan.Tag(ext.RPCSystem))
+			assert.Equal(t, "grpc.Fixture", serverSpan.Tag(ext.RPCService))
+			assert.Equal(t, "/grpc.Fixture/StreamPing", serverSpan.Tag(ext.GRPCFullMethod))
+		})
+	}
+}
+
+// slowStreamSrv is a FixtureServer that sleeps for a configurable duration
+// before replying to each stream message. Used to test that grpc.message
+// spans cover the actual I/O wait time.
+type slowStreamSrv struct {
+	fixturepb.UnimplementedFixtureServer
+	delay time.Duration
+}
+
+func (s *slowStreamSrv) StreamPing(stream fixturepb.Fixture_StreamPingServer) error {
+	_, err := stream.Recv()
+	if err != nil {
+		return err
+	}
+	time.Sleep(s.delay)
+	return stream.Send(&fixturepb.FixtureReply{Message: "slow"})
+}
+
+// newRigWithHandler creates a test rig using a custom FixtureServer
+// implementation instead of the default one.
+func newRigWithHandler(handler fixturepb.FixtureServer, opts ...Option) (*rig, error) {
+	serverOpts := []grpc.ServerOption{
+		grpc.StreamInterceptor(StreamServerInterceptor(opts...)),
+	}
+	server := grpc.NewServer(serverOpts...)
+	fixturepb.RegisterFixtureServer(server, handler)
+
+	li, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	_, port, _ := net.SplitHostPort(li.Addr().String())
+	go server.Serve(li)
+
+	conn, err := grpc.NewClient("localhost:"+port,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStreamInterceptor(StreamClientInterceptor(opts...)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error dialing: %s", err)
+	}
+	return &rig{
+		listener: li,
+		port:     port,
+		server:   server,
+		conn:     conn,
+		client:   fixturepb.NewFixtureClient(conn),
+	}, nil
+}
+
+// TestStreamRecvMsgSpanDuration verifies that grpc.message spans for RecvMsg
+// cover the actual time spent waiting for a server response. A span that is
+// started and finished before the underlying RecvMsg returns would not capture
+// the real I/O duration.
+func TestStreamRecvMsgSpanDuration(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const delay = 100 * time.Millisecond
+
+	rig, err := newRigWithHandler(&slowStreamSrv{delay: delay}, WithService("grpc"))
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, rig.Close()) }()
+
+	stream, err := rig.client.StreamPing(context.Background())
+	require.NoError(t, err)
+
+	require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "slow"}))
+
+	_, err = stream.Recv()
+	require.NoError(t, err)
+
+	// Drain to EOF so the client call span is finished by the cleanup
+	// goroutine watching the stream context.
+	require.NoError(t, stream.CloseSend())
+	_, _ = stream.Recv()
+
+	// Spans:
+	//   - 1 grpc.client (call)
+	//   - 1 grpc.server (call)
+	//   - 3 client grpc.message: Send + Recv("slow") + Recv(EOF)
+	//   - 2 server grpc.message: Recv + Send
+	waitForSpans(mt, 7)
+
+	// The client's RecvMsg("slow") span must cover at least the server-imposed
+	// delay because the client is blocked waiting for the server to respond.
+	var slowSpan *mocktracer.Span
+	for _, s := range mt.FinishedSpans() {
+		if s.OperationName() != "grpc.message" {
+			continue
+		}
+		if s.FinishTime().Sub(s.StartTime()) >= delay {
+			slowSpan = s
+		}
+	}
+	require.NotNil(t, slowSpan,
+		"expected a grpc.message span with duration >= %s covering the server delay; spans: %v", delay, mt.FinishedSpans())
+	assert.GreaterOrEqual(t, slowSpan.FinishTime().Sub(slowSpan.StartTime()), delay)
 }

@@ -8,6 +8,7 @@ package grpc
 import (
 	"context"
 	"net"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2/internal/grpcutil"
 
@@ -21,13 +22,26 @@ import (
 
 type clientStream struct {
 	grpc.ClientStream
-	ctx    context.Context
-	cfg    *config
-	method string
+	ctx          context.Context
+	cfg          *config
+	method       string
+	span         *tracer.Span  // non-nil when the call is traced
+	activated    chan struct{} // closed on the first RecvMsg or SendMsg call
+	activateOnce sync.Once
+	spanOnce     sync.Once
 }
 
 func (cs *clientStream) Context() context.Context {
 	return cs.ctx
+}
+
+// activate signals that the first RecvMsg or SendMsg has returned, meaning
+// the gRPC retry window is now closed and it is safe to call
+// ClientStream.Context() without disabling retries.
+func (cs *clientStream) activate() {
+	if cs.activated != nil {
+		cs.activateOnce.Do(func() { close(cs.activated) })
+	}
 }
 
 func (cs *clientStream) RecvMsg(m interface{}) (err error) {
@@ -47,6 +61,7 @@ func (cs *clientStream) RecvMsg(m interface{}) (err error) {
 		defer func() { finishWithError(span, err, cs.cfg) }()
 	}
 	err = cs.ClientStream.RecvMsg(m)
+	cs.activate()
 	return err
 }
 
@@ -67,6 +82,7 @@ func (cs *clientStream) SendMsg(m interface{}) (err error) {
 		defer func() { finishWithError(span, err, cs.cfg) }()
 	}
 	err = cs.ClientStream.SendMsg(m)
+	cs.activate()
 	return err
 }
 
@@ -108,29 +124,54 @@ func StreamClientInterceptor(opts ...Option) grpc.StreamClientInterceptor {
 				return nil, err
 			}
 
-			// the Peer call option only works with unary calls, so for streams
-			// we need to set it via FromContext
-			if p, ok := peer.FromContext(stream.Context()); ok {
-				setSpanTargetFromPeer(span, *p)
+			cs := &clientStream{
+				ClientStream: stream,
+				cfg:          cfg,
+				method:       method,
+				ctx:          ctx,
+				span:         span,
+				activated:    make(chan struct{}),
 			}
-
 			go func() {
-				<-stream.Context().Done()
-				finishWithError(span, stream.Context().Err(), cfg)
+				// Phase 1: wait for the first RecvMsg/SendMsg or a parent context
+				// cancellation. Until one of those happens the gRPC retry window is
+				// open, so we must not call ClientStream.Context().
+				select {
+				case <-cs.activated:
+				case <-ctx.Done():
+					cs.spanOnce.Do(func() { finishWithError(cs.span, ctx.Err(), cfg) })
+					return
+				}
+				// Phase 2: the retry window is closed. It is now safe to call
+				// ClientStream.Context() to obtain the stream context and use it to
+				// detect natural stream completion (EOF, server error, etc.) and to
+				// read the resolved peer address for span tags.
+				streamCtx := cs.ClientStream.Context()
+				select {
+				case <-streamCtx.Done():
+					cs.spanOnce.Do(func() {
+						if p, ok := peer.FromContext(streamCtx); ok {
+							setSpanTargetFromPeer(cs.span, *p)
+						}
+						finishWithError(cs.span, streamCtx.Err(), cfg)
+					})
+				case <-ctx.Done():
+					cs.spanOnce.Do(func() { finishWithError(cs.span, ctx.Err(), cfg) })
+				}
 			}()
-		} else {
-			// if call tracing is disabled, just call streamer, but still return
-			// a clientStream so that messages can be traced if enabled
+			return cs, nil
+		}
+		// if call tracing is disabled, just call streamer, but still return
+		// a clientStream so that messages can be traced if enabled
 
-			// it's possible there's already a span on the context even though
-			// we're not tracing calls, so inject it if it's there
-			ctx = injectSpanIntoContext(ctx)
+		// it's possible there's already a span on the context even though
+		// we're not tracing calls, so inject it if it's there
+		ctx = injectSpanIntoContext(ctx)
 
-			var err error
-			stream, err = streamer(ctx, desc, cc, method, opts...)
-			if err != nil {
-				return nil, err
-			}
+		var err error
+		stream, err = streamer(ctx, desc, cc, method, opts...)
+		if err != nil {
+			return nil, err
 		}
 		return &clientStream{
 			ClientStream: stream,
