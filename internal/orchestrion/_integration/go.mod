@@ -125,6 +125,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.10.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.10.0-dev // indirect
@@ -258,6 +259,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/labstack/echo/v5 v5.1.0 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect
@@ -450,6 +452,8 @@ replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 => ..
 replace github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 => ../../../contrib/k8s.io/client-go
 
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../../contrib/labstack/echo.v4
+
+replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
 
 replace github.com/DataDog/dd-trace-go/contrib/log/slog/v2 => ../../../contrib/log/slog
 
