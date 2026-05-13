@@ -14,7 +14,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.6.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2 v2.6.0-dev.1
@@ -40,7 +40,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.6.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.0.0-00010101000000-000000000000
@@ -53,8 +53,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.0.0-00010101000000-000000000000
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.9.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.10.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.55.5
@@ -246,7 +246,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect

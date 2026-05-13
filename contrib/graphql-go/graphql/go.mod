@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
 	github.com/graphql-go/graphql v0.8.1
 	github.com/graphql-go/handler v0.2.4
 	github.com/hashicorp/go-multierror v1.1.1
@@ -43,7 +43,7 @@ require (
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260216142805-b3301c5f2a88 // indirect

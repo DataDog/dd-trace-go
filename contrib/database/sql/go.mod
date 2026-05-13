@@ -6,7 +6,7 @@ godebug x509negativeserial=1
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.8.3
-	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
 	github.com/denisenkom/go-mssqldb v0.11.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/lib/pq v1.11.1
@@ -48,7 +48,7 @@ require (
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260216142805-b3301c5f2a88 // indirect

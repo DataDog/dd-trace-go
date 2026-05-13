@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.9.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.10.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
 	github.com/hashicorp/vault/api v1.15.0
 	github.com/hashicorp/vault/sdk v0.15.0
 	github.com/stretchr/testify v1.11.1
@@ -54,7 +54,7 @@ require (
 	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260216142805-b3301c5f2a88 // indirect

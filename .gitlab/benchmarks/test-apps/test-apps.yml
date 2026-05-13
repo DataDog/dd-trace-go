@@ -1,11 +1,11 @@
 variables:
   # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/dd-trace-go/-/jobs/1657729516
-  BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-111525540
+  TESTAPPS_BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-111525540
 
 unit-of-work:
   stage: test-apps
   when: manual
-  image: $BENCHMARKS_CI_IMAGE
+  image: $TESTAPPS_BENCHMARKS_CI_IMAGE
   timeout: 1h
   interruptible: true
   tags: ["runner:apm-k8s-tweaked-metal"]

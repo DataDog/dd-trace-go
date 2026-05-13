@@ -85,6 +85,9 @@ func (w *logsWriter) stop() {
 		w.startUpload(payloadToFlush)
 	}
 	w.wg.Wait()
+	if closer, ok := w.client.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
 }
 
 func (w *logsWriter) flush() {

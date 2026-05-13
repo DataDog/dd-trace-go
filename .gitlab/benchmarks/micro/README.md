@@ -78,7 +78,7 @@ for instructions on how to measure run-to-run variance.
 
 # How to rebuild the CI Docker image
 
-The `BENCHMARKS_CI_IMAGE` used by the microbenchmarks pipelines
+The `MICROBENCHMARKS_CI_IMAGE` used by the microbenchmarks pipelines
 is built from Dockerfile in `.gitlab/benchmarks/micro/container/`. You need to rebuild and update
 the pinned tag whenever you change any of files in that directory (e.g. bumping the Go
 base image, adding system packages, or updating `bp-runner` / `bp-analyzer` /
@@ -105,9 +105,16 @@ Steps:
    - `.gitlab/benchmarks/micro/gitlab-ci.yml`
    - `.gitlab/benchmarks/test-apps/test-apps.yml`
 
+   In micro/gitlab-ci.yml the variable is named MICROBENCHMARKS_CI_IMAGE:
    ```yaml
    # Benchmarks image is created here: <paste build-base-ci-image job URL>
-   BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-<NEW_PIPELINE_ID>
+   MICROBENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-<NEW_PIPELINE_ID>
+   ```
+   
+   In test-apps/test-apps.yml it is named TESTAPPS_BENCHMARKS_CI_IMAGE:
+   ```yaml
+   # Benchmarks image is created here: <paste build-base-ci-image job URL>
+   TESTAPPS_BENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-<NEW_PIPELINE_ID>
    ```
 
 5. Push the update. The microbenchmarks will now run

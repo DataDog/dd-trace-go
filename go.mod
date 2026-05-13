@@ -19,7 +19,7 @@ require (
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6
 	github.com/google/uuid v1.6.0
 	github.com/json-iterator/go v1.1.12
-	github.com/klauspost/compress v1.18.4
+	github.com/klauspost/compress v1.18.6
 	github.com/linkdata/deadlock v0.5.5
 	github.com/minio/simdjson-go v0.4.5
 	github.com/open-feature/go-sdk v1.17.0

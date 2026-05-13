@@ -1639,27 +1639,74 @@ func TestEnvConfig(t *testing.T) {
 }
 
 func TestStatsTags(t *testing.T) {
-	assert := assert.New(t)
-	c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
-	assert.NoError(err)
-	defer globalconfig.SetServiceName("")
-	c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
-	tags := statsTags(c)
+	setupProcessTags := func(t *testing.T, enabled string) {
+		t.Helper()
+		t.Cleanup(processtags.Reload)
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", enabled)
+		processtags.Reload()
+	}
 
-	assert.Contains(tags, "service:serviceName")
-	assert.Contains(tags, "env:envName")
-	assert.Contains(tags, "host:hostName")
-	assert.Contains(tags, "tracer_version:"+version.Tag)
+	t.Run("process tags are shared with contrib stats tags", func(t *testing.T) {
+		assert := assert.New(t)
+		setupProcessTags(t, "true")
+		t.Cleanup(func() {
+			globalconfig.SetServiceName("")
+			globalconfig.SetStatsTags(nil)
+		})
+		c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
+		assert.NoError(err)
+		c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
+		tags := statsTags(c)
 
-	st := globalconfig.StatsTags()
-	// all of the tracer tags except `service` and `version` should be on `st`
-	assert.Len(st, len(tags)-2)
-	assert.Contains(st, "env:envName")
-	assert.Contains(st, "host:hostName")
-	assert.Contains(st, "lang:go")
-	assert.Contains(st, "lang_version:"+runtime.Version())
-	assert.NotContains(st, "tracer_version:"+version.Tag)
-	assert.NotContains(st, "service:serviceName")
+		assert.Contains(tags, "service:serviceName")
+		assert.Contains(tags, "env:envName")
+		assert.Contains(tags, "host:hostName")
+		assert.Contains(tags, ext.RuntimeID+":"+globalconfig.RuntimeID())
+		processTags := processtags.GlobalTags().Slice()
+		require.NotEmpty(t, processTags)
+		for _, tag := range processTags {
+			assert.Contains(tags, tag)
+		}
+		assert.Contains(tags, "tracer_version:"+version.Tag)
+
+		st := globalconfig.StatsTags()
+		assert.Len(st, len(tags)-2)
+		assert.Contains(st, "env:envName")
+		assert.Contains(st, "host:hostName")
+		assert.Contains(st, "lang:go")
+		assert.Contains(st, "lang_version:"+runtime.Version())
+		assert.Contains(st, ext.RuntimeID+":"+globalconfig.RuntimeID())
+		for _, tag := range processTags {
+			assert.Contains(st, tag)
+		}
+		assert.NotContains(st, "tracer_version:"+version.Tag)
+		assert.NotContains(st, "service:serviceName")
+	})
+
+	t.Run("process tags collection disabled", func(t *testing.T) {
+		assert := assert.New(t)
+		setupProcessTags(t, "false")
+		t.Cleanup(func() {
+			globalconfig.SetServiceName("")
+			globalconfig.SetStatsTags(nil)
+		})
+		c, err := newTestConfig(WithService("serviceName"), WithEnv("envName"))
+		assert.NoError(err)
+		c.internalConfig.SetHostname("hostName", telemetry.OriginCode)
+		tags := statsTags(c)
+
+		assert.Nil(processtags.GlobalTags())
+		assert.Contains(tags, "service:serviceName")
+		assert.Contains(tags, "tracer_version:"+version.Tag)
+		st := globalconfig.StatsTags()
+		assert.Len(st, len(tags)-2)
+		for _, tag := range append(tags, st...) {
+			assert.Falsef(strings.HasPrefix(tag, "entrypoint."), "unexpected process tag %q", tag)
+			assert.Falsef(strings.HasPrefix(tag, "svc."), "unexpected process tag %q", tag)
+		}
+		assert.NotContains(st, "tracer_version:"+version.Tag)
+		assert.NotContains(st, "service:serviceName")
+	})
 }
 
 func TestGlobalTag(t *testing.T) {

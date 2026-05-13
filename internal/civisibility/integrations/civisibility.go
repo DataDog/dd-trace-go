@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -18,8 +19,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/logs"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -29,9 +32,34 @@ import (
 // ciVisibilityCloseAction defines an action to be executed when CI visibility is closing.
 type ciVisibilityCloseAction func()
 
+// ciVisibilityIdleConnectionCloser closes idle HTTP connections owned by a CI
+// Visibility client implementation.
+type ciVisibilityIdleConnectionCloser interface {
+	CloseIdleConnections()
+}
+
+// ciVisibilitySignalHandler owns the SIGINT/SIGTERM goroutine registered by CI
+// Visibility and lets normal test shutdown stop it before goleak runs.
+type ciVisibilitySignalHandler struct {
+	signals  chan os.Signal // receives process interrupt and termination signals
+	stop     chan struct{}  // asks the handler goroutine to exit during normal shutdown
+	done     chan struct{}  // closes when the handler goroutine exits
+	stopOnce sync.Once      // guarantees stop is signaled at most once
+	stopping atomic.Bool    // suppresses os.Exit when normal shutdown already started
+}
+
 var (
 	// ciVisibilityInitializationOnce ensures we initialize the CI visibility tracer only once.
 	ciVisibilityInitializationOnce sync.Once
+
+	// ciVisibilitySignalHandlerMu synchronizes access to activeCIVisibilitySignalHandler.
+	ciVisibilitySignalHandlerMu sync.Mutex
+
+	// activeCIVisibilitySignalHandler contains the active process signal handler, if CI Visibility started one.
+	activeCIVisibilitySignalHandler *ciVisibilitySignalHandler
+
+	// ciVisibilitySignalExitFunc terminates the process after signal-triggered shutdown; tests replace it.
+	ciVisibilitySignalExitFunc = os.Exit
 
 	// closeActions holds CI visibility close actions.
 	closeActions []ciVisibilityCloseAction
@@ -76,6 +104,9 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 
 		log.Debug("civisibility: initializing")
 
+		enabledMode, _ := envconfig.FromEnv()
+		parentOnly := enabledMode == envconfig.EnabledModeParent
+
 		// Since calling this method indicates we are in CI Visibility mode, set the environment variable.
 		_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "1")
 
@@ -112,17 +143,89 @@ func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOpt
 		log.Debug("civisibility: initializing tracer")
 		tracerInitializer(opts)
 
+		if parentOnly {
+			_ = os.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "false")
+		}
+
 		initializeCiVisibilityLogs(serviceName)
 
-		// Handle SIGINT and SIGTERM signals to ensure we close all open spans and flush the tracer before exiting
-		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			<-signals
-			ExitCiVisibility()
-			os.Exit(1)
-		}()
+		startCIVisibilitySignalHandler()
 	})
+}
+
+// run waits for either a process signal or a normal shutdown request.
+func (handler *ciVisibilitySignalHandler) run() {
+	defer close(handler.done)
+
+	select {
+	case <-handler.signals:
+		if handler.stopping.Load() {
+			return
+		}
+		exitCiVisibility(false)
+		ciVisibilitySignalExitFunc(1)
+	case <-handler.stop:
+		return
+	}
+}
+
+// startCIVisibilitySignalHandler registers the process signal handler once for
+// the current CI Visibility initialization.
+func startCIVisibilitySignalHandler() {
+	ciVisibilitySignalHandlerMu.Lock()
+	defer ciVisibilitySignalHandlerMu.Unlock()
+
+	if activeCIVisibilitySignalHandler != nil {
+		return
+	}
+
+	handler := &ciVisibilitySignalHandler{
+		signals: make(chan os.Signal, 1),
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+
+	activeCIVisibilitySignalHandler = handler
+	signal.Notify(handler.signals, syscall.SIGINT, syscall.SIGTERM)
+	go handler.run()
+}
+
+// markCIVisibilitySignalHandlerStopping prevents a late buffered signal from
+// converting an already-started normal shutdown into os.Exit(1).
+func markCIVisibilitySignalHandlerStopping() {
+	ciVisibilitySignalHandlerMu.Lock()
+	handler := activeCIVisibilitySignalHandler
+	ciVisibilitySignalHandlerMu.Unlock()
+
+	if handler != nil {
+		handler.stopping.Store(true)
+	}
+}
+
+// stopCIVisibilitySignalHandler stops the active signal handler and waits for
+// its goroutine to exit. It is safe to call repeatedly.
+func stopCIVisibilitySignalHandler() {
+	ciVisibilitySignalHandlerMu.Lock()
+	handler := activeCIVisibilitySignalHandler
+	ciVisibilitySignalHandlerMu.Unlock()
+
+	if handler == nil {
+		return
+	}
+
+	handler.stopOnce.Do(func() {
+		handler.stopping.Store(true)
+		signal.Stop(handler.signals)
+		close(handler.stop)
+	})
+
+	<-handler.done
+
+	ciVisibilitySignalHandlerMu.Lock()
+	if activeCIVisibilitySignalHandler == handler {
+		activeCIVisibilitySignalHandler = nil
+	}
+	ciVisibilitySignalHandlerMu.Unlock()
 }
 
 // initializeCiVisibilityLogs starts CI Visibility log shipping only when logs are enabled and Bazel offline/file modes do not suppress it.
@@ -157,12 +260,25 @@ func PushCiVisibilityCloseAction(action ciVisibilityCloseAction) {
 
 // ExitCiVisibility executes all registered close actions and stops the tracer.
 func ExitCiVisibility() {
+	markCIVisibilitySignalHandlerStopping()
+	exitCiVisibility(true)
+}
+
+// exitCiVisibility executes CI Visibility shutdown and optionally stops the
+// signal handler. Signal-triggered shutdown skips that wait to avoid self-deadlock.
+func exitCiVisibility(stopSignalHandler bool) {
 	if civisibility.GetState() != civisibility.StateInitialized {
 		log.Debug("civisibility: already closed or not initialized")
+		if stopSignalHandler {
+			stopCIVisibilitySignalHandler()
+		}
 		return
 	}
 
 	civisibility.SetState(civisibility.StateExiting)
+	if stopSignalHandler {
+		defer stopCIVisibilitySignalHandler()
+	}
 	defer civisibility.SetState(civisibility.StateExited)
 	log.Debug("civisibility: exiting")
 	closeActionsMutex.Lock()
@@ -175,9 +291,19 @@ func ExitCiVisibility() {
 		tracer.Flush()
 		tracer.Stop()
 		telemetry.StopApp()
+		closeCIVisibilityIdleConnections()
 		log.Debug("civisibility: done.")
 	}()
 	for _, v := range closeActions {
 		v()
 	}
+}
+
+// closeCIVisibilityIdleConnections releases keep-alive connections after all CI
+// Visibility components have completed their shutdown flushes.
+func closeCIVisibilityIdleConnections() {
+	if closer, ok := ciVisibilityClient.(ciVisibilityIdleConnectionCloser); ok {
+		closer.CloseIdleConnections()
+	}
+	civisibilitynet.CloseIdleConnections()
 }

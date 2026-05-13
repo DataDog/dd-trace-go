@@ -159,9 +159,11 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 	if settings.ItrEnabled {
 		coverageEnabled := settings.CodeCoverage && coverage.CanCollect()
 		session.SetTag(constants.CodeCoverageEnabled, strconv.FormatBool(coverageEnabled))
+		testsSkippingEnabled := strconv.FormatBool(settings.TestsSkipping)
+		session.SetTag(constants.ITRTestsSkippingEnabled, testsSkippingEnabled)
+		utils.AddCITagsMap(map[string]string{constants.ITRTestsSkippingEnabled: testsSkippingEnabled})
 
 		if settings.TestsSkipping {
-			session.SetTag(constants.ITRTestsSkippingEnabled, "true")
 			session.SetTag(constants.ITRTestsSkippingType, "test")
 
 			// Check if the test is going to be skipped by ITR
@@ -171,8 +173,6 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 					session.SetTag(constants.ITRTestsSkipped, "false")
 				}
 			}
-		} else {
-			session.SetTag(constants.ITRTestsSkippingEnabled, "false")
 		}
 	}
 
@@ -269,6 +269,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Set some required tags from the execution metadata
 		cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
 		if cancelExecution {
+			if !execMeta.hasAdditionalFeatureWrapper {
+				// Disabled fast-path executions close their test event before the normal defer is registered.
+				checkModuleAndSuite(module, suite)
+			}
 			return
 		}
 
