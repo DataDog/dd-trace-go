@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -137,6 +138,14 @@ func TestPayloadV04Decode(t *testing.T) {
 	}
 }
 
+// Helper to get the expected trace ID for a span before it can be GC'd
+func expectedTraceID(s *Span) (out [16]byte) {
+	ctx := s.Context()
+	binary.BigEndian.PutUint64(out[:8], ctx.traceID.Upper())
+	binary.BigEndian.PutUint64(out[8:], ctx.traceID.Lower())
+	return
+}
+
 // TestPayloadV1Decode ensures that whatever we push into a v1 payload can
 // be decoded by the codec, and that it matches the original payload.
 func TestPayloadV1Decode(t *testing.T) {
@@ -188,8 +197,13 @@ func TestPayloadV1Decode(t *testing.T) {
 				p      = newPayloadV1()
 			)
 
+			var first spanList
 			for i := range n {
-				_, _ = p.push(newDetailedSpanList(i%5 + 1))
+				sl := newDetailedSpanList(i%5 + 1)
+				_, _ = p.push(sl)
+				if i == 0 {
+					first = sl
+				}
 			}
 			encoded, err := io.ReadAll(p)
 			assert.NoError(err)
@@ -206,8 +220,10 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.Equal(p.attributes, got.attributes)
 			assert.Equal(got.attributes[keyProcessTags].value, processtags.GlobalTags().String())
 			assert.Greater(len(got.chunks), 0)
-			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
-			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
+
+			tid := expectedTraceID(first[0])
+			assert.Equal(tid[:], got.chunks[0].traceID)
+			assert.Equal(first[0].spanID, got.chunks[0].spans[0].spanID)
 			assert.Equal(got.chunks[0].attributes["service"].value, "golden")
 			assert.Equal(uint32(1), got.chunks[0].samplingMechanism)
 		})
@@ -221,7 +237,8 @@ func TestPayloadV1Decode(t *testing.T) {
 
 			s := newBasicSpan("span.list")
 			s.context.trace.replacePropagatingTags(map[string]string{"keyDecisionMaker": ""})
-			p.push([]*Span{s})
+			sl := spanList{s}
+			p.push(sl)
 			encoded, err := io.ReadAll(p)
 			assert.NoError(err)
 
@@ -234,8 +251,10 @@ func TestPayloadV1Decode(t *testing.T) {
 			assert.NoError(err)
 			assert.Empty(o)
 			assert.Greater(len(got.chunks), 0)
-			assert.Equal(p.chunks[0].traceID, got.chunks[0].traceID)
-			assert.Equal(p.chunks[0].spans[0].spanID, got.chunks[0].spans[0].spanID)
+
+			tid := expectedTraceID(sl[0])
+			assert.Equal(tid[:], got.chunks[0].traceID)
+			assert.Equal(sl[0].spanID, got.chunks[0].spans[0].spanID)
 		})
 
 		t.Run("with priority", func(t *testing.T) {
