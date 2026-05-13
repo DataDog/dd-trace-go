@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened, edited, milestoned, demilestoned]
 
 permissions:
+  id-token: write
   contents: read
   pull-requests: read
   statuses: write
@@ -13,12 +14,19 @@ permissions:
 jobs:
   code_freeze_check:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
     steps:
+      - name: Get GitHub Token via dd-octo-sts
+        id: generate-token
+        uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.code-freeze-check
+
       - name: Check code freeze status
         id: check
+        env:
+          GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
         run: |
           set -e
 
@@ -64,6 +72,8 @@ jobs:
         # Forked PRs have a read-only GITHUB_TOKEN that cannot write commit statuses.
         # Skip the API call for forks; the job will still fail via the next step if needed.
         if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
         run: |
           SHA="${{ github.event.pull_request.head.sha }}"
           REPO="${{ github.repository }}"
