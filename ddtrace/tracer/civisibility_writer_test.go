@@ -33,6 +33,7 @@ type failingCiVisibilityTransport struct {
 }
 
 func (t *failingCiVisibilityTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
 	t.sendAttempts++
 
 	ciVisibilityPayload := &ciVisibilityPayload{payload: p, serializationTime: 0}

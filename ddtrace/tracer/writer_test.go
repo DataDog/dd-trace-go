@@ -358,6 +358,7 @@ type failingTransport struct {
 }
 
 func (t *failingTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
 	t.sendAttempts++
 
 	traces, _, err := decode(p)
@@ -783,6 +784,7 @@ func TestPayloadSizeReporting(t *testing.T) {
 type simpleTransport struct{}
 
 func (t *simpleTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
 	// Just read and discard the payload to simulate a successful send
 	_, _ = io.Copy(io.Discard, p)
 	return io.NopCloser(strings.NewReader("{}")), nil

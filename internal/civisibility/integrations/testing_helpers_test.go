@@ -33,7 +33,13 @@ func resetCIVisibilityStateForTesting() {
 
 	uploadRepositoryChangesFunc = uploadRepositoryChanges
 	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
-	getSearchCommitsFunc = getSearchCommits
+	// Return "no commits" so the upload goroutine spawned by ensureSettingsInitialization
+	// exits immediately without reading ciVisibilityClient, preventing a data race with the
+	// next reset call that sets ciVisibilityClient = nil.
+	// Tests that need real commit data override getSearchCommitsFunc themselves.
+	getSearchCommitsFunc = func() (*searchCommitsResponse, error) {
+		return newSearchCommitsResponse(nil, nil, false), nil
+	}
 	unshallowGitRepositoryFunc = utils.UnshallowGitRepository
 	sendObjectsPackFileFunc = sendObjectsPackFile
 

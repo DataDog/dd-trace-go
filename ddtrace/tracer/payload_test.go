@@ -1168,3 +1168,67 @@ func BenchmarkPayloads(b *testing.B) {
 
 	// ... Add more payload versions here...
 }
+
+func TestPayloadV1Handoff(t *testing.T) {
+	// handoff must trigger a pool return exactly once regardless of ordering.
+	// wouldRelease mirrors handoff's Or+compare logic without the putPayloadV1
+	// side-effect, since putPayloadV1 isn't mockable.
+	wouldRelease := func(p *payloadV1, ownBit uint32) bool {
+		counterpart := (pv1StateFlushDone | pv1StateBodyClosed) &^ ownBit
+		return p.poolState.Or(ownBit) == counterpart
+	}
+
+	fresh := func() *payloadV1 {
+		// getPayloadV1 calls clear() which resets poolState to 0.
+		return getPayloadV1()
+	}
+
+	t.Run("flush first then close", func(t *testing.T) {
+		p := fresh()
+		assert.False(t, wouldRelease(p, pv1StateFlushDone), "flush alone must not release")
+		assert.True(t, wouldRelease(p, pv1StateBodyClosed), "close after flush must release")
+		putPayloadV1(p)
+	})
+
+	t.Run("close first then flush", func(t *testing.T) {
+		p := fresh()
+		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "close alone must not release")
+		assert.True(t, wouldRelease(p, pv1StateFlushDone), "flush after close must release")
+		putPayloadV1(p)
+	})
+
+	t.Run("repeated close idempotent", func(t *testing.T) {
+		p := fresh()
+		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "first close — flush not done")
+		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "second close — bit already set, no-op")
+		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "third close — still no-op")
+		// Flush must still release correctly after repeated closes.
+		assert.True(t, wouldRelease(p, pv1StateFlushDone), "flush after repeated closes must release")
+		putPayloadV1(p)
+	})
+
+	t.Run("concurrent flush and close", func(t *testing.T) {
+		const iterations = 10000
+		for range iterations {
+			p := fresh()
+			var wg sync.WaitGroup
+			var released atomic.Int32
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				if wouldRelease(p, pv1StateFlushDone) {
+					released.Add(1)
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				if wouldRelease(p, pv1StateBodyClosed) {
+					released.Add(1)
+				}
+			}()
+			wg.Wait()
+			assert.Equal(t, int32(1), released.Load(), "exactly one release per iteration")
+			putPayloadV1(p)
+		}
+	})
+}
