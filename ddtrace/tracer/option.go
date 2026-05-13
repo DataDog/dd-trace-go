@@ -1077,7 +1077,6 @@ func WithRuntimeMetrics() StartOption {
 func WithDogstatsdAddr(addr string) StartOption {
 	return func(cfg *config) {
 		cfg.internalConfig.SetDogstatsdAddr(addr, telemetry.OriginCode)
-		globalconfig.SetDogstatsdAddr(addr)
 	}
 }
 
