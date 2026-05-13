@@ -246,8 +246,10 @@ func TestGet(t *testing.T) {
 // settersWithoutTelemetry lists Set methods that don't report telemetry.
 // Add your setter here with a reason if telemetry reporting is not needed.
 var settersWithoutTelemetry = map[string]string{
-	"SetLogToStdout":      "not user-configurable",
-	"SetIsLambdaFunction": "not user-configurable",
+	"SetLogToStdout":             "not user-configurable",
+	"SetIsLambdaFunction":        "not user-configurable",
+	"SetAgentReportedStatsdPort": "reports telemetry with fixed OriginCalculated; origin not caller-supplied",
+	"SetDogstatsdSocketPath":     "test-only setter; resolved-address telemetry comes from other dogstatsd setters",
 }
 
 // specialCaseSetters handles setters with non-standard signatures.

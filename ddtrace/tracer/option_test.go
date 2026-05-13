@@ -51,6 +51,15 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	}
 }
 
+// withSocketDSD overrides the UDS socket path that internal/config probes for
+// DogStatsD auto-discovery. Applied as a StartOption so the override takes
+// effect before loadAgentFeatures triggers the resolved-address recompute.
+func withSocketDSD(path string) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetDogstatsdSocketPath(path)
+	}
+}
+
 // withAgentRemoteConfig creates a mock agent server that reports remote config support.
 // Use in tests that need RC to start but don't have a real agent running.
 // The server is automatically closed when the test ends.
@@ -150,9 +159,6 @@ func TestAutoDetectStatsd(t *testing.T) {
 		}
 		addr := filepath.Join(dir, "dsd.socket")
 
-		defer func(old string) { defaultSocketDSD = old }(defaultSocketDSD)
-		defaultSocketDSD = addr
-
 		uaddr, err := net.ResolveUnixAddr("unixgram", addr)
 		if err != nil {
 			t.Fatal(err)
@@ -164,7 +170,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 		defer conn.Close()
 		conn.SetDeadline(time.Now().Add(5 * time.Second))
 
-		cfg, err := newTestConfig(WithAgentTimeout(2))
+		cfg, err := newTestConfig(WithAgentTimeout(2), withSocketDSD(addr))
 		assert.NoError(t, err)
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -1160,10 +1166,12 @@ func TestResolveDogstatsdAddr(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			c := internalconfig.CreateNew()
+			c.SetDogstatsdSocketPath(tt.socketPath)
 			if tt.configAddr != "" {
 				c.SetDogstatsdAddr(tt.configAddr, internalconfig.OriginCode)
 			}
-			assert.Equal(t, tt.expected, c.ResolveDogstatsdAddr(tt.agentStatsdPort, tt.socketPath))
+			c.SetAgentReportedStatsdPort(tt.agentStatsdPort)
+			assert.Equal(t, tt.expected, c.DogstatsdAddr())
 		})
 	}
 }

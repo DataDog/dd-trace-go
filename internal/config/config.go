@@ -72,9 +72,21 @@ type Config struct {
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
-	// dogstatsdAddr is the address used to send DogStatsD metrics to the Datadog Agent.
+	// dogstatsdAddr is the resolved address used to send DogStatsD metrics to the Datadog Agent.
 	dogstatsdAddr string
-	debug         bool
+	// dogstatsdUserAddr is the address explicitly set via WithDogstatsdAddr (priority 1).
+	dogstatsdUserAddr string
+	// dogstatsdEnvHost / dogstatsdEnvPort / dogstatsdAgentHost are cached at
+	// loadConfig time from DD_DOGSTATSD_HOST / DD_DOGSTATSD_PORT / DD_AGENT_HOST.
+	dogstatsdEnvHost   string
+	dogstatsdEnvPort   string
+	dogstatsdAgentHost string
+	// dogstatsdSocketPath is the UDS socket path probed for auto-discovery.
+	dogstatsdSocketPath string
+	// agentReportedStatsdPort is the port from the trace-agent /info endpoint
+	// (0 = unknown). Set by the tracer via SetAgentReportedStatsdPort.
+	agentReportedStatsdPort int
+	debug                   bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
 	// serviceName specifies the name of this application.
@@ -196,6 +208,18 @@ func loadConfig() *Config {
 	agentHost := p.GetString("DD_AGENT_HOST", "")
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+
+	// Cache the dogstatsd-address layers and compute the initial resolved value.
+	// agentReportedStatsdPort starts at 0; the tracer sets it later via
+	// SetAgentReportedStatsdPort once /info is fetched.
+	cfg.dogstatsdAgentHost = agentHost
+	cfg.dogstatsdEnvHost = p.GetString("DD_DOGSTATSD_HOST", "")
+	cfg.dogstatsdEnvPort = p.GetString("DD_DOGSTATSD_PORT", "")
+	cfg.dogstatsdSocketPath = defaultSocketDSDPath
+	cfg.dogstatsdAddr = resolveDogstatsdAddr(
+		cfg.dogstatsdUserAddr, cfg.dogstatsdEnvHost, cfg.dogstatsdEnvPort,
+		cfg.dogstatsdAgentHost, cfg.agentReportedStatsdPort, cfg.dogstatsdSocketPath,
+	)
 
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
@@ -375,30 +399,49 @@ func (c *Config) DogstatsdAddr() string {
 	return c.dogstatsdAddr
 }
 
+// SetDogstatsdAddr records the user-provided DogStatsD address (priority 1)
+// and recomputes the resolved value from all current layers. Telemetry is
+// reported with the supplied origin.
 func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.checkProductConflict("DD_DOGSTATSD_URL", origin, addr, product...) {
 		return
 	}
-	c.dogstatsdAddr = addr
-	configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
+	c.dogstatsdUserAddr = addr
+	c.dogstatsdAddr = c.resolveDogstatsdAddrLocked()
+	configtelemetry.Report("DD_DOGSTATSD_URL", c.dogstatsdAddr, origin)
 }
 
-// ResolveDogstatsdAddr resolves and stores the DogStatsD address from the
-// user-configured value (set via WithDogstatsdAddr), env vars, and the
-// agent-reported statsd port (0 when unknown). socketDSDPath is the UDS
-// socket path to probe for auto-discovery. The resolved address is reported
-// to config telemetry with OriginCalculated. Returns the resolved address.
-func (c *Config) ResolveDogstatsdAddr(agentStatsdPort int, socketDSDPath string) string {
+// SetAgentReportedStatsdPort records the port from the trace-agent /info
+// endpoint and recomputes the resolved DogStatsD address. The tracer calls
+// this once after fetching agent features. A value of 0 means the agent did
+// not report a port (e.g. /info unavailable). Telemetry is reported with
+// OriginCalculated.
+func (c *Config) SetAgentReportedStatsdPort(port int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	addr := resolveDogstatsdAddr(c.dogstatsdAddr, agentStatsdPort, socketDSDPath)
-	c.dogstatsdAddr = addr
-	if addr != "" {
-		configtelemetry.Report("DD_DOGSTATSD_URL", addr, telemetry.OriginCalculated)
-	}
-	return addr
+	c.agentReportedStatsdPort = port
+	c.dogstatsdAddr = c.resolveDogstatsdAddrLocked()
+	configtelemetry.Report("DD_DOGSTATSD_URL", c.dogstatsdAddr, telemetry.OriginCalculated)
+}
+
+// SetDogstatsdSocketPath overrides the UDS socket path probed during
+// auto-discovery and recomputes the resolved address. Intended for tests.
+func (c *Config) SetDogstatsdSocketPath(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dogstatsdSocketPath = path
+	c.dogstatsdAddr = c.resolveDogstatsdAddrLocked()
+}
+
+// resolveDogstatsdAddrLocked recomputes the resolved address from the cached
+// layers. Caller must hold c.mu.
+func (c *Config) resolveDogstatsdAddrLocked() string {
+	return resolveDogstatsdAddr(
+		c.dogstatsdUserAddr, c.dogstatsdEnvHost, c.dogstatsdEnvPort,
+		c.dogstatsdAgentHost, c.agentReportedStatsdPort, c.dogstatsdSocketPath,
+	)
 }
 
 func (c *Config) Debug() bool {

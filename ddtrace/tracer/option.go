@@ -120,12 +120,6 @@ var contribIntegrations = map[string]struct {
 	"github.com/valkey-io/valkey-go":                {"Valkey", false},
 }
 
-var (
-	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
-	// Replaced in tests
-	defaultSocketDSD = "/var/run/datadog/dsd.socket"
-)
-
 // Supported trace protocols.
 const (
 	traceProtocolV04 = internalconfig.TraceProtocolV04
@@ -429,9 +423,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.loadContribIntegrations(info.Deps)
 	}
 	if c.statsdClient == nil {
-		// configure statsd client
-		addr := c.internalConfig.ResolveDogstatsdAddr(af.StatsdPort, defaultSocketDSD)
-		globalconfig.SetDogstatsdAddr(addr)
+		// Push the agent-reported port into Config so it can recompute the
+		// resolved dogstatsd address using the same precedence rules as the
+		// other layers. Mirror the final value into globalconfig for contrib
+		// code that consumes it from there.
+		c.internalConfig.SetAgentReportedStatsdPort(af.StatsdPort)
+		globalconfig.SetDogstatsdAddr(c.internalConfig.DogstatsdAddr())
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
 	// This allows persisting the initial value of globalTags for future resets and updates.
