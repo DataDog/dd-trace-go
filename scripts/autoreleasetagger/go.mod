@@ -4,6 +4,6 @@ go 1.25.0
 
 require github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
 
-require golang.org/x/mod v0.33.0 // indirect
+require golang.org/x/mod v0.34.0 // indirect
 
 replace github.com/DataDog/dd-trace-go/v2 => ../..
