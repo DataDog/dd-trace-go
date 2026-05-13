@@ -123,11 +123,22 @@ type payloadV1 struct {
 	poolState atomic.Uint32
 }
 
-// Bits for payloadV1.poolState.
+// Bits for payloadV1.poolState, used by handoff.
 const (
 	pv1StateFlushDone  uint32 = 1 << 0 // set by flush goroutine after all sends complete
 	pv1StateBodyClosed uint32 = 1 << 1 // set by payloadV1.Close() when HTTP is done
 )
+
+// handoff signals that one side (flush or HTTP close) is done with the payload.
+// It sets own bit and returns the payload to the pool if the counterpart bit was
+// already set — i.e., both parties are done. Idempotent: repeated calls with the
+// same bit are no-ops after the first.
+func (p *payloadV1) handoff(ownBit uint32) {
+	counterpart := (pv1StateFlushDone | pv1StateBodyClosed) &^ ownBit
+	if old := p.poolState.Or(ownBit); old == counterpart { // both parties done
+		putPayloadV1(p)
+	}
+}
 
 // Constant dummy value to represent a serialization failure. Used to prevent failures while
 // decoding the payload.
@@ -374,11 +385,7 @@ func (p *payloadV1) setProcessTags() {
 }
 
 func (p *payloadV1) Close() error {
-	// Set the "body closed" bit. If the flush goroutine already set its bit,
-	// all HTTP activity (reads + close) is done — return to pool.
-	if old := p.poolState.Or(pv1StateBodyClosed); old == pv1StateFlushDone {
-		putPayloadV1(p)
-	}
+	p.handoff(pv1StateBodyClosed)
 	return nil
 }
 
