@@ -1,0 +1,10 @@
+experiments:
+  - name: PR Performance Gate
+    steps:
+      - name: PR Performance Gate
+        run: fail_on_regression
+        regression_threshold: 20.0 # percents
+
+global_teardown:
+  - name: Post PR comment
+    run: post_pr_comment

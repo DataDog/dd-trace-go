@@ -11,10 +11,21 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internaltelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func resetCIVisibilityStateForTesting() {
+	stopCIVisibilitySignalHandler()
+
+	additionalFeaturesInitializationMu.Lock()
+	defer additionalFeaturesInitializationMu.Unlock()
+
+	// Payload-file tests can start a telemetry client that writes files
+	// asynchronously, so stop it before temporary output directories are cleaned.
+	internaltelemetry.StopApp()
+
 	settingsInitializationOnce = sync.Once{}
+	additionalFeaturesInitializationOnce = sync.Once{}
 
 	closeActions = nil
 
@@ -27,9 +38,23 @@ func resetCIVisibilityStateForTesting() {
 	ciVisibilityImpactedTestsAnalyzer = nil
 	sourceFileMetadataCache = sync.Map{}
 
-	uploadRepositoryChangesFunc = uploadRepositoryChanges
+	repositoryUploadHooksMu.Lock()
+	uploadRepositoryChangesFunc = nil
+	// Return "no commits" so the upload goroutine spawned by ensureSettingsInitialization
+	// exits immediately without reading ciVisibilityClient, preventing a data race with the
+	// next reset call that sets ciVisibilityClient = nil.
+	// Tests that need real commit data override getSearchCommitsFunc themselves.
+	getSearchCommitsFunc = func() (*searchCommitsResponse, error) {
+		return newSearchCommitsResponse(nil, nil, false), nil
+	}
+	unshallowGitRepositoryFunc = utils.UnshallowGitRepository
+	sendObjectsPackFileFunc = sendObjectsPackFile
+	repositoryUploadHooksMu.Unlock()
+
+	newCIVisibilityClientWithServiceNameFunc = net.NewClientWithServiceName
 
 	utils.ResetCITags()
 	utils.ResetCIMetrics()
+	utils.ResetCodeOwnersForTesting()
 	bazel.ResetForTesting()
 }

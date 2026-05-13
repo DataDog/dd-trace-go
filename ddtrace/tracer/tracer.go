@@ -29,6 +29,7 @@ import (
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -250,11 +251,12 @@ func Start(opts ...StartOption) error {
 		t.Stop()
 		return nil
 	}
-	if t.config.internalConfig.CIVisibilityEnabled() && t.config.ciVisibilityNoopTracer {
-		setGlobalTracer(wrapWithCiVisibilityNoopTracer(t))
-	} else {
-		setGlobalTracer(t)
+	ciVisibilityEnabled := t.config.internalConfig.CIVisibilityEnabled()
+	globalTracer := Tracer(t)
+	if ciVisibilityEnabled && t.config.ciVisibilityNoopTracer {
+		globalTracer = wrapWithCiVisibilityNoopTracer(t)
 	}
+	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -924,41 +926,45 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		return nil
 	}
 	span := spanStart(operationName, &t.sharedAttrs, options...)
+
+	// Snapshot all internal config fields needed below under a single RLock to avoid
+	// reader-counter contention on Config.mu when many goroutines call StartSpan.
+	cSnap := t.config.internalConfig.SpanStartSnapshot()
+
 	if span.service == "" {
-		span.service = t.config.internalConfig.ServiceName()
+		span.service = cSnap.ServiceName
 	}
 
 	// For non-universal version, promote main-service spans to the version-inclusive
 	// shared attrs before applying any tags. This makes the subsequent version write
 	// (from config or global tags) a COW no-op instead of triggering a Clone.
-	if !t.config.universalVersion && span.service == t.config.internalConfig.ServiceName() {
+	if !t.config.universalVersion && span.service == cSnap.ServiceName {
 		span.meta.ReplaceSharedAttrs(&t.sharedAttrs, &t.sharedAttrsForMainSvc)
 	}
 
-	cfg := t.config.internalConfig
-	span.noDebugStack = !cfg.DebugStack()
-	if hostname := cfg.Hostname(); hostname != "" && cfg.ReportHostname() {
-		span.setMetaInit(keyHostname, hostname)
+	span.noDebugStack = !cSnap.DebugStack
+	if cSnap.Hostname != "" && cSnap.ReportHostname {
+		span.setMetaInit(keyHostname, cSnap.Hostname)
 	}
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable
 
 	// add global tags
 	span.setTags(t.config.globalTags.get())
 
-	if newSvc, ok := cfg.ServiceMapping(span.service); ok {
+	if newSvc, ok := t.config.internalConfig.ServiceMapping(span.service); ok {
 		span.service = newSvc
 		span.serviceSource = ext.ServiceSourceMapping
 	}
 
-	if ver := cfg.Version(); ver != "" {
-		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.internalConfig.ServiceName()) {
+	if cSnap.Version != "" {
+		if t.config.universalVersion || span.service == cSnap.ServiceName {
 			delete(span.metrics, ext.Version)
-			span.meta.Set(ext.Version, ver)
+			span.meta.Set(ext.Version, cSnap.Version)
 		}
 	}
-	if env := cfg.Env(); env != "" {
+	if cSnap.Env != "" {
 		delete(span.metrics, ext.Environment)
-		span.meta.Set(ext.Environment, env)
+		span.meta.Set(ext.Environment, cSnap.Env)
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -969,12 +975,12 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
 			span, span.name, span.resource, &span.meta, span.metrics)
 	}
-	if t.config.internalConfig.ProfilerHotspotsEnabled() || t.config.internalConfig.ProfilerEndpoints() {
-		t.applyPPROFLabels(span.pprofCtxRestore, span)
+	if cSnap.ProfilerHotspotsEnabled || cSnap.ProfilerEndpoints {
+		t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
 	} else {
 		span.pprofCtxRestore = nil
 	}
-	if t.config.internalConfig.DebugAbandonedSpans() {
+	if cSnap.DebugAbandonedSpans {
 		select {
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
 			// ok
@@ -984,7 +990,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	if span.metrics[keyTopLevel] == 1 {
 		// The span is the local root span.
-		span.setMetricInit(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+		span.setMetricInit(keySpanAttributeSchemaVersion, float64(t.config.internalConfig.SpanAttributeSchemaVersion()))
 	}
 	span.setMetricInit(ext.Pid, float64(t.pid))
 	t.spansStarted.Inc(span.integration)
@@ -997,21 +1003,21 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
 // +checklocksignore — Initialization time, called from StartSpan before span is shared.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot) {
 	// Important: The label keys are ordered alphabetically to take advantage of
 	// an upstream optimization that landed in go1.24.  This results in ~10%
 	// better performance on BenchmarkStartSpan. See
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
 	localRootSpan := span.Root()
-	if t.config.internalConfig.ProfilerHotspotsEnabled() && localRootSpan != nil {
+	if snap.ProfilerHotspotsEnabled && localRootSpan != nil {
 		spanID := localRootSpan.getSpanID()
 		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
 	}
-	if t.config.internalConfig.ProfilerHotspotsEnabled() {
+	if snap.ProfilerHotspotsEnabled {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	if t.config.internalConfig.ProfilerEndpoints() && localRootSpan != nil {
+	if snap.ProfilerEndpoints && localRootSpan != nil {
 		resource := localRootSpan.getResource()
 		if spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, resource)

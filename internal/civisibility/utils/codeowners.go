@@ -44,13 +44,19 @@ type (
 )
 
 var (
-	// codeowners holds the parsed CODEOWNERS file data.
-	codeowners      *CodeOwners
+	// codeowners holds the parsed CODEOWNERS file data after discovery succeeds.
+	codeowners *CodeOwners
+
+	// codeownersLookupDone distinguishes "not looked up yet" from "looked up and no CODEOWNERS file exists".
+	codeownersLookupDone bool
+
+	// codeownersMutex protects CODEOWNERS discovery state.
 	codeownersMutex sync.Mutex
 )
 
-// GetCodeOwners retrieves and caches the CODEOWNERS data.
+// GetCodeOwners retrieves and caches CODEOWNERS discovery for this process.
 // It looks for the CODEOWNERS file in various standard locations within the CI workspace.
+// Successful parsed data is cached, and true missing-file discovery results are cached as nil.
 // This function is thread-safe due to the use of a mutex.
 //
 // Returns:
@@ -60,10 +66,11 @@ func GetCodeOwners() *CodeOwners {
 	codeownersMutex.Lock()
 	defer codeownersMutex.Unlock()
 
-	if codeowners != nil {
+	if codeownersLookupDone {
 		return codeowners
 	}
 
+	hasNonMissingError := false
 	tags := GetCITags()
 	if v, ok := tags[constants.CIWorkspacePath]; ok {
 		paths := []string{
@@ -75,7 +82,10 @@ func GetCodeOwners() *CodeOwners {
 		for _, path := range paths {
 			if cow, err := parseCodeOwners(path); err == nil {
 				codeowners = cow
+				codeownersLookupDone = true
 				return codeowners
+			} else if !os.IsNotExist(err) {
+				hasNonMissingError = true
 			}
 		}
 	}
@@ -84,11 +94,26 @@ func GetCodeOwners() *CodeOwners {
 	for _, path := range []string{"CODEOWNERS", filepath.Join(filepath.Dir(os.Args[0]), "CODEOWNERS")} {
 		if cow, err := parseCodeOwners(path); err == nil {
 			codeowners = cow
+			codeownersLookupDone = true
 			return codeowners
+		} else if !os.IsNotExist(err) {
+			hasNonMissingError = true
 		}
 	}
 
+	if !hasNonMissingError {
+		codeownersLookupDone = true
+	}
 	return nil
+}
+
+// ResetCodeOwnersForTesting clears the process-local CODEOWNERS discovery cache.
+func ResetCodeOwnersForTesting() {
+	codeownersMutex.Lock()
+	defer codeownersMutex.Unlock()
+
+	codeowners = nil
+	codeownersLookupDone = false
 }
 
 // parseCodeOwners reads and parses the CODEOWNERS file located at the given filePath.

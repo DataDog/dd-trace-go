@@ -316,6 +316,83 @@ func TestConcentratorDefaultEnv(t *testing.T) {
 	})
 }
 
+func TestPerSpanVersionInStats(t *testing.T) {
+	bucketSize := int64(500_000)
+	makeSpan := func(version string) *Span {
+		s := &Span{
+			name:     "http.request",
+			start:    time.Now().UnixNano() + 3*bucketSize,
+			duration: 1,
+			metrics:  map[string]float64{keyMeasured: 1},
+		}
+		if version != "" {
+			s.meta.Set(ext.Version, version)
+		}
+		return s
+	}
+
+	t.Run("per-span version propagates to stats payload", func(t *testing.T) {
+		spanVersion := "synthtracer-20250501120000"
+		transport := newDummyTransport()
+		c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+
+		s := makeSpan(spanVersion)
+		ss, ok := c.newTracerStatSpan(s, nil)
+		require.True(t, ok)
+		c.Start()
+		c.In <- ss
+		c.Stop()
+
+		got := transport.Stats()
+		require.Len(t, got, 1)
+		assert.Equal(t, spanVersion, got[0].Version,
+			"per-span version tag must be used when no global version is configured")
+	})
+
+	t.Run("falls back to global config version when span has no version tag", func(t *testing.T) {
+		transport := newDummyTransport()
+		cfg, err := newTestConfig(withNoopInfoHTTPClient(), func(c *config) {
+			c.ddTransport = transport
+			c.internalConfig.SetVersion("global-v1.2.3", internalconfig.OriginCode)
+		})
+		require.NoError(t, err)
+		c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
+
+		s := makeSpan("")
+		ss, ok := c.newTracerStatSpan(s, nil)
+		require.True(t, ok)
+		c.Start()
+		c.In <- ss
+		c.Stop()
+
+		got := transport.Stats()
+		require.Len(t, got, 1)
+		assert.Equal(t, "global-v1.2.3", got[0].Version)
+	})
+
+	t.Run("two spans with different versions produce separate payloads", func(t *testing.T) {
+		transport := newDummyTransport()
+		c := newConcentrator(newTestConfigWithTransport(t, transport), bucketSize, &statsd.NoOpClientDirect{})
+
+		s1 := makeSpan("v-timestamp-1")
+		s2 := makeSpan("v-timestamp-2")
+		ss1, ok := c.newTracerStatSpan(s1, nil)
+		require.True(t, ok)
+		ss2, ok := c.newTracerStatSpan(s2, nil)
+		require.True(t, ok)
+		c.Start()
+		c.In <- ss1
+		c.In <- ss2
+		c.Stop()
+
+		got := transport.Stats()
+		require.Len(t, got, 2)
+		versions := map[string]struct{}{got[0].Version: {}, got[1].Version: {}}
+		assert.Contains(t, versions, "v-timestamp-1")
+		assert.Contains(t, versions, "v-timestamp-2")
+	})
+}
+
 func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	uniqueMethod := "POST"
 	uniqueEndpoint := "/__unique_endpoint__"

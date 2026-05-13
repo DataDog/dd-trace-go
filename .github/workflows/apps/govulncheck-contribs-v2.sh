@@ -1,6 +1,7 @@
 #!/bin/bash
 
-find ./contrib -mindepth 2 -type f -name go.mod -exec dirname {} \; | while read dir ; do
+# Use go.work as the authoritative module list — avoids nested test go.mod files.
+grep -E '^\s+\./contrib/' go.work | awk '{print $1}' | while read -r dir; do
   echo "Checking $dir"
   # govulncheck doesn't support modules with only a go.mod in the root
   go_files=$(find $dir -maxdepth 1 -type f -name '*.go' | wc -l)

@@ -6,20 +6,28 @@
 package logs
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // resetGlobalState is a helper that resets the package level variables that keep
 // state between invocations. This is required so that each test can start with
 // a clean slate and does not depend on execution order.
 func resetGlobalState() {
+	logsMu.Lock()
+	defer logsMu.Unlock()
 	enabled = nil
 	logsWriterInstance = nil
+	servName = ""
+	host = ""
 }
 
 func TestIsEnabled_DefaultsToFalse(t *testing.T) {
@@ -75,6 +83,46 @@ func TestWriteLog_WritesEntry(t *testing.T) {
 	// stores the entry inside the payload, we can verify that the payload
 	// now contains exactly one item.
 	assert.Equal(t, 1, logsWriterInstance.payload.itemCount(), "Exactly one log entry should be stored after WriteLog")
+}
+
+func TestInitializeWriteLogStopConcurrentRace(t *testing.T) {
+	resetGlobalState()
+	t.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
+
+	Initialize("race-test-service")
+	logsMu.Lock()
+	require.NotNil(t, logsWriterInstance)
+	release := make(chan struct{})
+	logsWriterInstance.client = &MockClient{SendLogsFunc: func(payload io.Reader) error {
+		<-release
+		return drainLogsPayload(payload)
+	}}
+	logsMu.Unlock()
+
+	var wg sync.WaitGroup
+	for i := range 128 {
+		wg.Go(func() {
+			WriteLog(uint64(i+1), "module", "suite", "test", fmt.Sprintf("message-%d", i), "")
+		})
+	}
+	wg.Go(func() {
+		Stop()
+	})
+
+	time.Sleep(10 * time.Millisecond)
+	close(release)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		wg.Wait()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent WriteLog and Stop did not complete")
+	}
 }
 
 func TestLogsPayloadResetAndRead(t *testing.T) {
