@@ -8,6 +8,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -16,10 +17,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 var (
@@ -31,6 +30,18 @@ var (
 		".github",
 		"tools",
 	}
+
+	// versionFileRelPath is the path to the version file relative to the repo root.
+	versionFileRelPath = filepath.Join("internal", "version", "version.go")
+
+	// versionTagRe matches the var Tag line in version.go.
+	versionTagRe = regexp.MustCompile(`^(var Tag = )".+"$`)
+
+	// semverRe matches a valid release version: vMAJOR.MINOR.PATCH(-rc.N)?
+	semverRe = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)(-rc\.\d+)?$`)
+
+	// releaseBranchRe matches a release branch name: release-vMAJOR.MINOR.x
+	releaseBranchRe = regexp.MustCompile(`^release-v(\d+)\.(\d+)\.x$`)
 )
 
 type (
@@ -109,6 +120,7 @@ func initLogger(logLevel string, dryRun bool) *slog.Logger {
 func main() {
 	var (
 		root                string
+		version             string
 		logLevel            string
 		dryRun              bool
 		excludeModulesInput string
@@ -117,7 +129,8 @@ func main() {
 		disablePush         bool
 	)
 
-	flag.StringVar(&root, "root", "", "Path to the root directory (required)")
+	flag.StringVar(&root, "root", ".", "Path to the root directory (defaults to current directory)")
+	flag.StringVar(&version, "version", "", "Target release version (e.g. v2.9.0-rc.2)")
 	flag.StringVar(&logLevel, "loglevel", "info", "Log level (debug, info, warn, error)")
 	flag.BoolVar(&dryRun, "dry-run", false, "Enable dry run mode (skip actual operations)")
 	flag.StringVar(&excludeModulesInput, "exclude-modules", "", "Comma-separated list of modules to exclude")
@@ -126,8 +139,8 @@ func main() {
 	flag.BoolVar(&disablePush, "disable-push", false, "Disable pushing tags to remote")
 	flag.Parse()
 
-	if root == "" {
-		fmt.Fprintln(os.Stderr, "ERROR: --root is required")
+	if version == "" {
+		fmt.Fprintln(os.Stderr, "ERROR: --version is required")
 		os.Exit(1)
 	}
 
@@ -166,22 +179,19 @@ func main() {
 		}
 	}
 
-	version := version.Tag
-	envVersion := env.Get("VERSION")
-	if envVersion != "" {
-		version = envVersion
-	}
-
-	// Pass disablePush to run.
 	if err := run(dryRun, remote, disablePush, root, version, excludedModules, excludedDirs); err != nil {
 		slog.Error("Failed to run autoreleasetagger", "error", err)
 		os.Exit(1)
 	}
 }
 
-// Updated run signature with disablePush.
 func run(dryRun bool, remote string, disablePush bool, root, version string, excludedModules, excludedDirs []string) error {
 	slog.Info("Using version", "version", version)
+
+	// Validate version format and branch consistency.
+	if err := validateVersionAndBranch(root, version); err != nil {
+		return err
+	}
 
 	modules, err := findModules(root, excludedDirs)
 	if err != nil {
@@ -215,67 +225,224 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		return fmt.Errorf("failed to topologically sort modules: %w", err)
 	}
 
-	// Tag and push the root module first.
-	if err := tagAndPush(dryRun, disablePush, remote, rootModule, rootModule, version); err != nil {
-		return fmt.Errorf("failed to tag root module: %w", err)
+	// Idempotency check: if the version file already matches and the root tag already
+	// points at HEAD, treat this as a no-op.
+	if alreadyDone, err := isAlreadyTagged(root, version); err != nil {
+		return fmt.Errorf("idempotency check failed: %w", err)
+	} else if alreadyDone {
+		slog.Warn("Already at target version, nothing to do", "version", version)
+		return nil
+	}
+
+	// Phase 1: stage all file mutations without committing.
+	slog.Info("Phase 1: staging all mutations")
+
+	if err := updateVersionFile(dryRun, root, version); err != nil {
+		return fmt.Errorf("failed to update version file: %w", err)
 	}
 
 	for _, modulePath := range sortedModules {
 		mod := filteredModules[modulePath]
-		slog.Info("Processing module", "module", mod.Module.Path)
-
 		slog.Info("Updating dependencies", "module", mod.Module.Path)
 		if err := updateDependencies(dryRun, rootModule, mod, version); err != nil {
-			return fmt.Errorf("failed to update dependencies: %w", err)
+			return fmt.Errorf("failed to update dependencies for %s: %w", mod.Module.Path, err)
 		}
+	}
 
-		slog.Info("Committing changes", "module", mod.Module.Path)
-		if err := commitChangesIfNeeded(dryRun, rootModule, mod, version); err != nil {
-			return fmt.Errorf("failed to commit changes: %w", err)
+	// Phase 2: one single commit for all mutations.
+	slog.Info("Phase 2: committing all changes")
+	if err := commitAll(dryRun, root, version); err != nil {
+		return fmt.Errorf("failed to commit: %w", err)
+	}
+
+	// Phase 3: create all tags pointing at the single commit.
+	slog.Info("Phase 3: tagging all modules")
+	allTags := buildTagList(root, rootModule, filteredModules, sortedModules, version)
+	for _, tagName := range allTags {
+		slog.Info("Tagging", "tag", tagName)
+		if err := createTagIfMissing(dryRun, root, tagName); err != nil {
+			return fmt.Errorf("failed to create tag %s: %w", tagName, err)
 		}
+	}
 
-		slog.Info("Tagging module", "module", mod.Module.Path)
-		if err := tagAndPush(dryRun, disablePush, remote, rootModule, mod, version); err != nil {
-			return fmt.Errorf("failed to tag module: %w", err)
+	if disablePush {
+		slog.Info("Push disabled; skipping git push")
+		return nil
+	}
+
+	for _, tagName := range allTags {
+		if err := pushTagIfMissing(dryRun, root, remote, tagName); err != nil {
+			return fmt.Errorf("failed to push tag %s: %w", tagName, err)
 		}
 	}
 
 	return nil
 }
 
-// Updated tagAndPush to accept disablePush.
-func tagAndPush(dryRun, disablePush bool, remote string, root, mod GoMod, version string) error {
-	tagName := version
+// validateVersionAndBranch ensures the version matches the expected pattern and is
+// consistent with the current release branch (release-vMAJOR.MINOR.x).
+func validateVersionAndBranch(root, version string) error {
+	vm := semverRe.FindStringSubmatch(version)
+	if vm == nil {
+		return fmt.Errorf("invalid version %q: must match v<MAJOR>.<MINOR>.<PATCH>(-rc.<N>)?", version)
+	}
+	verMajor, verMinor := vm[1], vm[2]
 
-	isRoot := root.Module.Path == mod.Module.Path
-	if !isRoot {
-		name, err := moduleShortName(root, mod)
-		if err != nil {
-			return fmt.Errorf("failed to get module short name: %w", err)
-		}
-		tagName = name + "/" + version
+	branch, err := currentBranch(root)
+	if err != nil {
+		return fmt.Errorf("failed to determine current branch: %w", err)
 	}
 
-	slog.Debug("Tagging module", "path", mod.Module.Path, "tag", tagName)
-	if dryRun {
-		slog.Debug("Skipping tagging/pushing in dry-run mode")
-		return nil
+	bm := releaseBranchRe.FindStringSubmatch(branch)
+	if bm == nil {
+		return fmt.Errorf("current branch %q is not a release branch (expected release-v<MAJOR>.<MINOR>.x)", branch)
 	}
+	branchMajor, branchMinor := bm[1], bm[2]
 
-	if err := createTagIfMissing(mod.dir, tagName); err != nil {
-		return err
+	if verMajor != branchMajor || verMinor != branchMinor {
+		return fmt.Errorf("version %s does not match branch %s (major.minor mismatch: %s.%s vs %s.%s)",
+			version, branch, verMajor, verMinor, branchMajor, branchMinor)
 	}
-
-	if disablePush {
-		slog.Debug("Pushing is disabled; skipping git push", "tag", tagName)
-		return nil
-	}
-
-	return pushTagIfMissing(mod.dir, remote, tagName)
+	return nil
 }
 
-// createTagIfMissing checks for an existing local tag and creates it if needed.
-func createTagIfMissing(dir, tagName string) error {
+// currentBranch returns the name of the current git branch.
+func currentBranch(dir string) (string, error) {
+	out, err := runCommandWithOutput(dir, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// isAlreadyTagged returns true when the version file already contains the target
+// version AND the root tag already points at HEAD — meaning the tool has already run.
+func isAlreadyTagged(root, version string) (bool, error) {
+	current, err := readVersionFile(root)
+	if err != nil {
+		// If the file doesn't exist yet, we are definitely not done.
+		return false, nil
+	}
+	if current != version {
+		return false, nil
+	}
+
+	// Check whether the root tag exists and points at HEAD.
+	tagsAtHead, err := runCommandWithOutput(root, "git", "tag", "--points-at", "HEAD")
+	if err != nil {
+		return false, err
+	}
+	for _, t := range strings.Split(tagsAtHead, "\n") {
+		if strings.TrimSpace(t) == version {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// updateVersionFile rewrites the `var Tag = "..."` line in internal/version/version.go.
+func updateVersionFile(dryRun bool, root, version string) error {
+	path := filepath.Join(root, versionFileRelPath)
+	slog.Debug("Updating version file", "path", path, "version", version)
+
+	if dryRun {
+		slog.Debug("Skipping version file update in dry-run mode")
+		return nil
+	}
+
+	in, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("failed to open %s: %w", path, err)
+	}
+	defer in.Close()
+
+	var lines []string
+	updated := false
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if versionTagRe.MatchString(line) {
+			line = versionTagRe.ReplaceAllString(line, `${1}"`+version+`"`)
+			updated = true
+		}
+		lines = append(lines, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to scan %s: %w", path, err)
+	}
+	if !updated {
+		return fmt.Errorf("var Tag line not found in %s", path)
+	}
+
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("failed to write %s: %w", path, err)
+	}
+	return nil
+}
+
+// readVersionFile returns the version string currently recorded in version.go.
+func readVersionFile(root string) (string, error) {
+	path := filepath.Join(root, versionFileRelPath)
+	in, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+
+	re := regexp.MustCompile(`^var Tag = "(.+)"$`)
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		if m := re.FindStringSubmatch(scanner.Text()); m != nil {
+			return m[1], nil
+		}
+	}
+	return "", fmt.Errorf("var Tag line not found in %s", path)
+}
+
+// commitAll stages every change in the working tree from the repo root and
+// produces exactly one commit.
+func commitAll(dryRun bool, root, version string) error {
+	msg := fmt.Sprintf("internal/version: %s", version)
+	slog.Debug("Committing all changes", "message", msg)
+	if dryRun {
+		slog.Debug("Skipping commit in dry-run mode")
+		return nil
+	}
+
+	// Check if there is anything to commit.
+	status, err := runCommandWithOutput(root, "git", "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("git status failed: %w", err)
+	}
+	if strings.TrimSpace(status) == "" {
+		slog.Debug("Nothing to commit")
+		return nil
+	}
+
+	if err := runCommand(root, "git", "add", "--all"); err != nil {
+		return fmt.Errorf("git add failed: %w", err)
+	}
+	return runCommand(root, "git", "commit", "-m", msg)
+}
+
+// buildTagList constructs the ordered list of tag names for root + all contrib modules.
+func buildTagList(root string, rootModule GoMod, filteredModules map[string]GoMod, sortedModules []string, version string) []string {
+	tags := []string{version}
+	for _, modulePath := range sortedModules {
+		mod := filteredModules[modulePath]
+		name, err := moduleShortName(rootModule, mod)
+		if err != nil {
+			slog.Warn("Could not compute short name for module; skipping tag", "module", mod.Module.Path, "error", err)
+			continue
+		}
+		tags = append(tags, name+"/"+version)
+	}
+	return tags
+}
+
+// createTagIfMissing creates a tag at HEAD if it doesn't already exist locally.
+func createTagIfMissing(dryRun bool, dir, tagName string) error {
 	existingTag, err := runCommandWithOutput(dir, "git", "tag", "--list", tagName)
 	if err != nil {
 		return fmt.Errorf("failed to check local tags for %s: %w", tagName, err)
@@ -284,11 +451,15 @@ func createTagIfMissing(dir, tagName string) error {
 		slog.Info("Tag already exists locally; skipping creation", "tag", tagName)
 		return nil
 	}
+	if dryRun {
+		slog.Debug("Skipping tag creation in dry-run mode", "tag", tagName)
+		return nil
+	}
 	return runCommand(dir, "git", "tag", "-am", tagName, tagName)
 }
 
-// pushTagIfMissing checks if the remote tag exists and pushes only if it is missing.
-func pushTagIfMissing(dir, remote, tagName string) error {
+// pushTagIfMissing pushes a tag to the remote if it is not already there.
+func pushTagIfMissing(dryRun bool, dir, remote, tagName string) error {
 	remoteRef, err := runCommandWithOutput(dir, "git", "ls-remote", remote, "refs/tags/"+tagName)
 	if err != nil {
 		return fmt.Errorf("failed to check remote tags for %s: %w", tagName, err)
@@ -298,10 +469,14 @@ func pushTagIfMissing(dir, remote, tagName string) error {
 		return nil
 	}
 	slog.Debug("Pushing tag", "remote", remote, "tag", tagName)
+	if dryRun {
+		slog.Debug("Skipping push in dry-run mode", "tag", tagName)
+		return nil
+	}
 	return runCommand(dir, "git", "push", remote, tagName)
 }
 
-// updateDependencies edits the given module dependencies from the root module.
+// updateDependencies edits the given module's dependencies on the root module.
 func updateDependencies(dryRun bool, rootModule, mod GoMod, version string) error {
 	slog.Debug("Edit dd-trace-go dependencies", "module", mod.Module.Path)
 	if dryRun {
@@ -336,46 +511,6 @@ func syncDependencies(dryRun bool, mod GoMod) error {
 	}
 
 	return runCommand(mod.dir, "go", "mod", "tidy")
-}
-
-// commitChangesIfNeeded checks if there are any changes, and if so, commits them.
-func commitChangesIfNeeded(dryRun bool, root, mod GoMod, version string) error {
-	changes, err := runCommandWithOutput(mod.dir, "git", "status", "--porcelain")
-	if err != nil {
-		return fmt.Errorf("failed to get git status: %w", err)
-	}
-
-	if len(strings.TrimSpace(changes)) == 0 {
-		slog.Debug("No changes to commit", "module", mod.Module.Path)
-		return nil
-	}
-
-	// Skip commit if go.mod is not changed.
-	foundGoModChange := false
-	for _, line := range strings.Split(changes, "\n") {
-		if strings.Contains(line, "go.mod") {
-			foundGoModChange = true
-			break
-		}
-	}
-	if !foundGoModChange {
-		slog.Debug("No go.mod changes, skipping commit", "module", mod.Module.Path)
-		return nil
-	}
-
-	name, err := moduleShortName(root, mod)
-	if err != nil {
-		return fmt.Errorf("failed to get module short name: %w", err)
-	}
-	msg := fmt.Sprintf("%s: %s", name, version)
-
-	slog.Debug("Committing changes", "module", mod.Module.Path, "message", msg)
-	if dryRun {
-		slog.Debug("Skipping actual commit in dry-run mode")
-		return nil
-	}
-
-	return runCommand(mod.dir, "git", "commit", "-am", msg)
 }
 
 // runCommandWithOutput runs a command in the specified directory and returns any output.
