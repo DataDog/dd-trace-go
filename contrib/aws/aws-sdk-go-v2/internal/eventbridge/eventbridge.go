@@ -83,8 +83,8 @@ func getTraceContext(ctx context.Context, span *tracer.Span, entry *types.PutEve
 func eventBridgeEdgeTags(entry *types.PutEventsRequestEntry) []string {
 	return []string{
 		"direction:out",
-		"eventbridge:" + eventBusName(entry),
-		"type:eventbridge",
+		"type:eventbridge:" + eventBusName(entry),
+		"topic:" + detailType(entry),
 	}
 }
 
@@ -93,6 +93,13 @@ func eventBusName(entry *types.PutEventsRequestEntry) string {
 		return "default"
 	}
 	return *entry.EventBusName
+}
+
+func detailType(entry *types.PutEventsRequestEntry) string {
+	if entry == nil || entry.DetailType == nil {
+		return "unknown"
+	}
+	return *entry.DetailType
 }
 
 func payloadSize(entry *types.PutEventsRequestEntry) int64 {

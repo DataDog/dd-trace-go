@@ -241,3 +241,15 @@ func TestInjectTraceContextSizeLimit(t *testing.T) {
 		})
 	}
 }
+
+func TestEventBridgeEdgeTags(t *testing.T) {
+	entry := &types.PutEventsRequestEntry{
+		EventBusName: aws.String("orders-bus"),
+		DetailType:   aws.String("order.created"),
+	}
+
+	assert.Equal(t,
+		[]string{"direction:out", "type:eventbridge:orders-bus", "topic:order.created"},
+		eventBridgeEdgeTags(entry),
+	)
+}

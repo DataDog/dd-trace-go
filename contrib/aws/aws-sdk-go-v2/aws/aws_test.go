@@ -774,6 +774,7 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 		Entries: []eventBridgeTypes.PutEventsRequestEntry{
 			{
 				EventBusName: aws.String("my-event-bus"),
+				DetailType:   aws.String("order.created"),
 				Detail:       aws.String(`{"key": "value"}`),
 			},
 		},
@@ -826,8 +827,8 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 func eventBridgeEdgeTagsForTest(entry *eventBridgeTypes.PutEventsRequestEntry) []string {
 	return []string{
 		"direction:out",
-		"eventbridge:" + eventBridgeNameForTest(entry),
-		"type:eventbridge",
+		"type:eventbridge:" + eventBridgeNameForTest(entry),
+		"topic:" + eventBridgeDetailTypeForTest(entry),
 	}
 }
 
@@ -836,6 +837,13 @@ func eventBridgeNameForTest(entry *eventBridgeTypes.PutEventsRequestEntry) strin
 		return "default"
 	}
 	return *entry.EventBusName
+}
+
+func eventBridgeDetailTypeForTest(entry *eventBridgeTypes.PutEventsRequestEntry) string {
+	if entry == nil || entry.DetailType == nil {
+		return ""
+	}
+	return *entry.DetailType
 }
 
 func eventBridgePayloadSizeForTest(entry *eventBridgeTypes.PutEventsRequestEntry) int64 {
