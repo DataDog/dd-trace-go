@@ -804,27 +804,14 @@ type jsonErrorPayload struct {
 }
 
 // captureRenderError calls renderError with format=="json", captures what is
-// written to stderr, and returns the parsed payload.
+// written, and returns the parsed payload.
+// It writes into a plain bytes.Buffer rather than redirecting os.Stderr, so
+// parallel tests cannot race on the process-global file descriptor.
 func captureRenderError(t *testing.T, err error) jsonErrorPayload {
 	t.Helper()
 
-	// Redirect os.Stderr to a pipe for the duration of this call.
-	origStderr := os.Stderr
-	r, w, pipeErr := os.Pipe()
-	if pipeErr != nil {
-		t.Fatalf("failed to create pipe: %v", pipeErr)
-	}
-	os.Stderr = w
-
-	renderError(err, "json")
-
-	w.Close()
-	os.Stderr = origStderr
-
 	var buf bytes.Buffer
-	if _, copyErr := io.Copy(&buf, r); copyErr != nil {
-		t.Fatalf("failed to read pipe: %v", copyErr)
-	}
+	renderError(&buf, err, "json")
 
 	var payload jsonErrorPayload
 	if jsonErr := json.Unmarshal(buf.Bytes(), &payload); jsonErr != nil {
@@ -931,15 +918,8 @@ func TestJSONErrorFormatTextMode(t *testing.T) {
 
 	se := newStructuredError(errDirtyTree, "dirty", nil)
 
-	origStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-	renderError(se, "text")
-	w.Close()
-	os.Stderr = origStderr
-
 	var buf bytes.Buffer
-	io.Copy(&buf, r) //nolint:errcheck
+	renderError(&buf, se, "text")
 	out := buf.String()
 
 	// Must be prose, not JSON.
