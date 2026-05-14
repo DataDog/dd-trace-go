@@ -6,7 +6,7 @@
 package tracer
 
 import (
-	"bytes"
+	"bufio"
 	"cmp"
 	"context"
 	"encoding/binary"
@@ -1519,17 +1519,18 @@ func (t *dummyTransport) endpoint() string {
 }
 
 func decode(p payloadReader) (spanLists, []uint64, error) {
-	buf, err := io.ReadAll(p)
+	br := bufio.NewReader(p)
+	head, err := br.Peek(1)
+	if err == io.EOF || len(head) == 0 {
+		return spanLists{}, nil, nil
+	}
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(buf) == 0 {
-		return spanLists{}, nil, nil
-	}
-	switch first := buf[0]; {
+	switch first := head[0]; {
 	case first == msgpackArray16 || first == msgpackArray32 || first&0xf0 == msgpackArrayFix:
 		var traces spanLists
-		if err := msgp.Decode(bytes.NewReader(buf), &traces); err != nil {
+		if err := msgp.Decode(br, &traces); err != nil {
 			return nil, nil, err
 		}
 		ids := make([]uint64, 0, len(traces))
@@ -1546,6 +1547,10 @@ func decode(p payloadReader) (spanLists, []uint64, error) {
 		}
 		return traces, ids, nil
 	case first == msgpackMap16 || first == msgpackMap32 || first&0xf0 == msgpackMapFix:
+		buf, err := io.ReadAll(br)
+		if err != nil {
+			return nil, nil, err
+		}
 		payload := newPayloadV1()
 		payload.buf = buf
 		if _, err := payload.decodeBuffer(); err != nil {
