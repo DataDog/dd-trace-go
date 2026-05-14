@@ -33,6 +33,8 @@ var mTracer mocktracer.Tracer
 var logsEntries []*mockedLogEntry
 var parallelEfd bool
 
+const forceNormalPassingFailureEnv = "TEST_MANAGEMENT_FORCE_NORMAL_FAIL"
+
 // TestMain is the entry point for testing and runs before any test.
 func TestMain(m *testing.M) {
 	// Enable logs collection for all test scenarios (propagates to spawned child processes).
@@ -844,13 +846,24 @@ func runTestManagementTests(m *testing.M) {
 								},
 								"TestRetryWithFail": {
 									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
-										Quarantined: true,
+										Quarantined:  true,
+										AttemptToFix: true,
 									},
 								},
 								"TestRetryWithPanic": {
 									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
+										Disabled: true,
+									},
+								},
+								"TestNormalPassingAfterRetryAlwaysFail": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
 										Disabled:     true,
 										AttemptToFix: true,
+									},
+								},
+								"TestEarlyFlakeDetection": {
+									Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{
+										Quarantined: true,
 									},
 								},
 							},
@@ -865,15 +878,16 @@ func runTestManagementTests(m *testing.M) {
 
 	// set a custom retry count
 	os.Setenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, "10")
+	os.Setenv(forceNormalPassingFailureEnv, "1")
 
 	// initialize the mock tracer for doing assertions on the finished spans
 	currentM = m
 	mTracer = integrations.InitializeCIVisibilityMock()
 
-	testRetryWithPanicRunNumber.Store(-10) // this makes TestRetryWithPanic to always fail (required by this test)
+	testRetryWithFailRunNumber.Store(-10) // this makes TestRetryWithFail to always fail (required by this test)
 	exitCode := RunM(m)
-	if exitCode != 0 {
-		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+	if exitCode == 0 {
+		panic("expected the exit code to be non-zero because failing attempt-to-fix tests are no longer masked")
 	}
 
 	// get all finished spans
@@ -914,42 +928,60 @@ func runTestManagementTests(m *testing.M) {
 	checkSpansByTagValue(testMyTest01, constants.TestStatus, constants.TestStatusSkip, 1) // Because is not an attempt to fix we just skip it
 	checkSpansByTagValue(testMyTest01, constants.TestSkipReason, constants.TestDisabledSkipReason, 1)
 
-	// Quarantined test without an attempt to fix (it executed but reported as skipped)
-	testRetryWithFail := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
-	checkSpansByTagValue(testRetryWithFail, constants.TestIsQuarantined, "true", 1)            // Quarantined
-	checkSpansByTagValue(testRetryWithFail, constants.TestIsAttempToFix, "true", 0)            // Is not an attempt to fix
-	checkSpansByTagValue(testRetryWithFail, constants.TestIsRetry, "true", 0)                  // 0 retries
-	checkSpansByTagValue(testRetryWithFail, constants.TestRetryReason, "attempt_to_fix", 0)    // 0 retries with the attempt to fix reason
-	checkSpansByTagValue(testRetryWithFail, constants.TestHasFailedAllRetries, "true", 0)      // All retries failed (reported in the latest retry)
-	checkSpansByTagValue(testRetryWithFail, constants.TestAttemptToFixPassed, "true", 0)       // Attempt to fix passed false (reported in the latest retry)
-	checkSpansByTagValue(testRetryWithFail, constants.TestAttemptToFixPassed, "false", 0)      // Attempt to fix passed false (reported in the latest retry)
-	checkSpansByTagValue(testRetryWithFail, constants.TestStatus, constants.TestStatusFail, 1) // Because is not an attempt to fix we execute it but don't report the status
+	// Quarantined test with an attempt to fix with 10 failing executions
+	testRetryWithFail := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 10)
+	checkSpansByTagValue(testRetryWithFail, constants.TestIsQuarantined, "true", 10)            // Quarantined
+	checkSpansByTagValue(testRetryWithFail, constants.TestIsAttempToFix, "true", 10)            // Is an attempt to fix
+	checkSpansByTagValue(testRetryWithFail, constants.TestIsRetry, "true", 9)                   // 9 retries
+	checkSpansByTagValue(testRetryWithFail, constants.TestRetryReason, "attempt_to_fix", 9)     // 9 retries with the attempt to fix reason
+	checkSpansByTagValue(testRetryWithFail, constants.TestHasFailedAllRetries, "true", 1)       // All retries failed (reported in the latest retry)
+	checkSpansByTagValue(testRetryWithFail, constants.TestAttemptToFixPassed, "true", 0)        // Attempt to fix passed false (reported in the latest retry)
+	checkSpansByTagValue(testRetryWithFail, constants.TestAttemptToFixPassed, "false", 1)       // Attempt to fix passed false (reported in the latest retry)
+	checkSpansByTagValue(testRetryWithFail, constants.TestStatus, constants.TestStatusFail, 10) // All attempts failed
 
-	// Disabled test with an attempt to fix with 10 executions
-	testRetryWithPanic := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 10)
-	checkSpansByTagValue(testRetryWithPanic, constants.TestIsDisabled, "true", 10)               // Disabled
-	checkSpansByTagValue(testRetryWithPanic, constants.TestIsAttempToFix, "true", 10)            // Is an attempt to fix
-	checkSpansByTagValue(testRetryWithPanic, constants.TestIsRetry, "true", 9)                   // 9 retries
-	checkSpansByTagValue(testRetryWithPanic, constants.TestRetryReason, "attempt_to_fix", 9)     // 9 retries with the attempt to fix reason
-	checkSpansByTagValue(testRetryWithPanic, constants.TestHasFailedAllRetries, "true", 1)       // All retries failed (reported in the latest retry)
-	checkSpansByTagValue(testRetryWithPanic, constants.TestAttemptToFixPassed, "true", 0)        // Attempt to fix passed false (reported in the latest retry)
-	checkSpansByTagValue(testRetryWithPanic, constants.TestAttemptToFixPassed, "false", 1)       // Attempt to fix passed false (reported in the latest retry)
-	checkSpansByTagValue(testRetryWithPanic, constants.TestStatus, constants.TestStatusFail, 10) // All tests passed
+	// Disabled test with an attempt to fix with 10 failing executions
+	testNormalPassingAfterRetryAlwaysFail := checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 10)
+	checkSpansByTagValue(testNormalPassingAfterRetryAlwaysFail, constants.TestIsDisabled, "true", 10)               // Disabled
+	checkSpansByTagValue(testNormalPassingAfterRetryAlwaysFail, constants.TestIsAttempToFix, "true", 10)            // Is an attempt to fix
+	checkSpansByTagValue(testNormalPassingAfterRetryAlwaysFail, constants.TestIsRetry, "true", 9)                   // 9 retries
+	checkSpansByTagValue(testNormalPassingAfterRetryAlwaysFail, constants.TestRetryReason, "attempt_to_fix", 9)     // 9 retries with the attempt to fix reason
+	checkSpansByTagValue(testNormalPassingAfterRetryAlwaysFail, constants.TestHasFailedAllRetries, "true", 1)       // All retries failed (reported in the latest retry)
+	checkSpansByTagValue(testNormalPassingAfterRetryAlwaysFail, constants.TestAttemptToFixPassed, "true", 0)        // Attempt to fix passed false (reported in the latest retry)
+	checkSpansByTagValue(testNormalPassingAfterRetryAlwaysFail, constants.TestAttemptToFixPassed, "false", 1)       // Attempt to fix passed false (reported in the latest retry)
+	checkSpansByTagValue(testNormalPassingAfterRetryAlwaysFail, constants.TestStatus, constants.TestStatusFail, 10) // All attempts failed
+
+	// Quarantined test without an attempt to fix (it executed but reported as skipped)
+	testEarlyFlakeDetection := checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
+	checkSpansByTagValue(testEarlyFlakeDetection, constants.TestIsQuarantined, "true", 1)            // Quarantined
+	checkSpansByTagValue(testEarlyFlakeDetection, constants.TestIsAttempToFix, "true", 0)            // Is not an attempt to fix
+	checkSpansByTagValue(testEarlyFlakeDetection, constants.TestStatus, constants.TestStatusPass, 1) // Non-ATF quarantine still runs
+
+	// Disabled test without an attempt to fix (it just skipped and reported as skipped)
+	testRetryWithPanic := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 1)
+	checkSpansByTagValue(testRetryWithPanic, constants.TestIsDisabled, "true", 1)               // Disabled
+	checkSpansByTagValue(testRetryWithPanic, constants.TestIsAttempToFix, "true", 0)            // Is not an attempt to fix
+	checkSpansByTagValue(testRetryWithPanic, constants.TestStatus, constants.TestStatusSkip, 1) // Because is not an attempt to fix we just skip it
 
 	// check test.final_status - only on final execution span for tests with retries
-	// Disabled with ATF (testGetInternalTestArray): isDisabled=true -> final_status=skip on last execution
-	checkSpansByTagValue(testGetInternalTestArray, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+	// Disabled with ATF (testGetInternalTestArray): all attempts pass -> final_status=pass on last execution
+	checkSpansByTagValue(testGetInternalTestArray, constants.TestFinalStatus, constants.TestStatusPass, 1)
 
-	// Quarantined with ATF (testGetFieldPointerFrom): isQuarantined=true -> final_status=skip on last execution
-	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+	// Quarantined with ATF (testGetFieldPointerFrom): all attempts pass -> final_status=pass on last execution
+	checkSpansByTagValue(testGetFieldPointerFrom, constants.TestFinalStatus, constants.TestStatusPass, 1)
 
 	// Disabled without ATF (testMyTest01): isDisabled=true -> final_status=skip (set before close)
 	checkSpansByTagValue(testMyTest01, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 
-	// Quarantined without ATF (testRetryWithFail): isQuarantined=true -> final_status=skip on final execution
-	checkSpansByTagValue(testRetryWithFail, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+	// Quarantined with ATF all fail (testRetryWithFail): any failed attempt -> final_status=fail on last execution
+	checkSpansByTagValue(testRetryWithFail, constants.TestFinalStatus, constants.TestStatusFail, 1)
 
-	// Disabled with ATF all fail (testRetryWithPanic): isDisabled=true -> final_status=skip on last execution
+	// Disabled with ATF all fail (testNormalPassingAfterRetryAlwaysFail): any failed attempt -> final_status=fail on last execution
+	checkSpansByTagValue(testNormalPassingAfterRetryAlwaysFail, constants.TestFinalStatus, constants.TestStatusFail, 1)
+
+	// Quarantined without ATF (testEarlyFlakeDetection): isQuarantined=true -> final_status=skip on final execution
+	checkSpansByTagValue(testEarlyFlakeDetection, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+
+	// Disabled without ATF (testRetryWithPanic): isDisabled=true -> final_status=skip (set before close)
 	checkSpansByTagValue(testRetryWithPanic, constants.TestFinalStatus, constants.TestStatusSkip, 1)
 
 	// check capabilities tags
