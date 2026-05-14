@@ -244,9 +244,9 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 			p.st.reset()
 		}
 		// Pre-size buffer based on estimated span encoding size.
-		// 1024 is an arbitrary guess for the average span encoding size -- we should measure and update this value
+		// 300 is an arbitrary guess for the average span encoding size -- we should measure and update this value
 		if cap(p.buf) == 0 {
-			p.buf = make([]byte, 0, len(t)*1024)
+			p.buf = make([]byte, 0, len(t)*300)
 		}
 		p.buf = encodeField(p.buf, p.bm, 2, p.containerID, p.st)
 		p.buf = encodeField(p.buf, p.bm, 3, p.languageName, p.st)
