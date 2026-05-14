@@ -28,10 +28,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
+
+const pathwayContextKey = "dd-pathway-ctx-base64"
 
 func TestAppendMiddleware(t *testing.T) {
 	tests := []struct {
@@ -774,7 +778,17 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 			},
 		},
 	}
-	eventbridgeClient.PutEvents(context.Background(), putEventsInput)
+	upstreamCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+	expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+		upstreamCtx,
+		options.CheckpointParams{PayloadSize: eventBridgePayloadSizeForTest(&putEventsInput.Entries[0])},
+		eventBridgeEdgeTagsForTest(&putEventsInput.Entries[0])...,
+	)
+	require.True(t, ok)
+	expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+	require.True(t, ok)
+
+	eventbridgeClient.PutEvents(upstreamCtx, putEventsInput)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
@@ -794,7 +808,61 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 	assert.True(t, ok)
 	assert.Contains(t, ddData, "x-datadog-start-time")
 	assert.Contains(t, ddData, "x-datadog-resource-name")
+	assert.Contains(t, ddData, pathwayContextKey)
 	assert.Equal(t, "my-event-bus", ddData["x-datadog-resource-name"])
+
+	carrier := tracer.TextMapCarrier{}
+	for k, v := range ddData {
+		if s, ok := v.(string); ok {
+			carrier[k] = s
+		}
+	}
+
+	pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), carrier))
+	require.True(t, ok)
+	assert.Equal(t, expectedPathway.GetHash(), pathway.GetHash())
+}
+
+func eventBridgeEdgeTagsForTest(entry *eventBridgeTypes.PutEventsRequestEntry) []string {
+	return []string{
+		"direction:out",
+		"eventbridge:" + eventBridgeNameForTest(entry),
+		"type:eventbridge",
+	}
+}
+
+func eventBridgeNameForTest(entry *eventBridgeTypes.PutEventsRequestEntry) string {
+	if entry == nil || entry.EventBusName == nil || *entry.EventBusName == "" {
+		return "default"
+	}
+	return *entry.EventBusName
+}
+
+func eventBridgePayloadSizeForTest(entry *eventBridgeTypes.PutEventsRequestEntry) int64 {
+	if entry == nil {
+		return 0
+	}
+
+	var size int64
+	if entry.Detail != nil {
+		size += int64(len(*entry.Detail))
+	}
+	if entry.DetailType != nil {
+		size += int64(len(*entry.DetailType))
+	}
+	if entry.EventBusName != nil {
+		size += int64(len(*entry.EventBusName))
+	}
+	for _, resource := range entry.Resources {
+		size += int64(len(resource))
+	}
+	if entry.Source != nil {
+		size += int64(len(*entry.Source))
+	}
+	if entry.TraceHeader != nil {
+		size += int64(len(*entry.TraceHeader))
+	}
+	return size
 }
 
 func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {

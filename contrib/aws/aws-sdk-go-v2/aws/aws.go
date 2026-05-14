@@ -134,7 +134,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		case "SNS":
 			snsTracer.EnrichOperation(span, in, operation)
 		case "EventBridge":
-			eventBridgeTracer.EnrichOperation(span, in, operation)
+			eventBridgeTracer.EnrichOperation(spanctx, span, in, operation)
 		case "SFN":
 			sfnTracer.EnrichOperation(span, in, operation)
 		case "DynamoDB":
