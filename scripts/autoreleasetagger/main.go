@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -53,9 +54,10 @@ func newStructuredError(code errorCode, msg string, details map[string]any) *Str
 	return &StructuredError{Code: code, Msg: msg, Details: details}
 }
 
-// renderError writes err to stderr in the requested format ("json" or prose).
-// It is also used directly in tests to inspect the output shape.
-func renderError(err error, format string) {
+// renderError writes err to w in the requested format ("json" or prose).
+// Pass os.Stderr from main; pass a *bytes.Buffer in tests to avoid racing on
+// the process-global file descriptor.
+func renderError(w io.Writer, err error, format string) {
 	if err == nil {
 		return
 	}
@@ -75,11 +77,11 @@ func renderError(err error, format string) {
 			Details: se.Details,
 		}
 		b, _ := json.MarshalIndent(payload, "", "  ")
-		fmt.Fprintln(os.Stderr, string(b))
+		fmt.Fprintln(w, string(b))
 		return
 	}
 	// Human-readable prose.
-	fmt.Fprintf(os.Stderr, "ERROR: %s\n", err.Error())
+	fmt.Fprintf(w, "ERROR: %s\n", err.Error())
 }
 
 var (
@@ -243,7 +245,7 @@ func main() {
 	}
 
 	if err := run(dryRun, remote, disablePush, root, version, excludedModules, excludedDirs); err != nil {
-		renderError(err, format)
+		renderError(os.Stderr, err, format)
 		os.Exit(1)
 	}
 }
@@ -778,12 +780,28 @@ func commitAll(dryRun bool, root, version string) error {
 		return nil
 	}
 
-	// Check if there is anything to commit.
+	// Check if there is anything to commit, counting only tracked changes.
+	// Untracked files ("??") and ignored files ("+!!") are skipped — the same
+	// logic as checkDirtyTree — so that stray editor/build artefacts present
+	// during a repair run (version already committed, some tags missing) do not
+	// cause a spurious "nothing to commit" decision or a failed git commit.
 	status, err := runCommandWithOutput(root, "git", "status", "--porcelain")
 	if err != nil {
 		return fmt.Errorf("git status failed: %w", err)
 	}
-	if strings.TrimSpace(status) == "" {
+	hasTrackedChanges := false
+	for _, line := range strings.Split(status, "\n") {
+		if len(line) < 2 {
+			continue
+		}
+		xy := line[:2]
+		if xy == "??" || xy == "!!" {
+			continue
+		}
+		hasTrackedChanges = true
+		break
+	}
+	if !hasTrackedChanges {
 		slog.Debug("Nothing to commit")
 		return nil
 	}
