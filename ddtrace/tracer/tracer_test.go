@@ -2328,14 +2328,13 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
 // while partial flushing is enabled.
 func BenchmarkPartialFlushing(b *testing.B) {
-	addr := mockAgentEndpoint(b, "/v0.4/traces")
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
-		genBigTraces(b, WithAgentAddr(addr.Host))
+		genBigTraces(b)
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b, WithAgentAddr(addr.Host))
+		genBigTraces(b)
 	})
 }
 
