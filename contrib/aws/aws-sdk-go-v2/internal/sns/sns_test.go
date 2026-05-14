@@ -18,9 +18,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
+
+const pathwayContextKey = "dd-pathway-ctx-base64"
 
 func TestEnrichOperation(t *testing.T) {
 	tests := []struct {
@@ -28,7 +32,7 @@ func TestEnrichOperation(t *testing.T) {
 		operation string
 		input     middleware.InitializeInput
 		setup     func(context.Context) *tracer.Span
-		check     func(*testing.T, middleware.InitializeInput)
+		check     func(*testing.T, middleware.InitializeInput, *tracer.Span, context.Context)
 	}{
 		{
 			name:      "Publish",
@@ -43,7 +47,7 @@ func TestEnrichOperation(t *testing.T) {
 				span, _ := tracer.StartSpanFromContext(ctx, "test-span")
 				return span
 			},
-			check: func(t *testing.T, in middleware.InitializeInput) {
+			check: func(t *testing.T, in middleware.InitializeInput, span *tracer.Span, spanCtx context.Context) {
 				params, ok := in.Parameters.(*sns.PublishInput)
 				require.True(t, ok)
 				require.NotNil(t, params)
@@ -53,6 +57,18 @@ func TestEnrichOperation(t *testing.T) {
 				assert.Equal(t, "Binary", *params.MessageAttributes[datadogKey].DataType)
 				assert.NotNil(t, params.MessageAttributes[datadogKey].BinaryValue)
 				assert.NotEmpty(t, params.MessageAttributes[datadogKey].BinaryValue)
+
+				expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+					spanCtx,
+					options.CheckpointParams{PayloadSize: int64(publishInputSize(params))},
+					"direction:out",
+					"type:sns",
+					"topic:"+destinationName(params.TopicArn, params.TargetArn),
+				)
+				require.True(t, ok)
+				expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+				require.True(t, ok)
+				assertInjectedPathway(t, params.MessageAttributes[datadogKey].BinaryValue, expectedPathway, span)
 			},
 		},
 		{
@@ -77,7 +93,7 @@ func TestEnrichOperation(t *testing.T) {
 				span, _ := tracer.StartSpanFromContext(ctx, "test-span")
 				return span
 			},
-			check: func(t *testing.T, in middleware.InitializeInput) {
+			check: func(t *testing.T, in middleware.InitializeInput, span *tracer.Span, spanCtx context.Context) {
 				params, ok := in.Parameters.(*sns.PublishBatchInput)
 				require.True(t, ok)
 				require.NotNil(t, params)
@@ -91,6 +107,18 @@ func TestEnrichOperation(t *testing.T) {
 					assert.Equal(t, "Binary", *entry.MessageAttributes[datadogKey].DataType)
 					assert.NotNil(t, entry.MessageAttributes[datadogKey].BinaryValue)
 					assert.NotEmpty(t, entry.MessageAttributes[datadogKey].BinaryValue)
+
+					expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+						spanCtx,
+						options.CheckpointParams{PayloadSize: int64(publishBatchEntrySize(&entry))},
+						"direction:out",
+						"type:sns",
+						"topic:"+destinationName(params.TopicArn, nil),
+					)
+					require.True(t, ok)
+					expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+					require.True(t, ok)
+					assertInjectedPathway(t, entry.MessageAttributes[datadogKey].BinaryValue, expectedPathway, span)
 				}
 			},
 		},
@@ -101,13 +129,13 @@ func TestEnrichOperation(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			ctx := context.Background()
-			span := tt.setup(ctx)
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+			span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
-			EnrichOperation(span, tt.input, tt.operation)
+			EnrichOperation(spanCtx, span, tt.input, tt.operation)
 
 			if tt.check != nil {
-				tt.check(t, tt.input)
+				tt.check(t, tt.input, span, spanCtx)
 			}
 		})
 	}
@@ -118,7 +146,8 @@ func TestPublishSizeLimit(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+		ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
 		input := middleware.InitializeInput{
 			Parameters: &sns.PublishInput{
@@ -127,7 +156,7 @@ func TestPublishSizeLimit(t *testing.T) {
 			},
 		}
 
-		EnrichOperation(span, input, "Publish")
+		EnrichOperation(spanCtx, span, input, "Publish")
 
 		params := input.Parameters.(*sns.PublishInput)
 		assert.NotContains(t, params.MessageAttributes, datadogKey)
@@ -137,8 +166,9 @@ func TestPublishSizeLimit(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
-		traceCtx, err := getTraceContext(span)
+		ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
+		traceCtx, err := getTraceContext(spanCtx, span, "test-topic", 1)
 		require.NoError(t, err)
 		ctxSize := attributeSize(datadogKey, traceCtx)
 
@@ -161,7 +191,7 @@ func TestPublishSizeLimit(t *testing.T) {
 			},
 		}
 
-		EnrichOperation(span, input, "Publish")
+		EnrichOperation(spanCtx, span, input, "Publish")
 
 		params := input.Parameters.(*sns.PublishInput)
 		assert.NotContains(t, params.MessageAttributes, datadogKey)
@@ -173,9 +203,10 @@ func TestPublishBatchSizeLimit(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+		ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
-		traceCtx, err := getTraceContext(span)
+		traceCtx, err := getTraceContext(spanCtx, span, "test-topic", 1)
 		require.NoError(t, err)
 		ctxSize := attributeSize(datadogKey, traceCtx)
 
@@ -196,7 +227,7 @@ func TestPublishBatchSizeLimit(t *testing.T) {
 			},
 		}
 
-		EnrichOperation(span, input, "PublishBatch")
+		EnrichOperation(spanCtx, span, input, "PublishBatch")
 
 		params := input.Parameters.(*sns.PublishBatchInput)
 		assert.Contains(t, params.PublishBatchRequestEntries[0].MessageAttributes, datadogKey)
@@ -207,9 +238,10 @@ func TestPublishBatchSizeLimit(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+		ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
-		traceCtx, err := getTraceContext(span)
+		traceCtx, err := getTraceContext(spanCtx, span, "test-topic", 1)
 		require.NoError(t, err)
 		ctxSize := attributeSize(datadogKey, traceCtx)
 
@@ -238,7 +270,7 @@ func TestPublishBatchSizeLimit(t *testing.T) {
 			},
 		}
 
-		EnrichOperation(span, input, "PublishBatch")
+		EnrichOperation(spanCtx, span, input, "PublishBatch")
 
 		params := input.Parameters.(*sns.PublishBatchInput)
 		assert.NotContains(t, params.PublishBatchRequestEntries[0].MessageAttributes, datadogKey,
@@ -251,7 +283,8 @@ func TestPublishBatchSizeLimit(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		span, _ := tracer.StartSpanFromContext(context.Background(), "test-span")
+		ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
 		input := middleware.InitializeInput{
 			Parameters: &sns.PublishBatchInput{
@@ -262,7 +295,7 @@ func TestPublishBatchSizeLimit(t *testing.T) {
 			},
 		}
 
-		EnrichOperation(span, input, "PublishBatch")
+		EnrichOperation(spanCtx, span, input, "PublishBatch")
 
 		params := input.Parameters.(*sns.PublishBatchInput)
 		assert.NotContains(t, params.PublishBatchRequestEntries[0].MessageAttributes, datadogKey)
@@ -297,7 +330,8 @@ func TestInjectTraceContext(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
 
-			span := tracer.StartSpan("test-span")
+			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+			span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
 			messageAttributes := make(map[string]types.MessageAttributeValue)
 			for i := 0; i < tt.existingAttributes; i++ {
@@ -307,7 +341,7 @@ func TestInjectTraceContext(t *testing.T) {
 				}
 			}
 
-			traceContext, err := getTraceContext(span)
+			traceContext, err := getTraceContext(spanCtx, span, "test-topic", 42)
 			assert.NoError(t, err)
 			injected := injectTraceContext(traceContext, messageAttributes)
 			assert.Equal(t, tt.expectInjection, injected)
@@ -327,9 +361,28 @@ func TestInjectTraceContext(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Equal(t, span.Context().TraceID(), extractedSpanContext.TraceID())
 				assert.Equal(t, span.Context().SpanID(), extractedSpanContext.SpanID())
+				assert.Contains(t, carrier, pathwayContextKey)
 			} else {
 				assert.NotContains(t, messageAttributes, datadogKey)
 			}
 		})
 	}
+}
+
+func assertInjectedPathway(t *testing.T, raw []byte, expected datastreams.Pathway, span *tracer.Span) {
+	t.Helper()
+
+	carrier := tracer.TextMapCarrier{}
+	err := json.Unmarshal(raw, &carrier)
+	require.NoError(t, err)
+
+	extractedSpanContext, err := tracer.Extract(carrier)
+	require.NoError(t, err)
+	assert.Equal(t, span.Context().TraceID(), extractedSpanContext.TraceID())
+	assert.Equal(t, span.Context().SpanID(), extractedSpanContext.SpanID())
+	assert.Contains(t, carrier, pathwayContextKey)
+
+	pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), carrier))
+	require.True(t, ok)
+	assert.Equal(t, expected.GetHash(), pathway.GetHash())
 }

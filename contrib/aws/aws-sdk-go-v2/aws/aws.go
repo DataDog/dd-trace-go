@@ -27,6 +27,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal"
 	eventBridgeTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/eventbridge"
+	kinesisTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/kinesis"
 	sfnTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/sfn"
 	snsTracer "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/sns"
 	"github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/internal/spanpointers"
@@ -130,9 +131,11 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
-			sqsTracer.EnrichOperation(span, in, operation)
+			sqsTracer.EnrichOperation(spanctx, span, in, operation)
 		case "SNS":
-			snsTracer.EnrichOperation(span, in, operation)
+			snsTracer.EnrichOperation(spanctx, span, in, operation)
+		case "Kinesis":
+			kinesisTracer.EnrichOperation(spanctx, span, in, operation)
 		case "EventBridge":
 			eventBridgeTracer.EnrichOperation(spanctx, span, in, operation)
 		case "SFN":
