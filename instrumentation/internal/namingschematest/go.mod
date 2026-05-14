@@ -14,7 +14,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.6.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/emicklei/go-restful.v3/v2 v2.6.0-dev.1
@@ -40,7 +40,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.6.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.6.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.0.0-00010101000000-000000000000
@@ -53,8 +53,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.0.0-00010101000000-000000000000
-	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.9.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.9.0-dev
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 v2.10.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.55.5
@@ -246,7 +246,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
@@ -344,14 +344,14 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20260209203927-2842357ff358 // indirect
-	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/mod v0.34.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20251022142026-3a174f9686a8 // indirect
