@@ -21,6 +21,67 @@ import (
 	"strings"
 )
 
+// ---------------------------------------------------------------------------
+// Structured errors
+// ---------------------------------------------------------------------------
+
+// errorCode is the machine-readable vocabulary used in --format json output.
+// The pipeline pattern-matches on these values.
+type errorCode string
+
+const (
+	errDirtyTree            errorCode = "dirty_tree"
+	errTagsExist            errorCode = "tags_exist"
+	errMultiCommitViolation errorCode = "multi_commit_violation"
+	errInvalidVersion       errorCode = "invalid_version"
+	errInvalidBranch        errorCode = "invalid_branch"
+	errInternal             errorCode = "internal"
+)
+
+// StructuredError carries a fixed-vocabulary code together with a human
+// message and an optional details bag that is included verbatim in JSON output.
+type StructuredError struct {
+	Code    errorCode
+	Msg     string
+	Details map[string]any
+}
+
+func (e *StructuredError) Error() string { return e.Msg }
+
+// newStructuredError is a convenience constructor.
+func newStructuredError(code errorCode, msg string, details map[string]any) *StructuredError {
+	return &StructuredError{Code: code, Msg: msg, Details: details}
+}
+
+// renderError writes err to stderr in the requested format ("json" or prose).
+// It is also used directly in tests to inspect the output shape.
+func renderError(err error, format string) {
+	if err == nil {
+		return
+	}
+	if format == "json" {
+		var se *StructuredError
+		if !errors.As(err, &se) {
+			se = newStructuredError(errInternal, err.Error(), nil)
+		}
+		type jsonPayload struct {
+			Error   errorCode      `json:"error"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details,omitempty"`
+		}
+		payload := jsonPayload{
+			Error:   se.Code,
+			Message: se.Msg,
+			Details: se.Details,
+		}
+		b, _ := json.MarshalIndent(payload, "", "  ")
+		fmt.Fprintln(os.Stderr, string(b))
+		return
+	}
+	// Human-readable prose.
+	fmt.Fprintf(os.Stderr, "ERROR: %s\n", err.Error())
+}
+
 var (
 	defaultExcludedModules = []string{
 		"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2",
@@ -122,6 +183,7 @@ func main() {
 		root                string
 		version             string
 		logLevel            string
+		format              string
 		dryRun              bool
 		excludeModulesInput string
 		excludeDirsInput    string
@@ -132,6 +194,7 @@ func main() {
 	flag.StringVar(&root, "root", ".", "Path to the root directory (defaults to current directory)")
 	flag.StringVar(&version, "version", "", "Target release version (e.g. v2.9.0-rc.2)")
 	flag.StringVar(&logLevel, "loglevel", "info", "Log level (debug, info, warn, error)")
+	flag.StringVar(&format, "format", "text", `Output format for errors: "text" (default) or "json"`)
 	flag.BoolVar(&dryRun, "dry-run", false, "Enable dry run mode (skip actual operations)")
 	flag.StringVar(&excludeModulesInput, "exclude-modules", "", "Comma-separated list of modules to exclude")
 	flag.StringVar(&excludeDirsInput, "exclude-dirs", "", "Comma-separated list of directories to exclude. Paths are relative to the root directory")
@@ -180,7 +243,7 @@ func main() {
 	}
 
 	if err := run(dryRun, remote, disablePush, root, version, excludedModules, excludedDirs); err != nil {
-		slog.Error("Failed to run autoreleasetagger", "error", err)
+		renderError(err, format)
 		os.Exit(1)
 	}
 }
@@ -225,27 +288,65 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		return fmt.Errorf("failed to topologically sort modules: %w", err)
 	}
 
-	// Idempotency check: if the version file already matches and the root tag already
-	// points at HEAD, treat this as a no-op.
-	if alreadyDone, err := isAlreadyTagged(root, version); err != nil {
+	// Build the complete expected tag list now (root + every contrib) so we can
+	// use it for both the idempotency check and the pre-mutation guard below.
+	// allTags is also used in Phase 3; computing it once avoids a second walk.
+	allTags := buildTagList(root, rootModule, filteredModules, sortedModules, version)
+
+	// Idempotency check: if the version file already matches AND every expected
+	// tag already points at HEAD, the tool has fully run — treat as a no-op.
+	// Checking all tags (not just the root) prevents silently leaving a partial
+	// tag set when a previous run was interrupted after the root tag was created
+	// but before all contrib tags were written.
+	if alreadyDone, err := isAlreadyTagged(root, version, allTags); err != nil {
 		return fmt.Errorf("idempotency check failed: %w", err)
 	} else if alreadyDone {
 		slog.Warn("Already at target version, nothing to do", "version", version)
 		return nil
 	}
 
-	// Phase 1: stage all file mutations without committing.
-	slog.Info("Phase 1: staging all mutations")
-
-	if err := updateVersionFile(dryRun, root, version); err != nil {
-		return fmt.Errorf("failed to update version file: %w", err)
+	// Safety guard 1: refuse to run on a dirty working tree.
+	if err := checkDirtyTree(root); err != nil {
+		return err
 	}
 
-	for _, modulePath := range sortedModules {
-		mod := filteredModules[modulePath]
-		slog.Info("Updating dependencies", "module", mod.Module.Path)
-		if err := updateDependencies(dryRun, rootModule, mod, version); err != nil {
-			return fmt.Errorf("failed to update dependencies for %s: %w", mod.Module.Path, err)
+	// Safety guard 2: refuse if any of the target tags already exist on a
+	// different commit (locally or on the remote). The idempotency path above
+	// handles the "all tags already point at HEAD" case; this guard catches
+	// tags that point somewhere else — including tags that were pushed from a
+	// different run and are only visible via the remote.
+	if err := checkTagsExist(root, remote, allWouldBeTags(root, version, excludedDirs)); err != nil {
+		return err
+	}
+
+	// Record HEAD before any mutation so we can assert the single-commit
+	// invariant afterwards.
+	preHead, err := runCommandWithOutput(root, "git", "rev-parse", "HEAD")
+	if err != nil {
+		return fmt.Errorf("failed to read HEAD: %w", err)
+	}
+	preHead = strings.TrimSpace(preHead)
+
+	// Phase 1: stage all file mutations without committing.
+	// Skip if the version was already committed (repair path: the release commit
+	// exists but one or more tags are missing). Re-running go mod edit/tidy
+	// when the files are already correct risks a spurious second commit if the
+	// tools rewrite go.mod with cosmetically different content.
+	slog.Info("Phase 1: staging all mutations")
+
+	if versionAlreadyCommitted(root, version) {
+		slog.Info("Version already committed; skipping file mutations (repair path)")
+	} else {
+		if err := updateVersionFile(dryRun, root, version); err != nil {
+			return fmt.Errorf("failed to update version file: %w", err)
+		}
+
+		for _, modulePath := range sortedModules {
+			mod := filteredModules[modulePath]
+			slog.Info("Updating dependencies", "module", mod.Module.Path)
+			if err := updateDependencies(dryRun, rootModule, mod, version); err != nil {
+				return fmt.Errorf("failed to update dependencies for %s: %w", mod.Module.Path, err)
+			}
 		}
 	}
 
@@ -255,9 +356,17 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		return fmt.Errorf("failed to commit: %w", err)
 	}
 
+	// Safety guard 3: paranoia check — assert that exactly one commit was
+	// added. If this ever fires it means a future refactor reintroduced
+	// multi-commit behaviour; fail loudly so it is caught immediately.
+	if !dryRun {
+		if err := assertSingleCommit(root, preHead); err != nil {
+			return err
+		}
+	}
+
 	// Phase 3: create all tags pointing at the single commit.
 	slog.Info("Phase 3: tagging all modules")
-	allTags := buildTagList(root, rootModule, filteredModules, sortedModules, version)
 	for _, tagName := range allTags {
 		slog.Info("Tagging", "tag", tagName)
 		if err := createTagIfMissing(dryRun, root, tagName); err != nil {
@@ -284,7 +393,11 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 func validateVersionAndBranch(root, version string) error {
 	vm := semverRe.FindStringSubmatch(version)
 	if vm == nil {
-		return fmt.Errorf("invalid version %q: must match v<MAJOR>.<MINOR>.<PATCH>(-rc.<N>)?", version)
+		return newStructuredError(
+			errInvalidVersion,
+			fmt.Sprintf("invalid version %q: must match v<MAJOR>.<MINOR>.<PATCH>(-rc.<N>)?", version),
+			map[string]any{"version": version},
+		)
 	}
 	verMajor, verMinor := vm[1], vm[2]
 
@@ -295,29 +408,276 @@ func validateVersionAndBranch(root, version string) error {
 
 	bm := releaseBranchRe.FindStringSubmatch(branch)
 	if bm == nil {
-		return fmt.Errorf("current branch %q is not a release branch (expected release-v<MAJOR>.<MINOR>.x)", branch)
+		return newStructuredError(
+			errInvalidBranch,
+			fmt.Sprintf("current branch %q is not a release branch (expected release-v<MAJOR>.<MINOR>.x)", branch),
+			map[string]any{"branch": branch},
+		)
 	}
 	branchMajor, branchMinor := bm[1], bm[2]
 
 	if verMajor != branchMajor || verMinor != branchMinor {
-		return fmt.Errorf("version %s does not match branch %s (major.minor mismatch: %s.%s vs %s.%s)",
-			version, branch, verMajor, verMinor, branchMajor, branchMinor)
+		return newStructuredError(
+			errInvalidBranch,
+			fmt.Sprintf("version %s does not match branch %s (major.minor mismatch: %s.%s vs %s.%s)",
+				version, branch, verMajor, verMinor, branchMajor, branchMinor),
+			map[string]any{"version": version, "branch": branch},
+		)
 	}
 	return nil
 }
 
 // currentBranch returns the name of the current git branch.
+// It returns an invalid_branch StructuredError when the checkout is in
+// detached HEAD state (rev-parse --abbrev-ref returns "HEAD"), because CI
+// jobs that use a shallow or detached clone must explicitly check out the
+// release branch by name before invoking this tool.
 func currentBranch(dir string) (string, error) {
 	out, err := runCommandWithOutput(dir, "git", "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(out), nil
+	branch := strings.TrimSpace(out)
+	if branch == "HEAD" {
+		return "", newStructuredError(
+			errInvalidBranch,
+			"repository is in detached HEAD state: check out the release branch by name before running autoreleasetagger",
+			map[string]any{"hint": "git checkout release-v<MAJOR>.<MINOR>.x"},
+		)
+	}
+	return branch, nil
 }
 
+// checkDirtyTree inspects the working tree with `git status --porcelain` and
+// returns a dirty_tree StructuredError if any tracked file has uncommitted
+// changes or staged modifications. Untracked files that git does not know
+// about are ignored to avoid false-positives from editor temp files.
+func checkDirtyTree(root string) error {
+	out, err := runCommandWithOutput(root, "git", "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("git status failed: %w", err)
+	}
+	var dirty []string
+	for _, line := range strings.Split(out, "\n") {
+		if len(line) < 2 {
+			continue
+		}
+		xy := line[:2]
+		filePath := strings.TrimSpace(line[2:])
+		// '??' = untracked; '!!' = ignored — skip both.
+		if xy == "??" || xy == "!!" {
+			continue
+		}
+		if filePath != "" {
+			dirty = append(dirty, filePath)
+		}
+	}
+	if len(dirty) == 0 {
+		return nil
+	}
+	return newStructuredError(
+		errDirtyTree,
+		fmt.Sprintf("working tree has uncommitted changes in: %s", strings.Join(dirty, ", ")),
+		map[string]any{"modified_files": dirty},
+	)
+}
+
+// allWouldBeTags returns a conservative approximation of the tag list derived
+// solely from the filesystem (before modules are fully resolved). It is used
+// only by the pre-mutation tags_exist guard; the real tag list is built later
+// via buildTagList after modules are discovered.
+//
+// excludedDirs must be the same resolved slice passed to findModules so that
+// modules in _tools, .github, tools, etc. are not included — those directories
+// are never tagged and their presence in the list would cause false-positive
+// tags_exist errors if they happened to carry an old tag on a different commit.
+func allWouldBeTags(root, version string, excludedDirs []string) []string {
+	// Walk the repo and collect every go.mod that is NOT the root so we can
+	// build the tag list without running the full module-discovery pipeline.
+	tags := []string{version}
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			if containsPath(excludedDirs, path) {
+				return filepath.SkipDir
+			}
+		}
+		if d.Name() != "go.mod" || filepath.Dir(path) == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, filepath.Dir(path))
+		if err != nil {
+			return nil
+		}
+		tags = append(tags, rel+"/"+version)
+		return nil
+	})
+	return tags
+}
+
+// checkTagsExist inspects the provided tag names and returns a tags_exist
+// StructuredError if any of them already exist — locally or on the remote —
+// pointing at a commit other than HEAD. Tags that point at HEAD are handled
+// by the idempotency check and are not flagged here.
+//
+// Checking the remote is important in CI: a fresh clone will not have fetched
+// tags, so a tag that was pushed by a previous (diverged) run would be
+// invisible to a local-only check.
+func checkTagsExist(root, remote string, tags []string) error {
+	head, err := runCommandWithOutput(root, "git", "rev-parse", "HEAD")
+	if err != nil {
+		return fmt.Errorf("failed to read HEAD: %w", err)
+	}
+	head = strings.TrimSpace(head)
+
+	type conflict struct {
+		Tag    string `json:"tag"`
+		Commit string `json:"commit"`
+		Source string `json:"source"` // "local" or "remote"
+	}
+	var conflicts []conflict
+	seen := make(map[string]bool) // deduplicate across local + remote
+
+	// --- local tags ---
+	for _, tag := range tags {
+		out, err := runCommandWithOutput(root, "git", "tag", "--list", tag)
+		if err != nil || strings.TrimSpace(out) == "" {
+			continue // tag does not exist locally
+		}
+		// Resolve the tag to the commit it points at (dereferences annotated tags).
+		commit, err := runCommandWithOutput(root, "git", "rev-list", "-n1", tag)
+		if err != nil {
+			continue
+		}
+		commit = strings.TrimSpace(commit)
+		if commit != head {
+			conflicts = append(conflicts, conflict{Tag: tag, Commit: commit, Source: "local"})
+			seen[tag] = true
+		}
+	}
+
+	// --- remote tags ---
+	// Query the remote for all matching tags in one ls-remote call. Skip if the
+	// remote is empty (e.g. in tests that pass "test-remote" with no actual remote).
+	if remote != "" {
+		remoteRefs, err := runCommandWithOutput(root, "git", "ls-remote", "--tags", remote)
+		if err == nil && strings.TrimSpace(remoteRefs) != "" {
+			// Build a map of refname -> commit from the ls-remote output.
+			// Each line is: "<commit>\trefs/tags/<tag>" or "<commit>\trefs/tags/<tag>^{}"
+			// The "^{}" suffix is the peeled (dereferenced) commit for annotated tags;
+			// we prefer the peeled entry when present.
+			peeledCommit := make(map[string]string) // tag -> commit (peeled preferred)
+			for _, line := range strings.Split(remoteRefs, "\n") {
+				parts := strings.SplitN(line, "\t", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				commit, ref := parts[0], parts[1]
+				const prefix = "refs/tags/"
+				if !strings.HasPrefix(ref, prefix) {
+					continue
+				}
+				tagName := strings.TrimPrefix(ref, prefix)
+				peeled := strings.HasSuffix(tagName, "^{}")
+				if peeled {
+					tagName = strings.TrimSuffix(tagName, "^{}")
+				}
+				// Prefer the peeled (dereferenced) commit; only set if not already set.
+				if peeled || peeledCommit[tagName] == "" {
+					peeledCommit[tagName] = commit
+				}
+			}
+			for _, tag := range tags {
+				if seen[tag] {
+					continue // already reported from local
+				}
+				commit, exists := peeledCommit[tag]
+				if !exists {
+					continue // not on remote
+				}
+				if commit != head {
+					conflicts = append(conflicts, conflict{Tag: tag, Commit: commit, Source: "remote"})
+				}
+			}
+		}
+		// If ls-remote fails (e.g. no network, test remote), skip the remote
+		// check silently — the local check still applies.
+	}
+
+	if len(conflicts) == 0 {
+		return nil
+	}
+
+	names := make([]string, len(conflicts))
+	for i, c := range conflicts {
+		names[i] = fmt.Sprintf("%s@%s(%s)", c.Tag, c.Commit[:min(7, len(c.Commit))], c.Source)
+	}
+	return newStructuredError(
+		errTagsExist,
+		fmt.Sprintf("tags already exist on a different commit: %s", strings.Join(names, ", ")),
+		map[string]any{"conflicts": conflicts},
+	)
+}
+
+// assertSingleCommit verifies that exactly one commit was added between
+// preHead and the current HEAD. It returns a multi_commit_violation
+// StructuredError if the count is anything other than 1, or 0.
+// count == "0" is valid in the repair path: when a previous run already
+// committed the version bump but left some tags missing, Phase 1 is skipped
+// and commitAll produces no new commit — Phase 3 then creates the missing tags.
+func assertSingleCommit(root, preHead string) error {
+	// Count commits reachable from HEAD but not from preHead.
+	out, err := runCommandWithOutput(root, "git", "rev-list", "--count", preHead+"..HEAD")
+	if err != nil {
+		return fmt.Errorf("rev-list failed: %w", err)
+	}
+	count := strings.TrimSpace(out)
+	if count == "0" || count == "1" {
+		return nil
+	}
+	currentHead, _ := runCommandWithOutput(root, "git", "rev-parse", "HEAD")
+	return newStructuredError(
+		errMultiCommitViolation,
+		fmt.Sprintf("invariant violated: expected 0 or 1 new commit, got %s", count),
+		map[string]any{"pre_head": preHead, "current_head": strings.TrimSpace(currentHead), "new_commit_count": count},
+	)
+}
+
+// versionAlreadyCommitted reports whether the version file already records
+// the target version AND the most recent commit message matches the expected
+// release commit format. Both conditions together mean the release commit was
+// already produced by a previous (possibly interrupted) run; only tags may be
+// missing, so Phase 1 (file mutations) must be skipped to avoid a spurious
+// second commit.
+func versionAlreadyCommitted(root, version string) bool {
+	current, err := readVersionFile(root)
+	if err != nil || current != version {
+		return false
+	}
+	// Verify that the HEAD commit carries the expected release message.
+	expectedMsg := fmt.Sprintf("internal/version: %s", version)
+	out, err := runCommandWithOutput(root, "git", "log", "-1", "--format=%s")
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(out) == expectedMsg
+}
+
+// ---------------------------------------------------------------------------
+
 // isAlreadyTagged returns true when the version file already contains the target
-// version AND the root tag already points at HEAD — meaning the tool has already run.
-func isAlreadyTagged(root, version string) (bool, error) {
+// version AND every expected tag in wantTags already points at HEAD.
+//
+// Checking all tags (not just the root) prevents treating a partially-completed
+// run as done: if a previous invocation was interrupted after creating the root
+// tag but before all contrib tags were written, the next run must continue
+// rather than silently exit as a no-op.
+func isAlreadyTagged(root, version string, wantTags []string) (bool, error) {
 	current, err := readVersionFile(root)
 	if err != nil {
 		// If the file doesn't exist yet, we are definitely not done.
@@ -327,17 +687,25 @@ func isAlreadyTagged(root, version string) (bool, error) {
 		return false, nil
 	}
 
-	// Check whether the root tag exists and points at HEAD.
+	// Collect the set of tags that currently point at HEAD.
 	tagsAtHead, err := runCommandWithOutput(root, "git", "tag", "--points-at", "HEAD")
 	if err != nil {
 		return false, err
 	}
+	atHead := make(map[string]bool)
 	for _, t := range strings.Split(tagsAtHead, "\n") {
-		if strings.TrimSpace(t) == version {
-			return true, nil
+		if s := strings.TrimSpace(t); s != "" {
+			atHead[s] = true
 		}
 	}
-	return false, nil
+
+	// Every expected tag must be present at HEAD.
+	for _, tag := range wantTags {
+		if !atHead[tag] {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // updateVersionFile rewrites the `var Tag = "..."` line in internal/version/version.go.
@@ -420,7 +788,12 @@ func commitAll(dryRun bool, root, version string) error {
 		return nil
 	}
 
-	if err := runCommand(root, "git", "add", "--all"); err != nil {
+	// Stage only modifications to already-tracked files (and deletions).
+	// Using --update instead of --all ensures that untracked files (editor
+	// swap files, stray build artefacts) are never swept into the release
+	// commit. The dirty-tree guard already rejected any tracked dirt before
+	// mutations ran, so only the files the tool itself wrote are staged here.
+	if err := runCommand(root, "git", "add", "--update"); err != nil {
 		return fmt.Errorf("git add failed: %w", err)
 	}
 	return runCommand(root, "git", "commit", "-m", msg)
@@ -700,14 +1073,18 @@ func normalizedPathEqual(path1, path2 string) (bool, error) {
 	return filepath.Clean(abs1) == filepath.Clean(abs2), nil
 }
 
-// moduleShortName returns the short name of a module, relative to the root module.
+// moduleShortName returns the filesystem path of mod's directory relative to
+// the root module's directory. This is used as the tag prefix — Go's multi-
+// module tagging convention uses the directory path, not the module import
+// path. For dd-trace-go, where contrib modules keep go.mod at the module
+// directory root (no /vN subdirectory), the two coincide:
+//
+//	dir: contrib/google.golang.org/api  →  tag prefix: contrib/google.golang.org/api
+//	dir: contrib/envoyproxy/go-control-plane  →  tag prefix: contrib/envoyproxy/go-control-plane
 func moduleShortName(root, mod GoMod) (string, error) {
 	rel, err := filepath.Rel(root.dir, mod.dir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get relative path: %w", err)
 	}
-	// e.g.
-	// - github.com/DataDog/dd-trace-go/contrib/google.golang.org/api/v2 => contrib/google.golang.org/api/v2
-	// - github.com/Datadog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2 => contrib/envoyproxy/go-control-plane/v2
 	return strings.TrimPrefix(rel, "../"), nil
 }
