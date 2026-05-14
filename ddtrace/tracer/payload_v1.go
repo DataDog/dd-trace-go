@@ -308,9 +308,19 @@ func (p *payloadV1) reset() {
 	}
 }
 
+// maxRetainedBufCap is the maximum buffer capacity retained in the sync.Pool.
+// Buffers larger than this are discarded so that large one-off flushes (e.g.
+// 100k-span traces) do not permanently inflate pool memory, matching the
+// behaviour of payloadV04 which always discards its buffer on clear.
+const maxRetainedBufCap = 1 << 20 // 1 MB
+
 func (p *payloadV1) clear() {
 	p.bm = 0
-	p.buf = p.buf[:0]
+	if cap(p.buf) > maxRetainedBufCap {
+		p.buf = nil
+	} else {
+		p.buf = p.buf[:0]
+	}
 	p.reader = nil
 	// header is pre-allocated; keep backing array, reset length for sentinel check.
 	p.header = p.header[:0]
