@@ -720,7 +720,7 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 }
 
 func TestEvaluateFlag_JSONFixtures(t *testing.T) {
-	configData, err := os.ReadFile(filepath.Join("testdata", "ufc-config.json"))
+	configData, err := os.ReadFile(filepath.Join("ffe-system-test-data", "ufc-config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -729,7 +729,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	files, err := filepath.Glob(filepath.Join("testdata", "evaluation-cases", "*.json"))
+	files, err := filepath.Glob(filepath.Join("ffe-system-test-data", "evaluation-cases", "*.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

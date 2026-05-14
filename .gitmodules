@@ -1,0 +1,3 @@
+[submodule "openfeature/ffe-system-test-data"]
+	path = openfeature/ffe-system-test-data
+	url = git@github.com:DataDog/ffe-system-test-data.git
