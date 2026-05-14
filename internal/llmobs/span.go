@@ -363,11 +363,10 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	}
 
 	if a.CostTags != nil {
-		if costTags := s.validateCostTags(a.CostTags, "annotate"); len(costTags) > 0 {
-			for _, costTag := range costTags {
-				if !slices.Contains(s.llmCtx.costTags, costTag) {
-					s.llmCtx.costTags = append(s.llmCtx.costTags, costTag)
-				}
+		trackCostTagsAnnotated(s, "annotate")
+		for _, costTag := range a.CostTags {
+			if !slices.Contains(s.llmCtx.costTags, costTag) {
+				s.llmCtx.costTags = append(s.llmCtx.costTags, costTag)
 			}
 		}
 	}
@@ -418,32 +417,6 @@ func (s *Span) Annotate(a SpanAnnotations) {
 	}
 
 	s.annotateIO(a)
-}
-
-func (s *Span) validateCostTags(costTags []string, source string) []string {
-	trackCostTagsAnnotated(s, source)
-
-	validatedCostTags := make([]string, 0, len(costTags))
-	missingSpanTags := 0
-	for _, costTag := range costTags {
-		if _, ok := s.llmCtx.tags[costTag]; !ok {
-			log.Warn("llmobs: cost_tags entry %q must reference a key present in span tags. Skipping entry.", costTag)
-			missingSpanTags++
-			continue
-		}
-		if !slices.Contains(validatedCostTags, costTag) {
-			validatedCostTags = append(validatedCostTags, costTag)
-		}
-	}
-
-	if missingSpanTags > 0 {
-		trackCostTagsSubmitted(s, missingSpanTags, source, "error", "missing_span_tag")
-	}
-	if len(validatedCostTags) > 0 {
-		trackCostTagsSubmitted(s, len(validatedCostTags), source, "success", "none")
-	}
-
-	return validatedCostTags
 }
 
 func (s *Span) annotateIO(a SpanAnnotations) {

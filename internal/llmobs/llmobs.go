@@ -500,10 +500,6 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	if spanKind == SpanKindAgent && span.llmCtx.agentManifest != "" {
 		metadata["agent_manifest"] = span.llmCtx.agentManifest
 	}
-	setMetadataCostTags(metadata, span.llmCtx.costTags)
-	if len(metadata) > 0 {
-		meta["metadata"] = metadata
-	}
 
 	input := make(map[string]any)
 	output := make(map[string]any)
@@ -622,6 +618,12 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 	}
 
 	maps.Copy(tags, span.llmCtx.tags)
+
+	setMetadataCostTags(metadata, validateCostTags(span, tags))
+	if len(metadata) > 0 {
+		meta["metadata"] = metadata
+	}
+
 	tagsSlice := make([]string, 0, len(tags))
 	for k, v := range tags {
 		tagsSlice = append(tagsSlice, fmt.Sprintf("%s:%s", k, v))
@@ -677,6 +679,38 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		trackSpanEventSize(ev, actualSize, truncated)
 	}
 	return ev
+}
+
+// validateCostTags filters the span's annotated cost tags against the final
+// event tag set, drops entries that don't reference an emitted tag key, and
+// emits the cost-tags-submitted telemetry. It must run after the final tags
+// map is fully assembled, so cost tags referencing SDK-injected keys (e.g.
+// session_id from WithSessionID or propagation, integration, ml_app) are
+// accepted.
+func validateCostTags(span *Span, finalTags map[string]string) []string {
+	costTags := span.llmCtx.costTags
+	if len(costTags) == 0 {
+		return nil
+	}
+
+	validated := make([]string, 0, len(costTags))
+	missing := 0
+	for _, costTag := range costTags {
+		if _, ok := finalTags[costTag]; !ok {
+			log.Warn("llmobs: cost_tags entry %q must reference a key present in span tags. Skipping entry.", costTag)
+			missing++
+			continue
+		}
+		validated = append(validated, costTag)
+	}
+
+	if missing > 0 {
+		trackCostTagsSubmitted(span, missing, "annotate", "error", "missing_span_tag")
+	}
+	if len(validated) > 0 {
+		trackCostTagsSubmitted(span, len(validated), "annotate", "success", "none")
+	}
+	return validated
 }
 
 func setMetadataCostTags(metadata map[string]any, costTags []string) {

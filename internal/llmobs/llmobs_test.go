@@ -965,6 +965,35 @@ func TestSpanAnnotateCostTags(t *testing.T) {
 		assert.Equal(t, []any{"team"}, costTagsFromSpan(t, llmSpans[0]))
 	})
 
+	t.Run("references-session-id-from-start-config", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{
+			SessionID: "session-123",
+		})
+		span.Annotate(llmobs.SpanAnnotations{
+			CostTags: []string{"session_id"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, "session-123", llmSpans[0].SessionID)
+		assert.Equal(t, []any{"session_id"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("references-sdk-injected-tags", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{
+			MLApp: "custom-app",
+		})
+		span.Annotate(llmobs.SpanAnnotations{
+			CostTags: []string{"ml_app", "language"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"ml_app", "language"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
 	t.Run("drops-cost-tags-annotated-after-finish", func(t *testing.T) {
 		tt, ll := testTracer(t)
 		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
