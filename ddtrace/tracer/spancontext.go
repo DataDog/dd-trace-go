@@ -852,6 +852,9 @@ func (t *trace) finishedOneLocked(s *Span) {
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
+	// Clear the tail so the GC can collect the flushed spans; without this the
+	// backing array retains pointers past len(t.spans) and keeps them alive.
+	clear(t.spans[leftIdx:])
 	t.spans = t.spans[:leftIdx]
 	t.finished = 0 // important, because a buffer can be used for several flushes
 	t.mu.Unlock()
