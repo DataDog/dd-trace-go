@@ -45,7 +45,7 @@ func TestResolveOTLPEndpoint_DDTraceAgentURL(t *testing.T) {
 		},
 		{
 			name:             "URL with path",
-			agentURL:         "http://agent.example.com:8126/v1.0/traces",
+			agentURL:         "http://agent.example.com:8126/v0.4/traces",
 			expectedEndpoint: "agent.example.com:4318",
 			expectedInsecure: true,
 		},
