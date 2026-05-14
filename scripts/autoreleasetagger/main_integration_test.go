@@ -656,8 +656,8 @@ func TestTagsExistOnRemote(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(localDir, "extra.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
-	runGitCommand(localDir, "add", ".")                          //nolint:errcheck
-	runGitCommand(localDir, "commit", "-m", "second commit")     //nolint:errcheck
+	runGitCommand(localDir, "add", ".")                      //nolint:errcheck
+	runGitCommand(localDir, "commit", "-m", "second commit") //nolint:errcheck
 
 	// Create a tag on the first commit (HEAD~1) and push it to the remote.
 	if err := runGitCommand(localDir, "tag", "-am", version, version, "HEAD~1"); err != nil {
