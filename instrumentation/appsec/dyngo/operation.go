@@ -239,6 +239,7 @@ func (o *operation) disable() {
 
 	o.disabled = true
 	o.eventRegister.clear()
+	o.dataBroadcaster.clear()
 }
 
 // On registers and event listener that will be called when the operation
@@ -362,6 +363,12 @@ func (r *eventRegister) clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.listeners = nil
+}
+
+func (b *dataBroadcaster) clear() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.listeners = nil
 }
 
 func emitEvent[O Operation, T any](r *eventRegister, op O, v T) {
