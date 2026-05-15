@@ -949,6 +949,7 @@ func syncDependencies(dryRun bool, mod GoMod) error {
 func runCommandWithOutput(dir string, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	slog.Debug("Running command", "cmd", cmd.String(), "dir", dir)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to run command %q: %w", cmd.String(), err)
@@ -962,6 +963,7 @@ func runCommand(dir string, name string, args ...string) error {
 	cmd.Dir = dir
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
+	slog.Debug("Running command", "cmd", cmd.String(), "dir", dir)
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run command %q: %w", cmd.String(), err)
