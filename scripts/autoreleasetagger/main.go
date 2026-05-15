@@ -896,7 +896,15 @@ func pushTagsBatch(dryRun bool, dir, remote string, tagNames []string) error {
 		slog.Debug("Skipping push in dry-run mode", "tags", toPush)
 		return nil
 	}
-	args := append([]string{"push", remote}, toPush...)
+	// Use explicit refspecs (refs/tags/X:refs/tags/X) and --no-atomic so that
+	// git does not advertise or bundle unrelated local refs into this push.
+	// GitHub enforces a rule of at most 5 refs updated per push; without these
+	// flags git's send-pack negotiates all locally-ahead tags in one session,
+	// causing GitHub to count and reject the entire batch.
+	args := []string{"push", "--no-atomic", remote}
+	for _, tag := range toPush {
+		args = append(args, "refs/tags/"+tag+":refs/tags/"+tag)
+	}
 	return runCommand(dir, "git", args...)
 }
 
