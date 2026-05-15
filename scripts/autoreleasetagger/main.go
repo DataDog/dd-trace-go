@@ -85,10 +85,14 @@ func renderError(w io.Writer, err error, format string) {
 }
 
 var (
-	defaultExcludedModules = []string{
+	// defaultUntaggedModules lists modules whose go.mod is updated and committed
+	// as normal, but which are never tagged or pushed (e.g. internal test helpers
+	// that carry no public API).
+	defaultUntaggedModules = []string{
 		"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2",
 	}
-	defaultExcludedDirs = []string{
+	defaultExcludedModules = []string{}
+	defaultExcludedDirs    = []string{
 		"_tools",
 		".github",
 		"tools",
@@ -188,6 +192,7 @@ func main() {
 		format              string
 		dryRun              bool
 		excludeModulesInput string
+		untagModulesInput   string
 		excludeDirsInput    string
 		remote              string
 		disablePush         bool
@@ -198,7 +203,8 @@ func main() {
 	flag.StringVar(&logLevel, "loglevel", "info", "Log level (debug, info, warn, error)")
 	flag.StringVar(&format, "format", "text", `Output format for errors: "text" (default) or "json"`)
 	flag.BoolVar(&dryRun, "dry-run", false, "Enable dry run mode (skip actual operations)")
-	flag.StringVar(&excludeModulesInput, "exclude-modules", "", "Comma-separated list of modules to exclude")
+	flag.StringVar(&excludeModulesInput, "exclude-modules", "", "Comma-separated list of modules to exclude entirely (no go.mod update, no tag)")
+	flag.StringVar(&untagModulesInput, "untag-modules", "", "Comma-separated list of modules to update go.mod for but not tag or push")
 	flag.StringVar(&excludeDirsInput, "exclude-dirs", "", "Comma-separated list of directories to exclude. Paths are relative to the root directory")
 	flag.StringVar(&remote, "remote", "origin", "Git remote name")
 	flag.BoolVar(&disablePush, "disable-push", false, "Disable pushing tags to remote")
@@ -231,6 +237,14 @@ func main() {
 		}
 	}
 
+	untaggedModules := append([]string{}, defaultUntaggedModules...)
+	if untagModulesInput != "" {
+		modules := strings.Split(untagModulesInput, ",")
+		for _, m := range modules {
+			untaggedModules = append(untaggedModules, strings.TrimSpace(m))
+		}
+	}
+
 	// These paths are relative to the root directory.
 	excludedDirs := append([]string{}, defaultExcludedDirs...)
 	for i, d := range excludedDirs {
@@ -244,13 +258,13 @@ func main() {
 		}
 	}
 
-	if err := run(dryRun, remote, disablePush, root, version, excludedModules, excludedDirs); err != nil {
+	if err := run(dryRun, remote, disablePush, root, version, excludedModules, untaggedModules, excludedDirs); err != nil {
 		renderError(os.Stderr, err, format)
 		os.Exit(1)
 	}
 }
 
-func run(dryRun bool, remote string, disablePush bool, root, version string, excludedModules, excludedDirs []string) error {
+func run(dryRun bool, remote string, disablePush bool, root, version string, excludedModules, untaggedModules, excludedDirs []string) error {
 	slog.Info("Using version", "version", version)
 
 	// Validate version format and branch consistency.
@@ -293,7 +307,7 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	// Build the complete expected tag list now (root + every contrib) so we can
 	// use it for both the idempotency check and the pre-mutation guard below.
 	// allTags is also used in Phase 3; computing it once avoids a second walk.
-	allTags := buildTagList(root, rootModule, filteredModules, sortedModules, version)
+	allTags := buildTagList(root, rootModule, filteredModules, sortedModules, version, untaggedModules)
 
 	// Idempotency check: if the version file already matches AND every expected
 	// tag already points at HEAD, the tool has fully run — treat as a no-op.
@@ -317,7 +331,7 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	// handles the "all tags already point at HEAD" case; this guard catches
 	// tags that point somewhere else — including tags that were pushed from a
 	// different run and are only visible via the remote.
-	if err := checkTagsExist(root, remote, allWouldBeTags(root, version, excludedDirs)); err != nil {
+	if err := checkTagsExist(root, remote, allWouldBeTags(root, version, excludedDirs, untaggedModules)); err != nil {
 		return err
 	}
 
@@ -493,7 +507,7 @@ func checkDirtyTree(root string) error {
 // modules in _tools, .github, tools, etc. are not included — those directories
 // are never tagged and their presence in the list would cause false-positive
 // tags_exist errors if they happened to carry an old tag on a different commit.
-func allWouldBeTags(root, version string, excludedDirs []string) []string {
+func allWouldBeTags(root, version string, excludedDirs, untaggedModules []string) []string {
 	// Walk the repo and collect every go.mod that is NOT the root so we can
 	// build the tag list without running the full module-discovery pipeline.
 	tags := []string{version}
@@ -514,6 +528,11 @@ func allWouldBeTags(root, version string, excludedDirs []string) []string {
 		}
 		rel, err := filepath.Rel(root, filepath.Dir(path))
 		if err != nil {
+			return nil
+		}
+		// Read the module path to check against untaggedModules.
+		mod, err := readModule(path)
+		if err == nil && containsPath(untaggedModules, mod.Module.Path) {
 			return nil
 		}
 		tags = append(tags, rel+"/"+version)
@@ -818,10 +837,14 @@ func commitAll(dryRun bool, root, version string) error {
 }
 
 // buildTagList constructs the ordered list of tag names for root + all contrib modules.
-func buildTagList(root string, rootModule GoMod, filteredModules map[string]GoMod, sortedModules []string, version string) []string {
+func buildTagList(root string, rootModule GoMod, filteredModules map[string]GoMod, sortedModules []string, version string, untaggedModules []string) []string {
 	tags := []string{version}
 	for _, modulePath := range sortedModules {
 		mod := filteredModules[modulePath]
+		if containsPath(untaggedModules, mod.Module.Path) {
+			slog.Info("Skipping tag for untagged module", "module", mod.Module.Path)
+			continue
+		}
 		name, err := moduleShortName(rootModule, mod)
 		if err != nil {
 			slog.Warn("Could not compute short name for module; skipping tag", "module", mod.Module.Path, "error", err)
