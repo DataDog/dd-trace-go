@@ -395,6 +395,19 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		return nil
 	}
 
+	// Push the branch first so the remote has the release commit before any
+	// tag push. Without this, each tag push must also transmit the commit
+	// objects, causing GitHub to count the implicit branch ref update against
+	// its "max 5 refs per push" rule.
+	branch, err := currentBranch(root)
+	if err != nil {
+		return fmt.Errorf("failed to determine current branch for push: %w", err)
+	}
+	slog.Info("Pushing branch", "branch", branch)
+	if err := runCommand(root, "git", "push", remote, branch); err != nil {
+		return fmt.Errorf("failed to push branch %s: %w", branch, err)
+	}
+
 	for i := 0; i < len(allTags); i += 3 {
 		batch := allTags[i:min(i+3, len(allTags))]
 		if err := pushTagsBatch(dryRun, root, remote, batch); err != nil {
