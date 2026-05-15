@@ -381,38 +381,36 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		}
 	}
 
-	// Phase 3: create all tags pointing at the single commit.
-	slog.Info("Phase 3: tagging all modules")
+	// Phase 3: push the branch first so the remote has the release commit,
+	// then create each tag and push it immediately before creating the next.
+	// Pushing the branch first means tag pushes carry no commit objects and
+	// update exactly one ref each, which complies with GitHub's rule that
+	// forbids updating more than 5 refs per push.
+	slog.Info("Phase 3: tagging and pushing all modules")
+	if !disablePush && !dryRun {
+		branch, err := currentBranch(root)
+		if err != nil {
+			return fmt.Errorf("failed to determine current branch for push: %w", err)
+		}
+		slog.Info("Pushing branch", "branch", branch)
+		if err := runCommand(root, "git", "push", "--no-atomic", remote, "refs/heads/"+branch+":refs/heads/"+branch); err != nil {
+			return fmt.Errorf("failed to push branch %s: %w", branch, err)
+		}
+	}
 	for _, tagName := range allTags {
 		slog.Info("Tagging", "tag", tagName)
 		if err := createTagIfMissing(dryRun, root, tagName); err != nil {
 			return fmt.Errorf("failed to create tag %s: %w", tagName, err)
 		}
+		if disablePush {
+			continue
+		}
+		if err := pushTagIfMissing(dryRun, root, remote, tagName); err != nil {
+			return fmt.Errorf("failed to push tag %s: %w", tagName, err)
+		}
 	}
-
 	if disablePush {
 		slog.Info("Push disabled; skipping git push")
-		return nil
-	}
-
-	// Push the branch first so the remote has the release commit before any
-	// tag push. Without this, each tag push must also transmit the commit
-	// objects, causing GitHub to count the implicit branch ref update against
-	// its "max 5 refs per push" rule.
-	branch, err := currentBranch(root)
-	if err != nil {
-		return fmt.Errorf("failed to determine current branch for push: %w", err)
-	}
-	slog.Info("Pushing branch", "branch", branch)
-	if err := runCommand(root, "git", "push", remote, branch); err != nil {
-		return fmt.Errorf("failed to push branch %s: %w", branch, err)
-	}
-
-	for i := 0; i < len(allTags); i += 3 {
-		batch := allTags[i:min(i+3, len(allTags))]
-		if err := pushTagsBatch(dryRun, root, remote, batch); err != nil {
-			return fmt.Errorf("failed to push tags %v: %w", batch, err)
-		}
 	}
 
 	return nil
@@ -886,39 +884,26 @@ func createTagIfMissing(dryRun bool, dir, tagName string) error {
 	return runCommand(dir, "git", "tag", "-am", tagName, tagName)
 }
 
-// pushTagsBatch pushes up to 3 tags in a single git push invocation, skipping
-// any that already exist on the remote.
-func pushTagsBatch(dryRun bool, dir, remote string, tagNames []string) error {
-	var toPush []string
-	for _, tagName := range tagNames {
-		remoteRef, err := runCommandWithOutput(dir, "git", "ls-remote", remote, "refs/tags/"+tagName)
-		if err != nil {
-			return fmt.Errorf("failed to check remote tag %s: %w", tagName, err)
-		}
-		if strings.TrimSpace(remoteRef) != "" {
-			slog.Info("Remote tag already exists; skipping push", "tag", tagName)
-			continue
-		}
-		toPush = append(toPush, tagName)
+// pushTagIfMissing pushes a single tag to the remote if it is not already
+// there. Each tag must be pushed individually (one git push per tag) to comply
+// with GitHub's rule that forbids updating more than 5 refs per push. Callers
+// must also ensure the tag is created immediately before this call so that no
+// other locally-ahead tags exist at push time.
+func pushTagIfMissing(dryRun bool, dir, remote, tagName string) error {
+	remoteRef, err := runCommandWithOutput(dir, "git", "ls-remote", remote, "refs/tags/"+tagName)
+	if err != nil {
+		return fmt.Errorf("failed to check remote tag %s: %w", tagName, err)
 	}
-	if len(toPush) == 0 {
+	if strings.TrimSpace(remoteRef) != "" {
+		slog.Info("Remote tag already exists; skipping push", "tag", tagName)
 		return nil
 	}
-	slog.Debug("Pushing tags", "remote", remote, "tags", toPush)
+	slog.Debug("Pushing tag", "remote", remote, "tag", tagName)
 	if dryRun {
-		slog.Debug("Skipping push in dry-run mode", "tags", toPush)
+		slog.Debug("Skipping push in dry-run mode", "tag", tagName)
 		return nil
 	}
-	// Use explicit refspecs (refs/tags/X:refs/tags/X) and --no-atomic so that
-	// git does not advertise or bundle unrelated local refs into this push.
-	// GitHub enforces a rule of at most 5 refs updated per push; without these
-	// flags git's send-pack negotiates all locally-ahead tags in one session,
-	// causing GitHub to count and reject the entire batch.
-	args := []string{"push", "--no-atomic", remote}
-	for _, tag := range toPush {
-		args = append(args, "refs/tags/"+tag+":refs/tags/"+tag)
-	}
-	return runCommand(dir, "git", args...)
+	return runCommand(dir, "git", "push", "--no-atomic", remote, "refs/tags/"+tagName+":refs/tags/"+tagName)
 }
 
 // updateDependencies edits the given module's dependencies on the root module.
