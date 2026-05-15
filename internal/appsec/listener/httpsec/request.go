@@ -73,6 +73,24 @@ var (
 	monitoredClientIPHeadersCfg []string
 )
 
+const (
+	securityTestingEndpointScanHeader = "x-datadog-endpoint-scan"
+	securityTestingHeader             = "x-datadog-security-test"
+
+	securityTestingEndpointScanTag = ext.HTTPRequestHeaders + "." + securityTestingEndpointScanHeader
+	securityTestingTag             = ext.HTTPRequestHeaders + "." + securityTestingHeader
+)
+
+type securityTestingHeaderTag struct {
+	Header string
+	Tag    string
+}
+
+var securityTestingHeaders = [...]securityTestingHeaderTag{
+	{Header: securityTestingEndpointScanHeader, Tag: securityTestingEndpointScanTag},
+	{Header: securityTestingHeader, Tag: securityTestingTag},
+}
+
 // ClientIPTags returns the resulting Datadog span tags `http.client_ip`
 // containing the client IP and `network.client.ip` containing the remote IP.
 // The tags are present only if a valid ip address has been returned by
@@ -118,6 +136,26 @@ func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]st
 		return nil
 	}
 	return normalized
+}
+
+// SetSecurityTestingHeaderTags sets RFC-1105 security testing header tags on tags.
+func SetSecurityTestingHeaderTags(tags map[string]any, headers http.Header) {
+	for _, h := range securityTestingHeaders {
+		values, ok := securityTestingHeaderValues(headers, h.Header)
+		if !ok {
+			continue
+		}
+		tags[h.Tag] = strings.TrimSpace(normalizeHTTPHeaderValue(values))
+	}
+}
+
+func securityTestingHeaderValues(headers http.Header, header string) ([]string, bool) {
+	for name, values := range headers {
+		if strings.EqualFold(name, header) {
+			return values, true
+		}
+	}
+	return nil, false
 }
 
 // Remove cookies from the request headers and return the map of headers

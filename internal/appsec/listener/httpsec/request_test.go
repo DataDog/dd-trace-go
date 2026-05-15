@@ -250,6 +250,19 @@ func TestTags(t *testing.T) {
 	}
 }
 
+func TestSetRequestHeadersTagsDoesNotOwnSecurityTestingHeaders(t *testing.T) {
+	var span MockSpan
+	setRequestHeadersTags(&span, map[string][]string{
+		"X-Datadog-Endpoint-Scan": {"scan-uuid"},
+		"X-Datadog-Security-Test": {"test-uuid"},
+		"X-Forwarded-For":         {"1.2.3.4"},
+	})
+
+	require.Equal(t, "1.2.3.4", span.Tags["http.request.headers.x-forwarded-for"])
+	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-endpoint-scan")
+	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-security-test")
+}
+
 //go:embed testdata/trace_tagging_rules.json
 var wafRulesJSON []byte
 
