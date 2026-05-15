@@ -656,12 +656,12 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		}
 
 		component, spanKind := "", ""
-		// Range iterates only flat-map entries (promoted attrs are excluded).
-		span.meta.Range(func(k, v string) bool {
+		// Map(false) returns the underlying flat map directly (no copy, no promoted attrs).
+		for k, v := range span.meta.Map(false) {
 			// Span links are serialized separately in the payload, so
 			// we skip them here to avoid duplication.
 			if k == "_dd.span_links" {
-				return true
+				continue
 			}
 			// Grab common attributes early to avoid map lookups later on.
 			if k == ext.Component {
@@ -674,8 +674,7 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			p.buf = st.serialize(k, p.buf)
 			p.buf = append(p.buf, byte(StringValueType))
 			p.buf = st.serialize(v, p.buf)
-			return true
-		})
+		}
 		for k, v := range span.metrics {
 			count++
 			p.buf = st.serialize(k, p.buf)
