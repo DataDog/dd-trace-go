@@ -147,7 +147,7 @@ func TestSingleCommitMultiTag(t *testing.T) {
 
 	tmpDir := scaffoldRepo(t, branch)
 
-	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}); err != nil {
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
 		t.Fatalf("autoreleasetagger failed: %v", err)
 	}
 
@@ -205,7 +205,7 @@ func TestIdempotency(t *testing.T) {
 
 	runOnce := func() {
 		t.Helper()
-		if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}); err != nil {
+		if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
 			t.Fatalf("autoreleasetagger failed: %v", err)
 		}
 	}
@@ -239,7 +239,7 @@ func TestVersionBranchMismatch(t *testing.T) {
 
 	tmpDir := scaffoldRepo(t, "release-v2.9.x")
 
-	err := run(false, "test-remote", true, tmpDir, "v2.8.0-rc.1", []string{}, []string{})
+	err := run(false, "test-remote", true, tmpDir, "v2.8.0-rc.1", []string{}, []string{}, []string{})
 	if err == nil {
 		t.Fatal("expected error for version/branch mismatch, got nil")
 	}
@@ -267,7 +267,7 @@ func TestInvalidVersion(t *testing.T) {
 		t.Run(bad, func(t *testing.T) {
 			t.Parallel()
 			tmpDir := scaffoldRepo(t, "release-v2.9.x")
-			err := run(false, "test-remote", true, tmpDir, bad, []string{}, []string{})
+			err := run(false, "test-remote", true, tmpDir, bad, []string{}, []string{}, []string{})
 			if err == nil {
 				t.Fatalf("expected error for invalid version %q, got nil", bad)
 			}
@@ -283,7 +283,7 @@ func TestNonReleaseBranch(t *testing.T) {
 
 	tmpDir := scaffoldRepo(t, "main")
 
-	err := run(false, "test-remote", true, tmpDir, "v2.9.0-rc.1", []string{}, []string{})
+	err := run(false, "test-remote", true, tmpDir, "v2.9.0-rc.1", []string{}, []string{}, []string{})
 	if err == nil {
 		t.Fatal("expected error for non-release branch, got nil")
 	}
@@ -312,7 +312,7 @@ func TestVersionFileUpdate(t *testing.T) {
 
 	tmpDir := scaffoldRepo(t, branch)
 
-	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}); err != nil {
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
 		t.Fatalf("autoreleasetagger failed: %v", err)
 	}
 
@@ -588,7 +588,7 @@ func TestPartialIdempotency(t *testing.T) {
 	tmpDir := scaffoldRepo(t, branch)
 
 	// Full first run.
-	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}); err != nil {
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
 		t.Fatalf("first run failed: %v", err)
 	}
 
@@ -598,7 +598,7 @@ func TestPartialIdempotency(t *testing.T) {
 	}
 
 	// Second run: must NOT exit as a no-op — it must repair the missing tag.
-	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}); err != nil {
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
 		t.Fatalf("repair run failed: %v", err)
 	}
 
