@@ -713,6 +713,84 @@ func TestEvaluateFlag(t *testing.T) {
 	}
 }
 
+func TestEvaluateFlagSurfacesBackendMetadata(t *testing.T) {
+	// Flag carries backend-emitted metadata (version, lastModified, etc.).
+	// On a successful evaluation, it should be merged into result.Metadata
+	// alongside dd.allocation.key / dd.doLog, with SDK-internal keys winning
+	// on collision.
+	matchingFlag := &flag{
+		Key:           "test-flag",
+		Enabled:       true,
+		VariationType: valueTypeBoolean,
+		Variations: map[string]*variant{
+			"on": {Key: "on", Value: true},
+		},
+		Allocations: []*allocation{
+			{
+				Key: "allocation1",
+				Splits: []*split{
+					{
+						Shards: []*shard{
+							{
+								Salt:        "test",
+								Ranges:      []*shardRange{{Start: 0, End: 8192}},
+								TotalShards: 8192,
+							},
+						},
+						VariationKey: "on",
+					},
+				},
+			},
+		},
+		Metadata: map[string]any{
+			"version":           42,
+			"lastModified":      "2026-05-13T10:30:00Z",
+			metadataAllocationKey: "should-be-overridden",
+		},
+	}
+	ctx := map[string]any{of.TargetingKey: "user-123"}
+
+	result := evaluateFlag(matchingFlag, false, ctx)
+
+	if result.Reason != of.TargetingMatchReason {
+		t.Fatalf("expected TargetingMatchReason, got %s", result.Reason)
+	}
+	if got := result.Metadata["version"]; got != 42 {
+		t.Errorf("expected metadata[version]=42, got %v", got)
+	}
+	if got := result.Metadata["lastModified"]; got != "2026-05-13T10:30:00Z" {
+		t.Errorf("expected metadata[lastModified]=2026-05-13T10:30:00Z, got %v", got)
+	}
+	if got := result.Metadata[metadataAllocationKey]; got != "allocation1" {
+		t.Errorf("expected SDK-internal allocation key to win on collision, got %v", got)
+	}
+	if _, ok := result.Metadata[metadataDoLogKey]; !ok {
+		t.Errorf("expected metadata[%s] to be present", metadataDoLogKey)
+	}
+}
+
+func TestEvaluateFlagNoMetadataWhenDefault(t *testing.T) {
+	// When the flag has metadata but no allocation matches, the result
+	// uses the default reason and carries no metadata. Confirms we don't
+	// regress existing behavior.
+	noMatchFlag := &flag{
+		Key:           "test-flag",
+		Enabled:       true,
+		VariationType: valueTypeBoolean,
+		Allocations:   []*allocation{}, // no allocations → no match
+		Metadata: map[string]any{
+			"version": 42,
+		},
+	}
+	result := evaluateFlag(noMatchFlag, false, map[string]any{})
+	if result.Reason != of.DefaultReason {
+		t.Fatalf("expected DefaultReason, got %s", result.Reason)
+	}
+	if result.Metadata != nil {
+		t.Errorf("expected no metadata on default path, got %v", result.Metadata)
+	}
+}
+
 func TestComputeShardIndex(t *testing.T) {
 	// Test consistency: same input should always produce same output
 	key1 := computeShardIndex("salt1", "user-123", 8192)

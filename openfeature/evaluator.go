@@ -68,8 +68,13 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 				}
 			}
 
-			// Build metadata for exposure tracking
-			metadata := make(map[string]any)
+			// Build metadata for exposure tracking.
+			// Seed from flag.Metadata (backend passthrough, e.g. version)
+			// so SDK-internal keys below win on collision.
+			metadata := make(map[string]any, len(flag.Metadata)+2)
+			for k, v := range flag.Metadata {
+				metadata[k] = v
+			}
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)

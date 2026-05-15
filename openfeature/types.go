@@ -57,6 +57,9 @@ type flag struct {
 	// Allocations define targeting and traffic distribution rules
 	// They are evaluated in order, and the first matching allocation wins
 	Allocations []*allocation `json:"allocations"`
+	// Metadata is generic passthrough metadata emitted by the backend
+	// (e.g. version, lastModified). Surfaced via OpenFeature flag_metadata.
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // variant represents a single variation/variation of a feature flag.
