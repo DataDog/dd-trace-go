@@ -18,6 +18,14 @@ import (
 const (
 	// envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
 	envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
+
+	// Headers used to identify Datadog security testing requests.
+	securityTestingEndpointScanHeader = "x-datadog-endpoint-scan"
+	securityTestingHeader             = "x-datadog-security-test"
+
+	// Span tags for the corresponding security testing request headers.
+	securityTestingEndpointScanTag = ext.HTTPRequestHeaders + "." + securityTestingEndpointScanHeader
+	securityTestingTag             = ext.HTTPRequestHeaders + "." + securityTestingHeader
 )
 
 var (
@@ -62,6 +70,17 @@ var (
 		"x-sigsci-tags",
 	}, defaultIPHeaders...)
 
+	// securityTestingHeaders maps security testing headers to service-entry span tags.
+	// These headers are tracked separately from defaultCollectedHeaders because
+	// they are tagged on HTTP service-entry spans even when AppSec is disabled.
+	securityTestingHeaders = [...]struct {
+		Header string
+		Tag    string
+	}{
+		{Header: securityTestingEndpointScanHeader, Tag: securityTestingEndpointScanTag},
+		{Header: securityTestingHeader, Tag: securityTestingTag},
+	}
+
 	// collectedHeadersLookupMap is a helper lookup map of HTTP headers to
 	// collect as request span tags when appsec is enabled. It is computed at
 	// init-time based on defaultCollectedHeaders and leveraged by NormalizeHTTPHeaders.
@@ -72,24 +91,6 @@ var (
 	// time in function of the value of the envClientIPHeader environment variable.
 	monitoredClientIPHeadersCfg []string
 )
-
-const (
-	securityTestingEndpointScanHeader = "x-datadog-endpoint-scan"
-	securityTestingHeader             = "x-datadog-security-test"
-
-	securityTestingEndpointScanTag = ext.HTTPRequestHeaders + "." + securityTestingEndpointScanHeader
-	securityTestingTag             = ext.HTTPRequestHeaders + "." + securityTestingHeader
-)
-
-type securityTestingHeaderTag struct {
-	Header string
-	Tag    string
-}
-
-var securityTestingHeaders = [...]securityTestingHeaderTag{
-	{Header: securityTestingEndpointScanHeader, Tag: securityTestingEndpointScanTag},
-	{Header: securityTestingHeader, Tag: securityTestingTag},
-}
 
 // ClientIPTags returns the resulting Datadog span tags `http.client_ip`
 // containing the client IP and `network.client.ip` containing the remote IP.
@@ -138,7 +139,7 @@ func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]st
 	return normalized
 }
 
-// SetSecurityTestingHeaderTags sets RFC-1105 security testing header tags on tags.
+// SetSecurityTestingHeaderTags sets security testing header tags on tags.
 func SetSecurityTestingHeaderTags(tags map[string]any, headers http.Header) {
 	for _, h := range securityTestingHeaders {
 		values, ok := securityTestingHeaderValues(headers, h.Header)
