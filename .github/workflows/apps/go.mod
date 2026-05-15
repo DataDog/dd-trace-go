@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/.github/workflows/apps
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.8.1
+	github.com/DataDog/dd-trace-go/v2 v2.8.2-rc.2
 	golang.org/x/mod v0.33.0
 )
 

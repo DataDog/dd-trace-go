@@ -28,10 +28,10 @@ github.com/DataDog/datadog-agent/pkg/version v0.77.0 h1:fxpMWuoaRHS5vHzCNHftvJ6w
 github.com/DataDog/datadog-agent/pkg/version v0.77.0/go.mod h1:h9eJjfeTHlYYv+kzq6n3rQ07qXGirdCCacn1Ryu4TFQ=
 github.com/DataDog/datadog-go/v5 v5.8.3 h1:s58CUJ9s8lezjhTNJO/SxkPBv2qZjS3ktpRSqGF5n0s=
 github.com/DataDog/datadog-go/v5 v5.8.3/go.mod h1:K9kcYBlxkcPP8tvvjZZKs/m1edNAUFzBbdpTUKfCsuw=
-github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.3.0-rc.2 h1:xw3hOkYNpkbLR+9ZL9gy7b4UpLAbbI8qbhVoTsZBQvs=
-github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.3.0-rc.2/go.mod h1:Yfrm8yh1Nsnod9EVsSlwx5MBJ9uB6B4gjz6bE8A6Fc8=
-github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0-rc.2 h1:zXRv46eiKvATggiQbpclFeTVh/t/fnMtDGMb+m0q65Y=
-github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0-rc.2/go.mod h1:Djb2nb7QCZ89v8RmmQA7V6ZgTGyJZ6NJSozK4Ybmjvo=
+github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.3.0 h1:olaANi1Wv75eo1t0Y5D3eWxACT72/VHZ8hDM6M6Y8po=
+github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.3.0/go.mod h1:vNSnD829U9o/UPc8k8UFJeKZJZoTAZPDUX54olAppyo=
+github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0 h1:ZaM8iFAoM33TaUZ9pACkccVMfQ9lFzLvJSCYwE3LcKk=
+github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.3.0/go.mod h1:E5iHsN3Mj4JNTo+eGB0KENF6HeaT8TAwUjKqe/no2SQ=
 github.com/DataDog/go-libddwaf/v4 v4.9.0 h1:a788e37iuH7sR9uIYHkulvTnp2FkXTiZ3yY/kuaHgZE=
 github.com/DataDog/go-libddwaf/v4 v4.9.0/go.mod h1:/AZqP6zw3qGJK5mLrA0PkfK3UQDk1zCI2fUNCt4xftE=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d h1:cH9Bm0tJ8FEQbA4FRi0iRm7Zr/5Lata/Or31c+Dth0E=
@@ -300,8 +300,8 @@ google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 h1:
 google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57/go.mod h1:j9x/tPzZkyxcgEFkiKEEGxfvyumM01BEtsW8xzOahRQ=
 google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=
 google.golang.org/protobuf v1.36.11/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
-gopkg.in/DataDog/dd-trace-go.v1 v1.74.7-rc.2 h1:xYpqXOkPegtYZucMSz+jDG4F2CT4PrqHlLA3CuH8gjw=
-gopkg.in/DataDog/dd-trace-go.v1 v1.74.7-rc.2/go.mod h1:jNdrW+vNYpiGHwlkQcvZnV8hMxKobruRlvqEXzXZRxQ=
+gopkg.in/DataDog/dd-trace-go.v1 v1.74.7 h1:Vz7lua569eApE/1suZueI8ixJZqJCSbWavE9SuTDV9c=
+gopkg.in/DataDog/dd-trace-go.v1 v1.74.7/go.mod h1:yLnCS8nIkriRHfQW+YPDcNG+8ehXYNVio3NSEqy1Iqk=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c h1:Hei/4ADfdWqJk1ZMxUNpqntNwaWcugrBjAiHlqqRiVk=
 gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EVd6muEfDQjcINNoR0C8j2r3qZ4Q=
