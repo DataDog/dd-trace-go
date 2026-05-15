@@ -395,9 +395,10 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		return nil
 	}
 
-	for _, tagName := range allTags {
-		if err := pushTagIfMissing(dryRun, root, remote, tagName); err != nil {
-			return fmt.Errorf("failed to push tag %s: %w", tagName, err)
+	for i := 0; i < len(allTags); i += 3 {
+		batch := allTags[i:min(i+3, len(allTags))]
+		if err := pushTagsBatch(dryRun, root, remote, batch); err != nil {
+			return fmt.Errorf("failed to push tags %v: %w", batch, err)
 		}
 	}
 
@@ -872,22 +873,31 @@ func createTagIfMissing(dryRun bool, dir, tagName string) error {
 	return runCommand(dir, "git", "tag", "-am", tagName, tagName)
 }
 
-// pushTagIfMissing pushes a tag to the remote if it is not already there.
-func pushTagIfMissing(dryRun bool, dir, remote, tagName string) error {
-	remoteRef, err := runCommandWithOutput(dir, "git", "ls-remote", remote, "refs/tags/"+tagName)
-	if err != nil {
-		return fmt.Errorf("failed to check remote tags for %s: %w", tagName, err)
+// pushTagsBatch pushes up to 3 tags in a single git push invocation, skipping
+// any that already exist on the remote.
+func pushTagsBatch(dryRun bool, dir, remote string, tagNames []string) error {
+	var toPush []string
+	for _, tagName := range tagNames {
+		remoteRef, err := runCommandWithOutput(dir, "git", "ls-remote", remote, "refs/tags/"+tagName)
+		if err != nil {
+			return fmt.Errorf("failed to check remote tag %s: %w", tagName, err)
+		}
+		if strings.TrimSpace(remoteRef) != "" {
+			slog.Info("Remote tag already exists; skipping push", "tag", tagName)
+			continue
+		}
+		toPush = append(toPush, tagName)
 	}
-	if strings.TrimSpace(remoteRef) != "" {
-		slog.Info("Remote tag already exists; skipping push", "tag", tagName)
+	if len(toPush) == 0 {
 		return nil
 	}
-	slog.Debug("Pushing tag", "remote", remote, "tag", tagName)
+	slog.Debug("Pushing tags", "remote", remote, "tags", toPush)
 	if dryRun {
-		slog.Debug("Skipping push in dry-run mode", "tag", tagName)
+		slog.Debug("Skipping push in dry-run mode", "tags", toPush)
 		return nil
 	}
-	return runCommand(dir, "git", "push", remote, tagName)
+	args := append([]string{"push", remote}, toPush...)
+	return runCommand(dir, "git", args...)
 }
 
 // updateDependencies edits the given module's dependencies on the root module.
