@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"sync"
 	"sync/atomic"
 
@@ -1177,26 +1178,39 @@ func (s *stringValue) decode(buf []byte) ([]byte, error) {
 
 var errUnableDecodeString = errors.New("unable to read string value")
 
+// stringTable maps strings to insertion-order indices for v1 payload encoding.
+// Insertion order is preserved by strings[]; the open-addressed hash table maps
+// string -> existing index. Empty slots are marked by hashes[slot] == 0; a real
+// hash of 0 is folded to 1 (probability 2^-64).
 type stringTable struct {
-	strings   []stringValue    // list of strings
-	indices   map[string]index // map strings to their indices
-	nextIndex index            // last index of the stringTable
+	strings   []stringValue // ordered list; strings[0] == ""; index = position
+	nextIndex index         // == len(strings)
+
+	hashes []uint64 // maphash.String of strings[slots[i]]; 0 means empty slot
+	slots  []index  // strings[] index occupying this slot
+	mask   uint64   // cap-1
+	used   int      // occupied slots; grow when used*2 >= cap
+	seed   maphash.Seed
 }
+
+const stringTableInitCap = 64 // power of two; load factor 0.5 → first grow at 32 entries
 
 func newStringTable() *stringTable {
 	st := &stringTable{
-		strings:   make([]stringValue, 1, 64),
-		indices:   make(map[string]index, 64),
+		strings:   make([]stringValue, 1, stringTableInitCap),
 		nextIndex: 1,
+		hashes:    make([]uint64, stringTableInitCap),
+		slots:     make([]index, stringTableInitCap),
+		mask:      stringTableInitCap - 1,
+		seed:      maphash.MakeSeed(),
 	}
 	st.strings[0] = ""
-	st.indices[""] = 0
 	return st
 }
 
 func (st *stringTable) reset() {
-	clear(st.indices)
-	st.indices[""] = 0
+	clear(st.hashes)
+	st.used = 0
 	st.strings = st.strings[:1]
 	st.strings[0] = ""
 	st.nextIndex = 1
@@ -1207,16 +1221,54 @@ func (st *stringTable) serialize(value string, buf []byte) []byte {
 	if value == "" {
 		return msgp.AppendUint32(buf, 0)
 	}
-	if idx, ok := st.indices[value]; ok {
-		return idx.encode(buf)
+	h := maphash.String(st.seed, value)
+	if h == 0 {
+		h = 1
 	}
-	sv := stringValue(value)
-	buf = sv.encode(buf)
-	st.indices[value] = st.nextIndex
-	st.strings = append(st.strings, sv)
-	st.nextIndex++
-	return buf
+	slot := h & st.mask
+	for {
+		sh := st.hashes[slot]
+		if sh == 0 {
+			sv := stringValue(value)
+			buf = sv.encode(buf)
+			idx := st.nextIndex
+			st.strings = append(st.strings, sv)
+			st.hashes[slot] = h
+			st.slots[slot] = idx
+			st.nextIndex++
+			st.used++
+			if st.used*2 >= len(st.hashes) {
+				st.grow()
+			}
+			return buf
+		}
+		if sh == h && string(st.strings[st.slots[slot]]) == value {
+			return st.slots[slot].encode(buf)
+		}
+		slot = (slot + 1) & st.mask
+	}
+}
 
+// grow doubles the hash table capacity and rehashes all existing entries.
+func (st *stringTable) grow() {
+	newCap := len(st.hashes) * 2
+	newHashes := make([]uint64, newCap)
+	newSlots := make([]index, newCap)
+	newMask := uint64(newCap - 1)
+	for i, h := range st.hashes {
+		if h == 0 {
+			continue
+		}
+		slot := h & newMask
+		for newHashes[slot] != 0 {
+			slot = (slot + 1) & newMask
+		}
+		newHashes[slot] = h
+		newSlots[slot] = st.slots[i]
+	}
+	st.hashes = newHashes
+	st.slots = newSlots
+	st.mask = newMask
 }
 
 // Reads a string from a byte slice and returns it from the string table if it exists.
