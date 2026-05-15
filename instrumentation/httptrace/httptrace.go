@@ -110,6 +110,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			if r.Host != "" {
 				ssCfg.Tags["http.host"] = r.Host
 			}
+			httpsec.SetSecurityTestingHeaderTags(ssCfg.Tags, r.Header)
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
