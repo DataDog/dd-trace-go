@@ -353,7 +353,7 @@ func TestSpanAnnotations(t *testing.T) {
 		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-cost-tags")
 		span.Annotate(
 			llmobs.WithAnnotatedTags(map[string]string{"team": "ml", "feature": "chatbot"}),
-			llmobs.WithAnnotatedCostTags([]string{"team", "feature"}),
+			llmobs.WithAnnotatedCostTagKeys([]string{"team", "feature"}),
 		)
 		span.Finish()
 
@@ -372,7 +372,7 @@ func TestSpanAnnotations(t *testing.T) {
 			{
 				name: "cost-tags-before-session-id",
 				opts: []llmobs.AnnotateOption{
-					llmobs.WithAnnotatedCostTags([]string{"session_id"}),
+					llmobs.WithAnnotatedCostTagKeys([]string{"session_id"}),
 					llmobs.WithAnnotatedSessionID("session-123"),
 				},
 			},
@@ -380,7 +380,7 @@ func TestSpanAnnotations(t *testing.T) {
 				name: "session-id-before-cost-tags",
 				opts: []llmobs.AnnotateOption{
 					llmobs.WithAnnotatedSessionID("session-123"),
-					llmobs.WithAnnotatedCostTags([]string{"session_id"}),
+					llmobs.WithAnnotatedCostTagKeys([]string{"session_id"}),
 				},
 			},
 		}

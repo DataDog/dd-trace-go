@@ -115,14 +115,14 @@ func WithAnnotatedTags(tags map[string]string) AnnotateOption {
 	}
 }
 
-// WithAnnotatedCostTags marks existing span tag keys for propagation to LLMObs cost and token metrics.
+// WithAnnotatedCostTagKeys marks existing span tag keys for propagation to LLMObs cost and token metrics.
 // Each key must already be present in tags from this annotation or a previous annotation on the same span.
-func WithAnnotatedCostTags(costTags []string) AnnotateOption {
+func WithAnnotatedCostTagKeys(costTagKeys []string) AnnotateOption {
 	return func(a *illmobs.SpanAnnotations) {
 		if a.CostTags == nil {
-			a.CostTags = make([]string, 0, len(costTags))
+			a.CostTags = make([]string, 0, len(costTagKeys))
 		}
-		a.CostTags = append(a.CostTags, costTags...)
+		a.CostTags = append(a.CostTags, costTagKeys...)
 	}
 }
 
