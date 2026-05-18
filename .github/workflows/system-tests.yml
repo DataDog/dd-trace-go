@@ -50,7 +50,7 @@ jobs:
         run: |
           echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
       - name: Cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
@@ -150,7 +150,7 @@ jobs:
     steps:
       - name: Restore repo cache
         id: restore-repo-cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: .git
           key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
@@ -206,7 +206,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@658e853e774142ed2ef1fe58e59160a03db988c1
         with:
           datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
 
@@ -220,7 +220,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
@@ -330,7 +330,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@658e853e774142ed2ef1fe58e59160a03db988c1
         with:
           datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
 
@@ -344,7 +344,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
