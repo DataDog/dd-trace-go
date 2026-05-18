@@ -1133,6 +1133,168 @@ func TestCIInvalidVersionError(t *testing.T) {
 	assertJSONErrorCode(t, stderrOut, string(errInvalidVersion))
 }
 
+// TestExcludeModulesTagConflictGuard is the primary regression test for the
+// P2 bug: when --exclude-modules is used, the tag-conflict guard must NOT flag
+// tags that belong to excluded modules — even when those tags already exist on
+// an older commit.
+//
+// Scenario:
+//  1. Scaffold a repo with moduleA, moduleB, and moduleC.
+//  2. Create an extra commit so HEAD advances past the initial commit.
+//  3. Tag moduleC's slot (moduleC/<version>) on the older commit, simulating a
+//     prior release where moduleC was tagged independently.
+//  4. Run autoreleasetagger with moduleC in --exclude-modules.
+//
+// Expected outcome: the run succeeds (no tags_exist error), moduleA and
+// moduleB are tagged at the new HEAD, and moduleC is NOT re-tagged.
+func TestExcludeModulesTagConflictGuard(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	// Add an extra commit so the initial commit is no longer HEAD.
+	// The moduleC tag will be placed on this older commit, not on HEAD,
+	// which is exactly the condition that triggered the spurious tags_exist
+	// failure in the old allWouldBeTags code path.
+	if err := os.WriteFile(filepath.Join(tmpDir, "bump.txt"), []byte("bump"), 0o644); err != nil {
+		t.Fatalf("write bump.txt failed: %v", err)
+	}
+	if err := runGitCommand(tmpDir, "add", "."); err != nil {
+		t.Fatalf("git add failed: %v", err)
+	}
+	if err := runGitCommand(tmpDir, "commit", "-m", "pre-existing bump"); err != nil {
+		t.Fatalf("git commit failed: %v", err)
+	}
+
+	// Record the current HEAD so we can assert it advances after the release.
+	head, err := runGitCommandWithOutput(tmpDir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse HEAD failed: %v", err)
+	}
+	head = strings.TrimSpace(head)
+
+	// Place moduleC's tag on the commit BEFORE the bump (HEAD~1), simulating
+	// a tag that exists on a different commit than the one this run will produce.
+	// Without the fix, checkTagsExist would see this tag in its input set and
+	// return a spurious tags_exist error even though moduleC is excluded.
+	moduleCTag := "moduleC/" + version
+	if err := runGitCommand(tmpDir, "tag", "-am", moduleCTag, moduleCTag, "HEAD~1"); err != nil {
+		t.Fatalf("failed to create moduleC tag on HEAD~1: %v", err)
+	}
+
+	// Run with moduleC excluded. Must succeed despite moduleC's tag existing on
+	// a different commit: allTags (derived from filteredModules, which already
+	// excludes moduleC) is what gets passed to checkTagsExist, so moduleC's
+	// tag is never in the conflict-guard's input set.
+	excludedModule := "example.com/root/moduleC/v2"
+	if err := run(false, "test-remote", true, tmpDir, version, []string{excludedModule}, []string{}, []string{}); err != nil {
+		t.Fatalf("run with --exclude-modules failed unexpectedly: %v\n"+
+			"(regression: the tag-conflict guard must not flag tags for excluded modules)", err)
+	}
+
+	// Three commits: initial + bump + release.
+	commits, err := runGitCommandWithOutput(tmpDir, "log", "--oneline")
+	if err != nil {
+		t.Fatalf("failed to read commits: %v", err)
+	}
+	if got := len(nonEmptyLines(commits)); got != 3 {
+		t.Errorf("expected 3 commits (initial + bump + release), got %d:\n%s", got, commits)
+	}
+
+	// HEAD must have advanced past the pre-bump commit.
+	newHead, err := runGitCommandWithOutput(tmpDir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse HEAD failed: %v", err)
+	}
+	if strings.TrimSpace(newHead) == head {
+		t.Error("expected a new release commit, but HEAD did not advance")
+	}
+
+	tagsAtHead, err := runGitCommandWithOutput(tmpDir, "tag", "--points-at", "HEAD")
+	if err != nil {
+		t.Fatalf("failed to list tags at HEAD: %v", err)
+	}
+
+	// Root tag and non-excluded contrib tags must be present at the new HEAD.
+	for _, tag := range []string{version, "moduleA/" + version, "moduleB/" + version} {
+		if !containsLine(tagsAtHead, tag) {
+			t.Errorf("expected tag %q at HEAD, not found in:\n%s", tag, tagsAtHead)
+		}
+	}
+
+	// moduleC must NOT have been re-tagged — it must still point at HEAD~1.
+	// This confirms excludedModules is respected all the way through to Phase 3.
+	if containsLine(tagsAtHead, moduleCTag) {
+		t.Errorf("excluded moduleC tag %q must not appear at the new HEAD", moduleCTag)
+	}
+}
+
+// TestExcludeModulesSkipsTagCreation probes the pipeline at the unit level:
+// filterModules + buildTagList must together produce a tag slice that contains
+// no entry for the excluded module. This slice is the exact input that
+// checkTagsExist receives, so a missing module here means the conflict guard
+// cannot be falsely triggered by that module's stale tags.
+func TestExcludeModulesSkipsTagCreation(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	modules, err := findModules(tmpDir, []string{})
+	if err != nil {
+		t.Fatalf("findModules failed: %v", err)
+	}
+
+	rootMod, err := readModule(filepath.Join(tmpDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("readModule failed: %v", err)
+	}
+
+	excludedModule := "example.com/root/moduleC/v2"
+	filtered := filterModules(modules, rootMod.Module.Path, []string{excludedModule})
+
+	sorted, err := topologicalSort(buildDependencyGraph(filtered))
+	if err != nil {
+		t.Fatalf("topologicalSort failed: %v", err)
+	}
+
+	tags := buildTagList(tmpDir, rootMod, filtered, sorted, version, []string{})
+
+	// moduleC must not appear in the tag list that checkTagsExist would receive.
+	moduleCTag := "moduleC/" + version
+	for _, tag := range tags {
+		if tag == moduleCTag {
+			t.Errorf("buildTagList must not include %q for excluded module %q; full list: %v",
+				moduleCTag, excludedModule, tags)
+		}
+	}
+
+	// The non-excluded modules must still appear.
+	for _, want := range []string{version, "moduleA/" + version, "moduleB/" + version} {
+		found := false
+		for _, tag := range tags {
+			if tag == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected tag %q in buildTagList output; got: %v", want, tags)
+		}
+	}
+}
+
 // assertJSONErrorCode parses the JSON on stderr and asserts the "error" field
 // matches the expected code.
 func assertJSONErrorCode(t *testing.T, stderrOut, wantCode string) {

@@ -331,7 +331,15 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	// handles the "all tags already point at HEAD" case; this guard catches
 	// tags that point somewhere else — including tags that were pushed from a
 	// different run and are only visible via the remote.
-	if err := checkTagsExist(root, remote, allWouldBeTags(root, version, excludedDirs, untaggedModules)); err != nil {
+	//
+	// allTags (computed above) is the exact set of tags this run will create;
+	// it already respects excludedModules, untaggedModules, and the
+	// dependency-graph filter. Using it directly avoids the false-positive
+	// that the old allWouldBeTags approximation caused: that function had no
+	// knowledge of excludedModules, so it included tags for explicitly
+	// excluded modules — causing a spurious tags_exist failure when one of
+	// those modules carried an old tag on a different commit.
+	if err := checkTagsExist(root, remote, allTags); err != nil {
 		return err
 	}
 
@@ -508,49 +516,6 @@ func checkDirtyTree(root string) error {
 		fmt.Sprintf("working tree has uncommitted changes in: %s", strings.Join(dirty, ", ")),
 		map[string]any{"modified_files": dirty},
 	)
-}
-
-// allWouldBeTags returns a conservative approximation of the tag list derived
-// solely from the filesystem (before modules are fully resolved). It is used
-// only by the pre-mutation tags_exist guard; the real tag list is built later
-// via buildTagList after modules are discovered.
-//
-// excludedDirs must be the same resolved slice passed to findModules so that
-// modules in _tools, .github, tools, etc. are not included — those directories
-// are never tagged and their presence in the list would cause false-positive
-// tags_exist errors if they happened to carry an old tag on a different commit.
-func allWouldBeTags(root, version string, excludedDirs, untaggedModules []string) []string {
-	// Walk the repo and collect every go.mod that is NOT the root so we can
-	// build the tag list without running the full module-discovery pipeline.
-	tags := []string{version}
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if d.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			if containsPath(excludedDirs, path) {
-				return filepath.SkipDir
-			}
-		}
-		if d.Name() != "go.mod" || filepath.Dir(path) == root {
-			return nil
-		}
-		rel, err := filepath.Rel(root, filepath.Dir(path))
-		if err != nil {
-			return nil
-		}
-		// Read the module path to check against untaggedModules.
-		mod, err := readModule(path)
-		if err == nil && containsPath(untaggedModules, mod.Module.Path) {
-			return nil
-		}
-		tags = append(tags, rel+"/"+version)
-		return nil
-	})
-	return tags
 }
 
 // checkTagsExist inspects the provided tag names and returns a tags_exist
