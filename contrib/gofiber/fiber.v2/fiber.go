@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -67,6 +68,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			}
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
+		opts = append(opts, appsechttpsec.SecurityTestingHeaderTagsOption(h))
 		opts = append(opts, cfg.spanOpts...)
 		opts = append(opts,
 			tracer.Tag(ext.Component, componentName),

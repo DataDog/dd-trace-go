@@ -150,6 +150,17 @@ func SetSecurityTestingHeaderTags(tags map[string]any, headers http.Header) {
 	}
 }
 
+// SetSecurityTestingHeaderTagsFromBytes sets security testing header tags from byte values.
+func SetSecurityTestingHeaderTagsFromBytes(tags map[string]any, values func(string) [][]byte) {
+	for _, h := range securityTestingHeaders {
+		headerValues := values(h.Header)
+		if len(headerValues) == 0 {
+			continue
+		}
+		tags[h.Tag] = strings.TrimSpace(normalizeHTTPHeaderBytesValue(headerValues))
+	}
+}
+
 func securityTestingHeaderValues(headers http.Header, header string) ([]string, bool) {
 	for name, values := range headers {
 		if strings.EqualFold(name, header) {
@@ -187,6 +198,28 @@ func normalizeHTTPHeaderName(name string) string {
 
 func normalizeHTTPHeaderValue(values []string) string {
 	return strings.Join(values, ",")
+}
+
+func normalizeHTTPHeaderBytesValue(values [][]byte) string {
+	if len(values) == 1 {
+		return string(values[0])
+	}
+
+	var length int
+	for _, value := range values {
+		length += len(value)
+	}
+	length += len(values) - 1
+
+	var b strings.Builder
+	b.Grow(length)
+	for i, value := range values {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.Write(value)
+	}
+	return b.String()
 }
 
 func init() {

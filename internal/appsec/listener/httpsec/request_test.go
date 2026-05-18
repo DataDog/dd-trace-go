@@ -263,6 +263,21 @@ func TestSetRequestHeadersTagsDoesNotOwnSecurityTestingHeaders(t *testing.T) {
 	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-security-test")
 }
 
+func TestSetSecurityTestingHeaderTagsFromBytes(t *testing.T) {
+	tags := map[string]any{}
+	values := map[string][][]byte{
+		securityTestingEndpointScanHeader: {[]byte(" scan-uuid ")},
+		securityTestingHeader:             {[]byte("test-uuid"), []byte("second-value")},
+	}
+
+	SetSecurityTestingHeaderTagsFromBytes(tags, func(header string) [][]byte {
+		return values[header]
+	})
+
+	require.Equal(t, "scan-uuid", tags[securityTestingEndpointScanTag])
+	require.Equal(t, "test-uuid,second-value", tags[securityTestingTag])
+}
+
 //go:embed testdata/trace_tagging_rules.json
 var wafRulesJSON []byte
 

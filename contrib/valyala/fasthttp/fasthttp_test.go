@@ -263,3 +263,27 @@ func TestPropagation(t *testing.T) {
 	two := spans[1]
 	assert.Equal(one.TraceID(), two.TraceID())
 }
+
+func TestSecurityTestingHeaders(t *testing.T) {
+	assert := assert.New(t)
+	addr := startServer(t)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	req, err := http.NewRequest("GET", addr+"/any", nil)
+	require.NoError(t, err)
+	req.Header.Set("x-datadog-endpoint-scan", "true")
+	req.Header.Set("x-datadog-security-test", "test-value")
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	span := spans[0]
+	assert.Equal("true", span.Tag(ext.HTTPRequestHeaders+".x-datadog-endpoint-scan"))
+	assert.Equal("test-value", span.Tag(ext.HTTPRequestHeaders+".x-datadog-security-test"))
+}
