@@ -9,3 +9,4 @@ claim_pattern:
 
 permissions:
   contents: write
+  workflows: write
