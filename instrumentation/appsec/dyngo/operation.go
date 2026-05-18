@@ -206,7 +206,7 @@ func RegisterOperation(ctx context.Context, op Operation) context.Context {
 
 // FinishOperation finishes the operation along with its results and emits a
 // finish event with the operation results.
-// The operation is then disabled and its event listeners removed.
+// The operation is then disabled and its listeners removed.
 func FinishOperation[O Operation, E ResultOf[O]](op O, results E) {
 	o := op.unwrap()
 	defer o.disable() // This will need the RLock below to be released...
@@ -228,7 +228,7 @@ func FinishOperation[O Operation, E ResultOf[O]](op O, results E) {
 	}
 }
 
-// Disable the operation and remove all its event listeners.
+// Disable the operation and remove all its listeners.
 func (o *operation) disable() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
