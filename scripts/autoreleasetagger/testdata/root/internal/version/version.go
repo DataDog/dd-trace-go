@@ -3,15 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package moduleA
+package version
 
-import (
-	"example.com/root/v2"
-)
-
-var version = root.Version
-
-// HelloA returns a greeting that includes the root module's greeting.
-func HelloA() string {
-	return "Hello A + " + root.HelloRoot() + " + " + version
-}
+// Tag specifies the current release tag.
+var Tag = "v0.0.0-dev"
