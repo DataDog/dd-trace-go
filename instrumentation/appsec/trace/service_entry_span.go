@@ -26,7 +26,7 @@ type (
 	// ServiceEntrySpanArgs is the arguments for a ServiceEntrySpanOperation
 	ServiceEntrySpanArgs struct{}
 
-	// ServiceEntrySpanRes is the result of a ServiceEntrySpanOperation
+	// ServiceEntrySpanRes is the result of a ServiceEntrySpanOperation.
 	ServiceEntrySpanRes struct{}
 
 	// ServiceEntrySpanTag is a key value pair event that is used to tag a service entry span
@@ -49,7 +49,8 @@ type (
 	}
 )
 
-func (ServiceEntrySpanArgs) IsArgOf(*ServiceEntrySpanOperation)   {}
+func (ServiceEntrySpanArgs) IsArgOf(*ServiceEntrySpanOperation) {}
+
 func (ServiceEntrySpanRes) IsResultOf(*ServiceEntrySpanOperation) {}
 
 // SetTag adds the key/value pair to the tags to add to the service entry span
@@ -145,8 +146,6 @@ func StartServiceEntrySpanOperation(ctx context.Context, span TagSetter) (*Servi
 }
 
 func (op *ServiceEntrySpanOperation) Finish() {
-	// Deferred so the GLS entry is popped and dyngo listeners are cleared
-	// even if a misbehaving TagSetter.SetTag panics below.
 	defer dyngo.FinishOperation(op, ServiceEntrySpanRes{})
 
 	span := op.tagSetter
