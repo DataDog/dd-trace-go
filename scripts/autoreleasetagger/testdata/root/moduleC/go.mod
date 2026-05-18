@@ -1,4 +1,4 @@
-module example.com/root/moduleA/v2
+module example.com/root/moduleC/v2
 
 go 1.25.0
 

@@ -3,16 +3,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-package moduleB
+package moduleC
 
 import (
-	"example.com/root/moduleA/v2"
 	"example.com/root/v2"
 )
 
-var version = root.Version
-
-// HelloB returns a greeting that includes moduleA's greeting.
-func HelloB() string {
-	return "Hello B + " + moduleA.HelloA() + " + " + version
+// HelloC returns a greeting that includes the root module's greeting.
+func HelloC() string {
+	return "Hello C + " + root.HelloRoot()
 }
