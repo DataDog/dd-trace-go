@@ -770,13 +770,15 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				}
 
 				if isAnEfdExecution(execMeta) {
-					// For EFD, retry if remaining retries >= 0.
-					return remainingRetries >= 0
+					// Clean skips do not add flakiness signal, so EFD stops before scheduling retries.
+					cleanSkip := ptrToLocalT.Skipped() && !ptrToLocalT.Failed()
+					return !cleanSkip && remainingRetries >= 0
 				}
 
 				if execMeta.isFlakyTestRetriesEnabled {
 					return willRetryAfterExecution(
 						ptrToLocalT.Failed(),
+						ptrToLocalT.Skipped(),
 						execMeta,
 						remainingRetries,
 						atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount),
