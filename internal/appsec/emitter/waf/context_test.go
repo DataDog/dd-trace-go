@@ -32,7 +32,7 @@ func TestContextOperationFinishClearsServiceEntryGLS(t *testing.T) {
 	}
 }
 
-func TestFinishedServiceEntrySpanDoesNotReceiveDataEvents(t *testing.T) {
+func TestFinishedServiceEntrySpanDoesNotReceiveChildDataEvents(t *testing.T) {
 	t.Cleanup(orchestrion.MockGLS())
 
 	root := dyngo.NewRootOperation()
@@ -48,14 +48,15 @@ func TestFinishedServiceEntrySpanDoesNotReceiveDataEvents(t *testing.T) {
 	tags := newRecordingTagSetter()
 	op, _ := StartContextOperation(context.Background(), tags)
 	op.Finish()
+	child := dyngo.NewOperation(op.ServiceEntrySpanOperation)
 
-	dyngo.EmitData(op.ServiceEntrySpanOperation, tracelib.ServiceEntrySpanTag{
+	dyngo.EmitData(child, tracelib.ServiceEntrySpanTag{
 		Key:   "after.finish",
 		Value: "should-not-be-seen",
 	})
 
 	if _, ok := tags.Get("after.finish"); ok {
-		t.Fatal("finished service-entry operation still received data events")
+		t.Fatal("finished service-entry operation still received data events from a child operation")
 	}
 }
 
