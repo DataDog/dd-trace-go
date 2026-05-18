@@ -6,9 +6,10 @@
 package constants
 
 const (
-	// CIVisibilityEnabledEnvironmentVariable indicates if CI Visibility mode is enabled.
-	// This environment variable should be set to "1" or "true" to enable CI Visibility mode, which activates tracing and other
-	// features related to CI Visibility in the Datadog platform.
+	// CIVisibilityEnabledEnvironmentVariable controls whether CI Visibility mode is enabled.
+	// It accepts normal boolean values parsed by strconv.ParseBool. It also accepts
+	// "parent", which enables CI Visibility for the current process and rewrites the
+	// variable after bootstrap so child processes inherit disabled CI Visibility.
 	CIVisibilityEnabledEnvironmentVariable = "DD_CIVISIBILITY_ENABLED"
 
 	// CIVisibilityAgentlessEnabledEnvironmentVariable indicates if CI Visibility agentless mode is enabled.

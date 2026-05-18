@@ -20,6 +20,11 @@ const (
 	// DefaultRateLimit specifies the default rate limit per second for traces.
 	// TODO: Maybe delete this. We will have defaults in supported_configuration.json anyway.
 	DefaultRateLimit = 100.0
+
+	// DefaultMaxTagsHeaderLen is the default value for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
+	DefaultMaxTagsHeaderLen = 512
+	// MaxPropagatedTagsLength is the upper bound on DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
+	MaxPropagatedTagsLength = 512
 	// TraceMaxSize is the maximum number of spans we keep in memory for a
 	// single trace. This is to avoid memory leaks. If more spans than this
 	// are added to a trace, then the trace is dropped and the spans are
@@ -79,6 +84,21 @@ func parseSpanAttributeSchema(v string) (int, bool) {
 		log.Warn("DD_TRACE_SPAN_ATTRIBUTE_SCHEMA=%s is not a valid value, ignoring", v)
 		return 0, false
 	}
+}
+
+// resolveMaxTagsHeaderLen normalises a DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH value
+// into the supported range. Negative values are clamped to 0 (which disables
+// tags propagation); values above MaxPropagatedTagsLength are clamped down.
+func resolveMaxTagsHeaderLen(v int) int {
+	if v < 0 {
+		log.Warn("Invalid value %d for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH. Setting to 0.", v)
+		return 0
+	}
+	if v > MaxPropagatedTagsLength {
+		log.Warn("Invalid value %d for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH. Maximum allowed is %d. Setting to %d.", v, MaxPropagatedTagsLength, MaxPropagatedTagsLength)
+		return MaxPropagatedTagsLength
+	}
+	return v
 }
 
 func validatePartialFlushMinSpans(minSpans int) bool {

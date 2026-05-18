@@ -818,7 +818,7 @@ func extractJenkins() map[string]string {
 	tags[constants.PrNumber] = env.Get("CHANGE_ID")
 	tags[constants.GitPrBaseBranch] = env.Get("CHANGE_TARGET")
 
-	jsonString, err := getEnvVarsJSON("DD_CUSTOM_TRACE_ID")
+	jsonString, err := getEnvVarsJSON("DD_CUSTOM_TRACE_ID", "DD_CUSTOM_PARENT_ID")
 	if err == nil {
 		tags[constants.CIEnvVars] = string(jsonString)
 	}

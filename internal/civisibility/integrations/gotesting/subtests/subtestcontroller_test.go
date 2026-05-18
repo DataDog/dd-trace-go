@@ -43,6 +43,9 @@ var (
 		parentQuarantinedScenario(),
 		parentQuarantinedAttemptFixScenario(),
 		parentAttemptFixScenario(),
+		parentAttemptFixSubExplicitFalseScenario(),
+		parentQuarantinedAttemptFixSubExplicitFalseScenario(),
+		parentDisabledAttemptFixSubExplicitFalseScenario(),
 		subAttemptFixOnlyScenario(),
 		subAttemptFixCustomRetriesScenario(),
 		subAttemptFixParallelScenario(),
@@ -506,6 +509,122 @@ func parentAttemptFixScenario() *matrixScenario {
 			}
 			assertTagCount(subSpans, constants.TestIsRetry, "true", 2, "sub inherited attempt-to-fix retry tag count")
 			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "sub inherited attempt-to-fix retry reason count")
+		},
+	}
+}
+
+// parentAttemptFixSubExplicitFalseScenario verifies that an exact all-false subtest entry can
+// clear inherited attempt-to-fix metadata without forcing a child retry wrapper.
+func parentAttemptFixSubExplicitFalseScenario() *matrixScenario {
+	return &matrixScenario{
+		name: "parent_attempt_to_fix_sub_explicit_false",
+		configure: func(ctx *scenarioContext) {
+			ctx.ensureSuite()
+			ctx.attemptToFixRetries = 3
+			ctx.setParentDirective(directive{attemptToFix: true})
+			ctx.setSubDirective("SubAttemptFix", directive{})
+		},
+		validate: func(spans []*mocktracer.Span) {
+			testSpans := filterTestSpans(spans)
+
+			parentResource := fmt.Sprintf("%s.%s", suiteUnderTest, parentTestName)
+			parentSpans := spansByResource(testSpans, parentResource)
+			requireSpanCount(parentSpans, 3, "parent attempt-to-fix explicit-false parent span count")
+			for idx, span := range parentSpans {
+				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("parent explicit-false attempt tag span %d", idx))
+			}
+			assertTagCount(parentSpans, constants.TestIsRetry, "true", 2, "parent explicit-false retry tag count")
+			assertTagCount(parentSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "parent explicit-false retry reason count")
+
+			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
+			subSpans := spansByResource(testSpans, subResource)
+			requireSpanCount(subSpans, 3, "parent attempt-to-fix explicit-false child span count")
+			for idx, span := range subSpans {
+				assertTagNotTrue(span, constants.TestIsAttempToFix, fmt.Sprintf("explicit-false child attempt tag span %d", idx))
+				assertTagEquals(span, constants.TestStatus, constants.TestStatusPass, fmt.Sprintf("explicit-false child status span %d", idx))
+				assertTagEquals(span, constants.TestFinalStatus, constants.TestStatusPass, fmt.Sprintf("explicit-false child final status span %d", idx))
+			}
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "explicit-false child retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "explicit-false child retry reason count")
+		},
+	}
+}
+
+// parentQuarantinedAttemptFixSubExplicitFalseScenario keeps the current asymmetric
+// inheritance contract: exact all-false child metadata clears inherited attempt-to-fix
+// retry control, while quarantine still propagates from the parent.
+func parentQuarantinedAttemptFixSubExplicitFalseScenario() *matrixScenario {
+	return &matrixScenario{
+		name: "parent_quarantined_attempt_to_fix_sub_explicit_false",
+		configure: func(ctx *scenarioContext) {
+			ctx.ensureSuite()
+			ctx.attemptToFixRetries = 3
+			ctx.setParentDirective(directive{quarantined: true, attemptToFix: true})
+			ctx.setSubDirective("SubAttemptFix", directive{})
+		},
+		validate: func(spans []*mocktracer.Span) {
+			testSpans := filterTestSpans(spans)
+
+			parentResource := fmt.Sprintf("%s.%s", suiteUnderTest, parentTestName)
+			parentSpans := spansByResource(testSpans, parentResource)
+			requireSpanCount(parentSpans, 3, "parent quarantined attempt-to-fix explicit-false parent span count")
+			for idx, span := range parentSpans {
+				assertTagEquals(span, constants.TestIsQuarantined, "true", fmt.Sprintf("parent quarantined explicit-false quarantine tag span %d", idx))
+				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("parent quarantined explicit-false attempt tag span %d", idx))
+			}
+			assertTagCount(parentSpans, constants.TestIsRetry, "true", 2, "parent quarantined explicit-false retry tag count")
+			assertTagCount(parentSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "parent quarantined explicit-false retry reason count")
+
+			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
+			subSpans := spansByResource(testSpans, subResource)
+			requireSpanCount(subSpans, 3, "parent quarantined attempt-to-fix explicit-false child span count")
+			for idx, span := range subSpans {
+				assertTagEquals(span, constants.TestIsQuarantined, "true", fmt.Sprintf("explicit-false quarantined child quarantine tag span %d", idx))
+				assertTagNotTrue(span, constants.TestIsAttempToFix, fmt.Sprintf("explicit-false quarantined child attempt tag span %d", idx))
+				assertTagEquals(span, constants.TestFinalStatus, constants.TestStatusSkip, fmt.Sprintf("explicit-false quarantined child final status span %d", idx))
+			}
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "explicit-false quarantined child retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "explicit-false quarantined child retry reason count")
+		},
+	}
+}
+
+// parentDisabledAttemptFixSubExplicitFalseScenario mirrors the combined inherited
+// disabled plus attempt-to-fix case. The child exact-false directive clears inherited
+// attempt-to-fix retry control, but disabled still propagates and skips the child.
+func parentDisabledAttemptFixSubExplicitFalseScenario() *matrixScenario {
+	return &matrixScenario{
+		name: "parent_disabled_attempt_to_fix_sub_explicit_false",
+		configure: func(ctx *scenarioContext) {
+			ctx.ensureSuite()
+			ctx.attemptToFixRetries = 3
+			ctx.setParentDirective(directive{disabled: true, attemptToFix: true})
+			ctx.setSubDirective("SubAttemptFix", directive{})
+		},
+		validate: func(spans []*mocktracer.Span) {
+			testSpans := filterTestSpans(spans)
+
+			parentResource := fmt.Sprintf("%s.%s", suiteUnderTest, parentTestName)
+			parentSpans := spansByResource(testSpans, parentResource)
+			requireSpanCount(parentSpans, 3, "parent disabled attempt-to-fix explicit-false parent span count")
+			for idx, span := range parentSpans {
+				assertTagEquals(span, constants.TestIsDisabled, "true", fmt.Sprintf("parent disabled explicit-false disabled tag span %d", idx))
+				assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("parent disabled explicit-false attempt tag span %d", idx))
+			}
+			assertTagCount(parentSpans, constants.TestIsRetry, "true", 2, "parent disabled explicit-false retry tag count")
+			assertTagCount(parentSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, "parent disabled explicit-false retry reason count")
+
+			subResource := fmt.Sprintf("%s/%s", parentResource, "SubAttemptFix")
+			subSpans := spansByResource(testSpans, subResource)
+			requireSpanCount(subSpans, 3, "parent disabled attempt-to-fix explicit-false child span count")
+			for idx, span := range subSpans {
+				assertTagEquals(span, constants.TestIsDisabled, "true", fmt.Sprintf("explicit-false disabled child disabled tag span %d", idx))
+				assertTagNotTrue(span, constants.TestIsAttempToFix, fmt.Sprintf("explicit-false disabled child attempt tag span %d", idx))
+				assertTagEquals(span, constants.TestFinalStatus, constants.TestStatusSkip, fmt.Sprintf("explicit-false disabled child final status span %d", idx))
+			}
+			assertTagCount(subSpans, constants.TestIsRetry, "true", 0, "explicit-false disabled child retry tag count")
+			assertTagCount(subSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 0, "explicit-false disabled child retry reason count")
+			assertTagCount(subSpans, constants.TestSkipReason, constants.TestDisabledSkipReason, 3, "explicit-false disabled child skip reason count")
 		},
 	}
 }
