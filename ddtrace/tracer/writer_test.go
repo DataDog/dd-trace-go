@@ -419,7 +419,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
-			u := mockAgentEndpoint(t, "/v1.0/traces")
+			u := mockAgentEndpoint(t, "/v0.4/traces")
 			c, err := newTestConfig(func(c *config) {
 				c.ddTransport = p
 				c.sendRetries = test.configRetries
@@ -536,7 +536,7 @@ func TestTraceProtocol(t *testing.T) {
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV1, h.payload.protocol())
+		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("invalid, no endpoint", func(t *testing.T) {
@@ -559,7 +559,7 @@ func TestTraceProtocol(t *testing.T) {
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
-		assert.Equal(traceProtocolV1, h.payload.protocol())
+		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 }
 func BenchmarkJsonEncodeSpan(b *testing.B) {
@@ -787,7 +787,7 @@ func (t *simpleTransport) sendStats(s *pb.ClientStatsPayload, obfVersion int) er
 }
 
 func (t *simpleTransport) endpoint() string {
-	return "http://localhost:9/v1.0/traces"
+	return "http://localhost:9/v0.4/traces"
 }
 
 // TestAgentWriterFlushSizeMetrics validates that flush_bytes metrics are accurate
