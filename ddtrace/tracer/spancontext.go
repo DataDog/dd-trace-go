@@ -821,9 +821,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 		t.mu.Unlock()
-		if tr, ok := tr.(*tracer); ok {
-			tr.submitChunk(&chunk{spans: spans, willSend: willSend})
-		}
+		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend})
 		return
 	}
 
@@ -879,8 +877,16 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RUnlock()
 	}
 
-	if tr, ok := tr.(*tracer); ok {
-		tr.submitChunk(&chunk{spans: finishedSpans, willSend: willSend})
+	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend})
+}
+
+// submitChunkWithTracer submits a finished chunk when tr is backed by the real tracer.
+func submitChunkWithTracer(tr Tracer, c *chunk) {
+	switch t := tr.(type) {
+	case *tracer:
+		t.submitChunk(c)
+	case *ciVisibilityNoopTracer:
+		submitChunkWithTracer(t.Tracer, c)
 	}
 }
 

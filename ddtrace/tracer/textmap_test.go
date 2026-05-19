@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 
@@ -652,7 +653,7 @@ func TestTextMapPropagator(t *testing.T) {
 			BaggagePrefix:    "bg-",
 			TraceHeader:      "tid",
 			ParentHeader:     "pid",
-			MaxTagsHeaderLen: defaultMaxTagsHeaderLen,
+			MaxTagsHeaderLen: internalconfig.DefaultMaxTagsHeaderLen,
 		})
 		tracer, err := newTracer(WithPropagator(propagator))
 		defer tracer.Stop()
@@ -674,6 +675,48 @@ func TestTextMapPropagator(t *testing.T) {
 		assert.Equal(xctx.baggage, ctx.baggage)
 		assert.Equal(xctx.trace.priority.Load(), ctx.trace.priority.Load())
 	})
+}
+
+func TestExtractTraceTagsHeaderUsesMaxTagsHeaderLen(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	const customMax = 200
+	propagator := NewPropagator(&PropagatorConfig{
+		MaxTagsHeaderLen: customMax,
+	})
+
+	// Header is longer than the configured cap but shorter than the previous
+	// hardcoded 512 cap, to confirm extract now honors the configured maxLen.
+	tags := "_dd.p.k=" + strings.Repeat("a", customMax)
+	require.Greater(t, len(tags), customMax)
+	require.Less(t, len(tags), 512)
+
+	src := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		traceTagsHeader:       tags,
+	})
+	ctx, err := propagator.Extract(src)
+	require.NoError(t, err)
+	assert.Equal(t, "extract_max_size", ctx.trace.tags["_dd.propagation_error"])
+}
+
+func TestExtractTraceTagsHeaderDisabled(t *testing.T) {
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	propagator := NewPropagator(&PropagatorConfig{
+		MaxTagsHeaderLen: 0, // disable, mirroring inject
+	})
+
+	src := TextMapCarrier(map[string]string{
+		DefaultTraceIDHeader:  "1",
+		DefaultParentIDHeader: "1",
+		traceTagsHeader:       "_dd.p.k=v",
+	})
+	ctx, err := propagator.Extract(src)
+	require.NoError(t, err)
+	// Disabled extract: no propagating tags, no error tag.
+	_, hasErr := ctx.trace.tags["_dd.propagation_error"]
+	assert.False(t, hasErr)
+	assert.Empty(t, ctx.trace.propagatingTags)
 }
 
 func TestEnvVars(t *testing.T) {
@@ -2435,7 +2478,7 @@ func FuzzMarshalPropagatingTags(f *testing.F) {
 		if _, ok := sendCtx.trace.tags[keyPropagationError]; ok {
 			t.Skipf("Skipping invalid tags")
 		}
-		unmarshalPropagatingTags(recvCtx, marshal)
+		unmarshalPropagatingTags(recvCtx, marshal, pConfig.MaxTagsHeaderLen)
 		marshaled := sendCtx.trace.propagatingTags
 		unmarshaled := recvCtx.trace.propagatingTags
 		if !reflect.DeepEqual(sendCtx.trace.propagatingTags, recvCtx.trace.propagatingTags) {
