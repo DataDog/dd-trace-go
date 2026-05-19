@@ -79,6 +79,7 @@ use (
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./orchestrion/all
+	./scripts/autoreleasetagger
 	./scripts/fixmodules
 	./tools/v2fix
 	./tools/v2fix/_stage

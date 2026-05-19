@@ -322,6 +322,13 @@
         "default": "false"
       }
     ],
+    "DD_CUSTOM_PARENT_ID": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_CUSTOM_TRACE_ID": [
       {
         "implementation": "A",

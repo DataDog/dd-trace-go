@@ -837,6 +837,9 @@ func statsTags(c *config) []string {
 			tags = append(tags, k+":"+vstr)
 		}
 	}
+	tags = append(tags, processtags.GlobalTags().Slice()...)
+	// globalconfig.StatsTags is shared with contrib statsd clients. Process
+	// tags are shared too; keep only tracer_version and service tracer-only.
 	globalconfig.SetStatsTags(tags)
 	tags = append(tags, "tracer_version:"+version.Tag)
 	if v := c.internalConfig.ServiceName(); v != "" {

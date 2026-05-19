@@ -6,6 +6,8 @@
 package processtags
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -57,7 +59,7 @@ func TestSetServiceNameTag(t *testing.T) {
 	t.Run("works when tags map not yet initialised", func(t *testing.T) {
 		t.Cleanup(Reload)
 		// Simulate collect() returning empty (e.g. os.Executable fails):
-		// Reload creates pTags but Add is never called, leaving pTags.tags nil.
+		// Reload creates pTags but add is never called, leaving pTags.tags nil.
 		pTags = &ProcessTags{}
 		SetServiceNameTag("myapp", false)
 		tags := GlobalTags()
@@ -93,5 +95,30 @@ func TestProcessTags(t *testing.T) {
 		assert.Nil(t, p)
 		assert.Empty(t, p.String())
 		assert.Empty(t, p.Slice())
+	})
+}
+
+func TestDirectoryTagValue(t *testing.T) {
+	t.Run("filters non-informative directory names", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			dir  string
+		}{
+			{name: "empty", dir: ""},
+			{name: "bin", dir: "bin"},
+			{name: "root", dir: string(os.PathSeparator)},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				dir := tc.dir
+				_, ok := directoryTagValue(dir)
+				assert.False(t, ok)
+			})
+		}
+	})
+
+	t.Run("keeps informative directory names", func(t *testing.T) {
+		got, ok := directoryTagValue(filepath.Join("usr", "local", "app"))
+		assert.True(t, ok)
+		assert.Equal(t, "app", got)
 	})
 }
