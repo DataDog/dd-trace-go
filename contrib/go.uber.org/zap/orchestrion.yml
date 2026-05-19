@@ -50,16 +50,11 @@ aspects:
           template: |-
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
             {{- $req := .Function.ArgumentThatImplements "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/internal/context.ContextProvider" -}}
+            {{- $ellipsis := .AST.Ellipsis -}}
             {{- if $ctx -}}
-              {{ .AST.Fun.X }}.With(__ddzap.TraceFields({{ $ctx }})...).{{ .AST.Fun.Name }}(
-                {{ range .AST.Args }}{{ . }},
-                {{ end }}
-              )
+              {{ .AST.Fun.X }}.With(__ddzap.TraceFields({{ $ctx }})...).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- else if $req -}}
-              {{ .AST.Fun.X }}.With(__ddzap.TraceFields({{ $req }}.Context())...).{{ .AST.Fun.Name }}(
-                {{ range .AST.Args }}{{ . }},
-                {{ end }}
-              )
+              {{ .AST.Fun.X }}.With(__ddzap.TraceFields({{ $req }}.Context())...).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- else -}}
               {{ . }}
             {{- end -}}
@@ -189,16 +184,11 @@ aspects:
           template: |-
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
             {{- $req := .Function.ArgumentThatImplements "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/internal/context.ContextProvider" -}}
+            {{- $ellipsis := .AST.Ellipsis -}}
             {{- if $ctx -}}
-              {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFields({{ $ctx }})...).Sugar().{{ .AST.Fun.Name }}(
-                {{ range .AST.Args }}{{ . }},
-                {{ end }}
-              )
+              {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFields({{ $ctx }})...).Sugar().{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- else if $req -}}
-              {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFields({{ $req }}.Context())...).Sugar().{{ .AST.Fun.Name }}(
-                {{ range .AST.Args }}{{ . }},
-                {{ end }}
-              )
+              {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFields({{ $req }}.Context())...).Sugar().{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- else -}}
               {{ . }}
             {{- end -}}
