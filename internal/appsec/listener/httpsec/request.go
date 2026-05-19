@@ -6,6 +6,7 @@
 package httpsec
 
 import (
+	"bytes"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -74,11 +75,12 @@ var (
 	// These headers are tagged separately from defaultCollectedHeaders because
 	// they are collected even when AppSec is disabled.
 	securityTestingHeaders = [...]struct {
-		Header string
-		Tag    string
+		Header      string
+		HeaderBytes []byte
+		Tag         string
 	}{
-		{Header: securityTestingEndpointScanHeader, Tag: securityTestingEndpointScanTag},
-		{Header: securityTestingHeader, Tag: securityTestingTag},
+		{Header: securityTestingEndpointScanHeader, HeaderBytes: []byte(securityTestingEndpointScanHeader), Tag: securityTestingEndpointScanTag},
+		{Header: securityTestingHeader, HeaderBytes: []byte(securityTestingHeader), Tag: securityTestingTag},
 	}
 
 	// collectedHeadersLookupMap is a helper lookup map of HTTP headers to
@@ -156,18 +158,28 @@ func SecurityTestingHeaderTagValues(headers http.Header) ([2]string, [2]string, 
 	return tagNames, tagValues, count
 }
 
-// SecurityTestingHeaderByteTagValues returns span tag names and values from byte header lookups.
-func SecurityTestingHeaderByteTagValues(values func(string) [][]byte) ([2]string, [2]string, int) {
+// SecurityTestingHeaderByteTagValues returns span tag names and values from byte header entries.
+func SecurityTestingHeaderByteTagValues(visit func(func(key, value []byte))) ([2]string, [2]string, int) {
+	var headerValues [len(securityTestingHeaders)][][]byte
+	visit(func(key, value []byte) {
+		for i, h := range securityTestingHeaders {
+			if bytes.EqualFold(key, h.HeaderBytes) {
+				headerValues[i] = append(headerValues[i], value)
+				break
+			}
+		}
+	})
+
 	var tagNames [2]string
 	var tagValues [2]string
 	var count int
-	for _, h := range securityTestingHeaders {
-		headerValues := values(h.Header)
-		if len(headerValues) == 0 {
+	for i, h := range securityTestingHeaders {
+		values := headerValues[i]
+		if len(values) == 0 {
 			continue
 		}
 		tagNames[count] = h.Tag
-		tagValues[count] = strings.TrimSpace(normalizeHTTPHeaderBytesValue(headerValues))
+		tagValues[count] = strings.TrimSpace(normalizeHTTPHeaderBytesValue(values))
 		count++
 	}
 	return tagNames, tagValues, count

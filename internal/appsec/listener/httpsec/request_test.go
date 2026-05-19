@@ -280,13 +280,16 @@ func TestSecurityTestingHeaderTagValues(t *testing.T) {
 }
 
 func TestSecurityTestingHeaderByteTagValues(t *testing.T) {
-	values := map[string][][]byte{
-		securityTestingEndpointScanHeader: {[]byte(" scan-uuid ")},
-		securityTestingHeader:             {[]byte("test-uuid"), []byte("second-value")},
+	values := [][2][]byte{
+		{[]byte("X-Datadog-Endpoint-Scan"), []byte(" scan-uuid ")},
+		{[]byte("X-Datadog-Security-Test"), []byte("test-uuid")},
+		{[]byte("x-datadog-security-test"), []byte("second-value")},
 	}
 
-	tagNames, tagValues, count := SecurityTestingHeaderByteTagValues(func(header string) [][]byte {
-		return values[header]
+	tagNames, tagValues, count := SecurityTestingHeaderByteTagValues(func(visit func(key, value []byte)) {
+		for _, value := range values {
+			visit(value[0], value[1])
+		}
 	})
 
 	require.Equal(t, 2, count)

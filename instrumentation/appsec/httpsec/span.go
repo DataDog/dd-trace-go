@@ -26,9 +26,9 @@ func AppendSecurityTestingHeaderTags(opts []tracer.StartSpanOption, headers http
 	return appendSecurityTestingHeaderTags(opts, tagNames, tagValues, count)
 }
 
-// AppendSecurityTestingHeaderTagsFromBytes appends tag options for present byte header lookups.
-func AppendSecurityTestingHeaderTagsFromBytes(opts []tracer.StartSpanOption, values func(string) [][]byte) []tracer.StartSpanOption {
-	tagNames, tagValues, count := listenerhttpsec.SecurityTestingHeaderByteTagValues(values)
+// AppendSecurityTestingHeaderTagsFromBytes appends tag options for present byte header entries.
+func AppendSecurityTestingHeaderTagsFromBytes(opts []tracer.StartSpanOption, visit func(func(key, value []byte))) []tracer.StartSpanOption {
+	tagNames, tagValues, count := listenerhttpsec.SecurityTestingHeaderByteTagValues(visit)
 	return appendSecurityTestingHeaderTags(opts, tagNames, tagValues, count)
 }
 
