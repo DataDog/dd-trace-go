@@ -23,6 +23,27 @@ const (
 
 	// MetricKeyTotalTokens is the standard key for total token count metrics.
 	MetricKeyTotalTokens = "total_tokens"
+
+	// MetricKeyCacheReadInputTokens is the standard key for cache read input token count metrics.
+	MetricKeyCacheReadInputTokens = "cache_read_input_tokens"
+
+	// MetricKeyCacheWriteInputTokens is the standard key for cache write input token count metrics.
+	MetricKeyCacheWriteInputTokens = "cache_write_input_tokens"
+
+	// MetricKeyEphemeral1HInputTokens is the standard key for ephemeral 1-hour cache write input token count metrics.
+	MetricKeyEphemeral1HInputTokens = "ephemeral_1h_input_tokens"
+
+	// MetricKeyEphemeral5MInputTokens is the standard key for ephemeral 5-minute cache write input token count metrics.
+	MetricKeyEphemeral5MInputTokens = "ephemeral_5m_input_tokens"
+
+	// MetricKeyReasoningOutputTokens is the standard key for reasoning output token count metrics.
+	MetricKeyReasoningOutputTokens = "reasoning_output_tokens"
+
+	// MetricKeyBillableCharacterCount is the standard key for billable character count metrics.
+	MetricKeyBillableCharacterCount = "billable_character_count"
+
+	// MetricKeyTimeToFirstToken is the standard key for time-to-first-token metrics.
+	MetricKeyTimeToFirstToken = "time_to_first_token"
 )
 
 // ------------- Start options -------------
