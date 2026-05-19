@@ -122,3 +122,16 @@ func TestDirectoryTagValue(t *testing.T) {
 		assert.Equal(t, "app", got)
 	})
 }
+
+func TestContainerTagsHash(t *testing.T) {
+	t.Cleanup(func() { SetContainerTagsHash("") })
+
+	SetContainerTagsHash("hash-1")
+	assert.Equal(t, "hash-1", ContainerTagsHash())
+
+	SetContainerTagsHash("hash-2")
+	assert.Equal(t, "hash-2", ContainerTagsHash())
+
+	SetContainerTagsHash("")
+	assert.Empty(t, ContainerTagsHash())
+}
