@@ -7,12 +7,14 @@ package net
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
@@ -126,6 +129,44 @@ func TestReadThroughShortLivedCacheWritesSanitizedEntryAndHits(t *testing.T) {
 	assertLowerHex(t, entry.EndpointScope.RequestHash)
 }
 
+func TestReadThroughShortLivedCacheFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not expose Unix permission bits")
+	}
+
+	now := time.Unix(1_700_000_000, 0)
+	root := t.TempDir()
+	setReadCacheHooksForTest(t, root, &now, 111, 222)
+
+	c := newReadCacheTestClient(map[string]string{})
+	semanticRequest := map[string]string{"request": "permissions"}
+	cacheKey, paths := readCacheTestKeyAndPaths(t, c, "unit", semanticRequest)
+	live := func() (readCacheLiveResult[string], error) {
+		return readCacheLiveResult[string]{Value: "cached", Cacheable: true}, nil
+	}
+
+	value, err := readThroughShortLivedCache(c, "unit", semanticRequest, live, nil)
+	require.NoError(t, err)
+	require.Equal(t, "cached", value)
+
+	dirInfo, err := os.Stat(paths.Dir)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
+
+	cacheInfo, err := os.Stat(paths.CacheFile)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), cacheInfo.Mode().Perm())
+
+	owner, status := acquireReadCacheLock(paths, cacheKey)
+	require.Equal(t, readCacheLockAcquired, status)
+	require.NotNil(t, owner)
+	defer releaseReadCacheLock(owner)
+
+	lockInfo, err := os.Stat(paths.LockFile)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), lockInfo.Mode().Perm())
+}
+
 func TestReadThroughShortLivedCacheScopeChangeMisses(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	root := t.TempDir()
@@ -198,6 +239,89 @@ func TestReadThroughShortLivedCacheRejectsInvalidExpiredAndWrongTTL(t *testing.T
 	require.Equal(t, 3, liveCalls)
 }
 
+func TestReadThroughShortLivedCacheRejectsMismatchedAndFutureEntries(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	root := t.TempDir()
+	setReadCacheHooksForTest(t, root, &now, 111, 222)
+
+	c := newReadCacheTestClient(map[string]string{})
+	semanticRequest := map[string]string{"request": "stable"}
+	validEntry, paths := newReadCacheTestEntry(t, c, "unit", semanticRequest, now, "cached")
+
+	liveCalls := 0
+	live := func() (readCacheLiveResult[string], error) {
+		liveCalls++
+		return readCacheLiveResult[string]{Value: "fresh", Cacheable: false}, nil
+	}
+
+	testCases := []struct {
+		name  string
+		write func(t *testing.T)
+	}{
+		{
+			name: "future timestamp",
+			write: func(t *testing.T) {
+				entry := validEntry
+				entry.CreatedAtUnixNano = now.Add(time.Second).UnixNano()
+				writeReadCacheTestEntry(t, paths.CacheFile, entry)
+			},
+		},
+		{
+			name: "wrong base scope",
+			write: func(t *testing.T) {
+				entry := validEntry
+				entry.BaseScope.Service = "other-service"
+				writeReadCacheTestEntry(t, paths.CacheFile, entry)
+			},
+		},
+		{
+			name: "wrong endpoint scope",
+			write: func(t *testing.T) {
+				entry := validEntry
+				entry.EndpointScope.Endpoint = "other-endpoint"
+				writeReadCacheTestEntry(t, paths.CacheFile, entry)
+			},
+		},
+		{
+			name: "wrong cache key",
+			write: func(t *testing.T) {
+				entry := validEntry
+				entry.CacheKey = readCacheHashString("other-cache-key")
+				writeReadCacheTestEntry(t, paths.CacheFile, entry)
+			},
+		},
+		{
+			name: "wrong response type",
+			write: func(t *testing.T) {
+				entry := readCacheEntry[int]{
+					CacheKey:          validEntry.CacheKey,
+					CreatedAtUnixNano: validEntry.CreatedAtUnixNano,
+					TTLSeconds:        validEntry.TTLSeconds,
+					BaseScope:         validEntry.BaseScope,
+					EndpointScope:     validEntry.EndpointScope,
+					Response:          123,
+				}
+				writeReadCacheTestEntry(t, paths.CacheFile, entry)
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			beforeCalls := liveCalls
+			testCase.write(t)
+
+			value, err := readThroughShortLivedCache(c, "unit", semanticRequest, live, nil)
+			require.NoError(t, err)
+			require.Equal(t, "fresh", value)
+			require.Equal(t, beforeCalls+1, liveCalls)
+
+			_, err = os.Stat(paths.CacheFile)
+			require.True(t, os.IsNotExist(err))
+		})
+	}
+}
+
 func TestReadThroughShortLivedCacheDoesNotStoreNonCacheableResponses(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	root := t.TempDir()
@@ -217,6 +341,28 @@ func TestReadThroughShortLivedCacheDoesNotStoreNonCacheableResponses(t *testing.
 	}
 	require.Equal(t, 2, liveCalls)
 	require.Empty(t, readCacheJSONFiles(t, root))
+}
+
+func TestReadThroughShortLivedCacheLiveErrorReleasesLockAndDoesNotWrite(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	root := t.TempDir()
+	setReadCacheHooksForTest(t, root, &now, 111, 222)
+
+	c := newReadCacheTestClient(map[string]string{})
+	_, paths := readCacheTestKeyAndPaths(t, c, "unit", map[string]string{"request": "error"})
+	liveErr := errors.New("live failed")
+	live := func() (readCacheLiveResult[string], error) {
+		return readCacheLiveResult[string]{}, liveErr
+	}
+
+	value, err := readThroughShortLivedCache(c, "unit", map[string]string{"request": "error"}, live, nil)
+	require.ErrorIs(t, err, liveErr)
+	require.Empty(t, value)
+
+	_, err = os.Stat(paths.LockFile)
+	require.True(t, os.IsNotExist(err))
+	_, err = os.Stat(paths.CacheFile)
+	require.True(t, os.IsNotExist(err))
 }
 
 func TestReadCacheActiveLockDetection(t *testing.T) {
@@ -241,6 +387,88 @@ func TestReadCacheActiveLockDetection(t *testing.T) {
 	require.Equal(t, readCacheLockAcquired, reacquiredStatus)
 	require.NotNil(t, reacquiredOwner)
 	releaseReadCacheLock(reacquiredOwner)
+}
+
+func TestReadThroughShortLivedCacheWaiterFallbacksDoNotWriteCache(t *testing.T) {
+	t.Run("timeout", func(t *testing.T) {
+		now := time.Unix(1_700_000_000, 0)
+		root := t.TempDir()
+		setReadCacheHooksForTest(t, root, &now, 111, 222)
+
+		c := newReadCacheTestClient(map[string]string{})
+		semanticRequest := map[string]string{"request": "timeout"}
+		cacheKey, paths := readCacheTestKeyAndPaths(t, c, "unit", semanticRequest)
+		owner, status := acquireReadCacheLock(paths, cacheKey)
+		require.Equal(t, readCacheLockAcquired, status)
+		require.NotNil(t, owner)
+		defer releaseReadCacheLock(owner)
+
+		liveCalls := 0
+		live := func() (readCacheLiveResult[string], error) {
+			liveCalls++
+			return readCacheLiveResult[string]{Value: "fallback", Cacheable: true}, nil
+		}
+
+		value, err := readThroughShortLivedCache(c, "unit", semanticRequest, live, nil)
+		require.NoError(t, err)
+		require.Equal(t, "fallback", value)
+		require.Equal(t, 1, liveCalls)
+
+		_, err = os.Stat(paths.CacheFile)
+		require.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("lock disappears without cache", func(t *testing.T) {
+		now := time.Unix(1_700_000_000, 0)
+		root := t.TempDir()
+		c := newReadCacheTestClient(map[string]string{})
+		semanticRequest := map[string]string{"request": "non-cacheable-owner"}
+
+		SetReadCacheHooksForTesting(
+			root,
+			func() time.Time { return now },
+			func() int { return 111 },
+			func() int { return 222 },
+			func(duration time.Duration) { now = now.Add(duration) },
+		)
+		t.Cleanup(ResetReadCacheHooksForTesting)
+
+		cacheKey, paths := readCacheTestKeyAndPaths(t, c, "unit", semanticRequest)
+		owner, status := acquireReadCacheLock(paths, cacheKey)
+		require.Equal(t, readCacheLockAcquired, status)
+		require.NotNil(t, owner)
+		defer releaseReadCacheLock(owner)
+
+		sleepCalls := 0
+		SetReadCacheHooksForTesting(
+			root,
+			func() time.Time { return now },
+			func() int { return 111 },
+			func() int { return 222 },
+			func(duration time.Duration) {
+				sleepCalls++
+				if sleepCalls == 1 {
+					removeReadCacheFile(paths.LockFile)
+				}
+				now = now.Add(duration)
+			},
+		)
+
+		liveCalls := 0
+		live := func() (readCacheLiveResult[string], error) {
+			liveCalls++
+			return readCacheLiveResult[string]{Value: "fallback", Cacheable: true}, nil
+		}
+
+		value, err := readThroughShortLivedCache(c, "unit", semanticRequest, live, nil)
+		require.NoError(t, err)
+		require.Equal(t, "fallback", value)
+		require.Equal(t, 1, liveCalls)
+		require.Equal(t, 1, sleepCalls)
+
+		_, err = os.Stat(paths.CacheFile)
+		require.True(t, os.IsNotExist(err))
+	})
 }
 
 func TestReadCacheStaleOwnerDoesNotOverwriteReplacementLock(t *testing.T) {
@@ -274,6 +502,28 @@ func TestReadCacheStaleOwnerDoesNotOverwriteReplacementLock(t *testing.T) {
 	require.Equal(t, replacement.OwnerNonce, current.OwnerNonce)
 }
 
+func TestReadCacheMalformedLockStaleHandling(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	root := t.TempDir()
+	setReadCacheHooksForTest(t, root, &now, 111, 222)
+
+	c := newReadCacheTestClient(map[string]string{})
+	cacheKey, paths := readCacheTestKeyAndPaths(t, c, "unit", map[string]string{"request": "malformed-lock"})
+	require.NoError(t, os.WriteFile(paths.LockFile, []byte("{invalid"), 0o600))
+
+	owner, status := acquireReadCacheLock(paths, cacheKey)
+	require.Nil(t, owner)
+	require.Equal(t, readCacheLockActive, status)
+
+	staleTime := now.Add(-readCacheStaleLockTimeout - time.Minute)
+	require.NoError(t, os.Chtimes(paths.LockFile, staleTime, staleTime))
+
+	owner, status = acquireReadCacheLock(paths, cacheKey)
+	require.Equal(t, readCacheLockAcquired, status)
+	require.NotNil(t, owner)
+	releaseReadCacheLock(owner)
+}
+
 func TestReadCacheCurrentKeyCleanupRemovesOnlyStaleTemporaryFiles(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	root := t.TempDir()
@@ -297,6 +547,57 @@ func TestReadCacheCurrentKeyCleanupRemovesOnlyStaleTemporaryFiles(t *testing.T) 
 	require.True(t, os.IsNotExist(err))
 	_, err = os.Stat(freshTmp)
 	require.NoError(t, err)
+}
+
+func TestReadCacheSkippableManifestModeIgnoresShortLivedCache(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	root := t.TempDir()
+	var requestCount atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestCount.Add(1)
+		http.Error(w, "unexpected network call", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	setupReadCacheEndpointEnv(t, server.URL, root, &now)
+
+	c := NewClient().(*client)
+	body := skippableRequest{
+		Data: skippableRequestHeader{
+			Type: skippableRequestType,
+			Attributes: skippableRequestData{
+				TestLevel:      "test",
+				Configurations: c.testConfigurations,
+				Service:        c.serviceName,
+				Env:            c.environment,
+				RepositoryURL:  c.repositoryURL,
+				Sha:            c.commitSha,
+			},
+		},
+	}
+	value := cachedSkippableTests{
+		CorrelationID: "cached-correlation-id",
+		Skippables: map[string]map[string][]SkippableResponseDataAttributes{
+			"suite": {
+				"cached": {{Suite: "suite", Name: "cached"}},
+			},
+		},
+		ResponseTestsCount: 1,
+	}
+	entry, paths := newReadCacheTestEntry(t, c, readCacheEndpointSkippableTests, body, now, value)
+	writeReadCacheTestEntry(t, paths.CacheFile, entry)
+
+	manifestDir := filepath.Join(t.TempDir(), ".testoptimization")
+	manifestPath := filepath.Join(manifestDir, "manifest.txt")
+	require.NoError(t, os.MkdirAll(manifestDir, 0o755))
+	require.NoError(t, os.WriteFile(manifestPath, []byte("1\n"), 0o644))
+	require.NoError(t, os.Setenv(bazel.ManifestFilePathEnv, manifestPath))
+	bazel.ResetForTesting()
+
+	correlationID, skippables, err := c.GetSkippableTests()
+	require.NoError(t, err)
+	require.Empty(t, correlationID)
+	require.Equal(t, map[string]map[string][]SkippableResponseDataAttributes{}, skippables)
+	require.Equal(t, int64(0), requestCount.Load())
 }
 
 func TestReadCacheGetSettingsCachesSuccessfulResponseAndSkipsRequireGit(t *testing.T) {
@@ -549,6 +850,27 @@ func readCacheTestKeyAndPaths(t *testing.T, c *client, endpoint string, semantic
 	paths, err := readCachePathsForKey(cacheKey)
 	require.NoError(t, err)
 	return cacheKey, paths
+}
+
+// newReadCacheTestEntry builds a cache entry with metadata that matches the supplied client and semantic request.
+func newReadCacheTestEntry[T any](t *testing.T, c *client, endpoint string, semanticRequest any, createdAt time.Time, value T) (readCacheEntry[T], readCachePaths) {
+	t.Helper()
+
+	requestHash, err := readCacheHashJSON(semanticRequest)
+	require.NoError(t, err)
+	endpointScope := readCacheEndpointScope{Endpoint: endpoint, EndpointVersion: readCacheEndpointVersion, RequestHash: requestHash}
+	cacheKey, err := readCacheKey(c.readCacheBaseScope(), endpointScope)
+	require.NoError(t, err)
+	paths, err := readCachePathsForKey(cacheKey)
+	require.NoError(t, err)
+	return readCacheEntry[T]{
+		CacheKey:          cacheKey,
+		CreatedAtUnixNano: createdAt.UnixNano(),
+		TTLSeconds:        int64(c.readCacheScopeIdentity.TTL.Seconds()),
+		BaseScope:         c.readCacheBaseScope(),
+		EndpointScope:     endpointScope,
+		Response:          value,
+	}, paths
 }
 
 func writeReadCacheTestEntry[T any](t *testing.T, path string, entry readCacheEntry[T]) {
