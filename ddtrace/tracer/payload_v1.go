@@ -1015,7 +1015,7 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 				s.SetTag("language", p.languageName)
 			}
 		}
-		if pt, ok := p.attributes[keyProcessTags]; ok && pt.valueType == StringValueType && c.spans[0] != nil {
+		if pt, ok := p.attributes[keyProcessTags]; ok && pt.valueType == StringValueType && len(c.spans) >= 0 && c.spans[0] != nil {
 			c.spans[0].SetTag(keyProcessTags, pt.value.(string))
 		}
 	}
