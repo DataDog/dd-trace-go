@@ -149,7 +149,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			}
 			spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
 		}
-		spanOpts = append(spanOpts, appsechttpsec.SecurityTestingHeaderTagsOption(r.Header))
+		spanOpts = appsechttpsec.AppendSecurityTestingHeaderTags(spanOpts, r.Header)
 		span, ctx := tracer.StartSpanFromContext(r.Context(), "twirp.handler", spanOpts...)
 		defer span.Finish()
 

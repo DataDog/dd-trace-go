@@ -86,6 +86,6 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 	if host := string(fctx.Host()); len(host) > 0 {
 		opts = append(opts, tracer.Tag("http.host", host))
 	}
-	opts = append(opts, appsechttpsec.SecurityTestingHeaderTagsFromBytesOption(fctx.Request.Header.PeekAll))
+	opts = appsechttpsec.AppendSecurityTestingHeaderTagsFromBytes(opts, fctx.Request.Header.PeekAll)
 	return opts
 }

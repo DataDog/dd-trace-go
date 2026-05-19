@@ -68,7 +68,7 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 			}
 			opts = append(opts, tracer.ChildOf(spanctx))
 		}
-		opts = append(opts, appsechttpsec.SecurityTestingHeaderTagsOption(h))
+		opts = appsechttpsec.AppendSecurityTestingHeaderTags(opts, h)
 		opts = append(opts, cfg.spanOpts...)
 		opts = append(opts,
 			tracer.Tag(ext.Component, componentName),
