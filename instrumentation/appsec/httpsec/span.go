@@ -12,22 +12,29 @@ import (
 	listenerhttpsec "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 )
 
-// SecurityTestingHeaderTagsOption tags security-testing headers from the request.
-func SecurityTestingHeaderTagsOption(headers http.Header) tracer.StartSpanOption {
-	return func(cfg *tracer.StartSpanConfig) {
-		if cfg.Tags == nil {
-			cfg.Tags = make(map[string]any)
-		}
-		listenerhttpsec.SetSecurityTestingHeaderTags(cfg.Tags, headers)
+// SetSecurityTestingHeaderTags tags security-testing headers from the request.
+func SetSecurityTestingHeaderTags(tags map[string]any, headers http.Header) {
+	tagNames, tagValues, count := listenerhttpsec.SecurityTestingHeaderTagValues(headers)
+	for i := range count {
+		tags[tagNames[i]] = tagValues[i]
 	}
 }
 
-// SecurityTestingHeaderTagsFromBytesOption tags security-testing headers from byte lookup results.
-func SecurityTestingHeaderTagsFromBytesOption(values func(string) [][]byte) tracer.StartSpanOption {
-	return func(cfg *tracer.StartSpanConfig) {
-		if cfg.Tags == nil {
-			cfg.Tags = make(map[string]any)
-		}
-		listenerhttpsec.SetSecurityTestingHeaderTagsFromBytes(cfg.Tags, values)
+// AppendSecurityTestingHeaderTags appends tag options for present security-testing headers.
+func AppendSecurityTestingHeaderTags(opts []tracer.StartSpanOption, headers http.Header) []tracer.StartSpanOption {
+	tagNames, tagValues, count := listenerhttpsec.SecurityTestingHeaderTagValues(headers)
+	return appendSecurityTestingHeaderTags(opts, tagNames, tagValues, count)
+}
+
+// AppendSecurityTestingHeaderTagsFromBytes appends tag options for present byte header lookups.
+func AppendSecurityTestingHeaderTagsFromBytes(opts []tracer.StartSpanOption, values func(string) [][]byte) []tracer.StartSpanOption {
+	tagNames, tagValues, count := listenerhttpsec.SecurityTestingHeaderByteTagValues(values)
+	return appendSecurityTestingHeaderTags(opts, tagNames, tagValues, count)
+}
+
+func appendSecurityTestingHeaderTags(opts []tracer.StartSpanOption, tagNames, tagValues [2]string, count int) []tracer.StartSpanOption {
+	for i := range count {
+		opts = append(opts, tracer.Tag(tagNames[i], tagValues[i]))
 	}
+	return opts
 }

@@ -97,7 +97,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 		r = r.WithContext(ctx2)
 	}
 
-	nopts := make([]tracer.StartSpanOption, 0, len(opts)+2+len(ipTags))
+	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
 	nopts = append(nopts,
 		func(ssCfg *tracer.StartSpanConfig) {
 			if ssCfg.Tags == nil {
@@ -111,6 +111,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			if r.Host != "" {
 				ssCfg.Tags["http.host"] = r.Host
 			}
+			appsechttpsec.SetSecurityTestingHeaderTags(ssCfg.Tags, r.Header)
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
@@ -132,7 +133,6 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 				ssCfg.Tags[k] = v
 			}
 		})
-	nopts = append(nopts, appsechttpsec.SecurityTestingHeaderTagsOption(r.Header))
 	nopts = append(nopts, opts...)
 
 	requestContext := r.Context()
