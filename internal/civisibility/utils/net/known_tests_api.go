@@ -97,64 +97,90 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 		PageInfo: &knownTestsRequestPageInfo{},
 	}
 
-	accumulated := KnownTestsResponseData{
-		Tests: make(KnownTestsResponseDataModules),
-	}
-
-	for {
-		request := c.getPostRequestConfig(knownTestsURLPath, body)
-		if request.Compressed {
-			telemetry.KnownTestsRequest(telemetry.CompressedRequestCompressedType)
-		} else {
-			telemetry.KnownTestsRequest(telemetry.UncompressedRequestCompressedType)
-		}
-
-		startTime := time.Now()
-		response, err := c.handler.SendRequest(*request)
-		telemetry.KnownTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
-
-		if err != nil {
-			telemetry.KnownTestsRequestErrors(telemetry.NetworkErrorType)
-			return nil, fmt.Errorf("sending known tests request: %s", err)
-		}
-
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			telemetry.KnownTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
-		}
-		if response.Compressed {
-			telemetry.KnownTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
-		} else {
-			telemetry.KnownTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
-		}
-
-		var responseObject knownTestsResponse
-		err = response.Unmarshal(&responseObject)
-		if err != nil {
-			return nil, fmt.Errorf("unmarshalling known tests response: %s", err)
-		}
-
-		// Merge page data into accumulator
-		if responseObject.Data.Attributes.Tests != nil {
-			for module, suites := range responseObject.Data.Attributes.Tests {
-				if accumulated.Tests[module] == nil {
-					accumulated.Tests[module] = make(KnownTestsResponseDataSuites)
-				}
-				for suite, tests := range suites {
-					accumulated.Tests[module][suite] = append(accumulated.Tests[module][suite], tests...)
-				}
+	cacheRequest := body
+	cacheRequest.Data.ID = ""
+	cacheRequest.PageInfo = nil
+	return readThroughShortLivedCache(
+		c,
+		readCacheEndpointKnownTests,
+		cacheRequest,
+		func() (readCacheLiveResult[*KnownTestsResponseData], error) {
+			accumulated := KnownTestsResponseData{
+				Tests: make(KnownTestsResponseDataModules),
 			}
-		}
+			cacheable := true
 
-		// Check if there are more pages
-		if responseObject.PageInfo == nil || !responseObject.PageInfo.HasNext {
-			break
-		}
-		body.PageInfo.PageState = responseObject.PageInfo.Cursor
+			for {
+				request := c.getPostRequestConfig(knownTestsURLPath, body)
+				if request.Compressed {
+					telemetry.KnownTestsRequest(telemetry.CompressedRequestCompressedType)
+				} else {
+					telemetry.KnownTestsRequest(telemetry.UncompressedRequestCompressedType)
+				}
+
+				startTime := time.Now()
+				response, err := c.handler.SendRequest(*request)
+				telemetry.KnownTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
+
+				if err != nil {
+					telemetry.KnownTestsRequestErrors(telemetry.NetworkErrorType)
+					return readCacheLiveResult[*KnownTestsResponseData]{}, fmt.Errorf("sending known tests request: %s", err)
+				}
+
+				if response.StatusCode < 200 || response.StatusCode >= 300 {
+					cacheable = false
+					telemetry.KnownTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
+				}
+				if response.Compressed {
+					telemetry.KnownTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
+				} else {
+					telemetry.KnownTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
+				}
+
+				var responseObject knownTestsResponse
+				err = response.Unmarshal(&responseObject)
+				if err != nil {
+					return readCacheLiveResult[*KnownTestsResponseData]{}, fmt.Errorf("unmarshalling known tests response: %s", err)
+				}
+
+				// Merge page data into accumulator
+				if responseObject.Data.Attributes.Tests != nil {
+					for module, suites := range responseObject.Data.Attributes.Tests {
+						if accumulated.Tests[module] == nil {
+							accumulated.Tests[module] = make(KnownTestsResponseDataSuites)
+						}
+						for suite, tests := range suites {
+							accumulated.Tests[module][suite] = append(accumulated.Tests[module][suite], tests...)
+						}
+					}
+				}
+
+				// Check if there are more pages
+				if responseObject.PageInfo == nil || !responseObject.PageInfo.HasNext {
+					break
+				}
+				body.PageInfo.PageState = responseObject.PageInfo.Cursor
+			}
+
+			telemetry.KnownTestsResponseTests(float64(knownTestsResponseTestCount(&accumulated)))
+			return readCacheLiveResult[*KnownTestsResponseData]{
+				Value:     &accumulated,
+				Cacheable: cacheable,
+			}, nil
+		},
+		func(knownTests *KnownTestsResponseData) {
+			telemetry.KnownTestsResponseTests(float64(knownTestsResponseTestCount(knownTests)))
+		},
+	)
+}
+
+// knownTestsResponseTestCount counts decoded known tests for content-derived telemetry.
+func knownTestsResponseTestCount(response *KnownTestsResponseData) int {
+	if response == nil {
+		return 0
 	}
-
-	// Report total test count telemetry
 	testCount := 0
-	for _, suites := range accumulated.Tests {
+	for _, suites := range response.Tests {
 		if suites == nil {
 			continue
 		}
@@ -162,8 +188,7 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 			testCount += len(tests)
 		}
 	}
-	telemetry.KnownTestsResponseTests(float64(testCount))
-	return &accumulated, nil
+	return testCount
 }
 
 // loadKnownTestsFromManifestCache reads and validates the Bazel manifest cache file for known tests.
