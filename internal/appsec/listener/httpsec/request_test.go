@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"net/netip"
 	"testing"
 	"time"
@@ -263,19 +264,36 @@ func TestSetRequestHeadersTagsDoesNotOwnSecurityTestingHeaders(t *testing.T) {
 	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-security-test")
 }
 
-func TestSetSecurityTestingHeaderTagsFromBytes(t *testing.T) {
-	tags := map[string]any{}
+func TestSecurityTestingHeaderTagValues(t *testing.T) {
+	headers := http.Header{
+		"X-Datadog-Endpoint-Scan": {" scan-uuid "},
+		"X-Datadog-Security-Test": {"test-uuid", "second-value"},
+	}
+
+	tagNames, tagValues, count := SecurityTestingHeaderTagValues(headers)
+
+	require.Equal(t, 2, count)
+	require.Equal(t, securityTestingEndpointScanTag, tagNames[0])
+	require.Equal(t, "scan-uuid", tagValues[0])
+	require.Equal(t, securityTestingTag, tagNames[1])
+	require.Equal(t, "test-uuid,second-value", tagValues[1])
+}
+
+func TestSecurityTestingHeaderByteTagValues(t *testing.T) {
 	values := map[string][][]byte{
 		securityTestingEndpointScanHeader: {[]byte(" scan-uuid ")},
 		securityTestingHeader:             {[]byte("test-uuid"), []byte("second-value")},
 	}
 
-	SetSecurityTestingHeaderTagsFromBytes(tags, func(header string) [][]byte {
+	tagNames, tagValues, count := SecurityTestingHeaderByteTagValues(func(header string) [][]byte {
 		return values[header]
 	})
 
-	require.Equal(t, "scan-uuid", tags[securityTestingEndpointScanTag])
-	require.Equal(t, "test-uuid,second-value", tags[securityTestingTag])
+	require.Equal(t, 2, count)
+	require.Equal(t, securityTestingEndpointScanTag, tagNames[0])
+	require.Equal(t, "scan-uuid", tagValues[0])
+	require.Equal(t, securityTestingTag, tagNames[1])
+	require.Equal(t, "test-uuid,second-value", tagValues[1])
 }
 
 //go:embed testdata/trace_tagging_rules.json

@@ -71,8 +71,8 @@ var (
 	}, defaultIPHeaders...)
 
 	// securityTestingHeaders maps security testing headers to service-entry span tags.
-	// These headers are tracked separately from defaultCollectedHeaders because
-	// they are tagged on HTTP service-entry spans even when AppSec is disabled.
+	// These headers are tagged separately from defaultCollectedHeaders because
+	// they are collected even when AppSec is disabled.
 	securityTestingHeaders = [...]struct {
 		Header string
 		Tag    string
@@ -139,26 +139,38 @@ func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]st
 	return normalized
 }
 
-// SetSecurityTestingHeaderTags sets security testing header tags on tags.
-func SetSecurityTestingHeaderTags(tags map[string]any, headers http.Header) {
+// SecurityTestingHeaderTagValues returns span tag names and values from security testing headers.
+func SecurityTestingHeaderTagValues(headers http.Header) ([2]string, [2]string, int) {
+	var tagNames [2]string
+	var tagValues [2]string
+	var count int
 	for _, h := range securityTestingHeaders {
 		values, ok := securityTestingHeaderValues(headers, h.Header)
 		if !ok {
 			continue
 		}
-		tags[h.Tag] = strings.TrimSpace(normalizeHTTPHeaderValue(values))
+		tagNames[count] = h.Tag
+		tagValues[count] = strings.TrimSpace(normalizeHTTPHeaderValue(values))
+		count++
 	}
+	return tagNames, tagValues, count
 }
 
-// SetSecurityTestingHeaderTagsFromBytes sets security testing header tags from byte values.
-func SetSecurityTestingHeaderTagsFromBytes(tags map[string]any, values func(string) [][]byte) {
+// SecurityTestingHeaderByteTagValues returns span tag names and values from byte header lookups.
+func SecurityTestingHeaderByteTagValues(values func(string) [][]byte) ([2]string, [2]string, int) {
+	var tagNames [2]string
+	var tagValues [2]string
+	var count int
 	for _, h := range securityTestingHeaders {
 		headerValues := values(h.Header)
 		if len(headerValues) == 0 {
 			continue
 		}
-		tags[h.Tag] = strings.TrimSpace(normalizeHTTPHeaderBytesValue(headerValues))
+		tagNames[count] = h.Tag
+		tagValues[count] = strings.TrimSpace(normalizeHTTPHeaderBytesValue(headerValues))
+		count++
 	}
+	return tagNames, tagValues, count
 }
 
 func securityTestingHeaderValues(headers http.Header, header string) ([]string, bool) {
