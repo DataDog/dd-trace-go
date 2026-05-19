@@ -208,6 +208,6 @@ func TestOnBody_ZeroValueRequestStateDoesNotPanic(t *testing.T) {
 
 	require.NotPanics(t, func() {
 		err := mp.OnResponseBody(fakeBody{b: []byte("a"), eos: true}, &reqState)
-		require.EqualError(t, err, "received response body too early: 0")
+		require.EqualError(t, err, "received response body too early: <Unknown>")
 	})
 }
