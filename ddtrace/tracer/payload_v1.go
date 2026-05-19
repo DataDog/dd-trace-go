@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	_ "unsafe"
 
 	"github.com/tinylib/msgp/msgp"
 
