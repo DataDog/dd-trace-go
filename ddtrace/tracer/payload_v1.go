@@ -1024,6 +1024,8 @@ func (p *payloadV1) decodeBuffer() ([]byte, error) {
 
 // A testing helper to decode payloads into a map[string]any
 // Empty strings and slices are omitted from the result.
+//
+//go:linkname decodeTestingPayload
 func decodeTestingPayload(buf []byte) (map[string]any, error) {
 	p := newPayloadV1()
 	p.buf = buf
