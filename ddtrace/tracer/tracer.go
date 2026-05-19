@@ -25,9 +25,11 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -103,8 +105,8 @@ type tracer struct {
 	config *config
 
 	// stats specifies the concentrator used to compute statistics, when client-side
-	// stats are enabled.
-	stats *concentrator
+	// stats are enabled. In OTLP export mode this is a noopConcentrator.
+	stats statsConcentrator
 
 	// traceWriter is responsible for sending finished traces to their
 	// destination, such as the Trace Agent or Datadog Forwarder.
@@ -175,6 +177,18 @@ type tracer struct {
 
 	// State related to the Dynamic Instrumentation product.
 	dynInstSubscriptions dynInstSubscriptions
+
+	// sharedAttrs holds the process-level promoted span attributes.
+	// When universalVersion=true it includes env+version; otherwise env only.
+	// All spans start by sharing this pointer; copy-on-write clones it
+	// only when a span needs to set per-span fields (component, spanKind).
+	sharedAttrs traceinternal.SpanAttributes
+
+	// sharedAttrsForMainSvc is like sharedAttrs but always includes version
+	// (when a version is configured). It is used for main-service spans when
+	// universalVersion=false so that the version write in StartSpan is a
+	// copy-on-write no-op rather than triggering an unnecessary Clone.
+	sharedAttrsForMainSvc traceinternal.SpanAttributes
 }
 
 type dynInstSubscriptions struct {
@@ -237,11 +251,12 @@ func Start(opts ...StartOption) error {
 		t.Stop()
 		return nil
 	}
-	if t.config.internalConfig.CIVisibilityEnabled() && t.config.ciVisibilityNoopTracer {
-		setGlobalTracer(wrapWithCiVisibilityNoopTracer(t))
-	} else {
-		setGlobalTracer(t)
+	ciVisibilityEnabled := t.config.internalConfig.CIVisibilityEnabled()
+	globalTracer := Tracer(t)
+	if ciVisibilityEnabled && t.config.ciVisibilityNoopTracer {
+		globalTracer = wrapWithCiVisibilityNoopTracer(t)
 	}
+	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
@@ -484,6 +499,10 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
+	var sc statsConcentrator = newConcentrator(c, defaultStatsBucketSize, statsd)
+	if c.internalConfig.OTLPExportMode() {
+		sc = &noopConcentrator{}
+	}
 	t = &tracer{
 		config:           c,
 		traceWriter:      writer,
@@ -494,7 +513,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		defaultSampler:   dfltSampler,
 		pid:              os.Getpid(),
 		logDroppedTraces: time.NewTicker(1 * time.Second),
-		stats:            newConcentrator(c, defaultStatsBucketSize, statsd),
+		stats:            sc,
 		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
 		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
 		obfuscator: obfuscate.NewObfuscator(func() obfuscate.Config {
@@ -512,7 +531,34 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		dataStreams: dataStreamsProcessor,
 		logFile:     logFile,
 	}
+	buildSharedAttrs(c, &t.sharedAttrs, &t.sharedAttrsForMainSvc)
 	return t, nil
+}
+
+// buildSharedAttrs populates the tracer's two shared SpanAttributes instances
+// with process-level values (language, env, version) and marks them read-only.
+// Every new span starts with a pointer to one of these; the copy-on-write
+// mechanism in SpanAttributes.Clone() creates a span-specific copy only when
+// a per-span override is needed.
+func buildSharedAttrs(c *config, base, mainSvc *traceinternal.SpanAttributes) {
+	// language="go" is the same for every span — pre-populating avoids a
+	// COW clone on the setMetaInit("language", "go") call in spanStart.
+	base.Set(traceinternal.AttrLanguage, "go")
+	mainSvc.Set(traceinternal.AttrLanguage, "go")
+	if env := c.internalConfig.Env(); env != "" {
+		base.Set(traceinternal.AttrEnv, env)
+		mainSvc.Set(traceinternal.AttrEnv, env)
+	}
+	if ver := c.internalConfig.Version(); ver != "" {
+		if c.universalVersion {
+			base.Set(traceinternal.AttrVersion, ver)
+		}
+		// Always pre-populate mainSvc with version so that main-service spans
+		// in non-universal mode get a COW no-op instead of a Clone.
+		mainSvc.Set(traceinternal.AttrVersion, ver)
+	}
+	base.MarkReadOnly()
+	mainSvc.MarkReadOnly()
 }
 
 // defaultAgentInfoPollInterval is the default interval at which the tracer
@@ -765,7 +811,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 }
 
 // +checklocksignore — Initialization time, span not yet shared.
-func spanStart(operationName string, options ...StartSpanOption) *Span {
+func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
 	for _, fn := range options {
 		if fn == nil {
@@ -830,6 +876,7 @@ func spanStart(operationName string, options ...StartSpanOption) *Span {
 		traceID:       id,
 		start:         startTime,
 		integration:   "manual",
+		meta:          traceinternal.NewSpanMeta(sharedAttrs), // COW: shared until a per-span field is set
 	}
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
@@ -878,34 +925,46 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if !t.config.enabled.get() {
 		return nil
 	}
-	span := spanStart(operationName, options...)
+	span := spanStart(operationName, &t.sharedAttrs, options...)
+
+	// Snapshot all internal config fields needed below under a single RLock to avoid
+	// reader-counter contention on Config.mu when many goroutines call StartSpan.
+	cSnap := t.config.internalConfig.SpanStartSnapshot()
+
 	if span.service == "" {
-		span.service = t.config.internalConfig.ServiceName()
+		span.service = cSnap.ServiceName
 	}
 
-	cfg := t.config.internalConfig
-	span.noDebugStack = !cfg.DebugStack()
-	if hostname := cfg.Hostname(); hostname != "" && cfg.ReportHostname() {
-		span.setMetaInit(keyHostname, hostname)
+	// For non-universal version, promote main-service spans to the version-inclusive
+	// shared attrs before applying any tags. This makes the subsequent version write
+	// (from config or global tags) a COW no-op instead of triggering a Clone.
+	if !t.config.universalVersion && span.service == cSnap.ServiceName {
+		span.meta.ReplaceSharedAttrs(&t.sharedAttrs, &t.sharedAttrsForMainSvc)
+	}
+
+	span.noDebugStack = !cSnap.DebugStack
+	if cSnap.Hostname != "" && cSnap.ReportHostname {
+		span.setMetaInit(keyHostname, cSnap.Hostname)
 	}
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable
-	span.supportsLinks = t.config.internalConfig.TraceProtocol() == traceProtocolV1
 
 	// add global tags
 	span.setTags(t.config.globalTags.get())
 
-	if newSvc, ok := cfg.ServiceMapping(span.service); ok {
+	if newSvc, ok := t.config.internalConfig.ServiceMapping(span.service); ok {
 		span.service = newSvc
 		span.serviceSource = ext.ServiceSourceMapping
 	}
 
-	if ver := cfg.Version(); ver != "" {
-		if t.config.universalVersion || (!t.config.universalVersion && span.service == t.config.internalConfig.ServiceName()) {
-			span.setMetaInit(ext.Version, ver)
+	if cSnap.Version != "" {
+		if t.config.universalVersion || span.service == cSnap.ServiceName {
+			delete(span.metrics, ext.Version)
+			span.meta.Set(ext.Version, cSnap.Version)
 		}
 	}
-	if env := cfg.Env(); env != "" {
-		span.setMetaInit(ext.Environment, env)
+	if cSnap.Env != "" {
+		delete(span.metrics, ext.Environment)
+		span.meta.Set(ext.Environment, cSnap.Env)
 	}
 	if _, ok := span.context.SamplingPriority(); !ok {
 		// if not already sampled or a brand new trace, sample it
@@ -914,14 +973,14 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if log.DebugEnabled() {
 		// avoid allocating the ...interface{} argument if debug logging is disabled
 		log.Debug("Started Span: %v, Operation: %s, Resource: %s, Tags: %v, %v", //nolint:gocritic // Debug logging needs full span representation
-			span, span.name, span.resource, span.meta, span.metrics)
+			span, span.name, span.resource, &span.meta, span.metrics)
 	}
-	if t.config.internalConfig.ProfilerHotspotsEnabled() || t.config.internalConfig.ProfilerEndpoints() {
-		t.applyPPROFLabels(span.pprofCtxRestore, span)
+	if cSnap.ProfilerHotspotsEnabled || cSnap.ProfilerEndpoints {
+		t.applyPPROFLabels(span.pprofCtxRestore, span, cSnap)
 	} else {
 		span.pprofCtxRestore = nil
 	}
-	if t.config.internalConfig.DebugAbandonedSpans() {
+	if cSnap.DebugAbandonedSpans {
 		select {
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
 			// ok
@@ -931,7 +990,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	if span.metrics[keyTopLevel] == 1 {
 		// The span is the local root span.
-		span.setMetricInit(keySpanAttributeSchemaVersion, float64(t.config.spanAttributeSchemaVersion))
+		span.setMetricInit(keySpanAttributeSchemaVersion, float64(t.config.internalConfig.SpanAttributeSchemaVersion()))
 	}
 	span.setMetricInit(ext.Pid, float64(t.pid))
 	t.spansStarted.Inc(span.integration)
@@ -944,21 +1003,21 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 // found in ctx are restored. Additionally, this func informs the profiler how
 // many times each endpoint is called.
 // +checklocksignore — Initialization time, called from StartSpan before span is shared.
-func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span) {
+func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap internalconfig.SpanStartSnapshot) {
 	// Important: The label keys are ordered alphabetically to take advantage of
 	// an upstream optimization that landed in go1.24.  This results in ~10%
 	// better performance on BenchmarkStartSpan. See
 	// https://go-review.googlesource.com/c/go/+/574516 for more information.
 	labels := make([]string, 0, 3*2 /* 3 key value pairs */)
 	localRootSpan := span.Root()
-	if t.config.internalConfig.ProfilerHotspotsEnabled() && localRootSpan != nil {
+	if snap.ProfilerHotspotsEnabled && localRootSpan != nil {
 		spanID := localRootSpan.getSpanID()
 		labels = append(labels, traceprof.LocalRootSpanID, strconv.FormatUint(spanID, 10))
 	}
-	if t.config.internalConfig.ProfilerHotspotsEnabled() {
+	if snap.ProfilerHotspotsEnabled {
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
-	if t.config.internalConfig.ProfilerEndpoints() && localRootSpan != nil {
+	if snap.ProfilerEndpoints && localRootSpan != nil {
 		resource := localRootSpan.getResource()
 		if spanResourcePIISafe(localRootSpan) {
 			labels = append(labels, traceprof.TraceEndpoint, resource)
@@ -1114,13 +1173,7 @@ func (t *tracer) submit(s *Span) {
 	if !shouldCalc {
 		return
 	}
-	// the agent supports computed stats
-	select {
-	case t.stats.In <- statSpan:
-		// ok
-	default:
-		log.Error("Stats channel full, disregarding span.")
-	}
+	t.stats.trySendSpan(statSpan)
 }
 
 func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {

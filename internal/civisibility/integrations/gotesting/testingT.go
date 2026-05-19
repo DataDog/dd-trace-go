@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 )
 
 // T is a type alias for testing.T to provide additional methods for CI visibility.
@@ -54,7 +52,6 @@ func (ddt *T) Fail() { ddt.getTWithError("Fail", "failed test").Fail() }
 // those other goroutines.
 func (ddt *T) FailNow() {
 	t := ddt.getTWithError("FailNow", "failed test")
-	integrations.ExitCiVisibility()
 	t.FailNow()
 }
 

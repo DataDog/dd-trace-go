@@ -48,11 +48,20 @@ func compressionStrategy(pt ProfileType, isDelta bool, config string) (compressi
 	if config == "" || config == "legacy" {
 		return legacyCompressionStrategy(pt, isDelta)
 	}
-	algorithm, levelStr, _ := strings.Cut(config, "-")
+	algorithmStr, levelStr, _ := strings.Cut(config, "-")
+	algorithm := compressionAlgorithm(algorithmStr)
 	// Don't bother checking the error. We'll get zero which represents the
 	// default, and we we assume this is only going to get used internally
 	level, _ := strconv.Atoi(levelStr)
-	return inputCompression(pt, isDelta), compression{algorithm: compressionAlgorithm(algorithm), level: level}
+	if levelStr == "" {
+		switch algorithm {
+		case compressionAlgorithmGzip:
+			level = gzip6Compression.level
+		case compressionAlgorithmZstd:
+			level = zstdCompression.level
+		}
+	}
+	return inputCompression(pt, isDelta), compression{algorithm: algorithm, level: level}
 }
 
 // inputCompression maps the given profile type and isDelta flavor to the
@@ -170,12 +179,20 @@ func (b *compressionPipelineBuilder) Build(in compression, out compression) (com
 		return b.getZstdEncoder(getZstdLevelOrDefault(out.level))
 	}
 
+	if in.algorithm == compressionAlgorithmGzip && out.algorithm == compressionAlgorithmGzip {
+		gzipOut, err := kgzip.NewWriterLevel(nil, out.level)
+		if err != nil {
+			return nil, err
+		}
+		return newGzipDecodingRecompressor(gzipOut), nil
+	}
+
 	if in.algorithm == compressionAlgorithmGzip && out.algorithm == compressionAlgorithmZstd {
 		encoder, err := b.getZstdEncoder(getZstdLevelOrDefault(out.level))
 		if err != nil {
 			return nil, err
 		}
-		return newZstdRecompressor(encoder), nil
+		return newGzipDecodingRecompressor(encoder), nil
 	}
 
 	return nil, fmt.Errorf("unsupported recompression: %s -> %s", in, out)
@@ -211,41 +228,54 @@ func (r *passthroughCompressor) Close() error {
 	return nil
 }
 
-func newZstdRecompressor(encoder *sharedZstdEncoder) *zstdRecompressor {
-	return &zstdRecompressor{zstdOut: encoder, err: make(chan error)}
+// newGzipDecodingRecompressor returns a recompressor that decompresses
+// gzip-compressed input and re-encodes it using the supplied output
+// compressor (e.g. a gzip writer at a different level, or a zstd encoder).
+// Callers must always pair Reset with Close.
+func newGzipDecodingRecompressor(out compressor) *gzipDecodingRecompressor {
+	return &gzipDecodingRecompressor{out: out, err: make(chan error)}
 }
 
-type zstdRecompressor struct {
+type gzipDecodingRecompressor struct {
 	// err synchronizes finishing writes after closing pw and reports any
 	// error during recompression
-	err     chan error
-	pw      io.WriteCloser
-	zstdOut *sharedZstdEncoder
+	err chan error
+	pw  io.WriteCloser
+	out compressor
 }
 
-func (r *zstdRecompressor) Reset(w io.Writer) {
-	r.zstdOut.Reset(w)
+func (r *gzipDecodingRecompressor) Reset(w io.Writer) {
+	r.out.Reset(w)
 	pr, pw := io.Pipe()
 	go func() {
+		// Always close pr with the resulting error so any pending
+		// or future pw.Write call returns it instead of blocking on
+		// a reader that has gone away.
+		var finalErr error
+		defer func() {
+			pr.CloseWithError(finalErr)
+			r.err <- finalErr
+		}()
+
 		gzr, err := kgzip.NewReader(pr)
 		if err != nil {
-			r.err <- err
+			finalErr = err
 			return
 		}
-		_, err = io.Copy(r.zstdOut, gzr)
-		r.err <- err
+		_, copyErr := io.Copy(r.out, gzr)
+		closeErr := gzr.Close()
+		finalErr = cmp.Or(copyErr, closeErr)
 	}()
 	r.pw = pw
 }
 
-func (r *zstdRecompressor) Write(p []byte) (int, error) {
+func (r *gzipDecodingRecompressor) Write(p []byte) (int, error) {
 	return r.pw.Write(p)
 }
 
-func (r *zstdRecompressor) Close() error {
+func (r *gzipDecodingRecompressor) Close() error {
 	r.pw.Close()
-	err := <-r.err
-	return cmp.Or(err, r.zstdOut.Close())
+	return cmp.Or(<-r.err, r.out.Close())
 }
 
 // newSharedZstdEncoder creates a new shared Zstd encoder with the given level.

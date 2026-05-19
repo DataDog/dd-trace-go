@@ -27,6 +27,7 @@ on:
 
 env:
   TEST_RESULTS: /tmp/test-results # path to where test results will be saved
+  GOPROXY: "proxy.golang.org|direct" # fall back to `direct` in case of proxy issues
 
 permissions:
   id-token: write
@@ -54,24 +55,29 @@ jobs:
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
 
-      - name: go get -u
-        run: |-
-          mkdir -p "$TEST_RESULTS"
-          # shellcheck disable=SC2086
-          go get -u -t $PACKAGES
-          go mod tidy
-          find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
-
-      - name: Install requested go-libddwaf version
-        if: github.event_name == 'workflow_call' && inputs.go-libddwaf-ref != ''
-        run: |-
-          go get -u -t github.com/DataDog/go-libddwaf/v4@${{ inputs.go-libddwaf-ref }}
-          go mod tidy
-
-      - name: Compile dd-trace-go
-        run: |
-          # shellcheck disable=SC2086
-          go build $PACKAGES
+      - name: Compile dd-trace-go with updated dependencies (sandboxed)
+        # go get -u executes dependency code from the network. Keep those
+        # changes inside the gVisor sandbox; this setup job only needs to prove
+        # the updated dependency graph still compiles.
+        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
+        with:
+          env: |
+            GOPROXY=${{ env.GOPROXY }}
+            GO_LIBDDWAF_REF=${{ inputs.go-libddwaf-ref }}
+            PACKAGES=${{ env.PACKAGES }}
+            TEST_RESULTS=${{ env.TEST_RESULTS }}
+          run: |-
+            mkdir -p "$TEST_RESULTS"
+            # shellcheck disable=SC2086
+            go get -u -t $PACKAGES
+            go mod tidy
+            find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
+            if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
+              go get -u -t "github.com/DataDog/go-libddwaf/v4@${GO_LIBDDWAF_REF}"
+              go mod tidy
+            fi
+            # shellcheck disable=SC2086
+            go build $PACKAGES
 
       - name: Compute Matrix
         id: matrix
@@ -91,6 +97,8 @@ jobs:
         chunk: ${{ fromJson(needs.setup-env.outputs.matrix) }}
     runs-on: ubuntu-latest
     if: github.repository_owner == 'DataDog' # only run on DataDog's repository, not in forks
+    env:
+      TEST_RESULTS: ${{ github.workspace }}/test-results
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -107,19 +115,80 @@ jobs:
           go-version: stable
           tools-dir: ${{ github.workspace }}/_tools
           tools-bin: ${{ github.workspace }}/bin
-      - name: Test contribs
+      - name: Capture trusted commit SHA
+        # Pinned before any sandboxed step so we can re-checkout this exact
+        # commit after the sandbox runs. Anything that escapes the sandbox
+        # could otherwise rewrite .git/HEAD or refs and trick the host into
+        # running attacker-controlled code via local actions.
+        id: trusted
+        run: echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+      - name: Test contribs (sandboxed)
         # It needs to run before "Test dd-trace-go" to avoid TestTelemetryEnabled tests to fail.
+        # The smoke script runs go get -u inside each contrib module, so run it
+        # in gVisor and persist only the generated reports/coverage for uploads.
+        uses: geomys/sandboxed-step@7d75eb49d17fdeeb3656b3a57d35932d205bcfb9 # v1.2.1
+        with:
+          persist-workspace-changes: 'true'
+          env: |
+            GOPROXY=${{ env.GOPROXY }}
+            TEST_RESULTS=${{ env.TEST_RESULTS }}
+          run: |-
+            export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
+            ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+      - name: Stage sandbox artifacts outside workspace
+        # Move the test results and coverage files to RUNNER_TEMP so the
+        # next checkout (which wipes the workspace) does not delete them.
+        # Only regular files are staged, to avoid following any symlinks
+        # that may have been planted inside the sandbox.
+        id: stage
+        if: always()
         run: |-
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+          set -euo pipefail
+          SAFE="${RUNNER_TEMP}/sandbox-artifacts"
+          rm -rf "${SAFE}"
+          mkdir -p "${SAFE}"
+          if [ -d "${TEST_RESULTS}" ]; then
+            ( cd "${TEST_RESULTS}" && find . -type f -print0 \
+              | tar --null --no-recursion -T - -cf "${SAFE}/test-results.tar" )
+          fi
+          ( cd "${GITHUB_WORKSPACE}" \
+            && find . -type f \( -name 'coverage*.txt' -o -name 'profile.cov' \) -print0 \
+            | tar --null --no-recursion -T - -cf "${SAFE}/coverage.tar" ) || true
+      - name: Re-checkout trusted commit after sandbox
+        # Wipe the (potentially tampered) workspace and check out the SHA we
+        # captured before the sandbox ran. This restores .git, tracked files,
+        # and any local actions to a known-good state before any credentialed
+        # local action is invoked.
+        id: recheckout
+        if: always()
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          ref: ${{ steps.trusted.outputs.sha }}
+          repository: DataDog/dd-trace-go
+          clean: true
+      - name: Restore sandbox artifacts
+        id: restore
+        if: always() && steps.recheckout.outcome == 'success'
+        run: |-
+          set -euo pipefail
+          SAFE="${RUNNER_TEMP}/sandbox-artifacts"
+          mkdir -p "${TEST_RESULTS}"
+          if [ -f "${SAFE}/test-results.tar" ]; then
+            tar -C "${TEST_RESULTS}" -xf "${SAFE}/test-results.tar"
+          fi
+          if [ -f "${SAFE}/coverage.tar" ]; then
+            tar -C "${GITHUB_WORKSPACE}" -xf "${SAFE}/coverage.tar"
+          fi
       - name: Get Datadog credentials
         id: dd-sts
+        if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
-        if: always()
+        if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
@@ -127,7 +196,7 @@ jobs:
           path: ${{ env.TEST_RESULTS }}
           tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
       - name: Upload Coverage
-        if: always()
+        if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
         uses: ./.github/actions/codecov-upload
         with:
@@ -161,6 +230,7 @@ jobs:
         uses: ./.github/actions/supported_configurations_validation
       - name: Get Datadog credentials
         id: dd-sts
+        if: always()
         continue-on-error: true
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
@@ -315,13 +385,65 @@ jobs:
 
   smoke-tests-done:
     name: Smoke Tests
-    needs: setup-requirements-linux
+    needs: 
+      - setup-requirements-linux
+      - smoke-test-tracer
+      - go-get-u
     runs-on: ubuntu-latest
     if: success() || failure()
     steps:
       - name: Success
-        if: needs.setup-requirements-linux.result == 'success'
+        if: needs.setup-requirements-linux.result == 'success' && needs.smoke-test-tracer.result == 'success' && needs.go-get-u.result == 'success'
         run: echo "Success!"
       - name: Failure
-        if: needs.setup-requirements-linux.result != 'success'
-        run: echo "Failure!" && exit 1
+        if: needs.setup-requirements-linux.result != 'success' || needs.smoke-test-tracer.result != 'success' || needs.go-get-u.result != 'success'
+        uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
+        with:
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "Smoke Tests Failed",
+              "linux_result": "${{ needs.setup-requirements-linux.result }}",
+              "core_result": "${{ needs.smoke-test-tracer.result }}",
+              "contrib_result": "${{ needs.go-get-u.result }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": ":x: Smoke Tests Failed on Main!"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow:*\n${{ github.workflow }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Linux Result:*\n${{ needs.setup-requirements-linux.result }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Tracer Result:*\n${{ needs.smoke-test-tracer.result }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Contrib Test Result:*\n${{ needs.go-get-u.result }}"
+                    },
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_SMOKE_TESTS_WEBHOOK_URL }}

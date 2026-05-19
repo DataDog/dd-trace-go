@@ -44,6 +44,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -114,6 +115,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/syndtr/goleveldb":                   {"LevelDB", false},
 	"github.com/tidwall/buntdb":                     {"BuntDB", false},
 	"github.com/twitchtv/twirp":                     {"Twirp", false},
+	"github.com/twmb/franz-go":                      {"franz-go", false},
 	"github.com/uptrace/bun":                        {"Bun", false},
 	"github.com/urfave/negroni":                     {"Negroni", false},
 	"github.com/valyala/fasthttp":                   {"FastHTTP", false},
@@ -127,9 +129,6 @@ var (
 
 	// defaultStatsdPort specifies the default port to use for connecting to the statsd server.
 	defaultStatsdPort = "8125"
-
-	// defaultMaxTagsHeaderLen specifies the default maximum length of the X-Datadog-Tags header value.
-	defaultMaxTagsHeaderLen = 512
 )
 
 // Supported trace protocols.
@@ -217,9 +216,6 @@ type config struct {
 	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
 	enableHostnameDetection bool
 
-	// spanAttributeSchemaVersion holds the selected DD_TRACE_SPAN_ATTRIBUTE_SCHEMA version.
-	spanAttributeSchemaVersion int
-
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
@@ -266,9 +262,6 @@ type (
 
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
-
-// maxPropagatedTagsLength limits the size of DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH to prevent HTTP 413 responses.
-const maxPropagatedTagsLength = 512
 
 // newConfig renders the tracer configuration based on defaults, environment variables
 // and passed user opts.
@@ -338,7 +331,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.dynamicInstrumentationEnabled.setOrigin(origin)
 
 	namingschema.LoadFromEnv()
-	c.spanAttributeSchemaVersion = int(namingschema.GetVersion())
 
 	// LLM Observability config
 	c.llmobs = llmobsconfig.Config{
@@ -384,6 +376,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			}
 		}
 	}
+	svcIsUserDefined := true
 	if c.internalConfig.ServiceName() == "" {
 		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
@@ -394,28 +387,20 @@ func newConfig(opts ...StartOption) (*config, error) {
 			// There is not an explicit service set, default to binary name.
 			// In this case, don't set a global service name so the contribs continue using their defaults.
 			c.internalConfig.SetServiceName(filepath.Base(os.Args[0]), internalconfig.OriginDefault, internalconfig.ProductTracer)
+			svcIsUserDefined = false
 		}
 	} else {
 		globalconfig.SetServiceName(c.internalConfig.ServiceName())
 	}
+	processtags.SetServiceNameTag(c.internalConfig.ServiceName(), svcIsUserDefined)
 	if c.ddTransport == nil {
 		agentURL := c.internalConfig.AgentURL().String()
 		traceURL, headers := resolveTraceTransport(c.internalConfig)
 		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
 	}
 	if c.propagator == nil {
-		envKey := "DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH"
-		maxLen := internal.IntEnv(envKey, defaultMaxTagsHeaderLen)
-		if maxLen < 0 {
-			log.Warn("Invalid value %d for %s. Setting to 0.", maxLen, envKey)
-			maxLen = 0
-		}
-		if maxLen > maxPropagatedTagsLength {
-			log.Warn("Invalid value %d for %s. Maximum allowed is %d. Setting to %d.", maxLen, envKey, maxPropagatedTagsLength, maxPropagatedTagsLength)
-			maxLen = maxPropagatedTagsLength
-		}
 		c.propagator = NewPropagator(&PropagatorConfig{
-			MaxTagsHeaderLen: maxLen,
+			MaxTagsHeaderLen: c.internalConfig.MaxTagsHeaderLen(),
 		})
 	}
 	if c.logger != nil {
@@ -473,7 +458,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		Service:    c.internalConfig.ServiceName(),
 		Version:    c.internalConfig.Version(),
 		AgentURL:   c.internalConfig.AgentURL(),
-		APIKey:     env.Get("DD_API_KEY"),
+		APIKey:     c.internalConfig.APIKey(),
 		APPKey:     env.Get("DD_APP_KEY"),
 		HTTPClient: c.httpClient,
 		Site:       env.Get("DD_SITE"),
@@ -851,6 +836,9 @@ func statsTags(c *config) []string {
 			tags = append(tags, k+":"+vstr)
 		}
 	}
+	tags = append(tags, processtags.GlobalTags().Slice()...)
+	// globalconfig.StatsTags is shared with contrib statsd clients. Process
+	// tags are shared too; keep only tracer_version and service tracer-only.
 	globalconfig.SetStatsTags(tags)
 	tags = append(tags, "tracer_version:"+version.Tag)
 	if v := c.internalConfig.ServiceName(); v != "" {

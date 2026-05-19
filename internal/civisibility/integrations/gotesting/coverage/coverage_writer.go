@@ -33,6 +33,7 @@ type coverageWriter struct {
 	payload *coveragePayload // Encodes and buffers events in msgpack format.
 	climit  chan struct{}    // Limits the number of concurrent outgoing connections.
 	wg      sync.WaitGroup   // Waits for all uploads to finish.
+	mu      sync.Mutex       // Guards payload rotation between add and flush.
 }
 
 func newCoverageWriter() *coverageWriter {
@@ -47,11 +48,19 @@ func newCoverageWriter() *coverageWriter {
 func (w *coverageWriter) add(coverage *testCoverage) {
 	telemetry.EventsEnqueueForSerialization()
 	ciTestCoverage := newCiTestCoverageData(coverage)
+	var payloadToFlush *coveragePayload
+
+	w.mu.Lock()
 	if err := w.payload.push(ciTestCoverage); err != nil {
 		log.Error("coverageWriter: Error encoding msgpack: %s", err.Error())
 	}
 	if w.payload.size() > agentlessPayloadSizeLimit {
-		w.flush()
+		payloadToFlush = w.rotatePayloadLocked()
+	}
+	w.mu.Unlock()
+
+	if payloadToFlush != nil {
+		w.flushPayload(payloadToFlush)
 	}
 }
 
@@ -59,18 +68,36 @@ func (w *coverageWriter) stop() {
 	log.Debug("coverageWriter: stopping writer")
 	w.flush()
 	w.wg.Wait()
+	if closer, ok := w.client.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
 }
 
 func (w *coverageWriter) flush() {
+	w.mu.Lock()
+	payloadToFlush := w.rotatePayloadLocked()
+	w.mu.Unlock()
+
+	if payloadToFlush != nil {
+		w.flushPayload(payloadToFlush)
+	}
+}
+
+// rotatePayloadLocked swaps out the current payload while w.mu is held.
+func (w *coverageWriter) rotatePayloadLocked() *coveragePayload {
 	if w.payload.itemCount() == 0 {
-		return
+		return nil
 	}
 
-	w.wg.Add(1)
-	w.climit <- struct{}{}
 	oldp := w.payload
 	w.payload = newCoveragePayload()
+	return oldp
+}
 
+// flushPayload sends a closed payload asynchronously without holding w.mu.
+func (w *coverageWriter) flushPayload(oldp *coveragePayload) {
+	w.wg.Add(1)
+	w.climit <- struct{}{}
 	go func(p *coveragePayload) {
 		defer func() {
 			// Once the payload has been used, clear the buffer for garbage

@@ -21,14 +21,15 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, true, true))
 	bazel.ResetForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	var uploadCalls int
 	uploadRepositoryChangesFunc = func() (int64, error) {
@@ -46,12 +47,16 @@ func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testin
 
 func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDisablesImpactedTests(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, true, true))
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+	// Registered after TempDir so it executes before TempDir's RemoveAll (LIFO).
+	// Drains the async Flush goroutine started by telemetry.StartApp, preventing
+	// a race where that goroutine writes to payloads/telemetry while RemoveAll runs.
+	t.Cleanup(telemetry.StopApp)
 	bazel.ResetForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	var uploadCalls int
 	uploadRepositoryChangesFunc = func() (int64, error) {
@@ -69,11 +74,11 @@ func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDis
 
 func TestEnsureSettingsInitializationManifestModeAppliesSubtestFeaturesEnvOverride(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, false, false))
 	t.Setenv(constants.CIVisibilitySubtestFeaturesEnabled, "false")
 	bazel.ResetForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	ensureSettingsInitialization("manifest-service")
 
@@ -84,7 +89,6 @@ func TestEnsureSettingsInitializationManifestModeAppliesSubtestFeaturesEnvOverri
 
 func TestEnsureSettingsInitializationOnlineSettingsErrorRegistersCloseAction(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "temporary backend error", http.StatusInternalServerError)
@@ -103,6 +107,7 @@ func TestEnsureSettingsInitializationOnlineSettingsErrorRegistersCloseAction(t *
 		uploadDone <- struct{}{}
 		return 0, nil
 	}
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	ensureSettingsInitialization("online-service")
 

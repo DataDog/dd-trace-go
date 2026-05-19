@@ -1163,6 +1163,7 @@ func TestClientFlush(t *testing.T) {
 
 func TestMetricsDisabled(t *testing.T) {
 	t.Setenv("DD_TELEMETRY_METRICS_ENABLED", "false")
+	t.Setenv("DD_TELEMETRY_DEPENDENCY_COLLECTION_ENABLED", "false")
 
 	c, err := NewClient("test-service", "test-env", "1.0.0", ClientConfig{AgentURL: "http://localhost:8126"})
 	require.NoError(t, err)
@@ -1421,11 +1422,15 @@ func TestSendingFailures(t *testing.T) {
 		},
 	}
 
+	config := defaultConfig(cfg)
+	config.DependencyLoader = nil // prevent AppDependenciesLoaded from joining the flush and creating a MessageBatch
+	config.internalMetricsEnabled = false
+
 	c, err := newClient(internal.TracerConfig{
 		Service: "test-service",
 		Env:     "test-env",
 		Version: "1.0.0",
-	}, defaultConfig(cfg))
+	}, config)
 
 	require.NoError(t, err)
 	defer c.Close()

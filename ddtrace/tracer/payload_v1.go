@@ -572,28 +572,25 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		p.buf = encodeField(p.buf, fullSetBitmap, 7, span.duration, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 8, span.error != 0, st)
 
-		// span attributes combine the meta (tags), metrics and meta_struct
+		// span attributes combine the meta (tags), metrics and meta_struct.
 		// To avoid increased allocations, we serialize attributes immediately without
-		// creating an intermediate map. We also write a placeholder for the array header
-		// and write the actual count after writing all attributes
+		// creating an intermediate map. We write a placeholder for the array header
+		// and write the actual count after writing all attributes.
+		// Promoted attrs (env, version, language) are encoded separately
+		// as fields 13-16 and must not appear in the attributes array.
 		p.buf = msgp.AppendUint32(p.buf, uint32(9)) // attributes fieldID
 		off := len(p.buf)
 		count := 0
 		p.buf = append(p.buf, msgpackArray32, 0, 0, 0, 0)
-		env, version, component, spanKind := "", "", "", ""
-		for k, v := range span.meta {
+		component, spanKind := "", ""
+		// Range iterates only flat-map entries (promoted attrs are excluded).
+		span.meta.Range(func(k, v string) bool {
 			// Span links are serialized separately in the payload, so
 			// we skip them here to avoid duplication.
 			if k == "_dd.span_links" {
-				continue
+				return true
 			}
 			// Grab common attributes early to avoid map lookups later on.
-			if k == ext.Environment {
-				env = v
-			}
-			if k == ext.Version {
-				version = v
-			}
 			if k == ext.Component {
 				component = v
 			}
@@ -604,7 +601,8 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			p.buf = st.serialize(k, p.buf)
 			p.buf = msgp.AppendUint32(p.buf, uint32(StringValueType))
 			p.buf = st.serialize(v, p.buf)
-		}
+			return true
+		})
 		for k, v := range span.metrics {
 			count++
 			p.buf = st.serialize(k, p.buf)
@@ -633,6 +631,12 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		p.buf = encodeField(p.buf, fullSetBitmap, 10, span.spanType, st)
 		p.encodeSpanLinks(fullSetBitmap, 11, span.spanLinks, st)
 		p.encodeSpanEvents(fullSetBitmap, 12, span.spanEvents, st)
+
+		// Promoted attrs (env, version) live in promotedAttrs, not in the flat map,
+		// so they are retrieved via accessor methods. component and spanKind were
+		// captured during the Range iteration above.
+		env, _ := span.meta.Env()
+		version, _ := span.meta.Version()
 		p.buf = encodeField(p.buf, fullSetBitmap, 13, env, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 14, version, st)
 		p.buf = encodeField(p.buf, fullSetBitmap, 15, component, st)

@@ -16,6 +16,7 @@ import (
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -64,11 +65,11 @@ func TestConvertSpan(t *testing.T) {
 	s := newSpan("op", "svc", "my-resource", 100, 200, 50)
 	s.start = 1000
 	s.duration = 100
-	s.meta[ext.SpanKind] = ext.SpanKindServer
-	s.meta["meta.key"] = "meta.val"
+	s.meta.Set(ext.SpanKind, ext.SpanKindServer)
+	s.meta.Set("meta.key", "meta.val")
 	s.metrics["metric.key"] = 42.5
 	s.error = 1
-	s.meta[ext.ErrorMsg] = "something failed"
+	s.meta.Set(ext.ErrorMsg, "something failed")
 
 	otlp := convertSpan(s, "svc")
 	require.NotNil(t, otlp)
@@ -197,7 +198,7 @@ func TestConvertSpanStatus(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		s := newBasicSpan("op")
 		s.error = 1
-		s.meta = map[string]string{ext.ErrorMsg: "err msg"}
+		s.meta = tinternal.NewSpanMetaFromMap(map[string]string{ext.ErrorMsg: "err msg"})
 		st := convertSpanStatus(s)
 		require.NotNil(t, st)
 		assert.Equal(t, otlptrace.Status_STATUS_CODE_ERROR, st.Code)
@@ -207,7 +208,7 @@ func TestConvertSpanStatus(t *testing.T) {
 
 func TestConvertSpanAttributes(t *testing.T) {
 	s := newBasicSpan("op")
-	s.meta = map[string]string{"tag": "val", "env": "test"}
+	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{"tag": "val", "env": "test"})
 	s.metrics = map[string]float64{"count": 10, "rate": 0.5}
 
 	attrs := convertSpanAttributes(s, "")
@@ -223,7 +224,7 @@ func TestConvertSpanAttributes(t *testing.T) {
 
 func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 	s := newBasicSpan("op")
-	s.meta = map[string]string{"tag": "val"}
+	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{"tag": "val"})
 	s.metaStruct = map[string]any{
 		"nested": map[string]any{"a": "b"},
 		"simple": map[string]string{"x": "y"},
@@ -256,9 +257,8 @@ func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 
 func TestConvertSpanAttributesMaxLimit(t *testing.T) {
 	s := newBasicSpan("op")
-	s.meta = make(map[string]string, 200)
 	for i := range 200 {
-		s.meta[fmt.Sprintf("key-%d", i)] = "val"
+		s.meta.Set(fmt.Sprintf("key-%d", i), "val")
 	}
 
 	attrs := convertSpanAttributes(s, "other-service")
@@ -267,9 +267,8 @@ func TestConvertSpanAttributesMaxLimit(t *testing.T) {
 
 func TestConvertSpanAttributesPriorityOrder(t *testing.T) {
 	s := newBasicSpan("op")
-	s.meta = make(map[string]string, maxAttributesCount)
 	for i := range maxAttributesCount {
-		s.meta[fmt.Sprintf("key-%d", i)] = "val"
+		s.meta.Set(fmt.Sprintf("key-%d", i), "val")
 	}
 	s.metrics = map[string]float64{"should-be-dropped": 1.0}
 

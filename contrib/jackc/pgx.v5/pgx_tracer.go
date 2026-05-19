@@ -44,6 +44,15 @@ func (tb *tracedBatchQuery) finish() {
 	tb.span.Finish(tracer.WithError(tb.data.Err))
 }
 
+// batchState holds per-batch mutable tracing state. It is stored in the context
+// returned by TraceBatchStart so that concurrent batches on different pool
+// connections each have isolated state, avoiding a race on shared pgxTracer fields.
+type batchState struct {
+	prevQuery *tracedBatchQuery
+}
+
+type contextKeyBatchState struct{}
+
 type allPgxTracers interface {
 	pgx.QueryTracer
 	pgx.BatchTracer
@@ -63,9 +72,8 @@ type wrappedPgxTracer struct {
 }
 
 type pgxTracer struct {
-	cfg            *config
-	prevBatchQuery *tracedBatchQuery
-	wrapped        wrappedPgxTracer
+	cfg     *config
+	wrapped wrappedPgxTracer
 }
 
 var (
@@ -138,6 +146,7 @@ func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pg
 		tracer.Tag(tagBatchNumQueries, data.Batch.Len()),
 	)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.batch", opts...)
+	ctx = context.WithValue(ctx, contextKeyBatchState{}, &batchState{})
 	return ctx
 }
 
@@ -148,19 +157,23 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 	if t.wrapped.batch != nil {
 		t.wrapped.batch.TraceBatchQuery(ctx, conn, data)
 	}
-	// Finish the previous batch query span before starting the next one, since pgx doesn't provide hooks or timestamp
-	// information about when the actual operation started or finished.
-	// pgx.Batch* types don't support concurrency. This function doesn't support it either.
-	if t.prevBatchQuery != nil {
-		t.prevBatchQuery.finish()
+	// Finish the previous batch query span before starting the next one, since pgx doesn't provide hooks or
+	// timestamp information about when the actual operation started or finished.
+	// batchState is stored per-batch in the context so concurrent batches on different pool connections
+	// each track their own prevQuery without racing on shared tracer state.
+	bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState)
+	if bs != nil && bs.prevQuery != nil {
+		bs.prevQuery.finish()
 	}
 	opts := t.spanOptions(conn.Config(), operationTypeQuery, data.SQL,
 		tracer.Tag(tagRowsAffected, data.CommandTag.RowsAffected()),
 	)
 	span, _ := tracer.StartSpanFromContext(ctx, "pgx.batch.query", opts...)
-	t.prevBatchQuery = &tracedBatchQuery{
-		span: span,
-		data: data,
+	if bs != nil {
+		bs.prevQuery = &tracedBatchQuery{
+			span: span,
+			data: data,
+		}
 	}
 }
 
@@ -171,9 +184,9 @@ func (t *pgxTracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.
 	if t.wrapped.batch != nil {
 		t.wrapped.batch.TraceBatchEnd(ctx, conn, data)
 	}
-	if t.prevBatchQuery != nil {
-		t.prevBatchQuery.finish()
-		t.prevBatchQuery = nil
+	if bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState); bs != nil && bs.prevQuery != nil {
+		bs.prevQuery.finish()
+		bs.prevQuery = nil
 	}
 	t.finishSpan(ctx, data.Err)
 }
