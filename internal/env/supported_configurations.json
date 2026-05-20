@@ -1554,6 +1554,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_SECURE_RANDOM": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_SOURCE_HOSTNAME": [
       {
         "implementation": "A",
