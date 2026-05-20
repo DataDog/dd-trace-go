@@ -15,7 +15,6 @@ on:
     branches:
       - release-v*
       - main
-      - dario.castane/ktlo/agent-pkg-0.79-bump
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
