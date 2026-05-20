@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -26,6 +27,7 @@ import (
 	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
 	"github.com/stretchr/testify/assert"
@@ -181,6 +183,26 @@ func TestTransportResponse(t *testing.T) {
 			assert.Equal(tt.body, string(slurp))
 		})
 	}
+}
+
+func TestFetchAgentFeaturesContainerTagsHash(t *testing.T) {
+	t.Cleanup(func() { processtags.SetContainerTagsHash("") })
+	processtags.SetContainerTagsHash("")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/info", r.URL.Path)
+		w.Header().Set(containerTagsHashHeader, "info-container-hash")
+		w.Write([]byte(`{"endpoints":["/v0.6/stats"],"client_drop_p0s":true,"config":{}}`))
+	}))
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	features, err := fetchAgentFeatures(context.Background(), agentURL, srv.Client())
+	require.NoError(t, err)
+
+	assert.True(t, features.Stats)
+	assert.Equal(t, "info-container-hash", processtags.ContainerTagsHash())
 }
 
 func TestTraceCountHeader(t *testing.T) {
