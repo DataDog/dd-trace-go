@@ -160,11 +160,11 @@ func SecurityTestingHeaderTagValues(headers http.Header) ([2]string, [2]string, 
 
 // SecurityTestingHeaderByteTagValues returns span tag names and values from byte header entries.
 func SecurityTestingHeaderByteTagValues(visit func(func(key, value []byte))) ([2]string, [2]string, int) {
-	var headerValues [len(securityTestingHeaders)][][]byte
+	var headerValues [len(securityTestingHeaders)][]string
 	visit(func(key, value []byte) {
 		for i, h := range securityTestingHeaders {
 			if bytes.EqualFold(key, h.HeaderBytes) {
-				headerValues[i] = append(headerValues[i], value)
+				headerValues[i] = append(headerValues[i], string(value))
 				break
 			}
 		}
@@ -179,7 +179,7 @@ func SecurityTestingHeaderByteTagValues(visit func(func(key, value []byte))) ([2
 			continue
 		}
 		tagNames[count] = h.Tag
-		tagValues[count] = strings.TrimSpace(normalizeHTTPHeaderBytesValue(values))
+		tagValues[count] = strings.TrimSpace(normalizeHTTPHeaderValue(values))
 		count++
 	}
 	return tagNames, tagValues, count
@@ -222,28 +222,6 @@ func normalizeHTTPHeaderName(name string) string {
 
 func normalizeHTTPHeaderValue(values []string) string {
 	return strings.Join(values, ",")
-}
-
-func normalizeHTTPHeaderBytesValue(values [][]byte) string {
-	if len(values) == 1 {
-		return string(values[0])
-	}
-
-	var length int
-	for _, value := range values {
-		length += len(value)
-	}
-	length += len(values) - 1
-
-	var b strings.Builder
-	b.Grow(length)
-	for i, value := range values {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		b.Write(value)
-	}
-	return b.String()
 }
 
 func init() {

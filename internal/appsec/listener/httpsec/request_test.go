@@ -288,7 +288,15 @@ func TestSecurityTestingHeaderByteTagValues(t *testing.T) {
 
 	tagNames, tagValues, count := SecurityTestingHeaderByteTagValues(func(visit func(key, value []byte)) {
 		for _, value := range values {
-			visit(value[0], value[1])
+			key := append([]byte(nil), value[0]...)
+			headerValue := append([]byte(nil), value[1]...)
+			visit(key, headerValue)
+			for i := range key {
+				key[i] = 'x'
+			}
+			for i := range headerValue {
+				headerValue[i] = 'x'
+			}
 		}
 	})
 
