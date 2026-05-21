@@ -8,7 +8,6 @@ package echo
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"sync"
 
@@ -25,7 +24,6 @@ const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 type config struct {
 	serviceName       string
 	serviceSource     string
-	analyticsRate     float64
 	noDebugStack      bool
 	ignoreRequestFunc IgnoreRequestFunc
 	isStatusError     func(statusCode int) bool
@@ -58,8 +56,8 @@ func (c *config) String() string {
 		return "unset"
 	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "{serviceName:%q serviceSource:%q analyticsRate:%v noDebugStack:%v",
-		c.serviceName, c.serviceSource, c.analyticsRate, c.noDebugStack)
+	fmt.Fprintf(&sb, "{serviceName:%q serviceSource:%q noDebugStack:%v",
+		c.serviceName, c.serviceSource, c.noDebugStack)
 	fmt.Fprintf(&sb, " ignoreRequestFunc:%s isStatusError:%s translateError:%s errCheck:%s",
 		setOrUnset(c.ignoreRequestFunc != nil),
 		setOrUnset(c.isStatusError != nil),
@@ -109,7 +107,6 @@ type IgnoreRequestFunc func(c *echo.Context) bool
 func defaults(cfg *config) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentServer, nil)
 	cfg.serviceSource = string(instrumentation.PackageLabstackEchoV5)
-	cfg.analyticsRate = math.NaN()
 	if fn := httptrace.GetErrorCodesFromInput(env.Get(envServerErrorStatuses)); fn != nil {
 		cfg.isStatusError = fn
 	} else {
@@ -131,29 +128,6 @@ func WithService(name string) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceName = name
 		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
-	}
-}
-
-// WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) OptionFn {
-	return func(cfg *config) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
-}
-
-// WithAnalyticsRate sets the sampling rate for Trace Analytics events
-// correlated to started spans.
-func WithAnalyticsRate(rate float64) OptionFn {
-	return func(cfg *config) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
 	}
 }
 

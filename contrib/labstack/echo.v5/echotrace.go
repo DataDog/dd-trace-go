@@ -8,7 +8,6 @@ package echo
 
 import (
 	"fmt"
-	"math"
 	"net/http"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -128,9 +127,6 @@ func Middleware(opts ...Option) echo.MiddlewareFunc {
 			route := c.Path()
 			resource := request.Method + " " + route
 			opts := options.Copy(spanOpts) // opts must be a copy of spanOpts, locally scoped, to avoid races.
-			if !math.IsNaN(cfg.analyticsRate) {
-				opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
-			}
 			opts = append(opts,
 				tracer.ResourceName(resource),
 				tracer.Tag(ext.HTTPRoute, route),
