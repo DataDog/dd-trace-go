@@ -312,31 +312,16 @@ func TestSetProfileFraction(t *testing.T) {
 	t.Run("on", func(t *testing.T) {
 		start := runtime.SetMutexProfileFraction(0)
 		defer runtime.SetMutexProfileFraction(start)
-		p, err := unstartedProfiler(WithProfileTypes(MutexProfile))
-		require.NoError(t, err)
-		p.run()
-		p.stop()
+		startTestProfiler(t, 0, WithProfileTypes(MutexProfile))
 		assert.Equal(t, DefaultMutexFraction, runtime.SetMutexProfileFraction(-1))
 	})
 
 	t.Run("off", func(t *testing.T) {
 		start := runtime.SetMutexProfileFraction(0)
 		defer runtime.SetMutexProfileFraction(start)
-		p, err := unstartedProfiler()
-		require.NoError(t, err)
-		p.run()
-		p.stop()
+		startTestProfiler(t, 0, WithProfileTypes())
 		assert.Zero(t, runtime.SetMutexProfileFraction(-1))
 	})
-}
-
-func unstartedProfiler(opts ...Option) (*profiler, error) {
-	p, err := newProfiler(opts...)
-	if err != nil {
-		return nil, err
-	}
-	p.uploadFunc = func(_ batch) error { return nil }
-	return p, nil
 }
 
 type profileMeta struct {
