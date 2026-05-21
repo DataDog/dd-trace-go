@@ -19,6 +19,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChildSpan(t *testing.T) {
@@ -353,4 +354,32 @@ func TestIgnoreRequest(t *testing.T) {
 	spans := mt.FinishedSpans()
 
 	assert.Len(spans, 0)
+}
+
+func TestSecurityTestingHeaders(t *testing.T) {
+	assert := assert.New(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := fiber.New()
+	router.Use(Middleware(WithService("foobar")))
+	router.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendString("ok")
+	})
+
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("x-datadog-endpoint-scan", "true")
+	r.Header.Set("x-datadog-security-test", "test-value")
+
+	resp, err := router.Test(r)
+	assert.Equal(nil, err)
+	defer resp.Body.Close()
+	assert.Equal(resp.StatusCode, 200)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	span := spans[0]
+	assert.Equal("true", span.Tag(ext.HTTPRequestHeaders+".x-datadog-endpoint-scan"))
+	assert.Equal("test-value", span.Tag(ext.HTTPRequestHeaders+".x-datadog-security-test"))
 }

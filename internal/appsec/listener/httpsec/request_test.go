@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"net/netip"
 	"testing"
 	"time"
@@ -248,6 +249,62 @@ func TestTags(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSetRequestHeadersTagsDoesNotOwnSecurityTestingHeaders(t *testing.T) {
+	var span MockSpan
+	setRequestHeadersTags(&span, map[string][]string{
+		"X-Datadog-Endpoint-Scan": {"scan-uuid"},
+		"X-Datadog-Security-Test": {"test-uuid"},
+		"X-Forwarded-For":         {"1.2.3.4"},
+	})
+
+	require.Equal(t, "1.2.3.4", span.Tags["http.request.headers.x-forwarded-for"])
+	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-endpoint-scan")
+	require.NotContains(t, span.Tags, "http.request.headers.x-datadog-security-test")
+}
+
+func TestSecurityTestingHeaderTagValues(t *testing.T) {
+	headers := http.Header{
+		"X-Datadog-Endpoint-Scan": {" scan-uuid "},
+		"X-Datadog-Security-Test": {"test-uuid", "second-value"},
+	}
+
+	tagNames, tagValues, count := SecurityTestingHeaderTagValues(headers)
+
+	require.Equal(t, 2, count)
+	require.Equal(t, securityTestingEndpointScanTag, tagNames[0])
+	require.Equal(t, "scan-uuid", tagValues[0])
+	require.Equal(t, securityTestingTag, tagNames[1])
+	require.Equal(t, "test-uuid,second-value", tagValues[1])
+}
+
+func TestSecurityTestingHeaderByteTagValues(t *testing.T) {
+	values := [][2][]byte{
+		{[]byte("X-Datadog-Endpoint-Scan"), []byte(" scan-uuid ")},
+		{[]byte("X-Datadog-Security-Test"), []byte("test-uuid")},
+		{[]byte("x-datadog-security-test"), []byte("second-value")},
+	}
+
+	tagNames, tagValues, count := SecurityTestingHeaderByteTagValues(func(visit func(key, value []byte)) {
+		for _, value := range values {
+			key := append([]byte(nil), value[0]...)
+			headerValue := append([]byte(nil), value[1]...)
+			visit(key, headerValue)
+			for i := range key {
+				key[i] = 'x'
+			}
+			for i := range headerValue {
+				headerValue[i] = 'x'
+			}
+		}
+	})
+
+	require.Equal(t, 2, count)
+	require.Equal(t, securityTestingEndpointScanTag, tagNames[0])
+	require.Equal(t, "scan-uuid", tagValues[0])
+	require.Equal(t, securityTestingTag, tagNames[1])
+	require.Equal(t, "test-uuid,second-value", tagValues[1])
 }
 
 //go:embed testdata/trace_tagging_rules.json
