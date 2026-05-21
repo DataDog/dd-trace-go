@@ -16,6 +16,7 @@ Never silently expand scope. Never migrate a derived field before its base — e
 - No `*DynamicConfig[T]` accessor unless something outside this package needs RC handling. `globalSampleRate` doesn't expose one.
 - No new provider method unless this migration needs it.
 - Resist adding methods "for symmetry." Symmetry can be added later when there's a caller.
+- Comments stay minimal. Keep a field's existing definition comment if it had one; for other comments (existing or new), only migrate or write them when they capture motivation that can't be gleaned from the code alone.
 
 ## Source of truth: no shadow state
 
