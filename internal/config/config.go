@@ -105,9 +105,7 @@ type Config struct {
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
-	statsComputationEnabled bool
-	// traceAnalyticsEnabled is the legacy DD_TRACE_ANALYTICS_ENABLED toggle (sets the
-	// global analytics rate to 1.0 when true).
+	statsComputationEnabled      bool
 	traceAnalyticsEnabled        bool
 	dataStreamsMonitoringEnabled bool
 	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
