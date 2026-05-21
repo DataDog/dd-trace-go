@@ -409,6 +409,28 @@ func resetGlobalState() {
 	useFreshConfig = false
 }
 
+func TestSiteRoundTrip(t *testing.T) {
+	t.Setenv("DD_SITE", "datadoghq.eu")
+	resetGlobalState()
+	defer resetGlobalState()
+	if got := Get().Site(); got != "datadoghq.eu" {
+		t.Errorf("Site() from env = %q, want %q", got, "datadoghq.eu")
+	}
+	Get().SetSite("us3.datadoghq.com", telemetry.OriginCode)
+	if got := Get().Site(); got != "us3.datadoghq.com" {
+		t.Errorf("Site() after SetSite = %q, want %q", got, "us3.datadoghq.com")
+	}
+}
+
+func TestSiteDefaultEmpty(t *testing.T) {
+	t.Setenv("DD_SITE", "")
+	resetGlobalState()
+	defer resetGlobalState()
+	if got := Get().Site(); got != "" {
+		t.Errorf("Site() default = %q, want \"\"", got)
+	}
+}
+
 func TestSetFeatureFlagsReportsFullList(t *testing.T) {
 	resetGlobalState()
 	defer resetGlobalState()
