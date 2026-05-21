@@ -938,16 +938,6 @@ func (c *Config) CIVisibilityAgentless() bool {
 	return c.ciVisibilityAgentless
 }
 
-func (c *Config) SetCIVisibilityAgentless(enabled bool, origin telemetry.Origin, product ...Product) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.checkProductConflict(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, origin, enabled, product...) {
-		return
-	}
-	c.ciVisibilityAgentless = enabled
-	configtelemetry.Report(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, enabled, origin)
-}
-
 func (c *Config) LogsOTelEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

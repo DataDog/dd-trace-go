@@ -412,7 +412,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated) // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
 		ciTransport := newCiVisibilityTransport(c)                             // Create a default CI Visibility Transport
 		c.ddTransport = ciTransport                                            // Replace the default transport with the CI Visibility transport
-		c.internalConfig.SetCIVisibilityAgentless(ciTransport.agentless, internalconfig.OriginCalculated, internalconfig.ProductTracer)
 		c.ciVisibilityNoopTracer = internal.BoolEnv(constants.CIVisibilityUseNoopTracer, false)
 	}
 
