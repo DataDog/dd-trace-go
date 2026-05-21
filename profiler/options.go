@@ -116,6 +116,9 @@ type config struct {
 	enabled              bool
 	flushOnExit          bool
 	compressionConfig    string
+	maxHeapStacks        int // 0 = unlimited
+	maxMutexStacks       int // 0 = unlimited
+	maxBlockStacks       int // 0 = unlimited
 }
 
 // logStartup records the configuration to the configured logger in JSON format
@@ -519,5 +522,35 @@ var executionTraceEnabledDefault = runtime.GOARCH == "arm64" || runtime.GOARCH =
 func WithCustomProfilerLabelKeys(keys ...string) Option {
 	return func(cfg *config) {
 		cfg.customProfilerLabels = append(cfg.customProfilerLabels, keys...)
+	}
+}
+
+// WithMaxHeapStacks caps the number of unique heap allocation stacks serialized
+// in each heap profile to the n highest-weight stacks (by InUseBytes).
+// This reduces symbol resolution overhead for services with many unique
+// allocation sites. 0 means no cap (default).
+func WithMaxHeapStacks(n int) Option {
+	return func(cfg *config) {
+		cfg.maxHeapStacks = n
+	}
+}
+
+// WithMaxMutexStacks caps the number of unique mutex contention stacks
+// serialized in each mutex profile to the n highest-weight stacks (by Cycles).
+// This reduces symbol resolution overhead for services with heavy mutex
+// contention. 0 means no cap (default).
+func WithMaxMutexStacks(n int) Option {
+	return func(cfg *config) {
+		cfg.maxMutexStacks = n
+	}
+}
+
+// WithMaxBlockStacks caps the number of unique block contention stacks
+// serialized in each block profile to the n highest-weight stacks (by Cycles).
+// This reduces symbol resolution overhead for services with many unique
+// blocking sites. 0 means no cap (default).
+func WithMaxBlockStacks(n int) Option {
+	return func(cfg *config) {
+		cfg.maxBlockStacks = n
 	}
 }

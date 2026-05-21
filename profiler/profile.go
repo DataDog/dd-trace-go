@@ -263,6 +263,14 @@ func collectGenericProfile(name string, pt ProfileType) func(p *profiler) ([]byt
 	return func(p *profiler) ([]byte, error) {
 		p.interruptibleSleep(p.cfg.period)
 
+		raw, err := collectCappedProfile(p.cfg, pt)
+		if err != nil {
+			return nil, err
+		}
+		if raw != nil {
+			return applyDeltaOrCompress(p, pt, name, raw)
+		}
+
 		var buf bytes.Buffer
 		dp, ok := p.deltas[pt]
 		if !ok || !p.cfg.deltaProfiles {
