@@ -25,6 +25,20 @@ Never silently expand scope. Never migrate a derived field before its base — e
 
 Rely on existing tests in the source package for regression coverage. Add tests in `internal/config` only when this migration introduces new functionality there.
 
+## Trace every runtime write
+
+Before adding a setter for a runtime write, trace the written value to its literal source (env var, file, function input) and grep `internal/config/` for that source. If `internal/config` already reads it, the write is redundant — refactor the caller to read from `internal/config` (via the getter), eliminate the write, no setter needed.
+
+## Migration plan
+
+Produce a plan before writing code. The plan lists:
+
+- **Read sites**: one line per site (`file:line → new accessor`).
+- **Write sites**: for each site, the value expression; the traced literal source (`file:line` + env var / function input); the `grep` result against `internal/config/`; and the resulting action (redirect to read from `internal/config`, or add a setter).
+- **Surface added to `internal/config`**: getter only, getter + setter, etc.
+
+The `grep` output makes the "trace every runtime write" check auditable at a glance — no need to chase the value source through the codebase.
+
 ## Migration recipes
 
 Focus on non-obvious bits. Defer to the reference PRs for code shape.
