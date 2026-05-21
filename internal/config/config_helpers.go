@@ -17,8 +17,7 @@ import (
 )
 
 // DefaultSocketDSDPath is the UDS socket path probed during DogStatsD
-// auto-discovery. Exported as a var so tests can override the location;
-// production code must not modify it.
+// auto-discovery. Exported as a var only for test overrides.
 var DefaultSocketDSDPath = "/var/run/datadog/dsd.socket"
 
 const (
@@ -48,8 +47,6 @@ const (
 	URLSchemeHTTP  = "http"
 	URLSchemeHTTPS = "https"
 
-	// DefaultStatsdPort is the default port for the DogStatsD service when no
-	// other source provides one.
 	DefaultStatsdPort = "8125"
 
 	// Trace API paths appended to the agent URL for each protocol.
@@ -188,19 +185,9 @@ func detectUDSURL() *url.URL {
 	}
 }
 
-// initialDogstatsdURL builds the resolved DogStatsD URL at loadConfig time
-// from the env-sourced inputs. The URL is canonical:
-//   - Scheme "unix" with Path means UDS auto-discovery found a socket.
-//   - Empty Port means no source has explicitly set a port; the getter or a
-//     later SetAgentReportedStatsdPort fills it.
-//   - Empty Host means no source has explicitly set a host; the getter fills
-//     in the default.
-//
-// Priority follows the legacy resolveDogstatsdAddr:
-//  1. DD_DOGSTATSD_HOST / DD_DOGSTATSD_PORT (with DD_AGENT_HOST as host
-//     fallback).
-//  2. UDS socket at socketPath if it exists.
-//  3. Otherwise leave Host empty and Port empty for the getter to default.
+// initialDogstatsdURL builds the resolved DogStatsD URL from env inputs.
+// Convention: empty Port means no source explicitly set it; empty Host
+// means no source explicitly set it. The getter fills defaults at read time.
 func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) *url.URL {
 	if envHost != "" || envPort != "" {
 		host := envHost
@@ -218,9 +205,7 @@ func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) *url.UR
 	return &url.URL{Host: agentHost}
 }
 
-// parseDogstatsdAddr converts a user-supplied DogStatsD address (e.g. from
-// WithDogstatsdAddr) into the canonical URL form. Accepts "host:port" or
-// "unix:///path/to/socket".
+// parseDogstatsdAddr accepts "host:port" or "unix:///path/to/socket".
 func parseDogstatsdAddr(addr string) *url.URL {
 	if strings.HasPrefix(addr, "unix://") {
 		if u, err := url.Parse(addr); err == nil {
@@ -230,8 +215,8 @@ func parseDogstatsdAddr(addr string) *url.URL {
 	return &url.URL{Host: addr}
 }
 
-// formatDogstatsdAddr renders a DogStatsD URL into the string form expected
-// by NewStatsdClient. Defaults are filled in here when the URL omits them.
+// formatDogstatsdAddr renders the URL for NewStatsdClient, filling defaults
+// when host or port are unset.
 func formatDogstatsdAddr(u *url.URL) string {
 	if u == nil {
 		return net.JoinHostPort(internal.DefaultAgentHostname, DefaultStatsdPort)

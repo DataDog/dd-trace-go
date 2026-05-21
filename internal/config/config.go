@@ -77,10 +77,6 @@ type Config struct {
 	// dogstatsdAddr is the address to connect for sending metrics to the
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
-	//
-	// The URL stores only what was explicitly set: an empty Port means no
-	// explicit port was provided (the getter fills in the default; the
-	// agent-reported port may also fill it in via SetAgentReportedStatsdPort).
 	dogstatsdAddr *url.URL
 	debug         bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
@@ -205,11 +201,6 @@ func loadConfig() *Config {
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
 
-	// DogStatsD address. DD_DOGSTATSD_HOST and DD_DOGSTATSD_PORT are read here
-	// so the provider reports telemetry for them; the values feed into the
-	// initial URL build. An empty Port on the resulting URL means no source
-	// has explicitly set the port yet (default will be filled at read time, or
-	// the agent-reported port may set it via SetAgentReportedStatsdPort).
 	dogstatsdEnvHost := p.GetString("DD_DOGSTATSD_HOST", "")
 	dogstatsdEnvPort := p.GetString("DD_DOGSTATSD_PORT", "")
 	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdEnvHost, dogstatsdEnvPort, agentHost, DefaultSocketDSDPath)
@@ -386,19 +377,12 @@ func (c *Config) AgentURL() *url.URL {
 	return u
 }
 
-// DogstatsdAddr returns the resolved DogStatsD address as a string in the
-// form expected by NewStatsdClient: "host:port" for UDP or
-// "unix:///path/to/socket" for UDS. Defaults are filled in here when the
-// underlying URL has no explicit host or port.
 func (c *Config) DogstatsdAddr() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return formatDogstatsdAddr(c.dogstatsdAddr)
 }
 
-// SetDogstatsdAddr records a user-supplied DogStatsD address (priority 1) and
-// replaces the stored URL whole-cloth. Reports config telemetry under
-// DD_DOGSTATSD_URL.
 func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -412,11 +396,9 @@ func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product 
 	configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
 }
 
-// SetAgentReportedStatsdPort fills the port on the resolved DogStatsD URL
-// using the value reported by the trace-agent /info endpoint. Skipped when
-// the user has claimed DD_DOGSTATSD_URL, the URL already has a port (env
-// explicitly set it), or the URL is a unix socket. Reports config telemetry
-// under DD_DOGSTATSD_URL with OriginCalculated when the port is applied.
+// SetAgentReportedStatsdPort fills the URL port from the agent /info value.
+// No-op when the user claimed DD_DOGSTATSD_URL, the URL is a unix socket, or
+// a port is already set.
 func (c *Config) SetAgentReportedStatsdPort(port int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
