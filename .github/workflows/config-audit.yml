@@ -1,0 +1,36 @@
+name: config-audit
+
+on:
+  pull_request:
+    paths:
+      - 'internal/config/**'
+      - 'internal/env/supported_configurations.json'
+      - 'ddtrace/**'
+      - 'profiler/**'
+      - 'scripts/configaudit/**'
+      - '.github/workflows/config-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run config audit
+        run: |
+          mkdir -p out
+          GOWORK=off go run ./scripts/configaudit -root . -format json > out/audit.json
+          GOWORK=off go run ./scripts/configaudit -root . -format table | tee out/audit.txt
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-audit
+          path: out/
+          retention-days: 14
