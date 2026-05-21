@@ -21,6 +21,10 @@ Never silently expand scope. Never migrate a derived field before its base — e
 
 `internal/config` is canonical. Once a field is migrated, every read and write of that field goes through `internal/config`.
 
+## Testing
+
+Rely on existing tests in the source package for regression coverage. Add tests in `internal/config` only when this migration introduces new functionality there.
+
 ## Migration recipes
 
 Focus on non-obvious bits. Defer to the reference PRs for code shape.
