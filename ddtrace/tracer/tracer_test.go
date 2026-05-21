@@ -1808,8 +1808,9 @@ func TestTracerRace(t *testing.T) {
 
 	flush(total)
 	traces := transport.Traces()
+	ids := transport.TraceIDs()
 	assert.Len(traces, total, "we should have exactly as many traces as expected")
-	for _, trace := range traces {
+	for i, trace := range traces {
 		assert.Len(trace, 3, "each trace should have exactly 3 spans")
 		var parent, child, redis *Span
 		for _, span := range trace {
@@ -1828,14 +1829,12 @@ func TestTracerRace(t *testing.T) {
 		assert.NotNil(child)
 		assert.NotNil(redis)
 
+		tid := ids[i]
 		assert.Equal(uint64(0), parent.parentID)
-		assert.Equal(parent.traceID, parent.spanID)
+		assert.Equal(tid, parent.spanID)
 
-		assert.Equal(parent.traceID, redis.traceID)
-		assert.Equal(parent.traceID, child.traceID)
-
-		assert.Equal(parent.traceID, redis.parentID)
-		assert.Equal(parent.traceID, child.parentID)
+		assert.Equal(tid, redis.parentID)
+		assert.Equal(tid, child.parentID)
 	}
 }
 
@@ -2173,6 +2172,9 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
+
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCD", v)
 		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
@@ -2192,6 +2194,9 @@ func TestGitMetadata(t *testing.T) {
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
+
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
 
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCD", v)
@@ -2217,6 +2222,9 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
+
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCDE", v)
 		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
@@ -2236,6 +2244,9 @@ func TestGitMetadata(t *testing.T) {
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
 
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
+
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCDE", v)
 		v, _ = sp.meta.Get(internal.TraceTagRepositoryURL)
@@ -2254,6 +2265,9 @@ func TestGitMetadata(t *testing.T) {
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
+
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
 
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Equal("123456789ABCD", v)
@@ -2276,6 +2290,9 @@ func TestGitMetadata(t *testing.T) {
 		assert := assert.New(t)
 		sp := tracer.StartSpan("http.request")
 		sp.Finish()
+
+		sp.mu.RLock()
+		defer sp.mu.RUnlock()
 
 		v, _ := sp.meta.Get(internal.TraceTagCommitSha)
 		assert.Empty(v)
@@ -2328,8 +2345,8 @@ func BenchmarkBigTraces(b *testing.B) {
 	})
 }
 
-func genBigTraces(b *testing.B) {
-	tracer, transport, flush, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}))
+func genBigTraces(b *testing.B, opts ...StartOption) {
+	tracer, transport, flush, stop, err := startTestTracer(b, append(opts, WithLogger(log.DiscardLogger{}))...)
 	assert.Nil(b, err)
 	defer stop()
 
@@ -2517,28 +2534,42 @@ func newTestConfig(opts ...StartOption) (*config, error) {
 // not be available and the maps (meta & metrics will be nil for lengths
 // of 0). This function covers for those cases and correctly compares.
 func comparePayloadSpans(t *testing.T, a, b *Span) {
-	assert.Equal(t, cpspan(a), cpspan(b))
+	spanA, langA, spanKindA, traceIDA := cpspan(a)
+	spanB, langB, spanKindB, traceIDB := cpspan(b)
+	assert.Equal(t, langA, langB)
+	assert.Equal(t, spanKindA, spanKindB)
+	assert.Equal(t, traceIDA, traceIDB)
+	assert.Equal(t, spanA, spanB)
 }
 
-func cpspan(s *Span) *Span {
+func cpspan(s *Span) (sp *Span, lang string, spanKind string, traceID uint64) {
 	if len(s.metrics) == 0 {
 		s.metrics = nil
 	}
 	s.meta.Normalize()
-	return &Span{
+	m := s.meta.Map(true)
+
+	// Other fields that are not consistent between v0.4 and v1.0
+	lang = m["language"]
+	spanKind = m[ext.SpanKind]
+	traceID = s.traceID
+
+	delete(m, "language")
+	delete(m, ext.SpanKind)
+	sp = &Span{
 		name:     s.name,
 		service:  s.service,
 		resource: s.resource,
 		spanType: s.spanType,
 		start:    s.start,
 		duration: s.duration,
-		meta:     traceinternal.NewSpanMetaFromMap(s.meta.Map(true)), // flatten to plain map for comparison
+		meta:     traceinternal.NewSpanMetaFromMap(m), // flatten to plain map for comparison
 		metrics:  s.metrics,
 		spanID:   s.spanID,
-		traceID:  s.traceID,
 		parentID: s.parentID,
 		error:    s.error,
 	}
+	return sp, lang, spanKind, traceID
 }
 
 type testTraceWriter struct {
