@@ -283,7 +283,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v := env.Get("OTEL_LOGS_EXPORTER"); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
-	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
+	if c.internalConfig.TraceAnalyticsEnabled() {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
 	if c.internalConfig.ReportHostname() {

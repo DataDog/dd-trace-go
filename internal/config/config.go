@@ -105,7 +105,10 @@ type Config struct {
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
-	statsComputationEnabled      bool
+	statsComputationEnabled bool
+	// traceAnalyticsEnabled is the legacy DD_TRACE_ANALYTICS_ENABLED toggle (sets the
+	// global analytics rate to 1.0 when true).
+	traceAnalyticsEnabled        bool
 	dataStreamsMonitoringEnabled bool
 	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
 	dynamicInstrumentationEnabled bool
@@ -212,6 +215,7 @@ func loadConfig() *Config {
 	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
+	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = p.GetBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
@@ -635,6 +639,12 @@ func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origi
 	}
 	c.statsComputationEnabled = enabled
 	configtelemetry.Report("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
+}
+
+func (c *Config) TraceAnalyticsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceAnalyticsEnabled
 }
 
 func (c *Config) LogDirectory() string {
