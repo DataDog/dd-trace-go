@@ -1359,7 +1359,7 @@ Add this test to `internal/config/config_test.go`. (First inspect the file to fi
 ```go
 func TestSiteRoundTrip(t *testing.T) {
 	t.Setenv("DD_SITE", "datadoghq.eu")
-	resetForTest()
+	resetGlobalState()
 	if got := Get().Site(); got != "datadoghq.eu" {
 		t.Errorf("Site() from env = %q, want %q", got, "datadoghq.eu")
 	}
@@ -1371,14 +1371,14 @@ func TestSiteRoundTrip(t *testing.T) {
 
 func TestSiteDefaultEmpty(t *testing.T) {
 	t.Setenv("DD_SITE", "")
-	resetForTest()
+	resetGlobalState()
 	if got := Get().Site(); got != "" {
 		t.Errorf("Site() default = %q, want \"\"", got)
 	}
 }
 ```
 
-`resetForTest` already exists in the test file (used by other migrated-config tests like `TestSetServiceName` — find it with `grep -n resetForTest internal/config/config_test.go`).
+`resetGlobalState` already exists in the test file (used by other migrated-config tests like `TestSetServiceName` — find it with `grep -n resetGlobalState internal/config/config_test.go`).
 
 - [ ] **Step 3: Run the tests to confirm they fail**
 
@@ -1510,7 +1510,7 @@ If the env var name is hidden behind a `const` (the audit tool's output will say
 ```go
 func Test<Field>RoundTrip(t *testing.T) {
 	t.Setenv("<DD_VAR>", "value-from-env")
-	resetForTest()
+	resetGlobalState()
 	if got := Get().<Field>(); got != "value-from-env" {
 		t.Errorf("<Field>() from env = %q, want %q", got, "value-from-env")
 	}
@@ -1625,8 +1625,13 @@ When in doubt, run `go test -bench=BenchmarkStartSpanConcurrent -benchmem ./ddtr
 ### Cross-product gate
 Every `Set<Field>` setter **must** call `c.checkProductConflict(...)` as its first action after taking the lock — Task 9 Step 6 and Task 10 Step 6 already encode this. Do not skip it even for fields only one product uses today; it is the project's invariant.
 
+### `Get()` vs `CreateNew()` at the call site
+The singleton's lifecycle matters when migrating callers:
+- **`internalconfig.Get()`** returns the cached singleton. Use this from any code path that runs after `Tracer.Start(...)`.
+- **`internalconfig.CreateNew()`** forces a fresh load from env vars and replaces the cached singleton. Use this in `defaultConfig()`-style constructors that run at product startup, especially when tests use `t.Setenv(...)` to seed env before constructing the product. The tracer's `option.go` uses `CreateNew()` in `newConfig()`; the profiler's `defaultConfig()` (in `profiler/options.go`) does the same. If you replace a call site that's inside a per-call constructor and the corresponding tests fail with stale env values, the fix is to switch from `Get()` to `CreateNew()` (matching the prior art in that file).
+
 ### Test isolation
-The audit tool excludes `_test.go` files from the unmigrated-reads scan. That is intentional: tests intentionally call `t.Setenv("DD_…", …)` and the singleton's setters directly. Tests that mutate state should call `resetForTest()` (see `internal/config/config_test.go`) at the top.
+The audit tool excludes `_test.go` files from the unmigrated-reads scan. That is intentional: tests intentionally call `t.Setenv("DD_…", …)` and the singleton's setters directly. Tests that mutate state should call `resetGlobalState()` (see `internal/config/config_test.go`) at the top.
 
 ### Backports / V1
 This plan targets the V2 module (`github.com/DataDog/dd-trace-go/v2`). The `release-v1` branch has its own config layout and is **out of scope** here.
