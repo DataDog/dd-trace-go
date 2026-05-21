@@ -17,6 +17,10 @@ Never silently expand scope. Never migrate a derived field before its base — e
 - No new provider method unless this migration needs it.
 - Resist adding methods "for symmetry." Symmetry can be added later when there's a caller.
 
+## Source of truth: no shadow state
+
+`internal/config` is canonical. Once a field is migrated, every read and write of that field goes through `internal/config`.
+
 ## Migration recipes
 
 Focus on non-obvious bits. Defer to the reference PRs for code shape.
