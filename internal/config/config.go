@@ -215,7 +215,7 @@ func loadConfig() *Config {
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = p.GetBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
-	cfg.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
+	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
@@ -930,6 +930,22 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin, p
 	}
 	c.ciVisibilityEnabled = enabled
 	configtelemetry.Report(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+func (c *Config) CIVisibilityAgentless() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentless
+}
+
+func (c *Config) SetCIVisibilityAgentless(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, origin, enabled, product...) {
+		return
+	}
+	c.ciVisibilityAgentless = enabled
+	configtelemetry.Report(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, enabled, origin)
 }
 
 func (c *Config) LogsOTelEnabled() bool {

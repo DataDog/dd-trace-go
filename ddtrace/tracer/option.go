@@ -232,9 +232,6 @@ type config struct {
 	// it is frozen -- it cannot be overwritten by Remote Config.
 	dynamicInstrumentationEnabled dynamicConfig[bool]
 
-	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
-	ciVisibilityAgentless bool
-
 	// ciVisibilityNoopTracer controls if CI Visibility must set a wrapper to behave like a noop tracer. default false
 	ciVisibilityNoopTracer bool
 
@@ -415,12 +412,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated) // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
 		ciTransport := newCiVisibilityTransport(c)                             // Create a default CI Visibility Transport
 		c.ddTransport = ciTransport                                            // Replace the default transport with the CI Visibility transport
-		c.ciVisibilityAgentless = ciTransport.agentless
+		c.internalConfig.SetCIVisibilityAgentless(ciTransport.agentless, internalconfig.OriginCalculated, internalconfig.ProductTracer)
 		c.ciVisibilityNoopTracer = internal.BoolEnv(constants.CIVisibilityUseNoopTracer, false)
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
+	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.internalConfig.CIVisibilityAgentless()
 	agentURL := c.internalConfig.AgentURL()
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
@@ -771,7 +768,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 // The agent is considered disabled in serverless (LogToStdout), when the
 // tracer itself is disabled, or in CI visibility agentless mode.
 func (c *config) agentEnabled() bool {
-	return !c.internalConfig.LogToStdout() && c.enabled.get() && !c.ciVisibilityAgentless
+	return !c.internalConfig.LogToStdout() && c.enabled.get() && !c.internalConfig.CIVisibilityAgentless()
 }
 
 // MarkIntegrationImported labels the given integration as imported
