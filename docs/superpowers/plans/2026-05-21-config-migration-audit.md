@@ -6,7 +6,9 @@
 
 **Architecture:** A new Go program at `scripts/configaudit/` uses `golang.org/x/tools/go/packages` to load the module, resolve constants through `go/types`, and classify every `DD_*` env var into three buckets: `migrated` (read via `provider` in `internal/config.loadConfig`), `unmigrated` (still read outside `internal/config`), and `untracked` (read in code but missing from `internal/env/supported_configurations.json`). Output is JSON + a human-readable table; a `make config-audit` target wraps it, and a non-blocking GitHub Actions job posts the report. Then individual configs are migrated by following the project's documented procedure in [internal/config/README.md](../../../internal/config/README.md), using `serviceName` (PR #4559) and `logStartup` (PR #4214) as canonical references.
 
-**Tech Stack:** Go (1.24+, matches `go.mod`), `golang.org/x/tools/go/packages`, `go/ast`, `go/types`, `go/constant`, GitHub Actions, existing `make` infrastructure.
+**Tech Stack:** Go (1.25+, matches root `go.mod`), `golang.org/x/tools/go/packages`, `go/ast`, `go/types`, `go/constant`, GitHub Actions, existing `make` infrastructure.
+
+> **Build-environment note:** `scripts/configaudit/` lives outside the root `go.work` (same as `scripts/configinverter/`). All `go build` / `go test` / `go run` commands targeting `scripts/configaudit/...` must be run with `GOWORK=off` set, or executed from inside the `scripts/configaudit/` directory with `GOWORK=off`. Every command in this plan that targets the configaudit module shows the `GOWORK=off` prefix.
 
 ---
 
@@ -80,7 +82,7 @@ Expected: prints the contents of `scripts/configinverter/go.mod` (it exists toda
 ```
 module github.com/DataDog/dd-trace-go/v2/scripts/configaudit
 
-go 1.24
+go 1.25.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.0.0
@@ -89,6 +91,8 @@ require (
 
 replace github.com/DataDog/dd-trace-go/v2 => ../..
 ```
+
+The `require` block is provisional — `go mod tidy` will prune `github.com/DataDog/dd-trace-go/v2` and `golang.org/x/tools` until the code actually imports them (Task 3 brings them in). Commit whatever `go mod tidy` produces; do not hand-edit `go.sum`.
 
 - [ ] **Step 3: Create a minimal `main.go` that compiles**
 
@@ -133,7 +137,7 @@ func run(root, format string, out *os.File) error {
 
 - [ ] **Step 4: Confirm it builds**
 
-Run: `cd scripts/configaudit && go build ./...`
+Run: `GOWORK=off go build ./scripts/configaudit/...` (from repo root) or `cd scripts/configaudit && GOWORK=off go build ./...`
 Expected: exits 0, no output.
 
 - [ ] **Step 5: Commit**
@@ -247,7 +251,7 @@ func writeFile(path string, data []byte) error {
 
 - [ ] **Step 2: Run the tests to confirm they fail**
 
-Run: `cd scripts/configaudit && go test ./...`
+Run: `cd scripts/configaudit && GOWORK=off go test ./...`
 Expected: FAIL with `undefined: loadKnown`.
 
 - [ ] **Step 3: Implement `loadKnown`**
@@ -307,7 +311,7 @@ func loadKnown(path string) (map[string]struct{}, error) {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd scripts/configaudit && go test ./...`
+Run: `cd scripts/configaudit && GOWORK=off go test ./...`
 Expected: PASS, all four tests green.
 
 - [ ] **Step 5: Commit**
@@ -382,7 +386,7 @@ func TestLoadMigrated_ResolvesPackageConstants(t *testing.T) {
 
 - [ ] **Step 2: Run the test, confirm it fails**
 
-Run: `cd scripts/configaudit && go test -run TestLoadMigrated ./...`
+Run: `cd scripts/configaudit && GOWORK=off go test -run TestLoadMigrated ./...`
 Expected: FAIL with `undefined: loadMigrated`.
 
 - [ ] **Step 3: Implement `loadMigrated` using `go/packages` + `go/types`**
@@ -509,7 +513,7 @@ func packageErrors(pkgs []*packages.Package) []error {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd scripts/configaudit && go test -run TestLoadMigrated ./...`
+Run: `cd scripts/configaudit && GOWORK=off go test -run TestLoadMigrated ./...`
 Expected: PASS, both tests green.
 
 - [ ] **Step 5: Commit**
@@ -643,7 +647,7 @@ func TestScan_RealRepoTracerHasUnmigratedReads(t *testing.T) {
 
 - [ ] **Step 3: Run the test, confirm it fails**
 
-Run: `cd scripts/configaudit && go test -run TestScan ./...`
+Run: `cd scripts/configaudit && GOWORK=off go test -run TestScan ./...`
 Expected: FAIL with `undefined: scan` (and friends).
 
 - [ ] **Step 4: Implement the scanner**
@@ -822,7 +826,7 @@ func callIdentity(pkg *packages.Package, call *ast.CallExpr, r recognizers) (str
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cd scripts/configaudit && go test -run TestScan ./... -timeout 5m`
+Run: `cd scripts/configaudit && GOWORK=off go test -run TestScan ./... -timeout 5m`
 
 Expected: PASS, both tests green. The real-repo test takes 30-90s the first time because `packages.Load("./...")` builds the whole module.
 
@@ -936,7 +940,7 @@ func wantEq(t *testing.T, label string, got, want []string) {
 
 - [ ] **Step 2: Run the test to confirm it fails**
 
-Run: `cd scripts/configaudit && go test -run "TestClassify|TestRender" ./...`
+Run: `cd scripts/configaudit && GOWORK=off go test -run "TestClassify|TestRender" ./...`
 Expected: FAIL with `undefined: classify, AuditResult, ConfigEntry, renderTable, renderJSON`.
 
 - [ ] **Step 3: Implement the classifier and renderers**
@@ -1087,12 +1091,12 @@ func run(root, format string, out io.Writer) error {
 
 - [ ] **Step 5: Run the full test suite**
 
-Run: `cd scripts/configaudit && go test ./... -timeout 5m`
+Run: `cd scripts/configaudit && GOWORK=off go test ./... -timeout 5m`
 Expected: PASS, all tests green.
 
 - [ ] **Step 6: Smoke-test the binary end-to-end**
 
-Run: `cd scripts/configaudit && go run . -root ../.. -format table | head -30`
+Run: `cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table | head -30`
 Expected: shows `STATUS / CONFIG / CALL_SITES` table with `UNMIGRATED` rows like `DD_SITE`, `DD_APP_KEY`, etc., ending in a `SUMMARY` line.
 
 - [ ] **Step 7: Commit**
@@ -1142,7 +1146,7 @@ backing the migration tracked in [internal/config/README.md](../../internal/conf
 make config-audit
 
 # JSON for further processing
-go run ./scripts/configaudit -root . -format json > /tmp/audit.json
+GOWORK=off go run ./scripts/configaudit -root . -format json > /tmp/audit.json
 ```
 
 ## CI
@@ -1159,7 +1163,7 @@ Modify `Makefile`. Append at the end of the file:
 ```makefile
 .PHONY: config-audit
 config-audit: ## Report which DD_* configs are migrated to internal/config
-	@go run ./scripts/configaudit -root . -format table
+	@GOWORK=off go run ./scripts/configaudit -root . -format table
 ```
 
 - [ ] **Step 4: Verify the make target works**
@@ -1221,8 +1225,8 @@ jobs:
       - name: Run config audit
         run: |
           mkdir -p out
-          go run ./scripts/configaudit -root . -format json > out/audit.json
-          go run ./scripts/configaudit -root . -format table | tee out/audit.txt
+          GOWORK=off go run ./scripts/configaudit -root . -format json > out/audit.json
+          GOWORK=off go run ./scripts/configaudit -root . -format table | tee out/audit.txt
       - name: Upload audit artifact
         uses: actions/upload-artifact@v4
         with:
@@ -1261,8 +1265,8 @@ The committed snapshot serves three purposes: (a) a clear "what's left" document
 Run from repo root:
 
 ```bash
-go run ./scripts/configaudit -root . -format table > /tmp/audit-table.txt
-go run ./scripts/configaudit -root . -format json   > /tmp/audit.json
+GOWORK=off go run ./scripts/configaudit -root . -format table > /tmp/audit-table.txt
+GOWORK=off go run ./scripts/configaudit -root . -format json   > /tmp/audit.json
 wc -l /tmp/audit-table.txt /tmp/audit.json
 ```
 
