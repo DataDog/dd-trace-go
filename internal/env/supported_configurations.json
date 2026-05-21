@@ -280,6 +280,13 @@
         "default": "true"
       }
     ],
+    "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED": [
       {
         "implementation": "A",
