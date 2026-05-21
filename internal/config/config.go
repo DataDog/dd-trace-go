@@ -78,7 +78,10 @@ type Config struct {
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr *url.URL
-	debug         bool
+	// dogstatsdEnvPortSet is true when env explicitly set the dogstatsd port
+	// at loadConfig time; gates SetAgentReportedStatsdPort.
+	dogstatsdEnvPortSet bool
+	debug               bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
 	// serviceName specifies the name of this application.
@@ -203,7 +206,7 @@ func loadConfig() *Config {
 
 	dogstatsdEnvHost := p.GetString("DD_DOGSTATSD_HOST", "")
 	dogstatsdEnvPort := p.GetString("DD_DOGSTATSD_PORT", "")
-	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdEnvHost, dogstatsdEnvPort, agentHost, DefaultSocketDSDPath)
+	cfg.dogstatsdAddr, cfg.dogstatsdEnvPortSet = initialDogstatsdURL(dogstatsdEnvHost, dogstatsdEnvPort, agentHost, DefaultSocketDSDPath)
 
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
@@ -396,9 +399,9 @@ func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product 
 	configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
 }
 
-// SetAgentReportedStatsdPort fills the URL port from the agent /info value.
-// No-op when the user claimed DD_DOGSTATSD_URL, the URL is a unix socket, or
-// a port is already set.
+// SetAgentReportedStatsdPort overwrites the URL port with the agent /info
+// value. No-op when the user claimed DD_DOGSTATSD_URL, the URL is a unix
+// socket, or env already set the port.
 func (c *Config) SetAgentReportedStatsdPort(port int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -411,14 +414,10 @@ func (c *Config) SetAgentReportedStatsdPort(port int) {
 	if c.dogstatsdAddr == nil || c.dogstatsdAddr.Scheme == "unix" {
 		return
 	}
-	if c.dogstatsdAddr.Port() != "" {
+	if c.dogstatsdEnvPortSet {
 		return
 	}
-	host := c.dogstatsdAddr.Hostname()
-	if host == "" {
-		host = internal.DefaultAgentHostname
-	}
-	c.dogstatsdAddr.Host = net.JoinHostPort(host, strconv.Itoa(port))
+	c.dogstatsdAddr.Host = net.JoinHostPort(c.dogstatsdAddr.Hostname(), strconv.Itoa(port))
 	configtelemetry.Report("DD_DOGSTATSD_URL", formatDogstatsdAddr(c.dogstatsdAddr), telemetry.OriginCalculated)
 }
 

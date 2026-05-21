@@ -161,7 +161,7 @@ func TestDogstatsdAddrResolution(t *testing.T) {
 
 			c := CreateNew()
 			if tt.userAddr != "" {
-				c.SetDogstatsdAddr(tt.userAddr, telemetry.OriginCode)
+				c.SetDogstatsdAddr(tt.userAddr, telemetry.OriginCode, ProductTracer)
 			}
 			c.SetAgentReportedStatsdPort(tt.agentStatsdPort)
 			assert.Equal(t, tt.expected, c.DogstatsdAddr())

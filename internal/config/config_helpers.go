@@ -186,23 +186,33 @@ func detectUDSURL() *url.URL {
 }
 
 // initialDogstatsdURL builds the resolved DogStatsD URL from env inputs.
-// Convention: empty Port means no source explicitly set it; empty Host
-// means no source explicitly set it. The getter fills defaults at read time.
-func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) *url.URL {
+// The returned URL is always complete (host+port for TCP, or unix scheme +
+// path for UDS). The bool reports whether env explicitly set the port; used
+// by SetAgentReportedStatsdPort to decide whether to override later.
+func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) (*url.URL, bool) {
+	envPortSet := envPort != ""
 	if envHost != "" || envPort != "" {
 		host := envHost
 		if host == "" {
 			host = agentHost
 		}
-		if envPort != "" {
-			return &url.URL{Host: net.JoinHostPort(host, envPort)}
+		if host == "" {
+			host = internal.DefaultAgentHostname
 		}
-		return &url.URL{Host: host}
+		port := envPort
+		if port == "" {
+			port = DefaultStatsdPort
+		}
+		return &url.URL{Host: net.JoinHostPort(host, port)}, envPortSet
 	}
 	if _, err := os.Stat(socketPath); err == nil {
-		return &url.URL{Scheme: URLSchemeUnix, Path: socketPath}
+		return &url.URL{Scheme: URLSchemeUnix, Path: socketPath}, false
 	}
-	return &url.URL{Host: agentHost}
+	host := agentHost
+	if host == "" {
+		host = internal.DefaultAgentHostname
+	}
+	return &url.URL{Host: net.JoinHostPort(host, DefaultStatsdPort)}, false
 }
 
 // parseDogstatsdAddr accepts "host:port" or "unix:///path/to/socket".
@@ -215,24 +225,15 @@ func parseDogstatsdAddr(addr string) *url.URL {
 	return &url.URL{Host: addr}
 }
 
-// formatDogstatsdAddr renders the URL for NewStatsdClient, filling defaults
-// when host or port are unset.
+// formatDogstatsdAddr renders the URL for NewStatsdClient.
 func formatDogstatsdAddr(u *url.URL) string {
 	if u == nil {
-		return net.JoinHostPort(internal.DefaultAgentHostname, DefaultStatsdPort)
+		return ""
 	}
 	if u.Scheme == URLSchemeUnix {
 		return "unix://" + u.Path
 	}
-	host := u.Hostname()
-	if host == "" {
-		host = internal.DefaultAgentHostname
-	}
-	port := u.Port()
-	if port == "" {
-		port = DefaultStatsdPort
-	}
-	return net.JoinHostPort(host, port)
+	return u.Host
 }
 
 
