@@ -10,7 +10,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 )
 
 func main() {
@@ -26,9 +28,26 @@ func main() {
 	}
 }
 
-func run(root, format string, out *os.File) error {
-	_ = root
-	_ = format
-	_ = out
-	return nil
+func run(root, format string, out io.Writer) error {
+	known, err := loadKnown(filepath.Join(root, "internal", "env", "supported_configurations.json"))
+	if err != nil {
+		return err
+	}
+	migrated, err := loadMigrated(filepath.Join(root, "internal", "config"))
+	if err != nil {
+		return err
+	}
+	reads, err := scan(root, defaultRecognizers(), defaultExcludes(root))
+	if err != nil {
+		return err
+	}
+	res := classify(known, migrated, reads)
+	switch format {
+	case "json":
+		return renderJSON(out, res)
+	case "table":
+		return renderTable(out, res)
+	default:
+		return fmt.Errorf("unknown format %q", format)
+	}
 }
