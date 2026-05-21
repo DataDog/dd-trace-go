@@ -54,7 +54,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "trace_agent_url", Value: c.internalConfig.AgentURL().String()},
 		{Name: "agent_hostname", Value: c.internalConfig.Hostname()},
 		{Name: "runtime_metrics_v2_enabled", Value: c.internalConfig.RuntimeMetricsV2Enabled()},
-		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
+		{Name: "dogstatsd_addr", Value: c.internalConfig.DogstatsdAddr()},
 		{Name: "profiling_endpoints_enabled", Value: c.internalConfig.ProfilerEndpoints()},
 		{Name: "debug_stack_enabled", Value: c.internalConfig.DebugStack()},
 		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspotsEnabled()},

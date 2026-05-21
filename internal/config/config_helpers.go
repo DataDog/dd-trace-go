@@ -16,6 +16,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
+// DefaultSocketDSDPath is the UDS socket path probed during DogStatsD
+// auto-discovery. Exported as a var so tests can override the location;
+// production code must not modify it.
+var DefaultSocketDSDPath = "/var/run/datadog/dsd.socket"
+
 const (
 	// DefaultRateLimit specifies the default rate limit per second for traces.
 	// TODO: Maybe delete this. We will have defaults in supported_configuration.json anyway.
@@ -42,6 +47,10 @@ const (
 	URLSchemeUnix  = "unix"
 	URLSchemeHTTP  = "http"
 	URLSchemeHTTPS = "https"
+
+	// DefaultStatsdPort is the default port for the DogStatsD service when no
+	// other source provides one.
+	DefaultStatsdPort = "8125"
 
 	// Trace API paths appended to the agent URL for each protocol.
 	TracesPathV04 = "/v0.4/traces"
@@ -178,6 +187,69 @@ func detectUDSURL() *url.URL {
 		Path:   internal.DefaultTraceAgentUDSPath,
 	}
 }
+
+// initialDogstatsdURL builds the resolved DogStatsD URL at loadConfig time
+// from the env-sourced inputs. The URL is canonical:
+//   - Scheme "unix" with Path means UDS auto-discovery found a socket.
+//   - Empty Port means no source has explicitly set a port; the getter or a
+//     later SetAgentReportedStatsdPort fills it.
+//   - Empty Host means no source has explicitly set a host; the getter fills
+//     in the default.
+//
+// Priority follows the legacy resolveDogstatsdAddr:
+//  1. DD_DOGSTATSD_HOST / DD_DOGSTATSD_PORT (with DD_AGENT_HOST as host
+//     fallback).
+//  2. UDS socket at socketPath if it exists.
+//  3. Otherwise leave Host empty and Port empty for the getter to default.
+func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) *url.URL {
+	if envHost != "" || envPort != "" {
+		host := envHost
+		if host == "" {
+			host = agentHost
+		}
+		if envPort != "" {
+			return &url.URL{Host: net.JoinHostPort(host, envPort)}
+		}
+		return &url.URL{Host: host}
+	}
+	if _, err := os.Stat(socketPath); err == nil {
+		return &url.URL{Scheme: URLSchemeUnix, Path: socketPath}
+	}
+	return &url.URL{Host: agentHost}
+}
+
+// parseDogstatsdAddr converts a user-supplied DogStatsD address (e.g. from
+// WithDogstatsdAddr) into the canonical URL form. Accepts "host:port" or
+// "unix:///path/to/socket".
+func parseDogstatsdAddr(addr string) *url.URL {
+	if strings.HasPrefix(addr, "unix://") {
+		if u, err := url.Parse(addr); err == nil {
+			return u
+		}
+	}
+	return &url.URL{Host: addr}
+}
+
+// formatDogstatsdAddr renders a DogStatsD URL into the string form expected
+// by NewStatsdClient. Defaults are filled in here when the URL omits them.
+func formatDogstatsdAddr(u *url.URL) string {
+	if u == nil {
+		return net.JoinHostPort(internal.DefaultAgentHostname, DefaultStatsdPort)
+	}
+	if u.Scheme == URLSchemeUnix {
+		return "unix://" + u.Path
+	}
+	host := u.Hostname()
+	if host == "" {
+		host = internal.DefaultAgentHostname
+	}
+	port := u.Port()
+	if port == "" {
+		port = DefaultStatsdPort
+	}
+	return net.JoinHostPort(host, port)
+}
+
 
 // resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set, else agentURL host + default OTLP port 4318 + /v1/traces.
 // When the user-provided endpoint is set, it is validated: it must be a parseable URL with an http or https scheme.
