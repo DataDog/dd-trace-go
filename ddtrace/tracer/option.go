@@ -280,9 +280,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.sampler = NewAllSampler()
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
-	if v := env.Get("OTEL_LOGS_EXPORTER"); v != "" {
-		log.Warn("OTEL_LOGS_EXPORTER is not supported")
-	}
 	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
