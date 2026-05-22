@@ -1040,7 +1040,7 @@ func TestIssue2050(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: &roundTripper{
 			assertSpanFromRequest: func(r *http.Request) {
-				if r.URL.Path != "/v0.4/traces" {
+				if r.URL.Path != "/v0.4/traces" && r.URL.Path != "/v1.0/traces" {
 					return
 				}
 				req := r.Clone(context.Background())
@@ -1049,26 +1049,46 @@ func TestIssue2050(t *testing.T) {
 				buf, err := io.ReadAll(req.Body)
 				require.NoError(t, err)
 
-				var payload bytes.Buffer
-				_, err = msgp.UnmarshalAsJSON(&payload, buf)
-				require.NoError(t, err)
+				if r.URL.Path == "/v1.0/traces" {
+					var trace map[string]interface{}
+					trace = testutils.DecodeV1Traces(t, buf)
+					chunks, ok := trace["11"].([]interface{})
+					if !ok || len(chunks) == 0 {
+						return
+					}
+					require.Len(t, chunks, 2)
+					getFirstSpan := func(c interface{}) map[string]interface{} {
+						return c.(map[string]interface{})["4"].([]interface{})[0].(map[string]interface{})
+					}
+					s0 := getFirstSpan(chunks[0])
+					s1 := getFirstSpan(chunks[1])
+					assert.Equal(t, "some-dd-service", s0["1"])
+					assert.Equal(t, "grpc.client", s1["1"])
+					assert.EqualValues(t, 2, s0["16"]) // server
+					assert.EqualValues(t, 3, s1["16"]) // client
+				} else {
+					// allow fallback to v0.4
+					var payload bytes.Buffer
+					_, err = msgp.UnmarshalAsJSON(&payload, buf)
+					require.NoError(t, err)
 
-				var trace [][]map[string]interface{}
-				err = json.Unmarshal(payload.Bytes(), &trace)
-				require.NoError(t, err)
+					var trace [][]map[string]interface{}
+					err = json.Unmarshal(payload.Bytes(), &trace)
+					require.NoError(t, err)
 
-				if len(trace) == 0 {
-					return
+					if len(trace) == 0 {
+						return
+					}
+					require.Len(t, trace, 2)
+					s0 := trace[0][0]
+					s1 := trace[1][0]
+
+					assert.Equal(t, "server", s0["meta"].(map[string]interface{})["span.kind"])
+					assert.Equal(t, "some-dd-service", s0["service"])
+
+					assert.Equal(t, "client", s1["meta"].(map[string]interface{})["span.kind"])
+					assert.Equal(t, "grpc.client", s1["service"])
 				}
-				require.Len(t, trace, 2)
-				s0 := trace[0][0]
-				s1 := trace[1][0]
-
-				assert.Equal(t, "server", s0["meta"].(map[string]interface{})["span.kind"])
-				assert.Equal(t, "some-dd-service", s0["service"])
-
-				assert.Equal(t, "client", s1["meta"].(map[string]interface{})["span.kind"])
-				assert.Equal(t, "grpc.client", s1["service"])
 				close(spansFound)
 			},
 		},

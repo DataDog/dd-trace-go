@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -722,6 +723,9 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMetaLocked(keyTraceID128, s.context.traceID.UpperHex())
 	}
+	if pTags := processtags.GlobalTags().String(); pTags != "" {
+		s.setMetaLocked(keyProcessTags, pTags)
+	}
 }
 
 // updateTracerGitMetadataTags updates the tracer git metadata tags on the given span.
@@ -825,29 +829,37 @@ func (t *trace) finishedOneLocked(s *Span) {
 	log.Debug("Partial flush triggered with %d finished spans", t.finished)
 	telemetry.Count(telemetry.NamespaceTracers, "trace_partial_flush.count", []string{"reason:large_trace"}).Submit(1)
 
+	// Partition spans in-place: finished spans go to finishedSpans, unfinished
+	// spans are compacted to the front of t.spans. This avoids a separate
+	// leftoverSpans allocation on every partial flush trigger.
+	originalFirst := t.spans[0]
 	finishedSpans := make([]*Span, 0, t.finished)
-	leftoverSpans := make([]*Span, 0, len(t.spans)-t.finished)
+	leftIdx := 0
 	for _, s2 := range t.spans {
 		if s2.finished {
 			finishedSpans = append(finishedSpans, s2)
 		} else {
-			leftoverSpans = append(leftoverSpans, s2)
+			t.spans[leftIdx] = s2
+			leftIdx++
 		}
 	}
 
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
-	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(len(leftoverSpans)))
+	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(leftIdx))
 
 	// #incident-46344 -- if we set metrics and tags on a different span than what was passed into this function,
 	// we need to lock this new span. However, to preserve lock ordering (span.mu -> trace.mu), we must
 	// release trace.mu before acquiring fSpan.mu.
 	fSpan := finishedSpans[0]
 	currentSpanIsFirstInChunk := s == fSpan
-	needsFirstSpanTags := s != t.spans[0]
+	needsFirstSpanTags := s != originalFirst
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
-	t.spans = leftoverSpans
+	// Clear the tail so the GC can collect the flushed spans; without this the
+	// backing array retains pointers past len(t.spans) and keeps them alive.
+	clear(t.spans[leftIdx:])
+	t.spans = t.spans[:leftIdx]
 	t.finished = 0 // important, because a buffer can be used for several flushes
 	t.mu.Unlock()
 

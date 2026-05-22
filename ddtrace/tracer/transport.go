@@ -19,6 +19,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/tinylib/msgp/msgp"
@@ -38,6 +39,9 @@ const (
 	defaultHTTPTimeout       = 10 * time.Second              // defines the current timeout before giving up with the send process
 	traceCountHeader         = "X-Datadog-Trace-Count"       // header containing the number of traces in the payload
 	obfuscationVersionHeader = "Datadog-Obfuscation-Version" // header containing the version of obfuscation used, if any
+	containerIDHeader        = "Datadog-Container-ID"
+	entityIDHeader           = "Datadog-Entity-ID"
+	containerTagsHashHeader  = "Datadog-Container-Tags-Hash"
 
 	tracesAPIPath   = "/v0.4/traces"
 	tracesAPIPathV1 = "/v1.0/traces"
@@ -87,15 +91,30 @@ func datadogHeaders() map[string]string {
 		"Content-Type":                  "application/msgpack",
 	}
 	if cid := internal.ContainerID(); cid != "" {
-		h["Datadog-Container-ID"] = cid
+		h[containerIDHeader] = cid
 	}
 	if eid := internal.EntityID(); eid != "" {
-		h["Datadog-Entity-ID"] = eid
+		h[entityIDHeader] = eid
 	}
 	if extEnv := internal.ExternalEnvironment(); extEnv != "" {
 		h["Datadog-External-Env"] = extEnv
 	}
 	return h
+}
+
+func setContainerHeaders(h http.Header) {
+	if cid := internal.ContainerID(); cid != "" {
+		h.Set(containerIDHeader, cid)
+	}
+	if eid := internal.EntityID(); eid != "" {
+		h.Set(entityIDHeader, eid)
+	}
+}
+
+func updateContainerTagsHash(h http.Header) {
+	if hash := h.Get(containerTagsHashHeader); hash != "" {
+		processtags.SetContainerTagsHash(hash)
+	}
 }
 
 func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVersion int) error {

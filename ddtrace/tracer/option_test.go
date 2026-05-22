@@ -1989,6 +1989,7 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newTestConfig(WithStatsComputation(false))
 		assert.NoError(err)
 		assert.False(c.internalConfig.StatsComputationEnabled())
+		assert.Equal(traceProtocolV04, c.internalConfig.TraceProtocol())
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)

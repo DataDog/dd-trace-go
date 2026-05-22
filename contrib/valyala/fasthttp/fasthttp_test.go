@@ -32,6 +32,10 @@ func ignoreResources(fctx *fasthttp.RequestCtx) bool {
 }
 
 func startServer(t *testing.T, opts ...Option) string {
+	return startServerWithConfig(t, nil, opts...)
+}
+
+func startServerWithConfig(t *testing.T, configure func(*fasthttp.Server), opts ...Option) string {
 	router := WrapHandler(func(fctx *fasthttp.RequestCtx) {
 		switch string(fctx.Path()) {
 		case "/any":
@@ -63,6 +67,9 @@ func startServer(t *testing.T, opts ...Option) string {
 	addr := ln.Addr()
 	server := &fasthttp.Server{
 		Handler: router,
+	}
+	if configure != nil {
+		configure(server)
 	}
 	go func() {
 		require.NoError(t, server.Serve(ln))
@@ -262,4 +269,54 @@ func TestPropagation(t *testing.T) {
 	one := spans[0]
 	two := spans[1]
 	assert.Equal(one.TraceID(), two.TraceID())
+}
+
+func TestSecurityTestingHeaders(t *testing.T) {
+	assert := assert.New(t)
+	addr := startServer(t)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	req, err := http.NewRequest("GET", addr+"/any", nil)
+	require.NoError(t, err)
+	req.Header.Set("x-datadog-endpoint-scan", "true")
+	req.Header.Set("x-datadog-security-test", "test-value")
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	span := spans[0]
+	assert.Equal("true", span.Tag(ext.HTTPRequestHeaders+".x-datadog-endpoint-scan"))
+	assert.Equal("test-value", span.Tag(ext.HTTPRequestHeaders+".x-datadog-security-test"))
+}
+
+func TestSecurityTestingHeadersWithDisabledHeaderNamesNormalizing(t *testing.T) {
+	assert := assert.New(t)
+	addr := startServerWithConfig(t, func(server *fasthttp.Server) {
+		server.DisableHeaderNamesNormalizing = true
+	})
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	req, err := http.NewRequest("GET", addr+"/any", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Datadog-Endpoint-Scan", "true")
+	req.Header.Set("X-Datadog-Security-Test", "test-value")
+
+	resp, err := (&http.Client{}).Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+
+	span := spans[0]
+	assert.Equal("true", span.Tag(ext.HTTPRequestHeaders+".x-datadog-endpoint-scan"))
+	assert.Equal("test-value", span.Tag(ext.HTTPRequestHeaders+".x-datadog-security-test"))
 }
