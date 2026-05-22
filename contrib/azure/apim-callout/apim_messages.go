@@ -22,6 +22,10 @@ var (
 	_ proxy.RequestHeaders  = (*messageRequestHeaders)(nil)
 	_ proxy.ResponseHeaders = (*messageResponseHeaders)(nil)
 	_ proxy.HTTPBody        = (*messageBody)(nil)
+
+	// errBodySizeExceeded is returned when a base64-encoded inline body
+	// exceeds the configured body parsing size limit.
+	errBodySizeExceeded = errors.New("apim_callout: inline body exceeds body parsing size limit")
 )
 
 // calloutMessage represents the JSON body sent by the gateway on POST /.
@@ -212,7 +216,9 @@ func hasRawBody(raw json.RawMessage) bool {
 // decodeRawBase64Body extracts the JSON string from a json.RawMessage and
 // base64-decodes its content in place without intermediate copies.
 // Returns nil if the raw message is empty/null.
-func decodeRawBase64Body(raw json.RawMessage) ([]byte, error) {
+// When maxDecodedSize > 0, the function returns errBodySizeExceeded if the
+// decoded body would exceed the limit, preventing unbounded memory allocation.
+func decodeRawBase64Body(raw json.RawMessage, maxDecodedSize int) ([]byte, error) {
 	first := bytes.IndexByte(raw, '"')
 	if first < 0 {
 		return nil, nil
@@ -222,7 +228,11 @@ func decodeRawBase64Body(raw json.RawMessage) ([]byte, error) {
 		return nil, nil
 	}
 	src := raw[first+1 : last]
-	dst := make([]byte, base64.StdEncoding.DecodedLen(len(src)))
+	decodedLen := base64.StdEncoding.DecodedLen(len(src))
+	if maxDecodedSize > 0 && decodedLen > maxDecodedSize {
+		return nil, errBodySizeExceeded
+	}
+	dst := make([]byte, decodedLen)
 	n, err := base64.StdEncoding.Decode(dst, src)
 	if err != nil {
 		return nil, err

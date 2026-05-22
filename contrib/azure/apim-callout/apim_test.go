@@ -250,22 +250,28 @@ func TestMethodNotAllowed(t *testing.T) {
 
 func TestDecodeRawBase64Body(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   json.RawMessage
-		want    []byte
-		wantErr bool
+		name           string
+		input          json.RawMessage
+		maxDecodedSize int
+		want           []byte
+		wantErr        bool
+		wantSizeErr    bool
 	}{
-		{"nil", nil, nil, false},
-		{"null", json.RawMessage("null"), nil, false},
-		{"empty-string", json.RawMessage(`""`), nil, false},
-		{"valid", json.RawMessage(`"aGVsbG8="`), []byte("hello"), false},
-		{"invalid", json.RawMessage(`"not-valid-base64!!!"`), nil, true},
+		{"nil", nil, 0, nil, false, false},
+		{"null", json.RawMessage("null"), 0, nil, false, false},
+		{"empty-string", json.RawMessage(`""`), 0, nil, false, false},
+		{"valid", json.RawMessage(`"aGVsbG8="`), 0, []byte("hello"), false, false},
+		{"invalid", json.RawMessage(`"not-valid-base64!!!"`), 0, nil, true, false},
+		{"valid-within-limit", json.RawMessage(`"aGVsbG8="`), 100, []byte("hello"), false, false},
+		{"valid-exceeds-limit", json.RawMessage(`"aGVsbG8="`), 2, nil, true, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := decodeRawBase64Body(tt.input)
-			if tt.wantErr {
+			got, err := decodeRawBase64Body(tt.input, tt.maxDecodedSize)
+			if tt.wantSizeErr {
+				assert.ErrorIs(t, err, errBodySizeExceeded)
+			} else if tt.wantErr {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
@@ -273,6 +279,37 @@ func TestDecodeRawBase64Body(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOversizedInlineBodyFailsOpen(t *testing.T) {
+	bodyLimit := 16
+	h := NewHandler(AppsecAPIMConfig{
+		Context:              t.Context(),
+		BodyParsingSizeLimit: &bodyLimit,
+	})
+
+	tracer.Start()
+	t.Cleanup(tracer.Stop)
+
+	largePayload := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte("A"), 64))
+	rr := doPost(t, h, calloutMessage{
+		Addresses: marshalAddresses(t, addressesRequestHeaders{
+			Method:    "POST",
+			Scheme:    "https",
+			Authority: "datadoghq.com",
+			Path:      "/api/data",
+			Headers: map[string][]string{
+				"User-Agent":   {"Mozilla/5.0"},
+				"Content-Type": {"application/json"},
+			},
+			Body: rawBody(largePayload),
+		}),
+	})
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	result := decodeResult(t, rr)
+	assert.Nil(t, result.Block, "oversized inline body should fail open")
+	assert.NotEmpty(t, result.RequestID, "request should still be processed")
 }
 
 // AppSec tests -- these use DD_APPSEC_RULES to test WAF detection and blocking.
