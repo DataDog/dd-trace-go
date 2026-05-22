@@ -204,9 +204,9 @@ func loadConfig() *Config {
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
 
-	dogstatsdEnvHost := p.GetString("DD_DOGSTATSD_HOST", "")
-	dogstatsdEnvPort := p.GetString("DD_DOGSTATSD_PORT", "")
-	cfg.dogstatsdAddr, cfg.dogstatsdEnvPortSet = initialDogstatsdURL(dogstatsdEnvHost, dogstatsdEnvPort, agentHost, DefaultSocketDSDPath)
+	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
+	dogstatsdPort := p.GetString("DD_DOGSTATSD_PORT", "")
+	cfg.dogstatsdAddr, cfg.dogstatsdEnvPortSet = initialDogstatsdURL(dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
 
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
@@ -400,8 +400,8 @@ func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product 
 }
 
 // ApplyAgentReportedStatsdPort overwrites the URL port with the agent /info
-// value. No-op when the user claimed DD_DOGSTATSD_URL, the URL is a unix
-// socket, or env already set the port.
+// value. No-op when the user explicitly configured via DD_DOGSTATSD_PORT or DD_DOGSTATSD_URL, and if the URL is a unix
+// socket.
 func (c *Config) ApplyAgentReportedStatsdPort(port int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
