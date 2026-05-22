@@ -1023,7 +1023,6 @@ func TestDefaultHTTPClient(t *testing.T) {
 	})
 }
 
-
 func TestServiceName(t *testing.T) {
 	t.Run("WithService", func(t *testing.T) {
 		defer globalconfig.SetServiceName("")

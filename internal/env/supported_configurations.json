@@ -368,7 +368,7 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": "http://localhost:8125"
       }
     ],
     "DD_DYNAMIC_INSTRUMENTATION_ENABLED": [

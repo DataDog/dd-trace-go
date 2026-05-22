@@ -236,7 +236,6 @@ func formatDogstatsdAddr(u *url.URL) string {
 	return u.Host
 }
 
-
 // resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set, else agentURL host + default OTLP port 4318 + /v1/traces.
 // When the user-provided endpoint is set, it is validated: it must be a parseable URL with an http or https scheme.
 // If validation fails, the default endpoint is used instead.
