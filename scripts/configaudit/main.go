@@ -17,18 +17,19 @@ import (
 
 func main() {
 	var (
-		root   = flag.String("root", ".", "repository root")
-		format = flag.String("format", "table", "output format: table or json")
+		root    = flag.String("root", ".", "repository root")
+		format  = flag.String("format", "table", "output format: table or json")
+		pkgPref = flag.String("package", "", "restrict output to call sites whose package path (relative to the module root) starts with this prefix")
 	)
 	flag.Parse()
 
-	if err := run(*root, *format, os.Stdout); err != nil {
+	if err := run(*root, *format, *pkgPref, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "configaudit:", err)
 		os.Exit(1)
 	}
 }
 
-func run(root, format string, out io.Writer) error {
+func run(root, format, pkgPrefix string, out io.Writer) error {
 	known, err := loadKnown(filepath.Join(root, "internal", "env", "supported_configurations.json"))
 	if err != nil {
 		return err
@@ -41,6 +42,7 @@ func run(root, format string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	reads = filterByPackage(reads, pkgPrefix)
 	res := classify(known, migrated, reads)
 	switch format {
 	case "json":

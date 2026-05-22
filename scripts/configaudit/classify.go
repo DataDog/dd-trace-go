@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"text/tabwriter"
 )
 
@@ -65,20 +66,89 @@ func renderJSON(w io.Writer, res AuditResult) error {
 	return enc.Encode(res)
 }
 
+// pkgRow is one row in the per-package view: a status, env var name, and
+// the number of call sites in this package.
+type pkgRow struct {
+	Status string
+	Name   string
+	Count  int
+}
+
+// groupByPackage walks the bucketed audit result and produces a
+// package -> []pkgRow map. Buckets without call sites (Migrated) are not
+// represented, since they have nothing to attribute to a package.
+func groupByPackage(res AuditResult) map[string][]pkgRow {
+	out := map[string][]pkgRow{}
+	add := func(status string, entries []ConfigEntry) {
+		for _, e := range entries {
+			counts := map[string]int{}
+			for _, cs := range e.CallSites {
+				counts[cs.Package]++
+			}
+			for pkg, n := range counts {
+				out[pkg] = append(out[pkg], pkgRow{Status: status, Name: e.Name, Count: n})
+			}
+		}
+	}
+	add("UNMIGRATED", res.Unmigrated)
+	add("STILL_READ", res.MigratedButStillReadOutside)
+	add("UNTRACKED", res.Untracked)
+	return out
+}
+
+// shortPkg strips the dd-trace-go module prefix for readable rendering.
+func shortPkg(path string) string {
+	const prefix = "github.com/DataDog/dd-trace-go/v2/"
+	return strings.TrimPrefix(path, prefix)
+}
+
 func renderTable(w io.Writer, res AuditResult) error {
+	groups := groupByPackage(res)
+	pkgs := make([]string, 0, len(groups))
+	for p := range groups {
+		pkgs = append(pkgs, p)
+	}
+	sort.Strings(pkgs)
+
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(tw, "STATUS\tCONFIG\tCALL_SITES\n")
-	for _, e := range res.Unmigrated {
-		fmt.Fprintf(tw, "UNMIGRATED\t%s\t%d\n", e.Name, len(e.CallSites))
+	for i, pkg := range pkgs {
+		if i > 0 {
+			fmt.Fprintln(tw)
+		}
+		fmt.Fprintf(tw, "PACKAGE: %s\n", shortPkg(pkg))
+		fmt.Fprintf(tw, "  STATUS\tCONFIG\tCALL_SITES\n")
+		rows := groups[pkg]
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Status != rows[j].Status {
+				return rows[i].Status < rows[j].Status
+			}
+			return rows[i].Name < rows[j].Name
+		})
+		for _, r := range rows {
+			fmt.Fprintf(tw, "  %s\t%s\t%d\n", r.Status, r.Name, r.Count)
+		}
 	}
-	for _, e := range res.MigratedButStillReadOutside {
-		fmt.Fprintf(tw, "STILL_READ\t%s\t%d\n", e.Name, len(e.CallSites))
-	}
-	for _, e := range res.Untracked {
-		fmt.Fprintf(tw, "UNTRACKED\t%s\t%d\n", e.Name, len(e.CallSites))
-	}
-	fmt.Fprintf(tw, "---\n")
-	fmt.Fprintf(tw, "SUMMARY\tmigrated=%d\tunmigrated=%d\tuntracked=%d\tstill_read=%d\n",
-		len(res.Migrated), len(res.Unmigrated), len(res.Untracked), len(res.MigratedButStillReadOutside))
 	return tw.Flush()
+}
+
+// filterByPackage restricts the call-site map to call sites whose package
+// import path has the given prefix (after stripping the dd-trace-go module
+// prefix from both sides). An empty prefix returns reads unchanged.
+func filterByPackage(reads map[string][]CallSite, prefix string) map[string][]CallSite {
+	if prefix == "" {
+		return reads
+	}
+	out := make(map[string][]CallSite)
+	for key, sites := range reads {
+		var kept []CallSite
+		for _, cs := range sites {
+			if strings.HasPrefix(shortPkg(cs.Package), prefix) {
+				kept = append(kept, cs)
+			}
+		}
+		if len(kept) > 0 {
+			out[key] = kept
+		}
+	}
+	return out
 }

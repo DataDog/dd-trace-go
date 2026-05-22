@@ -19,6 +19,7 @@ func TestLoadMigrated_RealRepo(t *testing.T) {
 	// These are migrated as of the plan date.
 	for _, key := range []string{
 		"DD_SERVICE",
+		"DD_SITE",
 		"DD_TRACE_STARTUP_LOGS",
 		"DD_TRACE_AGENT_URL",
 		"DD_AGENT_HOST",
@@ -30,9 +31,9 @@ func TestLoadMigrated_RealRepo(t *testing.T) {
 			t.Errorf("expected %s in migrated set", key)
 		}
 	}
-	// DD_SITE has *not* been migrated yet.
-	if _, ok := got["DD_SITE"]; ok {
-		t.Errorf("did not expect DD_SITE to be in migrated set yet")
+	// DD_APPSEC_ENABLED is registered but not migrated to internal/config.
+	if _, ok := got["DD_APPSEC_ENABLED"]; ok {
+		t.Errorf("did not expect DD_APPSEC_ENABLED to be in migrated set yet")
 	}
 }
 

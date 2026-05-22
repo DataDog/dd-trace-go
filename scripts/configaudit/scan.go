@@ -16,9 +16,10 @@ import (
 
 // CallSite records where a DD_* env var was read.
 type CallSite struct {
-	File string
-	Line int
-	Func string // fully-qualified or fixture-local function name
+	File    string
+	Line    int
+	Func    string // fully-qualified or fixture-local function name
+	Package string // import path of the containing package
 }
 
 // recognizers describes how to identify env-reading function calls.
@@ -113,9 +114,10 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 				}
 				pos := pkg.Fset.Position(call.Pos())
 				out[key] = append(out[key], CallSite{
-					File: pos.Filename,
-					Line: pos.Line,
-					Func: funcID,
+					File:    pos.Filename,
+					Line:    pos.Line,
+					Func:    funcID,
+					Package: pkg.PkgPath,
 				})
 				return true
 			})

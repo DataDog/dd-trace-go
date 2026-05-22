@@ -39,15 +39,60 @@ func TestClassify(t *testing.T) {
 func TestRenderTable(t *testing.T) {
 	res := AuditResult{
 		Unmigrated: []ConfigEntry{
-			{Name: "DD_SITE", CallSites: []CallSite{{File: "a.go", Line: 1}}},
+			{Name: "DD_SITE", CallSites: []CallSite{
+				{File: "a.go", Line: 1, Package: "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"},
+			}},
+		},
+		MigratedButStillReadOutside: []ConfigEntry{
+			{Name: "DD_SERVICE", CallSites: []CallSite{
+				{File: "b.go", Line: 1, Package: "github.com/DataDog/dd-trace-go/v2/profiler"},
+			}},
 		},
 	}
 	var buf bytes.Buffer
 	if err := renderTable(&buf, res); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "DD_SITE") {
-		t.Fatalf("expected DD_SITE in table output, got %q", buf.String())
+	got := buf.String()
+	for _, want := range []string{
+		"PACKAGE: ddtrace/tracer",
+		"UNMIGRATED",
+		"DD_SITE",
+		"PACKAGE: profiler",
+		"STILL_READ",
+		"DD_SERVICE",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in table output, got:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "SUMMARY") {
+		t.Errorf("table should no longer include a SUMMARY line, got:\n%s", got)
+	}
+}
+
+func TestFilterByPackage(t *testing.T) {
+	reads := map[string][]CallSite{
+		"DD_SITE": {
+			{Package: "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"},
+			{Package: "github.com/DataDog/dd-trace-go/v2/profiler"},
+		},
+		"DD_FOO": {
+			{Package: "github.com/DataDog/dd-trace-go/v2/profiler"},
+		},
+	}
+	got := filterByPackage(reads, "ddtrace/tracer")
+	if len(got) != 1 {
+		t.Fatalf("expected 1 key after filter, got %d", len(got))
+	}
+	if sites, ok := got["DD_SITE"]; !ok || len(sites) != 1 {
+		t.Fatalf("expected DD_SITE with 1 tracer site, got %v", got)
+	}
+
+	// Empty prefix is a passthrough.
+	got = filterByPackage(reads, "")
+	if len(got) != 2 {
+		t.Fatalf("expected passthrough with 2 keys, got %d", len(got))
 	}
 }
 
