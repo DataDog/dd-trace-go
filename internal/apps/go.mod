@@ -80,7 +80,7 @@ require (
 require (
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

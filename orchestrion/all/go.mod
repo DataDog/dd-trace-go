@@ -46,7 +46,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.9.0-rc.2
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.9.0-rc.2
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.9.0-rc.2
-	github.com/DataDog/dd-trace-go/v2 v2.9.0-rc.2
+	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
 	github.com/DataDog/orchestrion v1.6.0
 )
 
