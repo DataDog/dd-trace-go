@@ -263,6 +263,7 @@ func TestDecodeRawBase64Body(t *testing.T) {
 		{"valid", json.RawMessage(`"aGVsbG8="`), 0, []byte("hello"), false, false},
 		{"invalid", json.RawMessage(`"not-valid-base64!!!"`), 0, nil, true, false},
 		{"valid-within-limit", json.RawMessage(`"aGVsbG8="`), 100, []byte("hello"), false, false},
+		{"valid-at-exact-limit", json.RawMessage(`"aGVsbG8="`), 5, []byte("hello"), false, false},
 		{"valid-exceeds-limit", json.RawMessage(`"aGVsbG8="`), 2, nil, true, true},
 	}
 

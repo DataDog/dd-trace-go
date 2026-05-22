@@ -229,13 +229,19 @@ func decodeRawBase64Body(raw json.RawMessage, maxDecodedSize int) ([]byte, error
 	}
 	src := raw[first+1 : last]
 	decodedLen := base64.StdEncoding.DecodedLen(len(src))
-	if maxDecodedSize > 0 && decodedLen > maxDecodedSize {
+	// DecodedLen is an upper bound that can overestimate by up to 2 bytes due to
+	// base64 padding. Allow this tolerance so bodies exactly at the limit aren't
+	// falsely rejected. The exact decoded size is checked after decoding below.
+	if maxDecodedSize > 0 && decodedLen > maxDecodedSize+2 {
 		return nil, errBodySizeExceeded
 	}
 	dst := make([]byte, decodedLen)
 	n, err := base64.StdEncoding.Decode(dst, src)
 	if err != nil {
 		return nil, err
+	}
+	if maxDecodedSize > 0 && n > maxDecodedSize {
+		return nil, errBodySizeExceeded
 	}
 	return dst[:n], nil
 }
