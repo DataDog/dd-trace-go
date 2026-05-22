@@ -188,7 +188,7 @@ func detectUDSURL() *url.URL {
 // initialDogstatsdURL builds the resolved DogStatsD URL from env inputs.
 // The returned URL is always complete (host+port for TCP, or unix scheme +
 // path for UDS). The bool reports whether env explicitly set the port; used
-// by SetAgentReportedStatsdPort to decide whether to override later.
+// by ApplyAgentReportedStatsdPort to decide whether to override later.
 func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) (*url.URL, bool) {
 	envPortSet := envPort != ""
 	if envHost != "" || envPort != "" {

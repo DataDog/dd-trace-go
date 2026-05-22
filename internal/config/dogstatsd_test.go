@@ -18,7 +18,7 @@ import (
 // TestDogstatsdAddrResolution exercises the full DogStatsD address
 // resolution path through internal/config: env-sourced inputs at loadConfig
 // time, an optional user-supplied address via SetDogstatsdAddr, and the
-// agent-reported port via SetAgentReportedStatsdPort.
+// agent-reported port via ApplyAgentReportedStatsdPort.
 func TestDogstatsdAddrResolution(t *testing.T) {
 	socketFile, err := os.CreateTemp("", "dsd.socket")
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestDogstatsdAddrResolution(t *testing.T) {
 			if tt.userAddr != "" {
 				c.SetDogstatsdAddr(tt.userAddr, telemetry.OriginCode, ProductTracer)
 			}
-			c.SetAgentReportedStatsdPort(tt.agentStatsdPort)
+			c.ApplyAgentReportedStatsdPort(tt.agentStatsdPort)
 			assert.Equal(t, tt.expected, c.DogstatsdAddr())
 		})
 	}

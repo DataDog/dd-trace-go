@@ -79,7 +79,7 @@ type Config struct {
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr *url.URL
 	// dogstatsdEnvPortSet is true when env explicitly set the dogstatsd port
-	// at loadConfig time; gates SetAgentReportedStatsdPort.
+	// at loadConfig time; gates ApplyAgentReportedStatsdPort.
 	dogstatsdEnvPortSet bool
 	debug               bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
@@ -399,10 +399,10 @@ func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product 
 	configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
 }
 
-// SetAgentReportedStatsdPort overwrites the URL port with the agent /info
+// ApplyAgentReportedStatsdPort overwrites the URL port with the agent /info
 // value. No-op when the user claimed DD_DOGSTATSD_URL, the URL is a unix
 // socket, or env already set the port.
-func (c *Config) SetAgentReportedStatsdPort(port int) {
+func (c *Config) ApplyAgentReportedStatsdPort(port int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if port <= 0 {

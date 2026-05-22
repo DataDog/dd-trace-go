@@ -426,7 +426,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// Push the agent-reported StatsdPort into internal/config so it can
 		// fill in the resolved port if no other source provided one. Then
 		// mirror the resolved value into globalconfig for contrib readers.
-		c.internalConfig.SetAgentReportedStatsdPort(af.StatsdPort)
+		c.internalConfig.ApplyAgentReportedStatsdPort(af.StatsdPort)
 		globalconfig.SetDogstatsdAddr(c.internalConfig.DogstatsdAddr())
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
