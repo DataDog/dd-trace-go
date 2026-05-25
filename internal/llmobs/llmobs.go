@@ -140,9 +140,10 @@ type LLMObs struct {
 	evalMetricsCh chan *transport.LLMObsMetric
 
 	// runtime buffers, payloads are accumulated here and flushed periodically
-	bufSpanEvents     []*transport.LLMObsSpanEvent
-	bufSpanEventsSize int // cumulative JSON size of buffered span events
-	bufEvalMetrics    []*transport.LLMObsMetric
+	bufSpanEvents      []*transport.LLMObsSpanEvent
+	bufSpanEventsSize  int // cumulative JSON size of buffered span events
+	bufEvalMetrics     []*transport.LLMObsMetric
+	bufEvalMetricsSize int // cumulative JSON size of buffered eval metrics
 
 	// lifecycle
 	mu            sync.Mutex
@@ -285,7 +286,14 @@ func (l *LLMObs) Run() {
 				l.bufSpanEventsSize += evSize
 
 			case evalMetric := <-l.evalMetricsCh:
+				mSize := jsonSize(evalMetric)
+				if l.bufEvalMetricsSize+mSize > sizeLimitEVPEvent {
+					log.Debug("llmobs: eval metrics buffer size limit reached, flushing before adding new metric")
+					params := l.clearBuffersNonLocked()
+					l.sendWg.Go(func() { l.batchSend(params) })
+				}
 				l.bufEvalMetrics = append(l.bufEvalMetrics, evalMetric)
+				l.bufEvalMetricsSize += mSize
 
 			case <-ticker.C:
 				params := l.clearBuffersNonLocked()
@@ -327,6 +335,7 @@ func (l *LLMObs) clearBuffersNonLocked() batchSendParams {
 	l.bufSpanEvents = nil
 	l.bufSpanEventsSize = 0
 	l.bufEvalMetrics = nil
+	l.bufEvalMetricsSize = 0
 	return params
 }
 
