@@ -14,6 +14,7 @@ package pubsubtrace
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -79,6 +80,7 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 	if msg.Attributes == nil {
 		msg.Attributes = make(map[string]string)
 	}
+	log.Printf("inject publish context: %+v\n\nusing span ID: %v", span.Context(), span.Context().SpanID())
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
 		tr.instr.Logger().Debug("contrib/cloud.google.com/go/pubsubtrace: failed injecting tracing attributes: %s", err.Error())
 	}
@@ -101,7 +103,11 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 	}
 	tr.instr.Logger().Debug("contrib/cloud.google.com/go/pubsubtrace: Wrapping Receive Handler: %#v", cfg)
 	return func(ctx context.Context, msg *Message) (context.Context, func()) {
-		parentSpanCtx, _ := tracer.Extract(tracer.TextMapCarrier(msg.Attributes))
+		log.Printf("extracting parent context")
+		parentSpanCtx, err := tracer.Extract(tracer.TextMapCarrier(msg.Attributes))
+		if err != nil {
+			log.Printf("error extracting parent ctx: %s", err.Error())
+		}
 		opts := []tracer.StartSpanOption{
 			tracer.ResourceName(s.String()),
 			tracer.SpanType(ext.SpanTypeMessageConsumer),
