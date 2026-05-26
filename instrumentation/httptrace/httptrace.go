@@ -310,27 +310,36 @@ func obfuscateQueryStringDefault(s string) string {
 		last = pos + n
 		return last
 	}
-	matchers := [...]func(string, int) (int, bool){
-		matchDefaultObfuscatorSensitiveKey,
-		matchDefaultObfuscatorBearerToken,
-		matchDefaultObfuscatorShortToken,
-		matchDefaultObfuscatorGitHubToken,
-		matchDefaultObfuscatorJWT,
-		matchDefaultObfuscatorPEMPrivateKey,
-		matchDefaultObfuscatorSSHRSAKey,
-	}
 	for pos := 0; pos < len(s); {
-		matched := false
-		for _, match := range matchers {
-			if n, ok := match(s, pos); ok {
-				pos = emit(pos, n)
-				matched = true
-				break
-			}
+		if n, ok := matchDefaultObfuscatorSensitiveKey(s, pos); ok {
+			pos = emit(pos, n)
+			continue
 		}
-		if !matched {
-			pos++
+		if n, ok := matchDefaultObfuscatorBearerToken(s, pos); ok {
+			pos = emit(pos, n)
+			continue
 		}
+		if n, ok := matchDefaultObfuscatorShortToken(s, pos); ok {
+			pos = emit(pos, n)
+			continue
+		}
+		if n, ok := matchDefaultObfuscatorGitHubToken(s, pos); ok {
+			pos = emit(pos, n)
+			continue
+		}
+		if n, ok := matchDefaultObfuscatorJWT(s, pos); ok {
+			pos = emit(pos, n)
+			continue
+		}
+		if n, ok := matchDefaultObfuscatorPEMPrivateKey(s, pos); ok {
+			pos = emit(pos, n)
+			continue
+		}
+		if n, ok := matchDefaultObfuscatorSSHRSAKey(s, pos); ok {
+			pos = emit(pos, n)
+			continue
+		}
+		pos++
 	}
 	if b.Len() == 0 {
 		return s
@@ -642,16 +651,14 @@ func consumeDefaultObfuscatorSpaceOrPct20(s string, pos int) (int, bool) {
 }
 
 func consumeDefaultObfuscatorNonHyphenRun(s string, pos int) (int, bool) {
-	start := pos
-	// '-' is ASCII (0x2D) and cannot appear as a continuation byte in UTF-8,
-	// so byte-by-byte advance is correct.
-	for pos < len(s) && s[pos] != '-' {
-		pos++
-	}
-	if pos == start {
+	i := strings.IndexByte(s[pos:], '-')
+	if i == 0 {
 		return 0, false
 	}
-	return pos, true
+	if i < 0 {
+		return len(s), true
+	}
+	return pos + i, true
 }
 
 func consumeDefaultObfuscatorJWTHeader(s string, pos int) (int, bool) {
@@ -815,20 +822,15 @@ func consumeDefaultObfuscatorFoldedASCIISet(s string, pos int, chars string) (in
 		return 0, false
 	}
 	if s[pos] < utf8.RuneSelf {
-		c := toLowerASCII(s[pos])
-		for i := range len(chars) {
-			if c == chars[i] {
-				return pos + 1, true
-			}
+		if strings.IndexByte(chars, toLowerASCII(s[pos])) >= 0 {
+			return pos + 1, true
 		}
 		return 0, false
 	}
 	r, width := utf8.DecodeRuneInString(s[pos:])
 	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
-		for i := range len(chars) {
-			if folded == rune(chars[i]) {
-				return pos + width, true
-			}
+		if strings.IndexByte(chars, byte(folded)) >= 0 {
+			return pos + width, true
 		}
 	}
 	return 0, false
