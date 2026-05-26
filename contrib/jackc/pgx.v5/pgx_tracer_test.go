@@ -378,7 +378,7 @@ func TestPoolName(t *testing.T) {
 			if s.OperationName() == "parent" {
 				continue
 			}
-			assert.Equal(t, "my-pool", s.Tag(tagPoolName))
+			assert.Equal(t, "my-pool", s.Tag(ext.DBClientConnectionPoolName))
 		}
 	})
 	t.Run("without pool name", func(t *testing.T) {
@@ -395,7 +395,7 @@ func TestPoolName(t *testing.T) {
 			if s.OperationName() == "parent" {
 				continue
 			}
-			assert.Nil(t, s.Tag(tagPoolName))
+			assert.Nil(t, s.Tag(ext.DBClientConnectionPoolName))
 		}
 	})
 }

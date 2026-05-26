@@ -95,7 +95,7 @@ func TestPoolWithPoolStatsAndPoolName(t *testing.T) {
 		calls := statsd.GetCallsByName(name)
 		assert.NotEmpty(calls, "expected calls for %s", name)
 		for _, call := range calls {
-			assert.Contains(call.Tags(), "pool_name:test-pool", "metric %s missing pool_name tag", name)
+			assert.Contains(call.Tags(), "db_client_connection_pool_name:test-pool", "metric %s missing pool name tag", name)
 			assert.Contains(call.Tags(), "service:test-service", "metric %s missing service tag", name)
 		}
 	}

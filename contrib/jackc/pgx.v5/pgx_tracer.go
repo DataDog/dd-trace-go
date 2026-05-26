@@ -24,7 +24,6 @@ const (
 	tagBatchNumQueries = "db.batch.num_queries"
 	tagCopyFromTables  = "db.copy_from.tables"
 	tagCopyFromColumns = "db.copy_from.columns"
-	tagPoolName        = "db.pool.name"
 )
 
 const (
@@ -293,7 +292,7 @@ func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sq
 		tracer.Tag(tagOperation, string(op)),
 	}
 	if t.cfg.poolName != "" {
-		opts = append(opts, tracer.Tag(tagPoolName, t.cfg.poolName))
+		opts = append(opts, tracer.Tag(ext.DBClientConnectionPoolName, t.cfg.poolName))
 	}
 	opts = append(opts, extraOpts...)
 	if sqlStatement != "" {

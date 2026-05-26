@@ -46,11 +46,11 @@ func TestStatsTags(t *testing.T) {
 	})
 	t.Run("with pool name", func(t *testing.T) {
 		tags := statsTags(&config{poolName: "test-pool"})
-		assert.Contains(t, tags, "pool_name:test-pool")
+		assert.Contains(t, tags, "db_client_connection_pool_name:test-pool")
 	})
 	t.Run("with both service and pool name", func(t *testing.T) {
 		tags := statsTags(&config{serviceName: "test-service", poolName: "test-pool"})
 		assert.Contains(t, tags, "service:test-service")
-		assert.Contains(t, tags, "pool_name:test-pool")
+		assert.Contains(t, tags, "db_client_connection_pool_name:test-pool")
 	})
 }

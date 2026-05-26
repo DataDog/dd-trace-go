@@ -60,7 +60,7 @@ func statsTags(c *config) []string {
 		tags = append(tags, "service:"+c.serviceName)
 	}
 	if c.poolName != "" {
-		tags = append(tags, "pool_name:"+c.poolName)
+		tags = append(tags, "db_client_connection_pool_name:"+c.poolName)
 	}
 	return tags
 }
