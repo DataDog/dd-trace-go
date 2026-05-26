@@ -667,6 +667,66 @@ func TestFilterQueryStringByAllowlist(t *testing.T) {
 	}
 }
 
+func TestObfuscateQueryStringDefault(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		// Alt 1: sensitive key=value and JSON-quoted forms.
+		{name: "empty", input: "", want: ""},
+		{name: "no_sensitive_key", input: "safe=value", want: "safe=value"},
+		{name: "key_only_no_eq", input: "pass", want: "pass"},
+		// Basic keyword matches.
+		{name: "password", input: "password=secret", want: "<redacted>"},
+		{name: "PASSWORD_case", input: "PASSWORD=secret", want: "<redacted>"},
+		{name: "pwd", input: "pwd=secret", want: "<redacted>"},
+		{name: "passwd", input: "passwd=secret", want: "<redacted>"},
+		{name: "pass", input: "pass=secret", want: "<redacted>"},
+		{name: "passphrase", input: "passphrase=secret", want: "<redacted>"},
+		{name: "pass_phrase", input: "pass_phrase=secret", want: "<redacted>"},
+		{name: "secret", input: "secret=x", want: "<redacted>"},
+		{name: "token_eq", input: "token=abc", want: "<redacted>"},
+		{name: "auth", input: "auth=x", want: "<redacted>"},
+		{name: "authentication", input: "authentication=x", want: "<redacted>"},
+		{name: "authorization", input: "authorization=x", want: "<redacted>"},
+		{name: "api_key", input: "api_key=x", want: "<redacted>"},
+		{name: "apikey", input: "apikey=x", want: "<redacted>"},
+		{name: "api_key_id", input: "api_key_id=x", want: "<redacted>"},
+		{name: "access_key", input: "access_key=x", want: "<redacted>"},
+		{name: "private_key", input: "private_key=x", want: "<redacted>"},
+		{name: "consumer_id", input: "consumer_id=x", want: "<redacted>"},
+		{name: "consumer_key", input: "consumer_key=x", want: "<redacted>"},
+		{name: "consumer_secret", input: "consumer_secret=x", want: "<redacted>"},
+		{name: "signature", input: "signature=x", want: "<redacted>"},
+		{name: "signed", input: "signed=x", want: "<redacted>"},
+		// Boundary: empty value does not match ([^&]+ requires ≥1 char).
+		{name: "empty_value", input: "password=", want: "password="},
+		{name: "empty_value_amp", input: "password=&foo=bar", want: "password=&foo=bar"},
+		// Context: sensitive key embedded among safe params.
+		{name: "prefix_safe", input: "safe=1&password=secret", want: "safe=1&<redacted>"},
+		{name: "suffix_safe", input: "password=secret&safe=1", want: "<redacted>&safe=1"},
+		{name: "surrounded", input: "a=1&password=secret&b=2", want: "a=1&<redacted>&b=2"},
+		// Multiple sensitive params: each is redacted independently.
+		{name: "two_sensitive", input: "password=x&token=y", want: "<redacted>&<redacted>"},
+		// URL-encoded = (%3D).
+		{name: "pct3D", input: "password%3Dsecret", want: "<redacted>"},
+		// %20 spaces around =.
+		{name: "pct20_spaces", input: "password%20=%20value", want: "<redacted>"},
+		// JSON-quoted form "key":"value": the leading '"' before the key name is
+		// not consumed by the match, so it is preserved in the output.
+		{name: "json_form", input: `"password":"value"`, want: `"<redacted>`},
+		// Same with %22/%3A URL-encoded delimiters.
+		{name: "json_form_pct", input: `%22password%22:%22value%22`, want: `%22<redacted>`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := obfuscateQueryStringDefault(tc.input)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func BenchmarkURLFromRequest(b *testing.B) {
 	oldCfg := cfg
 	defer func() { cfg = oldCfg }()

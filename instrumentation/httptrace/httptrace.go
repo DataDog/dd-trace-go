@@ -275,6 +275,14 @@ func filterQueryStringByAllowlist(rawQuery string, allowlist map[string]struct{}
 	return b.String()
 }
 
+// obfuscateQueryStringDefault obfuscates s using the default query string
+// obfuscation logic, equivalent to
+// defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>").
+// Step B will replace this body with the hand-written state machine.
+func obfuscateQueryStringDefault(s string) string {
+	return defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>")
+}
+
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
 // and creates span tags based on the header tag target and the req header value
 func HeaderTagsFromRequest(req *http.Request, headerTags instrumentation.HeaderTags) tracer.StartSpanOption {
