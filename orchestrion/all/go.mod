@@ -332,6 +332,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../contrib/gofiber/fiber.v2
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 => ../../contrib/gomodule/redigo
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 => ../../contrib/google.golang.org/grpc
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../instrumentation/testutils/grpc
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 => ../../contrib/gorilla/mux
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 => ../../contrib/gorm.io/gorm.v1
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 => ../../contrib/graph-gophers/graphql-go
