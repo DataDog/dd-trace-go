@@ -880,6 +880,35 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 	}
 }
 
+func FuzzDefaultObfuscator(f *testing.F) {
+	seeds := []string{
+		"",
+		"safe=value",
+		"password=secret",
+		"safe=1&password=secret&token=abc",
+		"bearer x",
+		"bearer xy",
+		"token:1234567890abc",
+		"gho_abcdefghijklmnopqrstuvwxyz0123456789",
+		"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0",
+		"-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF-----END RSA PRIVATE KEY-----",
+		"ssh-rsa " + strings.Repeat("a", 100),
+		`"password":"value"`,
+		"password%3Dsecret",
+		"password=&foo=bar",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		want := defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>")
+		got := obfuscateQueryStringDefault(s)
+		if got != want {
+			t.Errorf("obfuscateQueryStringDefault(%q) = %q; want %q", s, got, want)
+		}
+	})
+}
+
 func BenchmarkURLFromRequest(b *testing.B) {
 	oldCfg := cfg
 	defer func() { cfg = oldCfg }()
