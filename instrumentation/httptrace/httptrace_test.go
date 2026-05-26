@@ -718,6 +718,27 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "json_form", input: `"password":"value"`, want: `"<redacted>`},
 		// Same with %22/%3A URL-encoded delimiters.
 		{name: "json_form_pct", input: `%22password%22:%22value%22`, want: `%22<redacted>`},
+
+		// Alt 2: bearer token.
+		// Quirk: only ONE char is consumed after the whitespace — the regex has
+		// [a-z0-9._-] (no +), so "bearer xy" leaves "y" unredacted. Replicated verbatim.
+		{name: "bearer_one_char", input: "bearer x", want: "<redacted>"},
+		{name: "bearer_case", input: "Bearer X", want: "<redacted>"},
+		{name: "bearer_one_char_digit", input: "bearer 1", want: "<redacted>"},
+		{name: "bearer_one_char_dot", input: "bearer .", want: "<redacted>"},
+		{name: "bearer_one_char_dash", input: "bearer -", want: "<redacted>"},
+		{name: "bearer_one_char_underscore", input: "bearer _", want: "<redacted>"},
+		{name: "bearer_pct20", input: "bearer%20x", want: "<redacted>"},
+		{name: "bearer_multi_space", input: "bearer  x", want: "<redacted>"},
+		// Quirk: only the first char after spaces is part of the match.
+		{name: "bearer_two_chars_quirk", input: "bearer xy", want: "<redacted>y"},
+		{name: "bearer_three_chars_quirk", input: "bearer abc", want: "<redacted>bc"},
+		// No match: nothing after space.
+		{name: "bearer_no_char", input: "bearer ", want: "bearer "},
+		// No match: no space before token.
+		{name: "bearer_no_space", input: "bearer", want: "bearer"},
+		// No match: char not in [a-z0-9._-].
+		{name: "bearer_invalid_char", input: "bearer !", want: "bearer !"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
