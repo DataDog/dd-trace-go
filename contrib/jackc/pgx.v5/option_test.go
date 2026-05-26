@@ -8,7 +8,9 @@ package pgx
 import (
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWithPoolStats(t *testing.T) {
@@ -52,5 +54,27 @@ func TestStatsTags(t *testing.T) {
 		tags := statsTags(&config{serviceName: "test-service", poolName: "test-pool"})
 		assert.Contains(t, tags, "service:test-service")
 		assert.Contains(t, tags, "db_client_connection_pool_name:test-pool")
+	})
+}
+
+func TestDefaultPoolName(t *testing.T) {
+	t.Run("full connConfig", func(t *testing.T) {
+		cfg, err := pgx.ParseConfig("postgres://user:pass@myhost:5432/mydb?sslmode=disable")
+		require.NoError(t, err)
+		assert.Equal(t, "myhost:5432/mydb", defaultPoolName(cfg))
+	})
+	t.Run("host and port only", func(t *testing.T) {
+		cfg, err := pgx.ParseConfig("postgres://myhost:5432/?sslmode=disable")
+		require.NoError(t, err)
+		assert.Equal(t, "myhost:5432", defaultPoolName(cfg))
+	})
+	t.Run("host and database only", func(t *testing.T) {
+		cfg, err := pgx.ParseConfig("postgres://myhost/mydb?sslmode=disable")
+		require.NoError(t, err)
+		assert.Equal(t, "myhost/mydb", defaultPoolName(cfg))
+	})
+	t.Run("empty connConfig", func(t *testing.T) {
+		cfg := &pgx.ConnConfig{}
+		assert.Equal(t, "", defaultPoolName(cfg))
 	})
 }

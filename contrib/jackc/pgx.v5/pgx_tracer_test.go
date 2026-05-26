@@ -381,12 +381,29 @@ func TestPoolName(t *testing.T) {
 			assert.Equal(t, "my-pool", s.Tag(ext.DBClientConnectionPoolName))
 		}
 	})
-	t.Run("without pool name", func(t *testing.T) {
+	t.Run("with auto-generated default pool name", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
 		opts := append(tracingAllDisabled(), WithTraceQuery(true))
 		runAllOperations(t, newPoolCreator(nil, opts...))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 3)
+
+		for _, s := range spans {
+			if s.OperationName() == "parent" {
+				continue
+			}
+			assert.Equal(t, "127.0.0.1:5432/postgres", s.Tag(ext.DBClientConnectionPoolName))
+		}
+	})
+	t.Run("without pool name for non-pool connection", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		opts := append(tracingAllDisabled(), WithTraceQuery(true))
+		runAllOperations(t, newConnCreator(nil, nil, opts...))
 
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 3)
