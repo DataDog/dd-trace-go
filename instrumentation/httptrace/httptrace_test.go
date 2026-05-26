@@ -846,6 +846,31 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "ssh_wrong_prefix", input: "ssh-dsa " + ssh100, want: "ssh-dsa " + ssh100},
 		// Embedded in params.
 		{name: "ssh_embedded", input: "key=x&ssh-rsa " + ssh100 + "&safe=1", want: "key=x&<redacted>&safe=1"},
+
+		// Cross-alternative interactions.
+		// Multiple alt1 keywords: each sensitive param redacted independently.
+		{name: "mix_multi_alt1", input: "user=john&password=secret&api_key=mykey&safe=1", want: "user=john&<redacted>&<redacted>&safe=1"},
+		// Alt1 + Alt2: sensitive key=value followed by a bearer token.
+		{name: "mix_alt1_alt2", input: "safe=1&password=secret&bearer x", want: "safe=1&<redacted>&<redacted>"},
+		// Alt1 sub-string match: "token" inside "access_token" is matched (no word-boundary anchoring).
+		{name: "mix_alt1_substring", input: "access_token=xxx", want: "access_<redacted>"},
+		// Alt1 + Alt5: safe param followed by a standalone JWT.
+		{name: "mix_alt1_alt5", input: "callback=ok&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0&other=1", want: "callback=ok&<redacted>&other=1"},
+		// Alt1 + Alt4: sensitive key=value followed by a GitHub token.
+		{name: "mix_alt1_alt4", input: "password=x&gho_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>&<redacted>"},
+		// All 7 alternatives in one string.
+		// Alt6 contributes "<redacted>-----" because the pattern ends at KEY (no trailing -----).
+		{
+			name: "mix_all_alts",
+			input: "password=secret" +
+				"&bearer x" +
+				"&token:1234567890abc" +
+				"&gho_abcdefghijklmnopqrstuvwxyz0123456789" +
+				"&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0" +
+				"&-----BEGIN RSA PRIVATE KEY-----BODY-----END RSA PRIVATE KEY-----" +
+				"&ssh-rsa " + ssh100,
+			want: "<redacted>&<redacted>&<redacted>&<redacted>&<redacted>&<redacted>-----&<redacted>",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
