@@ -329,6 +329,16 @@ func obfuscateQueryStringDefault(s string) string {
 			last = pos
 			continue
 		}
+		if n, ok := matchDefaultObfuscatorGitHubToken(s, pos); ok {
+			if b.Len() == 0 {
+				b.Grow(len(s))
+			}
+			b.WriteString(s[last:pos])
+			b.WriteString("<redacted>")
+			pos += n
+			last = pos
+			continue
+		}
 		pos++
 	}
 	if b.Len() == 0 {
@@ -380,7 +390,28 @@ func matchDefaultObfuscatorShortToken(s string, pos int) (int, bool) {
 		return 0, false
 	}
 	for range 13 {
-		if pos, ok = consumeDefaultObfuscatorShortTokenChar(s, pos); !ok {
+		if pos, ok = consumeDefaultObfuscatorAlphaNumChar(s, pos); !ok {
+			return 0, false
+		}
+	}
+	return pos - start, true
+}
+
+func matchDefaultObfuscatorGitHubToken(s string, pos int) (int, bool) {
+	start := pos
+	var ok bool
+	if pos, ok = matchFoldLiteral(s, pos, "gh"); !ok {
+		return 0, false
+	}
+	if pos, ok = consumeDefaultObfuscatorFoldedASCIISet(s, pos, "opsu"); !ok {
+		return 0, false
+	}
+	if pos >= len(s) || s[pos] != '_' {
+		return 0, false
+	}
+	pos++
+	for range 36 {
+		if pos, ok = consumeDefaultObfuscatorAlphaNumChar(s, pos); !ok {
 			return 0, false
 		}
 	}
@@ -488,7 +519,7 @@ func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
 	return 0, false
 }
 
-func consumeDefaultObfuscatorShortTokenChar(s string, pos int) (int, bool) {
+func consumeDefaultObfuscatorAlphaNumChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -503,6 +534,30 @@ func consumeDefaultObfuscatorShortTokenChar(s string, pos int) (int, bool) {
 	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
 		if 'a' <= folded && folded <= 'z' {
 			return pos + width, true
+		}
+	}
+	return 0, false
+}
+
+func consumeDefaultObfuscatorFoldedASCIISet(s string, pos int, chars string) (int, bool) {
+	if pos >= len(s) {
+		return 0, false
+	}
+	if s[pos] < utf8.RuneSelf {
+		c := toLowerASCII(s[pos])
+		for i := range len(chars) {
+			if c == chars[i] {
+				return pos + 1, true
+			}
+		}
+		return 0, false
+	}
+	r, width := utf8.DecodeRuneInString(s[pos:])
+	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
+		for i := range len(chars) {
+			if folded == rune(chars[i]) {
+				return pos + width, true
+			}
 		}
 	}
 	return 0, false

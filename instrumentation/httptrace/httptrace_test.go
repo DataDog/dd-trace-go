@@ -764,7 +764,7 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		// Embedded in params.
 		{name: "token_colon_embedded", input: "safe=1&token:1234567890abc&other=2", want: "safe=1&<redacted>&other=2"},
 
-		// Alt 4: GitHub tokens — gh[opsu]_ followed by exactly 36 alphanumeric chars.
+		// GitHub tokens: gh[opsu]_ followed by exactly 36 alphanumeric chars.
 		{name: "gho_36", input: "gho_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>"},
 		{name: "ghp_36", input: "ghp_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>"},
 		{name: "ghs_36", input: "ghs_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>"},
