@@ -6,6 +6,7 @@
 package httpsec
 
 import (
+	"bytes"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -18,6 +19,14 @@ import (
 const (
 	// envClientIPHeader is the name of the env var used to specify the IP header to be used for client IP collection.
 	envClientIPHeader = "DD_TRACE_CLIENT_IP_HEADER"
+
+	// Headers used to identify Datadog security testing requests.
+	securityTestingEndpointScanHeader = "x-datadog-endpoint-scan"
+	securityTestingHeader             = "x-datadog-security-test"
+
+	// Span tags for the corresponding security testing request headers.
+	securityTestingEndpointScanTag = ext.HTTPRequestHeaders + "." + securityTestingEndpointScanHeader
+	securityTestingTag             = ext.HTTPRequestHeaders + "." + securityTestingHeader
 )
 
 var (
@@ -61,6 +70,18 @@ var (
 		"x-sigsci-requestid",
 		"x-sigsci-tags",
 	}, defaultIPHeaders...)
+
+	// securityTestingHeaders maps security testing headers to service-entry span tags.
+	// These headers are tagged separately from defaultCollectedHeaders because
+	// they are collected even when AppSec is disabled.
+	securityTestingHeaders = [...]struct {
+		Header      string
+		HeaderBytes []byte
+		Tag         string
+	}{
+		{Header: securityTestingEndpointScanHeader, HeaderBytes: []byte(securityTestingEndpointScanHeader), Tag: securityTestingEndpointScanTag},
+		{Header: securityTestingHeader, HeaderBytes: []byte(securityTestingHeader), Tag: securityTestingTag},
+	}
 
 	// collectedHeadersLookupMap is a helper lookup map of HTTP headers to
 	// collect as request span tags when appsec is enabled. It is computed at
@@ -118,6 +139,59 @@ func NormalizeHTTPHeaders(headers map[string][]string) (normalized map[string]st
 		return nil
 	}
 	return normalized
+}
+
+// SecurityTestingHeaderTagValues returns span tag names and values from security testing headers.
+func SecurityTestingHeaderTagValues(headers http.Header) ([2]string, [2]string, int) {
+	var tagNames [2]string
+	var tagValues [2]string
+	var count int
+	for _, h := range securityTestingHeaders {
+		values, ok := securityTestingHeaderValues(headers, h.Header)
+		if !ok {
+			continue
+		}
+		tagNames[count] = h.Tag
+		tagValues[count] = strings.TrimSpace(normalizeHTTPHeaderValue(values))
+		count++
+	}
+	return tagNames, tagValues, count
+}
+
+// SecurityTestingHeaderByteTagValues returns span tag names and values from byte header entries.
+func SecurityTestingHeaderByteTagValues(visit func(func(key, value []byte))) ([2]string, [2]string, int) {
+	var headerValues [len(securityTestingHeaders)][]string
+	visit(func(key, value []byte) {
+		for i, h := range securityTestingHeaders {
+			if bytes.EqualFold(key, h.HeaderBytes) {
+				headerValues[i] = append(headerValues[i], string(value))
+				break
+			}
+		}
+	})
+
+	var tagNames [2]string
+	var tagValues [2]string
+	var count int
+	for i, h := range securityTestingHeaders {
+		values := headerValues[i]
+		if len(values) == 0 {
+			continue
+		}
+		tagNames[count] = h.Tag
+		tagValues[count] = strings.TrimSpace(normalizeHTTPHeaderValue(values))
+		count++
+	}
+	return tagNames, tagValues, count
+}
+
+func securityTestingHeaderValues(headers http.Header, header string) ([]string, bool) {
+	for name, values := range headers {
+		if strings.EqualFold(name, header) {
+			return values, true
+		}
+	}
+	return nil, false
 }
 
 // Remove cookies from the request headers and return the map of headers

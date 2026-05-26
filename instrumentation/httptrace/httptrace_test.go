@@ -8,6 +8,7 @@ package httptrace
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -29,6 +30,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var securityTestingHeaders = [...]struct {
+	header string
+	tag    string
+}{
+	{header: "x-datadog-endpoint-scan", tag: ext.HTTPRequestHeaders + ".x-datadog-endpoint-scan"},
+	{header: "x-datadog-security-test", tag: ext.HTTPRequestHeaders + ".x-datadog-security-test"},
+}
 
 func TestGetErrorCodesFromInput(t *testing.T) {
 	codesOnly := "400,401,402"
@@ -164,6 +173,116 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 	for expectedTag, expectedTagVal := range expectedHeaderTags {
 		assert.Equal(t, expectedTagVal, spans[0].Tags()[expectedTag])
 	}
+}
+
+func TestStartRequestSpanSecurityTestingHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		headers  http.Header
+		expected map[string]string
+	}{
+		{
+			name: "present",
+			headers: http.Header{
+				"x-datadog-endpoint-scan": {"scan-uuid"},
+				"X-Datadog-Security-Test": {" test-uuid "},
+			},
+			expected: map[string]string{
+				"http.request.headers.x-datadog-endpoint-scan": "scan-uuid",
+				"http.request.headers.x-datadog-security-test": "test-uuid",
+			},
+		},
+		{
+			name: "empty-values",
+			headers: http.Header{
+				"X-Datadog-Endpoint-Scan": {""},
+				"X-Datadog-Security-Test": {""},
+			},
+			expected: map[string]string{
+				"http.request.headers.x-datadog-endpoint-scan": "",
+				"http.request.headers.x-datadog-security-test": "",
+			},
+		},
+		{
+			name:     "missing",
+			headers:  http.Header{},
+			expected: map[string]string{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			r := httptest.NewRequest(http.MethodGet, "/test", nil)
+			maps.Copy(r.Header, tc.headers)
+			span, _, _ := StartRequestSpan(r)
+			span.Finish()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			tags := spans[0].Tags()
+
+			for _, h := range securityTestingHeaders {
+				value, ok := tc.expected[h.tag]
+				if !ok {
+					assert.NotContains(t, tags, h.tag)
+					continue
+				}
+				assert.Contains(t, tags, h.tag)
+				assert.Equal(t, value, tags[h.tag])
+			}
+		})
+	}
+}
+
+func TestStartRequestSpanSecurityTestingHeadersNotPropagated(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	r.Header.Set("X-Datadog-Endpoint-Scan", "scan-uuid")
+	r.Header.Set("X-Datadog-Security-Test", "test-uuid")
+	span, _, _ := StartRequestSpan(r)
+	outgoing := http.Header{}
+	require.NoError(t, tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(outgoing)))
+	span.Finish()
+
+	for _, h := range securityTestingHeaders {
+		_, ok := outgoing[http.CanonicalHeaderKey(h.header)]
+		assert.False(t, ok)
+	}
+}
+
+func TestBeforeHandleSecurityTestingHeadersWithAppSec(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	appsec.Start()
+	defer appsec.Stop()
+	ResetCfg()
+
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
+	r.Header.Set("X-Datadog-Endpoint-Scan", "scan-uuid")
+	r.Header.Set("X-Datadog-Security-Test", " test-uuid ")
+	w := httptest.NewRecorder()
+
+	rw, rt, after, handled := BeforeHandle(&ServeConfig{Route: "/test"}, w, r)
+	assert.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "scan-uuid", spans[0].Tag(securityTestingHeaders[0].tag))
+	assert.Equal(t, "test-uuid", spans[0].Tag(securityTestingHeaders[1].tag))
 }
 
 func TestStartRequestSpan(t *testing.T) {

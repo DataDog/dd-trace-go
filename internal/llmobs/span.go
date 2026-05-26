@@ -8,6 +8,7 @@ package llmobs
 import (
 	"encoding/json"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -220,6 +221,9 @@ type SpanAnnotations struct {
 	Metrics map[string]float64
 	// Tags contains string tags key-value pairs.
 	Tags map[string]string
+	// CostTags contains tag keys to propagate to LLMObs cost and token metrics.
+	// Each key must reference a tag already present on the span.
+	CostTags []string
 }
 
 // Span represents an LLMObs span with its associated metadata and context.
@@ -355,6 +359,15 @@ func (s *Span) Annotate(a SpanAnnotations) {
 		s.llmCtx.tags = updateMapKeys(s.llmCtx.tags, a.Tags)
 		if sessionID, ok := a.Tags[TagKeySessionID]; ok {
 			s.sessionID = sessionID
+		}
+	}
+
+	if a.CostTags != nil {
+		trackCostTagsAnnotated(s, "annotate")
+		for _, costTag := range a.CostTags {
+			if !slices.Contains(s.llmCtx.costTags, costTag) {
+				s.llmCtx.costTags = append(s.llmCtx.costTags, costTag)
+			}
 		}
 	}
 
