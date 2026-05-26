@@ -739,6 +739,23 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "bearer_no_space", input: "bearer", want: "bearer"},
 		// No match: char not in [a-z0-9._-].
 		{name: "bearer_invalid_char", input: "bearer !", want: "bearer !"},
+
+		// Alt 3: short token — exactly 13 [a-z0-9] chars after "token:" or "token%3A".
+		{name: "token_colon_13", input: "token:1234567890abc", want: "<redacted>"},
+		{name: "token_colon_13_upper", input: "TOKEN:1234567890ABC", want: "<redacted>"},
+		{name: "token_pct3A_13", input: "token%3A1234567890abc", want: "<redacted>"},
+		// Boundary: 12 chars → no match.
+		{name: "token_colon_12", input: "token:123456789012", want: "token:123456789012"},
+		// Boundary: 14 chars → first 13 matched, trailing char unredacted.
+		{name: "token_colon_14", input: "token:12345678901234", want: "<redacted>4"},
+		// No match: empty after colon.
+		{name: "token_colon_empty", input: "token:", want: "token:"},
+		// No match: invalid chars (not in [a-z0-9]).
+		{name: "token_colon_invalid_chars", input: "token:!!!!!!!!!!!!!!", want: "token:!!!!!!!!!!!!!!"},
+		// No match: colon with too few chars — alt 1 also inapplicable (no =).
+		{name: "token_colon_short", input: "token:abc", want: "token:abc"},
+		// Embedded in params.
+		{name: "token_colon_embedded", input: "safe=1&token:1234567890abc&other=2", want: "safe=1&<redacted>&other=2"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
