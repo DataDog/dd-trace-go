@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -275,12 +277,236 @@ func filterQueryStringByAllowlist(rawQuery string, allowlist map[string]struct{}
 	return b.String()
 }
 
+var defaultSensitiveQueryStringKeywords = [...]string{
+	"password", "passwd", "pword", "pwd",
+	"pass_phrase", "passphrase", "pass",
+	"secret",
+	"api_key_id", "api_keyid", "api_key", "apikey_id", "apikeyid", "apikey",
+	"private_key_id", "private_keyid", "private_key", "privatekey_id", "privatekeyid", "privatekey",
+	"public_key_id", "public_keyid", "public_key", "publickey_id", "publickeyid", "publickey",
+	"access_key_id", "access_keyid", "access_key", "accesskey_id", "accesskeyid", "accesskey",
+	"secret_key_id", "secret_keyid", "secret_key", "secretkey_id", "secretkeyid", "secretkey",
+	"token",
+	"consumer_id", "consumer_key", "consumer_secret", "consumerid", "consumerkey", "consumersecret",
+	"signed", "signature", "sign",
+	"authentication", "authorization", "auth",
+}
+
 // obfuscateQueryStringDefault obfuscates s using the default query string
 // obfuscation logic, equivalent to
 // defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>").
-// Step B will replace this body with the hand-written state machine.
 func obfuscateQueryStringDefault(s string) string {
-	return defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>")
+	var b strings.Builder
+	last := 0
+	for pos := 0; pos < len(s); {
+		if n, ok := matchDefaultObfuscatorAlt1(s, pos); ok {
+			if b.Len() == 0 {
+				b.Grow(len(s))
+			}
+			b.WriteString(s[last:pos])
+			b.WriteString("<redacted>")
+			pos += n
+			last = pos
+			continue
+		}
+		pos++
+	}
+	if b.Len() == 0 {
+		return s
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+func matchDefaultObfuscatorAlt1(s string, pos int) (int, bool) {
+	for _, keyword := range defaultSensitiveQueryStringKeywords {
+		end, ok := matchFoldLiteral(s, pos, keyword)
+		if !ok {
+			continue
+		}
+		if suffixEnd, ok := matchDefaultObfuscatorAlt1Suffix(s, end); ok {
+			return suffixEnd - pos, true
+		}
+	}
+	return 0, false
+}
+
+func matchDefaultObfuscatorAlt1Suffix(s string, pos int) (int, bool) {
+	if end, ok := matchDefaultObfuscatorAlt1KeyValue(s, pos); ok {
+		return end, true
+	}
+	return matchDefaultObfuscatorAlt1JSON(s, pos)
+}
+
+func matchDefaultObfuscatorAlt1KeyValue(s string, pos int) (int, bool) {
+	pos = skipDefaultObfuscatorSpaces(s, pos)
+	var ok bool
+	if pos < len(s) && s[pos] == '=' {
+		pos++
+	} else if pos, ok = matchFoldLiteral(s, pos, "%3D"); !ok {
+		return 0, false
+	}
+	if pos >= len(s) || s[pos] == '&' {
+		return 0, false
+	}
+	for pos < len(s) && s[pos] != '&' {
+		pos++
+	}
+	return pos, true
+}
+
+func matchDefaultObfuscatorAlt1JSON(s string, pos int) (int, bool) {
+	var ok bool
+	if pos, ok = matchDefaultObfuscatorQuote(s, pos); !ok {
+		return 0, false
+	}
+	pos = skipDefaultObfuscatorSpaces(s, pos)
+	if pos < len(s) && s[pos] == ':' {
+		pos++
+	} else if pos, ok = matchFoldLiteral(s, pos, "%3A"); !ok {
+		return 0, false
+	}
+	pos = skipDefaultObfuscatorSpaces(s, pos)
+	if pos, ok = matchDefaultObfuscatorQuote(s, pos); !ok {
+		return 0, false
+	}
+	valueStart := pos
+	pos = consumeDefaultObfuscatorJSONValue(s, pos)
+	if pos == valueStart {
+		return 0, false
+	}
+	if pos, ok = matchDefaultObfuscatorQuote(s, pos); !ok {
+		return 0, false
+	}
+	return pos, true
+}
+
+func matchDefaultObfuscatorQuote(s string, pos int) (int, bool) {
+	if pos < len(s) && s[pos] == '"' {
+		return pos + 1, true
+	}
+	return matchFoldLiteral(s, pos, "%22")
+}
+
+func skipDefaultObfuscatorSpaces(s string, pos int) int {
+	for pos < len(s) {
+		if isDefaultObfuscatorSpace(s[pos]) {
+			pos++
+			continue
+		}
+		if next, ok := matchFoldLiteral(s, pos, "%20"); ok {
+			pos = next
+			continue
+		}
+		return pos
+	}
+	return pos
+}
+
+func isDefaultObfuscatorSpace(c byte) bool {
+	switch c {
+	case ' ', '\t', '\n', '\f', '\r':
+		return true
+	default:
+		return false
+	}
+}
+
+func consumeDefaultObfuscatorJSONValue(s string, pos int) int {
+	for pos < len(s) {
+		// The value regexp is (%2[^2]|%[^2]|[^"%])+. The order is
+		// observable for inputs such as %20 and %2", so keep it verbatim.
+		if next, ok := consumeDefaultObfuscatorJSONValuePct2(s, pos); ok {
+			pos = next
+			continue
+		}
+		if next, ok := consumeDefaultObfuscatorJSONValuePct(s, pos); ok {
+			pos = next
+			continue
+		}
+		r, width := utf8.DecodeRuneInString(s[pos:])
+		if r == '"' || r == '%' {
+			return pos
+		}
+		pos += width
+	}
+	return pos
+}
+
+func consumeDefaultObfuscatorJSONValuePct2(s string, pos int) (int, bool) {
+	next, ok := matchFoldLiteral(s, pos, "%2")
+	if !ok || next >= len(s) {
+		return 0, false
+	}
+	r, width := utf8.DecodeRuneInString(s[next:])
+	if r == '2' {
+		return 0, false
+	}
+	return next + width, true
+}
+
+func consumeDefaultObfuscatorJSONValuePct(s string, pos int) (int, bool) {
+	if pos >= len(s) || s[pos] != '%' || pos+1 >= len(s) {
+		return 0, false
+	}
+	r, width := utf8.DecodeRuneInString(s[pos+1:])
+	if r == '2' {
+		return 0, false
+	}
+	return pos + 1 + width, true
+}
+
+func matchFoldLiteral(s string, pos int, lit string) (int, bool) {
+	for i := 0; i < len(lit); i++ {
+		if pos >= len(s) {
+			return 0, false
+		}
+		want := lit[i]
+		if isASCIILetter(want) {
+			if s[pos] < utf8.RuneSelf {
+				if toLowerASCII(s[pos]) != toLowerASCII(want) {
+					return 0, false
+				}
+				pos++
+				continue
+			}
+			r, width := utf8.DecodeRuneInString(s[pos:])
+			if !equalFoldASCII(r, toLowerASCII(want)) {
+				return 0, false
+			}
+			pos += width
+			continue
+		}
+		if s[pos] != want {
+			return 0, false
+		}
+		pos++
+	}
+	return pos, true
+}
+
+func equalFoldASCII(r rune, lower byte) bool {
+	want := rune(lower)
+	for folded := r; ; folded = unicode.SimpleFold(folded) {
+		if folded == want {
+			return true
+		}
+		next := unicode.SimpleFold(folded)
+		if next == r {
+			return false
+		}
+	}
+}
+
+func isASCIILetter(c byte) bool {
+	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
+}
+
+func toLowerASCII(c byte) byte {
+	if 'A' <= c && c <= 'Z' {
+		return c + 'a' - 'A'
+	}
+	return c
 }
 
 // HeaderTagsFromRequest matches req headers to user-defined list of header tags
