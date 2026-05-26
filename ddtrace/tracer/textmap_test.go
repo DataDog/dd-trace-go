@@ -2389,6 +2389,33 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 		assert.Equal(t, uint64(0), span.parentID)
 		assert.Empty(t, span.spanLinks)
 	})
+
+	t.Run("restart/w3c-only", func(t *testing.T) {
+		// restart mode where only W3C headers are present: the Datadog propagator
+		// is configured first but finds nothing, so W3C is the propagator that
+		// produces the incoming context. The span link's context_headers must
+		// reflect that — not the first configured propagator.
+		t.Setenv(headerPropagationBehaviorExtract, "restart")
+		tr, err := newTracer(WithHTTPClient(c))
+		require.NoError(t, err)
+		defer tr.Stop()
+
+		w3cOnlyCarrier := TextMapCarrier{
+			traceparentHeader: "00-00000000000000000000000000000003-0000000000000003-01",
+			tracestateHeader:  "dd=s:1",
+		}
+
+		sctx, err := tr.Extract(w3cOnlyCarrier)
+		require.NoError(t, err)
+		require.NotNil(t, sctx)
+
+		span := tr.StartSpan("test", ChildOf(sctx), WithSpanLinks(sctx.SpanLinks()))
+		defer span.Finish()
+
+		require.Len(t, span.spanLinks, 1)
+		assert.Equal(t, "tracecontext", span.spanLinks[0].Attributes["context_headers"])
+		assert.Equal(t, uint64(3), span.spanLinks[0].SpanID)
+	})
 }
 
 func TestW3CExtractsBaggage(t *testing.T) {

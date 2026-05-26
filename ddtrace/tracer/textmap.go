@@ -309,7 +309,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		return nil, nil
 	}
 
-	incomingCtx, err := p.extractIncomingSpanContext(carrier)
+	incomingCtx, producer, err := p.extractIncomingSpanContext(carrier)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +331,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			SpanID:      incomingCtx.SpanID(),
 			Attributes: map[string]string{
 				"reason":          "propagation_behavior_extract",
-				"context_headers": getPropagatorName(p.extractors[0]),
+				"context_headers": getPropagatorName(producer),
 			},
 		}
 		if trace := incomingCtx.trace; trace != nil {
@@ -380,8 +380,14 @@ func (p *chainedPropagator) extractBaggage(carrier any) map[string]string {
 	return nil
 }
 
-func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContext, error) {
+// extractIncomingSpanContext walks the configured extractors and returns the
+// first successfully extracted span context, along with the propagator that
+// produced it. When multiple propagators read the same trace-id only the
+// propagator that created the ctx is returned, not subsequent ones that
+// enriched it.
+func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContext, Propagator, error) {
 	var ctx *SpanContext
+	var producer Propagator // propagator that produced ctx
 	var links []SpanLink
 	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
 
@@ -401,16 +407,19 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 		if firstExtraction {
 			if err != nil {
 				if p.onlyExtractFirst { // Every error is relevant when we are relying on the first extractor
-					return nil, err
+					return nil, nil, err
 				}
 				if err != ErrSpanContextNotFound { // We don't care about ErrSpanContextNotFound because we could find a span context in a subsequent extractor
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			if p.onlyExtractFirst {
-				return extractedCtx, nil
+				return extractedCtx, v, nil
 			}
-			ctx = extractedCtx
+			if extractedCtx != nil {
+				ctx = extractedCtx
+				producer = v
+			}
 		} else { // A trace context was already extracted by a previous propagator
 			// When trace IDs match, merge W3C tracestate and resolve parent ID conflicts.
 			// When trace IDs differ, create span links to preserve the terminated context.
@@ -452,10 +461,10 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 			}
 			maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
-			return ctx, nil
+			return ctx, nil, nil
 		}
 		// 0 successful extractions
-		return nil, ErrSpanContextNotFound
+		return nil, nil, ErrSpanContextNotFound
 	}
 	if len(pendingBaggage) > 0 {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
@@ -469,7 +478,7 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 		ctx.spanLinks = links // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 	}
 	log.Debug("Extracted span context: %s", ctx.safeDebugString())
-	return ctx, nil
+	return ctx, producer, nil
 }
 
 func getPropagatorName(p Propagator) string {
