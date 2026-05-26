@@ -797,6 +797,23 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "jwt_empty_first_body", input: "eyJ.eyJzdWIiOiJ1c2VyIn0", want: "eyJ.eyJzdWIiOiJ1c2VyIn0"},
 		// Embedded in params.
 		{name: "jwt_embedded", input: "safe=1&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0&other=2", want: "safe=1&<redacted>&other=2"},
+
+		// Alt 6: PEM private key block.
+		// Note: the pattern ends at the final KEY — trailing "-----" is NOT consumed.
+		// Note: (?:\s|%20) between PRIVATE and KEY has no +, so exactly one space/encoded-space.
+		{name: "pem_rsa", input: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF-----END RSA PRIVATE KEY-----", want: "<redacted>-----"},
+		{name: "pem_ec", input: "-----BEGIN EC PRIVATE KEY-----MIIEABCDEF-----END EC PRIVATE KEY-----", want: "<redacted>-----"},
+		{name: "pem_no_type", input: "-----BEGIN PRIVATE KEY-----MIIEABCDEF-----END PRIVATE KEY-----", want: "<redacted>-----"},
+		{name: "pem_lower", input: "-----begin rsa private key-----miieabcdef-----end rsa private key-----", want: "<redacted>-----"},
+		{name: "pem_pct20", input: "-----BEGIN%20RSA%20PRIVATE%20KEY-----MIIEABCDEF-----END%20RSA%20PRIVATE%20KEY-----", want: "<redacted>-----"},
+		// No match: CERTIFICATE has no PRIVATE keyword.
+		{name: "pem_certificate", input: "-----BEGIN CERTIFICATE-----MIIEABCDEF-----END CERTIFICATE-----", want: "-----BEGIN CERTIFICATE-----MIIEABCDEF-----END CERTIFICATE-----"},
+		// No match: double space between PRIVATE and KEY — the single (?:\s|%20) can't span two spaces.
+		{name: "pem_double_space", input: "-----BEGIN RSA PRIVATE  KEY-----MIIEABCDEF-----END RSA PRIVATE  KEY-----", want: "-----BEGIN RSA PRIVATE  KEY-----MIIEABCDEF-----END RSA PRIVATE  KEY-----"},
+		// No match: missing END block.
+		{name: "pem_no_end", input: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF", want: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF"},
+		// Embedded in params: trailing "-----" before "&safe=1" is preserved.
+		{name: "pem_embedded", input: "key=x&-----BEGIN RSA PRIVATE KEY-----BODY-----END RSA PRIVATE KEY-----&safe=1", want: "key=x&<redacted>-----&safe=1"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
