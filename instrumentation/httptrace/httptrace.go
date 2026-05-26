@@ -359,6 +359,16 @@ func obfuscateQueryStringDefault(s string) string {
 			last = pos
 			continue
 		}
+		if n, ok := matchDefaultObfuscatorSSHRSAKey(s, pos); ok {
+			if b.Len() == 0 {
+				b.Grow(len(s))
+			}
+			b.WriteString(s[last:pos])
+			b.WriteString("<redacted>")
+			pos += n
+			last = pos
+			continue
+		}
 		pos++
 	}
 	if b.Len() == 0 {
@@ -522,6 +532,28 @@ func matchDefaultObfuscatorPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
 		return 0, false
 	}
 	return matchFoldLiteral(s, pos, "KEY")
+}
+
+func matchDefaultObfuscatorSSHRSAKey(s string, pos int) (int, bool) {
+	start := pos
+	var ok bool
+	if pos, ok = matchFoldLiteral(s, pos, "ssh-rsa"); !ok {
+		return 0, false
+	}
+	pos = skipDefaultObfuscatorSpaces(s, pos)
+	count := 0
+	for {
+		next, ok := consumeDefaultObfuscatorSSHRSAKeyChar(s, pos)
+		if !ok {
+			break
+		}
+		pos = next
+		count++
+	}
+	if count < 100 {
+		return 0, false
+	}
+	return pos - start, true
 }
 
 func matchDefaultObfuscatorSensitiveKeySuffix(s string, pos int) (int, bool) {
@@ -747,6 +779,25 @@ func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+func consumeDefaultObfuscatorSSHRSAKeyChar(s string, pos int) (int, bool) {
+	if next, ok := consumeDefaultObfuscatorAlphaNumChar(s, pos); ok {
+		return next, true
+	}
+	if pos < len(s) {
+		switch s[pos] {
+		case '/', '.', '+':
+			return pos + 1, true
+		}
+	}
+	if next, ok := matchFoldLiteral(s, pos, "%2F"); ok {
+		return next, true
+	}
+	if next, ok := matchFoldLiteral(s, pos, "%5C"); ok {
+		return next, true
+	}
+	return matchFoldLiteral(s, pos, "%2B")
 }
 
 func consumeDefaultObfuscatorWordChar(s string, pos int) (int, bool) {

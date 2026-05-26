@@ -669,7 +669,7 @@ func TestFilterQueryStringByAllowlist(t *testing.T) {
 }
 
 func TestObfuscateQueryStringDefault(t *testing.T) {
-	// SSH key bodies for the 100-repetition boundary (alt 7).
+	// SSH RSA key bodies for the 100-repetition boundary.
 	// Note: {100,} counts group repetitions, not bytes — %2F/%5C/%2B each count as one.
 	ssh99 := strings.Repeat("a", 99)
 	ssh100 := strings.Repeat("a", 100)
@@ -822,7 +822,7 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		// Embedded in params: trailing "-----" before "&safe=1" is preserved.
 		{name: "pem_embedded", input: "key=x&-----BEGIN RSA PRIVATE KEY-----BODY-----END RSA PRIVATE KEY-----&safe=1", want: "key=x&<redacted>-----&safe=1"},
 
-		// Alt 7: SSH RSA key — ssh-rsa + optional spaces + ≥100 repetitions of [a-z0-9/\.+] or %2F/%5C/%2B.
+		// SSH RSA key: ssh-rsa + optional spaces + ≥100 repetitions of [a-z0-9/\.+] or %2F/%5C/%2B.
 		// Quirk: bare '\' is absent from [a-z0-9\/\.+]; only %5C (URL-encoded '\') is accepted.
 		{name: "ssh_100", input: "ssh-rsa " + ssh100, want: "<redacted>"},
 		{name: "ssh_101", input: "ssh-rsa " + ssh101, want: "<redacted>"},
