@@ -831,17 +831,17 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "ssh_no_space", input: "ssh-rsa" + ssh100, want: "<redacted>"},
 		{name: "ssh_pct20", input: "ssh-rsa%20" + ssh100, want: "<redacted>"},
 		// / . + are valid body chars.
-		{name: "ssh_with_slash", input: "ssh-rsa " + strings.Repeat("a", 99) + "/", want: "<redacted>"},
-		{name: "ssh_with_dot", input: "ssh-rsa " + strings.Repeat("a", 99) + ".", want: "<redacted>"},
-		{name: "ssh_with_plus", input: "ssh-rsa " + strings.Repeat("a", 99) + "+", want: "<redacted>"},
+		{name: "ssh_with_slash", input: "ssh-rsa " + ssh99 + "/", want: "<redacted>"},
+		{name: "ssh_with_dot", input: "ssh-rsa " + ssh99 + ".", want: "<redacted>"},
+		{name: "ssh_with_plus", input: "ssh-rsa " + ssh99 + "+", want: "<redacted>"},
 		// %2F/%5C/%2B each count as one repetition toward the 100 minimum.
-		{name: "ssh_pct2F_counts_one", input: "ssh-rsa " + strings.Repeat("a", 99) + "%2F", want: "<redacted>"},
-		{name: "ssh_pct5C_counts_one", input: "ssh-rsa " + strings.Repeat("a", 99) + "%5C", want: "<redacted>"},
-		{name: "ssh_pct2B_counts_one", input: "ssh-rsa " + strings.Repeat("a", 99) + "%2B", want: "<redacted>"},
+		{name: "ssh_pct2F_counts_one", input: "ssh-rsa " + ssh99 + "%2F", want: "<redacted>"},
+		{name: "ssh_pct5C_counts_one", input: "ssh-rsa " + ssh99 + "%5C", want: "<redacted>"},
+		{name: "ssh_pct2B_counts_one", input: "ssh-rsa " + ssh99 + "%2B", want: "<redacted>"},
 		// Boundary: 99 repetitions → no match.
 		{name: "ssh_99", input: "ssh-rsa " + ssh99, want: "ssh-rsa " + ssh99},
 		// Quirk: bare '\' is not in the char class → the run stops before it, preventing 100 repetitions.
-		{name: "ssh_bare_backslash", input: "ssh-rsa " + strings.Repeat("a", 99) + "\\", want: "ssh-rsa " + strings.Repeat("a", 99) + "\\"},
+		{name: "ssh_bare_backslash", input: "ssh-rsa " + ssh99 + "\\", want: "ssh-rsa " + ssh99 + "\\"},
 		// No match: wrong prefix.
 		{name: "ssh_wrong_prefix", input: "ssh-dsa " + ssh100, want: "ssh-dsa " + ssh100},
 		// Embedded in params.
