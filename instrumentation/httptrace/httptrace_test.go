@@ -756,6 +756,23 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "token_colon_short", input: "token:abc", want: "token:abc"},
 		// Embedded in params.
 		{name: "token_colon_embedded", input: "safe=1&token:1234567890abc&other=2", want: "safe=1&<redacted>&other=2"},
+
+		// Alt 4: GitHub tokens — gh[opsu]_ followed by exactly 36 alphanumeric chars.
+		{name: "gho_36", input: "gho_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>"},
+		{name: "ghp_36", input: "ghp_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>"},
+		{name: "ghs_36", input: "ghs_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>"},
+		{name: "ghu_36", input: "ghu_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>"},
+		{name: "gho_36_upper", input: "GHO_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", want: "<redacted>"},
+		// No match: 'a' not in [opsu].
+		{name: "gha_36", input: "gha_abcdefghijklmnopqrstuvwxyz0123456789", want: "gha_abcdefghijklmnopqrstuvwxyz0123456789"},
+		// Boundary: 35 chars → no match.
+		{name: "gho_35", input: "gho_abcdefghijklmnopqrstuvwxyz012345678", want: "gho_abcdefghijklmnopqrstuvwxyz012345678"},
+		// Boundary: 37 chars → first 36 matched, trailing char unredacted.
+		{name: "gho_37", input: "gho_abcdefghijklmnopqrstuvwxyz01234567890", want: "<redacted>0"},
+		// No match: non-alphanumeric chars break the 36-char run.
+		{name: "gho_invalid_chars", input: "gho_abcdefghijklmnopqrstuvwxyz012345!!!!!", want: "gho_abcdefghijklmnopqrstuvwxyz012345!!!!!"},
+		// Embedded in params.
+		{name: "gho_embedded", input: "key=x&gho_abcdefghijklmnopqrstuvwxyz0123456789&other=y", want: "key=x&<redacted>&other=y"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
