@@ -680,7 +680,7 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		input string
 		want  string
 	}{
-		// Alt 1: sensitive key=value and JSON-quoted forms.
+		// Sensitive keys: key=value and JSON-quoted forms.
 		{name: "empty", input: "", want: ""},
 		{name: "no_sensitive_key", input: "safe=value", want: "safe=value"},
 		{name: "key_only_no_eq", input: "pass", want: "pass"},
@@ -759,7 +759,7 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "token_colon_empty", input: "token:", want: "token:"},
 		// No match: invalid chars (not in [a-z0-9]).
 		{name: "token_colon_invalid_chars", input: "token:!!!!!!!!!!!!!!", want: "token:!!!!!!!!!!!!!!"},
-		// No match: colon with too few chars — alt 1 also inapplicable (no =).
+		// No match: colon with too few chars — the sensitive-key branch is also inapplicable (no =).
 		{name: "token_colon_short", input: "token:abc", want: "token:abc"},
 		// Embedded in params.
 		{name: "token_colon_embedded", input: "safe=1&token:1234567890abc&other=2", want: "safe=1&<redacted>&other=2"},
@@ -848,16 +848,16 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "ssh_embedded", input: "key=x&ssh-rsa " + ssh100 + "&safe=1", want: "key=x&<redacted>&safe=1"},
 
 		// Cross-alternative interactions.
-		// Multiple alt1 keywords: each sensitive param redacted independently.
-		{name: "mix_multi_alt1", input: "user=john&password=secret&api_key=mykey&safe=1", want: "user=john&<redacted>&<redacted>&safe=1"},
-		// Alt1 + Alt2: sensitive key=value followed by a bearer token.
-		{name: "mix_alt1_alt2", input: "safe=1&password=secret&bearer x", want: "safe=1&<redacted>&<redacted>"},
-		// Alt1 sub-string match: "token" inside "access_token" is matched (no word-boundary anchoring).
-		{name: "mix_alt1_substring", input: "access_token=xxx", want: "access_<redacted>"},
-		// Alt1 + Alt5: safe param followed by a standalone JWT.
-		{name: "mix_alt1_alt5", input: "callback=ok&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0&other=1", want: "callback=ok&<redacted>&other=1"},
-		// Alt1 + Alt4: sensitive key=value followed by a GitHub token.
-		{name: "mix_alt1_alt4", input: "password=x&gho_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>&<redacted>"},
+		// Multiple sensitive keywords: each sensitive param redacted independently.
+		{name: "mix_multi_sensitive_keys", input: "user=john&password=secret&api_key=mykey&safe=1", want: "user=john&<redacted>&<redacted>&safe=1"},
+		// Sensitive key + bearer token.
+		{name: "mix_sensitive_key_bearer", input: "safe=1&password=secret&bearer x", want: "safe=1&<redacted>&<redacted>"},
+		// Sensitive key sub-string match: "token" inside "access_token" is matched (no word-boundary anchoring).
+		{name: "mix_sensitive_key_substring", input: "access_token=xxx", want: "access_<redacted>"},
+		// Sensitive key + JWT: safe param followed by a standalone JWT.
+		{name: "mix_sensitive_key_jwt", input: "callback=ok&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0&other=1", want: "callback=ok&<redacted>&other=1"},
+		// Sensitive key + GitHub token.
+		{name: "mix_sensitive_key_github", input: "password=x&gho_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>&<redacted>"},
 		// All 7 alternatives in one string.
 		// Alt6 contributes "<redacted>-----" because the pattern ends at KEY (no trailing -----).
 		{

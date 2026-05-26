@@ -299,7 +299,7 @@ func obfuscateQueryStringDefault(s string) string {
 	var b strings.Builder
 	last := 0
 	for pos := 0; pos < len(s); {
-		if n, ok := matchDefaultObfuscatorAlt1(s, pos); ok {
+		if n, ok := matchDefaultObfuscatorSensitiveKey(s, pos); ok {
 			if b.Len() == 0 {
 				b.Grow(len(s))
 			}
@@ -328,13 +328,13 @@ func obfuscateQueryStringDefault(s string) string {
 	return b.String()
 }
 
-func matchDefaultObfuscatorAlt1(s string, pos int) (int, bool) {
+func matchDefaultObfuscatorSensitiveKey(s string, pos int) (int, bool) {
 	for _, keyword := range defaultSensitiveQueryStringKeywords {
 		end, ok := matchFoldLiteral(s, pos, keyword)
 		if !ok {
 			continue
 		}
-		if suffixEnd, ok := matchDefaultObfuscatorAlt1Suffix(s, end); ok {
+		if suffixEnd, ok := matchDefaultObfuscatorSensitiveKeySuffix(s, end); ok {
 			return suffixEnd - pos, true
 		}
 	}
@@ -358,14 +358,14 @@ func matchDefaultObfuscatorBearerToken(s string, pos int) (int, bool) {
 	return tokenEnd - start, true
 }
 
-func matchDefaultObfuscatorAlt1Suffix(s string, pos int) (int, bool) {
-	if end, ok := matchDefaultObfuscatorAlt1KeyValue(s, pos); ok {
+func matchDefaultObfuscatorSensitiveKeySuffix(s string, pos int) (int, bool) {
+	if end, ok := matchDefaultObfuscatorSensitiveKeyValue(s, pos); ok {
 		return end, true
 	}
-	return matchDefaultObfuscatorAlt1JSON(s, pos)
+	return matchDefaultObfuscatorSensitiveKeyJSON(s, pos)
 }
 
-func matchDefaultObfuscatorAlt1KeyValue(s string, pos int) (int, bool) {
+func matchDefaultObfuscatorSensitiveKeyValue(s string, pos int) (int, bool) {
 	pos = skipDefaultObfuscatorSpaces(s, pos)
 	var ok bool
 	if pos < len(s) && s[pos] == '=' {
@@ -382,7 +382,7 @@ func matchDefaultObfuscatorAlt1KeyValue(s string, pos int) (int, bool) {
 	return pos, true
 }
 
-func matchDefaultObfuscatorAlt1JSON(s string, pos int) (int, bool) {
+func matchDefaultObfuscatorSensitiveKeyJSON(s string, pos int) (int, bool) {
 	var ok bool
 	if pos, ok = matchDefaultObfuscatorQuote(s, pos); !ok {
 		return 0, false
