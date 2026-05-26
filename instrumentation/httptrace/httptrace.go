@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -300,78 +301,36 @@ var defaultSensitiveQueryStringKeywords = [...]string{
 func obfuscateQueryStringDefault(s string) string {
 	var b strings.Builder
 	last := 0
+	emit := func(pos, n int) int {
+		if b.Len() == 0 {
+			b.Grow(len(s))
+		}
+		b.WriteString(s[last:pos])
+		b.WriteString("<redacted>")
+		last = pos + n
+		return last
+	}
+	matchers := [...]func(string, int) (int, bool){
+		matchDefaultObfuscatorSensitiveKey,
+		matchDefaultObfuscatorBearerToken,
+		matchDefaultObfuscatorShortToken,
+		matchDefaultObfuscatorGitHubToken,
+		matchDefaultObfuscatorJWT,
+		matchDefaultObfuscatorPEMPrivateKey,
+		matchDefaultObfuscatorSSHRSAKey,
+	}
 	for pos := 0; pos < len(s); {
-		if n, ok := matchDefaultObfuscatorSensitiveKey(s, pos); ok {
-			if b.Len() == 0 {
-				b.Grow(len(s))
+		matched := false
+		for _, match := range matchers {
+			if n, ok := match(s, pos); ok {
+				pos = emit(pos, n)
+				matched = true
+				break
 			}
-			b.WriteString(s[last:pos])
-			b.WriteString("<redacted>")
-			pos += n
-			last = pos
-			continue
 		}
-		if n, ok := matchDefaultObfuscatorBearerToken(s, pos); ok {
-			if b.Len() == 0 {
-				b.Grow(len(s))
-			}
-			b.WriteString(s[last:pos])
-			b.WriteString("<redacted>")
-			pos += n
-			last = pos
-			continue
+		if !matched {
+			pos++
 		}
-		if n, ok := matchDefaultObfuscatorShortToken(s, pos); ok {
-			if b.Len() == 0 {
-				b.Grow(len(s))
-			}
-			b.WriteString(s[last:pos])
-			b.WriteString("<redacted>")
-			pos += n
-			last = pos
-			continue
-		}
-		if n, ok := matchDefaultObfuscatorGitHubToken(s, pos); ok {
-			if b.Len() == 0 {
-				b.Grow(len(s))
-			}
-			b.WriteString(s[last:pos])
-			b.WriteString("<redacted>")
-			pos += n
-			last = pos
-			continue
-		}
-		if n, ok := matchDefaultObfuscatorJWT(s, pos); ok {
-			if b.Len() == 0 {
-				b.Grow(len(s))
-			}
-			b.WriteString(s[last:pos])
-			b.WriteString("<redacted>")
-			pos += n
-			last = pos
-			continue
-		}
-		if n, ok := matchDefaultObfuscatorPEMPrivateKey(s, pos); ok {
-			if b.Len() == 0 {
-				b.Grow(len(s))
-			}
-			b.WriteString(s[last:pos])
-			b.WriteString("<redacted>")
-			pos += n
-			last = pos
-			continue
-		}
-		if n, ok := matchDefaultObfuscatorSSHRSAKey(s, pos); ok {
-			if b.Len() == 0 {
-				b.Grow(len(s))
-			}
-			b.WriteString(s[last:pos])
-			b.WriteString("<redacted>")
-			pos += n
-			last = pos
-			continue
-		}
-		pos++
 	}
 	if b.Len() == 0 {
 		return s
@@ -661,9 +620,7 @@ func consumeDefaultObfuscatorPEMLabelEndPositions(s string, pos int) []int {
 		pos = next
 		positions = append(positions, pos)
 	}
-	for i, j := 0, len(positions)-1; i < j; i, j = i+1, j-1 {
-		positions[i], positions[j] = positions[j], positions[i]
-	}
+	slices.Reverse(positions)
 	return positions
 }
 
@@ -686,9 +643,10 @@ func consumeDefaultObfuscatorSpaceOrPct20(s string, pos int) (int, bool) {
 
 func consumeDefaultObfuscatorNonHyphenRun(s string, pos int) (int, bool) {
 	start := pos
+	// '-' is ASCII (0x2D) and cannot appear as a continuation byte in UTF-8,
+	// so byte-by-byte advance is correct.
 	for pos < len(s) && s[pos] != '-' {
-		_, width := utf8.DecodeRuneInString(s[pos:])
-		pos += width
+		pos++
 	}
 	if pos == start {
 		return 0, false
