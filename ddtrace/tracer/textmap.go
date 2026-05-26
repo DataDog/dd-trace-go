@@ -320,7 +320,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 	//
 	// If incomingCtx is nil or baggage-only (no upstream trace context), there
 	// is no trace to link to, so fall through to continue behavior.
-	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && !incomingCtx.baggageOnly {
+	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && !incomingCtx.baggageOnly { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		ctx := &SpanContext{
 			baggageOnly: true, // signals spanStart to generate new traceID/spanID
 		}
