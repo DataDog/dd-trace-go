@@ -339,6 +339,16 @@ func obfuscateQueryStringDefault(s string) string {
 			last = pos
 			continue
 		}
+		if n, ok := matchDefaultObfuscatorJWT(s, pos); ok {
+			if b.Len() == 0 {
+				b.Grow(len(s))
+			}
+			b.WriteString(s[last:pos])
+			b.WriteString("<redacted>")
+			pos += n
+			last = pos
+			continue
+		}
 		pos++
 	}
 	if b.Len() == 0 {
@@ -413,6 +423,33 @@ func matchDefaultObfuscatorGitHubToken(s string, pos int) (int, bool) {
 	for range 36 {
 		if pos, ok = consumeDefaultObfuscatorAlphaNumChar(s, pos); !ok {
 			return 0, false
+		}
+	}
+	return pos - start, true
+}
+
+func matchDefaultObfuscatorJWT(s string, pos int) (int, bool) {
+	start := pos
+	var ok bool
+	if pos, ok = consumeDefaultObfuscatorJWTHeader(s, pos); !ok {
+		return 0, false
+	}
+	if pos, ok = consumeDefaultObfuscatorJWTSegment(s, pos); !ok {
+		return 0, false
+	}
+	if pos >= len(s) || s[pos] != '.' {
+		return 0, false
+	}
+	pos++
+	if pos, ok = consumeDefaultObfuscatorJWTHeader(s, pos); !ok {
+		return 0, false
+	}
+	if pos, ok = consumeDefaultObfuscatorJWTSegment(s, pos); !ok {
+		return 0, false
+	}
+	if pos < len(s) && s[pos] == '.' {
+		if end, ok := consumeDefaultObfuscatorJWTSignature(s, pos+1); ok {
+			pos = end
 		}
 	}
 	return pos - start, true
@@ -499,6 +536,73 @@ func isDefaultObfuscatorSpace(c byte) bool {
 	}
 }
 
+func consumeDefaultObfuscatorJWTHeader(s string, pos int) (int, bool) {
+	var ok bool
+	if pos, ok = matchFoldLiteral(s, pos, "ey"); !ok {
+		return 0, false
+	}
+	return consumeDefaultObfuscatorFoldedASCIISet(s, pos, "ijkl")
+}
+
+func consumeDefaultObfuscatorJWTSegment(s string, pos int) (int, bool) {
+	start := pos
+	for {
+		next, ok := consumeDefaultObfuscatorJWTSegmentChar(s, pos)
+		if !ok {
+			break
+		}
+		pos = next
+	}
+	if pos == start {
+		return 0, false
+	}
+	return pos, true
+}
+
+func consumeDefaultObfuscatorJWTSegmentChar(s string, pos int) (int, bool) {
+	if next, ok := consumeDefaultObfuscatorWordChar(s, pos); ok {
+		return next, true
+	}
+	if pos < len(s) && (s[pos] == '=' || s[pos] == '-') {
+		return pos + 1, true
+	}
+	return matchFoldLiteral(s, pos, "%3D")
+}
+
+func consumeDefaultObfuscatorJWTSignature(s string, pos int) (int, bool) {
+	start := pos
+	for {
+		next, ok := consumeDefaultObfuscatorJWTSignatureChar(s, pos)
+		if !ok {
+			break
+		}
+		pos = next
+	}
+	if pos == start {
+		return 0, false
+	}
+	return pos, true
+}
+
+func consumeDefaultObfuscatorJWTSignatureChar(s string, pos int) (int, bool) {
+	if next, ok := consumeDefaultObfuscatorWordChar(s, pos); ok {
+		return next, true
+	}
+	if pos < len(s) {
+		switch s[pos] {
+		case '.', '+', '/', '=', '-':
+			return pos + 1, true
+		}
+	}
+	if next, ok := matchFoldLiteral(s, pos, "%3D"); ok {
+		return next, true
+	}
+	if next, ok := matchFoldLiteral(s, pos, "%2F"); ok {
+		return next, true
+	}
+	return matchFoldLiteral(s, pos, "%2B")
+}
+
 func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
@@ -515,6 +619,16 @@ func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
 		if 'a' <= folded && folded <= 'z' {
 			return pos + width, true
 		}
+	}
+	return 0, false
+}
+
+func consumeDefaultObfuscatorWordChar(s string, pos int) (int, bool) {
+	if next, ok := consumeDefaultObfuscatorAlphaNumChar(s, pos); ok {
+		return next, true
+	}
+	if pos < len(s) && s[pos] == '_' {
+		return pos + 1, true
 	}
 	return 0, false
 }

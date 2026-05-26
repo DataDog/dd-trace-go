@@ -781,7 +781,7 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		// Embedded in params.
 		{name: "gho_embedded", input: "key=x&gho_abcdefghijklmnopqrstuvwxyz0123456789&other=y", want: "key=x&<redacted>&other=y"},
 
-		// Alt 5: JWT shape — ey[I-L] + body + dot + ey[I-L] + body, optional third segment.
+		// JWT shape: ey[I-L] + body + dot + ey[I-L] + body, optional third segment.
 		// Two-segment JWT.
 		{name: "jwt_2seg", input: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0", want: "<redacted>"},
 		// Three-segment JWT (with signature).
