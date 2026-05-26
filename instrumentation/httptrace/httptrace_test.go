@@ -773,6 +773,30 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "gho_invalid_chars", input: "gho_abcdefghijklmnopqrstuvwxyz012345!!!!!", want: "gho_abcdefghijklmnopqrstuvwxyz012345!!!!!"},
 		// Embedded in params.
 		{name: "gho_embedded", input: "key=x&gho_abcdefghijklmnopqrstuvwxyz0123456789&other=y", want: "key=x&<redacted>&other=y"},
+
+		// Alt 5: JWT shape — ey[I-L] + body + dot + ey[I-L] + body, optional third segment.
+		// Two-segment JWT.
+		{name: "jwt_2seg", input: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0", want: "<redacted>"},
+		// Three-segment JWT (with signature).
+		{name: "jwt_3seg", input: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c", want: "<redacted>"},
+		// Base64 padding '=' is in the char class.
+		{name: "jwt_padding", input: "eyJhbGc=.eyJzdWI=", want: "<redacted>"},
+		// URL-encoded '=' (%3D) is also accepted.
+		{name: "jwt_pct3D", input: "eyJhbGc%3D.eyJzdWI%3D", want: "<redacted>"},
+		// Case-insensitive prefix: EY + [I-L] matches.
+		{name: "jwt_upper", input: "EYJhbGciOiJIUzI1NiJ9.EYJzdWIiOiJ1c2VyMTIzIn0", want: "<redacted>"},
+		// Third segment with URL-encoded chars.
+		{name: "jwt_3seg_pct", input: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.sig%2Fwith%2Bchars", want: "<redacted>"},
+		// No match: only one segment (no dot + second ey[I-L]).
+		{name: "jwt_one_seg", input: "eyJhbGciOiJIUzI1NiJ9", want: "eyJhbGciOiJIUzI1NiJ9"},
+		// No match: second segment doesn't start with ey[I-L].
+		{name: "jwt_bad_second", input: "eyJhbGciOiJIUzI1NiJ9.abc123", want: "eyJhbGciOiJIUzI1NiJ9.abc123"},
+		// No match: third char not in [I-L] (M is out of range).
+		{name: "jwt_bad_prefix", input: "eyMhbGciOiJIUzI1NiJ9.eyMzdWIiOiJ1c2VyIn0", want: "eyMhbGciOiJIUzI1NiJ9.eyMzdWIiOiJ1c2VyIn0"},
+		// No match: first segment body is empty (dot immediately after ey[I-L]).
+		{name: "jwt_empty_first_body", input: "eyJ.eyJzdWIiOiJ1c2VyIn0", want: "eyJ.eyJzdWIiOiJ1c2VyIn0"},
+		// Embedded in params.
+		{name: "jwt_embedded", input: "safe=1&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0&other=2", want: "safe=1&<redacted>&other=2"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
