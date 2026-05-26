@@ -341,6 +341,125 @@ func TestPartialFlush(t *testing.T) {
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
 	})
 
+	// Verify partition correctness when finished and unfinished spans interleave in t.spans.
+	// t.spans order: [root, c0, c1, c2, c3]. Finish c1 and c3 first; root, c0, c2 stay open.
+	t.Run("InterleavedFinishOrder", func(t *testing.T) {
+		tracer, transport, flush, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		var children []*Span
+		for i := range 4 {
+			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
+		}
+		// Finish interleaved: child[1] and child[3]; leave root, child[0], child[2] open.
+		children[1].Finish()
+		children[3].Finish() // triggers partial flush (t.finished == 2 >= min 2)
+		flush(1)
+
+		ts := transport.Traces()
+		require.Len(t, ts, 1)
+		require.Len(t, ts[0], 2, "first chunk must contain exactly the two finished spans")
+		flushedNames := map[string]bool{ts[0][0].name: true, ts[0][1].name: true}
+		assert.True(t, flushedNames["child1"], "child1 must be in first chunk")
+		assert.True(t, flushedNames["child3"], "child3 must be in first chunk")
+
+		// Finish remaining spans. With min=2 a second partial flush may fire (root+c0),
+		// then c2 completes the trace. Collect all remaining chunks and flatten.
+		root.Finish()
+		children[0].Finish()
+		children[2].Finish()
+		flush(2) // wait for the two remaining chunks: {root,c0} and {c2}
+
+		remainingNames := map[string]bool{}
+		for _, chunk := range transport.Traces() {
+			for _, s := range chunk {
+				remainingNames[s.name] = true
+			}
+		}
+		assert.True(t, remainingNames["root"])
+		assert.True(t, remainingNames["child0"])
+		assert.True(t, remainingNames["child2"])
+		assert.False(t, remainingNames["child1"], "child1 must not reappear")
+		assert.False(t, remainingNames["child3"], "child3 must not reappear")
+	})
+
+	// Verify originalFirst is captured correctly when t.spans[0] (root) is itself flushed.
+	// root finishes before children, triggering a partial flush where originalFirst == s == root.
+	t.Run("OriginalFirstSpanFlushed", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "3")
+		tracer, transport, flush, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		root.context.trace.setTag("someTraceTag", "someValue")
+		var children []*Span
+		for i := range 4 {
+			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
+		}
+		// Finish root + two children; root is t.spans[0] and ends up in finishedSpans.
+		root.Finish()
+		children[0].Finish()
+		children[1].Finish() // triggers partial flush (t.finished == 3 >= min 3)
+		flush(1)
+
+		ts := transport.Traces()
+		require.Len(t, ts, 1)
+		require.Len(t, ts[0], 3, "first chunk must contain root + child[0] + child[1]")
+		flushedNames := map[string]bool{}
+		for _, s := range ts[0] {
+			flushedNames[s.name] = true
+		}
+		assert.True(t, flushedNames["root"])
+		assert.True(t, flushedNames["child0"])
+		assert.True(t, flushedNames["child1"])
+
+		// Remaining children should appear in second chunk; root must not.
+		children[2].Finish()
+		children[3].Finish()
+		flush(1)
+
+		ts2 := transport.Traces()
+		require.Len(t, ts2, 1)
+		remainingNames := map[string]bool{}
+		for _, s := range ts2[0] {
+			remainingNames[s.name] = true
+		}
+		assert.False(t, remainingNames["root"], "root must not reappear in second chunk")
+		assert.True(t, remainingNames["child2"])
+		assert.True(t, remainingNames["child3"])
+	})
+
+	// Verify that the backing array tail is cleared after in-place compaction so that
+	// flushed spans are not kept alive through stale pointers past len(t.spans).
+	t.Run("TailClearedAfterFlush", func(t *testing.T) {
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		child0 := tracer.StartSpan("child0", ChildOf(root.Context()))
+		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+
+		child0.Finish()
+		child1.Finish() // triggers partial flush; root is the sole leftover
+
+		// Inspect t.spans immediately: len==1 (root only), tail must be nil.
+		root.context.trace.mu.RLock()
+		spans := root.context.trace.spans
+		root.context.trace.mu.RUnlock()
+
+		require.Equal(t, 1, len(spans), "only root must remain in trace after partial flush")
+		full := spans[:cap(spans)]
+		for i := len(spans); i < len(full); i++ {
+			assert.Nil(t, full[i], "tail slot %d must be nil so flushed spans can be GC'd", i)
+		}
+
+		root.Finish()
+	})
+
 	// This test covers an issue where partial flushing + a rate sampler would panic
 	t.Run("WithRateSamplerNoPanic", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithSamplerRate(0.000001))
