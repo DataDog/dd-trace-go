@@ -747,7 +747,7 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		// No match: char not in [a-z0-9._-].
 		{name: "bearer_invalid_char", input: "bearer !", want: "bearer !"},
 
-		// Alt 3: short token — exactly 13 [a-z0-9] chars after "token:" or "token%3A".
+		// Short token: exactly 13 [a-z0-9] chars after "token:" or "token%3A".
 		{name: "token_colon_13", input: "token:1234567890abc", want: "<redacted>"},
 		{name: "token_colon_13_upper", input: "TOKEN:1234567890ABC", want: "<redacted>"},
 		{name: "token_pct3A_13", input: "token%3A1234567890abc", want: "<redacted>"},
