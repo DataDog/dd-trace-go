@@ -805,7 +805,7 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		// Embedded in params.
 		{name: "jwt_embedded", input: "safe=1&eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyMTIzIn0&other=2", want: "safe=1&<redacted>&other=2"},
 
-		// Alt 6: PEM private key block.
+		// PEM private key block.
 		// Note: the pattern ends at the final KEY — trailing "-----" is NOT consumed.
 		// Note: (?:\s|%20) between PRIVATE and KEY has no +, so exactly one space/encoded-space.
 		{name: "pem_rsa", input: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF-----END RSA PRIVATE KEY-----", want: "<redacted>-----"},
@@ -859,7 +859,7 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		// Sensitive key + GitHub token.
 		{name: "mix_sensitive_key_github", input: "password=x&gho_abcdefghijklmnopqrstuvwxyz0123456789", want: "<redacted>&<redacted>"},
 		// All 7 alternatives in one string.
-		// Alt6 contributes "<redacted>-----" because the pattern ends at KEY (no trailing -----).
+		// The PEM private key branch contributes "<redacted>-----" because the pattern ends at KEY (no trailing -----).
 		{
 			name: "mix_all_alts",
 			input: "password=secret" +

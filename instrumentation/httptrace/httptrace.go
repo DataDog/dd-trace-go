@@ -349,6 +349,16 @@ func obfuscateQueryStringDefault(s string) string {
 			last = pos
 			continue
 		}
+		if n, ok := matchDefaultObfuscatorPEMPrivateKey(s, pos); ok {
+			if b.Len() == 0 {
+				b.Grow(len(s))
+			}
+			b.WriteString(s[last:pos])
+			b.WriteString("<redacted>")
+			pos += n
+			last = pos
+			continue
+		}
 		pos++
 	}
 	if b.Len() == 0 {
@@ -455,6 +465,65 @@ func matchDefaultObfuscatorJWT(s string, pos int) (int, bool) {
 	return pos - start, true
 }
 
+func matchDefaultObfuscatorPEMPrivateKey(s string, pos int) (int, bool) {
+	start := pos
+	var ok bool
+	if pos, ok = matchDefaultObfuscatorHyphens(s, pos, 5); !ok {
+		return 0, false
+	}
+	if pos, ok = matchFoldLiteral(s, pos, "BEGIN"); !ok {
+		return 0, false
+	}
+	for _, labelEnd := range consumeDefaultObfuscatorPEMLabelEndPositions(s, pos) {
+		afterKey, ok := matchDefaultObfuscatorPEMPrivateKeyLiteral(s, labelEnd)
+		if !ok {
+			continue
+		}
+		end, ok := matchDefaultObfuscatorPEMBodyAndEnd(s, afterKey)
+		if ok {
+			return end - start, true
+		}
+	}
+	return 0, false
+}
+
+func matchDefaultObfuscatorPEMBodyAndEnd(s string, pos int) (int, bool) {
+	var ok bool
+	if pos, ok = matchDefaultObfuscatorHyphens(s, pos, 5); !ok {
+		return 0, false
+	}
+	if pos, ok = consumeDefaultObfuscatorNonHyphenRun(s, pos); !ok {
+		return 0, false
+	}
+	if pos, ok = matchDefaultObfuscatorHyphens(s, pos, 5); !ok {
+		return 0, false
+	}
+	if pos, ok = matchFoldLiteral(s, pos, "END"); !ok {
+		return 0, false
+	}
+	return matchDefaultObfuscatorPEMFinalPrivateKey(s, pos)
+}
+
+func matchDefaultObfuscatorPEMFinalPrivateKey(s string, pos int) (int, bool) {
+	for _, labelEnd := range consumeDefaultObfuscatorPEMLabelEndPositions(s, pos) {
+		if end, ok := matchDefaultObfuscatorPEMPrivateKeyLiteral(s, labelEnd); ok {
+			return end, true
+		}
+	}
+	return 0, false
+}
+
+func matchDefaultObfuscatorPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
+	var ok bool
+	if pos, ok = matchFoldLiteral(s, pos, "PRIVATE"); !ok {
+		return 0, false
+	}
+	if pos, ok = consumeDefaultObfuscatorSpaceOrPct20(s, pos); !ok {
+		return 0, false
+	}
+	return matchFoldLiteral(s, pos, "KEY")
+}
+
 func matchDefaultObfuscatorSensitiveKeySuffix(s string, pos int) (int, bool) {
 	if end, ok := matchDefaultObfuscatorSensitiveKeyValue(s, pos); ok {
 		return end, true
@@ -527,6 +596,18 @@ func skipDefaultObfuscatorSpaces(s string, pos int) int {
 	return pos
 }
 
+func matchDefaultObfuscatorHyphens(s string, pos int, n int) (int, bool) {
+	if len(s)-pos < n {
+		return 0, false
+	}
+	for i := range n {
+		if s[pos+i] != '-' {
+			return 0, false
+		}
+	}
+	return pos + n, true
+}
+
 func isDefaultObfuscatorSpace(c byte) bool {
 	switch c {
 	case ' ', '\t', '\n', '\f', '\r':
@@ -534,6 +615,51 @@ func isDefaultObfuscatorSpace(c byte) bool {
 	default:
 		return false
 	}
+}
+
+func consumeDefaultObfuscatorPEMLabelEndPositions(s string, pos int) []int {
+	var positions []int
+	for {
+		next, ok := consumeDefaultObfuscatorPEMLabelChar(s, pos)
+		if !ok {
+			break
+		}
+		pos = next
+		positions = append(positions, pos)
+	}
+	for i, j := 0, len(positions)-1; i < j; i, j = i+1, j-1 {
+		positions[i], positions[j] = positions[j], positions[i]
+	}
+	return positions
+}
+
+func consumeDefaultObfuscatorPEMLabelChar(s string, pos int) (int, bool) {
+	if next, ok := consumeDefaultObfuscatorAlphaChar(s, pos); ok {
+		return next, true
+	}
+	if next, ok := consumeDefaultObfuscatorSpaceOrPct20(s, pos); ok {
+		return next, true
+	}
+	return 0, false
+}
+
+func consumeDefaultObfuscatorSpaceOrPct20(s string, pos int) (int, bool) {
+	if pos < len(s) && isDefaultObfuscatorSpace(s[pos]) {
+		return pos + 1, true
+	}
+	return matchFoldLiteral(s, pos, "%20")
+}
+
+func consumeDefaultObfuscatorNonHyphenRun(s string, pos int) (int, bool) {
+	start := pos
+	for pos < len(s) && s[pos] != '-' {
+		_, width := utf8.DecodeRuneInString(s[pos:])
+		pos += width
+	}
+	if pos == start {
+		return 0, false
+	}
+	return pos, true
 }
 
 func consumeDefaultObfuscatorJWTHeader(s string, pos int) (int, bool) {
@@ -629,6 +755,26 @@ func consumeDefaultObfuscatorWordChar(s string, pos int) (int, bool) {
 	}
 	if pos < len(s) && s[pos] == '_' {
 		return pos + 1, true
+	}
+	return 0, false
+}
+
+func consumeDefaultObfuscatorAlphaChar(s string, pos int) (int, bool) {
+	if pos >= len(s) {
+		return 0, false
+	}
+	c := s[pos]
+	if ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') {
+		return pos + 1, true
+	}
+	if c < utf8.RuneSelf {
+		return 0, false
+	}
+	r, width := utf8.DecodeRuneInString(s[pos:])
+	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
+		if 'a' <= folded && folded <= 'z' {
+			return pos + width, true
+		}
 	}
 	return 0, false
 }
