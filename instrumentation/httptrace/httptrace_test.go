@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -912,6 +913,7 @@ func FuzzDefaultObfuscator(f *testing.F) {
 func BenchmarkURLFromRequest(b *testing.B) {
 	oldCfg := cfg
 	defer func() { cfg = oldCfg }()
+	customQueryStringRegexp := regexp.MustCompile("password=[^&]+")
 
 	queries := []struct {
 		name string
@@ -929,10 +931,37 @@ func BenchmarkURLFromRequest(b *testing.B) {
 			Host: "example.com",
 		}
 
-		b.Run("regex/"+q.name, func(b *testing.B) {
+		b.Run("default_regex/"+q.name, func(b *testing.B) {
 			cfg = oldCfg
 			cfg.queryString = true
-			cfg.queryStringRegexp = QueryStringRegexp()
+			cfg.queryStringRegexp = defaultQueryStringRegexp
+			cfg.useDefaultObfuscator = false
+			cfg.serverQueryStringAllowlist = nil
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				URLFromRequest(r, true)
+			}
+		})
+
+		b.Run("default_fast/"+q.name, func(b *testing.B) {
+			cfg = oldCfg
+			cfg.queryString = true
+			cfg.queryStringRegexp = nil
+			cfg.useDefaultObfuscator = true
+			cfg.serverQueryStringAllowlist = nil
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				URLFromRequest(r, true)
+			}
+		})
+
+		b.Run("custom_regex/"+q.name, func(b *testing.B) {
+			cfg = oldCfg
+			cfg.queryString = true
+			cfg.queryStringRegexp = customQueryStringRegexp
+			cfg.useDefaultObfuscator = false
 			cfg.serverQueryStringAllowlist = nil
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -945,6 +974,7 @@ func BenchmarkURLFromRequest(b *testing.B) {
 			cfg = oldCfg
 			cfg.queryString = true
 			cfg.queryStringRegexp = nil
+			cfg.useDefaultObfuscator = false
 			cfg.serverQueryStringAllowlist = map[string]struct{}{
 				"user": {}, "page": {}, "sort": {},
 				"sz": {}, "tile": {}, "gdpr": {}, "ip": {}, "idtype": {},
