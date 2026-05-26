@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
@@ -668,6 +669,12 @@ func TestFilterQueryStringByAllowlist(t *testing.T) {
 }
 
 func TestObfuscateQueryStringDefault(t *testing.T) {
+	// SSH key bodies for the 100-repetition boundary (alt 7).
+	// Note: {100,} counts group repetitions, not bytes — %2F/%5C/%2B each count as one.
+	ssh99 := strings.Repeat("a", 99)
+	ssh100 := strings.Repeat("a", 100)
+	ssh101 := strings.Repeat("a", 101)
+
 	tests := []struct {
 		name  string
 		input string
@@ -814,6 +821,31 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "pem_no_end", input: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF", want: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF"},
 		// Embedded in params: trailing "-----" before "&safe=1" is preserved.
 		{name: "pem_embedded", input: "key=x&-----BEGIN RSA PRIVATE KEY-----BODY-----END RSA PRIVATE KEY-----&safe=1", want: "key=x&<redacted>-----&safe=1"},
+
+		// Alt 7: SSH RSA key — ssh-rsa + optional spaces + ≥100 repetitions of [a-z0-9/\.+] or %2F/%5C/%2B.
+		// Quirk: bare '\' is absent from [a-z0-9\/\.+]; only %5C (URL-encoded '\') is accepted.
+		{name: "ssh_100", input: "ssh-rsa " + ssh100, want: "<redacted>"},
+		{name: "ssh_101", input: "ssh-rsa " + ssh101, want: "<redacted>"},
+		{name: "ssh_upper", input: "SSH-RSA " + ssh100, want: "<redacted>"},
+		// Zero spaces also accepted ((?:\s|%20)*).
+		{name: "ssh_no_space", input: "ssh-rsa" + ssh100, want: "<redacted>"},
+		{name: "ssh_pct20", input: "ssh-rsa%20" + ssh100, want: "<redacted>"},
+		// / . + are valid body chars.
+		{name: "ssh_with_slash", input: "ssh-rsa " + strings.Repeat("a", 99) + "/", want: "<redacted>"},
+		{name: "ssh_with_dot", input: "ssh-rsa " + strings.Repeat("a", 99) + ".", want: "<redacted>"},
+		{name: "ssh_with_plus", input: "ssh-rsa " + strings.Repeat("a", 99) + "+", want: "<redacted>"},
+		// %2F/%5C/%2B each count as one repetition toward the 100 minimum.
+		{name: "ssh_pct2F_counts_one", input: "ssh-rsa " + strings.Repeat("a", 99) + "%2F", want: "<redacted>"},
+		{name: "ssh_pct5C_counts_one", input: "ssh-rsa " + strings.Repeat("a", 99) + "%5C", want: "<redacted>"},
+		{name: "ssh_pct2B_counts_one", input: "ssh-rsa " + strings.Repeat("a", 99) + "%2B", want: "<redacted>"},
+		// Boundary: 99 repetitions → no match.
+		{name: "ssh_99", input: "ssh-rsa " + ssh99, want: "ssh-rsa " + ssh99},
+		// Quirk: bare '\' is not in the char class → the run stops before it, preventing 100 repetitions.
+		{name: "ssh_bare_backslash", input: "ssh-rsa " + strings.Repeat("a", 99) + "\\", want: "ssh-rsa " + strings.Repeat("a", 99) + "\\"},
+		// No match: wrong prefix.
+		{name: "ssh_wrong_prefix", input: "ssh-dsa " + ssh100, want: "ssh-dsa " + ssh100},
+		// Embedded in params.
+		{name: "ssh_embedded", input: "key=x&ssh-rsa " + ssh100 + "&safe=1", want: "key=x&<redacted>&safe=1"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
