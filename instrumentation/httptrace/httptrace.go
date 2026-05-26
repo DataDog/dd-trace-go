@@ -309,6 +309,16 @@ func obfuscateQueryStringDefault(s string) string {
 			last = pos
 			continue
 		}
+		if n, ok := matchDefaultObfuscatorBearerToken(s, pos); ok {
+			if b.Len() == 0 {
+				b.Grow(len(s))
+			}
+			b.WriteString(s[last:pos])
+			b.WriteString("<redacted>")
+			pos += n
+			last = pos
+			continue
+		}
 		pos++
 	}
 	if b.Len() == 0 {
@@ -329,6 +339,23 @@ func matchDefaultObfuscatorAlt1(s string, pos int) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+func matchDefaultObfuscatorBearerToken(s string, pos int) (int, bool) {
+	start := pos
+	var ok bool
+	if pos, ok = matchFoldLiteral(s, pos, "bearer"); !ok {
+		return 0, false
+	}
+	spaceStart := pos
+	pos = skipDefaultObfuscatorSpaces(s, pos)
+	tokenEnd, ok := consumeDefaultObfuscatorBearerTokenChar(s, pos)
+	if pos == spaceStart || !ok {
+		return 0, false
+	}
+	// Quirk: the regexp has [a-z0-9._-] without a quantifier, so only one
+	// token character after the spaces is redacted.
+	return tokenEnd - start, true
 }
 
 func matchDefaultObfuscatorAlt1Suffix(s string, pos int) (int, bool) {
@@ -410,6 +437,26 @@ func isDefaultObfuscatorSpace(c byte) bool {
 	default:
 		return false
 	}
+}
+
+func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
+	if pos >= len(s) {
+		return 0, false
+	}
+	c := s[pos]
+	if ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || c == '.' || c == '_' || c == '-' {
+		return pos + 1, true
+	}
+	if c < utf8.RuneSelf {
+		return 0, false
+	}
+	r, width := utf8.DecodeRuneInString(s[pos:])
+	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
+		if 'a' <= folded && folded <= 'z' {
+			return pos + width, true
+		}
+	}
+	return 0, false
 }
 
 func consumeDefaultObfuscatorJSONValue(s string, pos int) int {
