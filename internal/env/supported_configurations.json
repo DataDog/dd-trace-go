@@ -1043,13 +1043,6 @@
         "default": "false"
       }
     ],
-    "DD_TRACE_CLIENT_HOSTNAME_COMPAT": [
-      {
-        "implementation": "A",
-        "type": "string",
-        "default": null
-      }
-    ],
     "DD_TRACE_CLIENT_IP_ENABLED": [
       {
         "implementation": "A",
