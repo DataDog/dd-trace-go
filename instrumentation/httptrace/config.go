@@ -84,6 +84,8 @@ func newConfig() config {
 	if _, ok := env.Lookup(EnvQueryStringRegexp); ok {
 		c.queryStringRegexp = QueryStringRegexp()
 	} else {
+		// Use an in-code state-machine obfuscator by default instead of `defaultQueryStringRegexp`
+		// for performance reasons.
 		c.useDefaultObfuscator = true
 	}
 	if v, ok := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
