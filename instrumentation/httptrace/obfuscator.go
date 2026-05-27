@@ -58,6 +58,15 @@ const (
 	classJWTSig  uint8 = 1 << 6 // [a-zA-Z0-9_.+/=-]
 )
 
+// Regex-quantifier mirror constants. Each matches a fixed-length run in the
+// original defaultQueryStringRegexp; keep these in sync if the regex changes.
+const (
+	shortTokenBodyLen = 13  // token(?::|%3A)[a-z0-9]{13}
+	gitHubTokenLen    = 36  // gh[opsu]_[0-9a-zA-Z]{36}
+	pemHyphenRun      = 5   // [\-]{5}
+	sshRSAMinBody     = 100 // (?:[a-z0-9\/\.+]|%2F|%5C|%2B){100,}
+)
+
 // asciiClass is a 128-entry lookup table indexed by ASCII byte value.
 // It collapses the per-byte range checks in the six character classifiers
 // into a single load + bitmask test.
@@ -100,37 +109,37 @@ func obfuscateQueryStringDefault(s string) string {
 	var b strings.Builder
 	last := 0
 	for pos := 0; pos < len(s); {
-		if n, ok := matchDefaultObfuscatorSensitiveKey(s, pos); ok {
+		if n, ok := matchSensitiveKey(s, pos); ok {
 			last = emitObfuscated(&b, s, last, pos, n)
 			pos = last
 			continue
 		}
-		if n, ok := matchDefaultObfuscatorBearerToken(s, pos); ok {
+		if n, ok := matchBearerToken(s, pos); ok {
 			last = emitObfuscated(&b, s, last, pos, n)
 			pos = last
 			continue
 		}
-		if n, ok := matchDefaultObfuscatorShortToken(s, pos); ok {
+		if n, ok := matchShortToken(s, pos); ok {
 			last = emitObfuscated(&b, s, last, pos, n)
 			pos = last
 			continue
 		}
-		if n, ok := matchDefaultObfuscatorGitHubToken(s, pos); ok {
+		if n, ok := matchGitHubToken(s, pos); ok {
 			last = emitObfuscated(&b, s, last, pos, n)
 			pos = last
 			continue
 		}
-		if n, ok := matchDefaultObfuscatorJWT(s, pos); ok {
+		if n, ok := matchJWT(s, pos); ok {
 			last = emitObfuscated(&b, s, last, pos, n)
 			pos = last
 			continue
 		}
-		if n, ok := matchDefaultObfuscatorPEMPrivateKey(s, pos); ok {
+		if n, ok := matchPEMPrivateKey(s, pos); ok {
 			last = emitObfuscated(&b, s, last, pos, n)
 			pos = last
 			continue
 		}
-		if n, ok, skip := matchDefaultObfuscatorSSHRSAKey(s, pos); ok {
+		if n, ok, skip := matchSSHRSAKey(s, pos); ok {
 			last = emitObfuscated(&b, s, last, pos, n)
 			pos = last
 		} else {
@@ -144,7 +153,7 @@ func obfuscateQueryStringDefault(s string) string {
 	return b.String()
 }
 
-func matchDefaultObfuscatorSensitiveKey(s string, pos int) (int, bool) {
+func matchSensitiveKey(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -158,7 +167,7 @@ func matchDefaultObfuscatorSensitiveKey(s string, pos int) (int, bool) {
 				if !ok {
 					continue
 				}
-				if suffixEnd, ok := matchDefaultObfuscatorSensitiveKeySuffix(s, end); ok {
+				if suffixEnd, ok := matchSensitiveKeySuffix(s, end); ok {
 					return suffixEnd - pos, true
 				}
 			}
@@ -185,22 +194,22 @@ func matchDefaultObfuscatorSensitiveKey(s string, pos int) (int, bool) {
 		if !ok {
 			continue
 		}
-		if suffixEnd, ok := matchDefaultObfuscatorSensitiveKeySuffix(s, end); ok {
+		if suffixEnd, ok := matchSensitiveKeySuffix(s, end); ok {
 			return suffixEnd - pos, true
 		}
 	}
 	return 0, false
 }
 
-func matchDefaultObfuscatorBearerToken(s string, pos int) (int, bool) {
+func matchBearerToken(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
 	if pos, ok = matchFoldLiteral(s, pos, "bearer"); !ok {
 		return 0, false
 	}
 	spaceStart := pos
-	pos = skipDefaultObfuscatorSpaces(s, pos)
-	tokenEnd, ok := consumeDefaultObfuscatorBearerTokenChar(s, pos)
+	pos = skipSpaces(s, pos)
+	tokenEnd, ok := consumeBearerTokenChar(s, pos)
 	if pos == spaceStart || !ok {
 		return 0, false
 	}
@@ -209,7 +218,7 @@ func matchDefaultObfuscatorBearerToken(s string, pos int) (int, bool) {
 	return tokenEnd - start, true
 }
 
-func matchDefaultObfuscatorShortToken(s string, pos int) (int, bool) {
+func matchShortToken(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
 	if pos, ok = matchFoldLiteral(s, pos, "token"); !ok {
@@ -220,77 +229,77 @@ func matchDefaultObfuscatorShortToken(s string, pos int) (int, bool) {
 	} else if pos, ok = matchFoldLiteral(s, pos, "%3A"); !ok {
 		return 0, false
 	}
-	for range 13 {
-		if pos, ok = consumeDefaultObfuscatorAlphaNumChar(s, pos); !ok {
+	for range shortTokenBodyLen {
+		if pos, ok = consumeAlphaNumChar(s, pos); !ok {
 			return 0, false
 		}
 	}
 	return pos - start, true
 }
 
-func matchDefaultObfuscatorGitHubToken(s string, pos int) (int, bool) {
+func matchGitHubToken(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
 	if pos, ok = matchFoldLiteral(s, pos, "gh"); !ok {
 		return 0, false
 	}
-	if pos, ok = consumeDefaultObfuscatorFoldedASCIISet(s, pos, "opsu"); !ok {
+	if pos, ok = consumeFoldedASCIISet(s, pos, "opsu"); !ok {
 		return 0, false
 	}
 	if pos >= len(s) || s[pos] != '_' {
 		return 0, false
 	}
 	pos++
-	for range 36 {
-		if pos, ok = consumeDefaultObfuscatorAlphaNumChar(s, pos); !ok {
+	for range gitHubTokenLen {
+		if pos, ok = consumeAlphaNumChar(s, pos); !ok {
 			return 0, false
 		}
 	}
 	return pos - start, true
 }
 
-func matchDefaultObfuscatorJWT(s string, pos int) (int, bool) {
+func matchJWT(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
-	if pos, ok = consumeDefaultObfuscatorJWTHeader(s, pos); !ok {
+	if pos, ok = consumeJWTHeader(s, pos); !ok {
 		return 0, false
 	}
-	if pos, ok = consumeDefaultObfuscatorJWTSegment(s, pos); !ok {
+	if pos, ok = consumeJWTSegment(s, pos); !ok {
 		return 0, false
 	}
 	if pos >= len(s) || s[pos] != '.' {
 		return 0, false
 	}
 	pos++
-	if pos, ok = consumeDefaultObfuscatorJWTHeader(s, pos); !ok {
+	if pos, ok = consumeJWTHeader(s, pos); !ok {
 		return 0, false
 	}
-	if pos, ok = consumeDefaultObfuscatorJWTSegment(s, pos); !ok {
+	if pos, ok = consumeJWTSegment(s, pos); !ok {
 		return 0, false
 	}
 	if pos < len(s) && s[pos] == '.' {
-		if end, ok := consumeDefaultObfuscatorJWTSignature(s, pos+1); ok {
+		if end, ok := consumeJWTSignature(s, pos+1); ok {
 			pos = end
 		}
 	}
 	return pos - start, true
 }
 
-func matchDefaultObfuscatorPEMPrivateKey(s string, pos int) (int, bool) {
+func matchPEMPrivateKey(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
-	if pos, ok = matchDefaultObfuscatorHyphens(s, pos, 5); !ok {
+	if pos, ok = matchHyphens(s, pos, pemHyphenRun); !ok {
 		return 0, false
 	}
 	if pos, ok = matchFoldLiteral(s, pos, "BEGIN"); !ok {
 		return 0, false
 	}
-	for _, labelEnd := range consumeDefaultObfuscatorPEMLabelEndPositions(s, pos) {
-		afterKey, ok := matchDefaultObfuscatorPEMPrivateKeyLiteral(s, labelEnd)
+	for _, labelEnd := range consumePEMLabelEndPositions(s, pos) {
+		afterKey, ok := matchPEMPrivateKeyLiteral(s, labelEnd)
 		if !ok {
 			continue
 		}
-		end, ok := matchDefaultObfuscatorPEMBodyAndEnd(s, afterKey)
+		end, ok := matchPEMBodyAndEnd(s, afterKey)
 		if ok {
 			return end - start, true
 		}
@@ -298,44 +307,44 @@ func matchDefaultObfuscatorPEMPrivateKey(s string, pos int) (int, bool) {
 	return 0, false
 }
 
-func matchDefaultObfuscatorPEMBodyAndEnd(s string, pos int) (int, bool) {
+func matchPEMBodyAndEnd(s string, pos int) (int, bool) {
 	var ok bool
-	if pos, ok = matchDefaultObfuscatorHyphens(s, pos, 5); !ok {
+	if pos, ok = matchHyphens(s, pos, pemHyphenRun); !ok {
 		return 0, false
 	}
-	if pos, ok = consumeDefaultObfuscatorNonHyphenRun(s, pos); !ok {
+	if pos, ok = consumeNonHyphenRun(s, pos); !ok {
 		return 0, false
 	}
-	if pos, ok = matchDefaultObfuscatorHyphens(s, pos, 5); !ok {
+	if pos, ok = matchHyphens(s, pos, pemHyphenRun); !ok {
 		return 0, false
 	}
 	if pos, ok = matchFoldLiteral(s, pos, "END"); !ok {
 		return 0, false
 	}
-	return matchDefaultObfuscatorPEMFinalPrivateKey(s, pos)
+	return matchPEMFinalPrivateKey(s, pos)
 }
 
-func matchDefaultObfuscatorPEMFinalPrivateKey(s string, pos int) (int, bool) {
-	for _, labelEnd := range consumeDefaultObfuscatorPEMLabelEndPositions(s, pos) {
-		if end, ok := matchDefaultObfuscatorPEMPrivateKeyLiteral(s, labelEnd); ok {
+func matchPEMFinalPrivateKey(s string, pos int) (int, bool) {
+	for _, labelEnd := range consumePEMLabelEndPositions(s, pos) {
+		if end, ok := matchPEMPrivateKeyLiteral(s, labelEnd); ok {
 			return end, true
 		}
 	}
 	return 0, false
 }
 
-func matchDefaultObfuscatorPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
+func matchPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
 	var ok bool
 	if pos, ok = matchFoldLiteral(s, pos, "PRIVATE"); !ok {
 		return 0, false
 	}
-	if pos, ok = consumeDefaultObfuscatorSpaceOrPct20(s, pos); !ok {
+	if pos, ok = consumeSpaceOrPct20(s, pos); !ok {
 		return 0, false
 	}
 	return matchFoldLiteral(s, pos, "KEY")
 }
 
-// matchDefaultObfuscatorSSHRSAKey returns (matchedLen, ok, safeSkip).
+// matchSSHRSAKey returns (matchedLen, ok, safeSkip).
 // On failure (ok=false), safeSkip is the number of bytes from pos that the
 // outer loop can safely skip without missing any other match. This avoids
 // re-scanning the entire key body when the key is too short.
@@ -348,47 +357,44 @@ func matchDefaultObfuscatorPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
 //   JWT (eyJ…)                 — '.' in body charset; 'e'/'E' can start JWT → NOT safe; stop skip at e/E
 //   PEM (-----)                — '-' not in body → safe
 //   SSH-RSA itself             — '-' not in body → cannot re-anchor → safe
-func matchDefaultObfuscatorSSHRSAKey(s string, pos int) (matchedLen int, ok bool, safeSkip int) {
+func matchSSHRSAKey(s string, pos int) (matchedLen int, ok bool, safeSkip int) {
 	start := pos
 	var matched bool
 	if pos, matched = matchFoldLiteral(s, pos, "ssh-rsa"); !matched {
 		return 0, false, 0
 	}
-	pos = skipDefaultObfuscatorSpaces(s, pos)
-	// safeEnd tracks the furthest position that is safe to skip to on failure.
-	// We advance it for each single-byte body char that is not 'e'/'E'
-	// (which could anchor a JWT match).
+	pos = skipSpaces(s, pos)
 	safeEnd := pos
 	count := 0
 	for {
-		next, ok := consumeDefaultObfuscatorSSHRSAKeyChar(s, pos)
+		next, ok := consumeSSHRSAKeyChar(s, pos)
 		if !ok {
 			break
 		}
-		// Only extend safeEnd for single-byte advances that aren't 'e'/'E'.
-		// Percent-encoded chars (next=pos+3) are fine to skip but we keep
-		// safeEnd conservative by only advancing on single-byte steps.
+		// Stop safeEnd at 'e'/'E' (could anchor a JWT match) and at multi-byte
+		// percent runs (kept conservative). s[pos]|32 ASCII-lowercases the
+		// LUT-validated body char.
 		if next == pos+1 && s[pos]|32 != 'e' {
 			safeEnd = next
 		}
 		pos = next
 		count++
 	}
-	if count < 100 {
+	if count < sshRSAMinBody {
 		return 0, false, safeEnd - start
 	}
 	return pos - start, true, 0
 }
 
-func matchDefaultObfuscatorSensitiveKeySuffix(s string, pos int) (int, bool) {
-	if end, ok := matchDefaultObfuscatorSensitiveKeyValue(s, pos); ok {
+func matchSensitiveKeySuffix(s string, pos int) (int, bool) {
+	if end, ok := matchSensitiveKeyValue(s, pos); ok {
 		return end, true
 	}
-	return matchDefaultObfuscatorSensitiveKeyJSON(s, pos)
+	return matchSensitiveKeyJSON(s, pos)
 }
 
-func matchDefaultObfuscatorSensitiveKeyValue(s string, pos int) (int, bool) {
-	pos = skipDefaultObfuscatorSpaces(s, pos)
+func matchSensitiveKeyValue(s string, pos int) (int, bool) {
+	pos = skipSpaces(s, pos)
 	var ok bool
 	if pos < len(s) && s[pos] == '=' {
 		pos++
@@ -404,42 +410,42 @@ func matchDefaultObfuscatorSensitiveKeyValue(s string, pos int) (int, bool) {
 	return pos, true
 }
 
-func matchDefaultObfuscatorSensitiveKeyJSON(s string, pos int) (int, bool) {
+func matchSensitiveKeyJSON(s string, pos int) (int, bool) {
 	var ok bool
-	if pos, ok = matchDefaultObfuscatorQuote(s, pos); !ok {
+	if pos, ok = matchQuote(s, pos); !ok {
 		return 0, false
 	}
-	pos = skipDefaultObfuscatorSpaces(s, pos)
+	pos = skipSpaces(s, pos)
 	if pos < len(s) && s[pos] == ':' {
 		pos++
 	} else if pos, ok = matchFoldLiteral(s, pos, "%3A"); !ok {
 		return 0, false
 	}
-	pos = skipDefaultObfuscatorSpaces(s, pos)
-	if pos, ok = matchDefaultObfuscatorQuote(s, pos); !ok {
+	pos = skipSpaces(s, pos)
+	if pos, ok = matchQuote(s, pos); !ok {
 		return 0, false
 	}
 	valueStart := pos
-	pos = consumeDefaultObfuscatorJSONValue(s, pos)
+	pos = consumeJSONValue(s, pos)
 	if pos == valueStart {
 		return 0, false
 	}
-	if pos, ok = matchDefaultObfuscatorQuote(s, pos); !ok {
+	if pos, ok = matchQuote(s, pos); !ok {
 		return 0, false
 	}
 	return pos, true
 }
 
-func matchDefaultObfuscatorQuote(s string, pos int) (int, bool) {
+func matchQuote(s string, pos int) (int, bool) {
 	if pos < len(s) && s[pos] == '"' {
 		return pos + 1, true
 	}
 	return matchFoldLiteral(s, pos, "%22")
 }
 
-func skipDefaultObfuscatorSpaces(s string, pos int) int {
+func skipSpaces(s string, pos int) int {
 	for pos < len(s) {
-		if isDefaultObfuscatorSpace(s[pos]) {
+		if isSpace(s[pos]) {
 			pos++
 			continue
 		}
@@ -452,7 +458,7 @@ func skipDefaultObfuscatorSpaces(s string, pos int) int {
 	return pos
 }
 
-func matchDefaultObfuscatorHyphens(s string, pos int, n int) (int, bool) {
+func matchHyphens(s string, pos int, n int) (int, bool) {
 	if len(s)-pos < n {
 		return 0, false
 	}
@@ -464,7 +470,7 @@ func matchDefaultObfuscatorHyphens(s string, pos int, n int) (int, bool) {
 	return pos + n, true
 }
 
-func isDefaultObfuscatorSpace(c byte) bool {
+func isSpace(c byte) bool {
 	switch c {
 	case ' ', '\t', '\n', '\f', '\r':
 		return true
@@ -473,10 +479,10 @@ func isDefaultObfuscatorSpace(c byte) bool {
 	}
 }
 
-func consumeDefaultObfuscatorPEMLabelEndPositions(s string, pos int) []int {
+func consumePEMLabelEndPositions(s string, pos int) []int {
 	var positions []int
 	for {
-		next, ok := consumeDefaultObfuscatorPEMLabelChar(s, pos)
+		next, ok := consumePEMLabelChar(s, pos)
 		if !ok {
 			break
 		}
@@ -487,24 +493,24 @@ func consumeDefaultObfuscatorPEMLabelEndPositions(s string, pos int) []int {
 	return positions
 }
 
-func consumeDefaultObfuscatorPEMLabelChar(s string, pos int) (int, bool) {
-	if next, ok := consumeDefaultObfuscatorAlphaChar(s, pos); ok {
+func consumePEMLabelChar(s string, pos int) (int, bool) {
+	if next, ok := consumeAlphaChar(s, pos); ok {
 		return next, true
 	}
-	if next, ok := consumeDefaultObfuscatorSpaceOrPct20(s, pos); ok {
+	if next, ok := consumeSpaceOrPct20(s, pos); ok {
 		return next, true
 	}
 	return 0, false
 }
 
-func consumeDefaultObfuscatorSpaceOrPct20(s string, pos int) (int, bool) {
-	if pos < len(s) && isDefaultObfuscatorSpace(s[pos]) {
+func consumeSpaceOrPct20(s string, pos int) (int, bool) {
+	if pos < len(s) && isSpace(s[pos]) {
 		return pos + 1, true
 	}
 	return matchFoldLiteral(s, pos, "%20")
 }
 
-func consumeDefaultObfuscatorNonHyphenRun(s string, pos int) (int, bool) {
+func consumeNonHyphenRun(s string, pos int) (int, bool) {
 	i := strings.IndexByte(s[pos:], '-')
 	if i == 0 {
 		return 0, false
@@ -515,18 +521,18 @@ func consumeDefaultObfuscatorNonHyphenRun(s string, pos int) (int, bool) {
 	return pos + i, true
 }
 
-func consumeDefaultObfuscatorJWTHeader(s string, pos int) (int, bool) {
+func consumeJWTHeader(s string, pos int) (int, bool) {
 	var ok bool
 	if pos, ok = matchFoldLiteral(s, pos, "ey"); !ok {
 		return 0, false
 	}
-	return consumeDefaultObfuscatorFoldedASCIISet(s, pos, "ijkl")
+	return consumeFoldedASCIISet(s, pos, "ijkl")
 }
 
-func consumeDefaultObfuscatorJWTSegment(s string, pos int) (int, bool) {
+func consumeJWTSegment(s string, pos int) (int, bool) {
 	start := pos
 	for {
-		next, ok := consumeDefaultObfuscatorJWTSegmentChar(s, pos)
+		next, ok := consumeJWTSegmentChar(s, pos)
 		if !ok {
 			break
 		}
@@ -538,7 +544,20 @@ func consumeDefaultObfuscatorJWTSegment(s string, pos int) (int, bool) {
 	return pos, true
 }
 
-func consumeDefaultObfuscatorJWTSegmentChar(s string, pos int) (int, bool) {
+// foldsToLowerASCIILetter is the non-ASCII slow path shared by every per-byte
+// classifier whose ASCII members are exactly [a-zA-Z]: a multi-byte rune
+// matches iff some SimpleFold of it lands on an ASCII lowercase letter.
+func foldsToLowerASCIILetter(s string, pos int) (int, bool) {
+	r, width := utf8.DecodeRuneInString(s[pos:])
+	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
+		if 'a' <= folded && folded <= 'z' {
+			return pos + width, true
+		}
+	}
+	return 0, false
+}
+
+func consumeJWTSegmentChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -552,19 +571,13 @@ func consumeDefaultObfuscatorJWTSegmentChar(s string, pos int) (int, bool) {
 		}
 		return 0, false
 	}
-	r, width := utf8.DecodeRuneInString(s[pos:])
-	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
-		if 'a' <= folded && folded <= 'z' {
-			return pos + width, true
-		}
-	}
-	return 0, false
+	return foldsToLowerASCIILetter(s, pos)
 }
 
-func consumeDefaultObfuscatorJWTSignature(s string, pos int) (int, bool) {
+func consumeJWTSignature(s string, pos int) (int, bool) {
 	start := pos
 	for {
-		next, ok := consumeDefaultObfuscatorJWTSignatureChar(s, pos)
+		next, ok := consumeJWTSignatureChar(s, pos)
 		if !ok {
 			break
 		}
@@ -576,7 +589,7 @@ func consumeDefaultObfuscatorJWTSignature(s string, pos int) (int, bool) {
 	return pos, true
 }
 
-func consumeDefaultObfuscatorJWTSignatureChar(s string, pos int) (int, bool) {
+func consumeJWTSignatureChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -596,16 +609,10 @@ func consumeDefaultObfuscatorJWTSignatureChar(s string, pos int) (int, bool) {
 		}
 		return 0, false
 	}
-	r, width := utf8.DecodeRuneInString(s[pos:])
-	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
-		if 'a' <= folded && folded <= 'z' {
-			return pos + width, true
-		}
-	}
-	return 0, false
+	return foldsToLowerASCIILetter(s, pos)
 }
 
-func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
+func consumeBearerTokenChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -616,16 +623,10 @@ func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
 		}
 		return 0, false
 	}
-	r, width := utf8.DecodeRuneInString(s[pos:])
-	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
-		if 'a' <= folded && folded <= 'z' {
-			return pos + width, true
-		}
-	}
-	return 0, false
+	return foldsToLowerASCIILetter(s, pos)
 }
 
-func consumeDefaultObfuscatorSSHRSAKeyChar(s string, pos int) (int, bool) {
+func consumeSSHRSAKeyChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -645,16 +646,10 @@ func consumeDefaultObfuscatorSSHRSAKeyChar(s string, pos int) (int, bool) {
 		}
 		return 0, false
 	}
-	r, width := utf8.DecodeRuneInString(s[pos:])
-	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
-		if 'a' <= folded && folded <= 'z' {
-			return pos + width, true
-		}
-	}
-	return 0, false
+	return foldsToLowerASCIILetter(s, pos)
 }
 
-func consumeDefaultObfuscatorAlphaChar(s string, pos int) (int, bool) {
+func consumeAlphaChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -665,16 +660,10 @@ func consumeDefaultObfuscatorAlphaChar(s string, pos int) (int, bool) {
 		}
 		return 0, false
 	}
-	r, width := utf8.DecodeRuneInString(s[pos:])
-	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
-		if 'a' <= folded && folded <= 'z' {
-			return pos + width, true
-		}
-	}
-	return 0, false
+	return foldsToLowerASCIILetter(s, pos)
 }
 
-func consumeDefaultObfuscatorAlphaNumChar(s string, pos int) (int, bool) {
+func consumeAlphaNumChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -685,16 +674,10 @@ func consumeDefaultObfuscatorAlphaNumChar(s string, pos int) (int, bool) {
 		}
 		return 0, false
 	}
-	r, width := utf8.DecodeRuneInString(s[pos:])
-	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
-		if 'a' <= folded && folded <= 'z' {
-			return pos + width, true
-		}
-	}
-	return 0, false
+	return foldsToLowerASCIILetter(s, pos)
 }
 
-func consumeDefaultObfuscatorFoldedASCIISet(s string, pos int, chars string) (int, bool) {
+func consumeFoldedASCIISet(s string, pos int, chars string) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -713,15 +696,15 @@ func consumeDefaultObfuscatorFoldedASCIISet(s string, pos int, chars string) (in
 	return 0, false
 }
 
-func consumeDefaultObfuscatorJSONValue(s string, pos int) int {
+func consumeJSONValue(s string, pos int) int {
 	for pos < len(s) {
 		// The value regexp is (%2[^2]|%[^2]|[^"%])+. The order is
 		// observable for inputs such as %20 and %2", so keep it verbatim.
-		if next, ok := consumeDefaultObfuscatorJSONValuePct2(s, pos); ok {
+		if next, ok := consumeJSONValuePct2(s, pos); ok {
 			pos = next
 			continue
 		}
-		if next, ok := consumeDefaultObfuscatorJSONValuePct(s, pos); ok {
+		if next, ok := consumeJSONValuePct(s, pos); ok {
 			pos = next
 			continue
 		}
@@ -734,7 +717,7 @@ func consumeDefaultObfuscatorJSONValue(s string, pos int) int {
 	return pos
 }
 
-func consumeDefaultObfuscatorJSONValuePct2(s string, pos int) (int, bool) {
+func consumeJSONValuePct2(s string, pos int) (int, bool) {
 	next, ok := matchFoldLiteral(s, pos, "%2")
 	if !ok || next >= len(s) {
 		return 0, false
@@ -746,7 +729,7 @@ func consumeDefaultObfuscatorJSONValuePct2(s string, pos int) (int, bool) {
 	return next + width, true
 }
 
-func consumeDefaultObfuscatorJSONValuePct(s string, pos int) (int, bool) {
+func consumeJSONValuePct(s string, pos int) (int, bool) {
 	if pos >= len(s) || s[pos] != '%' || pos+1 >= len(s) {
 		return 0, false
 	}
