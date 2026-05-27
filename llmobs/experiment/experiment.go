@@ -50,8 +50,9 @@ type Experiment struct {
 	tagsSlice         []string
 
 	// these are set after the experiment is run
-	id      string
-	runName string
+	id        string
+	runName   string
+	projectID string
 }
 
 // Task represents the task to run for an Experiment.
@@ -265,6 +266,7 @@ func (e *Experiment) Run(ctx context.Context, opts ...RunOption) (result *Experi
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
+	e.projectID = proj.ID
 
 	// 2) Create the experiment, telling the backend how many runs to expect
 	expResp, err := ll.Transport.CreateExperiment(ctx, e.Name, e.dataset.ID(), proj.ID, e.dataset.Version(), e.cfg.experimentCfg, e.tagsSlice, e.description, e.cfg.runs)
@@ -454,6 +456,7 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 		ID:           e.id,
 		RunID:        run.ID,
 		RunIteration: run.Iteration,
+		ProjectID:    e.projectID,
 	}, illmobs.StartSpanConfig{})
 	defer func() { span.Finish(illmobs.FinishSpanConfig{Error: err}) }()
 
@@ -464,6 +467,9 @@ func (e *Experiment) runTaskForRecord(ctx context.Context, llmobs *illmobs.LLMOb
 	tags["experiment_id"] = e.id
 	tags["run_id"] = run.ID
 	tags["run_iteration"] = fmt.Sprintf("%d", run.Iteration)
+	if e.projectID != "" {
+		tags["project_id"] = e.projectID
+	}
 
 	out, err := e.task.Run(ctx, rec, e.cfg.experimentCfg)
 	if err != nil {
