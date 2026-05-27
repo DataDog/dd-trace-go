@@ -2258,8 +2258,6 @@ func TestCanComputeStats(t *testing.T) {
 }
 
 // Regression: agentless flag set without CI Visibility enabled must not disable the agent.
-// Pre-config-migration, c.ciVisibilityAgentless was only assigned inside the CI Vis block,
-// so the raw env var alone couldn't flip agent-bypass behavior.
 func TestAgentEnabledWithAgentlessEnvOnly(t *testing.T) {
 	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
 	c, err := newTestConfig()
