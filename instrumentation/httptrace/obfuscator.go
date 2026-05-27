@@ -49,13 +49,14 @@ var sensitiveKeywordsByFirstByte = [5]struct {
 // Each bit covers ALL characters that belong to that class (not just the extras).
 // Non-ASCII bytes are handled by the Unicode fold fallback in each classifier.
 const (
-	classAlpha   uint8 = 1 << 0 // [a-zA-Z]
-	classDigit   uint8 = 1 << 1 // [0-9]
-	classWord    uint8 = 1 << 2 // [a-zA-Z0-9_]
-	classBearer  uint8 = 1 << 3 // [a-zA-Z0-9._-]
-	classSSHBody uint8 = 1 << 4 // [a-zA-Z0-9/+.]
-	classJWTSeg  uint8 = 1 << 5 // [a-zA-Z0-9_=-]
-	classJWTSig  uint8 = 1 << 6 // [a-zA-Z0-9_.+/=-]
+	classAlpha    uint8 = 1 << 0 // [a-zA-Z]
+	classDigit    uint8 = 1 << 1 // [0-9]
+	classWord     uint8 = 1 << 2 // [a-zA-Z0-9_]
+	classBearer   uint8 = 1 << 3 // [a-zA-Z0-9._-]
+	classSSHBody  uint8 = 1 << 4 // [a-zA-Z0-9/+.]
+	classJWTSeg   uint8 = 1 << 5 // [a-zA-Z0-9_=-]
+	classJWTSig   uint8 = 1 << 6 // [a-zA-Z0-9_.+/=-]
+	classAlphaNum uint8 = 1 << 7 // [a-zA-Z0-9]
 )
 
 // Regex-quantifier mirror constants. Each matches a fixed-length run in the
@@ -73,13 +74,13 @@ const (
 var asciiClass = func() [128]uint8 {
 	var t [128]uint8
 	// Alpha: [a-zA-Z] — member of all classes that include alpha.
-	allAlpha := classAlpha | classWord | classBearer | classSSHBody | classJWTSeg | classJWTSig
+	allAlpha := classAlpha | classAlphaNum | classWord | classBearer | classSSHBody | classJWTSeg | classJWTSig
 	for c := byte('a'); c <= 'z'; c++ {
 		t[c] |= allAlpha
 		t[c-32] |= allAlpha // A-Z
 	}
 	// Digits: [0-9] — member of all classes that include digits.
-	allDigit := classDigit | classWord | classBearer | classSSHBody | classJWTSeg | classJWTSig
+	allDigit := classDigit | classAlphaNum | classWord | classBearer | classSSHBody | classJWTSeg | classJWTSig
 	for c := byte('0'); c <= '9'; c++ {
 		t[c] |= allDigit
 	}
@@ -153,6 +154,8 @@ func obfuscateQueryStringDefault(s string) string {
 	return b.String()
 }
 
+// matchSensitiveKey matches a sensitive keyword (password, api_key, …) followed
+// by either =value or a JSON-style "key":"value" pair.
 func matchSensitiveKey(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
@@ -218,6 +221,7 @@ func matchBearerToken(s string, pos int) (int, bool) {
 	return tokenEnd - start, true
 }
 
+// matchShortToken matches `token:` or `token%3A` followed by exactly 13 [a-z0-9] chars.
 func matchShortToken(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
@@ -547,6 +551,8 @@ func consumeJWTSegment(s string, pos int) (int, bool) {
 // foldsToLowerASCIILetter is the non-ASCII slow path shared by every per-byte
 // classifier whose ASCII members are exactly [a-zA-Z]: a multi-byte rune
 // matches iff some SimpleFold of it lands on an ASCII lowercase letter.
+// Callers must already have taken the ASCII fast path; this helper decodes
+// s[pos:] as UTF-8 unconditionally.
 func foldsToLowerASCIILetter(s string, pos int) (int, bool) {
 	r, width := utf8.DecodeRuneInString(s[pos:])
 	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
@@ -669,7 +675,7 @@ func consumeAlphaNumChar(s string, pos int) (int, bool) {
 	}
 	c := s[pos]
 	if c < utf8.RuneSelf {
-		if asciiClass[c]&(classAlpha|classDigit) != 0 {
+		if asciiClass[c]&classAlphaNum != 0 {
 			return pos + 1, true
 		}
 		return 0, false
