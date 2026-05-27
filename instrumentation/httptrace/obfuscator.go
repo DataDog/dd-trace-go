@@ -67,6 +67,41 @@ const (
 	sshRSAMinBody     = 100 // (?:[a-z0-9\/\.+]|%2F|%5C|%2B){100,}
 )
 
+// matcherStart is a 128-entry LUT indexed by ASCII byte value. Each bit marks
+// a top-level matcher whose first character matches that byte (case-folded).
+// The outer loop ANDs s[pos] against the LUT to skip matchers that cannot
+// anchor here, instead of unconditionally invoking all seven. Non-ASCII bytes
+// take the slow path (all matchers attempted via Unicode fold).
+const (
+	matcherSensitive  uint8 = 1 << 0 // sensitive keys: a/c/p/s/t
+	matcherBearer     uint8 = 1 << 1 // bearer token: b
+	matcherShortToken uint8 = 1 << 2 // token: t
+	matcherGithub     uint8 = 1 << 3 // gh[opsu]_: g
+	matcherJWT        uint8 = 1 << 4 // ey[I-L]…: e
+	matcherPEM        uint8 = 1 << 5 // -----BEGIN…: -
+	matcherSSHRSA     uint8 = 1 << 6 // ssh-rsa…: s
+)
+
+var matcherStart = func() [128]uint8 {
+	var t [128]uint8
+	setFolded := func(c byte, mask uint8) {
+		t[c] |= mask
+		if 'a' <= c && c <= 'z' {
+			t[c-32] |= mask
+		}
+	}
+	for _, c := range []byte{'a', 'c', 'p', 's', 't'} {
+		setFolded(c, matcherSensitive)
+	}
+	setFolded('b', matcherBearer)
+	setFolded('t', matcherShortToken)
+	setFolded('g', matcherGithub)
+	setFolded('e', matcherJWT)
+	t['-'] |= matcherPEM
+	setFolded('s', matcherSSHRSA)
+	return t
+}()
+
 // asciiClass is a 128-entry lookup table indexed by ASCII byte value.
 // It collapses the per-byte range checks in the six character classifiers
 // into a single load + bitmask test.
@@ -109,42 +144,73 @@ func obfuscateQueryStringDefault(s string) string {
 	var b strings.Builder
 	last := 0
 	for pos := 0; pos < len(s); {
-		if n, ok := matchSensitiveKey(s, pos); ok {
-			last = emitObfuscated(&b, s, last, pos, n)
-			pos = last
-			continue
-		}
-		if n, ok := matchBearerToken(s, pos); ok {
-			last = emitObfuscated(&b, s, last, pos, n)
-			pos = last
-			continue
-		}
-		if n, ok := matchShortToken(s, pos); ok {
-			last = emitObfuscated(&b, s, last, pos, n)
-			pos = last
-			continue
-		}
-		if n, ok := matchGitHubToken(s, pos); ok {
-			last = emitObfuscated(&b, s, last, pos, n)
-			pos = last
-			continue
-		}
-		if n, ok := matchJWT(s, pos); ok {
-			last = emitObfuscated(&b, s, last, pos, n)
-			pos = last
-			continue
-		}
-		if n, ok := matchPEMPrivateKey(s, pos); ok {
-			last = emitObfuscated(&b, s, last, pos, n)
-			pos = last
-			continue
-		}
-		if n, ok, skip := matchSSHRSAKey(s, pos); ok {
-			last = emitObfuscated(&b, s, last, pos, n)
-			pos = last
+		c := s[pos]
+		var mask uint8
+		if c < utf8.RuneSelf {
+			mask = matcherStart[c]
+			if mask == 0 {
+				pos++
+				continue
+			}
 		} else {
-			pos += max(1, skip)
+			// Non-ASCII: any matcher may match via Unicode fold; try all.
+			mask = 0xff
 		}
+		if mask&matcherSensitive != 0 {
+			if n, ok := matchSensitiveKey(s, pos); ok {
+				last = emitObfuscated(&b, s, last, pos, n)
+				pos = last
+				continue
+			}
+		}
+		if mask&matcherBearer != 0 {
+			if n, ok := matchBearerToken(s, pos); ok {
+				last = emitObfuscated(&b, s, last, pos, n)
+				pos = last
+				continue
+			}
+		}
+		if mask&matcherShortToken != 0 {
+			if n, ok := matchShortToken(s, pos); ok {
+				last = emitObfuscated(&b, s, last, pos, n)
+				pos = last
+				continue
+			}
+		}
+		if mask&matcherGithub != 0 {
+			if n, ok := matchGitHubToken(s, pos); ok {
+				last = emitObfuscated(&b, s, last, pos, n)
+				pos = last
+				continue
+			}
+		}
+		if mask&matcherJWT != 0 {
+			if n, ok := matchJWT(s, pos); ok {
+				last = emitObfuscated(&b, s, last, pos, n)
+				pos = last
+				continue
+			}
+		}
+		if mask&matcherPEM != 0 {
+			if n, ok := matchPEMPrivateKey(s, pos); ok {
+				last = emitObfuscated(&b, s, last, pos, n)
+				pos = last
+				continue
+			}
+		}
+		if mask&matcherSSHRSA != 0 {
+			n, ok, skip := matchSSHRSAKey(s, pos)
+			if ok {
+				last = emitObfuscated(&b, s, last, pos, n)
+				pos = last
+				continue
+			}
+			if skip > 0 {
+				pos += skip
+				continue
+			}
+		}
+		pos++
 	}
 	if b.Len() == 0 {
 		return s
