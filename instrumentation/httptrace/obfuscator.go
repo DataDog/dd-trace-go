@@ -6,7 +6,6 @@
 package httptrace
 
 import (
-	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -298,17 +297,29 @@ func matchPEMPrivateKey(s string, pos int) (int, bool) {
 	if pos, ok = matchFoldLiteral(s, pos, "BEGIN"); !ok {
 		return 0, false
 	}
-	for _, labelEnd := range consumePEMLabelEndPositions(s, pos) {
-		afterKey, ok := matchPEMPrivateKeyLiteral(s, labelEnd)
-		if !ok {
-			continue
-		}
-		end, ok := matchPEMBodyAndEnd(s, afterKey)
-		if ok {
-			return end - start, true
-		}
+	// Greedy regex: try longest label first. Forward-scan and keep the LAST
+	// (longest) successful match instead of allocating a positions slice.
+	labelPos, ok := consumePEMLabelChar(s, pos)
+	if !ok {
+		return 0, false
 	}
-	return 0, false
+	bestEnd := -1
+	for {
+		if afterKey, ok := matchPEMPrivateKeyLiteral(s, labelPos); ok {
+			if end, ok := matchPEMBodyAndEnd(s, afterKey); ok && end > bestEnd {
+				bestEnd = end
+			}
+		}
+		next, ok := consumePEMLabelChar(s, labelPos)
+		if !ok {
+			break
+		}
+		labelPos = next
+	}
+	if bestEnd < 0 {
+		return 0, false
+	}
+	return bestEnd - start, true
 }
 
 func matchPEMBodyAndEnd(s string, pos int) (int, bool) {
@@ -329,12 +340,25 @@ func matchPEMBodyAndEnd(s string, pos int) (int, bool) {
 }
 
 func matchPEMFinalPrivateKey(s string, pos int) (int, bool) {
-	for _, labelEnd := range consumePEMLabelEndPositions(s, pos) {
-		if end, ok := matchPEMPrivateKeyLiteral(s, labelEnd); ok {
-			return end, true
-		}
+	labelPos, ok := consumePEMLabelChar(s, pos)
+	if !ok {
+		return 0, false
 	}
-	return 0, false
+	bestEnd := -1
+	for {
+		if end, ok := matchPEMPrivateKeyLiteral(s, labelPos); ok && end > bestEnd {
+			bestEnd = end
+		}
+		next, ok := consumePEMLabelChar(s, labelPos)
+		if !ok {
+			break
+		}
+		labelPos = next
+	}
+	if bestEnd < 0 {
+		return 0, false
+	}
+	return bestEnd, true
 }
 
 func matchPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
@@ -481,20 +505,6 @@ func isSpace(c byte) bool {
 	default:
 		return false
 	}
-}
-
-func consumePEMLabelEndPositions(s string, pos int) []int {
-	var positions []int
-	for {
-		next, ok := consumePEMLabelChar(s, pos)
-		if !ok {
-			break
-		}
-		pos = next
-		positions = append(positions, pos)
-	}
-	slices.Reverse(positions)
-	return positions
 }
 
 func consumePEMLabelChar(s string, pos int) (int, bool) {
