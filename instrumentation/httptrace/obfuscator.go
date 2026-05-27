@@ -67,6 +67,23 @@ const (
 	sshRSAMinBody     = 100 // (?:[a-z0-9\/\.+]|%2F|%5C|%2B){100,}
 )
 
+// sensitiveBySecondByte sub-dispatches the first-byte sensitive bucket on the
+// second byte. Both indices are ASCII lowercase letter offsets ('a'->0). Cells
+// inherit the source list's order so prefix disambiguation ("pass_phrase"
+// before "pass") is preserved. Sensitive keywords whose first byte is not
+// a/c/p/s/t leave their row empty.
+var sensitiveBySecondByte = func() [26][26][]string {
+	var t [26][26][]string
+	for _, bucket := range sensitiveKeywordsByFirstByte {
+		f := bucket.first - 'a'
+		for _, kw := range bucket.keywords {
+			s := kw[1] - 'a'
+			t[f][s] = append(t[f][s], kw)
+		}
+	}
+	return t
+}()
+
 // matcherStart is a 128-entry LUT indexed by ASCII byte value. Each bit marks
 // a top-level matcher whose first character matches that byte (case-folded).
 // The outer loop ANDs s[pos] against the LUT to skip matchers that cannot
@@ -242,20 +259,40 @@ func matchSensitiveKey(s string, pos int) (int, bool) {
 		}
 		return 0, false
 	}
-	var keywords []string
-	switch toLowerASCII(c) {
+	lc := toLowerASCII(c)
+	var firstIdx int
+	switch lc {
 	case 'a':
-		keywords = sensitiveKeywordsByFirstByte[0].keywords
+		firstIdx = 0
 	case 'c':
-		keywords = sensitiveKeywordsByFirstByte[1].keywords
+		firstIdx = 1
 	case 'p':
-		keywords = sensitiveKeywordsByFirstByte[2].keywords
+		firstIdx = 2
 	case 's':
-		keywords = sensitiveKeywordsByFirstByte[3].keywords
+		firstIdx = 3
 	case 't':
-		keywords = sensitiveKeywordsByFirstByte[4].keywords
+		firstIdx = 4
 	default:
 		return 0, false
+	}
+	// Second-byte sub-dispatch when the second byte is also an ASCII letter:
+	// only iterate keywords whose 2nd char folds to the input's 2nd char.
+	// All sensitive keywords have an ASCII letter at position 1, so a
+	// non-letter ASCII second byte can never match.
+	var keywords []string
+	if pos+1 < len(s) {
+		c2 := s[pos+1]
+		if c2 < utf8.RuneSelf {
+			lc2 := toLowerASCII(c2)
+			if 'a' <= lc2 && lc2 <= 'z' {
+				keywords = sensitiveBySecondByte[lc-'a'][lc2-'a']
+			}
+		} else {
+			// Non-ASCII second byte may fold to any letter; fall back
+			// to the full first-byte bucket and let matchFoldLiteral
+			// do the folding.
+			keywords = sensitiveKeywordsByFirstByte[firstIdx].keywords
+		}
 	}
 	for _, keyword := range keywords {
 		end, ok := matchFoldLiteral(s, pos, keyword)
