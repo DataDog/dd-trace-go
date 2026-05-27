@@ -467,13 +467,14 @@ func matchPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
 // re-scanning the entire key body when the key is too short.
 //
 // Safe-skip correctness table (matchers vs. SSH-RSA body charset [a-zA-Z0-9/+.]):
-//   sensitive key (p/a/s/c/t)  — letters present, but suffix needs '='/'%3D'/'"'/':', none in body → safe
-//   bearer                     — needs space after "bearer"; space not in body → safe
-//   short-token                — needs ':' after "token"; ':' not in body → safe
-//   github                     — needs '_' after gh[opsu]; '_' not in body → safe
-//   JWT (eyJ…)                 — '.' in body charset; 'e'/'E' can start JWT → NOT safe; stop skip at e/E
-//   PEM (-----)                — '-' not in body → safe
-//   SSH-RSA itself             — '-' not in body → cannot re-anchor → safe
+//
+//	sensitive key (p/a/s/c/t)  — letters present, but suffix needs '='/'%3D'/'"'/':', none in body → safe
+//	bearer                     — needs space after "bearer"; space not in body → safe
+//	short-token                — needs ':' after "token"; ':' not in body → safe
+//	github                     — needs '_' after gh[opsu]; '_' not in body → safe
+//	JWT (eyJ…)                 — '.' in body charset; 'e'/'E' can start JWT → NOT safe; stop skip at e/E
+//	PEM (-----)                — '-' not in body → safe
+//	SSH-RSA itself             — '-' not in body → cannot re-anchor → safe
 func matchSSHRSAKey(s string, pos int) (matchedLen int, ok bool, safeSkip int) {
 	start := pos
 	var matched bool
