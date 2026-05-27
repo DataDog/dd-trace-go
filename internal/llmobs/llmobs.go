@@ -50,6 +50,7 @@ const (
 	baggageKeyExperimentID           = "_ml_obs.experiment_id"
 	baggageKeyExperimentRunID        = "_ml_obs.experiment_run_id"
 	baggageKeyExperimentRunIteration = "_ml_obs.experiment_run_iteration"
+	baggageKeyExperimentProjectID    = "_ml_obs.experiment_project_id"
 )
 
 const (
@@ -825,7 +826,8 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	experimentID := apmSpan.BaggageItem(baggageKeyExperimentID)
 	experimentRunID := apmSpan.BaggageItem(baggageKeyExperimentRunID)
 	experimentRunIteration := apmSpan.BaggageItem(baggageKeyExperimentRunIteration)
-	if experimentID != "" || experimentRunID != "" || experimentRunIteration != "" {
+	experimentProjectID := apmSpan.BaggageItem(baggageKeyExperimentProjectID)
+	if experimentID != "" || experimentRunID != "" || experimentRunIteration != "" || experimentProjectID != "" {
 		if span.llmCtx.tags == nil {
 			span.llmCtx.tags = make(map[string]string)
 		}
@@ -839,6 +841,9 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		if experimentRunIteration != "" {
 			span.llmCtx.tags["run_iteration"] = experimentRunIteration
 		}
+		if experimentProjectID != "" {
+			span.llmCtx.tags["project_id"] = experimentProjectID
+		}
 	}
 
 	log.Debug("llmobs: starting LLMObs span: %s, span_kind: %s, ml_app: %s", spanName, kind, span.mlApp)
@@ -850,6 +855,7 @@ type ExperimentInfo struct {
 	ID           string
 	RunID        string
 	RunIteration int
+	ProjectID    string
 }
 
 // StartExperimentSpan starts a new experiment span with the given name and configuration.
@@ -867,6 +873,9 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, params Ex
 	}
 	if params.RunIteration > 0 {
 		span.apm.SetBaggageItem(baggageKeyExperimentRunIteration, fmt.Sprintf("%d", params.RunIteration))
+	}
+	if params.ProjectID != "" {
+		span.apm.SetBaggageItem(baggageKeyExperimentProjectID, params.ProjectID)
 	}
 	return span, ctx
 }
