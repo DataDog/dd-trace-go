@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/internal/apps/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.9.0-rc.3
-	github.com/DataDog/dd-trace-go/v2 v2.9.0-rc.3
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.9.0-rc.4
+	github.com/DataDog/dd-trace-go/v2 v2.9.0-rc.4
 	golang.org/x/sync v0.20.0
 )
 
@@ -77,7 +77,7 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20260209203927-2842357ff358 // indirect
-	golang.org/x/mod v0.33.0 // indirect
+	golang.org/x/mod v0.34.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	gopkg.in/ini.v1 v1.67.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
