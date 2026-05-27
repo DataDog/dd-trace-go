@@ -280,19 +280,46 @@ func filterQueryStringByAllowlist(rawQuery string, allowlist map[string]struct{}
 	return b.String()
 }
 
-var defaultSensitiveQueryStringKeywords = [...]string{
-	"password", "passwd", "pword", "pwd",
-	"pass_phrase", "passphrase", "pass",
-	"secret",
-	"api_key_id", "api_keyid", "api_key", "apikey_id", "apikeyid", "apikey",
-	"private_key_id", "private_keyid", "private_key", "privatekey_id", "privatekeyid", "privatekey",
-	"public_key_id", "public_keyid", "public_key", "publickey_id", "publickeyid", "publickey",
-	"access_key_id", "access_keyid", "access_key", "accesskey_id", "accesskeyid", "accesskey",
-	"secret_key_id", "secret_keyid", "secret_key", "secretkey_id", "secretkeyid", "secretkey",
-	"token",
-	"consumer_id", "consumer_key", "consumer_secret", "consumerid", "consumerkey", "consumersecret",
-	"signed", "signature", "sign",
-	"authentication", "authorization", "auth",
+// sensitiveKeywordsByFirstByte groups sensitive keywords by their lower-cased ASCII
+// first byte. Within each bucket, order is preserved from the original flat list:
+// longer keywords precede their prefixes (e.g. "api_key_id" before "api_key",
+// "pass_phrase"/"passphrase" before "pass"). Changing bucket order is safe; changing
+// intra-bucket order may break prefix disambiguation.
+var sensitiveKeywordsByFirstByte = [5]struct {
+	first    byte
+	keywords []string
+}{
+	{'a', []string{
+		"api_key_id", "api_keyid", "api_key", "apikey_id", "apikeyid", "apikey",
+		"access_key_id", "access_keyid", "access_key", "accesskey_id", "accesskeyid", "accesskey",
+		"authentication", "authorization", "auth",
+	}},
+	{'c', []string{
+		"consumer_id", "consumer_key", "consumer_secret", "consumerid", "consumerkey", "consumersecret",
+	}},
+	{'p', []string{
+		"password", "passwd", "pword", "pwd",
+		"pass_phrase", "passphrase", "pass",
+		"private_key_id", "private_keyid", "private_key", "privatekey_id", "privatekeyid", "privatekey",
+		"public_key_id", "public_keyid", "public_key", "publickey_id", "publickeyid", "publickey",
+	}},
+	{'s', []string{
+		"secret",
+		"secret_key_id", "secret_keyid", "secret_key", "secretkey_id", "secretkeyid", "secretkey",
+		"signed", "signature", "sign",
+	}},
+	{'t', []string{
+		"token",
+	}},
+}
+
+func emitObfuscated(b *strings.Builder, s string, last, pos, n int) int {
+	if b.Len() == 0 {
+		b.Grow(len(s))
+	}
+	b.WriteString(s[last:pos])
+	b.WriteString("<redacted>")
+	return pos + n
 }
 
 // obfuscateQueryStringDefault obfuscates s using the default query string
@@ -301,42 +328,40 @@ var defaultSensitiveQueryStringKeywords = [...]string{
 func obfuscateQueryStringDefault(s string) string {
 	var b strings.Builder
 	last := 0
-	emit := func(pos, n int) int {
-		if b.Len() == 0 {
-			b.Grow(len(s))
-		}
-		b.WriteString(s[last:pos])
-		b.WriteString("<redacted>")
-		last = pos + n
-		return last
-	}
 	for pos := 0; pos < len(s); {
 		if n, ok := matchDefaultObfuscatorSensitiveKey(s, pos); ok {
-			pos = emit(pos, n)
+			last = emitObfuscated(&b, s, last, pos, n)
+			pos = last
 			continue
 		}
 		if n, ok := matchDefaultObfuscatorBearerToken(s, pos); ok {
-			pos = emit(pos, n)
+			last = emitObfuscated(&b, s, last, pos, n)
+			pos = last
 			continue
 		}
 		if n, ok := matchDefaultObfuscatorShortToken(s, pos); ok {
-			pos = emit(pos, n)
+			last = emitObfuscated(&b, s, last, pos, n)
+			pos = last
 			continue
 		}
 		if n, ok := matchDefaultObfuscatorGitHubToken(s, pos); ok {
-			pos = emit(pos, n)
+			last = emitObfuscated(&b, s, last, pos, n)
+			pos = last
 			continue
 		}
 		if n, ok := matchDefaultObfuscatorJWT(s, pos); ok {
-			pos = emit(pos, n)
+			last = emitObfuscated(&b, s, last, pos, n)
+			pos = last
 			continue
 		}
 		if n, ok := matchDefaultObfuscatorPEMPrivateKey(s, pos); ok {
-			pos = emit(pos, n)
+			last = emitObfuscated(&b, s, last, pos, n)
+			pos = last
 			continue
 		}
 		if n, ok := matchDefaultObfuscatorSSHRSAKey(s, pos); ok {
-			pos = emit(pos, n)
+			last = emitObfuscated(&b, s, last, pos, n)
+			pos = last
 			continue
 		}
 		pos++
@@ -349,7 +374,42 @@ func obfuscateQueryStringDefault(s string) string {
 }
 
 func matchDefaultObfuscatorSensitiveKey(s string, pos int) (int, bool) {
-	for _, keyword := range defaultSensitiveQueryStringKeywords {
+	if pos >= len(s) {
+		return 0, false
+	}
+	c := s[pos]
+	if c >= utf8.RuneSelf {
+		// Non-ASCII: can fold to any keyword-initial letter; scan all buckets.
+		// Cold path for RFC-3986 query strings.
+		for i := range sensitiveKeywordsByFirstByte {
+			for _, keyword := range sensitiveKeywordsByFirstByte[i].keywords {
+				end, ok := matchFoldLiteral(s, pos, keyword)
+				if !ok {
+					continue
+				}
+				if suffixEnd, ok := matchDefaultObfuscatorSensitiveKeySuffix(s, end); ok {
+					return suffixEnd - pos, true
+				}
+			}
+		}
+		return 0, false
+	}
+	var keywords []string
+	switch toLowerASCII(c) {
+	case 'a':
+		keywords = sensitiveKeywordsByFirstByte[0].keywords
+	case 'c':
+		keywords = sensitiveKeywordsByFirstByte[1].keywords
+	case 'p':
+		keywords = sensitiveKeywordsByFirstByte[2].keywords
+	case 's':
+		keywords = sensitiveKeywordsByFirstByte[3].keywords
+	case 't':
+		keywords = sensitiveKeywordsByFirstByte[4].keywords
+	default:
+		return 0, false
+	}
+	for _, keyword := range keywords {
 		end, ok := matchFoldLiteral(s, pos, keyword)
 		if !ok {
 			continue
