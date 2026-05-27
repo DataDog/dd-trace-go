@@ -875,6 +875,12 @@ func matchFoldLiteral(s string, pos int, lit string) (int, bool) {
 	return pos, true
 }
 
+// equalFoldASCII reports whether rune r Unicode-case-folds to the ASCII
+// lowercase letter lower. It exists because the stdlib fold functions operate
+// on strings (strings.EqualFold) or full runes (unicode.SimpleFold) but
+// expose no zero-allocation "does this rune fold to this specific ASCII byte"
+// primitive. strings.EqualFold("x", string(r)) would allocate; calling it at
+// every character position of a hot scanner path is too costly.
 func equalFoldASCII(r rune, lower byte) bool {
 	want := rune(lower)
 	for folded := r; ; folded = unicode.SimpleFold(folded) {
@@ -888,10 +894,19 @@ func equalFoldASCII(r rune, lower byte) bool {
 	}
 }
 
+// isASCIILetter reports whether c is an ASCII letter [a-zA-Z]. It exists
+// because unicode.IsLetter takes a rune and traverses the full Unicode letter
+// table; this state machine only needs to classify raw bytes from a query
+// string, so the cheaper range check suffices and avoids a rune conversion.
 func isASCIILetter(c byte) bool {
 	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
 }
 
+// toLowerASCII returns the ASCII lowercase form of c. It exists because
+// unicode.ToLower operates on runes and bytes.ToLower/strings.ToLower operate
+// on slices/strings (allocating). The state machine compares individual bytes
+// from a query string, all of which are ASCII in the fast path, so a single
+// branch is both correct and allocation-free.
 func toLowerASCII(c byte) byte {
 	if 'A' <= c && c <= 'Z' {
 		return c + 'a' - 'A'
