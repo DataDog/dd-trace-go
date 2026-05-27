@@ -974,9 +974,9 @@ func BenchmarkURLFromRequest(b *testing.B) {
 }
 
 func BenchmarkObfuscateQueryStringDefault(b *testing.B) {
-	noMatchLong := strings.Repeat("xx=yy&zz=ww&", 350)   // ~4.2 KiB, no keyword prefixes
+	noMatchLong := strings.Repeat("xx=yy&zz=ww&", 350) // ~4.2 KiB, no keyword prefixes
 	sensitiveDense := strings.Repeat("password=x&apikey=y&token=z&", 50)
-	pemAdversarial := "-----BEGIN " + strings.Repeat("a", 4096) // matcher walks deep, no closing "-----"
+	pemAdversarial := "-----BEGIN " + strings.Repeat("a", 4096)  // matcher walks deep, no closing "-----"
 	sshAdversarial := "ssh-rsa " + strings.Repeat("a", 99) + "X" // 'X' is alphaNum → count=100 → matches (min-length boundary)
 	sshFail := "ssh-rsa " + strings.Repeat("a", 99) + "!"        // '!' not in body charset → count=99 → fails after full scan
 	sshMatch := "ssh-rsa " + strings.Repeat("a", 200)
