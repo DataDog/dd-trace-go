@@ -119,7 +119,7 @@ func startTelemetry(c *config) telemetry.Client {
 	if (!a.reachable || a.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
 		cfg.AgentURL = c.internalConfig.AgentURL().String()
 	}
-	if c.internalConfig.LogToStdout() || c.internalConfig.CIVisibilityAgentless() {
+	if c.internalConfig.LogToStdout() || c.internalConfig.CIVisibilityAgentlessActive() {
 		cfg.APIKey = c.internalConfig.APIKey()
 	}
 	client, err := telemetry.NewClient(c.internalConfig.ServiceName(), c.internalConfig.Env(), c.internalConfig.Version(), cfg)

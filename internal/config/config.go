@@ -938,6 +938,14 @@ func (c *Config) CIVisibilityAgentless() bool {
 	return c.ciVisibilityAgentless
 }
 
+// CIVisibilityAgentlessActive reports whether agentless CI Visibility mode is in effect.
+// Agentless is only meaningful when CI Visibility itself is enabled.
+func (c *Config) CIVisibilityAgentlessActive() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityEnabled && c.ciVisibilityAgentless
+}
+
 func (c *Config) LogsOTelEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

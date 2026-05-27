@@ -30,6 +30,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -2254,4 +2255,15 @@ func TestCanComputeStats(t *testing.T) {
 		assert.False(t, c.canComputeStats())
 		assert.False(t, c.canDropP0s())
 	})
+}
+
+// Regression: agentless flag set without CI Visibility enabled must not disable the agent.
+// Pre-config-migration, c.ciVisibilityAgentless was only assigned inside the CI Vis block,
+// so the raw env var alone couldn't flip agent-bypass behavior.
+func TestAgentEnabledWithAgentlessEnvOnly(t *testing.T) {
+	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
+	c, err := newTestConfig()
+	require.NoError(t, err)
+	assert.True(t, c.agentEnabled(), "agent must remain enabled when CI Visibility is off")
+	assert.False(t, c.internalConfig.CIVisibilityAgentlessActive(), "agentless mode must not be active without CI Visibility")
 }
