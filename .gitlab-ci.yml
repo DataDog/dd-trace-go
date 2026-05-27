@@ -1,6 +1,7 @@
 stages:
   - ci-image
   - docker-images-reliability-env
+  - config-validation
   - generate
   - microbenchmarks
   - macrobenchmarks
@@ -8,7 +9,6 @@ stages:
   - go-go-prof-app-parallel
   - go-go-prof-app-parallel-slo
   - gates
-  - config-validation
   - test-apps
 
 variables:
