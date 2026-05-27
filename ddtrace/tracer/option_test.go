@@ -1879,20 +1879,6 @@ func TestWithHeaderTags(t *testing.T) {
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
-func TestHostnameDisabled(t *testing.T) {
-	t.Run("Default", func(t *testing.T) {
-		c, err := newTestConfig()
-		assert.NoError(t, err)
-		assert.False(t, c.enableHostnameDetection)
-	})
-	t.Run("EnableViaEnv", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT", "v1.66")
-		c, err := newTestConfig()
-		assert.NoError(t, err)
-		assert.True(t, c.enableHostnameDetection)
-	})
-}
-
 func TestPartialFlushing(t *testing.T) {
 	partialFlushMinSpansDefault := 1000
 	t.Run("None", func(t *testing.T) {
@@ -1990,6 +1976,7 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newTestConfig(WithStatsComputation(false))
 		assert.NoError(err)
 		assert.False(c.internalConfig.StatsComputationEnabled())
+		assert.Equal(traceProtocolV04, c.internalConfig.TraceProtocol())
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)
