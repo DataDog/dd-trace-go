@@ -11,37 +11,36 @@ import (
 	"unicode/utf8"
 )
 
-// sensitiveKeywordsByFirstByte groups sensitive keywords by their lower-cased ASCII
-// first byte. Within each bucket, order is preserved from the original flat list:
-// longer keywords precede their prefixes (e.g. "api_key_id" before "api_key",
-// "pass_phrase"/"passphrase" before "pass"). Changing bucket order is safe; changing
-// intra-bucket order may break prefix disambiguation.
-var sensitiveKeywordsByFirstByte = [5]struct {
-	first    byte
-	keywords []string
-}{
-	{'a', []string{
+// sensitiveByFirstLetter groups sensitive keywords by their ASCII first-letter
+// offset ('a'->0, …, 'z'->25). Letters that can't anchor a sensitive keyword
+// (i.e. anything other than a/c/p/s/t) leave their cell nil. Within each bucket
+// the order is significant: longer keywords precede their prefixes (e.g.
+// "api_key_id" before "api_key", "pass_phrase"/"passphrase" before "pass") so
+// the suffix-matching pass picks the longest viable keyword before a shorter
+// prefix accidentally short-circuits the search.
+var sensitiveByFirstLetter = [26][]string{
+	'a' - 'a': {
 		"api_key_id", "api_keyid", "api_key", "apikey_id", "apikeyid", "apikey",
 		"access_key_id", "access_keyid", "access_key", "accesskey_id", "accesskeyid", "accesskey",
 		"authentication", "authorization", "auth",
-	}},
-	{'c', []string{
+	},
+	'c' - 'a': {
 		"consumer_id", "consumer_key", "consumer_secret", "consumerid", "consumerkey", "consumersecret",
-	}},
-	{'p', []string{
+	},
+	'p' - 'a': {
 		"password", "passwd", "pword", "pwd",
 		"pass_phrase", "passphrase", "pass",
 		"private_key_id", "private_keyid", "private_key", "privatekey_id", "privatekeyid", "privatekey",
 		"public_key_id", "public_keyid", "public_key", "publickey_id", "publickeyid", "publickey",
-	}},
-	{'s', []string{
+	},
+	's' - 'a': {
 		"secret",
 		"secret_key_id", "secret_keyid", "secret_key", "secretkey_id", "secretkeyid", "secretkey",
 		"signed", "signature", "sign",
-	}},
-	{'t', []string{
+	},
+	't' - 'a': {
 		"token",
-	}},
+	},
 }
 
 // Per-byte ASCII class bitmasks for the obfuscator's character classifiers.
@@ -74,9 +73,8 @@ const (
 // a/c/p/s/t leave their row empty.
 var sensitiveBySecondByte = func() [26][26][]string {
 	var t [26][26][]string
-	for _, bucket := range sensitiveKeywordsByFirstByte {
-		f := bucket.first - 'a'
-		for _, kw := range bucket.keywords {
+	for f, kws := range sensitiveByFirstLetter {
+		for _, kw := range kws {
 			s := kw[1] - 'a'
 			t[f][s] = append(t[f][s], kw)
 		}
@@ -246,8 +244,8 @@ func matchSensitiveKey(s string, pos int) (int, bool) {
 	if c >= utf8.RuneSelf {
 		// Non-ASCII: can fold to any keyword-initial letter; scan all buckets.
 		// Cold path for RFC-3986 query strings.
-		for i := range sensitiveKeywordsByFirstByte {
-			for _, keyword := range sensitiveKeywordsByFirstByte[i].keywords {
+		for _, bucket := range sensitiveByFirstLetter {
+			for _, keyword := range bucket {
 				end, ok := matchFoldLiteral(s, pos, keyword)
 				if !ok {
 					continue
@@ -260,19 +258,7 @@ func matchSensitiveKey(s string, pos int) (int, bool) {
 		return 0, false
 	}
 	lc := toLowerASCII(c)
-	var firstIdx int
-	switch lc {
-	case 'a':
-		firstIdx = 0
-	case 'c':
-		firstIdx = 1
-	case 'p':
-		firstIdx = 2
-	case 's':
-		firstIdx = 3
-	case 't':
-		firstIdx = 4
-	default:
+	if lc < 'a' || lc > 'z' {
 		return 0, false
 	}
 	// Second-byte sub-dispatch when the second byte is also an ASCII letter:
@@ -289,9 +275,9 @@ func matchSensitiveKey(s string, pos int) (int, bool) {
 			}
 		} else {
 			// Non-ASCII second byte may fold to any letter; fall back
-			// to the full first-byte bucket and let matchFoldLiteral
+			// to the full first-letter bucket and let matchFoldLiteral
 			// do the folding.
-			keywords = sensitiveKeywordsByFirstByte[firstIdx].keywords
+			keywords = sensitiveByFirstLetter[lc-'a']
 		}
 	}
 	for _, keyword := range keywords {
