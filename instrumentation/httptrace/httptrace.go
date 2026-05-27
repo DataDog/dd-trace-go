@@ -313,6 +313,45 @@ var sensitiveKeywordsByFirstByte = [5]struct {
 	}},
 }
 
+// Per-byte ASCII class bitmasks for the obfuscator's character classifiers.
+// Each bit covers ALL characters that belong to that class (not just the extras).
+// Non-ASCII bytes are handled by the Unicode fold fallback in each classifier.
+const (
+	classAlpha   uint8 = 1 << 0 // [a-zA-Z]
+	classDigit   uint8 = 1 << 1 // [0-9]
+	classWord    uint8 = 1 << 2 // [a-zA-Z0-9_]
+	classBearer  uint8 = 1 << 3 // [a-zA-Z0-9._-]
+	classSSHBody uint8 = 1 << 4 // [a-zA-Z0-9/+.]
+	classJWTSeg  uint8 = 1 << 5 // [a-zA-Z0-9_=-]
+	classJWTSig  uint8 = 1 << 6 // [a-zA-Z0-9_.+/=-]
+)
+
+// asciiClass is a 128-entry lookup table indexed by ASCII byte value.
+// It collapses the per-byte range checks in the six character classifiers
+// into a single load + bitmask test.
+var asciiClass = func() [128]uint8 {
+	var t [128]uint8
+	// Alpha: [a-zA-Z] — member of all classes that include alpha.
+	allAlpha := classAlpha | classWord | classBearer | classSSHBody | classJWTSeg | classJWTSig
+	for c := byte('a'); c <= 'z'; c++ {
+		t[c] |= allAlpha
+		t[c-32] |= allAlpha // A-Z
+	}
+	// Digits: [0-9] — member of all classes that include digits.
+	allDigit := classDigit | classWord | classBearer | classSSHBody | classJWTSeg | classJWTSig
+	for c := byte('0'); c <= '9'; c++ {
+		t[c] |= allDigit
+	}
+	// Extra single chars per class.
+	t['_'] |= classWord | classBearer | classJWTSeg | classJWTSig
+	t['.'] |= classBearer | classSSHBody | classJWTSig
+	t['-'] |= classBearer | classJWTSeg | classJWTSig
+	t['/'] |= classSSHBody | classJWTSig
+	t['+'] |= classSSHBody | classJWTSig
+	t['='] |= classJWTSeg | classJWTSig
+	return t
+}()
+
 func emitObfuscated(b *strings.Builder, s string, last, pos, n int) int {
 	if b.Len() == 0 {
 		b.Grow(len(s))
@@ -359,12 +398,12 @@ func obfuscateQueryStringDefault(s string) string {
 			pos = last
 			continue
 		}
-		if n, ok := matchDefaultObfuscatorSSHRSAKey(s, pos); ok {
+		if n, ok, skip := matchDefaultObfuscatorSSHRSAKey(s, pos); ok {
 			last = emitObfuscated(&b, s, last, pos, n)
 			pos = last
-			continue
+		} else {
+			pos += max(1, skip)
 		}
-		pos++
 	}
 	if b.Len() == 0 {
 		return s
@@ -564,26 +603,49 @@ func matchDefaultObfuscatorPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
 	return matchFoldLiteral(s, pos, "KEY")
 }
 
-func matchDefaultObfuscatorSSHRSAKey(s string, pos int) (int, bool) {
+// matchDefaultObfuscatorSSHRSAKey returns (matchedLen, ok, safeSkip).
+// On failure (ok=false), safeSkip is the number of bytes from pos that the
+// outer loop can safely skip without missing any other match. This avoids
+// re-scanning the entire key body when the key is too short.
+//
+// Safe-skip correctness table (matchers vs. SSH-RSA body charset [a-zA-Z0-9/+.]):
+//   sensitive key (p/a/s/c/t)  — letters present, but suffix needs '='/'%3D'/'"'/':', none in body → safe
+//   bearer                     — needs space after "bearer"; space not in body → safe
+//   short-token                — needs ':' after "token"; ':' not in body → safe
+//   github                     — needs '_' after gh[opsu]; '_' not in body → safe
+//   JWT (eyJ…)                 — '.' in body charset; 'e'/'E' can start JWT → NOT safe; stop skip at e/E
+//   PEM (-----)                — '-' not in body → safe
+//   SSH-RSA itself             — '-' not in body → cannot re-anchor → safe
+func matchDefaultObfuscatorSSHRSAKey(s string, pos int) (matchedLen int, ok bool, safeSkip int) {
 	start := pos
-	var ok bool
-	if pos, ok = matchFoldLiteral(s, pos, "ssh-rsa"); !ok {
-		return 0, false
+	var matched bool
+	if pos, matched = matchFoldLiteral(s, pos, "ssh-rsa"); !matched {
+		return 0, false, 0
 	}
 	pos = skipDefaultObfuscatorSpaces(s, pos)
+	// safeEnd tracks the furthest position that is safe to skip to on failure.
+	// We advance it for each single-byte body char that is not 'e'/'E'
+	// (which could anchor a JWT match).
+	safeEnd := pos
 	count := 0
 	for {
 		next, ok := consumeDefaultObfuscatorSSHRSAKeyChar(s, pos)
 		if !ok {
 			break
 		}
+		// Only extend safeEnd for single-byte advances that aren't 'e'/'E'.
+		// Percent-encoded chars (next=pos+3) are fine to skip but we keep
+		// safeEnd conservative by only advancing on single-byte steps.
+		if next == pos+1 && s[pos]|32 != 'e' {
+			safeEnd = next
+		}
 		pos = next
 		count++
 	}
 	if count < 100 {
-		return 0, false
+		return 0, false, safeEnd - start
 	}
-	return pos - start, true
+	return pos - start, true, 0
 }
 
 func matchDefaultObfuscatorSensitiveKeySuffix(s string, pos int) (int, bool) {
@@ -745,13 +807,26 @@ func consumeDefaultObfuscatorJWTSegment(s string, pos int) (int, bool) {
 }
 
 func consumeDefaultObfuscatorJWTSegmentChar(s string, pos int) (int, bool) {
-	if next, ok := consumeDefaultObfuscatorWordChar(s, pos); ok {
-		return next, true
+	if pos >= len(s) {
+		return 0, false
 	}
-	if pos < len(s) && (s[pos] == '=' || s[pos] == '-') {
-		return pos + 1, true
+	c := s[pos]
+	if c < utf8.RuneSelf {
+		if asciiClass[c]&classJWTSeg != 0 {
+			return pos + 1, true
+		}
+		if c == '%' {
+			return matchFoldLiteral(s, pos, "%3D")
+		}
+		return 0, false
 	}
-	return matchFoldLiteral(s, pos, "%3D")
+	r, width := utf8.DecodeRuneInString(s[pos:])
+	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
+		if 'a' <= folded && folded <= 'z' {
+			return pos + width, true
+		}
+	}
+	return 0, false
 }
 
 func consumeDefaultObfuscatorJWTSignature(s string, pos int) (int, bool) {
@@ -770,22 +845,32 @@ func consumeDefaultObfuscatorJWTSignature(s string, pos int) (int, bool) {
 }
 
 func consumeDefaultObfuscatorJWTSignatureChar(s string, pos int) (int, bool) {
-	if next, ok := consumeDefaultObfuscatorWordChar(s, pos); ok {
-		return next, true
+	if pos >= len(s) {
+		return 0, false
 	}
-	if pos < len(s) {
-		switch s[pos] {
-		case '.', '+', '/', '=', '-':
+	c := s[pos]
+	if c < utf8.RuneSelf {
+		if asciiClass[c]&classJWTSig != 0 {
 			return pos + 1, true
 		}
+		if c == '%' {
+			if next, ok := matchFoldLiteral(s, pos, "%3D"); ok {
+				return next, true
+			}
+			if next, ok := matchFoldLiteral(s, pos, "%2F"); ok {
+				return next, true
+			}
+			return matchFoldLiteral(s, pos, "%2B")
+		}
+		return 0, false
 	}
-	if next, ok := matchFoldLiteral(s, pos, "%3D"); ok {
-		return next, true
+	r, width := utf8.DecodeRuneInString(s[pos:])
+	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
+		if 'a' <= folded && folded <= 'z' {
+			return pos + width, true
+		}
 	}
-	if next, ok := matchFoldLiteral(s, pos, "%2F"); ok {
-		return next, true
-	}
-	return matchFoldLiteral(s, pos, "%2B")
+	return 0, false
 }
 
 func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
@@ -793,10 +878,10 @@ func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
 		return 0, false
 	}
 	c := s[pos]
-	if ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') || c == '.' || c == '_' || c == '-' {
-		return pos + 1, true
-	}
 	if c < utf8.RuneSelf {
+		if asciiClass[c]&classBearer != 0 {
+			return pos + 1, true
+		}
 		return 0, false
 	}
 	r, width := utf8.DecodeRuneInString(s[pos:])
@@ -809,43 +894,44 @@ func consumeDefaultObfuscatorBearerTokenChar(s string, pos int) (int, bool) {
 }
 
 func consumeDefaultObfuscatorSSHRSAKeyChar(s string, pos int) (int, bool) {
-	if next, ok := consumeDefaultObfuscatorAlphaNumChar(s, pos); ok {
-		return next, true
+	if pos >= len(s) {
+		return 0, false
 	}
-	if pos < len(s) {
-		switch s[pos] {
-		case '/', '.', '+':
+	c := s[pos]
+	if c < utf8.RuneSelf {
+		if asciiClass[c]&classSSHBody != 0 {
 			return pos + 1, true
 		}
+		if c == '%' {
+			if next, ok := matchFoldLiteral(s, pos, "%2F"); ok {
+				return next, true
+			}
+			if next, ok := matchFoldLiteral(s, pos, "%5C"); ok {
+				return next, true
+			}
+			return matchFoldLiteral(s, pos, "%2B")
+		}
+		return 0, false
 	}
-	if next, ok := matchFoldLiteral(s, pos, "%2F"); ok {
-		return next, true
-	}
-	if next, ok := matchFoldLiteral(s, pos, "%5C"); ok {
-		return next, true
-	}
-	return matchFoldLiteral(s, pos, "%2B")
-}
-
-func consumeDefaultObfuscatorWordChar(s string, pos int) (int, bool) {
-	if next, ok := consumeDefaultObfuscatorAlphaNumChar(s, pos); ok {
-		return next, true
-	}
-	if pos < len(s) && s[pos] == '_' {
-		return pos + 1, true
+	r, width := utf8.DecodeRuneInString(s[pos:])
+	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
+		if 'a' <= folded && folded <= 'z' {
+			return pos + width, true
+		}
 	}
 	return 0, false
 }
+
 
 func consumeDefaultObfuscatorAlphaChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
 	c := s[pos]
-	if ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') {
-		return pos + 1, true
-	}
 	if c < utf8.RuneSelf {
+		if asciiClass[c]&classAlpha != 0 {
+			return pos + 1, true
+		}
 		return 0, false
 	}
 	r, width := utf8.DecodeRuneInString(s[pos:])
@@ -862,10 +948,10 @@ func consumeDefaultObfuscatorAlphaNumChar(s string, pos int) (int, bool) {
 		return 0, false
 	}
 	c := s[pos]
-	if ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9') {
-		return pos + 1, true
-	}
 	if c < utf8.RuneSelf {
+		if asciiClass[c]&(classAlpha|classDigit) != 0 {
+			return pos + 1, true
+		}
 		return 0, false
 	}
 	r, width := utf8.DecodeRuneInString(s[pos:])
