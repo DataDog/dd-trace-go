@@ -281,9 +281,10 @@ func obfuscateQueryStringDefault(s string) string {
 // keyword drawn from sensitiveByFirstLetter followed by either a key=value
 // suffix (matchSensitiveKeyValue) or a JSON "key":"value" suffix
 // (matchSensitiveKeyJSON). The keyword list is the expanded form of:
-//   (?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|
-//       (?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|
-//       consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)
+//
+//	(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|
+//	    (?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|
+//	    consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)
 func matchSensitiveKey(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
