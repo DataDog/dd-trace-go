@@ -203,12 +203,13 @@ func loadConfig() *Config {
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
 
+	dogstatsdURL := p.GetString("DD_DOGSTATSD_URL", "")
 	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
 	dogstatsdPort := p.GetString("DD_DOGSTATSD_PORT", "")
-	if dogstatsdPort != "" {
+	if dogstatsdPort != "" || dogstatsdURL != "" {
 		cfg.dogstatsdPortSet = true
 	}
-	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
+	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdURL, dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
 
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)

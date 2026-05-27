@@ -566,6 +566,28 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 		})
 
+		t.Run("env-url", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_URL", "10.1.0.12:4002")
+			tracer, err := newTracer(opts...)
+			assert.NoError(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
+			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("env-url overrides host+port", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_URL", "10.1.0.12:4002")
+			t.Setenv("DD_DOGSTATSD_HOST", "ignored")
+			t.Setenv("DD_DOGSTATSD_PORT", "9999")
+			tracer, err := newTracer(opts...)
+			assert.NoError(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
+			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
+		})
+
 		t.Run("env-port: agent not available", func(t *testing.T) {
 			t.Setenv("DD_DOGSTATSD_PORT", "123")
 			fail = true

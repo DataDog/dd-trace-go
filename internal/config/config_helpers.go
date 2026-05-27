@@ -186,18 +186,20 @@ func detectUDSURL() *url.URL {
 }
 
 // initialDogstatsdURL builds the resolved DogStatsD URL from env inputs.
-// The returned URL is always complete: host+port for TCP, or unix scheme +
-// path for UDS.
-func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) *url.URL {
-	if envHost != "" || envPort != "" {
-		host := envHost
+// Precedence: addr (DD_DOGSTATSD_URL) > host/port (DD_DOGSTATSD_HOST/PORT) >
+// UDS auto-discovery > agentHost:DefaultStatsdPort. The returned URL is
+// always complete: host+port for TCP, or unix scheme + path for UDS.
+func initialDogstatsdURL(addr, host, port, agentHost, socketPath string) *url.URL {
+	if addr != "" {
+		return parseDogstatsdAddr(addr)
+	}
+	if host != "" || port != "" {
 		if host == "" {
 			host = agentHost
 		}
 		if host == "" {
 			host = internal.DefaultAgentHostname
 		}
-		port := envPort
 		if port == "" {
 			port = DefaultStatsdPort
 		}
@@ -206,7 +208,7 @@ func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) *url.UR
 	if _, err := os.Stat(socketPath); err == nil {
 		return &url.URL{Scheme: URLSchemeUnix, Path: socketPath}
 	}
-	host := agentHost
+	host = agentHost
 	if host == "" {
 		host = internal.DefaultAgentHostname
 	}
