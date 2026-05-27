@@ -20,6 +20,13 @@ func equalFloat(a, b float64) bool {
 	return a == b || (math.IsNaN(a) && math.IsNaN(b))
 }
 
+// equal compares two scalar values using Go's == operator. Use for bool, int,
+// string, and other comparable types where reference equality is sufficient.
+// For float64, prefer equalFloat to handle NaN.
+func equal[T comparable](a, b T) bool {
+	return a == b
+}
+
 // DynamicConfig is a thread-safe, RC-aware value store for a single configuration field.
 // It tracks both the current value and the startup baseline (for RC reset).
 // Consumers read via Get().
@@ -56,6 +63,13 @@ func (dc *DynamicConfig[T]) Get() T {
 	dc.mu.RLock()
 	defer dc.mu.RUnlock()
 	return dc.current
+}
+
+// Baseline returns the startup value and its origin atomically.
+func (dc *DynamicConfig[T]) Baseline() (T, telemetry.Origin) {
+	dc.mu.RLock()
+	defer dc.mu.RUnlock()
+	return dc.startup, dc.startupOrigin
 }
 
 // HandleRC processes a remote config update. If val is non-nil, the value is
