@@ -78,10 +78,9 @@ type Config struct {
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr *url.URL
-	// dogstatsdEnvPortSet is true when env explicitly set the dogstatsd port
-	// at loadConfig time; gates ApplyAgentReportedStatsdPort.
-	dogstatsdEnvPortSet bool
-	debug               bool
+	// dogstatsdPortSet is true when dogstatsd port is explicitly set by user configuration
+	dogstatsdPortSet bool
+	debug            bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
 	// serviceName specifies the name of this application.
@@ -206,7 +205,10 @@ func loadConfig() *Config {
 
 	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
 	dogstatsdPort := p.GetString("DD_DOGSTATSD_PORT", "")
-	cfg.dogstatsdAddr, cfg.dogstatsdEnvPortSet = initialDogstatsdURL(dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
+	if dogstatsdPort != "" {
+		cfg.dogstatsdPortSet = true
+	}
+	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
 
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
@@ -411,10 +413,11 @@ func (c *Config) ApplyAgentReportedStatsdPort(port int) {
 	if _, claimed := c.overrides["DD_DOGSTATSD_URL"]; claimed {
 		return
 	}
-	if c.dogstatsdAddr == nil || c.dogstatsdAddr.Scheme == "unix" {
+	// dogstatsdAddr is always set non-nil by loadConfig.
+	if c.dogstatsdAddr.Scheme == "unix" {
 		return
 	}
-	if c.dogstatsdEnvPortSet {
+	if c.dogstatsdPortSet {
 		return
 	}
 	c.dogstatsdAddr.Host = net.JoinHostPort(c.dogstatsdAddr.Hostname(), strconv.Itoa(port))

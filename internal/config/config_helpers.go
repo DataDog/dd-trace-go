@@ -186,11 +186,9 @@ func detectUDSURL() *url.URL {
 }
 
 // initialDogstatsdURL builds the resolved DogStatsD URL from env inputs.
-// The returned URL is always complete (host+port for TCP, or unix scheme +
-// path for UDS). The bool reports whether env explicitly set the port; used
-// by ApplyAgentReportedStatsdPort to decide whether to override later.
-func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) (*url.URL, bool) {
-	envPortSet := envPort != ""
+// The returned URL is always complete: host+port for TCP, or unix scheme +
+// path for UDS.
+func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) *url.URL {
 	if envHost != "" || envPort != "" {
 		host := envHost
 		if host == "" {
@@ -203,16 +201,16 @@ func initialDogstatsdURL(envHost, envPort, agentHost, socketPath string) (*url.U
 		if port == "" {
 			port = DefaultStatsdPort
 		}
-		return &url.URL{Host: net.JoinHostPort(host, port)}, envPortSet
+		return &url.URL{Host: net.JoinHostPort(host, port)}
 	}
 	if _, err := os.Stat(socketPath); err == nil {
-		return &url.URL{Scheme: URLSchemeUnix, Path: socketPath}, false
+		return &url.URL{Scheme: URLSchemeUnix, Path: socketPath}
 	}
 	host := agentHost
 	if host == "" {
 		host = internal.DefaultAgentHostname
 	}
-	return &url.URL{Host: net.JoinHostPort(host, DefaultStatsdPort)}, false
+	return &url.URL{Host: net.JoinHostPort(host, DefaultStatsdPort)}
 }
 
 // parseDogstatsdAddr accepts "host:port" or "unix:///path/to/socket".
