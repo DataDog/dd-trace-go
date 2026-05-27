@@ -267,6 +267,7 @@ func TestStartSpan(t *testing.T) {
 		experimentID := "exp-dist-123"
 		experimentRunID := "run-uuid-xyz"
 		experimentRunIteration := 3
+		experimentProjectID := "proj-dist-456"
 
 		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			ctx := req.Context()
@@ -281,6 +282,7 @@ func TestStartSpan(t *testing.T) {
 				ID:           experimentID,
 				RunID:        experimentRunID,
 				RunIteration: experimentRunIteration,
+				ProjectID:    experimentProjectID,
 			}, llmobs.StartSpanConfig{})
 			defer experimentSpan.Finish(llmobs.FinishSpanConfig{})
 
@@ -312,6 +314,7 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, experimentID, findTag(serverLLM.Tags, "experiment_id"), "server span should inherit experiment_id via baggage")
 		assert.Equal(t, experimentRunID, findTag(serverLLM.Tags, "run_id"), "server span should inherit run_id via baggage")
 		assert.Equal(t, fmt.Sprintf("%d", experimentRunIteration), findTag(serverLLM.Tags, "run_iteration"), "server span should inherit run_iteration via baggage")
+		assert.Equal(t, experimentProjectID, findTag(serverLLM.Tags, "project_id"), "server span should inherit project_id via baggage")
 	})
 	t.Run("custom-start-and-finish-times", func(t *testing.T) {
 		tt, ll := testTracer(t)
@@ -2345,10 +2348,12 @@ func TestDDAttributes(t *testing.T) {
 		experimentID := "test-experiment-789"
 		experimentRunID := "run-uuid-abc"
 		experimentRunIteration := 2
+		experimentProjectID := "test-project-789"
 		parentSpan, ctx := ll.StartExperimentSpan(ctx, "parent-experiment", llmobs.ExperimentInfo{
 			ID:           experimentID,
 			RunID:        experimentRunID,
 			RunIteration: experimentRunIteration,
+			ProjectID:    experimentProjectID,
 		}, llmobs.StartSpanConfig{})
 		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child-llm", llmobs.StartSpanConfig{})
 
@@ -2366,6 +2371,7 @@ func TestDDAttributes(t *testing.T) {
 		require.NotNil(t, childLLM, "Child LLM span should exist")
 		assert.Contains(t, childLLM.Tags, "run_id:"+experimentRunID, "Child span should inherit run_id from baggage")
 		assert.Contains(t, childLLM.Tags, "run_iteration:2", "Child span should inherit run_iteration from baggage")
+		assert.Contains(t, childLLM.Tags, "project_id:"+experimentProjectID, "Child span should inherit project_id from baggage")
 	})
 	t.Run("child-span-trace-ids", func(t *testing.T) {
 		tt, ll := testTracer(t)

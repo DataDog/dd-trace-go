@@ -8,6 +8,7 @@ package httptrace
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -29,6 +30,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var securityTestingHeaders = [...]struct {
+	header string
+	tag    string
+}{
+	{header: "x-datadog-endpoint-scan", tag: ext.HTTPRequestHeaders + ".x-datadog-endpoint-scan"},
+	{header: "x-datadog-security-test", tag: ext.HTTPRequestHeaders + ".x-datadog-security-test"},
+}
 
 func TestGetErrorCodesFromInput(t *testing.T) {
 	codesOnly := "400,401,402"
@@ -164,6 +173,116 @@ func TestHeaderTagsFromRequest(t *testing.T) {
 	for expectedTag, expectedTagVal := range expectedHeaderTags {
 		assert.Equal(t, expectedTagVal, spans[0].Tags()[expectedTag])
 	}
+}
+
+func TestStartRequestSpanSecurityTestingHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		headers  http.Header
+		expected map[string]string
+	}{
+		{
+			name: "present",
+			headers: http.Header{
+				"x-datadog-endpoint-scan": {"scan-uuid"},
+				"X-Datadog-Security-Test": {" test-uuid "},
+			},
+			expected: map[string]string{
+				"http.request.headers.x-datadog-endpoint-scan": "scan-uuid",
+				"http.request.headers.x-datadog-security-test": "test-uuid",
+			},
+		},
+		{
+			name: "empty-values",
+			headers: http.Header{
+				"X-Datadog-Endpoint-Scan": {""},
+				"X-Datadog-Security-Test": {""},
+			},
+			expected: map[string]string{
+				"http.request.headers.x-datadog-endpoint-scan": "",
+				"http.request.headers.x-datadog-security-test": "",
+			},
+		},
+		{
+			name:     "missing",
+			headers:  http.Header{},
+			expected: map[string]string{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			r := httptest.NewRequest(http.MethodGet, "/test", nil)
+			maps.Copy(r.Header, tc.headers)
+			span, _, _ := StartRequestSpan(r)
+			span.Finish()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			tags := spans[0].Tags()
+
+			for _, h := range securityTestingHeaders {
+				value, ok := tc.expected[h.tag]
+				if !ok {
+					assert.NotContains(t, tags, h.tag)
+					continue
+				}
+				assert.Contains(t, tags, h.tag)
+				assert.Equal(t, value, tags[h.tag])
+			}
+		})
+	}
+}
+
+func TestStartRequestSpanSecurityTestingHeadersNotPropagated(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	r.Header.Set("X-Datadog-Endpoint-Scan", "scan-uuid")
+	r.Header.Set("X-Datadog-Security-Test", "test-uuid")
+	span, _, _ := StartRequestSpan(r)
+	outgoing := http.Header{}
+	require.NoError(t, tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(outgoing)))
+	span.Finish()
+
+	for _, h := range securityTestingHeaders {
+		_, ok := outgoing[http.CanonicalHeaderKey(h.header)]
+		assert.False(t, ok)
+	}
+}
+
+func TestBeforeHandleSecurityTestingHeadersWithAppSec(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skipf("cgo disabled / no appsec tag")
+	}
+
+	oldCfg := cfg
+	defer func() { cfg = oldCfg }()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	appsec.Start()
+	defer appsec.Stop()
+	ResetCfg()
+
+	r := httptest.NewRequest(http.MethodGet, "https://example.com/test", nil)
+	r.Header.Set("X-Datadog-Endpoint-Scan", "scan-uuid")
+	r.Header.Set("X-Datadog-Security-Test", " test-uuid ")
+	w := httptest.NewRecorder()
+
+	rw, rt, after, handled := BeforeHandle(&ServeConfig{Route: "/test"}, w, r)
+	assert.False(t, handled)
+	http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }).ServeHTTP(rw, rt)
+	after()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "scan-uuid", spans[0].Tag(securityTestingHeaders[0].tag))
+	assert.Equal(t, "test-uuid", spans[0].Tag(securityTestingHeaders[1].tag))
 }
 
 func TestStartRequestSpan(t *testing.T) {
@@ -613,6 +732,38 @@ func BenchmarkStartRequestSpan(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		StartRequestSpan(r, opts...)
+	}
+}
+
+func BenchmarkStartRequestSpanQueryObfuscation(b *testing.B) {
+	log.UseLogger(log.DiscardLogger{})
+	opts := []tracer.StartSpanOption{
+		tracer.ServiceName("SomeService"),
+		tracer.ResourceName("SomeResource"),
+		tracer.Tag(ext.HTTPRoute, "/some/route/?"),
+	}
+	queries := []struct {
+		name string
+		raw  string
+	}{
+		{"few_params", "user=john&password=secret&token=abc123"},
+		{"many_params", "user=john&password=secret&token=abc123&session=xyz&debug=true&page=1&sort=asc&filter=active&lang=en&ref=homepage"},
+		{"really_long_1", "sz=300x50&iu=/12345678901/ad_unit_test&output=&tile=1&ss_req=1&d_imp=1&d_imp_hdr=1&t=%26devmake%3Dacme%26devmakedate%3D1700000000000%26uxloc%3DBANNER_TOP%26appname%3DTestApp%26devid%3Daaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee%26appver%3D10.200.0%26devmodel%3DAcme-default%26gppsid%3D%26usid%3Daaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-20260101120000-12345678901234567%26screen%3DLANDING%26contenttype%3DDISPLAY%26contentgenre%3D%26contentrating%3D%26dlid%3D11111111-2222-3333-4444-555555555555%26mvpd%3DTestApp%26tile%3D1%26carouselPosition%3D1%26gpp%3D%26carouselName%3DFeatured%2BBanner%2BSlot%2BUS%26devbrand%3DAcme%26partnername%3DTestApp%26devlang%3Den%26devlat%3D0%26apptype%3DEntertainment%26contentlang%3Den%26lowEnd%3Dtrue%26devcountry%3DUSA%26devtype%3Ddpid%26resellerId%3Dtestreseller%26platform%3DTVOS&ppid=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&rdid=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&is_lat=0&idtype=dpid&ip=198.51.100.1&c=1234567890123456789&gdpr=1&gdpr_consent=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBB"},
+		{"really_long_2", "sz=300x50&iu=/12345678901/ad_unit_test&output=&tile=1&ss_req=1&d_imp=1&d_imp_hdr=1&t=%26gpp%3D%26mvpd%3DTestApp%26usid%3Daaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee-20260101120000-12345678901234567%26platform%3DTVOS%26uxloc%3DBANNER_TOP%26tile%3D1%26devcountry%3DUSA%26devbrand%3DAcme%26devtype%3Ddpid%26appname%3DTestApp%26carouselPosition%3D1%26screen%3DLANDING%26devid%3Daaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee%26contenttype%3DDISPLAY%26contentgenre%3D%26contentrating%3D%26appver%3D10.200.0%26carouselName%3DFeatured%2BBanner%2BSlot%2BUS%26partnername%3DTestApp%26devmake%3Dacme%26devmakedate%3D1700000000000%26devlang%3Den%26contentlang%3Den%26devlat%3D0%26devmodel%3DAcme-default%26lowEnd%3Dtrue%26dlid%3D11111111-2222-3333-4444-555555555555%26apptype%3DEntertainment%26gppsid%3D&ppid=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&rdid=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&is_lat=0&idtype=dpid&ip=198.51.100.1&c=9876543210987654321&gdpr=1&gdpr_consent=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.BBBBBBBBBBBBB"},
+	}
+	for _, q := range queries {
+		r, err := http.NewRequest("GET", "http://example.com", nil)
+		if err != nil {
+			b.Fatalf("Failed to create request: %v", err)
+		}
+		r.URL.RawQuery = q.raw
+		b.Run(q.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				StartRequestSpan(r, opts...)
+			}
+		})
 	}
 }
 
