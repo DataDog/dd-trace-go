@@ -46,15 +46,16 @@ var sensitiveByFirstLetter = [26][]string{
 // Per-byte ASCII class bitmasks for the obfuscator's character classifiers.
 // Each bit covers ALL characters that belong to that class (not just the extras).
 // Non-ASCII bytes are handled by the Unicode fold fallback in each classifier.
+// The "alt N" annotations map to the alternatives in obfuscateQueryStringDefault.
 const (
-	classAlpha    uint8 = 1 << 0 // [a-zA-Z]
-	classDigit    uint8 = 1 << 1 // [0-9]
-	classWord     uint8 = 1 << 2 // [a-zA-Z0-9_]
-	classBearer   uint8 = 1 << 3 // [a-zA-Z0-9._-]
-	classSSHBody  uint8 = 1 << 4 // [a-zA-Z0-9/+.]
-	classJWTSeg   uint8 = 1 << 5 // [a-zA-Z0-9_=-]
-	classJWTSig   uint8 = 1 << 6 // [a-zA-Z0-9_.+/=-]
-	classAlphaNum uint8 = 1 << 7 // [a-zA-Z0-9]
+	classAlpha    uint8 = 1 << 0 // [a-zA-Z]              — PEM label chars (alt 6); base for derived classes
+	classDigit    uint8 = 1 << 1 // [0-9]                 — base for derived classes
+	classWord     uint8 = 1 << 2 // [a-zA-Z0-9_]          — \w as used in JWT segment/signature (alt 5)
+	classBearer   uint8 = 1 << 3 // [a-zA-Z0-9._-]        — bearer token body (alt 2)
+	classSSHBody  uint8 = 1 << 4 // [a-zA-Z0-9/+.]        — SSH RSA key body (alt 7)
+	classJWTSeg   uint8 = 1 << 5 // [a-zA-Z0-9_=-] ≡ [\w=-]       — JWT header/payload segment char (alt 5)
+	classJWTSig   uint8 = 1 << 6 // [a-zA-Z0-9_.+/=-] ≡ [\w.+\/=-] — JWT signature char (alt 5)
+	classAlphaNum uint8 = 1 << 7 // [a-zA-Z0-9]           — short-token and GitHub token body (alts 3, 4)
 )
 
 // Regex-quantifier mirror constants. Each matches a fixed-length run in the
@@ -155,6 +156,48 @@ func emitObfuscated(b *strings.Builder, s string, last, pos, n int) int {
 // obfuscateQueryStringDefault obfuscates s using the default query string
 // obfuscation logic, equivalent to
 // defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>").
+//
+// This is a hand-written state machine. Each of the seven matcher branches
+// implements one top-level alternative of defaultQueryStringRegexp, in the same
+// order. The labels "alt 1 … alt 7" are used consistently across this file.
+//
+// Alt 1 — sensitive key + value (matcherSensitive → matchSensitiveKey):
+//
+//	(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|
+//	    (?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|
+//	    consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)
+//	(?:(?:\s|%20)*(?:=|%3D)[^&]+                                      ← key=value
+//	  |(?:"|%22)(?:\s|%20)*(?::|%3A)(?:\s|%20)*(?:"|%22)              ← JSON "key":"value"
+//	   (?:%2[^2]|%[^2]|[^"%])+(?:"|%22))
+//
+// Alt 2 — bearer token (matcherBearer → matchBearerToken):
+//
+//	bearer(?:\s|%20)+[a-z0-9\._\-]
+//
+// Alt 3 — short token (matcherShortToken → matchShortToken):
+//
+//	token(?::|%3A)[a-z0-9]{13}
+//
+// Alt 4 — GitHub token (matcherGithub → matchGitHubToken):
+//
+//	gh[opsu]_[0-9a-zA-Z]{36}
+//
+// Alt 5 — JWT (matcherJWT → matchJWT):
+//
+//	ey[I-L](?:[\w=-]|%3D)+\.ey[I-L](?:[\w=-]|%3D)+
+//	(?:\.(?:[\w.+\/=-]|%3D|%2F|%2B)+)?
+//
+// Alt 6 — PEM private key (matcherPEM → matchPEMPrivateKey):
+//
+//	[\-]{5}BEGIN(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY[\-]{5}[^\-]+
+//	[\-]{5}END(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY
+//
+// Alt 7 — SSH RSA key (matcherSSHRSA → matchSSHRSAKey):
+//
+//	ssh-rsa(?:\s|%20)*(?:[a-z0-9\/\.+]|%2F|%5C|%2B){100,}
+//
+// Note: "token" appears in both alt 1 (token=value) and alt 3 (token:…), so
+// matcherStart['t'] sets both matcherSensitive and matcherShortToken bits.
 func obfuscateQueryStringDefault(s string) string {
 	var b strings.Builder
 	last := 0
@@ -234,8 +277,13 @@ func obfuscateQueryStringDefault(s string) string {
 	return b.String()
 }
 
-// matchSensitiveKey matches a sensitive keyword (password, api_key, …) followed
-// by either =value or a JSON-style "key":"value" pair.
+// matchSensitiveKey implements alt 1 of defaultQueryStringRegexp: a sensitive
+// keyword drawn from sensitiveByFirstLetter followed by either a key=value
+// suffix (matchSensitiveKeyValue) or a JSON "key":"value" suffix
+// (matchSensitiveKeyJSON). The keyword list is the expanded form of:
+//   (?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|
+//       (?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|
+//       consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)
 func matchSensitiveKey(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
@@ -292,6 +340,7 @@ func matchSensitiveKey(s string, pos int) (int, bool) {
 	return 0, false
 }
 
+// matchBearerToken implements alt 2: bearer(?:\s|%20)+[a-z0-9\._\-]
 func matchBearerToken(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
@@ -309,7 +358,7 @@ func matchBearerToken(s string, pos int) (int, bool) {
 	return tokenEnd - start, true
 }
 
-// matchShortToken matches `token:` or `token%3A` followed by exactly 13 [a-z0-9] chars.
+// matchShortToken implements alt 3: token(?::|%3A)[a-z0-9]{13}
 func matchShortToken(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
@@ -329,6 +378,7 @@ func matchShortToken(s string, pos int) (int, bool) {
 	return pos - start, true
 }
 
+// matchGitHubToken implements alt 4: gh[opsu]_[0-9a-zA-Z]{36}
 func matchGitHubToken(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
@@ -350,6 +400,11 @@ func matchGitHubToken(s string, pos int) (int, bool) {
 	return pos - start, true
 }
 
+// matchJWT implements alt 5:
+// ey[I-L](?:[\w=-]|%3D)+\.ey[I-L](?:[\w=-]|%3D)+(?:\.(?:[\w.+\/=-]|%3D|%2F|%2B)+)?
+// Header and payload segments each begin with "ey" followed by one of [I-L]
+// (the base64 encoding of the JSON byte '{'); the optional third segment is the
+// signature.
 func matchJWT(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
@@ -377,6 +432,13 @@ func matchJWT(s string, pos int) (int, bool) {
 	return pos - start, true
 }
 
+// matchPEMPrivateKey implements alt 6:
+// [\-]{5}BEGIN(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY[\-]{5}[^\-]+
+// [\-]{5}END(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY
+// The "PRIVATE KEY" substring may appear anywhere inside the PEM label (e.g.
+// "ENCRYPTED PRIVATE KEY"), so the scanner advances through label chars and
+// records the last position where "PRIVATE KEY" matches — implementing the
+// greedy semantics of the original regexp.
 func matchPEMPrivateKey(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
@@ -411,6 +473,7 @@ func matchPEMPrivateKey(s string, pos int) (int, bool) {
 	return bestEnd - start, true
 }
 
+// matchPEMBodyAndEnd implements [\-]{5}[^\-]+[\-]{5}END — PEM body and footer opener (alt 6).
 func matchPEMBodyAndEnd(s string, pos int) (int, bool) {
 	var ok bool
 	if pos, ok = matchHyphens(s, pos, pemHyphenRun); !ok {
@@ -428,6 +491,7 @@ func matchPEMBodyAndEnd(s string, pos int) (int, bool) {
 	return matchPEMFinalPrivateKey(s, pos)
 }
 
+// matchPEMFinalPrivateKey implements (?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY in the PEM footer (alt 6).
 func matchPEMFinalPrivateKey(s string, pos int) (int, bool) {
 	labelPos, ok := consumePEMLabelChar(s, pos)
 	if !ok {
@@ -450,6 +514,7 @@ func matchPEMFinalPrivateKey(s string, pos int) (int, bool) {
 	return bestEnd, true
 }
 
+// matchPEMPrivateKeyLiteral implements PRIVATE(?:\s|%20)KEY — shared by the BEGIN and END label scanners (alt 6).
 func matchPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
 	var ok bool
 	if pos, ok = matchFoldLiteral(s, pos, "PRIVATE"); !ok {
@@ -461,6 +526,8 @@ func matchPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
 	return matchFoldLiteral(s, pos, "KEY")
 }
 
+// matchSSHRSAKey implements alt 7: ssh-rsa(?:\s|%20)*(?:[a-z0-9\/\.+]|%2F|%5C|%2B){100,}
+//
 // matchSSHRSAKey returns (matchedLen, ok, safeSkip).
 // On failure (ok=false), safeSkip is the number of bytes from pos that the
 // outer loop can safely skip without missing any other match. This avoids
@@ -504,6 +571,7 @@ func matchSSHRSAKey(s string, pos int) (matchedLen int, ok bool, safeSkip int) {
 	return pos - start, true, 0
 }
 
+// matchSensitiveKeySuffix tries both suffixes of alt 1: key=value, then "key":"value".
 func matchSensitiveKeySuffix(s string, pos int) (int, bool) {
 	if end, ok := matchSensitiveKeyValue(s, pos); ok {
 		return end, true
@@ -511,6 +579,7 @@ func matchSensitiveKeySuffix(s string, pos int) (int, bool) {
 	return matchSensitiveKeyJSON(s, pos)
 }
 
+// matchSensitiveKeyValue implements the first suffix form of alt 1: (?:\s|%20)*(?:=|%3D)[^&]+
 func matchSensitiveKeyValue(s string, pos int) (int, bool) {
 	pos = skipSpaces(s, pos)
 	var ok bool
@@ -528,6 +597,8 @@ func matchSensitiveKeyValue(s string, pos int) (int, bool) {
 	return pos, true
 }
 
+// matchSensitiveKeyJSON implements the second suffix form of alt 1:
+// (?:"|%22)(?:\s|%20)*(?::|%3A)(?:\s|%20)*(?:"|%22)(?:%2[^2]|%[^2]|[^"%])+(?:"|%22)
 func matchSensitiveKeyJSON(s string, pos int) (int, bool) {
 	var ok bool
 	if pos, ok = matchQuote(s, pos); !ok {
@@ -554,6 +625,7 @@ func matchSensitiveKeyJSON(s string, pos int) (int, bool) {
 	return pos, true
 }
 
+// matchQuote implements (?:"|%22) — a literal or percent-encoded double-quote (alt 1 JSON suffix).
 func matchQuote(s string, pos int) (int, bool) {
 	if pos < len(s) && s[pos] == '"' {
 		return pos + 1, true
@@ -561,6 +633,7 @@ func matchQuote(s string, pos int) (int, bool) {
 	return matchFoldLiteral(s, pos, "%22")
 }
 
+// skipSpaces implements (?:\s|%20)* — zero or more spaces or percent-encoded spaces.
 func skipSpaces(s string, pos int) int {
 	for pos < len(s) {
 		if isSpace(s[pos]) {
@@ -576,6 +649,7 @@ func skipSpaces(s string, pos int) int {
 	return pos
 }
 
+// matchHyphens implements [\-]{n} — exactly n consecutive hyphens (PEM fence, alt 6).
 func matchHyphens(s string, pos int, n int) (int, bool) {
 	if len(s)-pos < n {
 		return 0, false
@@ -597,6 +671,7 @@ func isSpace(c byte) bool {
 	}
 }
 
+// consumePEMLabelChar implements [a-z\s]|%20 — one character of a PEM label (alt 6).
 func consumePEMLabelChar(s string, pos int) (int, bool) {
 	if next, ok := consumeAlphaChar(s, pos); ok {
 		return next, true
@@ -614,6 +689,7 @@ func consumeSpaceOrPct20(s string, pos int) (int, bool) {
 	return matchFoldLiteral(s, pos, "%20")
 }
 
+// consumeNonHyphenRun implements [^\-]+ — the PEM body between the BEGIN and END fences (alt 6).
 func consumeNonHyphenRun(s string, pos int) (int, bool) {
 	i := strings.IndexByte(s[pos:], '-')
 	if i == 0 {
@@ -625,6 +701,9 @@ func consumeNonHyphenRun(s string, pos int) (int, bool) {
 	return pos + i, true
 }
 
+// consumeJWTHeader implements ey[I-L] — the fixed 3-byte prefix of each JWT segment (alt 5).
+// [I-L] case-folds to [i-l]; the set {"i","j","k","l"} covers the base64
+// encodings of the four possible first bytes of a JSON object: 0x7B = '{'.
 func consumeJWTHeader(s string, pos int) (int, bool) {
 	var ok bool
 	if pos, ok = matchFoldLiteral(s, pos, "ey"); !ok {
@@ -633,6 +712,7 @@ func consumeJWTHeader(s string, pos int) (int, bool) {
 	return consumeFoldedASCIISet(s, pos, "ijkl")
 }
 
+// consumeJWTSegment implements (?:[\w=-]|%3D)+ — base64url body of a JWT header or payload (alt 5).
 func consumeJWTSegment(s string, pos int) (int, bool) {
 	start := pos
 	for {
@@ -802,6 +882,7 @@ func consumeFoldedASCIISet(s string, pos int, chars string) (int, bool) {
 	return 0, false
 }
 
+// consumeJSONValue implements (?:%2[^2]|%[^2]|[^"%])+ — JSON value body between the quotes (alt 1).
 func consumeJSONValue(s string, pos int) int {
 	for pos < len(s) {
 		// The value regexp is (%2[^2]|%[^2]|[^"%])+. The order is
