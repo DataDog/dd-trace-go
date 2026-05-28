@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -117,7 +118,6 @@ type SpanContext struct {
 	// the below group should propagate only locally
 
 	trace  *trace       // reference to the trace that this span belongs too
-	span   *Span        // reference to the span that hosts this context
 	errors atomic.Int32 // number of spans with errors in this trace
 
 	// The 16-character hex string of the last seen Datadog Span ID
@@ -142,6 +142,9 @@ type SpanContext struct {
 	baggage map[string]string
 	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	hasBaggage uint32 // +checkatomic
+	// +checklocks:mu
+	// inherited stores mirrored data from the span that hosts this context
+	inherited inheritedData
 	// e.g. "synthetics"
 	// +checklocks:mu
 	origin string
@@ -254,7 +257,6 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	context := &SpanContext{
 		spanID: span.spanID,
-		span:   span,
 	}
 
 	context.traceID.SetLower(span.traceID)
@@ -292,11 +294,76 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
+	context.setInherited(span.inheritedData())
 	// setting context.updated to false here is necessary to distinguish
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
 	context.updated = false
 	return context
+}
+
+func (c *SpanContext) inheritedSnapshot() inheritedData {
+	if c == nil {
+		return inheritedData{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.inherited
+}
+
+func (c *SpanContext) setInherited(data inheritedData) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inherited = data
+}
+
+func (c *SpanContext) setInheritedService(service, source string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inherited.service = service
+	c.inherited.serviceSource = source
+}
+
+func (c *SpanContext) setInheritedPPROFCtx(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inherited.pprofCtx = ctx
+}
+
+func (c *SpanContext) setInheritedMeta(key, value string) {
+	if c == nil {
+		return
+	}
+	switch key {
+	case ext.PeerService, ext.Environment, ext.Version:
+	default:
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.setInheritedMetaLocked(key, value)
+}
+
+// +checklocks:c.mu
+func (c *SpanContext) setInheritedMetaLocked(key, value string) {
+	assert.RWMutexLocked(&c.mu)
+	switch key {
+	case ext.PeerService:
+		c.inherited.peerService = value
+	case ext.Environment:
+		c.inherited.env = value
+	case ext.Version:
+		c.inherited.version = value
+	}
 }
 
 // SpanID implements ddtrace.SpanContext.
@@ -445,8 +512,8 @@ func (c *SpanContext) baggageItem(key string) string {
 
 // finish marks this span as finished in the trace.
 // The span must be locked by the caller.
-func (c *SpanContext) finish() {
-	c.trace.finishedOneLocked(c.span)
+func (c *SpanContext) finish(s *Span) {
+	c.trace.finishedOneLocked(s)
 }
 
 // safeDebugString returns a safe string representation of the SpanContext for debug logging.

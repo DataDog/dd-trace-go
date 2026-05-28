@@ -1648,3 +1648,90 @@ func TestExtractedContextOriginMarkedOnFirstChildOnly(t *testing.T) {
 	_, hasOrigin := grandchild.meta.Get(keyOrigin)
 	assert.False(t, hasOrigin, "grandchild should not have origin — it is not the first local span")
 }
+
+// TestInheritedFieldsMirrorSetTag verifies that context.inherited is updated when
+// env, version, and peer.service tags are mutated on a live span via SetTag.
+func TestInheritedFieldsMirrorSetTag(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	span := trc.StartSpan("op")
+	defer span.Finish()
+
+	span.SetTag(ext.Environment, "staging")
+	span.SetTag(ext.Version, "2.0")
+	span.SetTag(ext.PeerService, "my-peer")
+
+	inherited := span.context.inheritedSnapshot()
+	assert.Equal(t, "staging", inherited.env)
+	assert.Equal(t, "2.0", inherited.version)
+	assert.Equal(t, "my-peer", inherited.peerService)
+}
+
+// TestSiblingSpansGetFreshInheritedState verifies that each sibling span captures
+// the parent's inherited state at its own creation time, and that siblings do not
+// share or leak context state between them.
+func TestSiblingSpansGetFreshInheritedState(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t, WithService("global-svc"))
+	require.NoError(t, err)
+	defer stop()
+
+	parent := trc.StartSpan("parent", ServiceName("parent-svc"))
+	defer parent.Finish()
+
+	child1 := trc.StartSpan("child1", ChildOf(parent.Context()))
+	defer child1.Finish()
+
+	parent.SetTag(ext.ServiceName, "new-parent-svc")
+
+	child2 := trc.StartSpan("child2", ChildOf(parent.Context()))
+	defer child2.Finish()
+
+	assert.Equal(t, "parent-svc", child1.service, "child1 was created before service update")
+	assert.Equal(t, "new-parent-svc", child2.service, "child2 was created after service update")
+	assert.Equal(t, "parent-svc", child1.context.inheritedSnapshot().service)
+	assert.Equal(t, "new-parent-svc", child2.context.inheritedSnapshot().service)
+}
+
+func TestInheritedFieldsConcurrentAccess(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	parent := trc.StartSpan("parent")
+	defer parent.Finish()
+	ctx := parent.Context()
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 100)
+	for i := range 100 {
+		wg.Add(3)
+		go func(i int) {
+			defer wg.Done()
+			parent.SetTag(ext.Environment, fmt.Sprintf("env-%d", i))
+			parent.SetTag(ext.Version, fmt.Sprintf("version-%d", i))
+			parent.SetTag(ext.PeerService, fmt.Sprintf("peer-%d", i))
+			parent.SetTag(ext.ServiceName, fmt.Sprintf("service-%d", i))
+		}(i)
+		go func() {
+			defer wg.Done()
+			child := trc.StartSpan("child", ChildOf(ctx))
+			child.Finish()
+		}()
+		go func() {
+			defer wg.Done()
+			carrier := SQLCommentCarrier{
+				Query:         "SELECT 1",
+				Mode:          DBMPropagationModeService,
+				DBServiceName: "db",
+			}
+			errCh <- carrier.Inject(ctx)
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		assert.NoError(t, err)
+	}
+}
