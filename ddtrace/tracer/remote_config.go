@@ -261,10 +261,8 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	if updated {
 		telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 	}
-	updated = t.config.headerAsTags.handleRC(merged.HeaderTags.toSlice())
-	if updated {
-		telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
-	}
+	// internalConfig's HandleRC self-reports to telemetry, so no need to append to telemConfigs.
+	t.config.internalConfig.HeaderAsTagsConfig().HandleRC(merged.HeaderTags.toSlice())
 	updated = t.config.globalTags.handleRC(merged.Tags.toMap())
 	if updated {
 		telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())

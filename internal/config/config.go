@@ -115,6 +115,10 @@ type Config struct {
 	dynamicInstrumentationEnabled *DynamicConfig[bool]
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
+	// headerAsTags holds the configured "header:tag" entries for HTTP integrations.
+	// On change, the apply callback re-populates globalconfig.HeaderTags with the
+	// parsed mappings — transitional until integrations read directly from here.
+	headerAsTags *DynamicConfig[[]string]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled    bool
 	ciVisibilityAgentless  bool
@@ -247,10 +251,13 @@ func loadConfig() *Config {
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
-	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat)
+	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
 
 	enabled, origin := p.GetBoolWithOrigin("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	cfg.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, origin, equal[bool])
+	cfg.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, origin, equal[bool], nil)
+
+	headerTags, headerTagsOrigin := parseHeaderAsTagsFromEnv(p)
+	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], propagateHeaderAsTagsToGlobalConfig)
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -565,6 +572,26 @@ func (c *Config) SetDynamicInstrumentationEnabled(enabled bool, origin telemetry
 	}
 	c.dynamicInstrumentationEnabled.setBaseline(enabled, origin)
 	configtelemetry.Report("DD_DYNAMIC_INSTRUMENTATION_ENABLED", enabled, origin)
+}
+
+func (c *Config) HeaderAsTags() []string {
+	return c.headerAsTags.Get()
+}
+
+// HeaderAsTagsConfig returns the DynamicConfig for header-as-tags. Used by the
+// tracer's RC handler to invoke HandleRC on remote-config updates.
+func (c *Config) HeaderAsTagsConfig() *DynamicConfig[[]string] {
+	return c.headerAsTags
+}
+
+func (c *Config) SetHeaderAsTags(headerAsTags []string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_HEADER_TAGS", origin, headerAsTags, product...) {
+		return
+	}
+	c.headerAsTags.setBaseline(headerAsTags, origin)
+	configtelemetry.Report("DD_TRACE_HEADER_TAGS", strings.Join(headerAsTags, ","), origin)
 }
 
 func (c *Config) TraceRateLimitPerSecond() float64 {

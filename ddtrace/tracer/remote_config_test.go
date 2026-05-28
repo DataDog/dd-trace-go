@@ -483,7 +483,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			// Telemetry
 			assertCalled(t, telemetryClient,
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-env", Origin: telemetry.OriginDefault},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-env", Origin: telemetry.OriginEnvVar},
 				},
 			)
 		},
@@ -535,7 +535,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			// Telemetry
 			assertCalled(t, telemetryClient,
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-in-code", Origin: telemetry.OriginDefault},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-in-code", Origin: telemetry.OriginCode},
 				},
 			)
 		},
@@ -796,7 +796,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				if tt.expectedSamplingRate == rcSamplingRate {
 					samplingRateOrigin = telemetry.OriginRemoteConfig
 				}
-				headerTagOrigin := telemetry.OriginDefault
+				// DD_TRACE_HEADER_TAGS is set, so resets report OriginEnvVar.
+				headerTagOrigin := telemetry.OriginEnvVar
 				if tt.expectedHeaderTag == rcHeaderTag {
 					headerTagOrigin = telemetry.OriginRemoteConfig
 				}
