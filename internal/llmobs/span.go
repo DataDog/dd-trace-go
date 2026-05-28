@@ -558,6 +558,23 @@ func (s *Span) propagatedMLApp() string {
 	return ""
 }
 
+// resolvedToolVersion walks the parent chain to find the nearest LLM ancestor and returns the
+// ToolVersion for the tool matching this span's name in its tool_definitions, if any.
+func (s *Span) resolvedToolVersion() string {
+	for cur := s.parent; cur != nil; cur = cur.parent {
+		if cur.spanKind != SpanKindLLM {
+			continue
+		}
+		for _, td := range cur.llmCtx.toolDefinitions {
+			if td.Name == s.name {
+				return td.ToolVersion
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
 // updateMapKeys adds key/values from updates into src, overriding existing keys.
 func updateMapKeys[K comparable, V any](src map[K]V, updates map[K]V) map[K]V {
 	if len(updates) == 0 {
