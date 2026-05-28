@@ -1421,6 +1421,13 @@
         "default": ""
       }
     ],
+    "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "continue"
+      }
+    ],
     "DD_TRACE_PROPAGATION_EXTRACT_FIRST": [
       {
         "implementation": "A",

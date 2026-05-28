@@ -79,6 +79,8 @@ func startTelemetry(c *config) telemetry.Client {
 			telemetry.Configuration{Name: "trace_propagation_style_inject", Value: chained.injectorNames})
 		telemetryConfigs = append(telemetryConfigs,
 			telemetry.Configuration{Name: "trace_propagation_style_extract", Value: chained.extractorsNames})
+		telemetryConfigs = append(telemetryConfigs,
+			telemetry.Configuration{Name: "trace_propagation_behavior_extract", Value: chained.propagationBehaviorExtract})
 	}
 	for k, v := range c.internalConfig.FeatureFlags() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: k, Value: v})
