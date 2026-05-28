@@ -958,6 +958,8 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin, p
 	configtelemetry.Report(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
 }
 
+// CIVisibilityAgentless returns the raw DD_CIVISIBILITY_AGENTLESS_ENABLED value.
+// Only valid inside a CIVisibilityEnabled() block; prefer CIVisibilityAgentlessActive() elsewhere.
 func (c *Config) CIVisibilityAgentless() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
