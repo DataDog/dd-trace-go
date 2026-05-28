@@ -88,6 +88,7 @@ type Config struct {
 	hostnameLookupError        error
 	runtimeMetrics             bool
 	runtimeMetricsV2           bool
+	otelRuntimeMetrics         bool
 	profilerHotspots           bool
 	profilerEndpoints          bool
 	spanAttributeSchemaVersion int
@@ -207,6 +208,7 @@ func loadConfig() *Config {
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
+	cfg.otelRuntimeMetrics = p.GetBool("DD_METRICS_OTEL_ENABLED", false)
 	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
 	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
 	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
@@ -454,6 +456,22 @@ func (c *Config) SetRuntimeMetricsV2Enabled(enabled bool, origin telemetry.Origi
 	}
 	c.runtimeMetricsV2 = enabled
 	configtelemetry.Report("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
+}
+
+func (c *Config) OtelRuntimeMetricsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelRuntimeMetrics
+}
+
+func (c *Config) SetOtelRuntimeMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_METRICS_OTEL_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.otelRuntimeMetrics = enabled
+	configtelemetry.Report("DD_METRICS_OTEL_ENABLED", enabled, origin)
 }
 
 func (c *Config) DataStreamsMonitoringEnabled() bool {

@@ -31,6 +31,7 @@ import (
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -172,6 +173,9 @@ type tracer struct {
 	// runtimeMetrics is submitting runtime metrics to the agent using statsd.
 	runtimeMetrics *runtimemetrics.Emitter
 
+	// otelRuntimeMetrics emits Go runtime metrics via OTel semantic conventions.
+	otelRuntimeMetrics *otelRuntimeMetrics
+
 	// telemetry is the telemetry client for the tracer.
 	telemetry telemetry.Client
 
@@ -278,6 +282,19 @@ func Start(opts ...StartOption) error {
 			l.Debug("Runtime metrics v2 enabled.")
 		} else {
 			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+		}
+	}
+
+	// Respect explicit opt-out of runtime metrics (mirrors withRuntimeProducerDefault behavior).
+	if t.config.internalConfig.OtelRuntimeMetricsEnabled() {
+		rmd := env.Get("DD_RUNTIME_METRICS_ENABLED")
+		if rmd != "false" && rmd != "0" {
+			if m, err := startOtelRuntimeMetrics(gocontext.Background()); err != nil {
+				log.Warn("Failed to start OTel runtime metrics: %v", err.Error())
+			} else {
+				t.otelRuntimeMetrics = m
+				log.Info("OTel runtime metrics enabled.")
+			}
 		}
 	}
 
@@ -1056,6 +1073,9 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	if t.runtimeMetrics != nil {
 		t.runtimeMetrics.Stop()
+	}
+	if t.otelRuntimeMetrics != nil {
+		t.otelRuntimeMetrics.stop()
 	}
 	t.statsd.Close()
 	if t.dataStreams != nil {

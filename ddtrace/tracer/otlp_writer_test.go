@@ -261,14 +261,14 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 	for _, tc := range testcases {
 		name := fmt.Sprintf("retries=%d/fails=%d", tc.configRetries, tc.failCount)
 		t.Run(name, func(t *testing.T) {
-			var totalRequests int32
+			var totalRequests atomic.Int32
 			srv := newTestOTLPServer()
 			atomic.StoreInt32(&srv.failCount, int32(tc.failCount))
 			defer srv.Close()
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				atomic.AddInt32(&totalRequests, 1)
+				totalRequests.Add(1)
 				srv.Server.Config.Handler.ServeHTTP(w, r)
 			})
 			countingSrv := httptest.NewServer(mux)
@@ -284,7 +284,7 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 			w.flush()
 			w.wg.Wait()
 
-			assert.Equal(t, int32(tc.expAttempts), atomic.LoadInt32(&totalRequests))
+			assert.Equal(t, int32(tc.expAttempts), totalRequests.Load())
 			assert.Equal(t, tc.tracesSent, len(srv.getPayloads()) > 0)
 		})
 	}
@@ -313,14 +313,14 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 
-	var spansAdded int32
+	var spansAdded atomic.Int32
 
 	for range numAdders {
 		wg.Go(func() {
 			<-start
 			for range spansPerAdder {
 				w.add([]*Span{newSpan("op", "svc", "res", randUint64(), randUint64(), 0)})
-				atomic.AddInt32(&spansAdded, 1)
+				spansAdded.Add(1)
 			}
 		})
 	}
@@ -339,7 +339,7 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 
 	w.stop()
 
-	assert.Equal(t, int32(numAdders*spansPerAdder), atomic.LoadInt32(&spansAdded))
+	assert.Equal(t, int32(numAdders*spansPerAdder), spansAdded.Load())
 
 	// Verify all sent payloads are valid protobuf
 	totalSpans := 0
