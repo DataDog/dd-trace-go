@@ -606,7 +606,7 @@ func TestSpanAnnotations(t *testing.T) {
 		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-tool-definitions")
 		span.AnnotateLLMIO(nil, nil,
 			llmobs.WithAnnotatedToolDefinitions([]llmobs.ToolDefinition{
-				{Name: "get_weather", Description: "Get the current weather for a location"},
+				{Name: "get_weather", Description: "Get the current weather for a location", ToolVersion: "1.0.0"},
 			}),
 		)
 		span.Finish()

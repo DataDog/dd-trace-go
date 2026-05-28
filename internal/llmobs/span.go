@@ -117,6 +117,8 @@ type ToolDefinition struct {
 	Name string `json:"name"`
 	// Description is the description of what the tool does.
 	Description string `json:"description,omitempty"`
+	// ToolVersion is the version of the tool.
+	ToolVersion string `json:"tool_version,omitempty"`
 	// Schema is the JSON schema defining the tool's parameters.
 	Schema json.RawMessage `json:"schema,omitempty"`
 }
