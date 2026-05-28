@@ -2331,10 +2331,10 @@ func BenchmarkPartialFlushing(b *testing.B) {
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
-		genBigTraces(b)
+		genBigTraces(b, WithSpanPool(true))
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b)
+		genBigTraces(b, WithSpanPool(true))
 	})
 }
 
@@ -2408,7 +2408,7 @@ func genBigTraces(b *testing.B, opts ...StartOption) {
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
-	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0), WithSpanPool(true))
 	assert.Nil(b, err)
 	defer stop()
 
@@ -2809,7 +2809,7 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 func BenchmarkSingleSpanRetention(b *testing.B) {
 	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("no-rules", func(b *testing.B) {
-		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"))
+		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"), WithSpanPool(true))
 		assert.Nil(b, err)
 		defer stop()
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
@@ -2828,7 +2828,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 
 	b.Run("with-rules/match-half", func(b *testing.B) {
 		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
-		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"))
+		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"), WithSpanPool(true))
 		assert.Nil(b, err)
 		defer stop()
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
@@ -2851,7 +2851,7 @@ func BenchmarkSingleSpanRetention(b *testing.B) {
 
 	b.Run("with-rules/match-all", func(b *testing.B) {
 		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
-		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"))
+		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"), WithSpanPool(true))
 		assert.Nil(b, err)
 		defer stop()
 		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)

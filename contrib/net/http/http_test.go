@@ -585,7 +585,7 @@ func handler404(w http.ResponseWriter, r *http.Request) {
 }
 
 func BenchmarkHttpServeTrace(b *testing.B) {
-	err := tracer.Start(tracer.WithLogger(testutils.DiscardLogger()), tracer.WithHeaderTags([]string{"3header"}))
+	err := tracer.Start(tracer.WithLogger(testutils.DiscardLogger()), tracer.WithHeaderTags([]string{"3header"}), tracer.WithSpanPool(true))
 	assert.NoError(b, err)
 	defer tracer.Stop()
 
@@ -609,7 +609,7 @@ func BenchmarkHttpServeTrace(b *testing.B) {
 }
 
 func BenchmarkHttpServeTraceQueryObfuscation(b *testing.B) {
-	err := tracer.Start(tracer.WithLogger(testutils.DiscardLogger()), tracer.WithHeaderTags([]string{"3header"}))
+	err := tracer.Start(tracer.WithLogger(testutils.DiscardLogger()), tracer.WithHeaderTags([]string{"3header"}), tracer.WithSpanPool(true))
 	assert.NoError(b, err)
 	defer tracer.Stop()
 
