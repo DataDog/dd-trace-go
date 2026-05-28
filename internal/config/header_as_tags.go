@@ -16,24 +16,17 @@ import (
 )
 
 // parseHeaderAsTagsFromEnv reads DD_TRACE_HEADER_TAGS, splits it on commas, and
-// returns the resulting list with the origin (OriginEnvVar when set, OriginDefault otherwise).
+// returns the resulting list with the origin reported by the provider.
 func parseHeaderAsTagsFromEnv(p *provider.Provider) ([]string, telemetry.Origin) {
-	v := p.GetString("DD_TRACE_HEADER_TAGS", "")
+	v, origin := p.GetStringWithOrigin("DD_TRACE_HEADER_TAGS", "")
 	if v == "" {
-		return nil, telemetry.OriginDefault
+		return nil, origin
 	}
-	return strings.Split(v, ","), telemetry.OriginEnvVar
+	return strings.Split(v, ","), origin
 }
 
-// propagateHeaderAsTagsToGlobalConfig replaces globalconfig.HeaderTags with the
-// parsed mapping derived from headerAsTags. Invoked as the apply callback on the
-// headerAsTags DynamicConfig so the denormalized view stays in sync with every
-// update (env load, programmatic setter, RC).
-//
-// Transitional: this lives in internal/config only until the integrations that
-// read globalconfig.HeaderTags migrate to reading from this package directly.
-// At that point this function, the globalconfig import, and the normalizer
-// import all go away together.
+// propagateHeaderAsTagsToGlobalConfig is the apply callback for headerAsTags.
+// Transitional: removed when integrations read header tags from this package directly.
 func propagateHeaderAsTagsToGlobalConfig(headerAsTags []string) bool {
 	globalconfig.ClearHeaderTags()
 	for _, h := range headerAsTags {
