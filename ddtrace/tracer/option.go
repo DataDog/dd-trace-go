@@ -158,10 +158,6 @@ type config struct {
 	// if they have a version of the library available to integrate.
 	integrations map[string]integrationConfig
 
-	// universalVersion, reports whether span service name and config service name
-	// should match to set application version tag. False by default
-	universalVersion bool
-
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler RateSampler
 
@@ -1128,7 +1124,7 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.internalConfig.SetVersion(version, telemetry.OriginCode, internalconfig.ProductTracer)
-		cfg.universalVersion = false
+		cfg.internalConfig.SetUniversalVersion(false, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1138,7 +1134,7 @@ func WithServiceVersion(version string) StartOption {
 func WithUniversalVersion(version string) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetVersion(version, telemetry.OriginCode, internalconfig.ProductTracer)
-		c.universalVersion = true
+		c.internalConfig.SetUniversalVersion(true, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 

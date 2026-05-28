@@ -550,7 +550,7 @@ func buildSharedAttrs(c *config, base, mainSvc *traceinternal.SpanAttributes) {
 		mainSvc.Set(traceinternal.AttrEnv, env)
 	}
 	if ver := c.internalConfig.Version(); ver != "" {
-		if c.universalVersion {
+		if c.internalConfig.UniversalVersion() {
 			base.Set(traceinternal.AttrVersion, ver)
 		}
 		// Always pre-populate mainSvc with version so that main-service spans
@@ -958,7 +958,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	// For non-universal version, promote main-service spans to the version-inclusive
 	// shared attrs before applying any tags. This makes the subsequent version write
 	// (from config or global tags) a COW no-op instead of triggering a Clone.
-	if !t.config.universalVersion && span.service == cSnap.ServiceName {
+	if !cSnap.UniversalVersion && span.service == cSnap.ServiceName {
 		span.meta.ReplaceSharedAttrs(&t.sharedAttrs, &t.sharedAttrsForMainSvc)
 	}
 
@@ -977,7 +977,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 
 	if cSnap.Version != "" {
-		if t.config.universalVersion || span.service == cSnap.ServiceName {
+		if cSnap.UniversalVersion || span.service == cSnap.ServiceName {
 			delete(span.metrics, ext.Version)
 			span.meta.Set(ext.Version, cSnap.Version)
 		}
