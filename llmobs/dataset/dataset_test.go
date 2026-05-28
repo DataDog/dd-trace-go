@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -578,8 +579,35 @@ func TestDatasetPull(t *testing.T) {
 		assert.Equal(t, "existing-dataset", ds.Name())
 	})
 	t.Run("pull-dataset-with-non-map-input", func(t *testing.T) {
+		// Return records with string input (not a map) - this simulates a dataset created externally
+		recordsJSON := `{
+			"data": [
+				{
+					"id": "record-1",
+					"type": "dataset_records",
+					"attributes": {
+						"id": "record-1",
+						"input": "This is a simple string input, not a map",
+						"expected_output": "Some output",
+						"version": 1
+					}
+				}
+			]
+		}`
 		h := func(r *http.Request) *http.Response {
 			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+
+			// v2 project-scoped records endpoint
+			if strings.HasPrefix(path, "/api/v2/llm-obs/v1/") && strings.Contains(path, "/records") && r.Method == http.MethodGet {
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(recordsJSON)),
+					Request:    r,
+				}
+			}
+
 			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
 				return nil
 			}
@@ -611,29 +639,6 @@ func TestDatasetPull(t *testing.T) {
 					Body:       io.NopCloser(bytes.NewReader(respData)),
 					Request:    r,
 				}
-			case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
-				// Return records with string input (not a map) - this simulates a dataset created externally
-				rawJSON := `{
-					"data": [
-						{
-							"id": "record-1",
-							"type": "dataset_records",
-							"attributes": {
-								"id": "record-1",
-								"input": "This is a simple string input, not a map",
-								"expected_output": "Some output",
-								"version": 1
-							}
-						}
-					]
-				}`
-				return &http.Response{
-					Status:     "200 OK",
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(strings.NewReader(rawJSON)),
-					Request:    r,
-				}
 			default:
 				return nil
 			}
@@ -655,8 +660,36 @@ func TestDatasetPull(t *testing.T) {
 		assert.Equal(t, "Some output", rec.ExpectedOutput)
 	})
 	t.Run("pull-dataset-with-non-map-metadata", func(t *testing.T) {
+		// Return records with string metadata (not a map) - this simulates a dataset created externally
+		recordsJSON := `{
+			"data": [
+				{
+					"id": "record-1",
+					"type": "dataset_records",
+					"attributes": {
+						"id": "record-1",
+						"input": {"question": "What is AI?"},
+						"expected_output": "Artificial Intelligence",
+						"metadata": "simple string metadata from UI",
+						"version": 1
+					}
+				}
+			]
+		}`
 		h := func(r *http.Request) *http.Response {
 			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+
+			// v2 project-scoped records endpoint
+			if strings.HasPrefix(path, "/api/v2/llm-obs/v1/") && strings.Contains(path, "/records") && r.Method == http.MethodGet {
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(recordsJSON)),
+					Request:    r,
+				}
+			}
+
 			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
 				return nil
 			}
@@ -686,30 +719,6 @@ func TestDatasetPull(t *testing.T) {
 					StatusCode: http.StatusOK,
 					Header:     make(http.Header),
 					Body:       io.NopCloser(bytes.NewReader(respData)),
-					Request:    r,
-				}
-			case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
-				// Return records with string metadata (not a map) - this simulates a dataset created externally
-				rawJSON := `{
-					"data": [
-						{
-							"id": "record-1",
-							"type": "dataset_records",
-							"attributes": {
-								"id": "record-1",
-								"input": {"question": "What is AI?"},
-								"expected_output": "Artificial Intelligence",
-								"metadata": "simple string metadata from UI",
-								"version": 1
-							}
-						}
-					]
-				}`
-				return &http.Response{
-					Status:     "200 OK",
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(strings.NewReader(rawJSON)),
 					Request:    r,
 				}
 			default:
@@ -742,6 +751,44 @@ func TestDatasetPull(t *testing.T) {
 
 		h := func(r *http.Request) *http.Response {
 			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+
+			// v2 project-scoped records endpoint — simulate 3 pages
+			if strings.HasPrefix(path, "/api/v2/llm-obs/v1/") && strings.Contains(path, "/records") && r.Method == http.MethodGet {
+				requestCount++
+				var rawJSON string
+				switch requestCount {
+				case 1:
+					rawJSON = `{
+						"data": [
+							{"id":"record-1","type":"dataset_records","attributes":{"id":"record-1","input":{"question":"Q1"},"expected_output":"A1","metadata":{},"version":1}},
+							{"id":"record-2","type":"dataset_records","attributes":{"id":"record-2","input":{"question":"Q2"},"expected_output":"A2","metadata":{},"version":1}}
+						],
+						"meta": {"page": {"after": "cursor-page-2"}}
+					}`
+				case 2:
+					rawJSON = `{
+						"data": [
+							{"id":"record-3","type":"dataset_records","attributes":{"id":"record-3","input":{"question":"Q3"},"expected_output":"A3","metadata":{},"version":1}}
+						],
+						"meta": {"page": {"after": "cursor-page-3"}}
+					}`
+				default:
+					rawJSON = `{
+						"data": [
+							{"id":"record-4","type":"dataset_records","attributes":{"id":"record-4","input":{"question":"Q4"},"expected_output":"A4","metadata":{},"version":1}}
+						],
+						"meta": {}
+					}`
+				}
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(rawJSON)),
+					Request:    r,
+				}
+			}
+
 			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
 				return nil
 			}
@@ -773,90 +820,6 @@ func TestDatasetPull(t *testing.T) {
 					Body:       io.NopCloser(bytes.NewReader(respData)),
 					Request:    r,
 				}
-			case strings.Contains(path, "/datasets/") && strings.Contains(path, "/records") && r.Method == http.MethodGet:
-				// Simulate 3 pages of results
-				requestCount++
-				var rawJSON string
-
-				switch requestCount {
-				case 1:
-					// First page - has cursor for next page
-					rawJSON = `{
-						"data": [
-							{
-								"id": "record-1",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-1",
-									"input": {"question": "Q1"},
-									"expected_output": "A1",
-									"metadata": {},
-									"version": 1
-								}
-							},
-							{
-								"id": "record-2",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-2",
-									"input": {"question": "Q2"},
-									"expected_output": "A2",
-									"metadata": {},
-									"version": 1
-								}
-							}
-						],
-						"meta": {
-							"after": "cursor-page-2"
-						}
-					}`
-				case 2:
-					// Second page - has cursor for next page
-					rawJSON = `{
-						"data": [
-							{
-								"id": "record-3",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-3",
-									"input": {"question": "Q3"},
-									"expected_output": "A3",
-									"metadata": {},
-									"version": 1
-								}
-							}
-						],
-						"meta": {
-							"after": "cursor-page-3"
-						}
-					}`
-				default:
-					// Third page - no cursor (last page)
-					rawJSON = `{
-						"data": [
-							{
-								"id": "record-4",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-4",
-									"input": {"question": "Q4"},
-									"expected_output": "A4",
-									"metadata": {},
-									"version": 1
-								}
-							}
-						],
-						"meta": {}
-					}`
-				}
-
-				return &http.Response{
-					Status:     "200 OK",
-					StatusCode: http.StatusOK,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(strings.NewReader(rawJSON)),
-					Request:    r,
-				}
 			default:
 				return nil
 			}
@@ -884,6 +847,77 @@ func TestDatasetPull(t *testing.T) {
 			assert.Equal(t, fmt.Sprintf("Q%d", i+1), inputMap["question"])
 			assert.Equal(t, fmt.Sprintf("A%d", i+1), rec.ExpectedOutput)
 		}
+	})
+	t.Run("pull-with-version-option", func(t *testing.T) {
+		var capturedQuery url.Values
+
+		h := func(r *http.Request) *http.Response {
+			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+
+			// v2 project-scoped records endpoint — capture the query params
+			if strings.HasPrefix(path, "/api/v2/llm-obs/v1/") && strings.Contains(path, "/records") && r.Method == http.MethodGet {
+				capturedQuery = r.URL.Query()
+				rawJSON := `{
+					"data": [
+						{"id":"record-1","type":"dataset_records","attributes":{"id":"record-1","input":{"q":"v2 record"},"expected_output":"ans","version":2}}
+					],
+					"meta": {}
+				}`
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(rawJSON)),
+					Request:    r,
+				}
+			}
+
+			if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
+				return nil
+			}
+			path = strings.TrimPrefix(path, "/api/unstable/llm-obs/v1")
+
+			switch {
+			case path == "/projects" && r.Method == http.MethodPost:
+				return handleMockProjectCreate(r)
+			case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
+				response := llmobstransport.GetDatasetResponse{
+					Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
+						{
+							ID:   "versioned-dataset-id",
+							Type: "datasets",
+							Attributes: llmobstransport.DatasetView{
+								ID:             "versioned-dataset-id",
+								Name:           "versioned-dataset",
+								CurrentVersion: 5,
+							},
+						},
+					},
+				}
+				respData, _ := json.Marshal(response)
+				return &http.Response{
+					Status:     "200 OK",
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewReader(respData)),
+					Request:    r,
+				}
+			default:
+				return nil
+			}
+		}
+
+		tt := testTracer(t, testtracer.WithMockResponses(h))
+		defer tt.Stop()
+
+		ds, err := Pull(context.Background(), "versioned-dataset", WithPullVersion(2))
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, 1, ds.Len())
+
+		// Confirm filter[version]=2 was sent in the records request
+		require.NotNil(t, capturedQuery, "records request should have been made")
+		assert.Equal(t, "2", capturedQuery.Get("filter[version]"))
 	})
 }
 
@@ -1191,6 +1225,12 @@ func createMockHandler() testtracer.MockResponseFunc {
 
 	return func(r *http.Request) *http.Response {
 		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+
+		// v2 project-scoped records endpoint used by GetDatasetRecordsPage
+		if strings.HasPrefix(path, "/api/v2/llm-obs/v1/") && strings.Contains(path, "/datasets/") && strings.Contains(path, "/records") && r.Method == http.MethodGet {
+			return handleMockDatasetGet(r, state)
+		}
+
 		if !strings.HasPrefix(path, "/api/unstable/llm-obs/v1") {
 			return nil
 		}
@@ -1207,9 +1247,6 @@ func createMockHandler() testtracer.MockResponseFunc {
 			return handleMockDatasetBulkUpload(r)
 
 		case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
-			return handleMockDatasetGet(r, state)
-
-		case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
 			return handleMockDatasetGet(r, state)
 
 		case strings.Contains(path, "/datasets") && r.Method == http.MethodPost:

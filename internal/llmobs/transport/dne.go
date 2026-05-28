@@ -181,6 +181,19 @@ type ResponseList[T any] struct {
 	Meta ResponseMeta      `json:"meta"`
 }
 
+// responseMetaV2 matches the meta shape of the project-scoped v2 API endpoints,
+// which nest the pagination cursor under meta.page.after.
+type responseMetaV2 struct {
+	Page struct {
+		After string `json:"after,omitempty"`
+	} `json:"page"`
+}
+
+type responseListV2[T any] struct {
+	Data []ResponseData[T] `json:"data"`
+	Meta responseMetaV2    `json:"meta"`
+}
+
 type ResponseData[T any] struct {
 	ID         string `json:"id"`
 	Type       string `json:"type"`
@@ -343,16 +356,25 @@ func (c *Transport) BatchUpdateDataset(
 }
 
 // GetDatasetRecordsPage fetches a single page of records for the given dataset.
+// projectID is the LLM Observability project UUID that owns the dataset.
+// version, when non-nil, requests a specific historical snapshot; nil fetches the latest version.
 // Returns the records, the cursor for the next page (empty string if no more pages), and any error.
-func (c *Transport) GetDatasetRecordsPage(ctx context.Context, datasetID, cursor string) ([]DatasetRecordView, string, error) {
-	method := http.MethodGet
-	recordsPath := fmt.Sprintf("%s/datasets/%s/records", endpointPrefixDNE, url.PathEscape(datasetID))
+func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datasetID, cursor string, version *int) ([]DatasetRecordView, string, error) {
+	recordsPath := fmt.Sprintf("/api/v2/llm-obs/v1/%s/datasets/%s/records",
+		url.PathEscape(projectID), url.PathEscape(datasetID))
 
+	q := url.Values{}
+	if version != nil {
+		q.Set("filter[version]", fmt.Sprintf("%d", *version))
+	}
 	if cursor != "" {
-		recordsPath = fmt.Sprintf("%s?page[cursor]=%s", recordsPath, url.QueryEscape(cursor))
+		q.Set("page[cursor]", cursor)
+	}
+	if len(q) > 0 {
+		recordsPath = recordsPath + "?" + q.Encode()
 	}
 
-	result, err := c.jsonRequest(ctx, method, recordsPath, subdomainDNE, nil, getDatasetRecordsTimeout)
+	result, err := c.jsonRequest(ctx, http.MethodGet, recordsPath, subdomainDNE, nil, getDatasetRecordsTimeout)
 	if err != nil {
 		return nil, "", err
 	}
@@ -360,7 +382,7 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, datasetID, cursor
 		return nil, "", fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 
-	var recordsResp GetDatasetRecordsResponse
+	var recordsResp responseListV2[DatasetRecordView]
 	if err := json.Unmarshal(result.body, &recordsResp); err != nil {
 		return nil, "", fmt.Errorf("failed to decode json response: %w", err)
 	}
@@ -372,12 +394,13 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, datasetID, cursor
 		records = append(records, rec)
 	}
 
-	return records, recordsResp.Meta.After, nil
+	return records, recordsResp.Meta.Page.After, nil
 }
 
 // GetDatasetWithRecords fetches the given Dataset and all its records from DataDog.
+// version, when non-nil, requests a specific historical snapshot; nil fetches the latest version.
 // This eagerly fetches all pages of records.
-func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID string) (*DatasetView, []DatasetRecordView, error) {
+func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID string, version *int) (*DatasetView, []DatasetRecordView, error) {
 	// 1) Fetch dataset by name
 	ds, err := c.GetDatasetByName(ctx, name, projectID)
 	if err != nil {
@@ -392,7 +415,7 @@ func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID s
 	for {
 		log.Debug("llmobs/transport: fetching dataset records page %d", pageNum)
 
-		records, cursor, err := c.GetDatasetRecordsPage(ctx, ds.ID, nextCursor)
+		records, cursor, err := c.GetDatasetRecordsPage(ctx, projectID, ds.ID, nextCursor, version)
 		if err != nil {
 			return nil, nil, fmt.Errorf("get dataset records failed on page %d: %w", pageNum, err)
 		}

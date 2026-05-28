@@ -324,7 +324,7 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 		return nil, fmt.Errorf("failed to get or create project: %w", err)
 	}
 
-	dsResp, recordsResp, err := ll.Transport.GetDatasetWithRecords(ctx, name, project.ID)
+	dsResp, recordsResp, err := ll.Transport.GetDatasetWithRecords(ctx, name, project.ID, cfg.version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dataset: %w", err)
 	}
