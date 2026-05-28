@@ -99,7 +99,15 @@ func (p *Provider) GetStringWithValidator(key string, def string, validate func(
 }
 
 func (p *Provider) GetBool(key string, def bool) bool {
-	return get(p, key, def, func(v string) (bool, bool) {
+	v, _ := p.GetBoolWithOrigin(key, def)
+	return v
+}
+
+// GetBoolWithOrigin is like GetBool but also returns the origin of the winning
+// configuration source. Use this when the caller needs to know where the value
+// came from (e.g. to pass to DynamicConfig).
+func (p *Provider) GetBoolWithOrigin(key string, def bool) (bool, telemetry.Origin) {
+	return getWithOrigin(p, key, def, func(v string) (bool, bool) {
 		boolVal, err := strconv.ParseBool(v)
 		if err == nil {
 			return boolVal, true

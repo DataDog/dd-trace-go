@@ -157,7 +157,6 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_BAGGAGE_TAG_KEYS":                                       {},
 	"DD_TRACE_BUNTDB_ANALYTICS_ENABLED":                               {},
 	"DD_TRACE_CHI_ANALYTICS_ENABLED":                                  {},
-	"DD_TRACE_CLIENT_HOSTNAME_COMPAT":                                 {},
 	"DD_TRACE_CLIENT_IP_ENABLED":                                      {},
 	"DD_TRACE_CLIENT_IP_HEADER":                                       {},
 	"DD_TRACE_CONSUL_ANALYTICS_ENABLED":                               {},

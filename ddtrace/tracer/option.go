@@ -28,8 +28,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/mod/semver"
-
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/tinylib/msgp/msgp"
 
@@ -215,9 +213,6 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled dynamicConfig[bool]
 
-	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
-	enableHostnameDetection bool
-
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
@@ -227,12 +222,6 @@ type config struct {
 
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
-
-	// dynamicInstrumentationEnabled controls whether the target application can
-	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
-	// explicitly set to false (as opposed to starting as false by default), then
-	// it is frozen -- it cannot be overwritten by Remote Config.
-	dynamicInstrumentationEnabled dynamicConfig[bool]
 
 	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
 	ciVisibilityAgentless bool
@@ -282,10 +271,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.sampler = NewAllSampler()
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
-	if v := env.Get("OTEL_LOGS_EXPORTER"); v != "" {
-		log.Warn("OTEL_LOGS_EXPORTER is not supported")
-	}
-	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
+	if c.internalConfig.TraceAnalyticsEnabled() {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
 	if c.internalConfig.ReportHostname() {
@@ -312,25 +298,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
 		c.enabled.setOrigin(telemetry.OriginEnvVar)
 	}
-	if compatMode := env.Get("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
-		if semver.IsValid(compatMode) {
-			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
-		} else {
-			log.Warn("ignoring DD_TRACE_CLIENT_HOSTNAME_COMPAT, invalid version %q", compatMode)
-		}
-	}
-
-	dynamicInstrumentationEnabledDefault, origin, _ := stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	c.dynamicInstrumentationEnabled = newDynamicConfig(
-		"dynamic_instrumentation_enabled",
-		dynamicInstrumentationEnabledDefault,
-		func(bool) bool {
-			// NOTE: the side effects of changes are performed in onRemoteConfigUpdate.
-			return true
-		}, /* apply */
-		equal[bool],
-	)
-	c.dynamicInstrumentationEnabled.setOrigin(origin)
 
 	namingschema.LoadFromEnv()
 
@@ -1278,12 +1245,7 @@ func WithStatsComputation(enabled bool) StartOption {
 // and Dynamic Instrumentation products.
 func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		apply := func(bool) bool {
-			// NOTE: the side effects of changes are performed in onRemoteConfigUpdate.
-			return true
-		}
-		c.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, apply, equal[bool])
-		c.dynamicInstrumentationEnabled.setOrigin(telemetry.OriginCode)
+		c.internalConfig.SetDynamicInstrumentationEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
