@@ -339,12 +339,19 @@ func Pull(ctx context.Context, name string, opts ...PullOption) (*Dataset, error
 			version:        rec.Version,
 		})
 	}
+	// When pulling a specific historical version, report that version so that
+	// experiment.Run registers the run against the correct dataset snapshot
+	// rather than the latest current_version returned by GetDatasetByName.
+	dsVersion := dsResp.CurrentVersion
+	if cfg.version != nil {
+		dsVersion = *cfg.version
+	}
 	ds := &Dataset{
 		id:          dsResp.ID,
 		name:        dsResp.Name,
 		description: dsResp.Description,
 		records:     records,
-		version:     dsResp.CurrentVersion,
+		version:     dsVersion,
 	}
 	return ds, nil
 }
