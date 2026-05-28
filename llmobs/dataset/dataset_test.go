@@ -584,13 +584,8 @@ func TestDatasetPull(t *testing.T) {
 			"data": [
 				{
 					"id": "record-1",
-					"type": "dataset_records",
-					"attributes": {
-						"id": "record-1",
-						"input": "This is a simple string input, not a map",
-						"expected_output": "Some output",
-						"version": 1
-					}
+					"input": "This is a simple string input, not a map",
+					"expected_output": "Some output"
 				}
 			]
 		}`
@@ -665,14 +660,9 @@ func TestDatasetPull(t *testing.T) {
 			"data": [
 				{
 					"id": "record-1",
-					"type": "dataset_records",
-					"attributes": {
-						"id": "record-1",
-						"input": {"question": "What is AI?"},
-						"expected_output": "Artificial Intelligence",
-						"metadata": "simple string metadata from UI",
-						"version": 1
-					}
+					"input": {"question": "What is AI?"},
+					"expected_output": "Artificial Intelligence",
+					"metadata": "simple string metadata from UI"
 				}
 			]
 		}`
@@ -760,22 +750,22 @@ func TestDatasetPull(t *testing.T) {
 				case 1:
 					rawJSON = `{
 						"data": [
-							{"id":"record-1","type":"dataset_records","attributes":{"id":"record-1","input":{"question":"Q1"},"expected_output":"A1","metadata":{},"version":1}},
-							{"id":"record-2","type":"dataset_records","attributes":{"id":"record-2","input":{"question":"Q2"},"expected_output":"A2","metadata":{},"version":1}}
+							{"id":"record-1","input":{"question":"Q1"},"expected_output":"A1","metadata":{}},
+							{"id":"record-2","input":{"question":"Q2"},"expected_output":"A2","metadata":{}}
 						],
-						"meta": {"page": {"after": "cursor-page-2"}}
+						"meta": {"after": "cursor-page-2"}
 					}`
 				case 2:
 					rawJSON = `{
 						"data": [
-							{"id":"record-3","type":"dataset_records","attributes":{"id":"record-3","input":{"question":"Q3"},"expected_output":"A3","metadata":{},"version":1}}
+							{"id":"record-3","input":{"question":"Q3"},"expected_output":"A3","metadata":{}}
 						],
-						"meta": {"page": {"after": "cursor-page-3"}}
+						"meta": {"after": "cursor-page-3"}
 					}`
 				default:
 					rawJSON = `{
 						"data": [
-							{"id":"record-4","type":"dataset_records","attributes":{"id":"record-4","input":{"question":"Q4"},"expected_output":"A4","metadata":{},"version":1}}
+							{"id":"record-4","input":{"question":"Q4"},"expected_output":"A4","metadata":{}}
 						],
 						"meta": {}
 					}`
@@ -861,7 +851,7 @@ func TestDatasetPull(t *testing.T) {
 				capturedHeaders = r.Header.Clone()
 				rawJSON := `{
 					"data": [
-						{"id":"record-1","type":"dataset_records","attributes":{"id":"record-1","input":{"q":"v2 record"},"expected_output":"ans","version":2}}
+						{"id":"record-1","input":{"q":"v2 record"},"expected_output":"ans"}
 					],
 					"meta": {}
 				}`
@@ -1398,38 +1388,20 @@ func handleMockDatasetGet(r *http.Request, state *mockDatasetState) *http.Respon
 		}
 	}
 
-	// Check if this is a request for dataset records
+	// Check if this is a request for dataset records (v2 flat format)
 	if strings.Contains(r.URL.Path, "/records") {
-		recordsResponse := llmobstransport.GetDatasetRecordsResponse{
-			Data: []llmobstransport.ResponseData[llmobstransport.DatasetRecordView]{
-				{
-					ID:   "record-1",
-					Type: "dataset_records",
-					Attributes: llmobstransport.DatasetRecordView{
-						ID:             "record-1",
-						Input:          map[string]any{"question": "What is AI?"},
-						ExpectedOutput: "Artificial Intelligence",
-						Version:        1,
-					},
-				},
-				{
-					ID:   "record-2",
-					Type: "dataset_records",
-					Attributes: llmobstransport.DatasetRecordView{
-						ID:             "record-2",
-						Input:          map[string]any{"question": "What is ML?"},
-						ExpectedOutput: "Machine Learning",
-						Version:        1,
-					},
-				},
-			},
-		}
-		respData, _ := json.Marshal(recordsResponse)
+		rawJSON := `{
+			"data": [
+				{"id":"record-1","input":{"question":"What is AI?"},"expected_output":"Artificial Intelligence"},
+				{"id":"record-2","input":{"question":"What is ML?"},"expected_output":"Machine Learning"}
+			],
+			"meta": {}
+		}`
 		return &http.Response{
 			Status:     "200 OK",
 			StatusCode: http.StatusOK,
 			Header:     make(http.Header),
-			Body:       io.NopCloser(bytes.NewReader(respData)),
+			Body:       io.NopCloser(strings.NewReader(rawJSON)),
 			Request:    r,
 		}
 	}

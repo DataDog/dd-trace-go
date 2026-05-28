@@ -181,17 +181,19 @@ type ResponseList[T any] struct {
 	Meta ResponseMeta      `json:"meta"`
 }
 
-// responseMetaV2 matches the meta shape of the project-scoped v2 API endpoints,
-// which nest the pagination cursor under meta.page.after.
-type responseMetaV2 struct {
-	Page struct {
-		After string `json:"after,omitempty"`
-	} `json:"page"`
+// v2RecordItem is the wire format for a single item in the v2 dataset-records list response.
+// The v2 endpoint returns a flat object (id, input, expected_output, metadata at the top level),
+// unlike the unstable endpoint which wraps fields under "attributes".
+type v2RecordItem struct {
+	ID             string `json:"id"`
+	Input          any    `json:"input"`
+	ExpectedOutput any    `json:"expected_output"`
+	Metadata       any    `json:"metadata"`
 }
 
-type responseListV2[T any] struct {
-	Data []ResponseData[T] `json:"data"`
-	Meta responseMetaV2    `json:"meta"`
+type v2RecordsList struct {
+	Data []v2RecordItem `json:"data"`
+	Meta ResponseMeta   `json:"meta"` // flat meta.after, same shape as unstable endpoint
 }
 
 type ResponseData[T any] struct {
@@ -382,19 +384,22 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datase
 		return nil, "", fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 
-	var recordsResp responseListV2[DatasetRecordView]
+	var recordsResp v2RecordsList
 	if err := json.Unmarshal(result.body, &recordsResp); err != nil {
 		return nil, "", fmt.Errorf("failed to decode json response: %w", err)
 	}
 
 	records := make([]DatasetRecordView, 0, len(recordsResp.Data))
 	for _, r := range recordsResp.Data {
-		rec := r.Attributes
-		rec.ID = r.ID
-		records = append(records, rec)
+		records = append(records, DatasetRecordView{
+			ID:             r.ID,
+			Input:          r.Input,
+			ExpectedOutput: r.ExpectedOutput,
+			Metadata:       r.Metadata,
+		})
 	}
 
-	return records, recordsResp.Meta.Page.After, nil
+	return records, recordsResp.Meta.After, nil
 }
 
 // GetDatasetWithRecords fetches the given Dataset and all its records from DataDog.
