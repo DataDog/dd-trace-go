@@ -2788,8 +2788,9 @@ func TestUserMonitoring(t *testing.T) {
 			}
 		}()
 
-		root.Finish()
+		// Finish root after children so pool recycling can't race child reads of the parent.
 		wg.Wait()
+		root.Finish()
 	})
 }
 
