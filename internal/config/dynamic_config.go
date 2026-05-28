@@ -50,10 +50,7 @@ type DynamicConfig[T any] struct {
 	cfgName       string
 	startupOrigin telemetry.Origin // used on RC reset; updated by setBaseline
 	equal         func(T, T) bool  // compares values to avoid unnecessary updates
-	// apply, when non-nil, is invoked with the new value whenever the field
-	// changes via setBaseline or HandleRC. Used to propagate the change to
-	// derived state (e.g. parsed/denormalized form held elsewhere). Invoked
-	// without holding dc.mu so the callback may safely take other locks.
+	// executes any config-specific operations to propagate the update properly, returns whether the update was applied
 	apply func(T) bool
 }
 

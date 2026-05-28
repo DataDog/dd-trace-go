@@ -796,7 +796,6 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				if tt.expectedSamplingRate == rcSamplingRate {
 					samplingRateOrigin = telemetry.OriginRemoteConfig
 				}
-				// DD_TRACE_HEADER_TAGS is set, so resets report OriginEnvVar.
 				headerTagOrigin := telemetry.OriginEnvVar
 				if tt.expectedHeaderTag == rcHeaderTag {
 					headerTagOrigin = telemetry.OriginRemoteConfig

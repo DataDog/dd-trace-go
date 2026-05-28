@@ -115,9 +115,7 @@ type Config struct {
 	dynamicInstrumentationEnabled *DynamicConfig[bool]
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
-	// headerAsTags holds the configured "header:tag" entries for HTTP integrations.
-	// On change, the apply callback re-populates globalconfig.HeaderTags with the
-	// parsed mappings — transitional until integrations read directly from here.
+	// headerAsTags holds the header as tags configuration.
 	headerAsTags *DynamicConfig[[]string]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled    bool
