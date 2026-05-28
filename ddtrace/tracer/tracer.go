@@ -712,6 +712,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			if len(trace.spans) > 0 {
 				t.traceWriter.add(trace.spans)
 			}
+			if t.config.spanPoolEnabled {
+				releaseSpans(trace.spans)
+			}
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -738,6 +741,9 @@ func (t *tracer) worker(tick <-chan time.Time) {
 					t.sampleChunk(trace)
 					if len(trace.spans) > 0 {
 						t.traceWriter.add(trace.spans)
+					}
+					if t.config.spanPoolEnabled {
+						releaseSpans(trace.spans)
 					}
 				default:
 					break loop
@@ -811,7 +817,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 }
 
 // +checklocksignore — Initialization time, span not yet shared.
-func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, options ...StartSpanOption) *Span {
+func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) *Span {
 	var opts StartSpanConfig
 	for _, fn := range options {
 		if fn == nil {
@@ -864,18 +870,16 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	if id == 0 {
 		id = generateSpanID(startTime)
 	}
-	// span defaults
-	span := &Span{
-		name:          operationName,
-		service:       parentService, // inherit from parent if available
-		serviceSource: parentServiceSource,
-		resource:      operationName,
-		spanID:        id,
-		traceID:       id,
-		start:         startTime,
-		integration:   "manual",
-		meta:          traceinternal.NewSpanMeta(sharedAttrs), // COW: shared until a per-span field is set
-	}
+	span := acquireSpan(poolEnabled)
+	span.name = operationName
+	span.service = parentService // inherit from parent if available
+	span.serviceSource = parentServiceSource
+	span.resource = operationName
+	span.spanID = id
+	span.traceID = id
+	span.start = startTime
+	span.integration = "manual"
+	span.meta.SwapSharedAttrs(sharedAttrs) // COW: shared until a per-span field is set
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
@@ -903,7 +907,10 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		setLLMObsPropagatingTags(pprofContext, span.context)
 	}
 	span.setMetaInit("language", "go")
-	// add tags from options
+	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
+	span.pprofCtxRestore = pprofContext
+	// setTags takes s.mu internally. Tags may override service name
+	// (ServiceName option), so the top-level check below runs after.
 	span.setTags(opts.Tags)
 	// Re-sync the span snapshot after constructor tags: setTags may have mutated
 	// service, env, version, or peerService via SetTag before the span is shared.
@@ -917,8 +924,6 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		// all top level spans are measured. So the measured tag is redundant.
 		delete(span.metrics, keyMeasured)
 	}
-	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
-	span.pprofCtxRestore = pprofContext
 	return span
 }
 
@@ -928,7 +933,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if !t.config.enabled.get() {
 		return nil
 	}
-	span := spanStart(operationName, &t.sharedAttrs, options...)
+	span := spanStart(operationName, &t.sharedAttrs, t.config.spanPoolEnabled, options...)
 
 	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
