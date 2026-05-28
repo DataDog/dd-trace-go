@@ -375,8 +375,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.internalConfig.CIVisibilityEnabled() {
 		c.httpClientTimeout = time.Second * 45                                 // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
 		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated) // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
-		c.ddTransport = ciTransport                // Replace the default transport with the CI Visibility transport
+		ciTransport := newCiVisibilityTransport(c)                             // Create a default CI Visibility Transport
+		c.ddTransport = ciTransport                                            // Replace the default transport with the CI Visibility transport
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
