@@ -219,7 +219,7 @@ func loadConfig() *Config {
 	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
-	cfg.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
+	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
@@ -967,6 +967,22 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin, p
 	}
 	c.ciVisibilityEnabled = enabled
 	configtelemetry.Report(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+// CIVisibilityAgentless returns the raw DD_CIVISIBILITY_AGENTLESS_ENABLED value.
+// Only valid inside a CIVisibilityEnabled() block; prefer CIVisibilityAgentlessActive() elsewhere.
+func (c *Config) CIVisibilityAgentless() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentless
+}
+
+// CIVisibilityAgentlessActive reports whether agentless CI Visibility mode is in effect.
+// Agentless is only meaningful when CI Visibility itself is enabled.
+func (c *Config) CIVisibilityAgentlessActive() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityEnabled && c.ciVisibilityAgentless
 }
 
 func (c *Config) LogsOTelEnabled() bool {
