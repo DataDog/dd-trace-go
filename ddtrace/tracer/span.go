@@ -226,6 +226,10 @@ func (s *Span) Context() *SpanContext {
 	if s == nil {
 		return nil
 	}
+	// Lock-free read: s.context is a single pointer word, only reassigned
+	// during construction in spanStart. Taking s.mu.RLock() here would
+	// self-deadlock when called transitively from Span.finish() via
+	// mocktracer.FinishSpan inside s.context.finish().
 	return s.context
 }
 
@@ -572,13 +576,19 @@ func (s *Span) setProcessTags(pTags string) {
 // root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
 func (s *Span) Root() *Span {
-	if s == nil || s.context == nil {
+	if s == nil {
 		return nil
 	}
-	if s.context.trace == nil {
+	// Plain read for the same reason as Context(): avoids self-deadlock when
+	// called transitively from Span.finish() via mocktracer.FinishSpan.
+	ctx := s.context
+	if ctx == nil {
 		return nil
 	}
-	return s.context.trace.root
+	if ctx.trace == nil {
+		return nil
+	}
+	return ctx.trace.root
 }
 
 // SetUser associates user information to the current trace which the
@@ -653,7 +663,6 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
-// s.mu must be held for writing.
 // +checklocks:s.mu
 func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	assert.RWMutexLocked(&s.mu)
@@ -671,7 +680,6 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 // If the trace is locked, the sampling priority is forced to the given value.
 //
 // This function is should only be used when applying a manual keep or drop decision.
-// s.mu must be held for writing.
 // +checklocks:s.mu
 func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	assert.RWMutexLocked(&s.mu)
@@ -706,7 +714,7 @@ func (s *Span) setErrorFlagLocked(yes bool) {
 }
 
 // setTagErrorLocked sets the error tag. It accounts for various valid scenarios.
-// s.mu must be held for writing.
+// This method assumes the span lock is already held.
 // +checklocks:s.mu
 func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 	assert.RWMutexLocked(&s.mu)

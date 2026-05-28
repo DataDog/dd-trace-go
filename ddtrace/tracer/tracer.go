@@ -1031,8 +1031,8 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
 	if snap.ProfilerEndpoints && localRootSpan != nil {
-		resource := localRootSpan.getResource()
-		if spanResourcePIISafe(localRootSpan) {
+		resource, piiSafe := localRootSpan.getResourceIfPIISafe()
+		if piiSafe {
 			labels = append(labels, traceprof.TraceEndpoint, resource)
 			if span == localRootSpan {
 				// Inform the profiler of endpoint hits. This is used for the unit of
@@ -1043,18 +1043,30 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 		}
 	}
 	if len(labels) > 0 {
+		pprofActive := pprof.WithLabels(ctx, pprof.Labels(labels...))
 		span.pprofCtxRestore = ctx
-		span.pprofCtxActive = pprof.WithLabels(ctx, pprof.Labels(labels...))
-		pprof.SetGoroutineLabels(span.pprofCtxActive)
+		span.pprofCtxActive = pprofActive
+		pprof.SetGoroutineLabels(pprofActive)
 	}
 }
 
 // spanResourcePIISafe returns true if s.resource can be considered to not
 // include PII with reasonable confidence. E.g. SQL queries may contain PII,
 // but http, rpc or custom (s.spanType == "") span resource names generally do not.
-// +checklocksignore — Reads spanType, immutable after initialization.
+// Callers must ensure s.spanType is not being concurrently written (either by
+// holding the span lock or during span initialization).
+// +checklocksignore — Reads spanType, expected immutable after initialization.
 func spanResourcePIISafe(s *Span) bool {
 	return s.spanType == ext.SpanTypeWeb || s.spanType == ext.AppTypeRPC || s.spanType == ""
+}
+
+// getResourceIfPIISafe returns the span's resource and whether it's PII-safe
+// under a single read lock. This avoids a TOCTOU race on the span type field
+// when the span may be concurrently recycled by the pool.
+func (s *Span) getResourceIfPIISafe() (resource string, safe bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.resource, spanResourcePIISafe(s)
 }
 
 // Stop stops the tracer.
