@@ -806,6 +806,9 @@ func (t *tracer) pushChunk(trace *chunk) {
 	default:
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
 		atomic.AddUint32(&t.totalTracesDropped, 1)
+		if t.config.spanPoolEnabled {
+			releaseSpans(trace.spans)
+		}
 	}
 	select {
 	case <-t.logDroppedTraces.C:
