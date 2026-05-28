@@ -8,7 +8,6 @@ package eventbridge
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -19,15 +18,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
+
+const pathwayContextKey = "dd-pathway-ctx-base64"
 
 func TestEnrichOperation(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	span := tracer.StartSpan("test-span")
+	baseCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+	span, spanCtx := tracer.StartSpanFromContext(baseCtx, "test-span")
 
 	input := middleware.InitializeInput{
 		Parameters: &eventbridge.PutEventsInput{
@@ -44,13 +48,25 @@ func TestEnrichOperation(t *testing.T) {
 		},
 	}
 
-	EnrichOperation(span, input, "PutEvents")
-
 	params, ok := input.Parameters.(*eventbridge.PutEventsInput)
 	require.True(t, ok)
+	expectedPathways := make([]datastreams.Pathway, len(params.Entries))
+	for i := range params.Entries {
+		expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+			spanCtx,
+			options.CheckpointParams{PayloadSize: payloadSize(&params.Entries[i])},
+			eventBridgeEdgeTags(&params.Entries[i])...,
+		)
+		require.True(t, ok)
+		expectedPathways[i], ok = datastreams.PathwayFromContext(expectedCtx)
+		require.True(t, ok)
+	}
+
+	EnrichOperation(spanCtx, span, input, "PutEvents")
+
 	require.Len(t, params.Entries, 2)
 
-	for _, entry := range params.Entries {
+	for i, entry := range params.Entries {
 		var detail map[string]interface{}
 		err := json.Unmarshal([]byte(*entry.Detail), &detail)
 		require.NoError(t, err)
@@ -63,7 +79,19 @@ func TestEnrichOperation(t *testing.T) {
 
 		assert.Contains(t, ddData, startTimeKey)
 		assert.Contains(t, ddData, resourceNameKey)
+		assert.Contains(t, ddData, pathwayContextKey)
 		assert.Equal(t, *entry.EventBusName, ddData[resourceNameKey])
+
+		carrier := tracer.TextMapCarrier{}
+		for k, v := range ddData {
+			if s, ok := v.(string); ok {
+				carrier[k] = s
+			}
+		}
+
+		pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), carrier))
+		require.True(t, ok)
+		assert.Equal(t, expectedPathways[i].GetHash(), pathway.GetHash())
 	}
 }
 
@@ -71,9 +99,8 @@ func TestInjectTraceContext(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	ctx := context.Background()
-	span, _ := tracer.StartSpanFromContext(ctx, "test-span")
-	baseTraceContext := fmt.Sprintf(`{"x-datadog-trace-id":"%d","x-datadog-parent-id":"%d","x-datadog-start-time":"123456789"`, span.Context().TraceIDLower(), span.Context().SpanID())
+	baseCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+	span, spanCtx := tracer.StartSpanFromContext(baseCtx, "test-span")
 
 	tests := []struct {
 		name     string
@@ -112,18 +139,29 @@ func TestInjectTraceContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			injectTraceContext(baseTraceContext, &tt.entry)
+			expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+				spanCtx,
+				options.CheckpointParams{PayloadSize: payloadSize(&tt.entry)},
+				eventBridgeEdgeTags(&tt.entry)...,
+			)
+			require.True(t, ok)
+			expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+			require.True(t, ok)
+
+			carrier, err := getTraceContext(spanCtx, span, &tt.entry, 123456789)
+			require.NoError(t, err)
+
+			injectTraceContext(carrier, &tt.entry)
 			tt.expected(t, &tt.entry)
 
-			fmt.Printf("entry = %+v\n", tt.entry)
-
 			var detail map[string]interface{}
-			err := json.Unmarshal([]byte(*tt.entry.Detail), &detail)
+			err = json.Unmarshal([]byte(*tt.entry.Detail), &detail)
 			require.NoError(t, err)
 
 			ddData := detail[datadogKey].(map[string]interface{})
 			assert.Contains(t, ddData, startTimeKey)
 			assert.Contains(t, ddData, resourceNameKey)
+			assert.Contains(t, ddData, pathwayContextKey)
 			assert.Equal(t, *tt.entry.EventBusName, ddData[resourceNameKey])
 
 			// Check that start time exists and is not empty
@@ -131,17 +169,21 @@ func TestInjectTraceContext(t *testing.T) {
 			assert.True(t, ok)
 			assert.Equal(t, startTime, "123456789")
 
-			carrier := tracer.TextMapCarrier{}
+			extractedCarrier := tracer.TextMapCarrier{}
 			for k, v := range ddData {
 				if s, ok := v.(string); ok {
-					carrier[k] = s
+					extractedCarrier[k] = s
 				}
 			}
 
-			extractedSpanContext, err := tracer.Extract(&carrier)
+			extractedSpanContext, err := tracer.Extract(&extractedCarrier)
 			assert.NoError(t, err)
 			assert.Equal(t, span.Context().TraceIDLower(), extractedSpanContext.TraceIDLower())
 			assert.Equal(t, span.Context().SpanID(), extractedSpanContext.SpanID())
+
+			pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), extractedCarrier))
+			require.True(t, ok)
+			assert.Equal(t, expectedPathway.GetHash(), pathway.GetHash())
 		})
 	}
 }
@@ -150,7 +192,12 @@ func TestInjectTraceContextSizeLimit(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	baseTraceContext := `{"x-datadog-trace-id":"12345","x-datadog-parent-id":"67890","x-datadog-start-time":"123456789"`
+	baseTraceContext := tracer.TextMapCarrier{
+		"x-datadog-trace-id":      "12345",
+		"x-datadog-parent-id":     "67890",
+		"x-datadog-start-time":    "123456789",
+		"x-datadog-resource-name": "test-bus",
+	}
 
 	tests := []struct {
 		name     string
@@ -193,4 +240,16 @@ func TestInjectTraceContextSizeLimit(t *testing.T) {
 			tt.expected(t, &tt.entry)
 		})
 	}
+}
+
+func TestEventBridgeEdgeTags(t *testing.T) {
+	entry := &types.PutEventsRequestEntry{
+		EventBusName: aws.String("orders-bus"),
+		DetailType:   aws.String("order.created"),
+	}
+
+	assert.Equal(t,
+		[]string{"direction:out", "type:eventbridge:orders-bus", "topic:order.created"},
+		eventBridgeEdgeTags(entry),
+	)
 }

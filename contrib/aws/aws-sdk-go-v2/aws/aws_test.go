@@ -28,10 +28,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
+
+const pathwayContextKey = "dd-pathway-ctx-base64"
 
 func TestAppendMiddleware(t *testing.T) {
 	tests := []struct {
@@ -297,7 +301,19 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 		MessageBody: aws.String("test message"),
 		QueueUrl:    aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/MyQueueName"),
 	}
-	_, err := sqsClient.SendMessage(context.Background(), sendMessageInput)
+	upstreamCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+	expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+		upstreamCtx,
+		options.CheckpointParams{PayloadSize: sqsMessageSizeForTest(sendMessageInput)},
+		"direction:out",
+		"type:sqs",
+		"topic:"+sqsQueueNameForTest(sendMessageInput.QueueUrl),
+	)
+	require.True(t, ok)
+	expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+	require.True(t, ok)
+
+	_, err := sqsClient.SendMessage(upstreamCtx, sendMessageInput)
 	require.NoError(t, err)
 
 	spans := mt.FinishedSpans()
@@ -325,8 +341,13 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, traceContext, "x-datadog-trace-id")
 	assert.Contains(t, traceContext, "x-datadog-parent-id")
+	assert.Contains(t, traceContext, pathwayContextKey)
 	assert.NotEmpty(t, traceContext["x-datadog-trace-id"])
 	assert.NotEmpty(t, traceContext["x-datadog-parent-id"])
+
+	pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracer.TextMapCarrier(traceContext)))
+	require.True(t, ok)
+	assert.Equal(t, expectedPathway.GetHash(), pathway.GetHash())
 }
 
 func TestAppendMiddlewareS3ListObjects(t *testing.T) {
@@ -471,7 +492,19 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			snsClient := sns.NewFromConfig(awsCfg)
-			snsClient.Publish(context.Background(), tt.publishInput)
+			upstreamCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+			expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+				upstreamCtx,
+				options.CheckpointParams{PayloadSize: int64(snsPublishSizeForTest(tt.publishInput))},
+				"direction:out",
+				"type:sns",
+				"topic:"+snsDestinationNameForTest(tt.publishInput.TopicArn, tt.publishInput.TargetArn),
+			)
+			require.True(t, ok)
+			expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+			require.True(t, ok)
+
+			snsClient.Publish(upstreamCtx, tt.publishInput)
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -509,8 +542,13 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Contains(t, traceContext, "x-datadog-trace-id")
 			assert.Contains(t, traceContext, "x-datadog-parent-id")
+			assert.Contains(t, traceContext, pathwayContextKey)
 			assert.NotEmpty(t, traceContext["x-datadog-trace-id"])
 			assert.NotEmpty(t, traceContext["x-datadog-parent-id"])
+
+			pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), tracer.TextMapCarrier(traceContext)))
+			require.True(t, ok)
+			assert.Equal(t, expectedPathway.GetHash(), pathway.GetHash())
 		})
 	}
 }
@@ -636,11 +674,24 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			AppendMiddleware(&awsCfg)
 
 			kinesisClient := kinesis.NewFromConfig(awsCfg)
-			kinesisClient.PutRecord(context.Background(), &kinesis.PutRecordInput{
+			putRecordInput := &kinesis.PutRecordInput{
 				StreamName:   aws.String("my-kinesis-stream"),
-				Data:         []byte("Hello, Kinesis!"),
+				Data:         []byte(`{"message":"Hello, Kinesis!"}`),
 				PartitionKey: aws.String("my-partition-key"),
-			})
+			}
+			upstreamCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+			expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+				upstreamCtx,
+				options.CheckpointParams{PayloadSize: kinesisPutRecordSizeForTest(putRecordInput)},
+				"direction:out",
+				"type:kinesis",
+				"topic:"+kinesisStreamNameForTest(putRecordInput.StreamName, putRecordInput.StreamARN),
+			)
+			require.True(t, ok)
+			expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+			require.True(t, ok)
+
+			kinesisClient.PutRecord(upstreamCtx, putRecordInput)
 
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
@@ -664,6 +715,26 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "aws/aws-sdk-go-v2/aws", s.Tag(ext.Component))
 			assert.Equal(t, ext.SpanKindClient, s.Tag(ext.SpanKind))
 			assert.Equal(t, componentName, s.Integration())
+
+			var payload map[string]interface{}
+			err := json.Unmarshal(putRecordInput.Data, &payload)
+			require.NoError(t, err)
+			ddData, ok := payload["_datadog"].(map[string]interface{})
+			require.True(t, ok)
+			assert.Contains(t, ddData, "x-datadog-trace-id")
+			assert.Contains(t, ddData, "x-datadog-parent-id")
+			assert.Contains(t, ddData, pathwayContextKey)
+
+			carrier := tracer.TextMapCarrier{}
+			for k, v := range ddData {
+				if s, ok := v.(string); ok {
+					carrier[k] = s
+				}
+			}
+
+			pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), carrier))
+			require.True(t, ok)
+			assert.Equal(t, expectedPathway.GetHash(), pathway.GetHash())
 		})
 	}
 }
@@ -770,11 +841,22 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 		Entries: []eventBridgeTypes.PutEventsRequestEntry{
 			{
 				EventBusName: aws.String("my-event-bus"),
+				DetailType:   aws.String("order.created"),
 				Detail:       aws.String(`{"key": "value"}`),
 			},
 		},
 	}
-	eventbridgeClient.PutEvents(context.Background(), putEventsInput)
+	upstreamCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+	expectedCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+		upstreamCtx,
+		options.CheckpointParams{PayloadSize: eventBridgePayloadSizeForTest(&putEventsInput.Entries[0])},
+		eventBridgeEdgeTagsForTest(&putEventsInput.Entries[0])...,
+	)
+	require.True(t, ok)
+	expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
+	require.True(t, ok)
+
+	eventbridgeClient.PutEvents(upstreamCtx, putEventsInput)
 
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
@@ -794,7 +876,158 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 	assert.True(t, ok)
 	assert.Contains(t, ddData, "x-datadog-start-time")
 	assert.Contains(t, ddData, "x-datadog-resource-name")
+	assert.Contains(t, ddData, pathwayContextKey)
 	assert.Equal(t, "my-event-bus", ddData["x-datadog-resource-name"])
+
+	carrier := tracer.TextMapCarrier{}
+	for k, v := range ddData {
+		if s, ok := v.(string); ok {
+			carrier[k] = s
+		}
+	}
+
+	pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), carrier))
+	require.True(t, ok)
+	assert.Equal(t, expectedPathway.GetHash(), pathway.GetHash())
+}
+
+func eventBridgeEdgeTagsForTest(entry *eventBridgeTypes.PutEventsRequestEntry) []string {
+	return []string{
+		"direction:out",
+		"type:eventbridge:" + eventBridgeNameForTest(entry),
+		"topic:" + eventBridgeDetailTypeForTest(entry),
+	}
+}
+
+func eventBridgeNameForTest(entry *eventBridgeTypes.PutEventsRequestEntry) string {
+	if entry == nil || entry.EventBusName == nil || *entry.EventBusName == "" {
+		return "default"
+	}
+	return *entry.EventBusName
+}
+
+func eventBridgeDetailTypeForTest(entry *eventBridgeTypes.PutEventsRequestEntry) string {
+	if entry == nil || entry.DetailType == nil {
+		return ""
+	}
+	return *entry.DetailType
+}
+
+func eventBridgePayloadSizeForTest(entry *eventBridgeTypes.PutEventsRequestEntry) int64 {
+	if entry == nil {
+		return 0
+	}
+
+	var size int64
+	if entry.Detail != nil {
+		size += int64(len(*entry.Detail))
+	}
+	if entry.DetailType != nil {
+		size += int64(len(*entry.DetailType))
+	}
+	if entry.EventBusName != nil {
+		size += int64(len(*entry.EventBusName))
+	}
+	for _, resource := range entry.Resources {
+		size += int64(len(resource))
+	}
+	if entry.Source != nil {
+		size += int64(len(*entry.Source))
+	}
+	if entry.TraceHeader != nil {
+		size += int64(len(*entry.TraceHeader))
+	}
+	return size
+}
+
+func sqsQueueNameForTest(queueURL *string) string {
+	if queueURL == nil || *queueURL == "" {
+		return ""
+	}
+	parts := strings.Split(strings.TrimRight(*queueURL, "/"), "/")
+	return parts[len(parts)-1]
+}
+
+func sqsMessageSizeForTest(input *sqs.SendMessageInput) int64 {
+	if input == nil {
+		return 0
+	}
+
+	var size int64
+	if input.MessageBody != nil {
+		size += int64(len(*input.MessageBody))
+	}
+	for name, attr := range input.MessageAttributes {
+		size += int64(len(name))
+		if attr.DataType != nil {
+			size += int64(len(*attr.DataType))
+		}
+		if attr.StringValue != nil {
+			size += int64(len(*attr.StringValue))
+		}
+		size += int64(len(attr.BinaryValue))
+	}
+	return size
+}
+
+func snsDestinationNameForTest(topicArn *string, targetArn *string) string {
+	switch {
+	case topicArn != nil && *topicArn != "":
+		return snsARNResourceNameForTest(*topicArn)
+	case targetArn != nil && *targetArn != "":
+		return snsARNResourceNameForTest(*targetArn)
+	default:
+		return ""
+	}
+}
+
+func snsARNResourceNameForTest(arn string) string {
+	parts := strings.Split(arn, ":")
+	return parts[len(parts)-1]
+}
+
+func snsPublishSizeForTest(input *sns.PublishInput) int {
+	if input == nil {
+		return 0
+	}
+
+	size := 0
+	if input.Message != nil {
+		size += len(*input.Message)
+	}
+	for name, attr := range input.MessageAttributes {
+		size += len(name)
+		if attr.DataType != nil {
+			size += len(*attr.DataType)
+		}
+		if attr.StringValue != nil {
+			size += len(*attr.StringValue)
+		}
+		size += len(attr.BinaryValue)
+	}
+	return size
+}
+
+func kinesisStreamNameForTest(name *string, arn *string) string {
+	if name != nil {
+		return *name
+	}
+	if arn != nil {
+		parts := strings.Split(*arn, "/")
+		return parts[len(parts)-1]
+	}
+	return ""
+}
+
+func kinesisPutRecordSizeForTest(input *kinesis.PutRecordInput) int64 {
+	if input == nil {
+		return 0
+	}
+	var size int64 = int64(len(input.Data))
+	if input.PartitionKey != nil {
+		size += int64(len(*input.PartitionKey))
+	}
+	return size
 }
 
 func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
