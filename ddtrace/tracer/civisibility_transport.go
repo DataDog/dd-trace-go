@@ -73,8 +73,8 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		defaultHeaders["Datadog-Entity-ID"] = eid
 	}
 
-	// Determine if agentless mode is enabled through an environment variable.
-	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
+	// Determine if agentless mode is enabled (sourced from internal/config).
+	agentlessEnabled := config.internalConfig.CIVisibilityAgentless()
 
 	testCycleURL := ""
 	if agentlessEnabled {
