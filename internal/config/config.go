@@ -116,8 +116,9 @@ type Config struct {
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
-	ciVisibilityEnabled   bool
-	ciVisibilityAgentless bool
+	ciVisibilityEnabled    bool
+	ciVisibilityAgentless  bool
+	ciVisibilityNoopTracer bool
 	// logDirectory is directory for tracer logs
 	logDirectory string
 	// traceRateLimitPerSecond specifies the rate limit per second for traces.
@@ -220,6 +221,7 @@ func loadConfig() *Config {
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
+	cfg.ciVisibilityNoopTracer = p.GetBool(constants.CIVisibilityUseNoopTracer, false)
 	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
@@ -975,6 +977,12 @@ func (c *Config) CIVisibilityAgentless() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.ciVisibilityAgentless
+}
+
+func (c *Config) CIVisibilityNoopTracer() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityNoopTracer
 }
 
 // CIVisibilityAgentlessActive reports whether agentless CI Visibility mode is in effect.

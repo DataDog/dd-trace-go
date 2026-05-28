@@ -34,7 +34,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -223,9 +222,6 @@ type config struct {
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
 
-	// ciVisibilityNoopTracer controls if CI Visibility must set a wrapper to behave like a noop tracer. default false
-	ciVisibilityNoopTracer bool
-
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
 
@@ -379,9 +375,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.internalConfig.CIVisibilityEnabled() {
 		c.httpClientTimeout = time.Second * 45                                 // Increase timeout up to 45 seconds (same as other tracers in CIVis mode)
 		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated) // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
-		ciTransport := newCiVisibilityTransport(c)                             // Create a default CI Visibility Transport
-		c.ddTransport = ciTransport                                            // Replace the default transport with the CI Visibility transport
-		c.ciVisibilityNoopTracer = internal.BoolEnv(constants.CIVisibilityUseNoopTracer, false)
+		ciTransport := newCiVisibilityTransport(c) // Create a default CI Visibility Transport
+		c.ddTransport = ciTransport                // Replace the default transport with the CI Visibility transport
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
