@@ -412,7 +412,14 @@ func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID s
 		return nil, nil, err
 	}
 
-	// 2) Fetch all records with pagination support
+	// 2) Fetch all records with pagination support.
+	// The v2 records endpoint has no per-record version field, so stamp the effective
+	// version (requested snapshot or the dataset's current version) onto every record.
+	effectiveVersion := ds.CurrentVersion
+	if version != nil {
+		effectiveVersion = *version
+	}
+
 	var allRecords []DatasetRecordView
 	nextCursor := ""
 	pageNum := 0
@@ -425,6 +432,9 @@ func (c *Transport) GetDatasetWithRecords(ctx context.Context, name, projectID s
 			return nil, nil, fmt.Errorf("get dataset records failed on page %d: %w", pageNum, err)
 		}
 
+		for i := range records {
+			records[i].Version = effectiveVersion
+		}
 		allRecords = append(allRecords, records...)
 
 		nextCursor = cursor

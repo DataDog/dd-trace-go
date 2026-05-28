@@ -916,6 +916,11 @@ func TestDatasetPull(t *testing.T) {
 
 		// Confirm ds.Version() reflects the requested version, not the dataset's current_version (5)
 		assert.Equal(t, 2, ds.Version(), "Version() must return the pulled version, not the latest current_version")
+
+		// Confirm each record's Version is stamped with the requested version
+		rec, ok := ds.Record(0)
+		require.True(t, ok)
+		assert.Equal(t, 2, rec.Version(), "record Version must equal the pulled snapshot version")
 	})
 }
 
