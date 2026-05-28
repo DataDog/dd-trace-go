@@ -117,6 +117,8 @@ type ToolDefinition struct {
 	Name string `json:"name"`
 	// Description is the description of what the tool does.
 	Description string `json:"description,omitempty"`
+	// ToolVersion is the version of the tool.
+	ToolVersion string `json:"version,omitempty"`
 	// Schema is the JSON schema defining the tool's parameters.
 	Schema json.RawMessage `json:"schema,omitempty"`
 }
@@ -552,6 +554,23 @@ func (s *Span) propagatedMLApp() string {
 	if activeLLMObs != nil {
 		log.Debug("llmobs: using ml_app from global config: %s", activeLLMObs.Config.MLApp)
 		return activeLLMObs.Config.MLApp
+	}
+	return ""
+}
+
+// resolvedToolVersion walks the parent chain to find the nearest LLM ancestor and returns the
+// ToolVersion for the tool matching this span's name in its tool_definitions, if any.
+func (s *Span) resolvedToolVersion() string {
+	for cur := s.parent; cur != nil; cur = cur.parent {
+		if cur.spanKind != SpanKindLLM {
+			continue
+		}
+		for _, td := range cur.llmCtx.toolDefinitions {
+			if td.Name == s.name {
+				return td.ToolVersion
+			}
+		}
+		return ""
 	}
 	return ""
 }

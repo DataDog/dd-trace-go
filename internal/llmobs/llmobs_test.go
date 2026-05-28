@@ -352,6 +352,117 @@ func TestStartSpan(t *testing.T) {
 
 }
 
+func TestToolVersionPropagation(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("threaded-to-child-tool-span", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		llmSpan, llmCtx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-op", llmobs.StartSpanConfig{})
+		llmSpan.Annotate(llmobs.SpanAnnotations{
+			ToolDefinitions: []llmobs.ToolDefinition{
+				{Name: "search", ToolVersion: "2.0.0"},
+			},
+		})
+		toolSpan, _ := ll.StartSpan(llmCtx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+		llmSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 2)
+		require.Len(t, spans, 2)
+		var toolMeta map[string]any
+		for _, s := range spans {
+			if s.Meta["span.kind"] == "tool" {
+				toolMeta = s.Meta
+			}
+		}
+		require.NotNil(t, toolMeta)
+		assert.Equal(t, "2.0.0", toolMeta["tool.version"])
+	})
+
+	t.Run("no-version-when-tool-name-unmatched", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		llmSpan, llmCtx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-op", llmobs.StartSpanConfig{})
+		llmSpan.Annotate(llmobs.SpanAnnotations{
+			ToolDefinitions: []llmobs.ToolDefinition{
+				{Name: "other-tool", ToolVersion: "1.0.0"},
+			},
+		})
+		toolSpan, _ := ll.StartSpan(llmCtx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+		llmSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 2)
+		require.Len(t, spans, 2)
+		for _, s := range spans {
+			if s.Meta["span.kind"] == "tool" {
+				assert.NotContains(t, s.Meta, "tool.version")
+			}
+		}
+	})
+
+	t.Run("no-version-when-llm-parent-has-empty-tool-version", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		llmSpan, llmCtx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-op", llmobs.StartSpanConfig{})
+		llmSpan.Annotate(llmobs.SpanAnnotations{
+			ToolDefinitions: []llmobs.ToolDefinition{
+				{Name: "search"},
+			},
+		})
+		toolSpan, _ := ll.StartSpan(llmCtx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+		llmSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 2)
+		require.Len(t, spans, 2)
+		for _, s := range spans {
+			if s.Meta["span.kind"] == "tool" {
+				assert.NotContains(t, s.Meta, "tool.version")
+			}
+		}
+	})
+
+	t.Run("no-version-when-no-llm-parent", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		toolSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 1)
+		require.Len(t, spans, 1)
+		assert.NotContains(t, spans[0].Meta, "tool.version")
+	})
+
+	t.Run("skips-non-llm-parent-to-find-llm-ancestor", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		llmSpan, llmCtx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-op", llmobs.StartSpanConfig{})
+		llmSpan.Annotate(llmobs.SpanAnnotations{
+			ToolDefinitions: []llmobs.ToolDefinition{
+				{Name: "search", ToolVersion: "3.0.0"},
+			},
+		})
+		agentSpan, agentCtx := ll.StartSpan(llmCtx, llmobs.SpanKindAgent, "agent-op", llmobs.StartSpanConfig{})
+		toolSpan, _ := ll.StartSpan(agentCtx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+		agentSpan.Finish(llmobs.FinishSpanConfig{})
+		llmSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 3)
+		require.Len(t, spans, 3)
+		var toolMeta map[string]any
+		for _, s := range spans {
+			if s.Meta["span.kind"] == "tool" {
+				toolMeta = s.Meta
+			}
+		}
+		require.NotNil(t, toolMeta)
+		assert.Equal(t, "3.0.0", toolMeta["tool.version"])
+	})
+}
+
 func TestSpanAnnotate(t *testing.T) {
 	testCases := []struct {
 		name          string
