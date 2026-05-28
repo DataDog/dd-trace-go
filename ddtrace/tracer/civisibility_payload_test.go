@@ -12,10 +12,13 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -128,6 +131,76 @@ func TestCiVisibilityPayloadEnvelope(t *testing.T) {
 
 	assert.Contains(testCyclePayload.Metadata, "test")
 	assert.Subset(testCyclePayload.Metadata["test"], testSessionMap)
+}
+
+func TestCiVisibilityMetaValueTruncation(t *testing.T) {
+	assert := assert.New(t)
+	exact := strings.Repeat("a", ciVisibilityMetaValueMaxChars)
+	over := exact + "b"
+	unicodeOver := strings.Repeat("é", ciVisibilityMetaValueMaxChars+1)
+
+	assert.Equal(exact, truncateCIVisibilityMetaValue(exact))
+	assert.Equal(exact, truncateCIVisibilityMetaValue(over))
+
+	truncatedUnicode := truncateCIVisibilityMetaValue(unicodeOver)
+	assert.True(utf8.ValidString(truncatedUnicode))
+	assert.Equal(ciVisibilityMetaValueMaxChars, utf8.RuneCountInString(truncatedUnicode))
+	assert.Equal(strings.Repeat("é", ciVisibilityMetaValueMaxChars), truncatedUnicode)
+}
+
+func TestCiVisibilityEventMetaStringValuesAreTruncated(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	longValue := strings.Repeat("a", ciVisibilityMetaValueMaxChars+1)
+	unicodeValue := strings.Repeat("é", ciVisibilityMetaValueMaxChars+1)
+
+	span := newBasicSpan("truncated.test")
+	span.spanType = constants.SpanTypeTest
+	span.SetTag(constants.TestSessionIDTag, "123")
+	span.SetTag(constants.TestModuleIDTag, "456")
+	span.SetTag(constants.TestSuiteIDTag, "789")
+	span.SetTag("custom.tag", longValue)
+	span.SetTag("unicode.tag", unicodeValue)
+	span.SetTag(ext.ErrorMsg, longValue)
+	span.SetTag("custom.metric", 42)
+
+	p := newCiVisibilityPayload()
+	_, err := p.push(getCiVisibilityEvent(span))
+	require.NoError(err)
+
+	var events ciVisibilityEvents
+	require.NoError(msgp.Decode(p, &events))
+	require.Len(events, 1)
+
+	content := events[0].Content
+	assert.Equal(uint64(123), content.SessionID)
+	assert.Equal(uint64(456), content.ModuleID)
+	assert.Equal(uint64(789), content.SuiteID)
+	assert.NotContains(content.Meta, constants.TestSessionIDTag)
+	assert.NotContains(content.Meta, constants.TestModuleIDTag)
+	assert.NotContains(content.Meta, constants.TestSuiteIDTag)
+	assert.Equal(strings.Repeat("a", ciVisibilityMetaValueMaxChars), content.Meta["custom.tag"])
+	assert.Equal(strings.Repeat("a", ciVisibilityMetaValueMaxChars), content.Meta[ext.ErrorMsg])
+	assert.Equal(ciVisibilityMetaValueMaxChars, utf8.RuneCountInString(content.Meta["unicode.tag"]))
+	assert.True(utf8.ValidString(content.Meta["unicode.tag"]))
+	assert.Equal(42.0, content.Metrics["custom.metric"])
+}
+
+func TestCiVisibilityPayloadEnvelopeMetadataValuesAreTruncated(t *testing.T) {
+	assert := assert.New(t)
+	longValue := strings.Repeat("s", ciVisibilityMetaValueMaxChars+1)
+	truncatedValue := strings.Repeat("s", ciVisibilityMetaValueMaxChars)
+	t.Cleanup(utils.ResetCITags)
+	t.Setenv(constants.CIVisibilityTestSessionNameEnvironmentVariable, longValue)
+	utils.ResetCITags()
+
+	p := newCiVisibilityPayload()
+	payload := p.writeEnvelope(longValue, []byte{})
+
+	assert.Equal(truncatedValue, payload.Metadata["*"]["env"])
+	for _, eventType := range []string{"test_session_end", "test_module_end", "test_suite_end", "test"} {
+		assert.Equal(truncatedValue, payload.Metadata[eventType][constants.TestSessionName])
+	}
 }
 
 func BenchmarkCiVisibilityPayloadThroughput(b *testing.B) {
