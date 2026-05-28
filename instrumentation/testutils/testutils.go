@@ -123,7 +123,11 @@ func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 	// It's easier than using offsets when the desired data isn't far away from
 	// the struct's beginning.
 	type cookieCutter struct {
-		_     bool // spanContext.updated
+		_     bool   // spanContext.updated
+		_     bool   // spanContext.isRemote
+		_     bool   // spanContext.baggageOnly
+		_     uint32 // spanContext.errors
+		_     uint32 // spanContext.hasBaggage
 		trace *struct {
 			_               sync.RWMutex      // trace.mu
 			_               []any             // trace.spans

@@ -116,9 +116,15 @@ type SpanContext struct {
 	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
 
 	// the below group should propagate only locally
+	isRemote bool
+	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// +checklocks:mu
+	baggageOnly bool
+	errors      atomic.Int32 // number of spans with errors in this trace
+	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
+	hasBaggage uint32 // +checkatomic
 
-	trace  *trace       // reference to the trace that this span belongs too
-	errors atomic.Int32 // number of spans with errors in this trace
+	trace *trace // reference to the trace that this span belongs too
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -129,7 +135,6 @@ type SpanContext struct {
 	// Missing parent span could occur when a W3C-compliant tracer
 	// propagated this context, but didn't send any spans to Datadog.
 	reparentID string
-	isRemote   bool
 
 	// the below group should propagate cross-process
 
@@ -140,8 +145,6 @@ type SpanContext struct {
 	mu locking.RWMutex
 	// +checklocks:mu
 	baggage map[string]string
-	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
-	hasBaggage uint32 // +checkatomic
 	// +checklocks:mu
 	// spanSnapshot stores mirrored data from the span that hosts this context.
 	spanSnapshot spanSnapshot
@@ -152,9 +155,6 @@ type SpanContext struct {
 	// links to related spans in separate|external|disconnected traces
 	// +checklocks:mu
 	spanLinks []SpanLink
-	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
-	// +checklocks:mu
-	baggageOnly bool
 }
 
 // Private interface for span contexts that can propagate sampling decisions.
