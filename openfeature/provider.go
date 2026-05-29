@@ -33,7 +33,8 @@ var (
 
 const (
 	// ffeProductEnvVar is the environment variable to enable the experimental flagging provider
-	ffeProductEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
+	ffeProductEnvVar     = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
+	spanEnrichmentEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED"
 	// flagEvalCountsEnabledEnvVar is the operator killswitch for the EVP flagevaluation emission path.
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
 	// while leaving the OTel feature_flag.evaluations path unaffected.
@@ -125,7 +126,15 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	}
 
-	hooks := make([]openfeature.Hook, 0, 3)
+	var spanEnrichmentHook *spanEnrichmentHook
+	if internal.BoolEnv(spanEnrichmentEnvVar, false) {
+		spanEnrichmentHook = newSpanEnrichmentHook()
+		log.Debug("openfeature: span enrichment is enabled")
+	} else {
+		log.Debug("openfeature: span enrichment is disabled")
+	}
+
+	hooks := make([]openfeature.Hook, 0, 4)
 	if exposureLoggingHook != nil {
 		hooks = append(hooks, exposureLoggingHook)
 	}
@@ -134,6 +143,9 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	}
 	if evalLoggingHook != nil {
 		hooks = append(hooks, evalLoggingHook)
+	}
+	if spanEnrichmentHook != nil {
+		hooks = append(hooks, spanEnrichmentHook)
 	}
 
 	p := &DatadogProvider{
@@ -147,6 +159,7 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 		flagEvalLoggingHook:   evalLoggingHook,
 	}
 	p.configChange.L = &p.mu
+
 	return p
 }
 
