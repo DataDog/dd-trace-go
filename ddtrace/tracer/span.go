@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	iof "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
@@ -180,6 +181,9 @@ type Span struct {
 
 	// +checklocks:mu
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+
+	// +checklocks:mu
+	ffeEvaluations *iof.SpanEnrichment `msg:"-"`
 }
 
 func (s *Span) clear() {
@@ -956,6 +960,40 @@ func (s *Span) serializeSpanEvents() {
 	s.meta.Set("events", string(b))
 }
 
+// recordFFEEvaluation records a feature flag evaluation in span enrichment.
+// Used by github.com/DataDog/dd-trace-go/v2/openfeature via go:linkname.
+func recordFFEEvaluation(s *Span, eval *iof.FeatureFlagEvaluation) {
+	if s == nil || eval == nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.finished {
+		return
+	}
+
+	if s.ffeEvaluations == nil {
+		s.ffeEvaluations = iof.NewSpanEnrichment()
+	}
+	s.ffeEvaluations.AddEvaluation(eval)
+}
+
+// serializeFFEEvaluations sets the openfeature feature flag evaluation tags.
+// +checklocks:s.mu
+func (s *Span) serializeFFEEvaluations() {
+	assert.RWMutexLocked(&s.mu)
+	if s.ffeEvaluations == nil {
+		return
+	}
+	tags := s.ffeEvaluations.GetSpanTags()
+	for tag, value := range tags {
+		s.meta.Set(tag, value)
+	}
+	s.ffeEvaluations = nil
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *Span) Finish(opts ...FinishOption) {
@@ -1060,6 +1098,7 @@ func (s *Span) finish(finishTime int64) {
 
 	s.serializeSpanLinksInMeta()
 	s.serializeSpanEvents()
+	s.serializeFFEEvaluations()
 	s.enrichServiceSource()
 
 	if s.duration == 0 {
