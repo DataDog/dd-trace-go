@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
@@ -27,9 +28,10 @@ import (
 // DecodeMsg (msgp-generated) for v0.4 and the v1 decode machinery
 // (payloadV1.decodeBuffer, decodeTraceChunks, etc.) for v1.0.
 type testAgent struct {
-	server *httptest.Server
-	mu     sync.Mutex
-	spans  []*Span
+	server   *httptest.Server
+	mu       sync.Mutex
+	spans    []*Span
+	requests []string
 }
 
 // startTestAgent creates and starts a mock agent. It is closed automatically
@@ -73,16 +75,36 @@ func (a *testAgent) SpanCount() int {
 	return len(a.spans)
 }
 
-// Reset clears all received spans.
+// Requests returns a snapshot copy of trace intake paths with spans received so far.
+func (a *testAgent) Requests() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cp := make([]string, len(a.requests))
+	copy(cp, a.requests)
+	return cp
+}
+
+// Reset clears all received spans and request records.
 func (a *testAgent) Reset() {
 	a.mu.Lock()
 	a.spans = a.spans[:0]
+	a.requests = a.requests[:0]
+	a.mu.Unlock()
+}
+
+func (a *testAgent) recordRequest(path string, spans []*Span) {
+	if len(spans) == 0 {
+		return
+	}
+	a.mu.Lock()
+	a.requests = append(a.requests, path)
+	a.spans = append(a.spans, spans...)
 	a.mu.Unlock()
 }
 
 func (a *testAgent) handleInfo(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"endpoints":["/v0.4/traces","/v1.0/traces","/v0.6/stats"],"client_drop_p0s":true}`))
+	w.Write([]byte(`{"endpoints":["/v0.4/traces","/v1.0/traces","/v0.6/stats"],"client_drop_p0s":true,"span_events":true,"span_meta_structs":true}`))
 }
 
 func (a *testAgent) handleTracesV04(w http.ResponseWriter, r *http.Request) {
@@ -108,9 +130,7 @@ func (a *testAgent) handleTracesV04(w http.ResponseWriter, r *http.Request) {
 			spans = append(spans, s)
 		}
 	}
-	a.mu.Lock()
-	a.spans = append(a.spans, spans...)
-	a.mu.Unlock()
+	a.recordRequest(r.URL.Path, spans)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"rate_by_service":{}}`))
 }
@@ -121,7 +141,11 @@ func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	p := &payloadV1{buf: body}
+	p := newPayloadV1()
+	if _, err := p.Write(body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if _, err := p.decodeBuffer(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -139,11 +163,20 @@ func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
 			spans = append(spans, s)
 		}
 	}
-	a.mu.Lock()
-	a.spans = append(a.spans, spans...)
-	a.mu.Unlock()
+	a.recordRequest(r.URL.Path, spans)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(`{"rate_by_service":{}}`))
+}
+
+type testTraceProtocol struct {
+	name    string
+	version string
+	path    string
+}
+
+var testTraceProtocols = []testTraceProtocol{
+	{name: "v0.4", version: "0.4", path: tracesAPIPath},
+	{name: "v1.0", version: "1.0", path: tracesAPIPathV1},
 }
 
 // newTracerTest creates a tracer with an httpTransport pointed at the mock agent.
@@ -161,9 +194,54 @@ func newTracerTest(tb testing.TB, agent *testAgent, opts ...StartOption) *tracer
 	return tr
 }
 
+// newAgentTracerTest creates a tracer configured through agent discovery so tests
+// exercise the same protocol selection and HTTP endpoint that production uses.
+func newAgentTracerTest(tb testing.TB, agent *testAgent, protocol testTraceProtocol, opts ...StartOption) *tracer {
+	tb.Helper()
+	tb.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", protocol.version)
+	baseOpts := []StartOption{
+		WithAgentAddr(agent.Addr()),
+		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
+		WithSendRetries(0),
+		withNoopStats(),
+	}
+	tr, err := newTracer(append(baseOpts, opts...)...)
+	require.NoError(tb, err)
+	setGlobalTracer(tr)
+	return tr
+}
+
+// flushAgentTracerTest flushes tr and waits until the mock agent has received
+// exactly wantSpans spans. Unlike tracer.Flush, this also waits for the async
+// HTTP writer goroutine.
+func flushAgentTracerTest(tb testing.TB, tr *tracer, agent *testAgent, wantSpans int) {
+	tb.Helper()
+	deadline := time.Now().Add(time.Second * timeMultiplicator)
+	for {
+		tr.Flush()
+		if w, ok := tr.traceWriter.(*agentTraceWriter); ok {
+			w.wg.Wait()
+		}
+		got := agent.SpanCount()
+		switch {
+		case got == wantSpans:
+			return
+		case got > wantSpans:
+			require.Equal(tb, wantSpans, got)
+		}
+		if time.Now().After(deadline) {
+			require.Equal(tb, wantSpans, got, "timed out waiting for mock agent spans")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // stopTracerTest stops the tracer and resets global state.
 func stopTracerTest(tr *tracer) {
 	tr.Flush()
+	if w, ok := tr.traceWriter.(*agentTraceWriter); ok {
+		w.wg.Wait()
+	}
 	tr.Stop()
 	setGlobalTracer(&NoopTracer{})
 }
