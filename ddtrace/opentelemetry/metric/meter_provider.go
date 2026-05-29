@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 
+	"go.opentelemetry.io/otel"
 	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -18,10 +20,61 @@ import (
 )
 
 const (
-	// Environment variables for controlling metrics behavior
 	envDDMetricsOtelEnabled = "DD_METRICS_OTEL_ENABLED"
 	envOtelMetricsExporter  = "OTEL_METRICS_EXPORTER"
 )
+
+func init() {
+	otelmetricsinstall.StartHook = func(ctx context.Context) error {
+		if err := InstallGlobal(); err != nil {
+			return err
+		}
+		return startGoRuntimeMetrics(ctx)
+	}
+	otelmetricsinstall.ShutdownHook = func(ctx context.Context) error {
+		return Shutdown(ctx, otel.GetMeterProvider())
+	}
+}
+
+// InstallGlobal installs a DD-configured MeterProvider as the global OTel provider.
+// No-op when metric export is disabled (DD_METRICS_OTEL_ENABLED or OTEL_METRICS_EXPORTER=otlp).
+// tracer.Start() calls it when export is enabled.
+func InstallGlobal(opts ...Option) error {
+	if !isMetricsEnabled() {
+		return nil
+	}
+	// Don't replace a real OTel SDK MeterProvider that the user already installed.
+	// The OTel global defaults to an internal delegating *meterProvider (not a real
+	// SDK — it silently drops metrics until a real provider is set). We only skip
+	// installation if a real *metric.MeterProvider is already configured.
+	if _, ok := otel.GetMeterProvider().(*metric.MeterProvider); ok {
+		return nil
+	}
+	allOpts := append([]Option{withRuntimeProducerDefault()}, opts...)
+	mp, err := NewMeterProvider(allOpts...)
+	if err != nil {
+		return err
+	}
+	otel.SetMeterProvider(mp)
+	return nil
+}
+
+// withRuntimeProducerDefault injects the RuntimeProducer unless the caller disabled it
+// or the DD_RUNTIME_METRICS_ENABLED env var is set to false.
+func withRuntimeProducerDefault() Option {
+	return optionFunc(func(c *config) {
+		if c.disableRuntimeProducer {
+			return
+		}
+		// Respect the user's opt-out of runtime metrics reporting.
+		// When DD_RUNTIME_METRICS_ENABLED=false, suppress automatic go.schedule.duration
+		// collection so the RuntimeProducer scope doesn't appear in exported metrics.
+		if runtimeMetricsDisabled := env.Get("DD_RUNTIME_METRICS_ENABLED"); runtimeMetricsDisabled == "false" || runtimeMetricsDisabled == "0" {
+			return
+		}
+		c.producers = append(c.producers, NewRuntimeProducer())
+	})
+}
 
 // NewMeterProvider creates a new MeterProvider configured with Datadog-specific settings:
 // - Resource with DD service, env, version, hostname, and tags
@@ -29,9 +82,8 @@ const (
 // - Delta temporality for all metrics (default)
 // - 60-second export interval
 //
-// Metrics can be disabled via environment variables:
-// - DD_METRICS_OTEL_ENABLED=false (default: false/disabled)
-// - OTEL_METRICS_EXPORTER=none
+// Metrics are enabled when DD_METRICS_OTEL_ENABLED is true or OTEL_METRICS_EXPORTER
+// includes otlp. OTEL_METRICS_EXPORTER=none disables export.
 //
 // When disabled, returns a no-op MeterProvider that doesn't export metrics.
 //
@@ -74,11 +126,14 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 	// Build metric reader with DD defaults
 	// Note: Temporality is configured via the exporter's TemporalitySelector option
 	// The default OTLP exporter uses cumulative, but we configure delta via exporter options
-	reader := metric.NewPeriodicReader(
-		exporter,
+	readerOpts := []metric.PeriodicReaderOption{
 		metric.WithInterval(cfg.exportInterval),
 		metric.WithTimeout(cfg.exportTimeout),
-	)
+	}
+	for _, p := range cfg.producers {
+		readerOpts = append(readerOpts, metric.WithProducer(p))
+	}
+	reader := metric.NewPeriodicReader(exporter, readerOpts...)
 
 	// Create the MeterProvider
 	return metric.NewMeterProvider(
@@ -88,39 +143,8 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 }
 
 // isMetricsEnabled checks environment variables to determine if metrics should be enabled.
-// Metrics are disabled by default and can be enabled by:
-// - Setting DD_METRICS_OTEL_ENABLED=true
-//
-// Returns false (disabled) if:
-// - DD_METRICS_OTEL_ENABLED is "false" or unset (default)
-// - OTEL_METRICS_EXPORTER is set to "none"
 func isMetricsEnabled() bool {
-	// Check OTEL_METRICS_EXPORTER first - if set to "none", always disable
-	if exporter := env.Get(envOtelMetricsExporter); exporter != "" {
-		exporter = strings.ToLower(strings.TrimSpace(exporter))
-		if exporter == "none" {
-			return false
-		}
-	}
-
-	// Check DD_METRICS_OTEL_ENABLED (default: false/disabled)
-	metricsEnabled := env.Get(envDDMetricsOtelEnabled)
-	if metricsEnabled == "" {
-		// If not set, default to disabled
-		return false
-	}
-
-	// If explicitly set, respect the value
-	metricsEnabled = strings.ToLower(strings.TrimSpace(metricsEnabled))
-	if metricsEnabled == "false" || metricsEnabled == "0" {
-		return false
-	}
-	if metricsEnabled == "true" || metricsEnabled == "1" {
-		return true
-	}
-
-	// Invalid value, default to disabled
-	return false
+	return env.MetricsExportEnabled()
 }
 
 // isNoop returns true if the given MeterProvider is a no-op provider that doesn't export metrics.

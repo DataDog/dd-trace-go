@@ -65,6 +65,10 @@ var otelConfigs = map[string]*otelDDEnv{
 		ot:       "OTEL_METRICS_EXPORTER",
 		remapper: mapMetrics,
 	},
+	"DD_METRICS_OTEL_ENABLED": {
+		ot:       "OTEL_METRICS_EXPORTER",
+		remapper: mapOtelMetrics,
+	},
 	"DD_TRACE_DEBUG": {
 		ot:       "OTEL_LOG_LEVEL",
 		remapper: mapLogLevel,
@@ -117,6 +121,20 @@ func mapMetrics(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if ot == "none" {
 		return "false", nil
+	}
+	if ot == "otlp" || strings.Contains(ot, "otlp") {
+		return "", nil
+	}
+	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
+}
+
+func mapOtelMetrics(ot string) (string, error) {
+	ot = strings.TrimSpace(strings.ToLower(ot))
+	if ot == "none" {
+		return "false", nil
+	}
+	if ot == "otlp" || strings.Contains(ot, "otlp") {
+		return "", nil
 	}
 	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
