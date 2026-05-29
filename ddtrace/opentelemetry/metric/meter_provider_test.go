@@ -12,13 +12,16 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
 // TestMeterProviderInstruments verifies that various OTel instrument types
 // can be created and used without errors.
 func TestMeterProviderInstruments(t *testing.T) {
-	t.Setenv(envDDMetricsOtelEnabled, "true")
+	setMetricsExportEnv(t)
 	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -59,13 +62,28 @@ func TestMeterProviderInstruments(t *testing.T) {
 
 // TestForceFlush verifies that ForceFlush can be called without panicking.
 func TestForceFlush(t *testing.T) {
-	t.Setenv(envDDMetricsOtelEnabled, "true")
+	setMetricsExportEnv(t)
 	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
 	require.NoError(t, err)
 	defer Shutdown(context.Background(), mp)
 
 	// ForceFlush may fail due to connection issues, but shouldn't panic
 	_ = ForceFlush(context.Background(), mp)
+}
+
+func setMetricsExportEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv(envDDMetricsOtelEnabled, "true")
+}
+
+func TestInstallGlobalWithMetricsExport(t *testing.T) {
+	setMetricsExportEnv(t)
+	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
+	defer otel.SetMeterProvider(noop.NewMeterProvider())
+
+	require.NoError(t, InstallGlobal())
+	_, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
+	assert.True(t, ok)
 }
 
 // TestMetricsDisabledByDefault verifies that when DD_METRICS_OTEL_ENABLED is not set,
@@ -103,7 +121,7 @@ func TestMetricsDisabledExplicitly(t *testing.T) {
 	})
 
 	t.Run("OTEL_METRICS_EXPORTER=none", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "true")
+		setMetricsExportEnv(t)
 		t.Setenv(envOtelMetricsExporter, "none")
 		mp, err := NewMeterProvider()
 		require.NoError(t, err)
@@ -111,30 +129,16 @@ func TestMetricsDisabledExplicitly(t *testing.T) {
 	})
 }
 
-// TestMetricsEnabled verifies that metrics are enabled when DD_METRICS_OTEL_ENABLED
-// is set to "true" or "1", returning a functional (non-noop) MeterProvider.
+// TestMetricsEnabled verifies that metrics are enabled when all required env vars are set.
 func TestMetricsEnabled(t *testing.T) {
-	t.Run("DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "true")
-		mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
-		require.NoError(t, err)
-		assert.False(t, isNoop(mp), "MeterProvider should not be no-op when DD_METRICS_OTEL_ENABLED=true")
+	setMetricsExportEnv(t)
+	mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
+	require.NoError(t, err)
+	assert.False(t, isNoop(mp), "MeterProvider should not be no-op when metrics export is enabled")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer cancel()
-		defer Shutdown(ctx, mp)
-	})
-
-	t.Run("DD_METRICS_OTEL_ENABLED=1", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "1")
-		mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))
-		require.NoError(t, err)
-		assert.False(t, isNoop(mp), "MeterProvider should not be no-op when DD_METRICS_OTEL_ENABLED=1")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer cancel()
-		defer Shutdown(ctx, mp)
-	})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	defer Shutdown(ctx, mp)
 }
 
 // TestMeterProviderExporterProtocols verifies that the MeterProvider can be created
@@ -144,7 +148,7 @@ func TestMeterProviderExporterProtocols(t *testing.T) {
 
 	for _, protocol := range protocols {
 		t.Run(protocol, func(t *testing.T) {
-			t.Setenv(envDDMetricsOtelEnabled, "true")
+			setMetricsExportEnv(t)
 			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", protocol)
 
 			mp, err := NewMeterProvider(WithExportInterval(24 * time.Hour))

@@ -175,6 +175,9 @@ func mapMetrics(ot string) (string, error) {
 	if ot == "none" {
 		return "false", nil
 	}
+	if ot == "otlp" || strings.Contains(ot, "otlp") {
+		return "", nil
+	}
 	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
