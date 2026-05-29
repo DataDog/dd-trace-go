@@ -160,7 +160,7 @@ func TestCiVisibilityTraceWriterClosesHTTPResponseBody(t *testing.T) {
 			headers:          map[string]string{"Content-Type": "application/msgpack"},
 			agentless:        false,
 		}
-		c.sendRetries = 0
+		c.internalConfig.SetSendRetries(0, internalconfig.OriginCode)
 	})
 	assert.NoError(err)
 
