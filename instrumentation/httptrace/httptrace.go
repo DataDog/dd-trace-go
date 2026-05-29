@@ -74,8 +74,12 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			requestProxyContext, err := extractInferredProxyContext(r.Header)
 			if err != nil {
 				log.Debug("%s\n", err.Error())
+
+				// try to do pubsub infered span here
 			} else {
 				// TODO: Baggage?
+
+				// TODO refactor into a function
 				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
 				if spanParentErr == nil {
 					if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
@@ -83,7 +87,25 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 					}
 				}
 				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+				inferredProxySpanCreated = true
 			}
+		}
+
+		if !inferredProxySpanCreated {
+			var inferredStartSpanOpts []tracer.StartSpanOption
+			pubsubSpanContext, err := extractInferredPubsubSpan(r.Header)
+			if err != nil {
+				log.Debug("%s\n", err.Error())
+			} else {
+				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+				if spanParentErr == nil {
+					if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
+						inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanParentCtx.SpanLinks()))
+					}
+				}
+				inferredProxySpan = startInferredPubsubSpan(pubsubSpanContext, spanParentCtx, inferredStartSpanOpts...)
+			}
+
 		}
 	}
 

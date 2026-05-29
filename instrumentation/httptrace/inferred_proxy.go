@@ -55,6 +55,9 @@ const (
 	// AWS API Gateway, and provides the stage (e.g., dev, prod, etc.)
 	// in which the request is being processed.
 	ProxyHeaderStage = "X-Dd-Proxy-Stage"
+
+	PubsubHeaderSubscriptionName = "X-Goog-Pubsub-Subscription-Name"
+	PubsubHeaderMessageId        = "X-Goog-Pubsub-Message-Id"
 )
 
 type proxyDetails struct {
@@ -71,11 +74,20 @@ type proxyContext struct {
 	proxySystemName string
 }
 
+type pubsubContext struct {
+	subscriptionName string
+	messageId        string
+}
+
 var (
 	supportedProxies = map[string]proxyDetails{
 		"aws-apigateway": {
 			spanName:  "aws.apigateway",
 			component: "aws-apigateway",
+		},
+		"gcp-pubsub": {
+			spanName:  "gcp.pubsub",
+			component: "gcp-pubsub",
 		},
 	}
 )
@@ -144,6 +156,62 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 			cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.method, requestProxyContext.path)
 			cfg.Tags["_dd.inferred_span"] = 1
 			cfg.Tags["stage"] = requestProxyContext.stage
+		},
+	)
+
+	span := tracer.StartSpan(proxySpanInfo.spanName, optsLocal...)
+
+	return span
+}
+
+func extractInferredPubsubSpan(headers http.Header) (*pubsubContext, error) {
+	_, ok := headers[PubsubHeaderSubscriptionName]
+	if _, ok := headers[PubsubHeaderSubscriptionName]; !ok {
+		return nil, errors.New("pubsub header subscription name does not exist")
+	}
+
+	if _, ok = headers[PubsubHeaderMessageId]; !ok {
+		return nil, errors.New("pubsub header message Id does not exist")
+	}
+
+	return &pubsubContext{
+		subscriptionName: headers.Get(PubsubHeaderSubscriptionName),
+		messageId:        headers.Get(PubsubHeaderMessageId),
+	}, nil
+}
+
+func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
+	proxySpanInfo := supportedProxies["gcp-pubsub"]
+	log.Debug(`Successfully extracted inferred span info ${proxyContext} for proxy: ${proxyContext.proxySystemName}`)
+
+	// startTime := requestProxyContext.startTime
+
+	configService := "domainName"
+	if configService == "" {
+		configService = globalconfig.ServiceName()
+	}
+
+	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+1)
+	copy(optsLocal, opts)
+
+	optsLocal = append(optsLocal,
+		func(cfg *tracer.StartSpanConfig) {
+			if cfg.Tags == nil {
+				cfg.Tags = make(map[string]any)
+			}
+
+			cfg.Parent = parent
+			// cfg.StartTime = startTime
+
+			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
+			cfg.Tags[ext.ServiceName] = configService
+			cfg.Tags[ext.Component] = proxySpanInfo.component
+			cfg.Tags[ext.HTTPMethod] = "GET"
+			cfg.Tags[ext.HTTPURL] = "httpUrl"
+			cfg.Tags[ext.HTTPRoute] = "httpRoute"
+			cfg.Tags[ext.ResourceName] = "resourceName"
+			cfg.Tags["_dd.inferred_span"] = 1
+			cfg.Tags["stage"] = "stage"
 		},
 	)
 
