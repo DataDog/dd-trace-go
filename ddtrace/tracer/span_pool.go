@@ -20,7 +20,10 @@ func acquireSpan(poolEnabled bool) *Span {
 	return &Span{}
 }
 
-func releaseSpans(spans []*Span) {
+func releaseSpans(poolEnabled bool, spans []*Span) {
+	if !poolEnabled {
+		return
+	}
 	for _, s := range spans {
 		s.clear()
 		spanPool.Put(s)

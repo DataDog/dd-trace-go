@@ -713,9 +713,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			if len(trace.spans) > 0 {
 				t.traceWriter.add(trace.spans)
 			}
-			if t.config.spanPoolEnabled {
-				releaseSpans(spansToRelease)
-			}
+			releaseSpans(t.config.spanPoolEnabled, spansToRelease)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -744,9 +742,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 					if len(trace.spans) > 0 {
 						t.traceWriter.add(trace.spans)
 					}
-					if t.config.spanPoolEnabled {
-						releaseSpans(spansToRelease)
-					}
+					releaseSpans(t.config.spanPoolEnabled, spansToRelease)
 				default:
 					break loop
 				}
@@ -816,9 +812,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 	default:
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
 		atomic.AddUint32(&t.totalTracesDropped, 1)
-		if t.config.spanPoolEnabled {
-			releaseSpans(trace.releaseableSpans())
-		}
+		releaseSpans(t.config.spanPoolEnabled, trace.releaseableSpans())
 	}
 	select {
 	case <-t.logDroppedTraces.C:
