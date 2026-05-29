@@ -812,7 +812,10 @@ func (t *tracer) pushChunk(trace *chunk) {
 	default:
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
 		atomic.AddUint32(&t.totalTracesDropped, 1)
-		releaseSpans(t.config.spanPoolEnabled, trace.releaseableSpans())
+		// Do NOT call releaseSpans here: pushChunk is called from within
+		// finish() while s.mu is held. clear() acquires s.mu to serialize
+		// after finish(), so calling it here deadlocks the same goroutine.
+		// Dropped spans are GC'd instead.
 	}
 	select {
 	case <-t.logDroppedTraces.C:

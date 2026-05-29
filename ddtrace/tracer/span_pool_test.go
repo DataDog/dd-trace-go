@@ -881,46 +881,6 @@ func TestSpanPoolSingleSpanSamplingAgentPOVMatchesNoPool(t *testing.T) {
 	}
 }
 
-func TestSpanPoolDroppedChunkReleaseClearsSpans(t *testing.T) {
-	tr, err := newUnstartedTracer(WithSpanPool(true), withNoopInfoHTTPClient(), withNoopStats())
-	require.NoError(t, err)
-	defer tr.Stop()
-
-	for range payloadQueueSize {
-		tr.submitChunk(&chunk{spans: []*Span{{}}})
-	}
-
-	dropped := acquireSpan(true)
-	dropped.name = "dropped.name"
-	dropped.service = "dropped.service"
-	dropped.resource = "dropped.resource"
-	dropped.spanType = ext.SpanTypeWeb
-	dropped.spanID = 8001
-	dropped.traceID = 8001
-	dropped.parentID = 1
-	dropped.error = 1
-	dropped.meta.Set("dropped.meta", "stale")
-	dropped.setMetricInit("dropped.metric", 1)
-	dropped.spanLinks = []SpanLink{{TraceID: 1, SpanID: 2}}
-	dropped.spanEvents = []spanEvent{{Name: "dropped.event"}}
-
-	tr.submitChunk(&chunk{spans: []*Span{dropped}})
-
-	require.Equal(t, uint32(1), tr.totalTracesDropped)
-	require.Empty(t, dropped.name)
-	require.Empty(t, dropped.service)
-	require.Empty(t, dropped.resource)
-	require.Empty(t, dropped.spanType)
-	require.Zero(t, dropped.spanID)
-	require.Zero(t, dropped.traceID)
-	require.Zero(t, dropped.parentID)
-	require.Zero(t, dropped.error)
-	require.False(t, dropped.meta.Has("dropped.meta"))
-	require.NotContains(t, dropped.metrics, "dropped.metric")
-	require.Empty(t, dropped.spanLinks)
-	require.Empty(t, dropped.spanEvents)
-}
-
 func BenchmarkSpanPoolRelease(b *testing.B) {
 	// Cycle one span at a time: release → acquire keeps the pool at 0-1
 	// items, avoiding sync.Pool internal ring-buffer growth allocations
