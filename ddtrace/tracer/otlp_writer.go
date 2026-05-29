@@ -49,7 +49,7 @@ func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 	})
 	return &otlpTraceWriter{
 		config:    c,
-		transport: newOTLPTransport(internal.DefaultHTTPClient(c.httpClientTimeout, false), c.internalConfig.OTLPTraceURL(), c.internalConfig.OTLPHeaders()),
+		transport: newOTLPTransport(internal.DefaultHTTPClient(c.internalConfig.AgentTimeout(), false), c.internalConfig.OTLPTraceURL(), c.internalConfig.OTLPHeaders()),
 		resource:  resource,
 		scope:     scope,
 		spans:     make([]*otlptrace.Span, 0),
