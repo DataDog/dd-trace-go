@@ -1601,7 +1601,7 @@ func TestFromGenericCtxSamplingDecision(t *testing.T) {
 
 // TestChildInheritsUpdatedParentService verifies that when a parent span's service
 // is changed via SetTag after creation, a subsequently-started child inherits the
-// updated service name from context.inherited.
+// updated service name from the parent's span snapshot.
 func TestChildInheritsUpdatedParentService(t *testing.T) {
 	trc, _, _, stop, err := startTestTracer(t, WithService("global-svc"))
 	require.NoError(t, err)
@@ -1649,9 +1649,9 @@ func TestExtractedContextOriginMarkedOnFirstChildOnly(t *testing.T) {
 	assert.False(t, hasOrigin, "grandchild should not have origin — it is not the first local span")
 }
 
-// TestInheritedFieldsMirrorSetTag verifies that context.inherited is updated when
-// env, version, and peer.service tags are mutated on a live span via SetTag.
-func TestInheritedFieldsMirrorSetTag(t *testing.T) {
+// TestSpanSnapshotFieldsMirrorSetTag verifies that context.spanSnapshot is updated
+// when env, version, and peer.service tags are mutated on a live span via SetTag.
+func TestSpanSnapshotFieldsMirrorSetTag(t *testing.T) {
 	trc, _, _, stop, err := startTestTracer(t)
 	require.NoError(t, err)
 	defer stop()
@@ -1663,16 +1663,16 @@ func TestInheritedFieldsMirrorSetTag(t *testing.T) {
 	span.SetTag(ext.Version, "2.0")
 	span.SetTag(ext.PeerService, "my-peer")
 
-	inherited := span.context.inheritedSnapshot()
-	assert.Equal(t, "staging", inherited.env)
-	assert.Equal(t, "2.0", inherited.version)
-	assert.Equal(t, "my-peer", inherited.peerService)
+	spanSnapshot := span.context.getSpanSnapshot()
+	assert.Equal(t, "staging", spanSnapshot.env)
+	assert.Equal(t, "2.0", spanSnapshot.version)
+	assert.Equal(t, "my-peer", spanSnapshot.peerService)
 }
 
-// TestSiblingSpansGetFreshInheritedState verifies that each sibling span captures
-// the parent's inherited state at its own creation time, and that siblings do not
+// TestSiblingSpansGetFreshSpanSnapshot verifies that each sibling span captures
+// the parent's span snapshot at its own creation time, and that siblings do not
 // share or leak context state between them.
-func TestSiblingSpansGetFreshInheritedState(t *testing.T) {
+func TestSiblingSpansGetFreshSpanSnapshot(t *testing.T) {
 	trc, _, _, stop, err := startTestTracer(t, WithService("global-svc"))
 	require.NoError(t, err)
 	defer stop()
@@ -1690,11 +1690,11 @@ func TestSiblingSpansGetFreshInheritedState(t *testing.T) {
 
 	assert.Equal(t, "parent-svc", child1.service, "child1 was created before service update")
 	assert.Equal(t, "new-parent-svc", child2.service, "child2 was created after service update")
-	assert.Equal(t, "parent-svc", child1.context.inheritedSnapshot().service)
-	assert.Equal(t, "new-parent-svc", child2.context.inheritedSnapshot().service)
+	assert.Equal(t, "parent-svc", child1.context.getSpanSnapshot().service)
+	assert.Equal(t, "new-parent-svc", child2.context.getSpanSnapshot().service)
 }
 
-func TestInheritedFieldsConcurrentAccess(t *testing.T) {
+func TestSpanSnapshotFieldsConcurrentAccess(t *testing.T) {
 	trc, _, _, stop, err := startTestTracer(t)
 	require.NoError(t, err)
 	defer stop()

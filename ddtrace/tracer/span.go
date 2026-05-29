@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//msgp:ignore inheritedData
+//msgp:ignore spanSnapshot
 //go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 //go:generate go run ../../scripts/msgp_span_meta_omitempty.go -file span_msgp.go
 //go:generate go run ../../scripts/msgp_checklocks_ignore.go -type Span -file span_msgp.go
@@ -192,7 +192,7 @@ func (s *Span) Context() *SpanContext {
 	return s.context
 }
 
-type inheritedData struct {
+type spanSnapshot struct {
 	env           string
 	version       string
 	service       string
@@ -202,13 +202,13 @@ type inheritedData struct {
 }
 
 // +checklocksignore — Initialization time.
-func (s *Span) inheritedData() inheritedData {
+func (s *Span) spanSnapshot() spanSnapshot {
 	var (
 		env, _         = s.meta.Env()
 		version, _     = s.meta.Version()
 		peerService, _ = s.meta.Get(ext.PeerService)
 	)
-	return inheritedData{
+	return spanSnapshot{
 		env:           env,
 		version:       version,
 		service:       s.service,
@@ -432,7 +432,7 @@ func (s *Span) setTagLocked(key string, value any) {
 			s.service = so.Name
 			s.serviceSource = so.Source
 			if s.context != nil {
-				s.context.setInheritedService(so.Name, so.Source)
+				s.context.setSpanSnapshotService(so.Name, so.Source)
 			}
 			return
 		}
@@ -452,7 +452,7 @@ func (s *Span) setTagLocked(key string, value any) {
 			s.pprofCtxActive = pprof.WithLabels(s.pprofCtxActive, pprof.Labels(traceprof.TraceEndpoint, v))
 			pprof.SetGoroutineLabels(s.pprofCtxActive)
 			if s.context != nil {
-				s.context.setInheritedPPROFCtx(s.pprofCtxActive)
+				s.context.setSpanSnapshotPPROFCtx(s.pprofCtxActive)
 			}
 		}
 		s.setMetaLocked(key, v)
@@ -741,7 +741,7 @@ func (s *Span) setMetaLocked(key, v string) {
 	assert.RWMutexLocked(&s.mu)
 	s.setMetaInit(key, v)
 	if s.context != nil {
-		s.context.setInheritedMeta(key, v)
+		s.context.setSpanSnapshotMeta(key, v)
 	}
 }
 
@@ -756,7 +756,7 @@ func (s *Span) setMetaInit(key, v string) {
 		s.service = v
 		s.serviceSource = serviceSourceManual
 		if s.context != nil {
-			s.context.setInheritedService(v, serviceSourceManual)
+			s.context.setSpanSnapshotService(v, serviceSourceManual)
 		}
 	case ext.ResourceName:
 		s.resource = v
@@ -834,7 +834,7 @@ func (s *Span) setMetricLocked(key string, v float64) {
 	}
 	s.meta.Delete(key)
 	if s.context != nil {
-		s.context.setInheritedMeta(key, "")
+		s.context.setSpanSnapshotMeta(key, "")
 	}
 	switch key {
 	case ext.ManualKeep:

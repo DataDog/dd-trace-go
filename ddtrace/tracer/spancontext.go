@@ -143,8 +143,8 @@ type SpanContext struct {
 	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	hasBaggage uint32 // +checkatomic
 	// +checklocks:mu
-	// inherited stores mirrored data from the span that hosts this context
-	inherited inheritedData
+	// spanSnapshot stores mirrored data from the span that hosts this context.
+	spanSnapshot spanSnapshot
 	// e.g. "synthetics"
 	// +checklocks:mu
 	origin string
@@ -294,7 +294,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
-	context.setInherited(span.inheritedData())
+	context.setSpanSnapshot(span.spanSnapshot())
 	// setting context.updated to false here is necessary to distinguish
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
@@ -302,44 +302,44 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	return context
 }
 
-func (c *SpanContext) inheritedSnapshot() inheritedData {
+func (c *SpanContext) getSpanSnapshot() spanSnapshot {
 	if c == nil {
-		return inheritedData{}
+		return spanSnapshot{}
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.inherited
+	return c.spanSnapshot
 }
 
-func (c *SpanContext) setInherited(data inheritedData) {
+func (c *SpanContext) setSpanSnapshot(data spanSnapshot) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.inherited = data
+	c.spanSnapshot = data
 }
 
-func (c *SpanContext) setInheritedService(service, source string) {
+func (c *SpanContext) setSpanSnapshotService(service, source string) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.inherited.service = service
-	c.inherited.serviceSource = source
+	c.spanSnapshot.service = service
+	c.spanSnapshot.serviceSource = source
 }
 
-func (c *SpanContext) setInheritedPPROFCtx(ctx context.Context) {
+func (c *SpanContext) setSpanSnapshotPPROFCtx(ctx context.Context) {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.inherited.pprofCtx = ctx
+	c.spanSnapshot.pprofCtx = ctx
 }
 
-func (c *SpanContext) setInheritedMeta(key, value string) {
+func (c *SpanContext) setSpanSnapshotMeta(key, value string) {
 	if c == nil {
 		return
 	}
@@ -350,19 +350,19 @@ func (c *SpanContext) setInheritedMeta(key, value string) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.setInheritedMetaLocked(key, value)
+	c.setSpanSnapshotMetaLocked(key, value)
 }
 
 // +checklocks:c.mu
-func (c *SpanContext) setInheritedMetaLocked(key, value string) {
+func (c *SpanContext) setSpanSnapshotMetaLocked(key, value string) {
 	assert.RWMutexLocked(&c.mu)
 	switch key {
 	case ext.PeerService:
-		c.inherited.peerService = value
+		c.spanSnapshot.peerService = value
 	case ext.Environment:
-		c.inherited.env = value
+		c.spanSnapshot.env = value
 	case ext.Version:
-		c.inherited.version = value
+		c.spanSnapshot.version = value
 	}
 }
 

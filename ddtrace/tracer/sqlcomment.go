@@ -85,15 +85,15 @@ func (c *SQLCommentCarrier) Inject(ctx *SpanContext) error {
 		fallthrough
 	case DBMPropagationModeService:
 		if ctx != nil {
-			inherited := ctx.inheritedSnapshot()
-			if inherited.env != "" {
-				tags[sqlCommentEnv] = inherited.env
+			spanSnapshot := ctx.getSpanSnapshot()
+			if spanSnapshot.env != "" {
+				tags[sqlCommentEnv] = spanSnapshot.env
 			}
-			if inherited.version != "" {
-				tags[sqlCommentParentVersion] = inherited.version
+			if spanSnapshot.version != "" {
+				tags[sqlCommentParentVersion] = spanSnapshot.version
 			}
-			if inherited.peerService != "" {
-				tags[sqlCommentPeerService] = inherited.peerService
+			if spanSnapshot.peerService != "" {
+				tags[sqlCommentPeerService] = spanSnapshot.peerService
 			}
 		}
 		if c.PeerDBName != "" {
