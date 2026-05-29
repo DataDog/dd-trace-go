@@ -272,6 +272,57 @@ func TestSpanPoolSpanTypeAndErrorReset(t *testing.T) {
 	assert.Equal(t, int32(1), sC.error)
 }
 
+func TestSpanPoolPartialFlushedRootRetainedUntilTraceComplete(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
+
+	tracer, transport, flush, stop, err := startTestTracer(t, WithSpanPool(true))
+	require.NoError(t, err)
+	defer stop()
+
+	root := tracer.StartSpan("root", Tag(ext.ManualKeep, true))
+	child0 := tracer.StartSpan("child0", ChildOf(root.Context()))
+	child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+	child2 := tracer.StartSpan("child2", ChildOf(root.Context()))
+
+	root.Finish()
+	child0.Finish() // triggers a partial flush containing root while child1/child2 remain open
+	flush(1)
+
+	traces := transport.Traces()
+	require.Len(t, traces, 1)
+	require.Len(t, traces[0], 2)
+
+	flushedNames := map[string]bool{}
+	for _, s := range traces[0] {
+		flushedNames[s.name] = true
+	}
+	assert.True(t, flushedNames["root"])
+	assert.True(t, flushedNames["child0"])
+
+	// The partially flushed root is still trace.root for the unfinished children,
+	// so it must not be cleared and returned to the pool until the trace completes.
+	assert.Equal(t, "root", root.name)
+	assert.True(t, root.finished)
+	assert.Equal(t, root, child1.Root())
+	assert.Equal(t, root, child2.Root())
+
+	child1.Finish()
+	child2.Finish()
+	flush(1)
+
+	traces = transport.Traces()
+	require.Len(t, traces, 1)
+	require.Len(t, traces[0], 2)
+	remainingNames := map[string]bool{}
+	for _, s := range traces[0] {
+		remainingNames[s.name] = true
+	}
+	assert.False(t, remainingNames["root"], "root must not be encoded again in the final chunk")
+	assert.True(t, remainingNames["child1"])
+	assert.True(t, remainingNames["child2"])
+}
+
 func BenchmarkSpanPoolRelease(b *testing.B) {
 	// Cycle one span at a time: release → acquire keeps the pool at 0-1
 	// items, avoiding sync.Pool internal ring-buffer growth allocations

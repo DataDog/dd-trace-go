@@ -708,12 +708,13 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
+			spansToRelease := trace.releaseSpans()
 			t.sampleChunk(trace)
 			if len(trace.spans) > 0 {
 				t.traceWriter.add(trace.spans)
 			}
 			if t.config.spanPoolEnabled {
-				releaseSpans(trace.spans)
+				releaseSpans(spansToRelease)
 			}
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
@@ -738,12 +739,13 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
+					spansToRelease := trace.releaseSpans()
 					t.sampleChunk(trace)
 					if len(trace.spans) > 0 {
 						t.traceWriter.add(trace.spans)
 					}
 					if t.config.spanPoolEnabled {
-						releaseSpans(trace.spans)
+						releaseSpans(spansToRelease)
 					}
 				default:
 					break loop
@@ -760,8 +762,16 @@ func (t *tracer) worker(tick <-chan time.Time) {
 //
 // It's exported for supporting `mocktracer`.
 type chunk struct {
-	spans    []*Span
-	willSend bool // willSend indicates whether the trace will be sent to the agent.
+	spans          []*Span
+	willSend       bool // willSend indicates whether the trace will be sent to the agent.
+	spansToRelease []*Span
+}
+
+func (c *chunk) releaseSpans() []*Span {
+	if c.spansToRelease != nil {
+		return c.spansToRelease
+	}
+	return c.spans
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -807,7 +817,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
 		atomic.AddUint32(&t.totalTracesDropped, 1)
 		if t.config.spanPoolEnabled {
-			releaseSpans(trace.spans)
+			releaseSpans(trace.releaseSpans())
 		}
 	}
 	select {

@@ -1870,11 +1870,11 @@ func TestPushPayload(t *testing.T) {
 	s := newBasicSpan("3MB")
 	s.meta.Set("key", strings.Repeat("X", payloadSizeLimit/2+10))
 	// half payload size reached
-	tracer.pushChunk(&chunk{[]*Span{s}, true})
+	tracer.pushChunk(&chunk{spans: []*Span{s}, willSend: true})
 	tracer.awaitPayload(t, 1)
 
 	// payload size exceeded
-	tracer.pushChunk(&chunk{[]*Span{s}, true})
+	tracer.pushChunk(&chunk{spans: []*Span{s}, willSend: true})
 	flush(2)
 }
 
