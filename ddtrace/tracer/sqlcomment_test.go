@@ -19,6 +19,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type sqlCommentStringer string
+
+func (s sqlCommentStringer) String() string {
+	return string(s)
+}
+
 func TestSQLCommentCarrier(t *testing.T) {
 	testCases := []struct {
 		name               string
@@ -351,6 +357,61 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 				wanted: %d`, p, expectedSampled)
 		}
 	})
+}
+
+// TestSQLCommentUsesUpdatedInheritedTags verifies that when env, version, and
+// peer.service are set on a span after creation, SQLCommentCarrier.Inject reads
+// the updated values from context.inherited rather than stale initial values.
+func TestSQLCommentUsesUpdatedInheritedTags(t *testing.T) {
+	trc, err := newTracer(WithService("my-svc"))
+	require.NoError(t, err)
+	defer globalconfig.SetServiceName("")
+	defer trc.Stop()
+
+	span := trc.StartSpan("op")
+	defer span.Finish()
+
+	span.SetTag(ext.Environment, "staging")
+	span.SetTag(ext.Version, "2.0")
+	span.SetTag(ext.PeerService, "peer-svc")
+
+	carrier := SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeService,
+		DBServiceName: "mydb",
+	}
+	err = carrier.Inject(span.Context())
+	require.NoError(t, err)
+
+	assert.Contains(t, carrier.Query, "dde='staging'")
+	assert.Contains(t, carrier.Query, "ddpv='2.0'")
+	assert.Contains(t, carrier.Query, "ddprs='peer-svc'")
+}
+
+func TestSQLCommentUsesConvertedInheritedTags(t *testing.T) {
+	trc, err := newTracer(WithService("my-svc"))
+	require.NoError(t, err)
+	defer globalconfig.SetServiceName("")
+	defer trc.Stop()
+
+	span := trc.StartSpan("op")
+	defer span.Finish()
+
+	span.SetTag(ext.Environment, []byte("staging"))
+	span.SetTag(ext.Version, sqlCommentStringer("2.0"))
+	span.SetTag(ext.PeerService, true)
+
+	carrier := SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeService,
+		DBServiceName: "mydb",
+	}
+	err = carrier.Inject(span.Context())
+	require.NoError(t, err)
+
+	assert.Contains(t, carrier.Query, "dde='staging'")
+	assert.Contains(t, carrier.Query, "ddpv='2.0'")
+	assert.Contains(t, carrier.Query, "ddprs='true'")
 }
 
 func BenchmarkSQLCommentInjection(b *testing.B) {

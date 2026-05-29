@@ -1822,7 +1822,7 @@ func TestEnvVars(t *testing.T) {
 					err = tracer.Inject(s.Context(), headers)
 					assert.NoError(err)
 					assert.Equal(tc.tid, sctx.traceID)
-					assert.Equal(tc.out[0], sctx.span.parentID)
+					assert.Equal(tc.out[0], s.parentID)
 					assert.Equal(tc.out[1], sctx.spanID)
 
 					checkSameElements(assert, tc.outMap[traceparentHeader], headers[traceparentHeader])
