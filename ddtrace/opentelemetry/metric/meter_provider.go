@@ -19,11 +19,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-const (
-	envDDMetricsOtelEnabled = "DD_METRICS_OTEL_ENABLED"
-	envOtelMetricsExporter  = "OTEL_METRICS_EXPORTER"
-)
-
 func init() {
 	otelmetricsinstall.StartHook = func(ctx context.Context) error {
 		if err := InstallGlobal(); err != nil {
@@ -142,9 +137,8 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 	), nil
 }
 
-// isMetricsEnabled checks environment variables to determine if metrics should be enabled.
 func isMetricsEnabled() bool {
-	return env.MetricsExportEnabled()
+	return metricsExportEnabled()
 }
 
 // isNoop returns true if the given MeterProvider is a no-op provider that doesn't export metrics.

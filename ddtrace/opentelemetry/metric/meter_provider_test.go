@@ -73,7 +73,7 @@ func TestForceFlush(t *testing.T) {
 
 func setMetricsExportEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv(envDDMetricsOtelEnabled, "true")
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 }
 
 func TestInstallGlobalWithMetricsExport(t *testing.T) {
@@ -107,14 +107,14 @@ func TestMetricsDisabledByDefault(t *testing.T) {
 // - OTEL_METRICS_EXPORTER=none
 func TestMetricsDisabledExplicitly(t *testing.T) {
 	t.Run("DD_METRICS_OTEL_ENABLED=false", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "false")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "false")
 		mp, err := NewMeterProvider()
 		require.NoError(t, err)
 		assert.True(t, isNoop(mp), "MeterProvider should be no-op when DD_METRICS_OTEL_ENABLED=false")
 	})
 
 	t.Run("DD_METRICS_OTEL_ENABLED=0", func(t *testing.T) {
-		t.Setenv(envDDMetricsOtelEnabled, "0")
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "0")
 		mp, err := NewMeterProvider()
 		require.NoError(t, err)
 		assert.True(t, isNoop(mp), "MeterProvider should be no-op when DD_METRICS_OTEL_ENABLED=0")
@@ -122,7 +122,7 @@ func TestMetricsDisabledExplicitly(t *testing.T) {
 
 	t.Run("OTEL_METRICS_EXPORTER=none", func(t *testing.T) {
 		setMetricsExportEnv(t)
-		t.Setenv(envOtelMetricsExporter, "none")
+		t.Setenv("OTEL_METRICS_EXPORTER", "none")
 		mp, err := NewMeterProvider()
 		require.NoError(t, err)
 		assert.True(t, isNoop(mp), "MeterProvider should be no-op when OTEL_METRICS_EXPORTER=none")

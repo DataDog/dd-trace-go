@@ -240,7 +240,11 @@ func loadConfig() *Config {
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	cfg.otelRuntimeMetrics = env.OtelRuntimeMetricsEnabled()
+	otelExporter := strings.ToLower(strings.TrimSpace(env.Get("OTEL_METRICS_EXPORTER")))
+	cfg.otelRuntimeMetrics = otelExporter != "none" &&
+		p.GetBool("DD_RUNTIME_METRICS_ENABLED", false) &&
+		p.GetBool("DD_METRICS_OTEL_ENABLED", false) &&
+		strings.Contains(otelExporter, "otlp")
 	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
 	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
 	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
