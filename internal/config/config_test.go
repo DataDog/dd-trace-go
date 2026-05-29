@@ -716,6 +716,30 @@ func TestHostnameConfiguration(t *testing.T) {
 	})
 }
 
+func TestSiteConfig(t *testing.T) {
+	t.Run("default is datadoghq.com", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "datadoghq.com", cfg.Site(), "Site should default to datadoghq.com")
+	})
+
+	t.Run("DD_SITE env var is loaded", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_SITE", "datadoghq.eu")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, "datadoghq.eu", cfg.Site(), "Site should match DD_SITE env var")
+	})
+}
+
 func TestProductConflict(t *testing.T) {
 	t.Run("first-in-wins", func(t *testing.T) {
 		resetGlobalState()
@@ -793,6 +817,19 @@ func TestProductConflict(t *testing.T) {
 
 		assert.Equal(t, "my-svc", cfg.ServiceName(),
 			"same value from different products should be allowed")
+	})
+
+	t.Run("site first-in-wins", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetSite("tracer.datadoghq.com", OriginCode, ProductTracer)
+		assert.Equal(t, "tracer.datadoghq.com", cfg.Site())
+
+		cfg.SetSite("profiler.datadoghq.com", OriginCode, ProductProfiler)
+		assert.Equal(t, "tracer.datadoghq.com", cfg.Site(), "first-in-wins: profiler should be rejected")
 	})
 }
 

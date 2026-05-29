@@ -22,7 +22,6 @@ import (
 	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -223,8 +222,9 @@ func defaultConfig() (*config, error) {
 		c.apiKey = v
 	}
 	c.agentless = internal.BoolEnv("DD_PROFILING_AGENTLESS", false)
-	WithSite(internalconfig.Get().Site())(&c)
-
+	if v := env.Get("DD_SITE"); v != "" {
+		WithSite(v)(&c)
+	}
 	if v := env.Get("DD_ENV"); v != "" {
 		WithEnv(v)(&c)
 	}
