@@ -708,7 +708,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			spansToRelease := trace.releaseSpans()
+			spansToRelease := trace.releaseableSpans()
 			t.sampleChunk(trace)
 			if len(trace.spans) > 0 {
 				t.traceWriter.add(trace.spans)
@@ -739,7 +739,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					spansToRelease := trace.releaseSpans()
+					spansToRelease := trace.releaseableSpans()
 					t.sampleChunk(trace)
 					if len(trace.spans) > 0 {
 						t.traceWriter.add(trace.spans)
@@ -767,7 +767,7 @@ type chunk struct {
 	spansToRelease []*Span
 }
 
-func (c *chunk) releaseSpans() []*Span {
+func (c *chunk) releaseableSpans() []*Span {
 	if c.spansToRelease != nil {
 		return c.spansToRelease
 	}
@@ -817,7 +817,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 		log.Debug("payload queue full, trace dropped %d spans", len(trace.spans))
 		atomic.AddUint32(&t.totalTracesDropped, 1)
 		if t.config.spanPoolEnabled {
-			releaseSpans(trace.releaseSpans())
+			releaseSpans(trace.releaseableSpans())
 		}
 	}
 	select {
