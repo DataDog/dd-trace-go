@@ -1,0 +1,21 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+
+server_hook:
+  target: net/http
+  func: ServeHTTP
+  signature_contains:
+    args: [http.ResponseWriter, *http.Request]
+  before: TraceAndServe
+  path: github.com/DataDog/dd-trace-go/contrib/net/http/v2
+
+client_hook:
+  target: net/http
+  func: RoundTrip
+  recv: "*Transport"
+  before: ObserveRoundTrip
+  after: AfterRoundTrip
+  path: github.com/DataDog/dd-trace-go/contrib/net/http/v2
