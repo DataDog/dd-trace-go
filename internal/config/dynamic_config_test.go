@@ -158,6 +158,31 @@ func TestDynamicConfig(t *testing.T) {
 		assertTelemetryReport(t, client.Configuration, "my_field", 1.0, telemetry.OriginCode)
 	})
 
+	t.Run("Baseline returns startup value and origin", func(t *testing.T) {
+		dc := newDynamicConfig("test", 1.0, telemetry.OriginEnvVar, equalFloat)
+		val, origin := dc.Baseline()
+		assert.Equal(t, 1.0, val)
+		assert.Equal(t, telemetry.OriginEnvVar, origin)
+	})
+
+	t.Run("Baseline unchanged by HandleRC", func(t *testing.T) {
+		dc := newDynamicConfig("test", 1.0, telemetry.OriginEnvVar, equalFloat)
+		rate := 0.5
+		dc.HandleRC(&rate)
+		val, origin := dc.Baseline()
+		assert.Equal(t, 1.0, val, "baseline value should not reflect RC update")
+		assert.Equal(t, telemetry.OriginEnvVar, origin, "baseline origin should not reflect RC")
+		assert.Equal(t, 0.5, dc.Get(), "current value should reflect RC update")
+	})
+
+	t.Run("Baseline reflects setBaseline updates", func(t *testing.T) {
+		dc := newDynamicConfig("test", 1.0, telemetry.OriginDefault, equalFloat)
+		dc.setBaseline(2.0, telemetry.OriginCode)
+		val, origin := dc.Baseline()
+		assert.Equal(t, 2.0, val)
+		assert.Equal(t, telemetry.OriginCode, origin)
+	})
+
 	t.Run("concurrent access is safe", func(t *testing.T) {
 		dc := newDynamicConfig("test", 0, telemetry.OriginDefault, func(a, b int) bool { return a == b })
 		var wg sync.WaitGroup

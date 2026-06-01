@@ -151,6 +151,16 @@ type ExperimentEvalMetricEvent struct {
 	Error            *ErrorMessage `json:"error,omitempty"`
 	Tags             []string      `json:"tags,omitempty"`
 	ExperimentID     string        `json:"experiment_id,omitempty"`
+
+	// Reasoning is a free-form explanation for the evaluation result
+	// (e.g. an LLM judge's reasoning paragraph).
+	Reasoning string `json:"reasoning,omitempty"`
+	// Assessment is an optional categorical assessment of the result.
+	// Conventional values are "pass" and "fail".
+	Assessment string `json:"assessment,omitempty"`
+	// EvalMetricMetadata is arbitrary structured metadata about this
+	// specific evaluation. Distinct from span metadata.
+	EvalMetricMetadata map[string]any `json:"eval_metric_metadata,omitempty"`
 }
 
 type (

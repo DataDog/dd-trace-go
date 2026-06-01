@@ -395,32 +395,18 @@ func TestAddProfileType(t *testing.T) {
 }
 
 func TestWith_outputDir(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	dir := t.TempDir()
 
 	// Use env to enable this like a user would.
-	t.Setenv("DD_PROFILING_OUTPUT_DIR", tmpDir)
+	t.Setenv("DD_PROFILING_OUTPUT_DIR", dir)
 
-	p, err := unstartedProfiler()
-	require.NoError(t, err)
-	bat := batch{
-		end: time.Now(),
-		profiles: []*profile{
-			{name: "foo.pprof", data: []byte("foo")},
-			{name: "bar.pprof", data: []byte("bar")},
-		},
-	}
-	require.NoError(t, p.outputDir(bat))
-	files, err := filepath.Glob(filepath.Join(tmpDir, "*", "*.pprof"))
-	require.NoError(t, err)
+	startTestProfiler(t, 1,
+		WithProfileTypes(HeapProfile),
+		WithPeriod(10*time.Millisecond),
+	).ReceiveProfile(t)
 
-	fileData := map[string]string{}
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		require.NoError(t, err)
-		fileData[filepath.Base(file)] = string(data)
-	}
-	want := map[string]string{"foo.pprof": "foo", "bar.pprof": "bar"}
-	require.Equal(t, want, fileData)
+	// At least one subdirectory with .pprof files should have been written.
+	files, err := filepath.Glob(filepath.Join(dir, "*", "delta-heap.pprof"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
 }

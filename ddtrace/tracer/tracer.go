@@ -253,14 +253,14 @@ func Start(opts ...StartOption) error {
 	}
 	ciVisibilityEnabled := t.config.internalConfig.CIVisibilityEnabled()
 	globalTracer := Tracer(t)
-	if ciVisibilityEnabled && t.config.ciVisibilityNoopTracer {
+	if ciVisibilityEnabled && t.config.internalConfig.CIVisibilityNoopTracer() {
 		globalTracer = wrapWithCiVisibilityNoopTracer(t)
 	}
 	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
 	if t.dataStreams != nil {
 		t.dataStreams.Start()
 	}
-	if t.config.ciVisibilityAgentless {
+	if t.config.internalConfig.CIVisibilityAgentlessActive() {
 		// CI Visibility agentless mode doesn't require remote configuration.
 
 		// start instrumentation telemetry unless it is disabled through the

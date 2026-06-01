@@ -33,8 +33,7 @@ type (
 	}
 
 	knownTestsRequest struct {
-		Data     knownTestsRequestHeader    `json:"data"`
-		PageInfo *knownTestsRequestPageInfo `json:"page_info,omitempty"`
+		Data knownTestsRequestHeader `json:"data"`
 	}
 
 	knownTestsRequestHeader struct {
@@ -44,10 +43,11 @@ type (
 	}
 
 	KnownTestsRequestData struct {
-		Service        string             `json:"service"`
-		Env            string             `json:"env"`
-		RepositoryURL  string             `json:"repository_url"`
-		Configurations testConfigurations `json:"configurations"`
+		Service        string                     `json:"service"`
+		Env            string                     `json:"env"`
+		RepositoryURL  string                     `json:"repository_url"`
+		Configurations testConfigurations         `json:"configurations"`
+		PageInfo       *knownTestsRequestPageInfo `json:"page_info,omitempty"`
 	}
 
 	knownTestsResponse struct {
@@ -56,11 +56,11 @@ type (
 			Type       string                 `json:"type"`
 			Attributes KnownTestsResponseData `json:"attributes"`
 		} `json:"data"`
-		PageInfo *knownTestsResponsePageInfo `json:"page_info,omitempty"`
 	}
 
 	KnownTestsResponseData struct {
-		Tests KnownTestsResponseDataModules `json:"tests"`
+		Tests    KnownTestsResponseDataModules `json:"tests"`
+		PageInfo *knownTestsResponsePageInfo   `json:"page_info,omitempty"`
 	}
 
 	KnownTestsResponseDataModules map[string]KnownTestsResponseDataSuites
@@ -92,14 +92,14 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 				Env:            c.environment,
 				RepositoryURL:  c.repositoryURL,
 				Configurations: c.testConfigurations,
+				PageInfo:       &knownTestsRequestPageInfo{},
 			},
 		},
-		PageInfo: &knownTestsRequestPageInfo{},
 	}
 
 	cacheRequest := body
 	cacheRequest.Data.ID = ""
-	cacheRequest.PageInfo = nil
+	cacheRequest.Data.Attributes.PageInfo = nil
 	return readThroughShortLivedCache(
 		c,
 		readCacheEndpointKnownTests,
@@ -156,10 +156,10 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 				}
 
 				// Check if there are more pages
-				if responseObject.PageInfo == nil || !responseObject.PageInfo.HasNext {
+				if responseObject.Data.Attributes.PageInfo == nil || !responseObject.Data.Attributes.PageInfo.HasNext {
 					break
 				}
-				body.PageInfo.PageState = responseObject.PageInfo.Cursor
+				body.Data.Attributes.PageInfo.PageState = responseObject.Data.Attributes.PageInfo.Cursor
 			}
 
 			telemetry.KnownTestsResponseTests(float64(knownTestsResponseTestCount(&accumulated)))

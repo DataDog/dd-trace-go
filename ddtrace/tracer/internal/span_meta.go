@@ -132,16 +132,6 @@ func (sm *SpanMeta) Version() (string, bool) { return sm.promotedAttrs.Get(AttrV
 // Language returns the value of the "language" promoted attribute.
 func (sm *SpanMeta) Language() (string, bool) { return sm.promotedAttrs.Get(AttrLanguage) }
 
-// Range calls fn for each flat-map entry. Promoted attrs are not in sm.m
-// and are not yielded. Iteration stops if fn returns false.
-func (sm *SpanMeta) Range(fn func(k, v string) bool) {
-	for k, v := range sm.m {
-		if !fn(k, v) {
-			return
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Write methods
 // ---------------------------------------------------------------------------

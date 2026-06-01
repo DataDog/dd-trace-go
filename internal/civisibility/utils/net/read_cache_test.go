@@ -688,11 +688,11 @@ func TestReadCacheGetKnownTestsCachesAccumulatedPages(t *testing.T) {
 		response.Data.Type = knownTestsRequestType
 		switch count {
 		case 1:
-			require.Empty(t, request.PageInfo.PageState)
+			require.Empty(t, request.Data.Attributes.PageInfo.PageState)
 			response.Data.Attributes.Tests = KnownTestsResponseDataModules{"module": {"suite": {"TestOne"}}}
-			response.PageInfo = &knownTestsResponsePageInfo{Cursor: "next", HasNext: true}
+			response.Data.Attributes.PageInfo = &knownTestsResponsePageInfo{Cursor: "next", HasNext: true}
 		case 2:
-			require.Equal(t, "next", request.PageInfo.PageState)
+			require.Equal(t, "next", request.Data.Attributes.PageInfo.PageState)
 			response.Data.Attributes.Tests = KnownTestsResponseDataModules{"module": {"suite": {"TestTwo"}}}
 		default:
 			t.Fatalf("unexpected known tests request %d", count)
