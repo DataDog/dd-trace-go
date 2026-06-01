@@ -58,7 +58,7 @@ const (
 	ProxyHeaderStage = "X-Dd-Proxy-Stage"
 
 	PubsubHeaderSubscriptionName = "X-Goog-Pubsub-Subscription-Name"
-	PubsubHeaderMessageId        = "X-Goog-Pubsub-Message-Id"
+	PubsubHeaderMessageID        = "X-Goog-Pubsub-Message-Id"
 )
 
 type proxyDetails struct {
@@ -77,7 +77,7 @@ type proxyContext struct {
 
 type pubsubContext struct {
 	subscriptionName string
-	messageId        string
+	messageID        string
 }
 
 var (
@@ -188,13 +188,13 @@ func extractInferredPubsubSpan(headers http.Header) (*pubsubContext, error) {
 		return nil, errors.New("pubsub header subscription name does not exist")
 	}
 
-	if _, ok := headers[PubsubHeaderMessageId]; !ok {
+	if _, ok := headers[PubsubHeaderMessageID]; !ok {
 		return nil, errors.New("pubsub header message Id does not exist")
 	}
 
 	return &pubsubContext{
 		subscriptionName: headers.Get(PubsubHeaderSubscriptionName),
-		messageId:        headers.Get(PubsubHeaderMessageId),
+		messageID:        headers.Get(PubsubHeaderMessageID),
 	}, nil
 }
 func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
@@ -213,8 +213,8 @@ func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanCon
 
 			// subscription name is formatted as projects/{project_id}/subscriptions/{sub_id}
 			parts := strings.Split(pubsubContex.subscriptionName, "/")
-			projectId := parts[1]
-			subId := parts[3]
+			projectID := parts[1]
+			subID := parts[3]
 
 			cfg.Parent = parent
 			cfg.Tags[ext.SpanType] = ext.SpanTypeMessageConsumer
@@ -223,11 +223,11 @@ func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanCon
 			cfg.Tags[ext.Component] = component
 			cfg.Tags[ext.ResourceName] = pubsubContex.subscriptionName
 			cfg.Tags[ext.SpanKind] = ext.SpanKindConsumer
-			cfg.Tags[ext.MessagingDestinationName] = subId
+			cfg.Tags[ext.MessagingDestinationName] = subID
 			cfg.Tags["messaging.operation"] = "receive"
-			cfg.Tags["messaging.message_id"] = pubsubContex.messageId
-			cfg.Tags["message_id"] = pubsubContex.messageId // duplicate to align with existing pubsub tags for pull subscriptions
-			cfg.Tags["gcloud.project_id"] = projectId
+			cfg.Tags["messaging.message_id"] = pubsubContex.messageID
+			cfg.Tags["message_id"] = pubsubContex.messageID // duplicate to align with existing pubsub tags for pull subscriptions
+			cfg.Tags["gcloud.project_id"] = projectID
 			cfg.Tags[ext.MessagingSystem] = "googlepubsub"
 			cfg.Tags["_dd.inferred_span"] = 1
 		},
