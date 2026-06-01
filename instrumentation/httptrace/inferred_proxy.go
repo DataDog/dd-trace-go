@@ -57,8 +57,14 @@ const (
 	// in which the request is being processed.
 	ProxyHeaderStage = "X-Dd-Proxy-Stage"
 
+	// PubsubHeaderSubscriptionName is the header gcp Pub/Sub sets on push deliveries when
+	// write metadata is enabled. The value is the full subscription resource name
+	// (projects/{project_id}/subscriptions/{subscription_id}).
 	PubsubHeaderSubscriptionName = "X-Goog-Pubsub-Subscription-Name"
-	PubsubHeaderMessageID        = "X-Goog-Pubsub-Message-Id"
+
+	// PubsubHeaderMessageID is the header gcp Pub/Sub sets on push deliveries when write
+	// metadata is enabled. The value is the unique ID of the delivered message.
+	PubsubHeaderMessageID = "X-Goog-Pubsub-Message-Id"
 )
 
 type proxyDetails struct {
