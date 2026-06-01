@@ -125,7 +125,7 @@ func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 	type cookieCutter struct {
 		_     bool // spanContext.updated
 		trace *struct {
-			_               sync.RWMutex      // trace.mu
+			mu              sync.RWMutex      // trace.mu
 			_               []any             // trace.spans
 			_               map[string]string // trace.tags
 			propagatingTags map[string]string // trace level tags that will be propagated across service boundaries
@@ -133,7 +133,9 @@ func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 	}
 	ptr := uintptr(unsafe.Pointer(ctx))
 	cc := (*cookieCutter)(*(*unsafe.Pointer)(unsafe.Pointer(&ptr)))
+	cc.trace.mu.Lock()
 	cc.trace.propagatingTags[k] = v
+	cc.trace.mu.Unlock()
 }
 
 // StartTelemetryRecorder starts a new telemetry mock client and returns it.
