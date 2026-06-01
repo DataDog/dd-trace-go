@@ -134,8 +134,11 @@ func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 	ptr := uintptr(unsafe.Pointer(ctx))
 	cc := (*cookieCutter)(*(*unsafe.Pointer)(unsafe.Pointer(&ptr)))
 	cc.trace.mu.Lock()
+	defer cc.trace.mu.Unlock()
+	if cc.trace.propagatingTags == nil {
+		cc.trace.propagatingTags = make(map[string]string)
+	}
 	cc.trace.propagatingTags[k] = v
-	cc.trace.mu.Unlock()
 }
 
 // StartTelemetryRecorder starts a new telemetry mock client and returns it.
