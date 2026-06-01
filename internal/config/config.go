@@ -106,9 +106,13 @@ type Config struct {
 	partialFlushEnabled bool
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled      bool
+	traceAnalyticsEnabled        bool
 	dataStreamsMonitoringEnabled bool
-	// dynamicInstrumentationEnabled controls if the target application can be modified by Dynamic Instrumentation or not.
-	dynamicInstrumentationEnabled bool
+	// dynamicInstrumentationEnabled controls whether the target application can
+	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
+	// explicitly set to false (as opposed to starting as false by default), then
+	// it is frozen -- it cannot be overwritten by Remote Config.
+	dynamicInstrumentationEnabled *DynamicConfig[bool]
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
@@ -212,15 +216,18 @@ func loadConfig() *Config {
 	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
+	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
-	cfg.dynamicInstrumentationEnabled = p.GetBool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
-	cfg.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
+	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
+		log.Warn("OTEL_LOGS_EXPORTER is not supported")
+	}
 	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV04, validateTraceProtocolVersion))
 	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
@@ -233,6 +240,9 @@ func loadConfig() *Config {
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat)
+
+	enabled, origin := p.GetBoolWithOrigin("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
+	cfg.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, origin, equal[bool])
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -528,6 +538,27 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, prod
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 
+func (c *Config) DynamicInstrumentationEnabled() bool {
+	return c.dynamicInstrumentationEnabled.Get()
+}
+
+// DynamicInstrumentationEnabledConfig returns the DynamicConfig for the
+// dynamic instrumentation enabled flag. Products use this to apply RC updates
+// and inspect the baseline for local-explicit gating.
+func (c *Config) DynamicInstrumentationEnabledConfig() *DynamicConfig[bool] {
+	return c.dynamicInstrumentationEnabled
+}
+
+func (c *Config) SetDynamicInstrumentationEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_DYNAMIC_INSTRUMENTATION_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.dynamicInstrumentationEnabled.setBaseline(enabled, origin)
+	configtelemetry.Report("DD_DYNAMIC_INSTRUMENTATION_ENABLED", enabled, origin)
+}
+
 func (c *Config) TraceRateLimitPerSecond() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -635,6 +666,12 @@ func (c *Config) SetStatsComputationEnabled(enabled bool, origin telemetry.Origi
 	}
 	c.statsComputationEnabled = enabled
 	configtelemetry.Report("DD_TRACE_STATS_COMPUTATION_ENABLED", enabled, origin)
+}
+
+func (c *Config) TraceAnalyticsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceAnalyticsEnabled
 }
 
 func (c *Config) LogDirectory() string {
@@ -930,6 +967,22 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin, p
 	}
 	c.ciVisibilityEnabled = enabled
 	configtelemetry.Report(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+// CIVisibilityAgentless returns the raw DD_CIVISIBILITY_AGENTLESS_ENABLED value.
+// Only valid inside a CIVisibilityEnabled() block; prefer CIVisibilityAgentlessActive() elsewhere.
+func (c *Config) CIVisibilityAgentless() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentless
+}
+
+// CIVisibilityAgentlessActive reports whether agentless CI Visibility mode is in effect.
+// Agentless is only meaningful when CI Visibility itself is enabled.
+func (c *Config) CIVisibilityAgentlessActive() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityEnabled && c.ciVisibilityAgentless
 }
 
 func (c *Config) LogsOTelEnabled() bool {

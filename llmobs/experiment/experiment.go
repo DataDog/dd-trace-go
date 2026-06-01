@@ -92,7 +92,38 @@ func NewTask(name string, fn TaskFunc) Task {
 }
 
 // EvaluatorFunc is the type for Evaluator functions.
+//
+// The returned value may be a bare result (bool / numeric / string for
+// boolean / score / categorical metric types respectively) or an
+// *EvaluatorResult to additionally populate reasoning, assessment,
+// metadata, or per-evaluation tags. See EvaluatorResult.
 type EvaluatorFunc func(ctx context.Context, rec dataset.Record, output any) (any, error)
+
+// EvaluatorResult is the richer return shape for an Evaluator. Returning
+// *EvaluatorResult from an EvaluatorFunc populates the documented
+// LLM Observability evaluation fields beyond the primary value; returning
+// a bare value is equivalent to setting only EvaluatorResult.Value.
+//
+// Parity with the Python SDK's EvaluatorResult on LLMObs experiments.
+type EvaluatorResult struct {
+	// Value is the primary evaluation result. Same shape as the bare
+	// EvaluatorFunc return: numeric types become score metrics, bool
+	// becomes a boolean metric, anything else (string, etc.) becomes
+	// categorical.
+	Value any
+	// Reasoning is a free-form explanation for the evaluation result
+	// (e.g. an LLM judge's reasoning paragraph). Empty means unset.
+	Reasoning string
+	// Assessment is an optional categorical assessment. Conventional
+	// values are "pass" and "fail"; empty means unset.
+	Assessment string
+	// Metadata is arbitrary structured metadata about this specific
+	// evaluation. Surfaces as `eval_metric_metadata` on the wire.
+	Metadata map[string]any
+	// Tags are per-evaluation tags applied in addition to experiment-
+	// level tags. Empty means unset.
+	Tags map[string]string
+}
 
 type namedEvaluator struct {
 	name string
@@ -202,10 +233,23 @@ type RecordResult struct {
 }
 
 // Evaluation represents the output of an evaluator.
+//
+// Reasoning, Assessment, Metadata, and Tags are populated when the
+// evaluator returned an *EvaluatorResult; they are the zero value when
+// the evaluator returned a bare result.
 type Evaluation struct {
 	Name  string
 	Value any
 	Error error
+
+	// Reasoning is a free-form explanation for the evaluation result.
+	Reasoning string
+	// Assessment is an optional categorical assessment ("pass" / "fail" / "").
+	Assessment string
+	// Metadata is arbitrary per-evaluation metadata.
+	Metadata map[string]any
+	// Tags are per-evaluation tags applied in addition to experiment-level tags.
+	Tags map[string]string
 }
 
 // New creates a new Experiment.
@@ -516,17 +560,31 @@ func (e *Experiment) runEvaluators(ctx context.Context, results []*RecordResult,
 						log.Warn("llmobs: %s", retErr)
 					}
 				}
-				evs = append(evs, &Evaluation{
-					Name:  ev.Name(),
-					Value: val,
-					Error: err,
-				})
+				evs = append(evs, newEvaluation(ev.Name(), val, err))
 			}
 			res.Evaluations = evs
 			return nil
 		})
 	}
 	return eg.Wait()
+}
+
+// newEvaluation unwraps an EvaluatorFunc return into an *Evaluation.
+// When the function returned a *EvaluatorResult, its fields populate
+// the matching Evaluation fields; otherwise the bare value becomes
+// Evaluation.Value and the other fields remain unset.
+func newEvaluation(name string, val any, err error) *Evaluation {
+	ev := &Evaluation{Name: name, Error: err}
+	if r, ok := val.(*EvaluatorResult); ok && r != nil {
+		ev.Value = r.Value
+		ev.Reasoning = r.Reasoning
+		ev.Assessment = r.Assessment
+		ev.Metadata = r.Metadata
+		ev.Tags = r.Tags
+		return ev
+	}
+	ev.Value = val
+	return ev
 }
 
 func (e *Experiment) runSummaryEvaluators(ctx context.Context, results []*RecordResult, cfg *runCfg) ([]*Evaluation, error) {
@@ -548,11 +606,7 @@ func (e *Experiment) runSummaryEvaluators(ctx context.Context, results []*Record
 				log.Warn("llmobs: %s", retErr)
 			}
 		}
-		summaryEvals = append(summaryEvals, &Evaluation{
-			Name:  sumEv.Name(),
-			Value: val,
-			Error: err,
-		})
+		summaryEvals = append(summaryEvals, newEvaluation(sumEv.Name(), val, err))
 	}
 
 	return summaryEvals, nil
@@ -606,18 +660,21 @@ func (e *Experiment) generateMetricFromEvaluation(res *RecordResult, ev *Evaluat
 	}
 
 	return transport.ExperimentEvalMetricEvent{
-		MetricSource:     source,
-		SpanID:           res.SpanID,
-		TraceID:          res.TraceID,
-		TimestampMS:      res.Timestamp.UnixMilli(),
-		MetricType:       metricType,
-		Label:            ev.Name,
-		CategoricalValue: catVal,
-		ScoreValue:       scoreVal,
-		BooleanValue:     boolVal,
-		Error:            transport.NewErrorMessage(ev.Error),
-		Tags:             runTags,
-		ExperimentID:     e.id,
+		MetricSource:       source,
+		SpanID:             res.SpanID,
+		TraceID:            res.TraceID,
+		TimestampMS:        res.Timestamp.UnixMilli(),
+		MetricType:         metricType,
+		Label:              ev.Name,
+		CategoricalValue:   catVal,
+		ScoreValue:         scoreVal,
+		BooleanValue:       boolVal,
+		Error:              transport.NewErrorMessage(ev.Error),
+		Tags:               evalMetricTags(runTags, ev.Tags),
+		ExperimentID:       e.id,
+		Reasoning:          ev.Reasoning,
+		Assessment:         ev.Assessment,
+		EvalMetricMetadata: ev.Metadata,
 	}
 }
 
@@ -646,19 +703,46 @@ func (e *Experiment) generateMetricFromSummaryEvaluation(ev *Evaluation, timesta
 
 	// Summary evaluations don't have span/trace IDs, but use the latest timestamp from per-record evaluations.
 	return transport.ExperimentEvalMetricEvent{
-		MetricSource:     "summary",
-		SpanID:           "",
-		TraceID:          "",
-		TimestampMS:      timestamp.UnixMilli(),
-		MetricType:       metricType,
-		Label:            ev.Name,
-		CategoricalValue: catVal,
-		ScoreValue:       scoreVal,
-		BooleanValue:     boolVal,
-		Error:            transport.NewErrorMessage(ev.Error),
-		Tags:             runTags,
-		ExperimentID:     e.id,
+		MetricSource:       "summary",
+		SpanID:             "",
+		TraceID:            "",
+		TimestampMS:        timestamp.UnixMilli(),
+		MetricType:         metricType,
+		Label:              ev.Name,
+		CategoricalValue:   catVal,
+		ScoreValue:         scoreVal,
+		BooleanValue:       boolVal,
+		Error:              transport.NewErrorMessage(ev.Error),
+		Tags:               evalMetricTags(runTags, ev.Tags),
+		ExperimentID:       e.id,
+		Reasoning:          ev.Reasoning,
+		Assessment:         ev.Assessment,
+		EvalMetricMetadata: ev.Metadata,
 	}
+}
+
+// evalMetricTags selects the tag list shipped on a single eval metric.
+//
+// When the evaluator did not set per-evaluation tags (the legacy shape,
+// or an EvaluatorResult with empty Tags), the metric carries the
+// experiment-level runTags exactly as before — preserving backwards-
+// compatible correlation by experiment_id / run_id / dataset_id.
+//
+// When the evaluator did set per-evaluation tags, those tags replace
+// the runTags on the metric. This matches the Python SDK, where
+// experiment-level identifiers live on the experiment span (not on each
+// eval metric) and the metric carries only what the evaluator chose to
+// attach. Backend correlation still works via the experiment_id field
+// on ExperimentEvalMetricEvent and via the span's own tag set.
+func evalMetricTags(runTags []string, evalTags map[string]string) []string {
+	if len(evalTags) == 0 {
+		return runTags
+	}
+	out := make([]string, 0, len(evalTags))
+	for k, v := range evalTags {
+		out = append(out, k+":"+v)
+	}
+	return out
 }
 
 func asFloat64(x any) float64 {
