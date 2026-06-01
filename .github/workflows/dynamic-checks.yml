@@ -63,7 +63,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@1f350ca511be980515cf08b0bd64182b9c6e5d32
         with:
           policy: dd-trace-go
 

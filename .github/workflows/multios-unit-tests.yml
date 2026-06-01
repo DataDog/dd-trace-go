@@ -46,7 +46,7 @@ jobs:
         run: |
           "normalized_workspace=${{ github.workspace }}" >> $env:GITHUB_ENV
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
@@ -77,7 +77,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@1f350ca511be980515cf08b0bd64182b9c6e5d32
         with:
           policy: dd-trace-go
 
@@ -100,7 +100,7 @@ jobs:
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
-        uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
+        uses: DataDog/coverage-upload-github-action@6c4bd935248daa6f0ef94e3e6ba71ad5ad079998
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
           files: coverage.txt
