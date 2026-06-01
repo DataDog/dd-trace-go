@@ -16,9 +16,9 @@ import (
 type Package string
 
 const (
-	Package99DesignsGQLGen         Package = "99designs/gqlgen"
-	PackageAerospikeClientGoV7     Package = "aerospike/aerospike-client-go.v7"
-	PackageAWSSDKGo                Package = "aws/aws-sdk-go"
+	Package99DesignsGQLGen      Package = "99designs/gqlgen"
+	PackageAerospikeClientGoV7  Package = "aerospike/aerospike-client-go.v7"
+	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
 	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
 	PackageAWSDatadogLambdaGo   Package = "aws/datadog-lambda-go"
 	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
