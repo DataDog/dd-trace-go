@@ -216,6 +216,10 @@ jobs:
         image: localstack/localstack:4.14.0@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a
         ports:
           - 4566:4566
+      aerospike:
+        image: aerospike:ce-7.2.0.6
+        ports:
+          - 3000:3000
     steps:
       - name: Restore repo cache
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
