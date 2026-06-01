@@ -133,7 +133,7 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 
 			if err != nil {
 				telemetry.TestManagementTestsRequestErrors(telemetry.NetworkErrorType)
-				return readCacheLiveResult[*TestManagementTestsResponseDataModules]{}, fmt.Errorf("sending known tests request: %s", err)
+				return readCacheLiveResult[*TestManagementTestsResponseDataModules]{}, fmt.Errorf("sending test management tests request: %s", err)
 			}
 
 			if response.StatusCode < 200 || response.StatusCode >= 300 {
