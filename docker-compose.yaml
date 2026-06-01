@@ -1,4 +1,8 @@
 services:
+  aerospike:
+    image: aerospike/aerospike-server-community:7.1.0
+    ports:
+      - "3000:3000"
   cassandra:
     image: cassandra:5
     environment:

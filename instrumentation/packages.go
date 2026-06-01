@@ -16,8 +16,9 @@ import (
 type Package string
 
 const (
-	Package99DesignsGQLGen      Package = "99designs/gqlgen"
-	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
+	Package99DesignsGQLGen         Package = "99designs/gqlgen"
+	PackageAerospikeClientGoV7     Package = "aerospike/aerospike-client.v7"
+	PackageAWSSDKGo                Package = "aws/aws-sdk-go"
 	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
 	PackageAWSDatadogLambdaGo   Package = "aws/datadog-lambda-go"
 	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
@@ -184,6 +185,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("aws.lambda"),
 				buildOpNameV0:      staticName("aws.lambda"),
 				buildOpNameV1:      staticName("aws.lambda"),
+			},
+		},
+	},
+	PackageAerospikeClientGoV7: {
+		TracedPackage: "github.com/aerospike/aerospike-client-go/v7",
+		EnvVarPrefix:  "AEROSPIKE",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("aerospike"),
+				buildOpNameV0:      staticName("aerospike.command"),
+				buildOpNameV1:      staticName("aerospike.command"),
 			},
 		},
 	},

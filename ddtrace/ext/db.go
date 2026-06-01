@@ -38,6 +38,7 @@ const (
 	DBSystemConsulKV      = "consul"
 	DBSystemLevelDB       = "leveldb"
 	DBSystemBuntDB        = "buntdb"
+	DBSystemAerospike     = "aerospike"
 )
 
 // MicrosoftSQLServer tags.
