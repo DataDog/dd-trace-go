@@ -86,10 +86,6 @@ var (
 			spanName:  "aws.apigateway",
 			component: "aws-apigateway",
 		},
-		"gcp-pubsub": {
-			spanName:  "gcp.pubsub",
-			component: "gcp-pubsub",
-		},
 	}
 )
 
@@ -202,14 +198,10 @@ func extractInferredPubsubSpan(headers http.Header) (*pubsubContext, error) {
 	}, nil
 }
 func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
-	proxySpanInfo := supportedProxies["gcp-pubsub"]
-	log.Debug(`Successfully extracted inferred span info ${proxyContext} for proxy: ${proxyContext.proxySystemName}`)
 
-	configService := "domainName"
-	if configService == "" {
-		configService = globalconfig.ServiceName()
-	}
-
+	configService := globalconfig.ServiceName()
+	spanName := "pubsub.receive"
+	component := "cloud.google.com/go/pubsub"
 	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+1)
 	copy(optsLocal, opts)
 
@@ -226,9 +218,9 @@ func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanCon
 
 			cfg.Parent = parent
 			cfg.Tags[ext.SpanType] = ext.SpanTypeMessageConsumer
-			cfg.Tags[ext.SpanName] = "pubsub.receive"
+			cfg.Tags[ext.SpanName] = spanName
 			cfg.Tags[ext.ServiceName] = configService
-			cfg.Tags[ext.Component] = "cloud.google.com/go/pubsub"
+			cfg.Tags[ext.Component] = component
 			cfg.Tags[ext.ResourceName] = pubsubContex.subscriptionName
 			cfg.Tags[ext.SpanKind] = ext.SpanKindConsumer
 			cfg.Tags[ext.MessagingDestinationName] = subId
@@ -241,7 +233,7 @@ func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanCon
 		},
 	)
 
-	span := tracer.StartSpan(proxySpanInfo.spanName, optsLocal...)
+	span := tracer.StartSpan(spanName, optsLocal...)
 
 	return span
 }
