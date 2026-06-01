@@ -7,6 +7,7 @@ package aerospike
 
 import (
 	"context"
+	"math"
 	"os"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
@@ -246,4 +248,164 @@ func TestWithService(t *testing.T) {
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 	assert.Equal(t, "my-aerospike", spans[0].Tag(ext.ServiceName))
+}
+
+// Unit tests that do not require a running Aerospike server.
+
+func newTestClient(opts ...ClientOption) *Client {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	for _, opt := range opts {
+		opt.apply(cfg)
+	}
+	return &Client{ifc: &mockAsClient{}, cfg: cfg, context: context.Background()}
+}
+
+func TestConfigDefaults(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+
+	assert.Equal(t, "aerospike", cfg.serviceName)
+	assert.Equal(t, string(instrumentation.PackageAerospikeClientGoV7), cfg.serviceSource)
+	assert.Equal(t, "aerospike.command", cfg.operationName)
+	assert.True(t, math.IsNaN(cfg.analyticsRate))
+}
+
+func TestWithServiceOption(t *testing.T) {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	WithService("custom").apply(cfg)
+
+	assert.Equal(t, "custom", cfg.serviceName)
+	assert.Equal(t, instrumentation.ServiceSourceWithServiceOption, cfg.serviceSource)
+}
+
+func TestWithAnalyticsOption(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
+		cfg := new(clientConfig)
+		defaults(cfg)
+		WithAnalytics(true).apply(cfg)
+		assert.Equal(t, 1.0, cfg.analyticsRate)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		cfg := new(clientConfig)
+		defaults(cfg)
+		WithAnalytics(false).apply(cfg)
+		assert.True(t, math.IsNaN(cfg.analyticsRate))
+	})
+}
+
+func TestWithAnalyticsRateOption(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		cfg := new(clientConfig)
+		defaults(cfg)
+		WithAnalyticsRate(0.42).apply(cfg)
+		assert.InDelta(t, 0.42, cfg.analyticsRate, 1e-9)
+	})
+
+	t.Run("out_of_range", func(t *testing.T) {
+		cfg := new(clientConfig)
+		defaults(cfg)
+		WithAnalyticsRate(1.5).apply(cfg)
+		assert.True(t, math.IsNaN(cfg.analyticsRate))
+	})
+}
+
+func TestStartSpanTags(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	c := newTestClient(WithService("svc"))
+	span := c.startSpan("Put")
+	span.Finish()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	validateAerospikeSpan(t, spans[0], "Put")
+	assert.Equal(t, "svc", spans[0].Tag(ext.ServiceName))
+	assert.Nil(t, spans[0].Tag(ext.EventSampleRate))
+}
+
+func TestStartSpanAnalyticsRate(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	c := newTestClient(WithAnalyticsRate(0.5))
+	span := c.startSpan("Get")
+	span.Finish()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.InDelta(t, 0.5, spans[0].Tag(ext.EventSampleRate), 1e-9)
+}
+
+func TestWithContextUnit(t *testing.T) {
+	c := newTestClient()
+	type ctxKey struct{}
+	ctx := context.WithValue(context.Background(), ctxKey{}, "v")
+
+	c2 := c.WithContext(ctx)
+
+	assert.Equal(t, ctx, c2.context)
+	assert.Same(t, c.cfg, c2.cfg)
+	assert.Equal(t, c.Client, c2.Client)
+}
+
+func TestWrappedMethods(t *testing.T) {
+	key, err := as.NewKey("ns", "set", "pk")
+	require.NoError(t, err)
+
+	cases := []struct {
+		name string
+		fn   func(*Client)
+	}{
+		{"Put", func(c *Client) { c.Put(nil, key, nil) }},
+		{"PutBins", func(c *Client) { c.PutBins(nil, key) }},
+		{"Append", func(c *Client) { c.Append(nil, key, nil) }},
+		{"AppendBins", func(c *Client) { c.AppendBins(nil, key) }},
+		{"Prepend", func(c *Client) { c.Prepend(nil, key, nil) }},
+		{"PrependBins", func(c *Client) { c.PrependBins(nil, key) }},
+		{"Add", func(c *Client) { c.Add(nil, key, nil) }},
+		{"AddBins", func(c *Client) { c.AddBins(nil, key) }},
+		{"Delete", func(c *Client) { c.Delete(nil, key) }},
+		{"Touch", func(c *Client) { c.Touch(nil, key) }},
+		{"Exists", func(c *Client) { c.Exists(nil, key) }},
+		{"BatchExists", func(c *Client) { c.BatchExists(nil, []*as.Key{key}) }},
+		{"Get", func(c *Client) { c.Get(nil, key) }},
+		{"GetHeader", func(c *Client) { c.GetHeader(nil, key) }},
+		{"BatchGet", func(c *Client) { c.BatchGet(nil, []*as.Key{key}) }},
+		{"BatchGetHeader", func(c *Client) { c.BatchGetHeader(nil, []*as.Key{key}) }},
+		{"BatchGetOperate", func(c *Client) { c.BatchGetOperate(nil, []*as.Key{key}) }},
+		{"Operate", func(c *Client) { c.Operate(nil, key) }},
+		{"ScanAll", func(c *Client) { c.ScanAll(nil, "ns", "set") }},
+		{"ScanPartitions", func(c *Client) { c.ScanPartitions(nil, nil, "ns", "set") }},
+		{"BatchGetComplex", func(c *Client) { c.BatchGetComplex(nil, nil) }},
+		{"BatchDelete", func(c *Client) { c.BatchDelete(nil, nil, []*as.Key{key}) }},
+		{"BatchOperate", func(c *Client) { c.BatchOperate(nil, nil) }},
+		{"BatchExecute", func(c *Client) { c.BatchExecute(nil, nil, []*as.Key{key}, "pkg", "fn") }},
+		{"Execute", func(c *Client) { c.Execute(nil, key, "pkg", "fn") }},
+		{"ExecuteUDF", func(c *Client) { c.ExecuteUDF(nil, nil, "pkg", "fn") }},
+		{"ExecuteUDFNode", func(c *Client) { c.ExecuteUDFNode(nil, nil, nil, "pkg", "fn") }},
+		{"QueryExecute", func(c *Client) { c.QueryExecute(nil, nil, nil) }},
+		{"QueryPartitions", func(c *Client) { c.QueryPartitions(nil, nil, nil) }},
+		{"Query", func(c *Client) { c.Query(nil, nil) }},
+		{"QueryNode", func(c *Client) { c.QueryNode(nil, nil, nil) }},
+		{"ScanNode", func(c *Client) { c.ScanNode(nil, nil, "ns", "set") }},
+		{"Truncate", func(c *Client) { c.Truncate(nil, "ns", "set", nil) }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			c := newTestClient()
+			tc.fn(c)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			validateAerospikeSpan(t, spans[0], tc.name)
+		})
+	}
 }
