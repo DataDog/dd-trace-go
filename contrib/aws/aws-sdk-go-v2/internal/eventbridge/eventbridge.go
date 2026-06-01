@@ -84,7 +84,6 @@ func eventBridgeEdgeTags(entry *types.PutEventsRequestEntry) []string {
 	return []string{
 		"direction:out",
 		"exchange:" + eventBusName(entry),
-		"topic:" + detailType(entry),
 		"type:eventbridge",
 	}
 }
