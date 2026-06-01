@@ -181,21 +181,6 @@ type ResponseList[T any] struct {
 	Meta ResponseMeta      `json:"meta"`
 }
 
-// v2RecordItem is the wire format for a single item in the v2 dataset-records list response.
-// The v2 endpoint returns a flat object (id, input, expected_output, metadata at the top level),
-// unlike the unstable endpoint which wraps fields under "attributes".
-type v2RecordItem struct {
-	ID             string `json:"id"`
-	Input          any    `json:"input"`
-	ExpectedOutput any    `json:"expected_output"`
-	Metadata       any    `json:"metadata"`
-}
-
-type v2RecordsList struct {
-	Data []v2RecordItem `json:"data"`
-	Meta ResponseMeta   `json:"meta"` // flat meta.after, same shape as unstable endpoint
-}
-
 type ResponseData[T any] struct {
 	ID         string `json:"id"`
 	Type       string `json:"type"`
@@ -216,6 +201,21 @@ type (
 
 	CreateExperimentResponse = Response[ExperimentView]
 )
+
+// DatasetRecordItemV2 is the wire format for a single item in the v2 dataset-records list response.
+// The v2 endpoint returns a flat object (id, input, expected_output, metadata at the top level),
+// unlike the unstable endpoint which wraps fields under "attributes".
+type DatasetRecordItemV2 struct {
+	ID             string `json:"id"`
+	Input          any    `json:"input"`
+	ExpectedOutput any    `json:"expected_output"`
+	Metadata       any    `json:"metadata"`
+}
+
+type GetDatasetRecordsResponseV2 struct {
+	Data []DatasetRecordItemV2 `json:"data"`
+	Meta ResponseMeta          `json:"meta"`
+}
 
 func (c *Transport) GetDatasetByName(ctx context.Context, name, projectID string) (*DatasetView, error) {
 	q := url.Values{}
@@ -362,7 +362,7 @@ func (c *Transport) BatchUpdateDataset(
 // version, when non-nil, requests a specific historical snapshot; nil fetches the latest version.
 // Returns the records, the cursor for the next page (empty string if no more pages), and any error.
 func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datasetID, cursor string, version *int) ([]DatasetRecordView, string, error) {
-	recordsPath := fmt.Sprintf("/api/v2/llm-obs/v1/%s/datasets/%s/records",
+	recordsPath := fmt.Sprintf("%s/%s/datasets/%s/records", endpointPrefixDNEStable,
 		url.PathEscape(projectID), url.PathEscape(datasetID))
 
 	q := url.Values{}
@@ -384,7 +384,7 @@ func (c *Transport) GetDatasetRecordsPage(ctx context.Context, projectID, datase
 		return nil, "", fmt.Errorf("unexpected status %d: %s", result.statusCode, string(result.body))
 	}
 
-	var recordsResp v2RecordsList
+	var recordsResp GetDatasetRecordsResponseV2
 	if err := json.Unmarshal(result.body, &recordsResp); err != nil {
 		return nil, "", fmt.Errorf("failed to decode json response: %w", err)
 	}
