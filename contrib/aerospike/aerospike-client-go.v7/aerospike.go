@@ -100,6 +100,7 @@ type Client struct {
 func (c *Client) WithContext(ctx context.Context) *Client {
 	return &Client{
 		Client:  c.Client,
+		ifc:     c.ifc,
 		cfg:     c.cfg,
 		context: ctx,
 	}
