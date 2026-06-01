@@ -1043,7 +1043,7 @@ func (t *tracer) applyPPROFLabels(ctx gocontext.Context, span *Span, snap intern
 		labels = append(labels, traceprof.SpanID, strconv.FormatUint(span.spanID, 10))
 	}
 	if snap.ProfilerEndpoints && localRootSpan != nil {
-		resource, piiSafe := localRootSpan.getResourceIfPIISafe()
+		resource, piiSafe := localRootSpan.getResourceWithPIISafe()
 		if piiSafe {
 			labels = append(labels, traceprof.TraceEndpoint, resource)
 			if span == localRootSpan {
@@ -1072,10 +1072,10 @@ func spanResourcePIISafe(s *Span) bool {
 	return s.spanType == ext.SpanTypeWeb || s.spanType == ext.AppTypeRPC || s.spanType == ""
 }
 
-// getResourceIfPIISafe returns the span's resource and whether it's PII-safe
+// getResourceWithPIISafe returns the span's resource and whether it's PII-safe
 // under a single read lock. This avoids a TOCTOU race on the span type field
 // when the span may be concurrently recycled by the pool.
-func (s *Span) getResourceIfPIISafe() (resource string, safe bool) {
+func (s *Span) getResourceWithPIISafe() (resource string, safe bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.resource, spanResourcePIISafe(s)
