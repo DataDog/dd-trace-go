@@ -894,8 +894,9 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 func eventBridgeEdgeTagsForTest(entry *eventBridgeTypes.PutEventsRequestEntry) []string {
 	return []string{
 		"direction:out",
-		"type:eventbridge:" + eventBridgeNameForTest(entry),
+		"exchange:" + eventBridgeNameForTest(entry),
 		"topic:" + eventBridgeDetailTypeForTest(entry),
+		"type:eventbridge",
 	}
 }
 
