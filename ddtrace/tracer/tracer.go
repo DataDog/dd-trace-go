@@ -922,9 +922,11 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	// setTags takes s.mu internally. Tags may override service name
 	// (ServiceName option), so the top-level check below runs after.
 	span.setTags(opts.Tags)
-	// Re-sync the span snapshot after constructor tags: setTags may have mutated
-	// service, env, version, or peerService via SetTag before the span is shared.
-	span.context.setSpanSnapshot(span.spanSnapshot())
+	// The span snapshot is populated by tracer.StartSpan once all
+	// env/version/service-mapping mutations have been applied, so we
+	// don't take the SpanContext lock here. setSpanSnapshotMeta calls
+	// triggered by promoted SetTag keys still keep targeted fields in
+	// sync until then.
 	if isRootSpan {
 		traceprof.SetProfilerRootTags(span)
 	}

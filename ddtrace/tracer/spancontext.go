@@ -294,7 +294,10 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
-	context.setSpanSnapshot(span.spanSnapshot())
+	// The span snapshot is populated by tracer.StartSpan after all
+	// env/version/service-mapping mutations, so we skip the intermediate
+	// write here. Direct callers of newSpanContext (tests) do not read
+	// the snapshot before populating it.
 	// setting context.updated to false here is necessary to distinguish
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
