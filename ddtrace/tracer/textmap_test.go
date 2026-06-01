@@ -2785,12 +2785,11 @@ func FuzzComposeTracestate(f *testing.F) {
 		recvCtx := new(SpanContext)
 		recvCtx.trace = newTrace()
 
-		sm := &stringMutator{}
 		tags := map[string]string{key1: val1, key2: val2, key3: val3}
 		totalLen := 0
 		for key, val := range tags {
-			k := "_dd.p." + sm.Mutate(keyDisallowedFn, key)
-			v := sm.Mutate(valueDisallowedFn, val)
+			k := "_dd.p." + sanitizeTagKey(key)
+			v := sanitizeTagValue(val)
 			if strings.ContainsAny(k, ":;") {
 				t.Skipf("Skipping invalid tags")
 			}
@@ -2966,8 +2965,7 @@ func BenchmarkComposeTracestate(b *testing.B) {
 	}
 }
 
-func TestStringMutator(t *testing.T) {
-	sm := &stringMutator{}
+func TestSanitizeOrigin(t *testing.T) {
 	rx := regexp.MustCompile(`,|~|;|[^\x21-\x7E]+`)
 	tc := []struct {
 		name  string
@@ -2993,26 +2991,25 @@ func TestStringMutator(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			expected := rx.ReplaceAllString(tt.input, "_")
-			actual := sm.Mutate(originDisallowedFn, tt.input)
+			actual := sanitizeOrigin(tt.input)
 			assert.Equal(t, expected, actual)
 		})
 	}
 	t.Run("raw string", func(t *testing.T) {
 		expected := "a_b_c____d_~"
-		actual := sm.Mutate(originDisallowedFn, "a,b;c~~~~d;=")
+		actual := sanitizeOrigin("a,b;c~~~~d;=")
 		assert.Equal(t, expected, actual)
 	})
 }
 
-func FuzzStringMutator(f *testing.F) {
+func FuzzSanitizeOrigin(f *testing.F) {
 	rx := regexp.MustCompile(`,|~|;|[^\x21-\x7E]+`)
 	f.Add("a,b;c~~~~d;")
 	f.Add("a,b👍👍👍;c~d👍;")
 	f.Add("=")
 	f.Fuzz(func(t *testing.T, input string) {
-		sm := &stringMutator{}
 		expected := strings.ReplaceAll(rx.ReplaceAllString(input, "_"), "=", "~")
-		actual := sm.Mutate(originDisallowedFn, input)
+		actual := sanitizeOrigin(input)
 		if expected != actual {
 			t.Fatalf("expected: %s, actual: %s", expected, actual)
 		}
