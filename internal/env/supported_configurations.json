@@ -990,8 +990,8 @@
     "DD_TRACE_AEROSPIKE_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_AGENT_PORT": [
