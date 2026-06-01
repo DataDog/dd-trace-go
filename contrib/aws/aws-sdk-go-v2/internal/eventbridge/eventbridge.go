@@ -32,14 +32,14 @@ const (
 
 var instr = internal.Instr
 
-func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
+func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string, dsmEnabled bool) {
 	switch operation {
 	case "PutEvents":
-		handlePutEvents(ctx, span, in)
+		handlePutEvents(ctx, span, in, dsmEnabled)
 	}
 }
 
-func handlePutEvents(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func handlePutEvents(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, dsmEnabled bool) {
 	params, ok := in.Parameters.(*eventbridge.PutEventsInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PutEvents params")
@@ -49,7 +49,7 @@ func handlePutEvents(ctx context.Context, span *tracer.Span, in middleware.Initi
 	startTimeMillis := time.Now().UnixMilli()
 
 	for i := range params.Entries {
-		carrier, err := getTraceContext(ctx, span, &params.Entries[i], startTimeMillis)
+		carrier, err := getTraceContext(ctx, span, &params.Entries[i], startTimeMillis, dsmEnabled)
 		if err != nil {
 			instr.Logger().Debug("Unable to build trace context: %s", err.Error())
 			continue
@@ -58,19 +58,21 @@ func handlePutEvents(ctx context.Context, span *tracer.Span, in middleware.Initi
 	}
 }
 
-func getTraceContext(ctx context.Context, span *tracer.Span, entry *types.PutEventsRequestEntry, startTimeMillis int64) (tracer.TextMapCarrier, error) {
+func getTraceContext(ctx context.Context, span *tracer.Span, entry *types.PutEventsRequestEntry, startTimeMillis int64, dsmEnabled bool) (tracer.TextMapCarrier, error) {
 	carrier := tracer.TextMapCarrier{}
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
 		return nil, err
 	}
 
-	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
-		ctx,
-		options.CheckpointParams{PayloadSize: payloadSize(entry)},
-		eventBridgeEdgeTags(entry)...,
-	)
-	if ok {
-		datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
+	if dsmEnabled {
+		checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+			ctx,
+			options.CheckpointParams{PayloadSize: payloadSize(entry)},
+			eventBridgeEdgeTags(entry)...,
+		)
+		if ok {
+			datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
+		}
 	}
 
 	carrier[startTimeKey] = strconv.FormatInt(startTimeMillis, 10)

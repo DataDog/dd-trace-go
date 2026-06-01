@@ -133,11 +133,11 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		case "SQS":
 			sqsTracer.EnrichOperation(spanctx, span, in, operation)
 		case "SNS":
-			snsTracer.EnrichOperation(spanctx, span, in, operation)
+			snsTracer.EnrichOperation(spanctx, span, in, operation, mw.cfg.dataStreamsEnabled)
 		case "Kinesis":
-			kinesisTracer.EnrichOperation(spanctx, span, in, operation)
+			kinesisTracer.EnrichOperation(spanctx, span, in, operation, mw.cfg.dataStreamsEnabled)
 		case "EventBridge":
-			eventBridgeTracer.EnrichOperation(spanctx, span, in, operation)
+			eventBridgeTracer.EnrichOperation(spanctx, span, in, operation, mw.cfg.dataStreamsEnabled)
 		case "SFN":
 			sfnTracer.EnrichOperation(span, in, operation)
 		case "DynamoDB":

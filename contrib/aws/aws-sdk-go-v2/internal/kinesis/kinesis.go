@@ -28,23 +28,23 @@ const (
 
 var instr = internal.Instr
 
-func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
+func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string, dsmEnabled bool) {
 	switch operation {
 	case "PutRecord":
-		handlePutRecord(ctx, span, in)
+		handlePutRecord(ctx, span, in, dsmEnabled)
 	case "PutRecords":
-		handlePutRecords(ctx, span, in)
+		handlePutRecords(ctx, span, in, dsmEnabled)
 	}
 }
 
-func handlePutRecord(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func handlePutRecord(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, dsmEnabled bool) {
 	params, ok := in.Parameters.(*kinesis.PutRecordInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PutRecord params")
 		return
 	}
 
-	carrier, err := getTraceContext(ctx, span, streamName(params.StreamName, params.StreamARN), int64(putRecordSize(params)))
+	carrier, err := getTraceContext(ctx, span, streamName(params.StreamName, params.StreamARN), int64(putRecordSize(params)), dsmEnabled)
 	if err != nil {
 		instr.Logger().Debug("Unable to build trace context: %s", err.Error())
 		return
@@ -53,7 +53,7 @@ func handlePutRecord(ctx context.Context, span *tracer.Span, in middleware.Initi
 	params.Data = injectTraceContext(carrier, params.Data, params.PartitionKey)
 }
 
-func handlePutRecords(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func handlePutRecords(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, dsmEnabled bool) {
 	params, ok := in.Parameters.(*kinesis.PutRecordsInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PutRecords params")
@@ -62,7 +62,7 @@ func handlePutRecords(ctx context.Context, span *tracer.Span, in middleware.Init
 
 	stream := streamName(params.StreamName, params.StreamARN)
 	for i := range params.Records {
-		carrier, err := getTraceContext(ctx, span, stream, int64(putRecordsEntrySize(&params.Records[i])))
+		carrier, err := getTraceContext(ctx, span, stream, int64(putRecordsEntrySize(&params.Records[i])), dsmEnabled)
 		if err != nil {
 			instr.Logger().Debug("Unable to build trace context: %s", err.Error())
 			continue
@@ -71,21 +71,23 @@ func handlePutRecords(ctx context.Context, span *tracer.Span, in middleware.Init
 	}
 }
 
-func getTraceContext(ctx context.Context, span *tracer.Span, stream string, payloadSize int64) (tracer.TextMapCarrier, error) {
+func getTraceContext(ctx context.Context, span *tracer.Span, stream string, payloadSize int64, dsmEnabled bool) (tracer.TextMapCarrier, error) {
 	carrier := tracer.TextMapCarrier{}
 	if err := tracer.Inject(span.Context(), carrier); err != nil {
 		return nil, err
 	}
 
-	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
-		ctx,
-		options.CheckpointParams{PayloadSize: payloadSize},
-		"direction:out",
-		"type:kinesis",
-		"topic:"+stream,
-	)
-	if ok {
-		datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
+	if dsmEnabled {
+		checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+			ctx,
+			options.CheckpointParams{PayloadSize: payloadSize},
+			"direction:out",
+			"type:kinesis",
+			"topic:"+stream,
+		)
+		if ok {
+			datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
+		}
 	}
 
 	return carrier, nil

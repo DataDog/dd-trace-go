@@ -489,7 +489,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 				EndpointResolver: resolver,
 			}
 
-			AppendMiddleware(&awsCfg)
+			AppendMiddleware(&awsCfg, WithDataStreams())
 
 			snsClient := sns.NewFromConfig(awsCfg)
 			upstreamCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
@@ -671,7 +671,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 				EndpointResolver: resolver,
 			}
 
-			AppendMiddleware(&awsCfg)
+			AppendMiddleware(&awsCfg, WithDataStreams())
 
 			kinesisClient := kinesis.NewFromConfig(awsCfg)
 			putRecordInput := &kinesis.PutRecordInput{
@@ -834,7 +834,7 @@ func TestAppendMiddlewareEventBridgePutEvents(t *testing.T) {
 		EndpointResolver: resolver,
 	}
 
-	AppendMiddleware(&awsCfg)
+	AppendMiddleware(&awsCfg, WithDataStreams())
 
 	eventbridgeClient := eventbridge.NewFromConfig(awsCfg)
 	putEventsInput := &eventbridge.PutEventsInput{
