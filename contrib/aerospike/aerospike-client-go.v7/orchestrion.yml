@@ -5,7 +5,7 @@
 ---
 # yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
 meta:
-  name: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2
+  name: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2
   description: Aerospike client for Go.
 
 aspects:
@@ -19,7 +19,7 @@ aspects:
       - wrap-expression:
           imports:
             as: github.com/aerospike/aerospike-client-go/v7
-            aerospiketrace: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2
+            aerospiketrace: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2
           template: |-
             func(c *as.Client, err as.Error) (*aerospiketrace.Client, as.Error) {
               if c == nil || err != nil {

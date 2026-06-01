@@ -86,7 +86,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"type":     "aerospike",
 					},
 					Meta: map[string]string{
-						"component": "aerospike/aerospike-client.v7",
+						"component": "aerospike/aerospike-client-go.v7",
 						"span.kind": "client",
 						"db.system": "aerospike",
 					},
@@ -99,7 +99,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"type":     "aerospike",
 					},
 					Meta: map[string]string{
-						"component": "aerospike/aerospike-client.v7",
+						"component": "aerospike/aerospike-client-go.v7",
 						"span.kind": "client",
 						"db.system": "aerospike",
 					},

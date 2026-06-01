@@ -4,7 +4,7 @@ use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
-	./contrib/aerospike/aerospike-client.v7
+	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
 	./contrib/azure/apim-callout

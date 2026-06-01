@@ -6,7 +6,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.10.0-dev
-	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2 v2.10.0-dev
+	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.10.0-dev
@@ -313,7 +313,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../contrib/99designs/gqlgen
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 => ../../contrib/IBM/sarama
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 => ../../contrib/Shopify/sarama
-	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2 => ../../contrib/aerospike/aerospike-client.v7
+	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 => ../../contrib/aerospike/aerospike-client-go.v7
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../contrib/aws/aws-sdk-go-v2
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../contrib/aws/aws-sdk-go
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 => ../../contrib/cloud.google.com/go/pubsub.v1

@@ -9,7 +9,7 @@
 // the same methods, so should be seamless for existing applications. It also
 // has an additional `WithContext` method which can be used to connect a span
 // to an existing trace.
-package aerospike // import "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2"
+package aerospike // import "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2"
 
 import (
 	"context"
@@ -23,7 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
-const componentName = "aerospike/aerospike-client.v7"
+const componentName = "aerospike/aerospike-client-go.v7"
 
 var instr *instrumentation.Instrumentation
 
@@ -79,7 +79,7 @@ func WrapClient(client *as.Client, opts ...ClientOption) *Client {
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	instr.Logger().Debug("contrib/aerospike/aerospike-client.v7: Wrapping Client: %#v", cfg)
+	instr.Logger().Debug("contrib/aerospike/aerospike-client-go.v7: Wrapping Client: %#v", cfg)
 	return &Client{
 		Client:  client,
 		ifc:     client,

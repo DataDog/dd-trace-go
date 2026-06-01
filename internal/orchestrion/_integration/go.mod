@@ -97,7 +97,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.10.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2 v2.10.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.10.0-dev // indirect
@@ -392,7 +392,7 @@ require (
 	tags.cncf.io/container-device-interface v0.8.1 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2 => ../../../contrib/aerospike/aerospike-client.v7
+replace github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 => ../../../contrib/aerospike/aerospike-client-go.v7
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../../contrib/99designs/gqlgen
 
