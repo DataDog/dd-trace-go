@@ -352,5 +352,3 @@ replace (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../instrumentation/testutils/grpc
 	github.com/DataDog/dd-trace-go/v2 => ../..
 )
-
-replace google.golang.org/grpc => google.golang.org/grpc v1.70.0
