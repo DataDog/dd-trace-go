@@ -14,6 +14,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 	as "github.com/aerospike/aerospike-client-go/v7"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
@@ -61,8 +62,18 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	port, err := strconv.Atoi(mappedPort.Port())
 	require.NoError(t, err)
 
-	tc.client, err = as.NewClient(host, port)
-	require.NoError(t, err)
+	var aeroClient *as.Client
+	require.NoError(t,
+		backoff.Retry(
+			func() error {
+				var aerr as.Error
+				aeroClient, aerr = as.NewClient(host, port)
+				return aerr
+			},
+			backoff.NewExponentialBackOff(),
+		),
+	)
+	tc.client = aeroClient
 	t.Cleanup(func() { tc.client.Close() })
 }
 
