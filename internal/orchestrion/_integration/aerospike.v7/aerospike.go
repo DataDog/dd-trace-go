@@ -21,9 +21,17 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
+// aerospikeClient is a minimal interface satisfied by both *as.Client (without
+// orchestrion) and *aerospiketrace.Client (after orchestrion wraps NewClient).
+type aerospikeClient interface {
+	Put(policy *as.WritePolicy, key *as.Key, binMap as.BinMap) as.Error
+	Get(policy *as.BasePolicy, key *as.Key, binNames ...string) (*as.Record, as.Error)
+	Close()
+}
+
 type TestCase struct {
 	container testcontainers.Container
-	client    *as.Client
+	client    aerospikeClient
 }
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
