@@ -2331,6 +2331,17 @@ func BenchmarkPartialFlushing(b *testing.B) {
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
+		genBigTraces(b)
+	})
+	b.Run("Disabled", func(b *testing.B) {
+		genBigTraces(b)
+	})
+}
+
+func BenchmarkPartialFlushingSpanPool(b *testing.B) {
+	b.Run("Enabled", func(b *testing.B) {
+		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
 		genBigTraces(b, WithSpanPool(true))
 	})
 	b.Run("Disabled", func(b *testing.B) {
@@ -2408,6 +2419,19 @@ func genBigTraces(b *testing.B, opts ...StartOption) {
 // BenchmarkTracerAddSpans tests the performance of creating and finishing a root
 // span. It should include the encoding overhead.
 func BenchmarkTracerAddSpans(b *testing.B) {
+	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0))
+	assert.Nil(b, err)
+	defer stop()
+
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
+	b.ResetTimer()
+	for range b.N { //nolint:modernize
+		span := tracer.StartSpan("pylons.request", ServiceName("pylons"), ResourceName("/"))
+		span.Finish()
+	}
+}
+
+func BenchmarkTracerAddSpansSpanPool(b *testing.B) {
 	tracer, _, _, stop, err := startTestTracer(b, WithLogger(log.DiscardLogger{}), WithSamplerRate(0), WithSpanPool(true))
 	assert.Nil(b, err)
 	defer stop()
@@ -2807,6 +2831,69 @@ func BenchmarkTracerStackFrames(b *testing.B) {
 }
 
 func BenchmarkSingleSpanRetention(b *testing.B) {
+	// Don't use b.Loop() here because it'll cause measurement artifacts.
+	b.Run("no-rules", func(b *testing.B) {
+		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"))
+		assert.Nil(b, err)
+		defer stop()
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
+		tracer.config.sampler = NewRateSampler(0)
+		testPrioritySampler(tracer).defaultRate = 0
+		b.ResetTimer()
+		for range b.N {
+			span := tracer.StartSpan("name_1")
+			for range 100 {
+				child := tracer.StartSpan("name_2", ChildOf(span.context))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+
+	b.Run("with-rules/match-half", func(b *testing.B) {
+		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"))
+		assert.Nil(b, err)
+		defer stop()
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
+		tracer.config.sampler = NewRateSampler(0)
+		testPrioritySampler(tracer).defaultRate = 0
+		b.ResetTimer()
+		for range b.N {
+			span := tracer.StartSpan("name_1")
+			for range 50 {
+				child := tracer.StartSpan("name_2", ChildOf(span.context))
+				child.Finish()
+			}
+			for range 50 {
+				child := tracer.StartSpan("name", ChildOf(span.context))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+
+	b.Run("with-rules/match-all", func(b *testing.B) {
+		b.Setenv("DD_SPAN_SAMPLING_RULES", `[{"service": "test_*","name":"*_1", "sample_rate": 1.0, "max_per_second": 15.0}]`)
+		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"))
+		assert.Nil(b, err)
+		defer stop()
+		tracer.config.internalConfig.SetFeatureFlags([]string{"discovery"}, internalconfig.OriginCode)
+		tracer.config.sampler = NewRateSampler(0)
+		testPrioritySampler(tracer).defaultRate = 0
+		b.ResetTimer()
+		for range b.N {
+			span := tracer.StartSpan("name_1")
+			for range 100 {
+				child := tracer.StartSpan("name_2", ChildOf(span.context))
+				child.Finish()
+			}
+			span.Finish()
+		}
+	})
+}
+
+func BenchmarkSingleSpanRetentionSpanPool(b *testing.B) {
 	// Don't use b.Loop() here because it'll cause measurement artifacts.
 	b.Run("no-rules", func(b *testing.B) {
 		tracer, _, _, stop, err := startTestTracer(b, WithService("test_service"), WithSpanPool(true))

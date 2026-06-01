@@ -260,6 +260,39 @@ func BenchmarkOTelApiWithCustomTags(b *testing.B) {
 		env, srv, oldOp, newOp, tagKey, tagValue string
 	}{"test_env", "test_srv", "old_op", "new_op", "tag_1", "tag_1_val"}
 
+	tp := NewTracerProvider(tracer.WithEnv(testData.env), tracer.WithService(testData.srv))
+	defer tp.Shutdown()
+	otel.SetTracerProvider(tp)
+	tr := otel.Tracer("")
+
+	b.ResetTimer()
+	b.Run("otel_api", func(b *testing.B) {
+		for b.Loop() {
+			_, sp := tr.Start(context.Background(), testData.oldOp)
+			sp.SetAttributes(attribute.String(testData.tagKey, testData.tagValue))
+			sp.SetName(testData.newOp)
+			sp.End()
+		}
+	})
+
+	tracer.Start(tracer.WithEnv(testData.env), tracer.WithService(testData.srv))
+	defer tracer.Stop()
+	b.ResetTimer()
+	b.Run("datadog_otel_api", func(b *testing.B) {
+		for b.Loop() {
+			sp, _ := tracer.StartSpanFromContext(context.Background(), testData.oldOp)
+			sp.SetTag(testData.tagKey, testData.tagValue)
+			sp.SetOperationName(testData.newOp)
+			sp.Finish()
+		}
+	})
+}
+
+func BenchmarkOTelApiWithCustomTagsSpanPool(b *testing.B) {
+	testData := struct {
+		env, srv, oldOp, newOp, tagKey, tagValue string
+	}{"test_env", "test_srv", "old_op", "new_op", "tag_1", "tag_1_val"}
+
 	tp := NewTracerProvider(tracer.WithEnv(testData.env), tracer.WithService(testData.srv), tracer.WithSpanPool(true))
 	defer tp.Shutdown()
 	otel.SetTracerProvider(tp)
