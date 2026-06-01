@@ -64,7 +64,6 @@ func TestPropagation(t *testing.T) {
 	assert.NoError(err)
 
 	spans := mt.FinishedSpans()
-	fmt.Printf("spans: %+v", spans)
 	assert.Len(spans, 3, "wrong number of spans")
 	assert.Equal("pubsub.publish", spans[0].OperationName())
 	assert.Equal("propagation-test", spans[1].OperationName())
