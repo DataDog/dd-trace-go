@@ -1606,3 +1606,53 @@ func TestFromGenericCtxSamplingDecision(t *testing.T) {
 			"drop() after keep() should be a no-op — the trace stays rescued")
 	})
 }
+
+// TestChildInheritsUpdatedParentService verifies that when a parent span's service
+// is changed via SetTag after creation, a subsequently-started child inherits the
+// updated service name from context.inherited.
+func TestChildInheritsUpdatedParentService(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t, WithService("global-svc"))
+	require.NoError(t, err)
+	defer stop()
+
+	parent := trc.StartSpan("parent", ServiceName("original-svc"))
+	defer parent.Finish()
+	parent.SetTag(ext.ServiceName, "updated-svc")
+
+	child := trc.StartSpan("child", ChildOf(parent.Context()))
+	defer child.Finish()
+
+	assert.Equal(t, "updated-svc", child.service)
+}
+
+// TestExtractedContextOriginMarkedOnFirstChildOnly verifies that origin from an
+// extracted remote context is set on the first local child span only. The condition
+// context.trace.root == nil must be true for remote contexts and false for local ones.
+func TestExtractedContextOriginMarkedOnFirstChildOnly(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	// Simulate a remote extracted context with an origin.
+	// +checklocksignore — initialization time, not yet shared.
+	remoteCtx := &SpanContext{
+		traceID: traceIDFrom64Bits(42),
+		spanID:  99,
+		origin:  "synthetics",
+	}
+	remoteCtx.trace = newTrace() // trace.root is nil — no local spans yet
+
+	child := trc.StartSpan("local-op", ChildOf(remoteCtx))
+	defer child.Finish()
+
+	origin, ok := child.meta.Get(keyOrigin)
+	assert.True(t, ok, "first local span from remote context should have origin marked")
+	assert.Equal(t, "synthetics", origin)
+
+	// Grandchild: parent.Context().trace.root is now non-nil, so origin must not be set.
+	grandchild := trc.StartSpan("grandchild", ChildOf(child.Context()))
+	defer grandchild.Finish()
+
+	_, hasOrigin := grandchild.meta.Get(keyOrigin)
+	assert.False(t, hasOrigin, "grandchild should not have origin — it is not the first local span")
+}

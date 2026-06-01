@@ -275,7 +275,11 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.setBaggageItem(k, v)
 			return true
 		})
-	} else if traceID128BitEnabled.Load() {
+	}
+	// We generate a new upper trace ID when the trace is brand new (no parent)
+	// or when the parent is baggage only, since baggage only parents should
+	// not propagate their trace IDs
+	if (parent == nil || parent.baggageOnly) && traceID128BitEnabled.Load() { // +checklocksignore - Read-only after init.
 		// add 128 bit trace id, if enabled, formatted as big-endian:
 		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.start) / time.Second

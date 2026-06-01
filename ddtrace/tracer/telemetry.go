@@ -79,6 +79,8 @@ func startTelemetry(c *config) telemetry.Client {
 			telemetry.Configuration{Name: "trace_propagation_style_inject", Value: chained.injectorNames})
 		telemetryConfigs = append(telemetryConfigs,
 			telemetry.Configuration{Name: "trace_propagation_style_extract", Value: chained.extractorsNames})
+		telemetryConfigs = append(telemetryConfigs,
+			telemetry.Configuration{Name: "trace_propagation_behavior_extract", Value: chained.propagationBehaviorExtract})
 	}
 	for k, v := range c.internalConfig.FeatureFlags() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: k, Value: v})
@@ -119,7 +121,7 @@ func startTelemetry(c *config) telemetry.Client {
 	if (!a.reachable || a.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
 		cfg.AgentURL = c.internalConfig.AgentURL().String()
 	}
-	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
+	if c.internalConfig.LogToStdout() || c.internalConfig.CIVisibilityAgentlessActive() {
 		cfg.APIKey = c.internalConfig.APIKey()
 	}
 	client, err := telemetry.NewClient(c.internalConfig.ServiceName(), c.internalConfig.Env(), c.internalConfig.Version(), cfg)

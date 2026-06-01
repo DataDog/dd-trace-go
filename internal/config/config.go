@@ -116,8 +116,9 @@ type Config struct {
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
-	ciVisibilityEnabled   bool
-	ciVisibilityAgentless bool
+	ciVisibilityEnabled    bool
+	ciVisibilityAgentless  bool
+	ciVisibilityNoopTracer bool
 	// logDirectory is directory for tracer logs
 	logDirectory string
 	// traceRateLimitPerSecond specifies the rate limit per second for traces.
@@ -219,12 +220,16 @@ func loadConfig() *Config {
 	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
-	cfg.ciVisibilityAgentless = p.GetBool("DD_CIVISIBILITY_AGENTLESS_ENABLED", false)
+	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
+	cfg.ciVisibilityNoopTracer = p.GetBool(constants.CIVisibilityUseNoopTracer, false)
 	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
 	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
+		log.Warn("OTEL_LOGS_EXPORTER is not supported")
+	}
 	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV04, validateTraceProtocolVersion))
 	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
@@ -964,6 +969,28 @@ func (c *Config) SetCIVisibilityEnabled(enabled bool, origin telemetry.Origin, p
 	}
 	c.ciVisibilityEnabled = enabled
 	configtelemetry.Report(constants.CIVisibilityEnabledEnvironmentVariable, enabled, origin)
+}
+
+// CIVisibilityAgentless returns the raw DD_CIVISIBILITY_AGENTLESS_ENABLED value.
+// Only valid inside a CIVisibilityEnabled() block; prefer CIVisibilityAgentlessActive() elsewhere.
+func (c *Config) CIVisibilityAgentless() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentless
+}
+
+func (c *Config) CIVisibilityNoopTracer() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityNoopTracer
+}
+
+// CIVisibilityAgentlessActive reports whether agentless CI Visibility mode is in effect.
+// Agentless is only meaningful when CI Visibility itself is enabled.
+func (c *Config) CIVisibilityAgentlessActive() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityEnabled && c.ciVisibilityAgentless
 }
 
 func (c *Config) LogsOTelEnabled() bool {

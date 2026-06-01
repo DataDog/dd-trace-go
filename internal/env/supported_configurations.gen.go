@@ -211,6 +211,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS":                                {},
 	"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED":                          {},
 	"DD_TRACE_PEER_SERVICE_MAPPING":                                   {},
+	"DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT":                           {},
 	"DD_TRACE_PROPAGATION_EXTRACT_FIRST":                              {},
 	"DD_TRACE_PROPAGATION_STYLE":                                      {},
 	"DD_TRACE_PROPAGATION_STYLE_EXTRACT":                              {},
