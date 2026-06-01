@@ -1,6 +1,6 @@
 services:
   aerospike:
-    image: aerospike/aerospike-server-community:7.1.0
+    image: aerospike:ce-7.2.0.6
     ports:
       - "3000:3000"
   cassandra:

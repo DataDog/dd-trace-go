@@ -30,7 +30,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
 	req := testcontainers.ContainerRequest{
-		Image:        "aerospike/aerospike-server-community:7.1.0",
+		Image:        "aerospike:ce-7.2.0.6",
 		ExposedPorts: []string{"3000/tcp"},
 		WaitingFor:   wait.ForListeningPort("3000/tcp"),
 	}
