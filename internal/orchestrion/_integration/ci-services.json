@@ -1,4 +1,9 @@
 {
+  "aerospike": {
+    "image": "aerospike/aerospike-server-community:7.1.0",
+    "ports": ["3000:3000"],
+    "options": "--name \"aerospike\""
+  },
   "redis": {
     "image": "redis:7-alpine",
     "ports": ["6379:6379"],

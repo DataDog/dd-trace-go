@@ -6,6 +6,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.10.0-dev
+	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.10.0-dev
@@ -77,6 +78,7 @@ require (
 	github.com/IBM/sarama v1.44.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Shopify/sarama v1.38.1 // indirect
+	github.com/aerospike/aerospike-client-go/v7 v7.10.2 // indirect
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/antithesishq/antithesis-sdk-go v0.5.0 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
@@ -144,6 +146,7 @@ require (
 	github.com/go-redis/redis v6.15.9+incompatible // indirect
 	github.com/go-redis/redis/v7 v7.4.1 // indirect
 	github.com/go-redis/redis/v8 v8.11.5 // indirect
+	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gocql/gocql v1.7.0 // indirect
@@ -258,6 +261,7 @@ require (
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.mongodb.org/mongo-driver v1.17.1 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.2.2 // indirect
@@ -309,6 +313,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../contrib/99designs/gqlgen
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 => ../../contrib/IBM/sarama
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 => ../../contrib/Shopify/sarama
+	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2 => ../../contrib/aerospike/aerospike-client.v7
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../contrib/aws/aws-sdk-go-v2
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../contrib/aws/aws-sdk-go
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 => ../../contrib/cloud.google.com/go/pubsub.v1

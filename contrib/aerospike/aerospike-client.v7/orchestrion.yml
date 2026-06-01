@@ -1,0 +1,29 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2023-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2
+  description: Aerospike client for Go.
+
+aspects:
+  - id: NewClient
+    join-point:
+      one-of:
+        - function-call: github.com/aerospike/aerospike-client-go/v7.NewClient
+        - function-call: github.com/aerospike/aerospike-client-go/v7.NewClientWithPolicy
+        - function-call: github.com/aerospike/aerospike-client-go/v7.NewClientWithPolicyAndHost
+    advice:
+      - wrap-expression:
+          imports:
+            as: github.com/aerospike/aerospike-client-go/v7
+            aerospiketrace: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2
+          template: |-
+            func(c *as.Client, err as.Error) (*aerospiketrace.Client, as.Error) {
+              if c == nil || err != nil {
+                return nil, err
+              }
+              return aerospiketrace.WrapClient(c), nil
+            }({{ . }})

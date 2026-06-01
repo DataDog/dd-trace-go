@@ -14,6 +14,7 @@ require (
 	github.com/DataDog/orchestrion v1.9.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
+	github.com/aerospike/aerospike-client-go/v7 v7.10.2
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/aws/aws-sdk-go-v2 v1.36.5
 	github.com/aws/aws-sdk-go-v2/config v1.29.17
@@ -96,6 +97,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.10.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.10.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.10.0-dev // indirect
@@ -339,6 +341,7 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -388,6 +391,8 @@ require (
 	software.sslmate.com/src/go-pkcs12 v0.6.0 // indirect
 	tags.cncf.io/container-device-interface v0.8.1 // indirect
 )
+
+replace github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client.v7/v2 => ../../../contrib/aerospike/aerospike-client.v7
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../../contrib/99designs/gqlgen
 

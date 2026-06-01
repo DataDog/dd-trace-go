@@ -242,8 +242,40 @@ func (c *Client) ScanPartitions(apolicy *as.ScanPolicy, partitionFilter *as.Part
 	return recordset, err
 }
 
+// BatchGetComplex invokes and traces Client.BatchGetComplex.
+func (c *Client) BatchGetComplex(policy *as.BatchPolicy, records []*as.BatchRead) as.Error {
+	span := c.startSpan("BatchGetComplex")
+	err := c.Client.BatchGetComplex(policy, records)
+	span.Finish(tracer.WithError(err))
+	return err
+}
+
+// BatchDelete invokes and traces Client.BatchDelete.
+func (c *Client) BatchDelete(policy *as.BatchPolicy, deletePolicy *as.BatchDeletePolicy, keys []*as.Key) ([]*as.BatchRecord, as.Error) {
+	span := c.startSpan("BatchDelete")
+	results, err := c.Client.BatchDelete(policy, deletePolicy, keys)
+	span.Finish(tracer.WithError(err))
+	return results, err
+}
+
+// BatchOperate invokes and traces Client.BatchOperate.
+func (c *Client) BatchOperate(policy *as.BatchPolicy, records []as.BatchRecordIfc) as.Error {
+	span := c.startSpan("BatchOperate")
+	err := c.Client.BatchOperate(policy, records)
+	span.Finish(tracer.WithError(err))
+	return err
+}
+
+// BatchExecute invokes and traces Client.BatchExecute.
+func (c *Client) BatchExecute(policy *as.BatchPolicy, udfPolicy *as.BatchUDFPolicy, keys []*as.Key, packageName string, functionName string, args ...as.Value) ([]*as.BatchRecord, as.Error) {
+	span := c.startSpan("BatchExecute")
+	results, err := c.Client.BatchExecute(policy, udfPolicy, keys, packageName, functionName, args...)
+	span.Finish(tracer.WithError(err))
+	return results, err
+}
+
 // Execute invokes and traces Client.Execute.
-func (c *Client) Execute(policy *as.WritePolicy, key *as.Key, packageName string, functionName string, args ...as.Value) (interface{}, as.Error) {
+func (c *Client) Execute(policy *as.WritePolicy, key *as.Key, packageName string, functionName string, args ...as.Value) (any, as.Error) {
 	span := c.startSpan("Execute")
 	result, err := c.Client.Execute(policy, key, packageName, functionName, args...)
 	span.Finish(tracer.WithError(err))
