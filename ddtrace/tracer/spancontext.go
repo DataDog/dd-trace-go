@@ -23,7 +23,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -722,9 +721,6 @@ func (t *trace) setTraceTagsLocked(s *Span) {
 	updateTracerGitMetadataTags(s)
 	if s.context != nil && s.context.traceID.HasUpper() {
 		s.setMetaLocked(keyTraceID128, s.context.traceID.UpperHex())
-	}
-	if pTags := processtags.GlobalTags().String(); pTags != "" {
-		s.setMetaLocked(keyProcessTags, pTags)
 	}
 }
 
