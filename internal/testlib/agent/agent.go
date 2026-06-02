@@ -20,8 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/testlib/trace"
 )
 
 type MockAgent struct {
