@@ -28,8 +28,9 @@ func startGoRuntimeMetrics(ctx context.Context) error {
 
 func registerRecommendedMetrics(_ context.Context, meter otelmetric.Meter) error {
 	samples := []goruntime.Sample{
-		{Name: "/memory/classes/heap/objects:bytes"},
+		{Name: "/memory/classes/total:bytes"},
 		{Name: "/memory/classes/heap/stacks:bytes"},
+		{Name: "/memory/classes/heap/released:bytes"},
 		{Name: "/gc/gomemlimit:bytes"},
 		{Name: "/gc/heap/allocs:bytes"},
 		{Name: "/gc/heap/allocs:objects"},
@@ -118,15 +119,18 @@ func registerRecommendedMetrics(_ context.Context, meter otelmetric.Meter) error
 		func(_ context.Context, o otelmetric.Observer) error {
 			goruntime.Read(samples)
 
-			o.ObserveInt64(memUsed, int64(samples[0].Value.Uint64()), typeOther)
-			o.ObserveInt64(memUsed, int64(samples[1].Value.Uint64()), typeStack)
-			o.ObserveInt64(memLimit, int64(samples[2].Value.Uint64()))
-			o.ObserveInt64(memAllocated, int64(samples[3].Value.Uint64()))
-			o.ObserveInt64(memAllocations, int64(samples[4].Value.Uint64()))
-			o.ObserveInt64(gcGoal, int64(samples[5].Value.Uint64()))
-			o.ObserveInt64(goroutineCount, int64(samples[6].Value.Uint64()))
-			o.ObserveInt64(processorLimit, int64(samples[7].Value.Uint64()))
-			o.ObserveInt64(configGOGC, int64(samples[8].Value.Uint64()))
+			total := int64(samples[0].Value.Uint64())
+			stack := int64(samples[1].Value.Uint64())
+			released := int64(samples[2].Value.Uint64())
+			o.ObserveInt64(memUsed, total-released-stack, typeOther)
+			o.ObserveInt64(memUsed, stack, typeStack)
+			o.ObserveInt64(memLimit, int64(samples[3].Value.Uint64()))
+			o.ObserveInt64(memAllocated, int64(samples[4].Value.Uint64()))
+			o.ObserveInt64(memAllocations, int64(samples[5].Value.Uint64()))
+			o.ObserveInt64(gcGoal, int64(samples[6].Value.Uint64()))
+			o.ObserveInt64(goroutineCount, int64(samples[7].Value.Uint64()))
+			o.ObserveInt64(processorLimit, int64(samples[8].Value.Uint64()))
+			o.ObserveInt64(configGOGC, int64(samples[9].Value.Uint64()))
 			return nil
 		},
 		memUsed, memLimit, memAllocated, memAllocations,
