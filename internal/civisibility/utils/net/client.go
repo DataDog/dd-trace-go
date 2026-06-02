@@ -60,8 +60,10 @@ type (
 		headCommitMessage  string
 		branchName         string
 		testConfigurations testConfigurations
-		headers            map[string]string
-		handler            *RequestHandler
+		// readCacheScopeIdentity stores the short-lived read-cache scope derived from already-resolved CI tags.
+		readCacheScopeIdentity readCacheScopeIdentity
+		headers                map[string]string
+		handler                *RequestHandler
 	}
 
 	// testConfigurations represents the test configurations.
@@ -244,8 +246,9 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			RuntimeVersion: ciTags[constants.RuntimeVersion],
 			Custom:         customConfiguration,
 		},
-		headers: defaultHeaders,
-		handler: requestHandler,
+		readCacheScopeIdentity: newReadCacheScopeIdentity(ciTags),
+		headers:                defaultHeaders,
+		handler:                requestHandler,
 	}
 }
 
