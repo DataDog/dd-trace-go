@@ -952,6 +952,18 @@ func TestAgentTimeout(t *testing.T) {
 		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
 	})
 
+	t.Run("negative DD_TRACE_AGENT_TIMEOUT falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "-5")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
 	t.Run("SetAgentTimeout updates value", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()

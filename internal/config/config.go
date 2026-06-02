@@ -241,7 +241,7 @@ func loadConfig() *Config {
 	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
-	cfg.httpClientTimeout = time.Duration(p.GetInt("DD_TRACE_AGENT_TIMEOUT", 10)) * time.Second
+	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat)
