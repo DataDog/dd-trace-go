@@ -7,6 +7,7 @@ package metric
 
 import (
 	"context"
+	"math"
 	goruntime "runtime/metrics"
 
 	ddversion "github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -124,7 +125,9 @@ func registerRecommendedMetrics(_ context.Context, meter otelmetric.Meter) error
 			released := int64(samples[2].Value.Uint64())
 			o.ObserveInt64(memUsed, total-released-stack, typeOther)
 			o.ObserveInt64(memUsed, stack, typeStack)
-			o.ObserveInt64(memLimit, int64(samples[3].Value.Uint64()))
+			if limit := int64(samples[3].Value.Uint64()); limit != math.MaxInt64 {
+				o.ObserveInt64(memLimit, limit)
+			}
 			o.ObserveInt64(memAllocated, int64(samples[4].Value.Uint64()))
 			o.ObserveInt64(memAllocations, int64(samples[5].Value.Uint64()))
 			o.ObserveInt64(gcGoal, int64(samples[6].Value.Uint64()))
