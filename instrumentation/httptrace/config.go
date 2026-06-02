@@ -138,17 +138,13 @@ func isServerError(statusCode int) bool {
 }
 
 func QueryStringRegexp() *regexp.Regexp {
-	if s, ok := env.Lookup(EnvQueryStringRegexp); !ok {
-		return defaultQueryStringRegexp
-	} else if s == "" {
-		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", EnvQueryStringRegexp)
-		return nil
-	} else if r, err := regexp.Compile(s); err == nil {
-		return r
+	if s, ok := env.Lookup(EnvQueryStringRegexp); ok {
+		if r, err := regexp.Compile(s); err == nil {
+			return r
+		}
 	}
 	log.Error("Could not compile regexp from %s. Using default regexp instead.", EnvQueryStringRegexp)
 	return defaultQueryStringRegexp
-
 }
 
 // GetErrorCodesFromInput parses a comma-separated string s to determine which codes are to be considered errors
