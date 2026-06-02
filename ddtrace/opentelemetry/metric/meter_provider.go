@@ -19,6 +19,10 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
+// installedProvider tracks the MeterProvider installed by InstallGlobal so that
+// ShutdownHook only shuts down the provider we own, not one the user installed.
+var installedProvider *metric.MeterProvider
+
 func init() {
 	otelmetricsinstall.StartHook = func(ctx context.Context) error {
 		if err := InstallGlobal(); err != nil {
@@ -27,7 +31,10 @@ func init() {
 		return startGoRuntimeMetrics(ctx)
 	}
 	otelmetricsinstall.ShutdownHook = func(ctx context.Context) error {
-		return Shutdown(ctx, otel.GetMeterProvider())
+		if installedProvider == nil {
+			return nil
+		}
+		return installedProvider.Shutdown(ctx)
 	}
 }
 
@@ -51,6 +58,7 @@ func InstallGlobal(opts ...Option) error {
 		return err
 	}
 	otel.SetMeterProvider(mp)
+	installedProvider = mp.(*metric.MeterProvider)
 	return nil
 }
 
