@@ -12,8 +12,8 @@ import (
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/integration-testlib/agent"
-	"github.com/DataDog/dd-trace-go/v2/internal/integration-testlib/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/testlib/agent"
+	"github.com/DataDog/dd-trace-go/v2/internal/testlib/trace"
 )
 
 // TestCase describes the general contract for tests. Each package in this

@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2023-present Datadog, Inc.
 
-package testlib
+package agent
 
 import (
 	"encoding/json"
@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/testlib/trace"
 )
 
 type MockAgent struct {
@@ -107,7 +108,7 @@ func (m *MockAgent) Start(t *testing.T) {
 	t.Cleanup(tracer.Stop)
 }
 
-func (m *MockAgent) Traces(t *testing.T) Traces {
+func (m *MockAgent) Traces(t *testing.T) trace.Traces {
 	m.T.Log("mockagent: fetching spans")
 
 	tracer.Flush()
@@ -117,24 +118,24 @@ func (m *MockAgent) Traces(t *testing.T) Traces {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	spansByID := make(map[ID]*Trace)
+	spansByID := make(map[trace.ID]*trace.Trace)
 	for _, payload := range m.payloads {
 		for _, spans := range payload {
 			for _, span := range spans {
 				b, err := json.Marshal(span)
 				require.NoError(t, err)
 
-				var tr Trace
+				var tr trace.Trace
 				err = json.Unmarshal(b, &tr)
 				require.NoError(t, err)
 
-				spansByID[ID(span.SpanID)] = &tr
+				spansByID[trace.ID(span.SpanID)] = &tr
 			}
 		}
 	}
 
 	// If span are filtered we remove all their children as well
-	keptSpansByID := make(map[ID]*Trace)
+	keptSpansByID := make(map[trace.ID]*trace.Trace)
 	for id, span := range spansByID {
 		if filterInternalSpans(t, span, m.srv.URL) {
 			keptSpansByID[id] = span
@@ -144,7 +145,7 @@ func (m *MockAgent) Traces(t *testing.T) Traces {
 		t.Logf("mockagent: filtering out span %d: %s", id, span.String())
 	}
 
-	var result Traces
+	var result trace.Traces
 	for _, span := range keptSpansByID {
 		if span.ParentID == 0 {
 			result = append(result, span)
@@ -160,7 +161,7 @@ func (m *MockAgent) Traces(t *testing.T) Traces {
 
 // filterInternalSpans recursively checks the spans in the trace to ensure that that no spans a created as a result of
 // connection to the agent or any agentless HTTP call and also filters out any spans that are created by the testing framework
-func filterInternalSpans(t *testing.T, trace *Trace, agentHost string) bool {
+func filterInternalSpans(t *testing.T, trace *trace.Trace, agentHost string) bool {
 	t.Helper()
 	if trace == nil {
 		return false
