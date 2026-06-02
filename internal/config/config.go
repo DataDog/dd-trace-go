@@ -105,12 +105,12 @@ type Config struct {
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
-	statsComputationEnabled      bool
-	traceAnalyticsEnabled        bool
+	statsComputationEnabled bool
+	traceAnalyticsEnabled   bool
 	// statsAdditionalTags is a list of tag keys to extract from spans and use as
 	// additional aggregation dimensions for client-side stats.
 	// Configured via DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
-	statsAdditionalTags []string
+	statsAdditionalTags          []string
 	dataStreamsMonitoringEnabled bool
 	// dynamicInstrumentationEnabled controls whether the target application can
 	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
@@ -224,8 +224,8 @@ func loadConfig() *Config {
 	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
 	if v := p.GetString("DD_TRACE_STATS_ADDITIONAL_TAGS", ""); v != "" {
 		var tags []string
-		for _, t := range strings.Split(v, ",") {
-			if t = strings.TrimSpace(t); t != "" {
+		for t := range strings.SplitSeq(v, ",") {
+			if t := strings.TrimSpace(t); t != "" {
 				tags = append(tags, t)
 			}
 		}

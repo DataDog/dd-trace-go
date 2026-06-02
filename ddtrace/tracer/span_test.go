@@ -1891,7 +1891,7 @@ func TestStatsAdditionalMetricTags(t *testing.T) {
 		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
-		tracer.config.transport = transport
+		tracer.config.ddTransport = transport
 		af := tracer.config.agent.load()
 		af.Stats = true
 		af.DropP0s = true
@@ -1926,7 +1926,7 @@ func TestStatsAdditionalMetricTags(t *testing.T) {
 		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
-		tracer.config.transport = transport
+		tracer.config.ddTransport = transport
 		af := tracer.config.agent.load()
 		af.Stats = true
 		af.DropP0s = true
@@ -1958,7 +1958,7 @@ func TestStatsAdditionalMetricTags(t *testing.T) {
 		setGlobalTracer(tracer)
 
 		transport := newDummyTransport()
-		tracer.config.transport = transport
+		tracer.config.ddTransport = transport
 		af := tracer.config.agent.load()
 		af.Stats = true
 		af.DropP0s = true
