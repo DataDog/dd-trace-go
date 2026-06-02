@@ -68,7 +68,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
-	span, _ := tracer.StartSpanFromContext(ctx, "test.root")
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
 
 	key, err := as.NewKey("test", "testset", "orchestrion-key")
