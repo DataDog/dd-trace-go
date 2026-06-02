@@ -91,10 +91,17 @@ var profileTypes = map[ProfileType]profileType{
 		Collect: func(p *profiler) ([]byte, error) {
 			var buf bytes.Buffer
 			var outBuf bytes.Buffer
-			// Start the CPU profiler at the end of the profiling
-			// period so that we're sure to capture the CPU usage of
-			// this library, which mostly happens at the end
-			p.interruptibleSleep(p.cfg.period - p.cfg.cpuDuration)
+			// Normally the CPU profiler is scheduled at the end of the
+			// profiling period so that we're sure to capture the CPU usage
+			// of this library, which mostly happens at the end. The first
+			// CPU profile is instead started at the beginning of the period
+			// so that it overlaps the first (also-undelayed) execution trace
+			// and the first timeline gets on-CPU samples. See
+			// cpuProfileSchedule.
+			firstCPU := p.lastCPUProfile.IsZero()
+			p.lastCPUProfile = time.Now()
+			delay, finishLast := cpuProfileSchedule(p.cfg.period, p.cfg.cpuDuration, firstCPU)
+			p.interruptibleSleep(delay)
 			if p.cfg.cpuProfileRate != 0 {
 				// The profile has to be set each time before
 				// profiling is started. Otherwise,
@@ -110,8 +117,12 @@ var profileTypes = map[ProfileType]profileType{
 
 			// We want the CPU profiler to finish last so that it can
 			// properly record all of our profile processing work for
-			// the other profile types
-			p.pendingProfiles.Wait()
+			// the other profile types. The first CPU profile is an
+			// exception: it stops after cpuDuration so that its window
+			// stays equal to cpuDuration (see cpuProfileSchedule).
+			if finishLast {
+				p.pendingProfiles.Wait()
+			}
 			pprof.StopCPUProfile()
 
 			c := p.compressors[CPUProfile]
@@ -214,6 +225,26 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "goroutineleak.pprof",
 		Collect:  collectGenericProfile("goroutineleak", goroutineLeakProfile),
 	},
+}
+
+// cpuProfileSchedule decides when CPU profiling should start within the period
+// and whether it should finish last. By default CPU profiling is scheduled at
+// the end of the period (delay = period - cpuDuration) and finishes last, so
+// that it captures this library's own post-processing work for the other
+// profile types.
+//
+// On the first CPU profile, when CPU profiling covers less than the full period,
+// we instead start it at the beginning of the period (delay 0) and stop it after
+// cpuDuration (finishLast = false), so that it overlaps the first (also-undelayed)
+// execution trace and the first timeline gets on-CPU samples. The first profile
+// still respects cpuDuration, so its window and sample count match every other
+// cycle; the trade-off is that it does not capture this library's own
+// post-processing overhead (subsequent cycles still do).
+func cpuProfileSchedule(period, cpuDuration time.Duration, firstCPU bool) (delay time.Duration, finishLast bool) {
+	if firstCPU && cpuDuration > 0 && cpuDuration < period {
+		return 0, false
+	}
+	return max(0, period-cpuDuration), true
 }
 
 // executionTraceSchedule decides when the execution trace should start and how

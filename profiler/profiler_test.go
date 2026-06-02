@@ -663,6 +663,79 @@ func TestExecutionTraceSchedule(t *testing.T) {
 	}
 }
 
+func TestCPUProfileSchedule(t *testing.T) {
+	const period = 2 * time.Minute
+	for _, tc := range []struct {
+		name           string
+		cpuDuration    time.Duration
+		firstCPU       bool
+		wantDelay      time.Duration
+		wantFinishLast bool
+	}{
+		{
+			// Default schedule: CPU covers the whole period, so it already
+			// starts at t=0 and finishes last on every cycle, including the
+			// first. No special-casing.
+			name:           "cpu-duration-equals-period",
+			cpuDuration:    period,
+			wantDelay:      0,
+			wantFinishLast: true,
+		},
+		{
+			// Steady-state cycle with a shorter CPU duration: scheduled at
+			// the end of the period and finishes last.
+			name:           "cpu-shorter-than-period-steady-state",
+			cpuDuration:    time.Minute,
+			wantDelay:      time.Minute,
+			wantFinishLast: true,
+		},
+		{
+			// First CPU profile with a shorter CPU duration: start at t=0
+			// and stop after cpuDuration (do not finish last) so it overlaps
+			// the first execution trace while still respecting cpuDuration.
+			name:           "first-cpu-shorter-than-period",
+			cpuDuration:    time.Minute,
+			firstCPU:       true,
+			wantDelay:      0,
+			wantFinishLast: false,
+		},
+		{
+			// First cycle but CPU covers the whole period: no special-casing,
+			// behaves like the default.
+			name:           "first-cpu-duration-equals-period",
+			cpuDuration:    period,
+			firstCPU:       true,
+			wantDelay:      0,
+			wantFinishLast: true,
+		},
+		{
+			// A degenerate zero cpuDuration falls back to normal scheduling
+			// rather than the first-cycle special case.
+			name:           "zero-cpu-duration",
+			cpuDuration:    0,
+			firstCPU:       true,
+			wantDelay:      period,
+			wantFinishLast: true,
+		},
+		{
+			// cpuDuration is clamped to period by newProfiler, but guard the
+			// helper in isolation: a cpuDuration > period must never yield a
+			// negative delay.
+			name:           "cpu-duration-greater-than-period",
+			cpuDuration:    2 * period,
+			wantDelay:      0,
+			wantFinishLast: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			delay, finishLast := cpuProfileSchedule(period, tc.cpuDuration, tc.firstCPU)
+			assert.Equal(t, tc.wantDelay, delay, "delay")
+			assert.Equal(t, tc.wantFinishLast, finishLast, "finishLast")
+			assert.GreaterOrEqual(t, delay, time.Duration(0), "delay must be non-negative")
+		})
+	}
+}
+
 func TestExecutionTraceMisconfiguration(t *testing.T) {
 	rl := new(log.RecordLogger)
 	defer log.UseLogger(rl)()

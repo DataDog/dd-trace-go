@@ -117,6 +117,11 @@ type profiler struct {
 	// value is also load-bearing: it is used (via IsZero) to detect the first
 	// trace, which is never delayed. See executionTraceSchedule.
 	lastTrace time.Time
+
+	// lastCPUProfile is the last time a CPU profile was collected. Its zero
+	// value is load-bearing: it is used (via IsZero) to detect the first CPU
+	// profile, which is scheduled differently. See cpuProfileSchedule.
+	lastCPUProfile time.Time
 }
 
 func (p *profiler) lookupProfile(name string, w io.Writer, debug int) error {
