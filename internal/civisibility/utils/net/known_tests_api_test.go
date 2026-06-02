@@ -30,7 +30,7 @@ func TestKnownTestsApiRequest(t *testing.T) {
 			"MySuite1": []string{"Test1", "Test2"},
 		},
 	}
-	page1Response.PageInfo = &knownTestsResponsePageInfo{
+	page1Response.Data.Attributes.PageInfo = &knownTestsResponsePageInfo{
 		Cursor:  "cursor_page2",
 		Size:    2,
 		HasNext: true,
@@ -46,7 +46,7 @@ func TestKnownTestsApiRequest(t *testing.T) {
 			"MySuite2": []string{"Test4", "Test5"},
 		},
 	}
-	page2Response.PageInfo = &knownTestsResponsePageInfo{
+	page2Response.Data.Attributes.PageInfo = &knownTestsResponsePageInfo{
 		Cursor:  "cursor_page3",
 		Size:    3,
 		HasNext: true,
@@ -71,7 +71,7 @@ func TestKnownTestsApiRequest(t *testing.T) {
 
 		if r.Header.Get(HeaderContentType) == ContentTypeJSON {
 			var request knownTestsRequest
-			json.Unmarshal(body, &request)
+			assert.NoError(t, json.Unmarshal(body, &request))
 			assert.Equal(t, c.id, request.Data.ID)
 			assert.Equal(t, knownTestsRequestType, request.Data.Type)
 			assert.Equal(t, knownTestsURLPath, r.URL.Path[1:])
@@ -79,20 +79,36 @@ func TestKnownTestsApiRequest(t *testing.T) {
 			assert.Equal(t, c.repositoryURL, request.Data.Attributes.RepositoryURL)
 			assert.Equal(t, c.serviceName, request.Data.Attributes.Service)
 			assert.Equal(t, c.testConfigurations, request.Data.Attributes.Configurations)
-			assert.NotNil(t, request.PageInfo, "page_info should always be present")
+			assert.NotNil(t, request.Data.Attributes.PageInfo, "page_info should always be present under attributes")
+
+			var envelope map[string]json.RawMessage
+			assert.NoError(t, json.Unmarshal(body, &envelope))
+			assert.NotContains(t, envelope, "page_info", "page_info should not be top-level")
+
+			var requestData struct {
+				Attributes map[string]json.RawMessage `json:"attributes"`
+			}
+			assert.NoError(t, json.Unmarshal(envelope["data"], &requestData))
+			pageInfoRaw, ok := requestData.Attributes["page_info"]
+			assert.True(t, ok, "page_info should be present under data.attributes")
+			var pageInfo map[string]any
+			assert.NoError(t, json.Unmarshal(pageInfoRaw, &pageInfo))
 
 			w.Header().Set(HeaderContentType, ContentTypeJSON)
 			requestCount++
 			var resp knownTestsResponse
 			switch requestCount {
 			case 1:
-				assert.Empty(t, request.PageInfo.PageState, "first request should have empty page_state")
+				assert.Empty(t, request.Data.Attributes.PageInfo.PageState, "first request should have empty page_state")
+				assert.Empty(t, pageInfo, "first request should not send pagination fields")
 				resp = page1Response
 			case 2:
-				assert.Equal(t, "cursor_page2", request.PageInfo.PageState)
+				assert.Equal(t, "cursor_page2", request.Data.Attributes.PageInfo.PageState)
+				assert.Equal(t, map[string]any{"page_state": "cursor_page2"}, pageInfo)
 				resp = page2Response
 			case 3:
-				assert.Equal(t, "cursor_page3", request.PageInfo.PageState)
+				assert.Equal(t, "cursor_page3", request.Data.Attributes.PageInfo.PageState)
+				assert.Equal(t, map[string]any{"page_state": "cursor_page3"}, pageInfo)
 				resp = page3Response
 			default:
 				t.Fatalf("unexpected request count: %d", requestCount)

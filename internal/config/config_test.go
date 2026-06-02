@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -884,4 +885,34 @@ func TestAPIKey(t *testing.T) {
 		require.NotNil(t, cfg)
 		assert.Equal(t, "", cfg.APIKey())
 	})
+}
+
+func TestCIVisibilityAgentlessActive(t *testing.T) {
+	// Agentless is only "active" when CI Visibility is also enabled.
+	// Agentless alone must not flip agent-bypass behavior in normal tracer mode.
+	cases := []struct {
+		name      string
+		ciVis     string
+		agentless string
+		want      bool
+	}{
+		{"both unset", "", "", false},
+		{"agentless only", "", "true", false},
+		{"ci vis only", "true", "", false},
+		{"both set", "true", "true", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			if tc.ciVis != "" {
+				t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, tc.ciVis)
+			}
+			if tc.agentless != "" {
+				t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, tc.agentless)
+			}
+			cfg := CreateNew()
+			assert.Equal(t, tc.want, cfg.CIVisibilityAgentlessActive())
+		})
+	}
 }
