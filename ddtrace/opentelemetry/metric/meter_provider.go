@@ -34,7 +34,10 @@ func init() {
 		if installedProvider == nil {
 			return nil
 		}
-		return installedProvider.Shutdown(ctx)
+		err := installedProvider.Shutdown(ctx)
+		installedProvider = nil
+		otel.SetMeterProvider(noop.NewMeterProvider())
+		return err
 	}
 }
 
