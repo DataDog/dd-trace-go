@@ -5,14 +5,22 @@
 
 package pubsubtrace
 
-import "github.com/DataDog/dd-trace-go/v2/instrumentation"
+import (
+	"os"
+	"strconv"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+)
+
+const envPropagationAsSpanLinks = "DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS"
 
 type config struct {
-	serviceName     string
-	serviceSource   string
-	publishSpanName string
-	receiveSpanName string
-	measured        bool
+	serviceName            string
+	serviceSource          string
+	publishSpanName        string
+	receiveSpanName        string
+	measured               bool
+	propagationAsSpanLinks bool
 }
 
 // Option describes options for the Pub/Sub integration.
@@ -21,12 +29,14 @@ type Option interface {
 }
 
 func (tr *Tracer) defaultConfig() *config {
+	propagationAsSpanLinks, _ := strconv.ParseBool(os.Getenv(envPropagationAsSpanLinks))
 	return &config{
-		serviceName:     tr.instr.ServiceName(instrumentation.ComponentConsumer, nil),
-		serviceSource:   string(tr.component),
-		publishSpanName: tr.instr.OperationName(instrumentation.ComponentProducer, nil),
-		receiveSpanName: tr.instr.OperationName(instrumentation.ComponentConsumer, nil),
-		measured:        false,
+		serviceName:            tr.instr.ServiceName(instrumentation.ComponentConsumer, nil),
+		serviceSource:          string(tr.component),
+		publishSpanName:        tr.instr.OperationName(instrumentation.ComponentProducer, nil),
+		receiveSpanName:        tr.instr.OperationName(instrumentation.ComponentConsumer, nil),
+		measured:               false,
+		propagationAsSpanLinks: propagationAsSpanLinks,
 	}
 }
 
@@ -49,5 +59,15 @@ func WithService(serviceName string) OptionFn {
 func WithMeasured() OptionFn {
 	return func(cfg *config) {
 		cfg.measured = true
+	}
+}
+
+// WithPropagationAsSpanLinks configures the receive handler to record the producer span as a span
+// link rather than as a parent span. This keeps producer and consumer traces separate while
+// preserving their causal relationship. The same behavior can be enabled globally via the
+// DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS environment variable.
+func WithPropagationAsSpanLinks() OptionFn {
+	return func(cfg *config) {
+		cfg.propagationAsSpanLinks = true
 	}
 }
