@@ -66,7 +66,6 @@ func TestGoRuntimeMetricsRecommendedNames(t *testing.T) {
 
 	expected := []string{
 		"go.memory.used",
-		"go.memory.limit",
 		"go.memory.allocated",
 		"go.memory.allocations",
 		"go.memory.gc.goal",
@@ -78,6 +77,9 @@ func TestGoRuntimeMetricsRecommendedNames(t *testing.T) {
 		_, ok := byName[want]
 		assert.True(t, ok, "expected metric %q to be present", want)
 	}
+	// go.memory.limit is only emitted when GOMEMLIMIT is configured.
+	_, limitPresent := byName["go.memory.limit"]
+	assert.False(t, limitPresent, "go.memory.limit should be absent when GOMEMLIMIT is not set")
 }
 
 func TestGoRuntimeMetricsRecommendedValues(t *testing.T) {
