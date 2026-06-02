@@ -52,7 +52,7 @@ func InstallGlobal(opts ...Option) error {
 	if _, ok := otel.GetMeterProvider().(*metric.MeterProvider); ok {
 		return nil
 	}
-	allOpts := append([]Option{withRuntimeProducerDefault()}, opts...)
+	allOpts := append(opts, withRuntimeProducerDefault())
 	mp, err := NewMeterProvider(allOpts...)
 	if err != nil {
 		return err
