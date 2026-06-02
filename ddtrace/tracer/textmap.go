@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"maps"
 
@@ -1018,121 +1019,144 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 	return nil
 }
 
-// stringMutator maps characters in a string to new characters. It is a state machine intended
-// to replace regex patterns for simple character replacement, including collapsing runs of a
-// specific range.
+// sanitizeTagKey sanitizes a W3C tracestate tag key.
+// Equivalent to regexp: ,|=|[^\x20-\x7E]+
+//   - 0x00–0x1F, 0x7F: collapse consecutive bytes to '_'
+//   - ',', '=': replace with '_' (no collapse)
+//   - non-ASCII rune (> 0x7E): collapse
+//   - all others (0x20–0x7E minus ',','='): passthrough
+func sanitizeTagKey(s string) string { return sanitizeW3C(s, &keyLUT) }
+
+// sanitizeTagValue sanitizes a W3C tracestate tag value.
+// Equivalent to regexp: ,|;|~|[^\x20-\x7E]+
+//   - 0x00–0x1F, 0x7F: collapse to '_'
+//   - ',', ';', '~': replace with '_' (no collapse)
+//   - '=': replace with '~' (no collapse)
+//   - non-ASCII rune: collapse
+//   - all others: passthrough
+func sanitizeTagValue(s string) string { return sanitizeW3C(s, &valueLUT) }
+
+// sanitizeOrigin sanitizes the W3C tracestate origin field.
+// Equivalent to regexp: ,|~|;|[^\x21-\x7E]+
+//   - 0x00–0x20 (space included), 0x7F: collapse to '_'
+//   - ',', ';', '~': replace with '_' (no collapse)
+//   - '=': replace with '~' (no collapse)
+//   - non-ASCII rune: collapse
+//   - all others (0x21–0x7E minus ',',';','~','='): passthrough
+func sanitizeOrigin(s string) string { return sanitizeW3C(s, &originLUT) }
+
+// keyLUT, valueLUT, originLUT classify ASCII bytes (indices 0–127) for the
+// W3C tracestate sanitizers above.
 //
-// It's designed after the `hash#Hash` interface, and to work with `strings.Map`.
-type stringMutator struct {
-	// n is the current state of the mutator. It is used to track runs of characters that should
-	// be collapsed.
-	n bool
-	// fn is the function that implements the character replacement logic.
-	// It returns the rune to use as replacement and a bool to tell if next consecutive
-	// characters must be dropped if they fall in the currently matched character set.
-	// It's possible to return `-1` to immediately drop the current rune.
-	//
-	// This logic allows for:
-	// - Replace only the current rune: return <new value>, false
-	// - Drop only the current rune: return -1, false
-	// - Replace the current rune and drop the next consecutive runes if they match the same case: return <new value>, true
-	// - Drop all the consecutive runes matching the same case as the current one: return -1, true
-	//
-	// A known limitation is that we can only support a single case of consecutive runes.
-	fn func(rune) (rune, bool)
-}
-
-// Mutate the mapped string using `strings.Map` and the provided function implementing the character
-// replacement logic.
-func (sm *stringMutator) Mutate(fn func(rune) (rune, bool), s string) string {
-	sm.fn = fn
-	rs := strings.Map(sm.mapping, s)
-	sm.reset()
-
-	return rs
-}
-
-func (sm *stringMutator) mapping(r rune) rune {
-	v, dropConsecutiveMatches := sm.fn(r)
-	if v < 0 {
-		// We reset the state machine in any match that is not related to a consecutive run
-		sm.reset()
-		return -1
-	}
-	if dropConsecutiveMatches {
-		if !sm.n {
-			sm.n = true
-			return v
-		}
-		return -1
-	}
-	// We reset the state machine in any match that is not related to a consecutive run
-	sm.reset()
-	return v
-}
-
-// reset resets the state of the mutator.
-func (sm *stringMutator) reset() {
-	sm.n = false
-}
-
+// Encoding: 0x00 = passthrough; 0xFF = collapse (first of a run → '_', rest
+// dropped); any other value = replace with that byte (no collapse).
 var (
-	// keyDisallowedFn is used to sanitize the keys of the datadog propagating tags.
-	// Disallowed characters are comma (reserved as a list-member separator),
-	// equals (reserved for list-member key-value separator),
-	// space and characters outside the ASCII range 0x20 to 0x7E.
-	// Disallowed characters must be replaced with the underscore.
-	// Equivalent to regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
-	keyDisallowedFn = func(r rune) (rune, bool) {
-		switch {
-		case r == ',' || r == '=':
-			return '_', false
-		case r < 0x20 || r > 0x7E:
-			return '_', true
+	// keyLUT: equivalent to ,|=|[^\x20-\x7E]+
+	keyLUT = func() [128]uint8 {
+		var t [128]uint8
+		for i := range 0x20 { // 0x00–0x1F: collapse
+			t[i] = 0xFF
 		}
-		return r, false
-	}
+		t[','] = '_'
+		t['='] = '_'
+		t[0x7F] = 0xFF // 0x7F: collapse
+		return t
+	}()
 
-	// valueDisallowedFn is used to sanitize the values of the datadog propagating tags.
-	// Disallowed characters are comma (reserved as a list-member separator),
-	// semi-colon (reserved for separator between entries in the dd list-member),
-	// tilde (reserved, will represent 0x3D (equals) in the encoded tag value,
-	// and characters outside the ASCII range 0x20 to 0x7E.
-	// Equals character must be encoded with a tilde.
-	// Other disallowed characters must be replaced with the underscore.
-	// Equivalent to regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
-	valueDisallowedFn = func(r rune) (rune, bool) {
-		switch {
-		case r == '=':
-			return '~', false
-		case r == ',' || r == '~' || r == ';':
-			return '_', false
-		case r < 0x20 || r > 0x7E:
-			return '_', true
+	// valueLUT: equivalent to ,|;|~|[^\x20-\x7E]+
+	valueLUT = func() [128]uint8 {
+		var t [128]uint8
+		for i := range 0x20 { // 0x00–0x1F: collapse
+			t[i] = 0xFF
 		}
-		return r, false
-	}
+		t[','] = '_'
+		t[';'] = '_'
+		t['~'] = '_'
+		t['='] = '~' // '=' encodes as '~'
+		t[0x7F] = 0xFF
+		return t
+	}()
 
-	// originDisallowedFn is used to sanitize the value of the datadog origin tag.
-	// Disallowed characters are comma (reserved as a list-member separator),
-	// semi-colon (reserved for separator between entries in the dd list-member),
-	// equals (reserved for list-member key-value separator),
-	// and characters outside the ASCII range 0x21 to 0x7E.
-	// Equals character must be encoded with a tilde.
-	// Other disallowed characters must be replaced with the underscore.
-	// Equivalent to regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
-	originDisallowedFn = func(r rune) (rune, bool) {
-		switch {
-		case r == '=':
-			return '~', false
-		case r == ',' || r == '~' || r == ';':
-			return '_', false
-		case r < 0x21 || r > 0x7E:
-			return '_', true
+	// originLUT: equivalent to ,|~|;|[^\x21-\x7E]+
+	originLUT = func() [128]uint8 {
+		var t [128]uint8
+		for i := range 0x21 { // 0x00–0x20 (space included): collapse
+			t[i] = 0xFF
 		}
-		return r, false
-	}
+		t[','] = '_'
+		t[';'] = '_'
+		t['~'] = '_'
+		t['='] = '~'
+		t[0x7F] = 0xFF
+		return t
+	}()
 )
+
+// sanitizeW3C applies LUT-driven sanitization to s.
+//
+// State transitions (inRun tracks whether we are in a collapse run):
+//
+//	normal + passthrough byte   → copy byte, stay normal
+//	normal + single-replace byte → write replacement, stay normal
+//	normal + collapse byte/rune  → write '_', enter inRun
+//	inRun  + collapse byte/rune  → skip, stay inRun
+//	inRun  + passthrough byte    → copy byte, exit inRun (normal)
+//	inRun  + single-replace byte → write replacement, exit inRun (normal)
+//
+// Returns s unchanged (zero allocations) when no byte needs modification.
+func sanitizeW3C(s string, lut *[128]uint8) string {
+	// Scan for the first byte that needs modification; common case returns early.
+	first := 0
+	for first < len(s) && s[first] < utf8.RuneSelf && lut[s[first]] == 0 {
+		first++
+	}
+	if first == len(s) {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	b.WriteString(s[:first])
+
+	inRun := false
+	for i := first; i < len(s); {
+		c := s[i]
+		if c >= utf8.RuneSelf {
+			// All non-ASCII runes collapse to '_' in every sanitizer (rune > 0x7E).
+			_, size := utf8.DecodeRuneInString(s[i:])
+			if !inRun {
+				b.WriteByte('_')
+				inRun = true
+			}
+			i += size
+			continue
+		}
+		switch cls := lut[c]; cls {
+		case 0:
+			// Passthrough: bulk-skip the rest of the clean run.
+			j := i + 1
+			for j < len(s) && s[j] < utf8.RuneSelf && lut[s[j]] == 0 {
+				j++
+			}
+			b.WriteString(s[i:j])
+			inRun = false
+			i = j
+		case 0xFF:
+			// Collapse: emit '_' only for the first byte of the run.
+			if !inRun {
+				b.WriteByte('_')
+				inRun = true
+			}
+			i++
+		default:
+			// Single replace: emit the replacement byte; ends any active run.
+			b.WriteByte(cls)
+			inRun = false
+			i++
+		}
+	}
+	return b.String()
+}
 
 const (
 	asciiLowerA = 97
@@ -1167,10 +1191,7 @@ func isValidID(id string) bool {
 // the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
-	var (
-		b  strings.Builder
-		sm = &stringMutator{}
-	)
+	var b strings.Builder
 
 	b.Grow(128)
 	b.WriteString("dd=s:")
@@ -1178,9 +1199,8 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	listLength := 1
 
 	if ctx.origin != "" { // +checklocksignore - Read-only after init.
-		oWithSub := sm.Mutate(originDisallowedFn, ctx.origin) // +checklocksignore - Read-only after init.
 		b.WriteString(";o:")
-		b.WriteString(oWithSub)
+		b.WriteString(sanitizeOrigin(ctx.origin)) // +checklocksignore - Read-only after init.
 	}
 
 	// if the context is remote and there is a reparentID, set p as reparentId
@@ -1202,8 +1222,8 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
-		key := sm.Mutate(keyDisallowedFn, k[len("_dd.p."):])
-		value := sm.Mutate(valueDisallowedFn, v)
+		key := sanitizeTagKey(k[len("_dd.p."):])
+		value := sanitizeTagValue(v)
 		if b.Len()+len(key)+len(value)+4 > tracestateDDMaxSize { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
 			return false
 		}
