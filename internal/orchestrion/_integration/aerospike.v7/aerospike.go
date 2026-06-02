@@ -62,18 +62,16 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	port, err := strconv.Atoi(mappedPort.Port())
 	require.NoError(t, err)
 
-	var aeroClient *as.Client
 	require.NoError(t,
 		backoff.Retry(
 			func() error {
 				var aerr as.Error
-				aeroClient, aerr = as.NewClient(host, port)
+				tc.client, aerr = as.NewClient(host, port)
 				return aerr
 			},
 			backoff.NewExponentialBackOff(),
 		),
 	)
-	tc.client = aeroClient
 	t.Cleanup(func() { tc.client.Close() })
 }
 
