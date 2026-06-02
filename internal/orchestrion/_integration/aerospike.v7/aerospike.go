@@ -24,17 +24,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
-// aerospikeClient is a minimal interface satisfied by both *as.Client (without
-// orchestrion) and *aerospiketrace.Client (after orchestrion wraps NewClient).
-type aerospikeClient interface {
-	Put(policy *as.WritePolicy, key *as.Key, binMap as.BinMap) as.Error
-	Get(policy *as.BasePolicy, key *as.Key, binNames ...string) (*as.Record, as.Error)
-	Close()
-}
-
 type TestCase struct {
 	container testcontainers.Container
-	client    aerospikeClient
+	client    *as.Client
 }
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
@@ -66,7 +58,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 		backoff.Retry(
 			func() error {
 				var aerr as.Error
-				tc.client, aerr = as.NewClient(host, port)
+				tc.client, aerr = newClientReturn(host, port)
 				return aerr
 			},
 			backoff.NewExponentialBackOff(),
@@ -89,6 +81,32 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, record)
 }
+
+// These helpers type-check constructor shapes that must continue returning
+// *as.Client after Orchestrion instrumentation.
+func newClientReturn(host string, port int) (*as.Client, as.Error) {
+	return as.NewClient(host, port)
+}
+
+func newClientAssign(host string, port int) (*as.Client, as.Error) {
+	var client *as.Client
+	var err as.Error
+	client, err = as.NewClient(host, port)
+	return client, err
+}
+
+func newClientArgument(host string, port int) (*as.Client, as.Error) {
+	return acceptClient(as.NewClient(host, port))
+}
+
+func acceptClient(client *as.Client, err as.Error) (*as.Client, as.Error) {
+	return client, err
+}
+
+var (
+	_ = newClientAssign
+	_ = newClientArgument
+)
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
