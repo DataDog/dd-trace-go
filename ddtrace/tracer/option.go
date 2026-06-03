@@ -197,10 +197,6 @@ type config struct {
 	// associated with the runtime and the tracer.
 	statsdClient internal.StatsdClient
 
-	// statsdDisabled, when true, forces a no-op internal metrics (statsd) client
-	// regardless of statsdClient or dogstatsdAddr. Set via WithInternalMetricsDisabled.
-	statsdDisabled bool
-
 	// spanRules contains user-defined rules to determine the sampling rate to apply
 	// to a single span without affecting the entire trace
 	spanRules []SamplingRule
@@ -529,7 +525,7 @@ func resolveDogstatsdAddr(configAddr string, af agentFeatures, socketDSDPath str
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
-	if c.statsdDisabled {
+	if !c.internalConfig.InternalMetricsEnabled() {
 		return &statsd.NoOpClientDirect{}, nil
 	}
 	if c.statsdClient != nil {
@@ -824,12 +820,13 @@ func withNoopStats() StartOption {
 	}
 }
 
-// WithInternalMetricsDisabled replaces the tracer's internal metrics (statsd)
-// client with a no-op, silencing the tracer's internal self-instrumentation.
-func WithInternalMetricsDisabled() StartOption {
+// WithInternalMetricsEnabled enables or disables the tracer's internal metrics
+// (statsd) client, which reports the tracer's internal self-instrumentation.
+// This can also be configured by setting DD_TRACE_INTERNAL_METRICS_ENABLED. On
+// by default.
+func WithInternalMetricsEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		telemetry.RegisterAppConfig("internal_metrics_enabled", false, telemetry.OriginCode)
-		c.statsdDisabled = true
+		c.internalConfig.SetInternalMetricsEnabled(enabled, internalconfig.OriginCode)
 	}
 }
 

@@ -197,6 +197,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER":                 {},
 	"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED":                         {},
 	"DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED":                        {},
+	"DD_TRACE_INTERNAL_METRICS_ENABLED":                               {},
 	"DD_TRACE_KAFKA_ANALYTICS_ENABLED":                                {},
 	"DD_TRACE_LEVELDB_ANALYTICS_ENABLED":                              {},
 	"DD_TRACE_LOGRUS_ANALYTICS_ENABLED":                               {},

@@ -222,11 +222,11 @@ func TestAutoDetectStatsd(t *testing.T) {
 	})
 }
 
-func TestWithInternalMetricsDisabled(t *testing.T) {
+func TestWithInternalMetricsEnabled(t *testing.T) {
 	t.Run("default uses a real client", func(t *testing.T) {
 		cfg, err := newTestConfig(WithAgentTimeout(2))
 		require.NoError(t, err)
-		require.False(t, cfg.statsdDisabled)
+		require.True(t, cfg.internalConfig.InternalMetricsEnabled())
 
 		client, err := newStatsdClient(cfg)
 		require.NoError(t, err)
@@ -236,16 +236,16 @@ func TestWithInternalMetricsDisabled(t *testing.T) {
 	})
 
 	t.Run("disabled returns a no-op even over a custom client", func(t *testing.T) {
-		// A custom client AND a dogstatsd address are provided; the disable flag
-		// must win and yield a no-op client, leaving the custom client unused.
+		// A custom client AND a dogstatsd address are provided; disabling internal
+		// metrics must win and yield a no-op client, leaving the custom client unused.
 		custom := &statsdtest.TestStatsdClient{}
 		cfg, err := newTestConfig(
-			WithInternalMetricsDisabled(),
+			WithInternalMetricsEnabled(false),
 			WithDogstatsdAddr("localhost:8125"),
 			func(c *config) { c.statsdClient = custom },
 		)
 		require.NoError(t, err)
-		require.True(t, cfg.statsdDisabled)
+		require.False(t, cfg.internalConfig.InternalMetricsEnabled())
 
 		client, err := newStatsdClient(cfg)
 		require.NoError(t, err)
