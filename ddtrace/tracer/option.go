@@ -197,6 +197,10 @@ type config struct {
 	// associated with the runtime and the tracer.
 	statsdClient internal.StatsdClient
 
+	// statsdDisabled, when true, forces a no-op internal metrics (statsd) client
+	// regardless of statsdClient or dogstatsdAddr. Set via WithInternalMetricsDisabled.
+	statsdDisabled bool
+
 	// spanRules contains user-defined rules to determine the sampling rate to apply
 	// to a single span without affecting the entire trace
 	spanRules []SamplingRule
@@ -525,6 +529,9 @@ func resolveDogstatsdAddr(configAddr string, af agentFeatures, socketDSDPath str
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
+	if c.statsdDisabled {
+		return &statsd.NoOpClientDirect{}, nil
+	}
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
@@ -814,6 +821,23 @@ func statsTags(c *config) []string {
 func withNoopStats() StartOption {
 	return func(c *config) {
 		c.statsdClient = &statsd.NoOpClientDirect{}
+	}
+}
+
+// WithInternalMetricsDisabled disables the tracer's internal metrics (statsd)
+// client, replacing it with a no-op. This silences all of the tracer's internal
+// self-instrumentation: datadog.tracer.* health metrics, runtime.go.* runtime
+// metrics, and datadog.datastreams.processor.* Data Streams Monitoring processor
+// health counters.
+//
+// It does NOT affect trace delivery, Data Streams Monitoring product data,
+// instrumentation telemetry, or user/custom DogStatsD metrics — those are
+// independent of this client. This is primarily useful in environments such as
+// AWS Lambda where emitting these internal metrics adds avoidable overhead.
+func WithInternalMetricsDisabled() StartOption {
+	return func(c *config) {
+		telemetry.RegisterAppConfig("internal_metrics_enabled", false, telemetry.OriginCode)
+		c.statsdDisabled = true
 	}
 }
 

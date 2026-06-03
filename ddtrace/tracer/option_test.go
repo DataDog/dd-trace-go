@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -217,6 +219,45 @@ func TestAutoDetectStatsd(t *testing.T) {
 			assert.NoError(t, err)
 			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8999"))
 		})
+	})
+}
+
+func TestWithInternalMetricsDisabled(t *testing.T) {
+	t.Run("default uses a real client", func(t *testing.T) {
+		cfg, err := newTestConfig(WithAgentTimeout(2))
+		require.NoError(t, err)
+		require.False(t, cfg.statsdDisabled)
+
+		client, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer client.Close()
+		_, isNoop := client.(*statsd.NoOpClientDirect)
+		require.False(t, isNoop, "expected a real statsd client by default, got %T", client)
+	})
+
+	t.Run("disabled returns a no-op even over a custom client", func(t *testing.T) {
+		// A custom client AND a dogstatsd address are provided; the disable flag
+		// must win and yield a no-op client, leaving the custom client unused.
+		custom := &statsdtest.TestStatsdClient{}
+		cfg, err := newTestConfig(
+			WithInternalMetricsDisabled(),
+			WithDogstatsdAddr("localhost:8125"),
+			func(c *config) { c.statsdClient = custom },
+		)
+		require.NoError(t, err)
+		require.True(t, cfg.statsdDisabled)
+
+		client, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		_, isNoop := client.(*statsd.NoOpClientDirect)
+		require.True(t, isNoop, "expected a no-op statsd client, got %T", client)
+
+		// The no-op client is usable and safe to flush/close.
+		require.NoError(t, client.Count("name", 1, []string{"tag"}, 1))
+		require.NoError(t, client.Flush())
+		require.NoError(t, client.Close())
+		// The provided custom client was never used.
+		require.Empty(t, custom.CountCalls())
 	})
 }
 
