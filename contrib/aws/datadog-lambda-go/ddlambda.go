@@ -256,11 +256,12 @@ func initializeListeners(cfg *Config) []wrapper.HandlerListener {
 	if strings.EqualFold(logLevel, "debug") || (cfg != nil && cfg.DebugLogging) {
 		logger.SetLogLevel(logger.LevelDebug)
 	}
-	// Disable Go runtime metrics by default in Lambda: they add per-invocation
-	// statsd overhead for little value and aren't usable as distributions there.
-	// Must run before the tracer reads its config below. Users can opt back in by
-	// setting either env var explicitly.
-	disableRuntimeMetrics()
+	// Disable the tracer's internal statsd metrics by default in Lambda: they add
+	// per-invocation overhead for little value and aren't usable as distributions
+	// there. This silences all internal statsd output (tracer health, Go runtime,
+	// and DSM processor metrics) via the shared statsd client. Must run before the
+	// tracer reads its config below; users can opt back in by setting the env var.
+	disableInternalMetrics()
 	traceConfig := cfg.toTraceConfig()
 	extensionManager := extension.BuildExtensionManager(traceConfig.UniversalInstrumentation)
 	isExtensionRunning := extensionManager.IsExtensionRunning()
@@ -370,18 +371,19 @@ func (cfg *Config) calculateFipsMode() bool {
 // is the case, redirects `AWS_LAMBDA_RUNTIME_API` to the agent extension, and turns
 // on universal instrumentation unless it was already configured by the customer, so
 // that the HTTP context (invocation details span tags) is available on AppSec traces.
-// disableRuntimeMetrics turns off the tracer's Go runtime metrics (both the
-// legacy and v2 emitters) by default, since they add statsd overhead in Lambda
-// for little value. It only sets each env var when the user hasn't already
-// configured it, leaving explicit opt-in intact.
-func disableRuntimeMetrics() {
-	for _, envVar := range []string{"DD_RUNTIME_METRICS_ENABLED", "DD_RUNTIME_METRICS_V2_ENABLED"} {
-		if os.Getenv(envVar) != "" {
-			continue
-		}
-		if err := os.Setenv(envVar, "false"); err != nil {
-			logger.Debug(fmt.Sprintf("failed to set %s=false: %v", envVar, err))
-		}
+// disableInternalMetrics turns off the tracer's internal statsd metrics by
+// default, since they add overhead in Lambda for little value. Disabling health
+// metrics makes the tracer use a no-op statsd client, which also silences Go
+// runtime and DSM processor metrics (they share the one client). It only sets
+// the env var when the user hasn't already configured it, leaving explicit
+// opt-in intact.
+func disableInternalMetrics() {
+	const envVar = "DD_TRACE_HEALTH_METRICS_ENABLED"
+	if os.Getenv(envVar) != "" {
+		return
+	}
+	if err := os.Setenv(envVar, "false"); err != nil {
+		logger.Debug(fmt.Sprintf("failed to set %s=false: %v", envVar, err))
 	}
 }
 

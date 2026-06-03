@@ -664,16 +664,6 @@ func (c *Config) InternalMetricsEnabled() bool {
 	return c.internalMetricsEnabled
 }
 
-func (c *Config) SetInternalMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.checkProductConflict("DD_TRACE_HEALTH_METRICS_ENABLED", origin, enabled, product...) {
-		return
-	}
-	c.internalMetricsEnabled = enabled
-	configtelemetry.Report("DD_TRACE_HEALTH_METRICS_ENABLED", enabled, origin)
-}
-
 func (c *Config) StatsComputationEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

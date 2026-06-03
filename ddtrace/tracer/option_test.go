@@ -221,40 +221,27 @@ func TestAutoDetectStatsd(t *testing.T) {
 	})
 }
 
-func TestWithInternalMetricsEnabled(t *testing.T) {
+func TestHealthMetricsDisabled(t *testing.T) {
 	isNoop := func(c internal.StatsdClient) bool {
 		_, ok := c.(*statsd.NoOpClientDirect)
 		return ok
 	}
 
-	t.Run("default: statsd and health both real", func(t *testing.T) {
+	t.Run("default: real client", func(t *testing.T) {
 		tr, err := newUnstartedTracer(WithAgentTimeout(2))
 		require.NoError(t, err)
 		defer tr.statsd.Close()
-		require.False(t, isNoop(tr.statsd), "statsd should be real, got %T", tr.statsd)
-		require.False(t, isNoop(tr.healthStatsd), "healthStatsd should be real, got %T", tr.healthStatsd)
+		require.False(t, isNoop(tr.statsd), "statsd should be real by default, got %T", tr.statsd)
 	})
 
-	t.Run("internal disabled, runtime disabled: both no-op", func(t *testing.T) {
-		// Runtime metrics v2 defaults on, so it must also be disabled (via env)
-		// for the shared client to fall back to a no-op.
-		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
-		t.Setenv("DD_RUNTIME_METRICS_V2_ENABLED", "false")
-		tr, err := newUnstartedTracer(WithAgentTimeout(2), WithInternalMetricsEnabled(false))
+	t.Run("DD_TRACE_HEALTH_METRICS_ENABLED=false: no-op client", func(t *testing.T) {
+		// Disabling internal metrics swaps in a no-op client, silencing all of the
+		// tracer's internal statsd metrics (health, runtime, and DSM).
+		t.Setenv("DD_TRACE_HEALTH_METRICS_ENABLED", "false")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2))
 		require.NoError(t, err)
 		defer tr.statsd.Close()
-		require.True(t, isNoop(tr.statsd), "statsd should be no-op, got %T", tr.statsd)
-		require.True(t, isNoop(tr.healthStatsd), "healthStatsd should be no-op, got %T", tr.healthStatsd)
-	})
-
-	t.Run("internal disabled, runtime enabled: statsd real, health no-op", func(t *testing.T) {
-		// Runtime metrics still need the real client even though health metrics
-		// are disabled — they are gated independently.
-		tr, err := newUnstartedTracer(WithAgentTimeout(2), WithInternalMetricsEnabled(false), WithRuntimeMetrics())
-		require.NoError(t, err)
-		defer tr.statsd.Close()
-		require.False(t, isNoop(tr.statsd), "statsd should be real for runtime metrics, got %T", tr.statsd)
-		require.True(t, isNoop(tr.healthStatsd), "healthStatsd should be no-op, got %T", tr.healthStatsd)
+		require.True(t, isNoop(tr.statsd), "statsd should be a no-op, got %T", tr.statsd)
 	})
 }
 

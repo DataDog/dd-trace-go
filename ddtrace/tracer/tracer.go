@@ -154,14 +154,8 @@ type tracer struct {
 	// obfuscator may be nil if disabled.
 	obfuscator *obfuscate.Obfuscator
 
-	// statsd is the real statsd client, shared by runtime metrics and (when
-	// internal metrics are enabled) the tracer's health metrics.
+	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd globalinternal.StatsdClient
-
-	// healthStatsd reports the tracer's internal health metrics (datadog.tracer.*
-	// and DSM processor counters). It equals statsd when internal metrics are
-	// enabled and is a no-op otherwise, leaving runtime metrics unaffected.
-	healthStatsd globalinternal.StatsdClient
 
 	// dataStreams processes data streams monitoring information
 	dataStreams *datastreams.Processor
@@ -465,21 +459,18 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			statsd.Close()
 		}
 	}()
-	// healthStatsd gates the tracer's internal health metrics (and DSM counters)
-	// without affecting runtime metrics, which keep using statsd directly.
-	healthStatsd := newHealthStatsdClient(c, statsd)
 	var writer traceWriter
 	ps := newPrioritySampler()
 	var dfltSampler defaultSampler = ps
 	if c.internalConfig.CIVisibilityEnabled() {
 		writer = newCiVisibilityTraceWriter(c)
 	} else if c.internalConfig.LogToStdout() {
-		writer = newLogTraceWriter(c, healthStatsd)
+		writer = newLogTraceWriter(c, statsd)
 	} else if c.internalConfig.OTLPExportMode() {
 		dfltSampler = newOtelParentBasedAlwaysOnSampler()
 		writer = newOTLPTraceWriter(c)
 	} else {
-		writer = newAgentTraceWriter(c, ps, healthStatsd)
+		writer = newAgentTraceWriter(c, ps, statsd)
 	}
 	traces, spans, err := samplingRulesFromEnv()
 	if err != nil {
@@ -498,7 +489,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
-		dataStreamsProcessor = datastreams.NewProcessor(healthStatsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
+		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
 	}
 	var logFile *log.ManagedFile
 	if v := c.internalConfig.LogDirectory(); v != "" {
@@ -508,7 +499,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
-	var sc statsConcentrator = newConcentrator(c, defaultStatsBucketSize, healthStatsd)
+	var sc statsConcentrator = newConcentrator(c, defaultStatsBucketSize, statsd)
 	if c.internalConfig.OTLPExportMode() {
 		sc = &noopConcentrator{}
 	}
@@ -536,10 +527,9 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 				},
 			}
 		}()),
-		statsd:       statsd,
-		healthStatsd: healthStatsd,
-		dataStreams:  dataStreamsProcessor,
-		logFile:      logFile,
+		statsd:      statsd,
+		dataStreams: dataStreamsProcessor,
+		logFile:     logFile,
 	}
 	buildSharedAttrs(c, &t.sharedAttrs, &t.sharedAttrsForMainSvc)
 	return t, nil
@@ -586,7 +576,7 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 		return nil, err
 	}
 	c := t.config
-	t.healthStatsd.Incr("datadog.tracer.started", nil, 1)
+	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.internalConfig.RuntimeMetricsEnabled() {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Go(func() {
@@ -723,11 +713,11 @@ func (t *tracer) worker(tick <-chan time.Time) {
 				t.traceWriter.add(trace.spans)
 			}
 		case <-tick:
-			t.healthStatsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
+			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
 
 		case done := <-t.flush:
-			t.healthStatsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
+			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
 			t.traceWriter.flush()
 			t.statsd.Flush()
 			if !t.config.tracingAsTransport {
@@ -1058,7 +1048,7 @@ func spanResourcePIISafe(s *Span) bool {
 func (t *tracer) Stop() {
 	t.stopOnce.Do(func() {
 		close(t.stop)
-		t.healthStatsd.Incr("datadog.tracer.stopped", nil, 1)
+		t.statsd.Incr("datadog.tracer.stopped", nil, 1)
 	})
 	t.abandonedSpansDebugger.Stop()
 	t.stats.Stop()

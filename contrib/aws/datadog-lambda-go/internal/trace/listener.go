@@ -83,7 +83,6 @@ func (l *Listener) initTracer() {
 		ddtracer.WithStatsComputation(false),
 		ddtracer.WithGlobalTag("_dd.origin", "lambda"),
 		ddtracer.WithSendRetries(2),
-		ddtracer.WithInternalMetricsEnabled(false),
 	}, l.tracerOptions...)
 	if l.otelTracerEnabled {
 		provider := ddotel.NewTracerProvider(

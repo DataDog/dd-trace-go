@@ -177,7 +177,7 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 		partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))
 		droppedSpans := int(tracerstats.Count(tracerstats.AgentDroppedP0Spans))
 		if tt, ok := t.(*tracer); ok {
-			if stats := tt.healthStatsd; stats != nil {
+			if stats := tt.statsd; stats != nil {
 				stats.Count("datadog.tracer.dropped_p0_traces", int64(droppedTraces),
 					[]string{fmt.Sprintf("partial:%s", strconv.FormatBool(partialTraces > 0))}, 1)
 				stats.Count("datadog.tracer.dropped_p0_spans", int64(droppedSpans), nil, 1)
@@ -217,7 +217,7 @@ func reportAPIErrorsMetric(response *http.Response, err error, endpoint string) 
 			reason = fmt.Sprintf("server_response_%d", response.StatusCode)
 		}
 		tags := []string{"reason:" + reason, "endpoint:" + endpoint}
-		t.healthStatsd.Incr("datadog.tracer.api.errors", tags, 1)
+		t.statsd.Incr("datadog.tracer.api.errors", tags, 1)
 	} else {
 		return
 	}
