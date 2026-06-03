@@ -1456,7 +1456,7 @@ func TestFromGenericCtxSamplingDecision(t *testing.T) {
 
 // TestChildInheritsUpdatedParentService verifies that when a parent span's service
 // is changed via SetTag after creation, a subsequently-started child inherits the
-// updated service name from context.inherited.
+// updated service name from the parent's span snapshot.
 func TestChildInheritsUpdatedParentService(t *testing.T) {
 	trc, _, _, stop, err := startTestTracer(t, WithService("global-svc"))
 	require.NoError(t, err)
@@ -1492,7 +1492,7 @@ func TestExtractedContextOriginMarkedOnFirstChildOnly(t *testing.T) {
 	child := trc.StartSpan("local-op", ChildOf(remoteCtx))
 	defer child.Finish()
 
-	origin, ok := child.meta.Get(keyOrigin)
+	origin, ok := child.meta[keyOrigin]
 	assert.True(t, ok, "first local span from remote context should have origin marked")
 	assert.Equal(t, "synthetics", origin)
 
@@ -1500,6 +1500,93 @@ func TestExtractedContextOriginMarkedOnFirstChildOnly(t *testing.T) {
 	grandchild := trc.StartSpan("grandchild", ChildOf(child.Context()))
 	defer grandchild.Finish()
 
-	_, hasOrigin := grandchild.meta.Get(keyOrigin)
+	_, hasOrigin := grandchild.meta[keyOrigin]
 	assert.False(t, hasOrigin, "grandchild should not have origin — it is not the first local span")
+}
+
+// TestSpanSnapshotFieldsMirrorSetTag verifies that context.spanSnapshot is updated
+// when env, version, and peer.service tags are mutated on a live span via SetTag.
+func TestSpanSnapshotFieldsMirrorSetTag(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	span := trc.StartSpan("op")
+	defer span.Finish()
+
+	span.SetTag(ext.Environment, "staging")
+	span.SetTag(ext.Version, "2.0")
+	span.SetTag(ext.PeerService, "my-peer")
+
+	spanSnapshot := span.context.getSpanSnapshot()
+	assert.Equal(t, "staging", spanSnapshot.env)
+	assert.Equal(t, "2.0", spanSnapshot.version)
+	assert.Equal(t, "my-peer", spanSnapshot.peerService)
+}
+
+// TestSiblingSpansGetFreshSpanSnapshot verifies that each sibling span captures
+// the parent's span snapshot at its own creation time, and that siblings do not
+// share or leak context state between them.
+func TestSiblingSpansGetFreshSpanSnapshot(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t, WithService("global-svc"))
+	require.NoError(t, err)
+	defer stop()
+
+	parent := trc.StartSpan("parent", ServiceName("parent-svc"))
+	defer parent.Finish()
+
+	child1 := trc.StartSpan("child1", ChildOf(parent.Context()))
+	defer child1.Finish()
+
+	parent.SetTag(ext.ServiceName, "new-parent-svc")
+
+	child2 := trc.StartSpan("child2", ChildOf(parent.Context()))
+	defer child2.Finish()
+
+	assert.Equal(t, "parent-svc", child1.service, "child1 was created before service update")
+	assert.Equal(t, "new-parent-svc", child2.service, "child2 was created after service update")
+	assert.Equal(t, "parent-svc", child1.context.getSpanSnapshot().service)
+	assert.Equal(t, "new-parent-svc", child2.context.getSpanSnapshot().service)
+}
+
+func TestSpanSnapshotFieldsConcurrentAccess(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	parent := trc.StartSpan("parent")
+	defer parent.Finish()
+	ctx := parent.Context()
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 100)
+	for i := range 100 {
+		wg.Add(3)
+		go func(i int) {
+			defer wg.Done()
+			parent.SetTag(ext.Environment, fmt.Sprintf("env-%d", i))
+			parent.SetTag(ext.Version, fmt.Sprintf("version-%d", i))
+			parent.SetTag(ext.PeerService, fmt.Sprintf("peer-%d", i))
+			parent.SetTag(ext.ServiceName, fmt.Sprintf("service-%d", i))
+		}(i)
+		go func() {
+			defer wg.Done()
+			child := trc.StartSpan("child", ChildOf(ctx))
+			child.Finish()
+		}()
+		go func() {
+			defer wg.Done()
+			carrier := SQLCommentCarrier{
+				Query:         "SELECT 1",
+				Mode:          DBMPropagationModeService,
+				DBServiceName: "db",
+			}
+			errCh <- carrier.Inject(ctx)
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		assert.NoError(t, err)
+	}
 }
