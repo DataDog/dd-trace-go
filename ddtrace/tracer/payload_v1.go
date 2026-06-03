@@ -1593,6 +1593,12 @@ func (link *SpanLink) decode(b []byte, st *stringTable) ([]byte, error) {
 		case 3:
 			var attr map[string]anyValue
 			attr, o, err = decodeAttributes(o, st)
+			if err != nil {
+				break
+			}
+			if len(attr) > 0 && link.Attributes == nil {
+				link.Attributes = make(map[string]string, len(attr))
+			}
 			for k, v := range attr {
 				if v.valueType != StringValueType {
 					return o, fmt.Errorf("unexpected value type: %d", v.valueType)
