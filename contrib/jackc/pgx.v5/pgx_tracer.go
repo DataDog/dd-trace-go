@@ -71,9 +71,20 @@ type wrappedPgxTracer struct {
 	poolAcquire pgxpool.AcquireTracer
 }
 
+// connInfo holds the subset of connection config fields needed for span tags.
+// Snapshotted once at pool/connection creation to avoid deep-copying the full
+// pgx.ConnConfig (including TLS state) on every traced operation.
+type connInfo struct {
+	host string
+	port uint16
+	db   string
+	user string
+}
+
 type pgxTracer struct {
-	cfg     *config
-	wrapped wrappedPgxTracer
+	cfg      *config
+	wrapped  wrappedPgxTracer
+	connInfo connInfo
 }
 
 var (
@@ -116,7 +127,7 @@ func (t *pgxTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pg
 	if t.wrapped.query != nil {
 		ctx = t.wrapped.query.TraceQueryStart(ctx, conn, data)
 	}
-	opts := t.spanOptions(conn.Config(), operationTypeQuery, data.SQL)
+	opts := t.spanOptions(operationTypeQuery, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.query", opts...)
 	return ctx
 }
@@ -142,7 +153,7 @@ func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pg
 	if t.wrapped.batch != nil {
 		ctx = t.wrapped.batch.TraceBatchStart(ctx, conn, data)
 	}
-	opts := t.spanOptions(conn.Config(), operationTypeBatch, "",
+	opts := t.spanOptions(operationTypeBatch, "",
 		tracer.Tag(tagBatchNumQueries, data.Batch.Len()),
 	)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.batch", opts...)
@@ -165,7 +176,7 @@ func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pg
 	if bs != nil && bs.prevQuery != nil {
 		bs.prevQuery.finish()
 	}
-	opts := t.spanOptions(conn.Config(), operationTypeQuery, data.SQL,
+	opts := t.spanOptions(operationTypeQuery, data.SQL,
 		tracer.Tag(tagRowsAffected, data.CommandTag.RowsAffected()),
 	)
 	span, _ := tracer.StartSpanFromContext(ctx, "pgx.batch.query", opts...)
@@ -198,7 +209,7 @@ func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data
 	if t.wrapped.copyFrom != nil {
 		ctx = t.wrapped.copyFrom.TraceCopyFromStart(ctx, conn, data)
 	}
-	opts := t.spanOptions(conn.Config(), operationTypeCopyFrom, "",
+	opts := t.spanOptions(operationTypeCopyFrom, "",
 		tracer.Tag(tagCopyFromTables, data.TableName),
 		tracer.Tag(tagCopyFromColumns, data.ColumnNames),
 	)
@@ -223,7 +234,7 @@ func (t *pgxTracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data 
 	if t.wrapped.prepare != nil {
 		ctx = t.wrapped.prepare.TracePrepareStart(ctx, conn, data)
 	}
-	opts := t.spanOptions(conn.Config(), operationTypePrepare, data.SQL)
+	opts := t.spanOptions(operationTypePrepare, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.prepare", opts...)
 	return ctx
 }
@@ -245,7 +256,7 @@ func (t *pgxTracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnect
 	if t.wrapped.connect != nil {
 		ctx = t.wrapped.connect.TraceConnectStart(ctx, data)
 	}
-	opts := t.spanOptions(data.ConnConfig, operationTypeConnect, "")
+	opts := t.spanOptions(operationTypeConnect, "")
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.connect", opts...)
 	return ctx
 }
@@ -267,7 +278,7 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, d
 	if t.wrapped.poolAcquire != nil {
 		ctx = t.wrapped.poolAcquire.TraceAcquireStart(ctx, pool, data)
 	}
-	opts := t.spanOptions(pool.Config().ConnConfig, operationTypeAcquire, "")
+	opts := t.spanOptions(operationTypeAcquire, "")
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.pool.acquire", opts...)
 	return ctx
 }
@@ -282,7 +293,8 @@ func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, dat
 	t.finishSpan(ctx, data.Err)
 }
 
-func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sqlStatement string, extraOpts ...tracer.StartSpanOption) []tracer.StartSpanOption {
+func (t *pgxTracer) spanOptions(op operationType, sqlStatement string, extraOpts ...tracer.StartSpanOption) []tracer.StartSpanOption {
+	ci := &t.connInfo
 	opts := []tracer.StartSpanOption{
 		instrumentation.ServiceNameWithSource(t.cfg.serviceName, t.cfg.serviceSource),
 		tracer.SpanType(ext.SpanTypeSQL),
@@ -298,17 +310,17 @@ func (t *pgxTracer) spanOptions(connConfig *pgx.ConnConfig, op operationType, sq
 	} else {
 		opts = append(opts, tracer.ResourceName(string(op)))
 	}
-	if host := connConfig.Host; host != "" {
-		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, host))
+	if ci.host != "" {
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationName, ci.host))
 	}
-	if port := connConfig.Port; port != 0 {
-		opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, int(port)))
+	if ci.port != 0 {
+		opts = append(opts, tracer.Tag(ext.NetworkDestinationPort, int(ci.port)))
 	}
-	if db := connConfig.Database; db != "" {
-		opts = append(opts, tracer.Tag(ext.DBName, db))
+	if ci.db != "" {
+		opts = append(opts, tracer.Tag(ext.DBName, ci.db))
 	}
-	if user := connConfig.User; user != "" {
-		opts = append(opts, tracer.Tag(ext.DBUser, user))
+	if ci.user != "" {
+		opts = append(opts, tracer.Tag(ext.DBUser, ci.user))
 	}
 	return opts
 }
