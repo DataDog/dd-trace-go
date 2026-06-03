@@ -469,7 +469,7 @@ func mockAgentEndpoint(t testing.TB, path string) *url.URL {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"endpoints": ["` + path + `"], "config": {"statsd_port": 8125}}`))
+		w.Write([]byte(`{"endpoints": ["` + path + `", "/v0.6/stats"], "config": {"statsd_port": 8125}, "client_drop_p0s": true}`))
 	}))
 	t.Cleanup(srv.Close)
 	u, _ := url.Parse(srv.URL)
