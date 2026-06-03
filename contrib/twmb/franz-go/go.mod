@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.8.2
+	github.com/DataDog/dd-trace-go/v2 v2.8.3-rc.1
 	github.com/stretchr/testify v1.11.1
 	github.com/twmb/franz-go v1.21.0
 	github.com/twmb/franz-go/pkg/kadm v1.17.1
