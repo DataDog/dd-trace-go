@@ -1087,7 +1087,6 @@ func TestDDAppKeyHeader(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should always be set in agent mode")
 		assert.Empty(t, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should not be set in agent mode")
 	})
 	t.Run("needs-app-key-header-agent-mode", func(t *testing.T) {
@@ -1125,7 +1124,6 @@ func TestDDAppKeyHeader(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should be set when no app key is provided in agent mode")
 		assert.Empty(t, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should not be set when no app key is provided")
 	})
 }

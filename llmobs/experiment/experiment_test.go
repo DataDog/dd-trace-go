@@ -298,9 +298,7 @@ func TestDDAppKeyHeader(t *testing.T) {
 		_, err = exp.Run(context.Background())
 		require.NoError(t, err)
 
-		// Verify X-Datadog-NeedsAppKey header is set in agent mode (app key is ignored)
 		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should always be set in agent mode")
 		assert.Empty(t, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should not be set in agent mode")
 	})
 }

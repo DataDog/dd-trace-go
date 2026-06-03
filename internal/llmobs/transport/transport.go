@@ -219,9 +219,6 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			if c.agentless && c.appKey != "" {
 				// In agentless mode, set the app key header if available
 				req.Header.Set("DD-APPLICATION-KEY", c.appKey)
-			} else if !c.agentless {
-				// In agent mode, always set the NeedsAppKey header (app key is ignored)
-				req.Header.Set("X-Datadog-NeedsAppKey", "true")
 			}
 		}
 
