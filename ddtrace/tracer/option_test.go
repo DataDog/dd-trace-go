@@ -236,9 +236,11 @@ func TestWithInternalMetricsEnabled(t *testing.T) {
 	})
 
 	t.Run("internal disabled, runtime disabled: both no-op", func(t *testing.T) {
-		// Runtime metrics v2 defaults on, so it must also be disabled for the
-		// shared client to fall back to a no-op.
-		tr, err := newUnstartedTracer(WithAgentTimeout(2), WithInternalMetricsEnabled(false), WithRuntimeMetricsEnabled(false))
+		// Runtime metrics v2 defaults on, so it must also be disabled (via env)
+		// for the shared client to fall back to a no-op.
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
+		t.Setenv("DD_RUNTIME_METRICS_V2_ENABLED", "false")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), WithInternalMetricsEnabled(false))
 		require.NoError(t, err)
 		defer tr.statsd.Close()
 		require.True(t, isNoop(tr.statsd), "statsd should be no-op, got %T", tr.statsd)

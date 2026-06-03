@@ -1125,18 +1125,6 @@ func WithRuntimeMetrics() StartOption {
 	}
 }
 
-// WithRuntimeMetricsEnabled enables or disables automatic collection of Go
-// runtime metrics (runtime.go.*). It controls both the legacy and v2 runtime
-// metric emitters, and can also be configured via DD_RUNTIME_METRICS_ENABLED /
-// DD_RUNTIME_METRICS_V2_ENABLED. Runtime metrics v2 is enabled by default.
-func WithRuntimeMetricsEnabled(enabled bool) StartOption {
-	return func(cfg *config) {
-		telemetry.RegisterAppConfig("runtime_metrics_enabled", enabled, telemetry.OriginCode)
-		cfg.internalConfig.SetRuntimeMetricsEnabled(enabled, internalconfig.OriginCode)
-		cfg.internalConfig.SetRuntimeMetricsV2Enabled(enabled, internalconfig.OriginCode)
-	}
-}
-
 // WithDogstatsdAddr specifies the address to connect to for sending metrics to the Datadog
 // Agent. It should be a "host:port" string, or the path to a unix domain socket.If not set, it
 // attempts to determine the address of the statsd service according to the following rules:

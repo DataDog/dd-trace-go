@@ -201,3 +201,21 @@ func TestCalculateFipsMode(t *testing.T) {
 func boolPtr(b bool) *bool {
 	return &b
 }
+
+func TestDisableRuntimeMetrics(t *testing.T) {
+	t.Run("sets defaults when unset", func(t *testing.T) {
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "")
+		t.Setenv("DD_RUNTIME_METRICS_V2_ENABLED", "")
+		disableRuntimeMetrics()
+		assert.Equal(t, "false", os.Getenv("DD_RUNTIME_METRICS_ENABLED"))
+		assert.Equal(t, "false", os.Getenv("DD_RUNTIME_METRICS_V2_ENABLED"))
+	})
+
+	t.Run("respects explicit user values", func(t *testing.T) {
+		t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
+		t.Setenv("DD_RUNTIME_METRICS_V2_ENABLED", "true")
+		disableRuntimeMetrics()
+		assert.Equal(t, "true", os.Getenv("DD_RUNTIME_METRICS_ENABLED"))
+		assert.Equal(t, "true", os.Getenv("DD_RUNTIME_METRICS_V2_ENABLED"))
+	})
+}
