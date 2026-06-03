@@ -803,6 +803,67 @@ func TestIgnoredMetadata(t *testing.T) {
 	}
 }
 
+// WithMetadataTags must never write credential-bearing or binary metadata keys
+// into span tags, regardless of user-supplied WithIgnoredMetadata options.
+func TestMetadataCredentialLeakPrevention(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(false, WithMetadataTags())
+	require.NoError(t, err)
+	defer rig.Close()
+
+	sensitiveKeys := []string{
+		"authorization",
+		"proxy-authorization",
+		"cookie",
+		"set-cookie",
+		"x-api-key",
+		"x-auth-token",
+	}
+
+	md := metadata.MD{
+		"authorization":           []string{"Bearer secret-token"},
+		"proxy-authorization":     []string{"Basic secret"},
+		"cookie":                  []string{"session=secret"},
+		"set-cookie":              []string{"id=secret; HttpOnly"},
+		"x-api-key":               []string{"secret-api-key"},
+		"x-auth-token":            []string{"secret-auth-token"},
+		"grpc-status-details-bin": []string{"binary-data"},
+		"safe-key":                []string{"visible"},
+	}
+	ctx := metadata.NewOutgoingContext(context.Background(), md)
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	require.NoError(t, err)
+
+	waitForSpans(mt, 1)
+
+	var serverSpan *mocktracer.Span
+	for _, s := range mt.FinishedSpans() {
+		if s.OperationName() == "grpc.server" {
+			serverSpan = s
+			break
+		}
+	}
+	require.NotNil(t, serverSpan, "grpc.server span not found")
+
+	for _, key := range sensitiveKeys {
+		assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+key), "credential key %q must not appear as span tag", key)
+		assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+key+".0"), "credential key %q must not appear as span tag", key)
+	}
+
+	// Binary metadata must also be suppressed.
+	assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+"grpc-status-details-bin"), "binary metadata must not appear as span tag")
+	assert.Nil(t, serverSpan.Tag(tagMetadataPrefix+"grpc-status-details-bin.0"), "binary metadata must not appear as span tag")
+
+	// Non-sensitive keys must still be tagged.
+	safeTag := serverSpan.Tag(tagMetadataPrefix + "safe-key")
+	if safeTag == nil {
+		safeTag = serverSpan.Tag(tagMetadataPrefix + "safe-key.0")
+	}
+	assert.NotNil(t, safeTag, "non-sensitive metadata key must still be tagged")
+}
+
 func TestSpanOpts(t *testing.T) {
 	t.Run("unary", func(t *testing.T) {
 		mt := mocktracer.Start()

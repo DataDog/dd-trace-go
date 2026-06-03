@@ -916,6 +916,46 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		checkLiveDebuggerRemoteConfigState(false)
 	})
 
+	// Test that Live Debugger cannot be enabled through RC if the env var has
+	// explicitly disabled it.
+	t.Run("enable Live Debugger through RC with env var explicitly disabling it", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "false")
+
+		startRemoteConfig := func(tracer *tracer) {
+			t.Cleanup(remoteconfig.Reset)
+			t.Cleanup(remoteconfig.Stop)
+			err := tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+			require.NoError(t, err)
+		}
+
+		tr, _, _, stop, err := startTestTracer(t,
+			WithService("my-service"), WithEnv("my-env"),
+		)
+		require.Nil(t, err)
+		defer stop()
+		startRemoteConfig(tr)
+
+		checkLiveDebuggerRemoteConfigState := func(enabled bool) {
+			found, err := remoteconfig.HasProduct(state.ProductLiveDebugging)
+			require.NoError(t, err)
+			require.Equal(t, enabled, found)
+		}
+
+		checkLiveDebuggerRemoteConfigState(false)
+
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(
+				`{"lib_config": {"dynamic_instrumentation_enabled": true}, "service_target": {"service": "my-service", "env": "my-env"}}`,
+			),
+		}
+		tr.onRemoteConfigUpdate(input)
+		// Tracer is still not subscribed; the RC update did not override the env-var disable.
+		checkLiveDebuggerRemoteConfigState(false)
+	})
+
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 

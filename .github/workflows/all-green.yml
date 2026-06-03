@@ -20,10 +20,14 @@ jobs:
           # polling-interval-seconds: "60" # Default
           ignored-name-patterns: |
             devflow/merge
+            devflow/mergegate
             label_issues
             check-title
 
 # Reason for ignored-name-patterns:
 #
 # * devflow/merge: technical job used by the merge queue, do not remove it.
+# * devflow/mergegate: stays pending until the PR is approved by codeowners and other checks pass; ignoring it
+#   prevents all open PRs from appearing as failing CI before reviews are complete, making PRs with actual
+#   CI failures indistinguishable from PRs that are simply awaiting review.
 # * check-title: CI job used to validate the PR title, enforced by branch protection rules, do not remove it.
