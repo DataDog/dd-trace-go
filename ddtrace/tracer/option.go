@@ -824,16 +824,8 @@ func withNoopStats() StartOption {
 	}
 }
 
-// WithInternalMetricsDisabled disables the tracer's internal metrics (statsd)
-// client, replacing it with a no-op. This silences all of the tracer's internal
-// self-instrumentation: datadog.tracer.* health metrics, runtime.go.* runtime
-// metrics, and datadog.datastreams.processor.* Data Streams Monitoring processor
-// health counters.
-//
-// It does NOT affect trace delivery, Data Streams Monitoring product data,
-// instrumentation telemetry, or user/custom DogStatsD metrics — those are
-// independent of this client. This is primarily useful in environments such as
-// AWS Lambda where emitting these internal metrics adds avoidable overhead.
+// WithInternalMetricsDisabled replaces the tracer's internal metrics (statsd)
+// client with a no-op, silencing the tracer's internal self-instrumentation.
 func WithInternalMetricsDisabled() StartOption {
 	return func(c *config) {
 		telemetry.RegisterAppConfig("internal_metrics_enabled", false, telemetry.OriginCode)
