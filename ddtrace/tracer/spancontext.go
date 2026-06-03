@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -115,10 +116,15 @@ type SpanContext struct {
 	updated bool // updated is tracking changes for priority / origin / x-datadog-tags
 
 	// the below group should propagate only locally
+	isRemote bool
+	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
+	// +checklocks:mu
+	baggageOnly bool
+	errors      atomic.Int32 // number of spans with errors in this trace
+	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
+	hasBaggage uint32 // +checkatomic
 
-	trace  *trace       // reference to the trace that this span belongs too
-	span   *Span        // reference to the span that hosts this context
-	errors atomic.Int32 // number of spans with errors in this trace
+	trace *trace // reference to the trace that this span belongs too
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -129,7 +135,6 @@ type SpanContext struct {
 	// Missing parent span could occur when a W3C-compliant tracer
 	// propagated this context, but didn't send any spans to Datadog.
 	reparentID string
-	isRemote   bool
 
 	// the below group should propagate cross-process
 
@@ -140,8 +145,9 @@ type SpanContext struct {
 	mu locking.RWMutex
 	// +checklocks:mu
 	baggage map[string]string
-	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
-	hasBaggage uint32 // +checkatomic
+	// +checklocks:mu
+	// spanSnapshot stores mirrored data from the span that hosts this context.
+	spanSnapshot spanSnapshot
 	// e.g. "synthetics"
 	// +checklocks:mu
 	origin string
@@ -149,9 +155,6 @@ type SpanContext struct {
 	// links to related spans in separate|external|disconnected traces
 	// +checklocks:mu
 	spanLinks []SpanLink
-	// when true, indicates this context only propagates baggage items and should not be used for distributed tracing fields
-	// +checklocks:mu
-	baggageOnly bool
 }
 
 // Private interface for span contexts that can propagate sampling decisions.
@@ -254,7 +257,6 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	context := &SpanContext{
 		spanID: span.spanID,
-		span:   span,
 	}
 
 	context.traceID.SetLower(span.traceID)
@@ -292,11 +294,79 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
+	// The span snapshot is populated by tracer.StartSpan after all
+	// env/version/service-mapping mutations, so we skip the intermediate
+	// write here. Direct callers of newSpanContext (tests) do not read
+	// the snapshot before populating it.
 	// setting context.updated to false here is necessary to distinguish
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
 	context.updated = false
 	return context
+}
+
+func (c *SpanContext) getSpanSnapshot() spanSnapshot {
+	if c == nil {
+		return spanSnapshot{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanSnapshot
+}
+
+func (c *SpanContext) setSpanSnapshot(data spanSnapshot) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanSnapshot = data
+}
+
+func (c *SpanContext) setSpanSnapshotService(service, source string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanSnapshot.service = service
+	c.spanSnapshot.serviceSource = source
+}
+
+func (c *SpanContext) setSpanSnapshotPPROFCtx(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.spanSnapshot.pprofCtx = ctx
+}
+
+func (c *SpanContext) setSpanSnapshotMeta(key, value string) {
+	if c == nil {
+		return
+	}
+	switch key {
+	case ext.PeerService, ext.Environment, ext.Version:
+	default:
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.setSpanSnapshotMetaLocked(key, value)
+}
+
+// +checklocks:c.mu
+func (c *SpanContext) setSpanSnapshotMetaLocked(key, value string) {
+	assert.RWMutexLocked(&c.mu)
+	switch key {
+	case ext.PeerService:
+		c.spanSnapshot.peerService = value
+	case ext.Environment:
+		c.spanSnapshot.env = value
+	case ext.Version:
+		c.spanSnapshot.version = value
+	}
 }
 
 // SpanID implements ddtrace.SpanContext.
@@ -445,8 +515,8 @@ func (c *SpanContext) baggageItem(key string) string {
 
 // finish marks this span as finished in the trace.
 // The span must be locked by the caller.
-func (c *SpanContext) finish() {
-	c.trace.finishedOneLocked(c.span)
+func (c *SpanContext) finish(s *Span) {
+	c.trace.finishedOneLocked(s)
 }
 
 // safeDebugString returns a safe string representation of the SpanContext for debug logging.
@@ -524,6 +594,12 @@ type trace struct {
 	// the trace yet.
 	// Write-once during initialization in newSpanContext, read-only afterward.
 	root *Span
+
+	// rootFlushed is set when partial flushing sends the local root before the
+	// trace completes. The root must stay out of the pool while unfinished spans
+	// still refer to it through trace.root.
+	// +checklocks:mu
+	rootFlushed bool
 }
 
 var (
@@ -810,11 +886,16 @@ func (t *trace) finishedOneLocked(s *Span) {
 	// Full flush: all spans finished
 	if len(t.spans) == t.finished {
 		spans := t.spans
+		spansToRelease := spans
+		if t.rootFlushed {
+			spansToRelease = append(append([]*Span(nil), spans...), t.root)
+			t.rootFlushed = false
+		}
 		willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 		t.mu.Unlock()
-		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend})
+		submitChunkWithTracer(submitTracerForFinishedChunk(tr, spans), &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease})
 		return
 	}
 
@@ -854,6 +935,16 @@ func (t *trace) finishedOneLocked(s *Span) {
 	currentSpanIsFirstInChunk := s == fSpan
 	needsFirstSpanTags := s != originalFirst
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
+	spansToRelease := finishedSpans
+	if t.root != nil {
+		for i, s2 := range finishedSpans {
+			if s2 == t.root {
+				t.rootFlushed = true
+				spansToRelease = append(append([]*Span(nil), finishedSpans[:i]...), finishedSpans[i+1:]...)
+				break
+			}
+		}
+	}
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
 	// Clear the tail so the GC can collect the flushed spans; without this the
@@ -878,7 +969,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RUnlock()
 	}
 
-	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend})
+	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease})
 }
 
 // submitChunkWithTracer submits a finished chunk when tr is backed by the real tracer.

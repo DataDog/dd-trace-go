@@ -50,6 +50,7 @@ var defaultQueryStringRegexp = regexp.MustCompile("(?i)(?:p(?:ass)?w(?:or)?d|pas
 
 type config struct {
 	queryStringRegexp                        *regexp.Regexp      // specifies the regexp to use for query string obfuscation.
+	useDefaultObfuscator                     bool                // reports whether to use the default query string obfuscator.
 	queryString                              bool                // reports whether the query string should be included in the URL span tag.
 	clientQueryStringAllowlist               map[string]struct{} // when non-nil, only keep these query parameter keys for client spans and skip regex obfuscation.
 	serverQueryStringAllowlist               map[string]struct{} // when non-nil, only keep these query parameter keys for server spans and skip regex obfuscation.
@@ -76,7 +77,6 @@ func ResetCfg() {
 func newConfig() config {
 	c := config{
 		queryString:                              !internal.BoolEnv(envQueryStringDisabled, false),
-		queryStringRegexp:                        QueryStringRegexp(),
 		traceClientIP:                            internal.BoolEnv(envTraceClientIPEnabled, false),
 		isStatusError:                            isServerError,
 		inferredProxyServicesEnabled:             internal.BoolEnv(envInferredProxyServicesEnabled, false),
@@ -84,6 +84,13 @@ func newConfig() config {
 		baggageTagKeys:                           make(map[string]struct{}),
 		resourceRenamingAlwaysSimplifiedEndpoint: internal.BoolEnv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false),
 		appsecEnabledMode:                        sync.OnceValue(appsecEnabledAtStartup),
+	}
+	if _, ok := env.Lookup(EnvQueryStringRegexp); ok {
+		c.queryStringRegexp = QueryStringRegexp()
+	} else {
+		// Use an in-code state-machine obfuscator by default instead of `defaultQueryStringRegexp`
+		// for performance reasons.
+		c.useDefaultObfuscator = true
 	}
 	if v, ok := env.Lookup("DD_TRACE_BAGGAGE_TAG_KEYS"); ok {
 		if v == "*" {
@@ -135,17 +142,16 @@ func isServerError(statusCode int) bool {
 }
 
 func QueryStringRegexp() *regexp.Regexp {
-	if s, ok := env.Lookup(EnvQueryStringRegexp); !ok {
-		return defaultQueryStringRegexp
-	} else if s == "" {
-		log.Debug("%s is set but empty. Query string obfuscation will be disabled.", EnvQueryStringRegexp)
-		return nil
-	} else if r, err := regexp.Compile(s); err == nil {
-		return r
+	if s, ok := env.Lookup(EnvQueryStringRegexp); ok {
+		if s == "" {
+			return nil
+		}
+		if r, err := regexp.Compile(s); err == nil {
+			return r
+		}
 	}
 	log.Error("Could not compile regexp from %s. Using default regexp instead.", EnvQueryStringRegexp)
 	return defaultQueryStringRegexp
-
 }
 
 // GetErrorCodesFromInput parses a comma-separated string s to determine which codes are to be considered errors
