@@ -116,6 +116,24 @@ type payloadV1 struct {
 	// avoiding repeated boxing of the string into any.
 	processTagsCached anyValue
 	processTagsStr    string
+
+	// poolState coordinates returning this payload to the pool after all HTTP
+	// activity is done. RoundTrip can return before writeLoop calls Body.Close.
+	poolState atomic.Uint32
+}
+
+const (
+	pv1StateFlushDone  uint32 = 1 << 0
+	pv1StateBodyClosed uint32 = 1 << 1
+)
+
+// handoff marks one owner as done with the payload and returns it to the pool
+// once both the flush goroutine and HTTP request body close are complete.
+func (p *payloadV1) handoff(ownBit uint32) {
+	counterpart := (pv1StateFlushDone | pv1StateBodyClosed) &^ ownBit
+	if old := p.poolState.Or(ownBit); old == counterpart {
+		putPayloadV1(p)
+	}
 }
 
 // Constant dummy value to represent a serialization failure. Used to prevent failures while
@@ -295,8 +313,10 @@ func (p *payloadV1) clear() {
 	p.staticBufLen = 0
 	p.chunksCountOff = 0
 	p.chunks = p.chunks[:0]
+	clear(p.attributes)
 	atomic.StoreUint32(&p.fields, 0)
 	atomic.StoreUint32(&p.count, 0)
+	p.poolState.Store(0)
 }
 
 // recordItem records that a new chunk was added to the payload.
@@ -361,7 +381,7 @@ func (p *payloadV1) setProcessTags() {
 }
 
 func (p *payloadV1) Close() error {
-	p.clear()
+	p.handoff(pv1StateBodyClosed)
 	return nil
 }
 
