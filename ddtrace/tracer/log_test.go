@@ -321,12 +321,12 @@ func TestInvalidAgentURL(t *testing.T) {
 	tp.Reset()
 	tp.Ignore(commonLogIgnore...)
 	logStartup(tracer)
-	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v1.0/traces"`) // v1.0 endpoint is not available for invalid agent
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`) // falls back to v0.4 when agent doesn't support v1
 	if !found {
 		t.Fatal("Expected to find log entry")
 	}
 	// assert that it is the default URL
-	assert.Regexp(`"agent_url":"http://localhost:8126/v1.0/traces"`, logEntry)
+	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
 }
 
 func TestAgentURLConflict(t *testing.T) {
@@ -339,9 +339,9 @@ func TestAgentURLConflict(t *testing.T) {
 	tp.Reset()
 	tp.Ignore(commonLogIgnore...)
 	logStartup(tracer)
-	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v1.0/traces"`) // v1.0 endpoint is not available
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`) // falls back to v0.4 when agent doesn't support v1
 	if !found {
 		t.Fatal("Expected to find log entry")
 	}
-	assert.Regexp(`"agent_url":"http://localhost:8126/v1.0/traces"`, logEntry)
+	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
 }
