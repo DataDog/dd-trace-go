@@ -494,6 +494,7 @@ github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250721125240-fdf1ef85b
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20250806100345-ca5e7fdaf7b6/go.mod h1:YFoTl1xsMzdSRFIu33oCSPS/3+HZAPGpO3oOM96wXCM=
 github.com/DataDog/go-sqllexer v0.1.6/go.mod h1:GGpo1h9/BVSN+6NJKaEcJ9Jn44Hqc63Rakeb+24Mjgo=
 github.com/DataDog/go-tuf v1.1.0-0.5.2/go.mod h1:zBcq6f654iVqmkk8n2Cx81E1JnNTMOAx1UEO/wZR+P0=
+github.com/DataDog/gostackparse v0.7.0 h1:i7dLkXHvYzHV308hnkvVGDL3BR4FWl7IsXNPz/IGQh4=
 github.com/DataDog/gostackparse v0.7.0/go.mod h1:lTfqcJKqS9KnXQGnyQMCugq3u1FP6UZMfWR0aitKFMM=
 github.com/DataDog/mmh3 v0.0.0-20210722141835-012dc69a9e49 h1:EbzDX8HPk5uE2FsJYxD74QmMw0/3CqSKhEr6teh0ncQ=
 github.com/DataDog/mmh3 v0.0.0-20210722141835-012dc69a9e49/go.mod h1:SvsjzyJlSg0rKsqYgdcFxeEVflx3ZNAyFfkUHP0TxXg=
@@ -1434,6 +1435,7 @@ go.opentelemetry.io/collector/internal/telemetry v0.129.0/go.mod h1:riAPlR2LZBV7
 go.opentelemetry.io/collector/internal/telemetry v0.131.0/go.mod h1:TzNVIkIolnk/Jq/3qc4uWhL0bOeaP56jpyrMlUOeA/Y=
 go.opentelemetry.io/collector/internal/telemetry v0.132.0/go.mod h1:KUo0IpZZvImIl172+//Oh2mboILCV5WU4TjdUgU8xEM=
 go.opentelemetry.io/collector/internal/telemetry v0.133.0/go.mod h1:akUK7X6ZQ+CbbCjyXLv9y/EHt5jIy+J+nGoLvndZN14=
+go.opentelemetry.io/collector/internal/telemetry v0.137.0 h1:KlJcaBnIIn+QJzQIfA1eXbYUvHmgM7h/gLp/vjvUBMw=
 go.opentelemetry.io/collector/internal/telemetry v0.137.0/go.mod h1:GWOiXBZ82kMzwGMEihJ5rEo5lFL7gurfHD++5q0XtI8=
 go.opentelemetry.io/collector/internal/telemetry v0.138.0/go.mod h1:evqf71fdIMXdQEofbs1bVnBUzfF6zysLMLR9bEAS9Xw=
 go.opentelemetry.io/collector/internal/telemetry v0.142.0 h1:ALK9O2AYWuptSGSFzNW0BL6hFq7sf2lxwTrGQa45Nic=
