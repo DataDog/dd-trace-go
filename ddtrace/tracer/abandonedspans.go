@@ -302,7 +302,7 @@ func formatAbandonedSpans(b *bucket[uint64, *abandonedSpanCandidate], interval *
 			continue
 		}
 		if t, ok := getGlobalTracer().(*tracer); ok {
-			t.statsd.Incr("datadog.tracer.abandoned_spans", []string{"name:" + s.Name, "integration:" + s.Integration}, 1)
+			t.healthStatsd.Incr("datadog.tracer.abandoned_spans", []string{"name:" + s.Name, "integration:" + s.Integration}, 1)
 		}
 		spanCount++
 		msg := s.String()

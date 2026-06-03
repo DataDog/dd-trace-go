@@ -525,13 +525,28 @@ func resolveDogstatsdAddr(configAddr string, af agentFeatures, socketDSDPath str
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
-	if !c.internalConfig.InternalMetricsEnabled() {
-		return &statsd.NoOpClientDirect{}, nil
-	}
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
+	// The statsd client is shared by the tracer's internal/health metrics and by
+	// runtime metrics. Only fall back to a no-op client when no consumer is
+	// enabled; otherwise runtime metrics (gated independently) would be lost.
+	ic := c.internalConfig
+	if !ic.InternalMetricsEnabled() && !ic.RuntimeMetricsEnabled() && !ic.RuntimeMetricsV2Enabled() {
+		return &statsd.NoOpClientDirect{}, nil
+	}
 	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
+}
+
+// newHealthStatsdClient returns the client used for the tracer's internal health
+// metrics: the shared statsd client when internal metrics are enabled, otherwise
+// a no-op. This gates datadog.tracer.* / DSM counters independently of runtime
+// metrics, which keep using the shared client.
+func newHealthStatsdClient(c *config, statsdClient internal.StatsdClient) internal.StatsdClient {
+	if c.internalConfig.InternalMetricsEnabled() {
+		return statsdClient
+	}
+	return &statsd.NoOpClientDirect{}
 }
 
 type integrationConfig struct {
@@ -820,10 +835,12 @@ func withNoopStats() StartOption {
 	}
 }
 
-// WithInternalMetricsEnabled enables or disables the tracer's internal metrics
-// (statsd) client, which reports the tracer's internal self-instrumentation.
-// This can also be configured by setting DD_TRACE_INTERNAL_METRICS_ENABLED. On
-// by default.
+// WithInternalMetricsEnabled enables or disables the tracer's internal health
+// metrics (datadog.tracer.* and Data Streams Monitoring processor counters),
+// reported via statsd. It does not affect runtime metrics, which are controlled
+// separately by WithRuntimeMetrics / DD_RUNTIME_METRICS_ENABLED. Disabling is
+// useful where these metrics add overhead, such as AWS Lambda. This can also be
+// set via DD_TRACE_INTERNAL_METRICS_ENABLED. On by default.
 func WithInternalMetricsEnabled(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetInternalMetricsEnabled(enabled, internalconfig.OriginCode)

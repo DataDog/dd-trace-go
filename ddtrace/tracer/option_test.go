@@ -36,7 +36,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
-	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -223,41 +222,41 @@ func TestAutoDetectStatsd(t *testing.T) {
 }
 
 func TestWithInternalMetricsEnabled(t *testing.T) {
-	t.Run("default uses a real client", func(t *testing.T) {
-		cfg, err := newTestConfig(WithAgentTimeout(2))
-		require.NoError(t, err)
-		require.True(t, cfg.internalConfig.InternalMetricsEnabled())
+	isNoop := func(c internal.StatsdClient) bool {
+		_, ok := c.(*statsd.NoOpClientDirect)
+		return ok
+	}
 
-		client, err := newStatsdClient(cfg)
+	t.Run("default: statsd and health both real", func(t *testing.T) {
+		tr, err := newUnstartedTracer(WithAgentTimeout(2))
 		require.NoError(t, err)
-		defer client.Close()
-		_, isNoop := client.(*statsd.NoOpClientDirect)
-		require.False(t, isNoop, "expected a real statsd client by default, got %T", client)
+		defer tr.statsd.Close()
+		require.False(t, isNoop(tr.statsd), "statsd should be real, got %T", tr.statsd)
+		require.False(t, isNoop(tr.healthStatsd), "healthStatsd should be real, got %T", tr.healthStatsd)
 	})
 
-	t.Run("disabled returns a no-op even over a custom client", func(t *testing.T) {
-		// A custom client AND a dogstatsd address are provided; disabling internal
-		// metrics must win and yield a no-op client, leaving the custom client unused.
-		custom := &statsdtest.TestStatsdClient{}
-		cfg, err := newTestConfig(
-			WithInternalMetricsEnabled(false),
-			WithDogstatsdAddr("localhost:8125"),
-			func(c *config) { c.statsdClient = custom },
-		)
+	t.Run("internal disabled, runtime disabled: both no-op", func(t *testing.T) {
+		// Runtime metrics v2 defaults on, so it must also be disabled for the
+		// shared client to fall back to a no-op.
+		disableRuntime := func(c *config) {
+			c.internalConfig.SetRuntimeMetricsEnabled(false, internalconfig.OriginCode)
+			c.internalConfig.SetRuntimeMetricsV2Enabled(false, internalconfig.OriginCode)
+		}
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), WithInternalMetricsEnabled(false), disableRuntime)
 		require.NoError(t, err)
-		require.False(t, cfg.internalConfig.InternalMetricsEnabled())
+		defer tr.statsd.Close()
+		require.True(t, isNoop(tr.statsd), "statsd should be no-op, got %T", tr.statsd)
+		require.True(t, isNoop(tr.healthStatsd), "healthStatsd should be no-op, got %T", tr.healthStatsd)
+	})
 
-		client, err := newStatsdClient(cfg)
+	t.Run("internal disabled, runtime enabled: statsd real, health no-op", func(t *testing.T) {
+		// Runtime metrics still need the real client even though health metrics
+		// are disabled — they are gated independently.
+		tr, err := newUnstartedTracer(WithAgentTimeout(2), WithInternalMetricsEnabled(false), WithRuntimeMetrics())
 		require.NoError(t, err)
-		_, isNoop := client.(*statsd.NoOpClientDirect)
-		require.True(t, isNoop, "expected a no-op statsd client, got %T", client)
-
-		// The no-op client is usable and safe to flush/close.
-		require.NoError(t, client.Count("name", 1, []string{"tag"}, 1))
-		require.NoError(t, client.Flush())
-		require.NoError(t, client.Close())
-		// The provided custom client was never used.
-		require.Empty(t, custom.CountCalls())
+		defer tr.statsd.Close()
+		require.False(t, isNoop(tr.statsd), "statsd should be real for runtime metrics, got %T", tr.statsd)
+		require.True(t, isNoop(tr.healthStatsd), "healthStatsd should be no-op, got %T", tr.healthStatsd)
 	})
 }
 
