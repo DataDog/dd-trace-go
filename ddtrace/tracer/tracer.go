@@ -708,7 +708,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			spansToRelease := trace.releaseableSpans()
+			spansToRelease := trace.releasableSpans()
 			t.sampleChunk(trace)
 			if len(trace.spans) > 0 {
 				t.traceWriter.add(trace.spans)
@@ -737,7 +737,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					spansToRelease := trace.releaseableSpans()
+					spansToRelease := trace.releasableSpans()
 					t.sampleChunk(trace)
 					if len(trace.spans) > 0 {
 						t.traceWriter.add(trace.spans)
@@ -763,7 +763,7 @@ type chunk struct {
 	spansToRelease []*Span
 }
 
-func (c *chunk) releaseableSpans() []*Span {
+func (c *chunk) releasableSpans() []*Span {
 	if c.spansToRelease != nil {
 		return c.spansToRelease
 	}
