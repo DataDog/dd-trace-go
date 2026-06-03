@@ -47,6 +47,10 @@ func newSpan(name, service, resource string, spanID, traceID, parentID uint64) *
 		start:    now(),
 	}
 	span.context = newSpanContext(span, nil)
+	// Production spans get their snapshot populated by tracer.StartSpan after
+	// all mutations. Test helpers bypass that path, so populate it here so the
+	// span can act as a parent for child spans built via tracer.StartSpan.
+	span.context.setSpanSnapshot(span.spanSnapshot())
 	return span
 }
 

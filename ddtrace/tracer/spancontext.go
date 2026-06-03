@@ -274,7 +274,10 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	}
 	// put span in context's trace
 	context.trace.push(span)
-	context.setSpanSnapshot(span.spanSnapshot())
+	// The span snapshot is populated by tracer.StartSpan after all
+	// env/version/service-mapping mutations, so we skip the intermediate
+	// write here. Direct callers of newSpanContext (tests) do not read
+	// the snapshot before populating it.
 	// setting context.updated to false here is necessary to distinguish
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
@@ -571,6 +574,12 @@ type trace struct {
 	// the trace yet.
 	// Write-once during initialization in newSpanContext, read-only afterward.
 	root *Span
+
+	// rootFlushed is set when partial flushing sends the local root before the
+	// trace completes. The root must stay out of the pool while unfinished spans
+	// still refer to it through trace.root.
+	// +checklocks:mu
+	rootFlushed bool
 }
 
 var (
@@ -853,12 +862,17 @@ func (t *trace) finishedOneLocked(s *Span) {
 	// Full flush: all spans finished
 	if len(t.spans) == t.finished {
 		spans := t.spans
+		spansToRelease := spans
+		if t.rootFlushed {
+			spansToRelease = append(append([]*Span(nil), spans...), t.root)
+			t.rootFlushed = false
+		}
 		willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 		t.mu.Unlock()
 		if tr, ok := tr.(*tracer); ok {
-			tr.submitChunk(&chunk{spans: spans, willSend: willSend})
+			tr.submitChunk(&chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease})
 		}
 		return
 	}
@@ -894,6 +908,16 @@ func (t *trace) finishedOneLocked(s *Span) {
 	currentSpanIsFirstInChunk := s == fSpan
 	needsFirstSpanTags := s != t.spans[0]
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
+	spansToRelease := finishedSpans
+	if t.root != nil {
+		for i, s2 := range finishedSpans {
+			if s2 == t.root {
+				t.rootFlushed = true
+				spansToRelease = append(append([]*Span(nil), finishedSpans[:i]...), finishedSpans[i+1:]...)
+				break
+			}
+		}
+	}
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
 	t.spans = leftoverSpans
@@ -916,7 +940,7 @@ func (t *trace) finishedOneLocked(s *Span) {
 	}
 
 	if tr, ok := tr.(*tracer); ok {
-		tr.submitChunk(&chunk{spans: finishedSpans, willSend: willSend})
+		tr.submitChunk(&chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease})
 	}
 }
 

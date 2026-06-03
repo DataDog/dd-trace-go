@@ -178,6 +178,46 @@ type Span struct {
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
+func (s *Span) clear() {
+	// Serialize after finish()'s deferred s.mu.Unlock(). The span may still
+	// be inside finish() when the worker receives the chunk, because the
+	// channel send happens before the deferred unlock. Acquiring the lock
+	// here guarantees finish() has fully completed before we zero the struct.
+	s.mu.Lock()
+	// s.context is intentionally not nilled: Context() may still be called
+	// after Finish(), and spanStart will reassign it on reuse.
+	// clear() is called after traceWriter.add() encodes the span, so in-place
+	// map clearing is safe — no concurrent encoder holds a reference.
+	// TODO: we should cap large maps here.
+	clear(s.meta)
+	clear(s.metrics)
+	clear(s.metaStruct)
+	s.name = ""
+	s.service = ""
+	s.resource = ""
+	s.spanType = ""
+	s.start = 0
+	s.duration = 0
+	s.spanID = 0
+	s.traceID = 0
+	s.parentID = 0
+	s.error = 0
+	s.spanLinks = nil
+	s.spanEvents = nil
+	s.goExecTraced = false
+	s.noDebugStack = false
+	s.finished = false
+	s.integration = ""
+	s.supportsEvents = false
+	s.pprofCtxActive = nil
+	s.pprofCtxRestore = nil
+	s.taskEnd = nil
+	// Always keep this unlock as the last line. If we ever introduce
+	// code above that could panic, we should move it as deferred call
+	// under s.mu.Lock().
+	s.mu.Unlock()
+}
+
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
@@ -185,6 +225,10 @@ func (s *Span) Context() *SpanContext {
 	if s == nil {
 		return nil
 	}
+	// Lock-free read: s.context is a single pointer word, only reassigned
+	// during construction in spanStart. Taking s.mu.RLock() here would
+	// self-deadlock when called transitively from Span.finish() via
+	// mocktracer.FinishSpan inside s.context.finish().
 	return s.context
 }
 
@@ -546,13 +590,19 @@ func (s *Span) setProcessTags(pTags string) {
 // root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
 func (s *Span) Root() *Span {
-	if s == nil || s.context == nil {
+	if s == nil {
 		return nil
 	}
-	if s.context.trace == nil {
+	// Lock-free read for the same reason as Context(): avoids self-deadlock
+	// when called transitively from Span.finish() via mocktracer.FinishSpan.
+	ctx := s.context
+	if ctx == nil {
 		return nil
 	}
-	return s.context.trace.root
+	if ctx.trace == nil {
+		return nil
+	}
+	return ctx.trace.root
 }
 
 // SetUser associates user information to the current trace which the
@@ -680,7 +730,7 @@ func (s *Span) setErrorFlagLocked(yes bool) {
 }
 
 // setTagErrorLocked sets the error tag. It accounts for various valid scenarios.
-// s.mu must be held for writing.
+// This method assumes the span lock is already held.
 // +checklocks:s.mu
 func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 	assert.RWMutexLocked(&s.mu)
