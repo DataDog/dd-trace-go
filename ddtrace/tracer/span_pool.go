@@ -15,8 +15,6 @@ func acquireSpan(poolEnabled bool) *Span {
 	if poolEnabled {
 		return spanPool.Get().(*Span)
 	}
-	// Pool-disabled path: leave maps nil; setMetricInit/setMetaInit allocate
-	// lazily, matching the pre-pool allocation profile.
 	return &Span{}
 }
 
