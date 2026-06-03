@@ -272,7 +272,8 @@ func initializeListeners(cfg *Config) []wrapper.HandlerListener {
 
 // disableInternalMetrics defaults DD_TRACE_INTERNAL_METRICS_ENABLED to false,
 // disabling the tracer's internal statsd metrics in Lambda unless the user has
-// explicitly set the env var.
+// explicitly set the env var. This covers tracer health (datadog.tracer.*), Go
+// runtime (runtime.go.*), and DSM processor metrics, which share one statsd client.
 func disableInternalMetrics() {
 	const envVar = "DD_TRACE_INTERNAL_METRICS_ENABLED"
 	if os.Getenv(envVar) != "" {

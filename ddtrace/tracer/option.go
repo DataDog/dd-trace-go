@@ -525,10 +525,6 @@ func resolveDogstatsdAddr(configAddr string, af agentFeatures, socketDSDPath str
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
-	// When the tracer's internal metrics are disabled (DD_TRACE_INTERNAL_METRICS_ENABLED=false),
-	// use a no-op client. This silences all of the tracer's internal statsd
-	// metrics — health (datadog.tracer.*), Go runtime (runtime.go.*), and DSM
-	// processor counters — since they all share this single client.
 	if !c.internalConfig.InternalMetricsEnabled() {
 		return &statsd.NoOpClientDirect{}, nil
 	}
