@@ -6,10 +6,10 @@
 package pubsubtrace
 
 import (
-	"os"
 	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 const envPropagationAsSpanLinks = "DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS"
@@ -29,7 +29,7 @@ type Option interface {
 }
 
 func (tr *Tracer) defaultConfig() *config {
-	propagationAsSpanLinks, _ := strconv.ParseBool(os.Getenv(envPropagationAsSpanLinks))
+	propagationAsSpanLinks, _ := strconv.ParseBool(env.Get(envPropagationAsSpanLinks))
 	return &config{
 		serviceName:            tr.instr.ServiceName(instrumentation.ComponentConsumer, nil),
 		serviceSource:          string(tr.component),
@@ -63,9 +63,7 @@ func WithMeasured() OptionFn {
 }
 
 // WithPropagationAsSpanLinks configures the receive handler to record the producer span as a span
-// link rather than as a parent span. This keeps producer and consumer traces separate while
-// preserving their causal relationship. The same behavior can be enabled globally via the
-// DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS environment variable.
+// link rather than as a parent span
 func WithPropagationAsSpanLinks() OptionFn {
 	return func(cfg *config) {
 		cfg.propagationAsSpanLinks = true

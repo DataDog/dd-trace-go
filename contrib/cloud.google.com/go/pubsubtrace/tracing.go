@@ -114,16 +114,14 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 		}
-		if cfg.propagationAsSpanLinks {
-			if parentSpanCtx != nil {
-				// Record the producer span as a span link
-				link := tracer.SpanLink{
-					TraceID:     parentSpanCtx.TraceIDLower(),
-					TraceIDHigh: parentSpanCtx.TraceIDUpper(),
-					SpanID:      parentSpanCtx.SpanID(),
-				}
-				opts = append(opts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
+		if cfg.propagationAsSpanLinks && parentSpanCtx != nil {
+			// Record the producer span as a span link
+			link := tracer.SpanLink{
+				TraceID:     parentSpanCtx.TraceIDLower(),
+				TraceIDHigh: parentSpanCtx.TraceIDUpper(),
+				SpanID:      parentSpanCtx.SpanID(),
 			}
+			opts = append(opts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
 		} else {
 			opts = append(opts, tracer.ChildOf(parentSpanCtx))
 			// If there are span links as a result of context extraction, add them as a StartSpanOption
