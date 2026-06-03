@@ -235,6 +235,8 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 			// When an allowlist is configured, only keep the specified parameter keys.
 			// This avoids running the expensive obfuscation regex entirely.
 			query = filterQueryStringByAllowlist(query, allowlist)
+		} else if cfg.useDefaultObfuscator {
+			query = obfuscateQueryStringDefault(query)
 		} else if cfg.queryStringRegexp != nil {
 			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
 		}
