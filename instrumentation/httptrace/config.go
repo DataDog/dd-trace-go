@@ -139,6 +139,9 @@ func isServerError(statusCode int) bool {
 
 func QueryStringRegexp() *regexp.Regexp {
 	if s, ok := env.Lookup(EnvQueryStringRegexp); ok {
+		if s == "" {
+			return nil
+		}
 		if r, err := regexp.Compile(s); err == nil {
 			return r
 		}
