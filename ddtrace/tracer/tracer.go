@@ -253,7 +253,7 @@ func Start(opts ...StartOption) error {
 	}
 	ciVisibilityEnabled := t.config.internalConfig.CIVisibilityEnabled()
 	globalTracer := Tracer(t)
-	if ciVisibilityEnabled && t.config.ciVisibilityNoopTracer {
+	if ciVisibilityEnabled && t.config.internalConfig.CIVisibilityNoopTracer() {
 		globalTracer = wrapWithCiVisibilityNoopTracer(t)
 	}
 	setGlobalTracerPreservingCIVisibilityMockTracer(globalTracer, ciVisibilityEnabled)
