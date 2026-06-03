@@ -582,8 +582,8 @@ func (s *Span) Root() *Span {
 	if s == nil {
 		return nil
 	}
-	// Plain read for the same reason as Context(): avoids self-deadlock when
-	// called transitively from Span.finish() via mocktracer.FinishSpan.
+	// Lock-free read for the same reason as Context(): avoids self-deadlock
+	// when called transitively from Span.finish() via mocktracer.FinishSpan.
 	ctx := s.context
 	if ctx == nil {
 		return nil
