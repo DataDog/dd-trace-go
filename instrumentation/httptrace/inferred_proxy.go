@@ -168,8 +168,8 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 }
 
 func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
-	spanParentCtx, _ := tracer.Extract(tracer.HTTPHeadersCarrier(headers))
 	var inferredStartSpanOpts []tracer.StartSpanOption
+	spanParentCtx, _ := tracer.Extract(tracer.HTTPHeadersCarrier(headers))
 	if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
 		inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanParentCtx.SpanLinks()))
 	}
@@ -177,15 +177,36 @@ func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
 	requestProxyContext, err := extractInferredProxyContext(headers)
 	if err == nil {
 		return startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+	} else {
+		log.Debug("%s\n", err.Error())
 	}
-	log.Debug("%s\n", err.Error())
 
 	pubsubSpanContext, pubsubErr := extractInferredPubsubSpan(headers)
 	if pubsubErr == nil {
 		return startInferredPubsubSpan(pubsubSpanContext, spanParentCtx, inferredStartSpanOpts...)
+	} else {
+		log.Debug("%s\n", pubsubErr.Error())
 	}
-	log.Debug("%s\n", pubsubErr.Error())
 
+	return nil
+}
+
+// validatePubsubSubscriptionResourceName checks that name matches the full
+// the expected format projects/{project_id}/subscriptions/{subscription_id}
+func validatePubsubSubscriptionResourceName(name string) error {
+	if name == "" {
+		return errors.New("pubsub subscription name is empty")
+	}
+	parts := strings.Split(name, "/")
+	if len(parts) != 4 {
+		return fmt.Errorf("pubsub subscription name must have 4 path segments, got %d", len(parts))
+	}
+	if parts[0] != "projects" || parts[2] != "subscriptions" {
+		return errors.New("pubsub subscription name must be projects/{project_id}/subscriptions/{subscription_id}")
+	}
+	if parts[1] == "" || parts[3] == "" {
+		return errors.New("pubsub subscription name has empty project_id or subscription_id")
+	}
 	return nil
 }
 
@@ -194,12 +215,17 @@ func extractInferredPubsubSpan(headers http.Header) (*pubsubContext, error) {
 		return nil, errors.New("pubsub header subscription name does not exist")
 	}
 
+	subscriptionName := headers.Get(PubsubHeaderSubscriptionName)
+	if err := validatePubsubSubscriptionResourceName(subscriptionName); err != nil {
+		return nil, err
+	}
+
 	if _, ok := headers[PubsubHeaderMessageID]; !ok {
 		return nil, errors.New("pubsub header message Id does not exist")
 	}
 
 	return &pubsubContext{
-		subscriptionName: headers.Get(PubsubHeaderSubscriptionName),
+		subscriptionName: subscriptionName,
 		messageID:        headers.Get(PubsubHeaderMessageID),
 	}, nil
 }
