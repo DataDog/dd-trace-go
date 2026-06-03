@@ -840,7 +840,7 @@ func withNoopStats() StartOption {
 // reported via statsd. It does not affect runtime metrics, which are controlled
 // separately by WithRuntimeMetrics / DD_RUNTIME_METRICS_ENABLED. Disabling is
 // useful where these metrics add overhead, such as AWS Lambda. This can also be
-// set via DD_TRACE_INTERNAL_METRICS_ENABLED. On by default.
+// set via DD_TRACE_HEALTH_METRICS_ENABLED. On by default.
 func WithInternalMetricsEnabled(enabled bool) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetInternalMetricsEnabled(enabled, internalconfig.OriginCode)
