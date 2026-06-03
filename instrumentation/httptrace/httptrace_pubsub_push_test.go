@@ -328,4 +328,27 @@ func TestExtractInferredPubsubContext(t *testing.T) {
 
 		require.Error(t, err)
 	})
+
+	t.Run("returns error when subscription name has wrong format", func(t *testing.T) {
+		for _, bad := range []string{
+			"",
+			"my-subscription",
+			"projects/my-project",
+			"projects/my-project/topics/my-topic",
+			"projects/my-project/subscriptions",
+			"orgs/my-project/subscriptions/my-subscription",
+			"projects//subscriptions/my-subscription",
+			"projects/my-project/subscriptions/my-subscription/extra",
+		} {
+			t.Run(fmt.Sprintf("%q", bad), func(t *testing.T) {
+				headers := http.Header{}
+				headers.Set(PubsubHeaderSubscriptionName, bad)
+				headers.Set(PubsubHeaderMessageID, testMessageID)
+
+				_, err := extractInferredPubsubSpan(headers)
+
+				require.Error(t, err)
+			})
+		}
+	})
 }
