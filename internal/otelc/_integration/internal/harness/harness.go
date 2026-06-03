@@ -9,8 +9,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/agent"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/internal/testlib/v2/agent"
+	"github.com/DataDog/dd-trace-go/internal/testlib/v2/trace"
 )
 
 // TestCase describes the general contract for tests. Each package in this

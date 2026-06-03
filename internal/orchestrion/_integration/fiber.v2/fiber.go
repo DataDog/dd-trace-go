@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/internal/testlib/v2/net"
+	"github.com/DataDog/dd-trace-go/internal/testlib/v2/trace"
 )
 
 type TestCase struct {

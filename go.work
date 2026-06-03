@@ -76,6 +76,7 @@ use (
 	./internal/exectracetest
 	./internal/orchestrion/_integration
 	./internal/setup-smoke-test
+	./internal/testlib
 	./internal/traceprof/traceproftest
 	./orchestrion/all
 	./scripts/autoreleasetagger
