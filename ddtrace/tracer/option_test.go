@@ -221,7 +221,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 	})
 }
 
-func TestHealthMetricsDisabled(t *testing.T) {
+func TestInternalMetricsDisabled(t *testing.T) {
 	isNoop := func(c internal.StatsdClient) bool {
 		_, ok := c.(*statsd.NoOpClientDirect)
 		return ok
@@ -234,10 +234,10 @@ func TestHealthMetricsDisabled(t *testing.T) {
 		require.False(t, isNoop(tr.statsd), "statsd should be real by default, got %T", tr.statsd)
 	})
 
-	t.Run("DD_TRACE_HEALTH_METRICS_ENABLED=false: no-op client", func(t *testing.T) {
+	t.Run("DD_TRACE_INTERNAL_METRICS_ENABLED=false: no-op client", func(t *testing.T) {
 		// Disabling internal metrics swaps in a no-op client, silencing all of the
 		// tracer's internal statsd metrics (health, runtime, and DSM).
-		t.Setenv("DD_TRACE_HEALTH_METRICS_ENABLED", "false")
+		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "false")
 		tr, err := newUnstartedTracer(WithAgentTimeout(2))
 		require.NoError(t, err)
 		defer tr.statsd.Close()

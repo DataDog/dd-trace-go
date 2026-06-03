@@ -204,14 +204,14 @@ func boolPtr(b bool) *bool {
 
 func TestDisableInternalMetrics(t *testing.T) {
 	t.Run("sets default when unset", func(t *testing.T) {
-		t.Setenv("DD_TRACE_HEALTH_METRICS_ENABLED", "")
+		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "")
 		disableInternalMetrics()
-		assert.Equal(t, "false", os.Getenv("DD_TRACE_HEALTH_METRICS_ENABLED"))
+		assert.Equal(t, "false", os.Getenv("DD_TRACE_INTERNAL_METRICS_ENABLED"))
 	})
 
 	t.Run("respects explicit user value", func(t *testing.T) {
-		t.Setenv("DD_TRACE_HEALTH_METRICS_ENABLED", "true")
+		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "true")
 		disableInternalMetrics()
-		assert.Equal(t, "true", os.Getenv("DD_TRACE_HEALTH_METRICS_ENABLED"))
+		assert.Equal(t, "true", os.Getenv("DD_TRACE_INTERNAL_METRICS_ENABLED"))
 	})
 }

@@ -105,7 +105,7 @@ type Config struct {
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
 	// internalMetricsEnabled enables the tracer's internal metrics (statsd) client.
-	// Value from DD_TRACE_HEALTH_METRICS_ENABLED, default true.
+	// Value from DD_TRACE_INTERNAL_METRICS_ENABLED, default true.
 	internalMetricsEnabled bool
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled      bool
@@ -219,7 +219,7 @@ func loadConfig() *Config {
 	cfg.spanTimeout = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	cfg.internalMetricsEnabled = p.GetBool("DD_TRACE_HEALTH_METRICS_ENABLED", true)
+	cfg.internalMetricsEnabled = p.GetBool("DD_TRACE_INTERNAL_METRICS_ENABLED", true)
 	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)

@@ -378,7 +378,7 @@ func (cfg *Config) calculateFipsMode() bool {
 // the env var when the user hasn't already configured it, leaving explicit
 // opt-in intact.
 func disableInternalMetrics() {
-	const envVar = "DD_TRACE_HEALTH_METRICS_ENABLED"
+	const envVar = "DD_TRACE_INTERNAL_METRICS_ENABLED"
 	if os.Getenv(envVar) != "" {
 		return
 	}
