@@ -837,19 +837,17 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 
 	if opts.Parent != nil {
 		context = opts.Parent
-		if context.span != nil {
-			// Batch read service and pprofContext from parent span under single lock
-			// to minimize lock contention on the parent span during child creation.
-			inheritedData := context.span.inheritedData()
-			parentService = inheritedData.service
-			parentServiceSource = inheritedData.serviceSource
+		// Batch read service and pprofContext from parent span under single lock
+		// to minimize lock contention on the parent span during child creation.
+		spanSnapshot := context.getSpanSnapshot()
+		parentService = spanSnapshot.service
+		parentServiceSource = spanSnapshot.serviceSource
 
-			// Inherit the context.Context from parent span if it was propagated
-			// using ChildOf() rather than StartSpanFromContext(), see
-			// applyPPROFLabels() below.
-			if pprofContext == nil {
-				pprofContext = inheritedData.pprofCtx
-			}
+		// Inherit the context.Context from parent span if it was propagated
+		// using ChildOf() rather than StartSpanFromContext(), see
+		// applyPPROFLabels() below.
+		if pprofContext == nil {
+			pprofContext = spanSnapshot.pprofCtx
 		}
 	}
 	if pprofContext == nil {
@@ -888,7 +886,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		if p, ok := context.SamplingPriority(); ok {
 			span.setMetricInit(keySamplingPriority, float64(p))
 		}
-		if context.span == nil && context.origin != "" { // +checklocksignore - Read-only after init.
+		if (context.trace == nil || context.trace.root == nil) && context.origin != "" { // +checklocksignore - Read-only after init.
 			// mark origin
 			span.setMetaInit(keyOrigin, context.origin) // +checklocksignore - Read-only after init.
 		}
@@ -897,6 +895,9 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		}
 
 	}
+	// Must evaluate isRootSpan before newSpanContext: newSpanContext sets
+	// context.trace.root = span, making the nil check unreliable afterward.
+	isRootSpan := context == nil || context.trace == nil || context.trace.root == nil
 	span.context = newSpanContext(span, context)
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
@@ -904,11 +905,13 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.setMetaInit("language", "go")
 	// add tags from options
 	span.setTags(opts.Tags)
-	isRootSpan := context == nil || context.span == nil
+	// Re-sync the span snapshot after constructor tags: setTags may have mutated
+	// service, env, version, or peerService via SetTag before the span is shared.
+	span.context.setSpanSnapshot(span.spanSnapshot())
 	if isRootSpan {
 		traceprof.SetProfilerRootTags(span)
 	}
-	if isRootSpan || context.span.service != span.service {
+	if isRootSpan || parentService != span.service {
 		// The span is the local root span.
 		span.setMetricInit(keyTopLevel, 1)
 		// all top level spans are measured. So the measured tag is redundant.
@@ -994,6 +997,11 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 	span.setMetricInit(ext.Pid, float64(t.pid))
 	t.spansStarted.Inc(span.integration)
+	// Re-sync the span snapshot after all tracer-level config (env, version,
+	// service mapping, pprof labels) has been applied. spanStart sets the span
+	// snapshot earlier, but tracer.StartSpan may overwrite span fields after that
+	// re-sync.
+	span.context.setSpanSnapshot(span.spanSnapshot())
 
 	return span
 }
