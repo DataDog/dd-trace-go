@@ -28,15 +28,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/mod/semver"
-
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecconfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -59,6 +56,7 @@ const (
 	envLLMObsMlApp            = "DD_LLMOBS_ML_APP"
 	envLLMObsAgentlessEnabled = "DD_LLMOBS_AGENTLESS_ENABLED"
 	envLLMObsProjectName      = "DD_LLMOBS_PROJECT_NAME"
+	envSpanPoolEnabled        = "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED"
 )
 
 var contribIntegrations = map[string]struct {
@@ -215,9 +213,6 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled dynamicConfig[bool]
 
-	// enableHostnameDetection specifies whether the tracer should enable hostname detection.
-	enableHostnameDetection bool
-
 	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
 	// Only used for telemetry currently.
 	orchestrionCfg orchestrionConfig
@@ -228,23 +223,14 @@ type config struct {
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags dynamicConfig[[]string]
 
-	// dynamicInstrumentationEnabled controls whether the target application can
-	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
-	// explicitly set to false (as opposed to starting as false by default), then
-	// it is frozen -- it cannot be overwritten by Remote Config.
-	dynamicInstrumentationEnabled dynamicConfig[bool]
-
-	// ciVisibilityAgentless controls if the tracer is loaded with CI Visibility agentless mode. default false
-	ciVisibilityAgentless bool
-
-	// ciVisibilityNoopTracer controls if CI Visibility must set a wrapper to behave like a noop tracer. default false
-	ciVisibilityNoopTracer bool
-
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
+
+	// spanPoolEnabled controls whether finished spans are recycled via sync.Pool.
+	spanPoolEnabled bool
 }
 
 // orchestrionConfig contains Orchestrion configuration.
@@ -282,10 +268,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.sampler = NewAllSampler()
 	c.httpClientTimeout = time.Second * 10 // 10 seconds
 
-	if v := env.Get("OTEL_LOGS_EXPORTER"); v != "" {
-		log.Warn("OTEL_LOGS_EXPORTER is not supported")
-	}
-	if internal.BoolEnv("DD_TRACE_ANALYTICS_ENABLED", false) {
+	if c.internalConfig.TraceAnalyticsEnabled() {
 		globalconfig.SetAnalyticsRate(1.0)
 	}
 	if c.internalConfig.ReportHostname() {
@@ -312,25 +295,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
 		c.enabled.setOrigin(telemetry.OriginEnvVar)
 	}
-	if compatMode := env.Get("DD_TRACE_CLIENT_HOSTNAME_COMPAT"); compatMode != "" {
-		if semver.IsValid(compatMode) {
-			c.enableHostnameDetection = semver.Compare(semver.MajorMinor(compatMode), "v1.66") <= 0
-		} else {
-			log.Warn("ignoring DD_TRACE_CLIENT_HOSTNAME_COMPAT, invalid version %q", compatMode)
-		}
-	}
-
-	dynamicInstrumentationEnabledDefault, origin, _ := stableconfig.Bool("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
-	c.dynamicInstrumentationEnabled = newDynamicConfig(
-		"dynamic_instrumentation_enabled",
-		dynamicInstrumentationEnabledDefault,
-		func(bool) bool {
-			// NOTE: the side effects of changes are performed in onRemoteConfigUpdate.
-			return true
-		}, /* apply */
-		equal[bool],
-	)
-	c.dynamicInstrumentationEnabled.setOrigin(origin)
 
 	namingschema.LoadFromEnv()
 
@@ -341,6 +305,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
 		ProjectName:      env.Get(envLLMObsProjectName),
 	}
+	c.spanPoolEnabled = internal.BoolEnv(envSpanPoolEnabled, false)
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -417,12 +382,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.internalConfig.SetLogStartup(false, internalconfig.OriginCalculated) // If we are in CI Visibility mode we don't want to log the startup to stdout to avoid polluting the output
 		ciTransport := newCiVisibilityTransport(c)                             // Create a default CI Visibility Transport
 		c.ddTransport = ciTransport                                            // Replace the default transport with the CI Visibility transport
-		c.ciVisibilityAgentless = ciTransport.agentless
-		c.ciVisibilityNoopTracer = internal.BoolEnv(constants.CIVisibilityUseNoopTracer, false)
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.ciVisibilityAgentless
+	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.internalConfig.CIVisibilityAgentlessActive()
 	agentURL := c.internalConfig.AgentURL()
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
@@ -774,7 +737,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 // The agent is considered disabled in serverless (LogToStdout), when the
 // tracer itself is disabled, or in CI visibility agentless mode.
 func (c *config) agentEnabled() bool {
-	return !c.internalConfig.LogToStdout() && c.enabled.get() && !c.ciVisibilityAgentless
+	return !c.internalConfig.LogToStdout() && c.enabled.get() && !c.internalConfig.CIVisibilityAgentlessActive()
 }
 
 // MarkIntegrationImported labels the given integration as imported
@@ -1278,12 +1241,7 @@ func WithStatsComputation(enabled bool) StartOption {
 // and Dynamic Instrumentation products.
 func WithDynamicInstrumentationEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		apply := func(bool) bool {
-			// NOTE: the side effects of changes are performed in onRemoteConfigUpdate.
-			return true
-		}
-		c.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, apply, equal[bool])
-		c.dynamicInstrumentationEnabled.setOrigin(telemetry.OriginCode)
+		c.internalConfig.SetDynamicInstrumentationEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1460,6 +1418,15 @@ func WithLLMObsProjectName(projectName string) StartOption {
 func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 	return func(c *config) {
 		c.llmobs.AgentlessEnabled = &agentlessEnabled
+	}
+}
+
+// WithSpanPool controls whether finished spans are recycled via sync.Pool.
+// When enabled, spans are pooled for reduced allocation overhead.
+// This is equivalent to the DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED environment variable.
+func WithSpanPool(enabled bool) StartOption {
+	return func(c *config) {
+		c.spanPoolEnabled = enabled
 	}
 }
 

@@ -119,7 +119,8 @@ type llmobsContext struct {
 	outputText      string
 
 	// tool specific
-	intent string
+	intent      string
+	toolVersion string
 
 	// experiment specific
 	experimentInput          any
@@ -568,6 +569,10 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		}
 	}
 
+	if toolVersion := span.llmCtx.toolVersion; toolVersion != "" {
+		meta["tool.version"] = toolVersion
+	}
+
 	spanStatus := "ok"
 	var errMsg *transport.ErrorMessage
 	if span.error != nil {
@@ -810,6 +815,12 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	span.llmCtx = llmobsContext{
 		modelName:     cfg.ModelName,
 		modelProvider: cfg.ModelProvider,
+	}
+
+	if kind == SpanKindTool {
+		if v := span.resolvedToolVersion(); v != "" {
+			span.llmCtx.toolVersion = v
+		}
 	}
 
 	if span.sessionID == "" {

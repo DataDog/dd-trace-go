@@ -280,6 +280,13 @@
         "default": "true"
       }
     ],
+    "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED": [
       {
         "implementation": "A",
@@ -1043,13 +1050,6 @@
         "default": "false"
       }
     ],
-    "DD_TRACE_CLIENT_HOSTNAME_COMPAT": [
-      {
-        "implementation": "A",
-        "type": "string",
-        "default": null
-      }
-    ],
     "DD_TRACE_CLIENT_IP_ENABLED": [
       {
         "implementation": "A",
@@ -1428,6 +1428,13 @@
         "default": ""
       }
     ],
+    "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "continue"
+      }
+    ],
     "DD_TRACE_PROPAGATION_EXTRACT_FIRST": [
       {
         "implementation": "A",
@@ -1566,6 +1573,13 @@
         "implementation": "B",
         "type": "string",
         "default": "v0"
+      }
+    ],
+    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_SQL_ANALYTICS_ENABLED": [
