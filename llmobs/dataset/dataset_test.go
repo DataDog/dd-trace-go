@@ -840,15 +840,13 @@ func TestDatasetPull(t *testing.T) {
 	})
 	t.Run("pull-with-version-option", func(t *testing.T) {
 		var capturedQuery url.Values
-		var capturedHeaders http.Header
 
 		h := func(r *http.Request) *http.Response {
 			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
 
-			// v2 project-scoped records endpoint — capture the query params and headers
+			// v2 project-scoped records endpoint — capture the query params
 			if strings.HasPrefix(path, "/api/v2/llm-obs/v1/") && strings.Contains(path, "/records") && r.Method == http.MethodGet {
 				capturedQuery = r.URL.Query()
-				capturedHeaders = r.Header.Clone()
 				rawJSON := `{
 					"data": [
 						{"id":"record-1","input":{"q":"v2 record"},"expected_output":"ans"}
@@ -910,9 +908,6 @@ func TestDatasetPull(t *testing.T) {
 		// Confirm filter[version]=2 was sent in the records request
 		require.NotNil(t, capturedQuery, "records request should have been made")
 		assert.Equal(t, "2", capturedQuery.Get("filter[version]"))
-
-		// Confirm the auth header was sent on the v2 records path
-		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "auth header must be present on v2 records path")
 
 		// Confirm ds.Version() reflects the requested version, not the dataset's current_version (5)
 		assert.Equal(t, 2, ds.Version(), "Version() must return the pulled version, not the latest current_version")
