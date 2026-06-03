@@ -666,6 +666,7 @@ func (s *Span) StartChild(operationName string, opts ...StartSpanOption) *Span {
 
 // setSamplingPriorityLocked updates the sampling priority.
 // It also updates the trace's sampling priority.
+// s.mu must be held for writing.
 // +checklocks:s.mu
 func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	assert.RWMutexLocked(&s.mu)
@@ -683,6 +684,7 @@ func (s *Span) setSamplingPriorityLocked(priority int, sampler samplernames.Samp
 // If the trace is locked, the sampling priority is forced to the given value.
 //
 // This function is should only be used when applying a manual keep or drop decision.
+// s.mu must be held for writing.
 // +checklocks:s.mu
 func (s *Span) forceSetSamplingPriorityLocked(priority int, sampler samplernames.SamplerName) {
 	assert.RWMutexLocked(&s.mu)
