@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//msgp:ignore inheritedData
+//msgp:ignore spanSnapshot
 //go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 //go:generate go run ../../scripts/msgp_span_meta_omitempty.go -file span_msgp.go
 //go:generate go run ../../scripts/msgp_checklocks_ignore.go -type Span -file span_msgp.go
@@ -192,18 +192,28 @@ func (s *Span) Context() *SpanContext {
 	return s.context
 }
 
-type inheritedData struct {
+type spanSnapshot struct {
+	env           string
+	version       string
 	service       string
 	serviceSource string
+	peerService   string
 	pprofCtx      context.Context
 }
 
-func (s *Span) inheritedData() inheritedData {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return inheritedData{
+// +checklocksignore — Initialization time.
+func (s *Span) spanSnapshot() spanSnapshot {
+	var (
+		env, _         = s.meta.Env()
+		version, _     = s.meta.Version()
+		peerService, _ = s.meta.Get(ext.PeerService)
+	)
+	return spanSnapshot{
+		env:           env,
+		version:       version,
 		service:       s.service,
 		serviceSource: s.serviceSource,
+		peerService:   peerService,
 		pprofCtx:      s.pprofCtxActive,
 	}
 }
@@ -421,6 +431,9 @@ func (s *Span) setTagLocked(key string, value any) {
 		if so, ok := value.(sharedinternal.ServiceOverride); ok {
 			s.service = so.Name
 			s.serviceSource = so.Source
+			if s.context != nil {
+				s.context.setSpanSnapshotService(so.Name, so.Source)
+			}
 			return
 		}
 	}
@@ -438,6 +451,9 @@ func (s *Span) setTagLocked(key string, value any) {
 			// of what we change at a lower level.
 			s.pprofCtxActive = pprof.WithLabels(s.pprofCtxActive, pprof.Labels(traceprof.TraceEndpoint, v))
 			pprof.SetGoroutineLabels(s.pprofCtxActive)
+			if s.context != nil {
+				s.context.setSpanSnapshotPPROFCtx(s.pprofCtxActive)
+			}
 		}
 		s.setMetaLocked(key, v)
 		return
@@ -724,6 +740,9 @@ func (s *Span) setMeta(key, v string) {
 func (s *Span) setMetaLocked(key, v string) {
 	assert.RWMutexLocked(&s.mu)
 	s.setMetaInit(key, v)
+	if s.context != nil {
+		s.context.setSpanSnapshotMeta(key, v)
+	}
 }
 
 // setMetaInit sets a string tag without acquiring the lock and asserting the lock is held.
@@ -736,6 +755,9 @@ func (s *Span) setMetaInit(key, v string) {
 	case ext.ServiceName:
 		s.service = v
 		s.serviceSource = serviceSourceManual
+		if s.context != nil {
+			s.context.setSpanSnapshotService(v, serviceSourceManual)
+		}
 	case ext.ResourceName:
 		s.resource = v
 	case ext.SpanType:
@@ -811,6 +833,9 @@ func (s *Span) setMetricLocked(key string, v float64) {
 		s.metrics = make(map[string]float64, 1)
 	}
 	s.meta.Delete(key)
+	if s.context != nil {
+		s.context.setSpanSnapshotMeta(key, "")
+	}
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
@@ -1025,7 +1050,7 @@ func (s *Span) finish(finishTime int64) {
 	// Call context.finish() which handles trace-level bookkeeping and may modify
 	// this span (to set trace-level tags).
 	// Lock ordering is span.mu -> trace.mu.
-	s.context.finish()
+	s.context.finish(s)
 
 	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
 	if hasTracer {
