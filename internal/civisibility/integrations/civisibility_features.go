@@ -118,9 +118,10 @@ func ensureSettingsInitialization(serviceName string) {
 
 		testOptimizationMode := bazel.CurrentMode()
 		var uploadChannel = make(chan struct{})
-		uploadEnabled := !testOptimizationMode.ManifestEnabled && !testOptimizationMode.PayloadFilesEnabled
-		log.Debug("civisibility: settings initialization mode [manifest:%t payload_files:%t manifest_file:%s payload_root:%s repository_upload_enabled:%t]",
-			testOptimizationMode.ManifestEnabled, testOptimizationMode.PayloadFilesEnabled, bazel.TestOptimizationPathForLog(testOptimizationMode.ManifestPath), testOptimizationMode.PayloadsRoot, uploadEnabled)
+		gitUploadEnabled := internal.BoolEnv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, true)
+		uploadEnabled := gitUploadEnabled && !testOptimizationMode.ManifestEnabled && !testOptimizationMode.PayloadFilesEnabled
+		log.Debug("civisibility: settings initialization mode [manifest:%t payload_files:%t manifest_file:%s payload_root:%s git_upload_enabled:%t repository_upload_enabled:%t]",
+			testOptimizationMode.ManifestEnabled, testOptimizationMode.PayloadFilesEnabled, bazel.TestOptimizationPathForLog(testOptimizationMode.ManifestPath), testOptimizationMode.PayloadsRoot, gitUploadEnabled, uploadEnabled)
 		if uploadEnabled {
 			repositoryUpload := snapshotRepositoryUploadHooks()
 
@@ -138,7 +139,11 @@ func ensureSettingsInitialization(serviceName string) {
 			}()
 		} else {
 			close(uploadChannel)
-			log.Debug("civisibility: repository upload disabled for current test optimization mode")
+			if gitUploadEnabled {
+				log.Debug("civisibility: repository upload disabled for current test optimization mode")
+			} else {
+				log.Debug("civisibility: repository upload disabled by environment variable")
+			}
 		}
 
 		//Wait for the upload with timeout func
@@ -162,9 +167,13 @@ func ensureSettingsInitialization(serviceName string) {
 		ciSettings, err := ciVisibilityClient.GetSettings()
 		if err != nil || ciSettings == nil {
 			logSettingsFetchError(err)
-			log.Debug("civisibility: no need to wait for the git upload to finish")
-			// Enqueue a close action to wait for the upload to finish before finishing the process
-			PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
+			if uploadEnabled {
+				log.Debug("civisibility: no need to wait for the git upload to finish")
+				// Enqueue a close action to wait for the upload to finish before finishing the process
+				PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
+			} else {
+				log.Debug("civisibility: no upload wait required")
+			}
 			return
 		}
 

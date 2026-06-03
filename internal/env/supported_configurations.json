@@ -280,6 +280,13 @@
         "default": "true"
       }
     ],
+    "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED": [
       {
         "implementation": "A",
@@ -1008,6 +1015,13 @@
         "default": "1.0"
       }
     ],
+    "DD_TRACE_AGENT_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "10"
+      }
+    ],
     "DD_TRACE_AGENT_URL": [
       {
         "implementation": "C",
@@ -1573,6 +1587,13 @@
         "implementation": "B",
         "type": "string",
         "default": "v0"
+      }
+    ],
+    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_SQL_ANALYTICS_ENABLED": [
