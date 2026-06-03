@@ -216,6 +216,9 @@ func (s *Span) clear() {
 	s.pprofCtxActive = nil
 	s.pprofCtxRestore = nil
 	s.taskEnd = nil
+	// Always keep this unlock as the last line. If we ever introduce
+	// code above that could panic, we should move it as deferred call
+	// under s.mu.Lock().
 	s.mu.Unlock()
 }
 
