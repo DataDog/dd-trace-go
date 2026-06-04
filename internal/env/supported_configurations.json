@@ -1570,7 +1570,7 @@
     ],
     "DD_TRACE_SEND_RETRIES": [
       {
-        "implementation": "B",
+        "implementation": "A",
         "type": "int",
         "default": "0"
       }
