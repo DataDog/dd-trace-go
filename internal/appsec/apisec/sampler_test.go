@@ -97,13 +97,14 @@ func TestSampler(t *testing.T) {
 					dropped atomic.Uint64
 				)
 				sb.Add(1 + goroutineCount) // All child goroutines + this one...
-				for range goroutineCount {
+				for workerID := range goroutineCount {
 					wg.Go(func() {
+						rng := rand.New(rand.NewSource(int64(workerID)))
 						sb.Done() // We're ready for business, signal to the start barrier...
 						sb.Wait() // Wait for all the goroutines to have started...
 
 						for i := range samplesToTake {
-							if subject.DecisionFor(randomOne(tc.KeySpace)) {
+							if subject.DecisionFor(randomOneFrom(rng, tc.KeySpace)) {
 								kept.Add(1)
 							} else {
 								dropped.Add(1)
@@ -209,8 +210,8 @@ func BenchmarkSampler(b *testing.B) {
 	}
 }
 
-func randomOne[T any](list []T) T {
-	return list[rand.Intn(len(list))]
+func randomOneFrom[T any](rng *rand.Rand, list []T) T {
+	return list[rng.Intn(len(list))]
 }
 
 var (
