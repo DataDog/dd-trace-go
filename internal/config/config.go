@@ -390,6 +390,10 @@ func (c *Config) DogstatsdAddr() string {
 	return formatDogstatsdAddr(c.dogstatsdAddr)
 }
 
+// SetDogstatsdAddr records a user-configured DogStatsD address and marks it
+// explicit so agent-reported ports cannot overwrite it. Call this only from
+// user-facing paths (options, env vars). For agent-reported updates use
+// ApplyAgentReportedStatsdPort.
 func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -404,9 +408,9 @@ func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product 
 	configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
 }
 
-// ApplyAgentReportedStatsdPort overwrites the URL port with the agent /info
-// value. No-op when the user explicitly configured the address (via WithDogstatsdAddr,
-// DD_DOGSTATSD_PORT, or DD_DOGSTATSD_URL), or if the URL is a unix socket.
+// ApplyAgentReportedStatsdPort applies a port from the agent /info response.
+// For user-configured addresses use SetDogstatsdAddr instead. No-op when the
+// user already provided an explicit address or the current address is a unix socket.
 func (c *Config) ApplyAgentReportedStatsdPort(port int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
