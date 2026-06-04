@@ -1634,8 +1634,8 @@
     "DD_TRACE_UNIVERSAL_VERSION_ENABLED": [
       {
         "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_VALKEY_ANALYTICS_ENABLED": [
