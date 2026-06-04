@@ -79,6 +79,14 @@ func validateAgentTimeout(timeout int) bool {
 	return true
 }
 
+func validateSendRetries(retries int) bool {
+	if retries < 0 {
+		log.Warn("ignoring DD_TRACE_SEND_RETRIES: negative value %d", retries)
+		return false
+	}
+	return true
+}
+
 // parseSpanAttributeSchema parses the DD_TRACE_SPAN_ATTRIBUTE_SCHEMA value.
 // It accepts "v0", "v1" (case-insensitive) and returns the corresponding integer version.
 // An empty string defaults to 0 (v0). Invalid values are rejected.
