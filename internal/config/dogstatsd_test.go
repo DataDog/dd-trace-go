@@ -145,11 +145,43 @@ func TestDogstatsdAddrResolution(t *testing.T) {
 			socketPath:      socketPath,
 			expected:        "unix://" + socketPath,
 		},
+		// DD_DOGSTATSD_URL: TCP host:port form.
+		{
+			name:     "url-env-tcp",
+			env:      map[string]string{"DD_DOGSTATSD_URL": "myhost:9999"},
+			expected: "myhost:9999",
+		},
+		// DD_DOGSTATSD_URL: unix socket form.
+		{
+			name:     "url-env-unix",
+			env:      map[string]string{"DD_DOGSTATSD_URL": "unix://" + socketPath},
+			expected: "unix://" + socketPath,
+		},
+		// DD_DOGSTATSD_URL wins over DD_DOGSTATSD_HOST/PORT.
+		{
+			name:     "url-env+host-port-env",
+			env:      map[string]string{"DD_DOGSTATSD_URL": "myhost:9999", "DD_DOGSTATSD_HOST": "111.111.1.1", "DD_DOGSTATSD_PORT": "8111"},
+			expected: "myhost:9999",
+		},
+		// DD_DOGSTATSD_URL (unix) blocks agent-reported port override.
+		{
+			name:            "url-env-unix+agent-port",
+			env:             map[string]string{"DD_DOGSTATSD_URL": "unix://" + socketPath},
+			agentStatsdPort: 9876,
+			expected:        "unix://" + socketPath,
+		},
+		// DD_DOGSTATSD_URL (tcp) blocks agent-reported port override.
+		{
+			name:            "url-env-tcp+agent-port",
+			env:             map[string]string{"DD_DOGSTATSD_URL": "myhost:9999"},
+			agentStatsdPort: 9876,
+			expected:        "myhost:9999",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			for _, key := range []string{"DD_DOGSTATSD_HOST", "DD_DOGSTATSD_PORT", "DD_AGENT_HOST"} {
+			for _, key := range []string{"DD_DOGSTATSD_HOST", "DD_DOGSTATSD_PORT", "DD_DOGSTATSD_URL", "DD_AGENT_HOST"} {
 				t.Setenv(key, "")
 			}
 			for k, v := range tt.env {
