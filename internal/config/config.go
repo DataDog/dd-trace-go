@@ -81,7 +81,7 @@ type Config struct {
 	// dogstatsdAddrExplicit is true when the user explicitly configured the DogStatsD
 	// address (via DD_DOGSTATSD_PORT or DD_DOGSTATSD_URL), so agent-reported ports must not overwrite it.
 	dogstatsdAddrExplicit bool
-	debug            bool
+	debug                 bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
 	// serviceName specifies the name of this application.
