@@ -404,8 +404,8 @@ func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product 
 }
 
 // ApplyAgentReportedStatsdPort overwrites the URL port with the agent /info
-// value. No-op when the user explicitly configured via DD_DOGSTATSD_PORT or DD_DOGSTATSD_URL, and if the URL is a unix
-// socket.
+// value. No-op when the user explicitly configured the address (via WithDogstatsdAddr,
+// DD_DOGSTATSD_PORT, or DD_DOGSTATSD_URL), or if the URL is a unix socket.
 func (c *Config) ApplyAgentReportedStatsdPort(port int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
