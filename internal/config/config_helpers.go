@@ -220,6 +220,8 @@ func parseDogstatsdAddr(addr string) *url.URL {
 	if strings.HasPrefix(addr, "unix://") {
 		if u, err := url.Parse(addr); err == nil {
 			return u
+		} else {
+			log.Warn("Failed to parse DogStatsD unix address %q: %s", addr, err)
 		}
 	}
 	return &url.URL{Host: addr}
