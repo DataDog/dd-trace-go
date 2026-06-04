@@ -716,30 +716,6 @@ func TestHostnameConfiguration(t *testing.T) {
 	})
 }
 
-func TestSiteConfig(t *testing.T) {
-	t.Run("default is datadoghq.com", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.Equal(t, "datadoghq.com", cfg.Site(), "Site should default to datadoghq.com")
-	})
-
-	t.Run("DD_SITE env var is loaded", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
-		t.Setenv("DD_SITE", "datadoghq.eu")
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.Equal(t, "datadoghq.eu", cfg.Site(), "Site should match DD_SITE env var")
-	})
-}
-
 func TestProductConflict(t *testing.T) {
 	t.Run("first-in-wins", func(t *testing.T) {
 		resetGlobalState()

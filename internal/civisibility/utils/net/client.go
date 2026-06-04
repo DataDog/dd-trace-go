@@ -19,7 +19,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -150,8 +149,10 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
-			site := internalconfig.Get().Site()
-
+			site := "datadoghq.com"
+			if v := env.Get("DD_SITE"); v != "" {
+				site = v
+			}
 			baseURL = fmt.Sprintf("https://%s.%s", subdomain, site)
 		} else {
 			// Use the custom agentless URL.
