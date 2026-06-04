@@ -153,6 +153,10 @@ type Config struct {
 	traceID128BitEnabled bool
 	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
 	apiKey string
+	// httpClientTimeout is the timeout for HTTP requests to the Datadog Agent.
+	httpClientTimeout time.Duration
+	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
+	sendRetries int
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -226,6 +230,7 @@ func loadConfig() *Config {
 	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
 	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
+	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
@@ -239,6 +244,7 @@ func loadConfig() *Config {
 	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
+	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat)
@@ -1066,4 +1072,40 @@ func (c *Config) APIKey() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.apiKey
+}
+
+// AgentTimeout returns the HTTP client timeout used for requests to the Datadog Agent.
+func (c *Config) AgentTimeout() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.httpClientTimeout
+}
+
+// SetAgentTimeout sets the HTTP client timeout used for requests to the Datadog Agent.
+func (c *Config) SetAgentTimeout(timeout time.Duration, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_AGENT_TIMEOUT", origin, timeout, product...) {
+		return
+	}
+	c.httpClientTimeout = timeout
+	configtelemetry.Report("DD_TRACE_AGENT_TIMEOUT", timeout, origin)
+}
+
+// SendRetries returns the configured retry count for payload sends.
+func (c *Config) SendRetries() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.sendRetries
+}
+
+// SetSendRetries sets the retry count for payload sends.
+func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_SEND_RETRIES", origin, retries, product...) {
+		return
+	}
+	c.sendRetries = retries
+	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
 }

@@ -1008,6 +1008,13 @@
         "default": "1.0"
       }
     ],
+    "DD_TRACE_AGENT_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "10"
+      }
+    ],
     "DD_TRACE_AGENT_URL": [
       {
         "implementation": "C",
@@ -1559,6 +1566,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "DD_TRACE_SEND_RETRIES": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "0"
       }
     ],
     "DD_TRACE_SOURCE_HOSTNAME": [
