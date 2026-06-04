@@ -33,7 +33,7 @@ func TestSampler(t *testing.T) {
 		defer cancel()
 	}
 
-	const samplesToTake = config.MaxItemCount << 10
+	const samplesToTake = config.MaxItemCount << 7
 
 	type testCase struct {
 		// KeySpace is the set of keys to randomly draw from when sampling.
@@ -61,23 +61,23 @@ func TestSampler(t *testing.T) {
 		"high": {
 			KeySpace:         testVector[:config.MaxItemCount*2/3],
 			SimulatedTPS:     1000,
-			ExpectedKeepRate: .0091,
+			ExpectedKeepRate: .0094,
 			AllowedDelta:     .0001,
 		},
 		"large": {
 			KeySpace:         testVector[:config.MaxItemCount],
 			SimulatedTPS:     1000,
-			ExpectedKeepRate: .01,
-			AllowedDelta:     .005, // Small chance of collision here... so a bit more wiggle room...
+			ExpectedKeepRate: .0145,
+			AllowedDelta:     .001, // Small chance of collision here... so a bit more wiggle room...
 		},
 		"extreme": { // Not actually realistic usage... Evictions galore!
 			KeySpace:         testVector[:2*config.MaxItemCount],
 			SimulatedTPS:     10000,
-			ExpectedKeepRate: .21,
+			ExpectedKeepRate: .16,
 			// Very random evictions, so keep rate can be pretty off...
 			// It appears that some newer gen P-cores/E-cores CPU are significantly worse at running this job
-			// so we allow a bit more wiggle room here (like 50% worse).
-			AllowedDelta: .5,
+			// so we allow a bit more wiggle room here.
+			AllowedDelta: .07,
 		},
 	}
 
