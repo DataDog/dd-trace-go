@@ -1632,14 +1632,6 @@ func TestWithTraceEnabled(t *testing.T) {
 		assert.False(c.internalConfig.TracingEnabled())
 	})
 
-	t.Run("otel-env", func(t *testing.T) {
-		assert := assert.New(t)
-		t.Setenv("OTEL_TRACES_EXPORTER", "none")
-		c, err := newTestConfig()
-		assert.NoError(err)
-		assert.False(c.internalConfig.TracingEnabled())
-	})
-
 	t.Run("dd-env", func(t *testing.T) {
 		assert := assert.New(t)
 		t.Setenv("DD_TRACE_ENABLED", "false")
@@ -1648,16 +1640,10 @@ func TestWithTraceEnabled(t *testing.T) {
 		assert.False(c.internalConfig.TracingEnabled())
 	})
 
-	t.Run("override-chain", func(t *testing.T) {
+	t.Run("option-overrides-env", func(t *testing.T) {
 		assert := assert.New(t)
-		// dd env overrides otel env
-		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		t.Setenv("DD_TRACE_ENABLED", "true")
-		c, err := newTestConfig()
-		assert.NoError(err)
-		assert.True(c.internalConfig.TracingEnabled())
-		// tracer option overrides dd env
-		c, err = newTestConfig(WithTraceEnabled(false))
+		c, err := newTestConfig(WithTraceEnabled(false))
 		assert.NoError(err)
 		assert.False(c.internalConfig.TracingEnabled())
 	})

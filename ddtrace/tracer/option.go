@@ -223,16 +223,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// TODO: should we track the origin of these tags individually?
 		c.globalTags.setOrigin(telemetry.OriginEnvVar)
 	}
-	// OTel override: if DD_TRACE_ENABLED is unset but OTEL_TRACES_EXPORTER maps to
-	// a disable, propagate that into internal config.
-	if _, ok := env.Lookup("DD_TRACE_ENABLED"); !ok {
-		if v := getDDorOtelConfig("enabled"); v != "" {
-			if enabled := internal.BoolVal(v, true); !enabled {
-				c.internalConfig.SetTracingEnabled(false, telemetry.OriginEnvVar)
-			}
-		}
-	}
-
 	namingschema.LoadFromEnv()
 
 	// LLM Observability config
