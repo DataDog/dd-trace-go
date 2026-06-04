@@ -400,6 +400,7 @@ func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product 
 		return
 	}
 	c.dogstatsdAddr = parseDogstatsdAddr(addr)
+	c.dogstatsdAddrExplicit = true
 	configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
 }
 
