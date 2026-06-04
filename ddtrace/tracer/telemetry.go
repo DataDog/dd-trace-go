@@ -36,8 +36,6 @@ func startTelemetry(c *config) telemetry.Client {
 	}
 
 	telemetry.ProductStarted(telemetry.NamespaceTracers)
-	// Read enabled value and origin atomically to prevent TOCTOU bugs
-	traceEnabled, traceEnabledOrigin := c.enabled.getCurrentAndOrigin()
 	// Hoist to local var so both fields come from the same atomic snapshot.
 	a := c.agent.load()
 	telemetryConfigs := []telemetry.Configuration{
@@ -59,7 +57,6 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspotsEnabled()},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.internalConfig.PeerServiceDefaultsEnabled()},
 		{Name: "orchestrion_enabled", Value: orchestrion.Enabled(), Origin: telemetry.OriginCode},
-		{Name: "trace_enabled", Value: traceEnabled, Origin: traceEnabledOrigin},
 		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
 		c.globalTags.toTelemetry(),
 		c.traceSampleRules.toTelemetry(),

@@ -776,8 +776,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.True(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginDefault)
+			val, origin := c.internalConfig.TracingEnabledConfig().Baseline()
+			assert.True(t, val)
+			assert.Equal(t, telemetry.OriginDefault, origin)
 		})
 
 		t.Run("override", func(t *testing.T) {
@@ -786,8 +787,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.False(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginEnvVar)
+			val, origin := c.internalConfig.TracingEnabledConfig().Baseline()
+			assert.False(t, val)
+			assert.Equal(t, telemetry.OriginEnvVar, origin)
 		})
 	})
 
@@ -1627,7 +1629,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithTraceEnabled(false))
 		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 
 	t.Run("otel-env", func(t *testing.T) {
@@ -1635,7 +1637,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 
 	t.Run("dd-env", func(t *testing.T) {
@@ -1643,7 +1645,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 
 	t.Run("override-chain", func(t *testing.T) {
@@ -1653,11 +1655,11 @@ func TestWithTraceEnabled(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "true")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.True(c.enabled.current)
+		assert.True(c.internalConfig.TracingEnabled())
 		// tracer option overrides dd env
 		c, err = newTestConfig(WithTraceEnabled(false))
 		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 }
 

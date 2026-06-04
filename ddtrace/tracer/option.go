@@ -182,9 +182,6 @@ type config struct {
 	// It defaults to time.Ticker; replaced in tests.
 	tickChan <-chan time.Time
 
-	// enabled reports whether tracing is enabled.
-	enabled dynamicConfig[bool]
-
 	// traceSampleRules holds the trace sampling rules
 	traceSampleRules dynamicConfig[[]SamplingRule]
 
@@ -226,9 +223,14 @@ func newConfig(opts ...StartOption) (*config, error) {
 		// TODO: should we track the origin of these tags individually?
 		c.globalTags.setOrigin(telemetry.OriginEnvVar)
 	}
-	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
-	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
-		c.enabled.setOrigin(telemetry.OriginEnvVar)
+	// OTel override: if DD_TRACE_ENABLED is unset but OTEL_TRACES_EXPORTER maps to
+	// a disable, propagate that into internal config.
+	if _, ok := env.Lookup("DD_TRACE_ENABLED"); !ok {
+		if v := getDDorOtelConfig("enabled"); v != "" {
+			if enabled := internal.BoolVal(v, true); !enabled {
+				c.internalConfig.SetTracingEnabled(false, telemetry.OriginEnvVar)
+			}
+		}
 	}
 
 	namingschema.LoadFromEnv()
@@ -321,7 +323,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	}
 
 	// if using stdout or traces are disabled or we are in ci visibility agentless mode, agent is disabled
-	agentDisabled := c.internalConfig.LogToStdout() || !c.enabled.get() || c.internalConfig.CIVisibilityAgentlessActive()
+	agentDisabled := c.internalConfig.LogToStdout() || !c.internalConfig.TracingEnabled() || c.internalConfig.CIVisibilityAgentlessActive()
 	agentURL := c.internalConfig.AgentURL()
 	af := loadAgentFeatures(agentDisabled, agentURL, c.httpClient)
 	c.agent.store(af)
@@ -619,7 +621,7 @@ func loadAgentFeatures(agentDisabled bool, agentURL *url.URL, httpClient *http.C
 // The agent is considered disabled in serverless (LogToStdout), when the
 // tracer itself is disabled, or in CI visibility agentless mode.
 func (c *config) agentEnabled() bool {
-	return !c.internalConfig.LogToStdout() && c.enabled.get() && !c.internalConfig.CIVisibilityAgentlessActive()
+	return !c.internalConfig.LogToStdout() && c.internalConfig.TracingEnabled() && !c.internalConfig.CIVisibilityAgentlessActive()
 }
 
 // MarkIntegrationImported labels the given integration as imported
@@ -1040,8 +1042,7 @@ func WithHostname(name string) StartOption {
 // WithTraceEnabled allows specifying whether tracing will be enabled
 func WithTraceEnabled(enabled bool) StartOption {
 	return func(c *config) {
-		telemetry.RegisterAppConfig("trace_enabled", enabled, telemetry.OriginCode)
-		c.enabled = newDynamicConfig("tracing_enabled", enabled, func(_ bool) bool { return true }, equal[bool])
+		c.internalConfig.SetTracingEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 

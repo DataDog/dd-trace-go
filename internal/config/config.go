@@ -130,6 +130,9 @@ type Config struct {
 	globalSampleRate *DynamicConfig[float64]
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags *DynamicConfig[[]string]
+	// tracingEnabled controls whether tracing is active. RC can only disable it,
+	// never re-enable it once disabled by a local source.
+	tracingEnabled *DynamicConfig[bool]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled    bool
 	ciVisibilityAgentless  bool
@@ -272,6 +275,9 @@ func loadConfig() *Config {
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
+
+	tracingEnabled, tracingEnabledOrigin := p.GetBoolWithOrigin("DD_TRACE_ENABLED", true)
+	cfg.tracingEnabled = newDynamicConfig("tracing_enabled", tracingEnabled, tracingEnabledOrigin, equal[bool], nil)
 
 	enabled, origin := p.GetBoolWithOrigin("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, origin, equal[bool], nil)
@@ -659,6 +665,29 @@ func (c *Config) SetHeaderAsTags(headerAsTags []string, origin telemetry.Origin,
 	}
 	c.headerAsTags.setBaseline(headerAsTags, origin)
 	configtelemetry.Report("DD_TRACE_HEADER_TAGS", strings.Join(headerAsTags, ","), origin)
+}
+
+func (c *Config) TracingEnabled() bool {
+	return c.tracingEnabled.Get()
+}
+
+// TracingEnabledConfig returns the DynamicConfig for the tracing-enabled flag.
+// Use this only for RC updates (HandleRC). For user-configured changes use SetTracingEnabled.
+func (c *Config) TracingEnabledConfig() *DynamicConfig[bool] {
+	return c.tracingEnabled
+}
+
+// SetTracingEnabled records a user-configured tracing-enabled value. Call this
+// only from user-facing paths (options, env vars). For agent/RC updates use
+// TracingEnabledConfig().HandleRC(...).
+func (c *Config) SetTracingEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.tracingEnabled.setBaseline(enabled, origin)
+	configtelemetry.Report("DD_TRACE_ENABLED", enabled, origin)
 }
 
 func (c *Config) TraceRateLimitPerSecond() float64 {
