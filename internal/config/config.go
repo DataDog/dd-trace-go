@@ -78,8 +78,9 @@ type Config struct {
 	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
 	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
 	dogstatsdAddr *url.URL
-	// dogstatsdPortSet is true when dogstatsd port is explicitly set by user configuration
-	dogstatsdPortSet bool
+	// dogstatsdAddrExplicit is true when the user explicitly configured the DogStatsD
+	// address (via DD_DOGSTATSD_PORT or DD_DOGSTATSD_URL), so agent-reported ports must not overwrite it.
+	dogstatsdAddrExplicit bool
 	debug            bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
@@ -207,7 +208,7 @@ func loadConfig() *Config {
 	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
 	dogstatsdPort := p.GetString("DD_DOGSTATSD_PORT", "")
 	if dogstatsdPort != "" || dogstatsdURL != "" {
-		cfg.dogstatsdPortSet = true
+		cfg.dogstatsdAddrExplicit = true
 	}
 	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdURL, dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
 
@@ -418,7 +419,7 @@ func (c *Config) ApplyAgentReportedStatsdPort(port int) {
 	if c.dogstatsdAddr.Scheme == "unix" {
 		return
 	}
-	if c.dogstatsdPortSet {
+	if c.dogstatsdAddrExplicit {
 		return
 	}
 	c.dogstatsdAddr.Host = net.JoinHostPort(c.dogstatsdAddr.Hostname(), strconv.Itoa(port))
