@@ -65,8 +65,10 @@ fpd_origin_tracking_smoke_test:
         | tar -xz -C /usr/local/bin crane
       DDOCTOSTS_VERSION=v1.10.6
       DDOCTOSTS_DIGEST=sha256:2b1a69019340da2be0e1e71de4d827acee2fdc5ee38f676dd96aa88c112ed6e8
+      # In-archive entry has a leading slash (`/usr/local/bin/dd-octo-sts`),
+      # so the filter needs that slash and --strip-components=4 (empty + usr + local + bin).
       crane export "registry.ddbuild.io/dd-octo-sts:${DDOCTOSTS_VERSION}@${DDOCTOSTS_DIGEST}" - \
-        | tar -x -C /tmp --strip-components=3 usr/local/bin/dd-octo-sts
+        | tar -x -C /tmp --strip-components=4 /usr/local/bin/dd-octo-sts
       chmod +x /tmp/dd-octo-sts
       export PATH="/tmp:$PATH"
     - dd-octo-sts version
