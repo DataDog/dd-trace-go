@@ -46,7 +46,11 @@ update_central_configurations_version_range_v2:
 # Throw-away once green — see the corresponding draft PR description for context.
 fpd_origin_tracking_smoke_test:
   stage: config-validation
-  image: registry.ddbuild.io/ci/libdatadog-build/packaging:100425777
+  # Pre-built CI base image with dd-octo-sts baked in. Matches the canonical
+  # pattern documented at
+  # https://datadoghq.atlassian.net/wiki/spaces/SECENG/pages/5138645099
+  # and the existing usage in .gitlab/docker-images-reliability-env.yml.
+  image: registry.ddbuild.io/images/dd-octo-sts-ci-base:2025.06-1
   tags: ["runner:apm-k8s-tweaked-metal"]
   allow_failure: true   # smoke test; do not block the pipeline
   rules:
@@ -58,19 +62,6 @@ fpd_origin_tracking_smoke_test:
     DDOCTOSTS_SCOPE: "DataDog/dd-trace-go"
     DDOCTOSTS_POLICY: "gitlab.github-access.config-inversion.read"
   before_script:
-    # Install dd-octo-sts via crane (no image change).
-    - |
-      CRANE_VERSION=v0.20.2
-      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
-        | tar -xz -C /usr/local/bin crane
-      DDOCTOSTS_VERSION=v1.10.6
-      DDOCTOSTS_DIGEST=sha256:2b1a69019340da2be0e1e71de4d827acee2fdc5ee38f676dd96aa88c112ed6e8
-      # In-archive entry has a leading slash (`/usr/local/bin/dd-octo-sts`),
-      # so the filter needs that slash and --strip-components=4 (empty + usr + local + bin).
-      crane export "registry.ddbuild.io/dd-octo-sts:${DDOCTOSTS_VERSION}@${DDOCTOSTS_DIGEST}" - \
-        | tar -x -C /tmp --strip-components=4 /usr/local/bin/dd-octo-sts
-      chmod +x /tmp/dd-octo-sts
-      export PATH="/tmp:$PATH"
     - dd-octo-sts version
   script:
     # 1) Print the OIDC claims (useful for tightening trust policy patterns).
