@@ -227,21 +227,32 @@ func TestInternalMetricsDisabled(t *testing.T) {
 		return ok
 	}
 
-	t.Run("default: real client", func(t *testing.T) {
+	t.Run("default non-Lambda: real client", func(t *testing.T) {
 		tr, err := newUnstartedTracer(WithAgentTimeout(2))
 		require.NoError(t, err)
 		defer tr.statsd.Close()
 		require.False(t, isNoop(tr.statsd), "statsd should be real by default, got %T", tr.statsd)
 	})
 
-	t.Run("DD_TRACE_INTERNAL_METRICS_ENABLED=false: no-op client", func(t *testing.T) {
-		// Disabling internal metrics swaps in a no-op client, silencing all of the
-		// tracer's internal statsd metrics (health, runtime, and DSM).
-		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "false")
+	t.Run("Lambda without explicit config: no-op client", func(t *testing.T) {
+		// In Lambda the core config layer defaults internal metrics to off so the
+		// tracer emits no statsd traffic by default.
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
 		tr, err := newUnstartedTracer(WithAgentTimeout(2))
 		require.NoError(t, err)
 		defer tr.statsd.Close()
-		require.True(t, isNoop(tr.statsd), "statsd should be a no-op, got %T", tr.statsd)
+		require.True(t, isNoop(tr.statsd), "statsd should be a no-op in Lambda by default, got %T", tr.statsd)
+	})
+
+	t.Run("Lambda with explicit opt-in: real client", func(t *testing.T) {
+		// If the user explicitly enables internal metrics in Lambda, the real
+		// client is used and their setting is reported with origin env_var.
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
+		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "true")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.False(t, isNoop(tr.statsd), "statsd should be real when user opts in, got %T", tr.statsd)
 	})
 }
 

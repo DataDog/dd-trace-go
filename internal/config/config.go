@@ -219,7 +219,6 @@ func loadConfig() *Config {
 	cfg.spanTimeout = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
-	cfg.internalMetricsEnabled = p.GetBool("DD_TRACE_INTERNAL_METRICS_ENABLED", true)
 	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
@@ -280,6 +279,15 @@ func loadConfig() *Config {
 			cfg.isLambdaFunction = true
 		}
 	}
+
+	// Internal metrics default to off in Lambda: they add per-invocation statsd
+	// overhead for little value and are not usable as distributions there. If the
+	// user has explicitly set DD_TRACE_INTERNAL_METRICS_ENABLED, that value wins.
+	internalMetricsEnabled, internalMetricsOrigin := p.GetBoolWithOrigin("DD_TRACE_INTERNAL_METRICS_ENABLED", true)
+	if internalMetricsOrigin == telemetry.OriginDefault && cfg.isLambdaFunction {
+		internalMetricsEnabled = false
+	}
+	cfg.internalMetricsEnabled = internalMetricsEnabled
 
 	// Hostname lookup, if DD_TRACE_REPORT_HOSTNAME is true
 	// If the hostname lookup fails, an error is set and the hostname is not reported

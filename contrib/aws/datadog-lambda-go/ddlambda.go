@@ -256,7 +256,6 @@ func initializeListeners(cfg *Config) []wrapper.HandlerListener {
 	if strings.EqualFold(logLevel, "debug") || (cfg != nil && cfg.DebugLogging) {
 		logger.SetLogLevel(logger.LevelDebug)
 	}
-	disableInternalMetrics()
 	traceConfig := cfg.toTraceConfig()
 	extensionManager := extension.BuildExtensionManager(traceConfig.UniversalInstrumentation)
 	isExtensionRunning := extensionManager.IsExtensionRunning()
@@ -267,20 +266,6 @@ func initializeListeners(cfg *Config) []wrapper.HandlerListener {
 	ml := metrics.MakeListener(metricsConfig, extensionManager)
 	return []wrapper.HandlerListener{
 		&tl, &ml,
-	}
-}
-
-// disableInternalMetrics defaults DD_TRACE_INTERNAL_METRICS_ENABLED to false,
-// disabling the tracer's internal statsd metrics in Lambda unless the user has
-// explicitly set the env var. This covers tracer health (datadog.tracer.*), Go
-// runtime (runtime.go.*), and DSM processor metrics, which share one statsd client.
-func disableInternalMetrics() {
-	const envVar = "DD_TRACE_INTERNAL_METRICS_ENABLED"
-	if os.Getenv(envVar) != "" {
-		return
-	}
-	if err := os.Setenv(envVar, "false"); err != nil {
-		logger.Debug(fmt.Sprintf("failed to set %s=false: %v", envVar, err))
 	}
 }
 
