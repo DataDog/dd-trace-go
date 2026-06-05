@@ -1089,6 +1089,7 @@ func (t *tracer) Stop() {
 	})
 	t.abandonedSpansDebugger.Stop()
 	t.stats.Stop()
+	t.logDroppedTraces.Stop()
 	t.wg.Wait()
 	t.traceWriter.stop()
 	if t.runtimeMetrics != nil {
