@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -392,14 +393,92 @@ func TestSpanAddEvent(t *testing.T) {
 	})
 }
 
-// attributesContains returns true if attrs contains an attribute.KeyValue with the provided key and val
-func attributesContains(attrs map[string]any, key string, val any) bool {
-	for k, v := range attrs {
-		if k == key && v == val {
-			return true
-		}
+// TestSetStatusShouldNotOverwriteUserDefinedErrorFields test the tracer respects
+// user-defined error attributes when SetStatus is called.
+// See for more info: https://github.com/DataDog/dd-trace-go/issues/3708.
+func TestSetStatusShouldNotOverwriteUserDefinedErrorFields(t *testing.T) {
+	statusDesc := "status description from SetStatus"
+
+	tests := []struct {
+		name       string
+		attributes []attribute.KeyValue
+		// wantInMeta fields are expected to be preserved in the final span meta.
+		// These assertions are expected to FAIL, demonstrating the bug.
+		wantInMeta    []string
+		wantNotInMeta []string
+	}{
+		{
+			name: "error.message is overwritten by SetStatus description",
+			attributes: []attribute.KeyValue{
+				attribute.String(ext.ErrorMsg, "custom error message"),
+			},
+			wantInMeta:    []string{"custom error message"},
+			wantNotInMeta: []string{statusDesc},
+		},
+		{
+			name: "error.type is overwritten by SetStatus description",
+			attributes: []attribute.KeyValue{
+				attribute.String(ext.ErrorType, "custom.ErrorType"),
+			},
+			wantInMeta:    []string{"custom.ErrorType"},
+			wantNotInMeta: []string{"*errors.errorString"}, // auto-generated from errors.New
+		},
+		{
+			name: "error.stack is overwritten by SetStatus description",
+			attributes: []attribute.KeyValue{
+				attribute.String(ext.ErrorStack, "custom stack trace line 1\ncustom stack trace line 2"),
+			},
+			wantInMeta: []string{"custom stack trace line 1"},
+		},
+		{
+			name: "all error fields are overwritten when SetStatus is called",
+			attributes: []attribute.KeyValue{
+				attribute.String(ext.ErrorMsg, "custom error message"),
+				attribute.String(ext.ErrorType, "custom.ErrorType"),
+				attribute.String(ext.ErrorStack, "custom stack trace"),
+			},
+			wantInMeta:    []string{"custom error message", "custom.ErrorType", "custom stack trace"},
+			wantNotInMeta: []string{statusDesc},
+		},
 	}
-	return false
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, sp := tr.Start(context.Background(), "test_op")
+
+			// set a bunch of attributes, some of them might be the ones span.SetStatus will overwrite later.
+			for _, attr := range tc.attributes {
+				sp.SetAttributes(attr)
+			}
+
+			// when the span is finished, if
+			// if s.statusInfo.code == otelcodes.Error {
+			// s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
+			// opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
+			// }
+			sp.SetStatus(codes.Error, statusDesc)
+			sp.End()
+
+			tracer.Flush()
+			traces, err := waitForPayload(payloads)
+			require.NoError(t, err)
+
+			p := traces[0][0]
+			meta := fmt.Sprintf("%v", p["meta"])
+
+			assert.Equal(t, 1.0, p["error"], "span should be marked as error")
+			for _, want := range tc.wantInMeta {
+				assert.Contains(t, meta, want)
+			}
+			for _, notWant := range tc.wantNotInMeta {
+				assert.NotContains(t, meta, notWant)
+			}
+		})
+	}
 }
 
 func TestSpanContextWithStartOptions(t *testing.T) {
@@ -841,4 +920,14 @@ func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	assert.Contains(metrics, fmt.Sprintf("%s:%s", "_dd1.sr.eausr", "1"))
 	meta := fmt.Sprintf("%v", p[0]["meta"])
 	assert.Contains(meta, fmt.Sprintf("%s:%s", "http.status_code", "200"))
+}
+
+// attributesContains returns true if attrs contains an attribute.KeyValue with the provided key and val
+func attributesContains(attrs map[string]any, key string, val any) bool {
+	for k, v := range attrs {
+		if k == key && v == val {
+			return true
+		}
+	}
+	return false
 }
