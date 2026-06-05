@@ -63,7 +63,9 @@ fpd_origin_tracking_smoke_test:
       CRANE_VERSION=v0.20.2
       curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
         | tar -xz -C /usr/local/bin crane
-      crane export registry.ddbuild.io/dd-octo-sts:latest - \
+      DDOCTOSTS_VERSION=v1.10.6
+      DDOCTOSTS_DIGEST=sha256:2b1a69019340da2be0e1e71de4d827acee2fdc5ee38f676dd96aa88c112ed6e8
+      crane export "registry.ddbuild.io/dd-octo-sts:${DDOCTOSTS_VERSION}@${DDOCTOSTS_DIGEST}" - \
         | tar -x -C /tmp --strip-components=3 usr/local/bin/dd-octo-sts
       chmod +x /tmp/dd-octo-sts
       export PATH="/tmp:$PATH"
