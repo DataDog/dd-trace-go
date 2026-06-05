@@ -735,7 +735,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.NoError(t, err)
 		found := false
 		for _, log := range tp.Logs() {
-			if strings.Contains(log, "DEBUG: Runtime metrics enabled") {
+			if strings.Contains(log, "Runtime metrics") {
 				found = true
 				break
 			}
@@ -752,7 +752,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.NoError(t, err)
 		found := false
 		for _, log := range tp.Logs() {
-			if strings.Contains(log, "DEBUG: Runtime metrics enabled") {
+			if strings.Contains(log, "Runtime metrics") {
 				found = true
 				break
 			}

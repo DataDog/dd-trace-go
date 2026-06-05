@@ -116,7 +116,10 @@ func mapService(ot string) (string, error) {
 	return ot, nil
 }
 
-// mapMetrics maps OTEL_METRICS_EXPORTER to DD_RUNTIME_METRICS_ENABLED
+// mapMetrics maps OTEL_METRICS_EXPORTER to DD_RUNTIME_METRICS_ENABLED.
+// "none" disables DogStatsD runtime metrics. "otlp" is a valid exporter that does
+// not drive DD_RUNTIME_METRICS_ENABLED, so it returns no value (leaving the flag to
+// its explicit setting) rather than a spurious "not supported" warning.
 func mapMetrics(ot string) (string, error) {
 	ot = strings.TrimSpace(strings.ToLower(ot))
 	if ot == "none" {
@@ -128,15 +131,16 @@ func mapMetrics(ot string) (string, error) {
 	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
 }
 
+// mapOtelMetrics maps OTEL_METRICS_EXPORTER to DD_METRICS_OTEL_ENABLED.
+// OTel runtime metrics are opt-in: only DD_METRICS_OTEL_ENABLED=true enables them.
+// OTEL_METRICS_EXPORTER never enables on its own (otherwise any OTLP-configured
+// app would start exporting without opting in); it only acts as a kill switch via
+// "none". Any other value leaves DD_METRICS_OTEL_ENABLED to its explicit setting.
 func mapOtelMetrics(ot string) (string, error) {
-	ot = strings.TrimSpace(strings.ToLower(ot))
-	if ot == "none" {
+	if strings.TrimSpace(strings.ToLower(ot)) == "none" {
 		return "false", nil
 	}
-	if ot == "otlp" || strings.Contains(ot, "otlp") {
-		return "", nil
-	}
-	return "", fmt.Errorf("the following configuration is not supported: OTEL_METRICS_EXPORTER=%v", ot)
+	return "", nil
 }
 
 // mapLogLevel maps OTEL_LOG_LEVEL to DD_TRACE_DEBUG
