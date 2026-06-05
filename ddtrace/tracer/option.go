@@ -16,14 +16,12 @@ import (
 	"io"
 	"maps"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -122,15 +120,6 @@ var contribIntegrations = map[string]struct {
 	"github.com/valkey-io/valkey-go":                {"Valkey", false},
 }
 
-var (
-	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
-	// Replaced in tests
-	defaultSocketDSD = "/var/run/datadog/dsd.socket"
-
-	// defaultStatsdPort specifies the default port to use for connecting to the statsd server.
-	defaultStatsdPort = "8125"
-)
-
 // Supported trace protocols.
 const (
 	traceProtocolV04 = internalconfig.TraceProtocolV04
@@ -158,10 +147,6 @@ type config struct {
 	// if they have a version of the library available to integrate.
 	integrations map[string]integrationConfig
 
-	// universalVersion, reports whether span service name and config service name
-	// should match to set application version tag. False by default
-	universalVersion bool
-
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler RateSampler
 
@@ -181,11 +166,6 @@ type config struct {
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
 	logger Logger
-
-	// dogstatsdAddr specifies the address to connect for sending metrics to the
-	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
-	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
-	dogstatsdAddr string
 
 	// statsdClient is set when a user provides a custom statsd client for tracking metrics
 	// associated with the runtime and the tracer.
@@ -398,10 +378,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.loadContribIntegrations(info.Deps)
 	}
 	if c.statsdClient == nil {
-		// configure statsd client
-		addr := resolveDogstatsdAddr(c.dogstatsdAddr, af, defaultSocketDSD)
-		globalconfig.SetDogstatsdAddr(addr)
-		c.dogstatsdAddr = addr
+		// Push the agent-reported StatsdPort into internal/config so it can
+		// fill in the resolved port if no other source provided one. Then
+		// mirror the resolved value into globalconfig for contrib readers.
+		c.internalConfig.ApplyAgentReportedStatsdPort(af.StatsdPort)
+		globalconfig.SetDogstatsdAddr(c.internalConfig.DogstatsdAddr())
 	}
 	// Re-initialize the globalTags config with the value constructed from the environment and start options
 	// This allows persisting the initial value of globalTags for future resets and updates.
@@ -467,66 +448,11 @@ func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers
 	return traceURL, datadogHeaders()
 }
 
-// resolveDogstatsdAddr resolves the Dogstatsd address to use with the following
-// priority order:
-//  1. Explicitly configured address via WithDogstatsdAddr.
-//  2. Environment variables DD_DOGSTATSD_HOST (or DD_AGENT_HOST) and DD_DOGSTATSD_PORT.
-//  3. Auto-discovery: UDS socket at /var/run/datadog/dsd.socket, agent-reported port,
-//     or the default localhost:8125.
-func resolveDogstatsdAddr(configAddr string, af agentFeatures, socketDSDPath string) string {
-	// 1. User explicitly set address via WithDogstatsdAddr; honor it as-is.
-	if configAddr != "" {
-		return configAddr
-	}
-
-	// 2. Build address from dogstatsd-specific environment variables.
-	// DD_AGENT_HOST is only used as a host fallback when DD_DOGSTATSD_HOST or
-	// DD_DOGSTATSD_PORT is set — on its own it does not trigger this path.
-	envHost := env.Get("DD_DOGSTATSD_HOST")
-	envPort := env.Get("DD_DOGSTATSD_PORT")
-	if envHost != "" || envPort != "" {
-		host := envHost
-		if host == "" {
-			host = env.Get("DD_AGENT_HOST")
-		}
-		if host == "" {
-			host = defaultHostname
-		}
-		// For the port, prefer the env var, then the agent-reported port
-		// (loaded from the trace-agent /info endpoint), then the default.
-		port := envPort
-		if port == "" && af.StatsdPort != 0 {
-			port = strconv.Itoa(af.StatsdPort)
-		} else if port == "" {
-			port = defaultStatsdPort
-		}
-		return net.JoinHostPort(host, port)
-	}
-
-	// 3. No user configuration at all — auto-discover.
-	// Check for the UDS socket first; this is the preferred transport when available.
-	if _, err := os.Stat(socketDSDPath); err == nil {
-		return "unix://" + socketDSDPath
-	}
-	// For TCP, use DD_AGENT_HOST as the hostname if available, otherwise localhost.
-	host := env.Get("DD_AGENT_HOST")
-	if host == "" {
-		host = defaultHostname
-	}
-	// Use the agent-reported port if available. Agent features are loaded from
-	// the trace-agent, which may not be running — in that case StatsdPort is 0.
-	if af.StatsdPort != 0 {
-		return net.JoinHostPort(host, strconv.Itoa(af.StatsdPort))
-	}
-	// Fall back to default port 8125.
-	return net.JoinHostPort(host, defaultStatsdPort)
-}
-
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
-	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
+	return internal.NewStatsdClient(c.internalConfig.DogstatsdAddr(), statsTags(c))
 }
 
 type integrationConfig struct {
@@ -1103,8 +1029,7 @@ func WithRuntimeMetrics() StartOption {
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddr(addr string) StartOption {
 	return func(cfg *config) {
-		cfg.dogstatsdAddr = addr
-		globalconfig.SetDogstatsdAddr(addr)
+		cfg.internalConfig.SetDogstatsdAddr(addr, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1128,7 +1053,7 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.internalConfig.SetVersion(version, telemetry.OriginCode, internalconfig.ProductTracer)
-		cfg.universalVersion = false
+		cfg.internalConfig.SetUniversalVersion(false, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1138,7 +1063,7 @@ func WithServiceVersion(version string) StartOption {
 func WithUniversalVersion(version string) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetVersion(version, telemetry.OriginCode, internalconfig.ProductTracer)
-		c.universalVersion = true
+		c.internalConfig.SetUniversalVersion(true, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
