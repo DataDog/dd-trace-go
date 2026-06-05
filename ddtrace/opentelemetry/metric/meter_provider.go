@@ -17,31 +17,34 @@ import (
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 )
 
 // installedProvider is the MeterProvider we installed as the OTel global.
-// Accessed only from StartHook and ShutdownHook, both of which run under tracer's startStopMu.
-// ShutdownHook only shuts down this provider, never one the user installed.
+// Accessed only from Start and Stop, both of which run under tracer's startStopMu.
+// Stop only shuts down this provider, never one the user installed.
 var installedProvider *metric.MeterProvider
 
-func init() {
-	otelmetricsinstall.StartHook = func(ctx context.Context) error {
-		if err := installGlobal(); err != nil {
-			return err
-		}
-		return startGoRuntimeMetrics(ctx)
-	}
-	otelmetricsinstall.ShutdownHook = func(ctx context.Context) error {
-		p := installedProvider
-		installedProvider = nil
-		if p == nil {
-			return nil
-		}
-		err := p.Shutdown(ctx)
-		otel.SetMeterProvider(noop.NewMeterProvider())
+// Start installs the global OTel MeterProvider and begins collecting Go runtime
+// metrics. It is called by tracer.Start() once the tracer has verified that OTel
+// runtime metrics should be enabled.
+func Start(ctx context.Context) error {
+	if err := installGlobal(); err != nil {
 		return err
 	}
+	return startGoRuntimeMetrics(ctx)
+}
+
+// Stop flushes and shuts down the global OTel MeterProvider installed by Start.
+// It is a no-op if Start never installed a provider. It is called by tracer.Stop().
+func Stop(ctx context.Context) error {
+	p := installedProvider
+	installedProvider = nil
+	if p == nil {
+		return nil
+	}
+	err := p.Shutdown(ctx)
+	otel.SetMeterProvider(noop.NewMeterProvider())
+	return err
 }
 
 // installGlobal installs a DD-configured MeterProvider as the OTel global.

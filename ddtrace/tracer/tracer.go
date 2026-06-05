@@ -25,6 +25,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	otelmetric "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry/metric"
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -35,7 +36,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -272,13 +272,12 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	otelRuntimeMetricsShouldBeEnabled := otelmetricsinstall.StartHook != nil &&
-		t.config.internalConfig.RuntimeMetricsOtelEnabled() &&
+	otelRuntimeMetricsShouldBeEnabled := t.config.internalConfig.RuntimeMetricsOtelEnabled() &&
 		t.config.internalConfig.OTLPExportMetricsMode() &&
 		(t.config.internalConfig.RuntimeMetricsV2Enabled() || t.config.internalConfig.RuntimeMetricsEnabled())
 
 	if otelRuntimeMetricsShouldBeEnabled {
-		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
+		if err := otelmetric.Start(gocontext.Background()); err != nil {
 			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
 		} else {
 			log.Debug("OTel runtime metrics enabled.")
@@ -1107,10 +1106,10 @@ func (t *tracer) Stop() {
 	if t.runtimeMetrics != nil {
 		t.runtimeMetrics.Stop()
 	}
-	if otelmetricsinstall.ShutdownHook != nil {
+	{
 		ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 5*time.Second)
 		defer cancel()
-		if err := otelmetricsinstall.ShutdownHook(ctx); err != nil {
+		if err := otelmetric.Stop(ctx); err != nil {
 			log.Error("Failed to shut down OTel meter provider: %v", err.Error())
 		}
 	}
