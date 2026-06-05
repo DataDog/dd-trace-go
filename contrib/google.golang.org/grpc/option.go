@@ -87,6 +87,11 @@ func defaults(cfg *config) {
 		"set-cookie":          {},
 		"x-api-key":           {},
 		"x-auth-token":        {},
+		// gRPC transport-negotiation header, not user metadata. The client
+		// advertises it whenever a compressor (e.g. gzip) is registered in the
+		// process, so recording it would make span tags depend on unrelated
+		// imports elsewhere in the binary.
+		"grpc-accept-encoding": {},
 	}
 }
 
