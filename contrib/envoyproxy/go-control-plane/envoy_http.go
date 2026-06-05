@@ -162,9 +162,14 @@ func mergeMetadataHeaders(md metadata.MD, headers http.Header) {
 			continue
 		}
 
-		// Skip the content-type header of the grpc request
-		// Note: all envoy set headers are lower-case
-		if k == "content-type" {
+		// Skip gRPC transport headers of the ext_proc connection itself: these
+		// belong to the envoy<->service gRPC channel, not to the downstream HTTP
+		// request being inspected, so they must not leak into the request schema.
+		// Note: all envoy set headers are lower-case.
+		// - content-type: the gRPC request's own content-type
+		// - grpc-*: gRPC protocol headers (e.g. grpc-accept-encoding, advertised
+		//   whenever a compressor such as gzip is registered in the process)
+		if k == "content-type" || strings.HasPrefix(k, "grpc-") {
 			continue
 		}
 
