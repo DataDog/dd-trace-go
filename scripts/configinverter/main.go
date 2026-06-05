@@ -67,6 +67,10 @@ type configurationImplementation struct {
 	Type           string   `json:"type"`
 	Default        *string  `json:"default"`
 	Aliases        []string `json:"aliases,omitempty"`
+	// Sensitive marks a configuration whose value must not be reported in
+	// configuration telemetry. When set on any implementation of a key, that key
+	// is emitted in the generated SensitiveConfigurations set.
+	Sensitive bool `json:"sensitive,omitempty"`
 }
 
 // generate generates the supported configurations map from the supported configurations
@@ -91,6 +95,20 @@ func generate(input, output string) error {
 	f.Comment("SupportedConfigurations is a map of supported configuration keys.")
 	f.Var().Id("SupportedConfigurations").Op("=").Map(jen.String()).Struct().ValuesFunc(func(g *jen.Group) {
 		for _, v := range keys {
+			g.Add(jen.Line(), jen.Lit(v), jen.Op(":"), jen.Values())
+		}
+		g.Line()
+	})
+	f.Line()
+
+	// Collect keys marked sensitive in any of their implementations.
+	sensitiveKeys := sensitiveConfigurationKeys(cfg)
+
+	f.Comment("SensitiveConfigurations is the set of configuration keys whose value must not be")
+	f.Comment("reported in configuration telemetry. It is seeded from entries marked \"sensitive\": true")
+	f.Comment("in supported_configurations.json.")
+	f.Var().Id("SensitiveConfigurations").Op("=").Map(jen.String()).Struct().ValuesFunc(func(g *jen.Group) {
+		for _, v := range sensitiveKeys {
 			g.Add(jen.Line(), jen.Lit(v), jen.Op(":"), jen.Values())
 		}
 		g.Line()
@@ -230,6 +248,22 @@ func sortSupportedConfigurationsKeys(cfg *supportedConfiguration) []string {
 	keys := []string{}
 	for k := range cfg.SupportedConfigurations {
 		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// sensitiveConfigurationKeys returns the sorted list of configuration keys that have
+// at least one implementation marked "sensitive": true.
+func sensitiveConfigurationKeys(cfg *supportedConfiguration) []string {
+	keys := []string{}
+	for k, impls := range cfg.SupportedConfigurations {
+		for _, impl := range impls {
+			if impl.Sensitive {
+				keys = append(keys, k)
+				break
+			}
+		}
 	}
 	sort.Strings(keys)
 	return keys
