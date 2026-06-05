@@ -78,6 +78,10 @@ type Config struct {
 	// serviceName specifies the name of this application.
 	serviceName string
 	version     string
+	// universalVersion, when true, applies the configured version tag to every span
+	// regardless of service. When false, only spans whose service matches the
+	// configured service get the version tag.
+	universalVersion bool
 	// env contains the environment that this application will run under.
 	env string
 	// serviceMappings holds a set of service mappings to dynamically rename services
@@ -208,6 +212,7 @@ func loadConfig() *Config {
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = p.GetString("DD_SERVICE", "")
 	cfg.version = p.GetString("DD_VERSION", "")
+	cfg.universalVersion = p.GetBool("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
 	cfg.env = p.GetString("DD_ENV", "")
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
@@ -741,6 +746,22 @@ func (c *Config) SetVersion(version string, origin telemetry.Origin, product ...
 	}
 	c.version = version
 	configtelemetry.Report("DD_VERSION", version, origin)
+}
+
+func (c *Config) UniversalVersion() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.universalVersion
+}
+
+func (c *Config) SetUniversalVersion(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_UNIVERSAL_VERSION_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.universalVersion = enabled
+	configtelemetry.Report("DD_TRACE_UNIVERSAL_VERSION_ENABLED", enabled, origin)
 }
 
 func (c *Config) Env() string {

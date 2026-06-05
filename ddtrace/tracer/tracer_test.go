@@ -2109,6 +2109,19 @@ func TestVersion(t *testing.T) {
 		v, _ := sp.meta.Get(ext.Version)
 		assert.Equal("4.5.6", v)
 	})
+	t.Run("env-universal", func(t *testing.T) {
+		t.Setenv("DD_SERVICE", "servenv")
+		t.Setenv("DD_VERSION", "4.5.6")
+		t.Setenv("DD_TRACE_UNIVERSAL_VERSION_ENABLED", "true")
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
+		v, _ := sp.meta.Get(ext.Version)
+		assert.Equal("4.5.6", v)
+	})
 	t.Run("service/universal", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithServiceVersion("4.5.6"),
 			WithService("servenv"), WithUniversalVersion("1.2.3"))

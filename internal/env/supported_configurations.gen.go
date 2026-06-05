@@ -241,6 +241,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_STARTUP_LOGS":                                           {},
 	"DD_TRACE_STATS_COMPUTATION_ENABLED":                              {},
 	"DD_TRACE_TWIRP_ANALYTICS_ENABLED":                                {},
+	"DD_TRACE_UNIVERSAL_VERSION_ENABLED":                              {},
 	"DD_TRACE_VALKEY_ANALYTICS_ENABLED":                               {},
 	"DD_TRACE_VALKEY_RAW_COMMAND":                                     {},
 	"DD_TRACE_VAULT_ANALYTICS_ENABLED":                                {},
