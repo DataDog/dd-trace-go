@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"net"
 	"net/url"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -72,7 +74,14 @@ type Config struct {
 
 	// Config fields are protected by the mutex.
 	agentURL *url.URL
-	debug    bool
+	// dogstatsdAddr is the address to connect for sending metrics to the
+	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
+	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
+	dogstatsdAddr *url.URL
+	// dogstatsdAddrExplicit is true when the user explicitly configured the DogStatsD
+	// address (via DD_DOGSTATSD_PORT or DD_DOGSTATSD_URL), so agent-reported ports must not overwrite it.
+	dogstatsdAddrExplicit bool
+	debug                 bool
 	// logStartup, when true, causes various startup info to be written when the tracer starts.
 	logStartup bool
 	// serviceName specifies the name of this application.
@@ -207,6 +216,14 @@ func loadConfig() *Config {
 	agentHost := p.GetString("DD_AGENT_HOST", "")
 	agentPort := p.GetString("DD_TRACE_AGENT_PORT", "")
 	cfg.agentURL = resolveAgentURL(agentURLStr, agentHost, agentPort)
+
+	dogstatsdURL := p.GetString("DD_DOGSTATSD_URL", "")
+	dogstatsdHost := p.GetString("DD_DOGSTATSD_HOST", "")
+	dogstatsdPort := p.GetString("DD_DOGSTATSD_PORT", "")
+	if dogstatsdPort != "" || dogstatsdURL != "" {
+		cfg.dogstatsdAddrExplicit = true
+	}
+	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdURL, dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
 
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
@@ -388,6 +405,53 @@ func (c *Config) AgentURL() *url.URL {
 		return internal.UnixDataSocketURL(u.Path)
 	}
 	return u
+}
+
+func (c *Config) DogstatsdAddr() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return formatDogstatsdAddr(c.dogstatsdAddr)
+}
+
+// SetDogstatsdAddr records a user-configured DogStatsD address and marks it
+// explicit so agent-reported ports cannot overwrite it. Call this only from
+// user-facing paths (options, env vars). For agent-reported updates use
+// ApplyAgentReportedStatsdPort.
+func (c *Config) SetDogstatsdAddr(addr string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if addr == "" {
+		return
+	}
+	if c.checkProductConflict("DD_DOGSTATSD_URL", origin, addr, product...) {
+		return
+	}
+	c.dogstatsdAddr = parseDogstatsdAddr(addr)
+	c.dogstatsdAddrExplicit = true
+	configtelemetry.Report("DD_DOGSTATSD_URL", addr, origin)
+}
+
+// ApplyAgentReportedStatsdPort applies a port from the agent /info response.
+// For user-configured addresses use SetDogstatsdAddr instead. No-op when the
+// user already provided an explicit address or the current address is a unix socket.
+func (c *Config) ApplyAgentReportedStatsdPort(port int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if port <= 0 {
+		return
+	}
+	if _, claimed := c.overrides["DD_DOGSTATSD_URL"]; claimed {
+		return
+	}
+	// dogstatsdAddr is always set non-nil by loadConfig.
+	if c.dogstatsdAddr.Scheme == "unix" {
+		return
+	}
+	if c.dogstatsdAddrExplicit {
+		return
+	}
+	c.dogstatsdAddr.Host = net.JoinHostPort(c.dogstatsdAddr.Hostname(), strconv.Itoa(port))
+	configtelemetry.Report("DD_DOGSTATSD_URL", formatDogstatsdAddr(c.dogstatsdAddr), telemetry.OriginCalculated)
 }
 
 func (c *Config) Debug() bool {
