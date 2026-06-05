@@ -272,21 +272,25 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	if t.config.internalConfig.RuntimeMetricsV2Enabled() {
+	otelRuntimeMetricsShouldBeEnabled := otelmetricsinstall.StartHook != nil &&
+		t.config.internalConfig.RuntimeMetricsOtelEnabled() &&
+		t.config.internalConfig.OTLPExportMetricsMode() &&
+		(t.config.internalConfig.RuntimeMetricsV2Enabled() || t.config.internalConfig.RuntimeMetricsEnabled())
+
+	if otelRuntimeMetricsShouldBeEnabled {
+		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
+			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
+		} else {
+			log.Debug("OTel runtime metrics enabled.")
+		}
+	} else if t.config.internalConfig.RuntimeMetricsV2Enabled() {
+		// DD statsd path — only when OTel runtime metrics are not active.
 		l := slog.New(slogHandler{})
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
 			l.Debug("Runtime metrics v2 enabled.")
 		} else {
 			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
-		}
-	}
-
-	if t.config.internalConfig.OtelRuntimeMetricsEnabled() && otelmetricsinstall.StartHook != nil {
-		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
-			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
-		} else {
-			log.Debug("OTel runtime metrics enabled.")
 		}
 	}
 

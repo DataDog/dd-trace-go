@@ -139,7 +139,9 @@ type Scope = instrumentation.Scope
 // automatically; use WithoutRuntimeProducer to suppress it.
 func WithProducer(p metric.Producer) Option {
 	return optionFunc(func(c *config) {
-		c.producers = append(c.producers, p)
+		if !c.disableRuntimeProducer {
+			c.producers = append(c.producers, p)
+		}
 	})
 }
 

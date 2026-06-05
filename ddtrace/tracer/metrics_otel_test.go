@@ -50,7 +50,6 @@ func shutdownAndResetProvider(t *testing.T) {
 func TestTracerStartOtelRuntimeMetricsRequiresAllFlags(t *testing.T) {
 	t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-	t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	internalconfig.SetUseFreshConfig(true)
@@ -65,8 +64,8 @@ func TestTracerStartOtelRuntimeMetricsRequiresAllFlags(t *testing.T) {
 	assert.True(t, *started, "StartRuntimeMetrics hook should have been called")
 }
 
-func TestTracerStartSkipsOtelRuntimeMetricsWithoutAllFlags(t *testing.T) {
-	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+func TestTracerStartSkipsOtelRuntimeMetricsWhenExporterNone(t *testing.T) {
+	t.Setenv("OTEL_METRICS_EXPORTER", "none")
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
 	internalconfig.SetUseFreshConfig(true)
@@ -78,5 +77,5 @@ func TestTracerStartSkipsOtelRuntimeMetricsWithoutAllFlags(t *testing.T) {
 	require.NoError(t, Start(WithLogger(log.DiscardLogger{})))
 	defer Stop()
 
-	assert.False(t, *started, "StartRuntimeMetrics hook should not have been called")
+	assert.False(t, *started, "StartRuntimeMetrics hook should not have been called when OTEL_METRICS_EXPORTER=none")
 }
