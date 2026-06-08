@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -57,7 +58,7 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "debug_stack_enabled", Value: c.internalConfig.DebugStack()},
 		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspotsEnabled()},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.internalConfig.PeerServiceDefaultsEnabled()},
-		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
+		{Name: "orchestrion_enabled", Value: orchestrion.Enabled(), Origin: telemetry.OriginCode},
 		{Name: "trace_enabled", Value: traceEnabled, Origin: traceEnabledOrigin},
 		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
 		c.headerAsTags.toTelemetry(),
@@ -103,8 +104,8 @@ func startTelemetry(c *config) telemetry.Client {
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
-	if c.orchestrionCfg.Enabled {
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_version", Value: c.orchestrionCfg.Metadata.Version, Origin: telemetry.OriginCode})
+	if orchestrion.Enabled() {
+		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_version", Value: orchestrion.Version, Origin: telemetry.OriginCode})
 	}
 	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
@@ -128,9 +129,9 @@ func startTelemetry(c *config) telemetry.Client {
 		return nil
 	}
 
-	if c.orchestrionCfg.Enabled {
+	if orchestrion.Enabled() {
 		// If orchestrion is enabled, report it to the back-end via a telemetry metric on every flush.
-		handle := client.Gauge(telemetry.NamespaceTracers, "orchestrion.enabled", []string{"version:" + c.orchestrionCfg.Metadata.Version})
+		handle := client.Gauge(telemetry.NamespaceTracers, "orchestrion.enabled", []string{"version:" + orchestrion.Version})
 		client.AddFlushTicker(func(_ telemetry.Client) { handle.Submit(1) })
 	}
 

@@ -186,10 +186,6 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled dynamicConfig[bool]
 
-	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
-	// Only used for telemetry currently.
-	orchestrionCfg orchestrionConfig
-
 	// traceSampleRules holds the trace sampling rules
 	traceSampleRules dynamicConfig[[]SamplingRule]
 
@@ -206,21 +202,6 @@ type config struct {
 	spanPoolEnabled bool
 }
 
-// orchestrionConfig contains Orchestrion configuration.
-type (
-	orchestrionConfig struct {
-		// Enabled indicates whether this tracer was instanciated via Orchestrion.
-		Enabled bool `json:"enabled"`
-
-		// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
-		Metadata *orchestrionMetadata `json:"metadata,omitempty"`
-	}
-	orchestrionMetadata struct {
-		// Version is the version of the orchestrion tool that was used to instrument the application.
-		Version string `json:"version,omitempty"`
-	}
-)
-
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -229,14 +210,6 @@ type StartOption func(*config)
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
 	c.internalConfig = internalconfig.CreateNew()
-
-	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
-	// the baked-in values. We do this early so that opts can be used to override the baked-in values,
-	// which is necessary for some tests to work properly.
-	c.orchestrionCfg.Enabled = orchestrion.Enabled()
-	if orchestrion.Version != "" {
-		c.orchestrionCfg.Metadata = &orchestrionMetadata{Version: orchestrion.Version}
-	}
 
 	c.sampler = NewAllSampler()
 
