@@ -17,8 +17,9 @@ import (
 
 	as "github.com/aerospike/aerospike-client-go/v7"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 // WrapClient wraps an aerospike.Client so that all requests are traced using
