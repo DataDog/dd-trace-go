@@ -461,7 +461,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		APIKey:     c.internalConfig.APIKey(),
 		APPKey:     env.Get("DD_APP_KEY"),
 		HTTPClient: c.httpClient,
-		Site:       internalconfig.Get().Site(),
+		Site:       env.Get("DD_SITE"),
 	}
 	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
 		EVPProxyV2: af.evpProxyV2,

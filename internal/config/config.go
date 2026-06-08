@@ -77,8 +77,6 @@ type Config struct {
 	logStartup bool
 	// serviceName specifies the name of this application.
 	serviceName string
-	// site is the Datadog site (e.g. "datadoghq.com", "datadoghq.eu").
-	site string
 	version     string
 	// env contains the environment that this application will run under.
 	env string
@@ -200,7 +198,6 @@ func loadConfig() *Config {
 	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
 	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
 	cfg.serviceName = p.GetString("DD_SERVICE", "")
-	cfg.site = p.GetString("DD_SITE", "")
 	cfg.version = p.GetString("DD_VERSION", "")
 	cfg.env = p.GetString("DD_ENV", "")
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
@@ -917,22 +914,6 @@ func (c *Config) SetServiceName(name string, origin telemetry.Origin, product ..
 	}
 	c.serviceName = name
 	configtelemetry.Report("DD_SERVICE", name, origin)
-}
-
-func (c *Config) Site() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.site
-}
-
-func (c *Config) SetSite(site string, origin telemetry.Origin, product ...Product) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.checkProductConflict("DD_SITE", origin, site, product...) {
-		return
-	}
-	c.site = site
-	configtelemetry.Report("DD_SITE", site, origin)
 }
 
 func (c *Config) CIVisibilityEnabled() bool {
