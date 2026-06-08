@@ -40,7 +40,7 @@ jobs:
       sha: ${{ steps.pin.outputs.sha }}
     steps:
       - name: Checkout system-tests
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
@@ -50,7 +50,7 @@ jobs:
         run: |
           echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
       - name: Cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
@@ -150,7 +150,7 @@ jobs:
     steps:
       - name: Restore repo cache
         id: restore-repo-cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: .git
           key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
@@ -165,14 +165,14 @@ jobs:
       # Fall back in case of a cache miss, which can occur when retrying old runs.
       - name: Checkout system tests (cache miss)
         if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
@@ -181,7 +181,7 @@ jobs:
       # Use the app key policy to obtain DD_APP_KEY
       - name: Get Datadog credentials
         id: dd-sts
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go-app-key
           
@@ -206,7 +206,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@834c46e7077b7e3bad26f80b5748d7177ea40d9a
         with:
           datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
 
@@ -220,7 +220,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
@@ -294,7 +294,7 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: docker load -i ${{ matrix.image_artifact }}.tar
       - name: Checkout system tests
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
@@ -304,7 +304,7 @@ jobs:
         run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
@@ -312,7 +312,7 @@ jobs:
       
       - name: Get Datadog credentials
         id: dd-sts
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go-app-key
 
@@ -330,7 +330,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@834c46e7077b7e3bad26f80b5748d7177ea40d9a
         with:
           datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
 
@@ -344,7 +344,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
