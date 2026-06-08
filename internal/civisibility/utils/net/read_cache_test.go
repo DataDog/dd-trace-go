@@ -593,10 +593,10 @@ func TestReadCacheSkippableManifestModeIgnoresShortLivedCache(t *testing.T) {
 	require.NoError(t, os.Setenv(bazel.ManifestFilePathEnv, manifestPath))
 	bazel.ResetForTesting()
 
-	correlationID, skippables, err := c.GetSkippableTests()
+	response, err := c.GetSkippableTests()
 	require.NoError(t, err)
-	require.Empty(t, correlationID)
-	require.Equal(t, map[string]map[string][]SkippableResponseDataAttributes{}, skippables)
+	require.Empty(t, response.CorrelationID)
+	require.Equal(t, map[string]map[string][]SkippableResponseDataAttributes{}, response.Skippables)
 	require.Equal(t, int64(0), requestCount.Load())
 }
 
@@ -732,26 +732,26 @@ func TestReadCacheGetSkippableTestsCachesFilteredResponse(t *testing.T) {
 
 	first := NewClient().(*client)
 	first.testConfigurations.OsPlatform = "linux"
-	correlationID, skippables, err := first.GetSkippableTests()
+	response, err := first.GetSkippableTests()
 	require.NoError(t, err)
-	require.Equal(t, "correlation-id", correlationID)
-	require.Contains(t, skippables["suite"], "linux")
-	require.NotContains(t, skippables["suite"], "darwin")
+	require.Equal(t, "correlation-id", response.CorrelationID)
+	require.Contains(t, response.Skippables["suite"], "linux")
+	require.NotContains(t, response.Skippables["suite"], "darwin")
 
 	second := NewClient().(*client)
 	second.testConfigurations.OsPlatform = "linux"
-	correlationID, skippables, err = second.GetSkippableTests()
+	response, err = second.GetSkippableTests()
 	require.NoError(t, err)
-	require.Equal(t, "correlation-id", correlationID)
-	require.Contains(t, skippables["suite"], "linux")
+	require.Equal(t, "correlation-id", response.CorrelationID)
+	require.Contains(t, response.Skippables["suite"], "linux")
 	require.Equal(t, int64(1), requestCount.Load())
 
 	third := NewClient().(*client)
 	third.testConfigurations.OsPlatform = "darwin"
-	correlationID, skippables, err = third.GetSkippableTests()
+	response, err = third.GetSkippableTests()
 	require.NoError(t, err)
-	require.Equal(t, "correlation-id", correlationID)
-	require.Contains(t, skippables["suite"], "darwin")
+	require.Equal(t, "correlation-id", response.CorrelationID)
+	require.Contains(t, response.Skippables["suite"], "darwin")
 	require.Equal(t, int64(2), requestCount.Load())
 }
 

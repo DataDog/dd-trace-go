@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 )
 
 func TestCanCollect(t *testing.T) {
@@ -232,6 +234,7 @@ func TestCollectCoverageBeforeTestExecution(t *testing.T) {
 	}
 
 	mode = "count"
+	coverageUploadEnabled = true
 
 	tc := &testCoverage{
 		moduleID: 1,
@@ -273,6 +276,7 @@ func TestCollectCoverageAfterTestExecution(t *testing.T) {
 	}
 
 	mode = "count"
+	coverageUploadEnabled = true
 
 	tc := &testCoverage{
 		moduleID:            1,
@@ -300,5 +304,266 @@ func TestCollectCoverageAfterTestExecution(t *testing.T) {
 		if _, err := os.Stat(tc.postCoverageFilename); os.IsNotExist(err) {
 			t.Errorf("Expected postCoverageFilename %s to exist", tc.postCoverageFilename)
 		}
+	}
+}
+
+func TestFinalizeBackfillRewritesOnlyZeroCountMatchingBlocks(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	tempDir := t.TempDir()
+	profilePath := filepath.Join(tempDir, "coverage.out")
+	content := `mode: count
+# preserved comment
+github.com/example/project/lib/lib.go:2.1,2.10 1 0
+github.com/example/project/lib/lib.go:3.1,3.10 2 7
+github.com/example/project/app/app.go:4.1,4.10 1 0
+`
+	if err := os.WriteFile(profilePath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode = "count"
+	modulePath = "github.com/example/project"
+	tearDown = func(_, _ string) (string, error) {
+		return "", fmt.Errorf("tearDown should not run when coverprofile exists")
+	}
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
+	ConfigureBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"lib/lib.go": filebitmap.FromActiveRange(2, 2),
+		},
+		ActualSkips: 1,
+	})
+
+	result := FinalizeBackfill()
+	if result.Reason != "" {
+		t.Fatalf("unexpected reason: %s", result.Reason)
+	}
+	if !result.Applied {
+		t.Fatal("expected backfill to be applied")
+	}
+	if result.Coverage != 0.75 {
+		t.Fatalf("expected corrected coverage 0.75, got %v", result.Coverage)
+	}
+
+	updated, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `mode: count
+# preserved comment
+github.com/example/project/lib/lib.go:2.1,2.10 1 1
+github.com/example/project/lib/lib.go:3.1,3.10 2 7
+github.com/example/project/app/app.go:4.1,4.10 1 0
+`
+	if string(updated) != expected {
+		t.Fatalf("unexpected profile contents:\n%s", string(updated))
+	}
+}
+
+func TestFinalizeBackfillMatchesNestedSemanticImportModulePaths(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	profileLine := "github.com/example/project/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/lib.go:9.19,13.2 3 0"
+	if err := os.WriteFile(profilePath, []byte("mode: count\n"+profileLine+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode = "count"
+	modulePath = "github.com/example/project/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion"
+	tearDown = func(_, _ string) (string, error) { return "", nil }
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
+	ConfigureBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/lib.go": filebitmap.FromActiveRange(9, 13),
+		},
+		ActualSkips: 1,
+	})
+
+	result := FinalizeBackfill()
+	if result.Reason != "" {
+		t.Fatalf("unexpected reason: %s", result.Reason)
+	}
+	if !result.Applied {
+		t.Fatal("expected nested module path backfill to be applied")
+	}
+
+	updated, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), profileLine[:strings.LastIndex(profileLine, " ")]+" 1") {
+		t.Fatalf("expected profile count to be backfilled, got:\n%s", string(updated))
+	}
+}
+
+func TestPreflightBackfillDoesNotFreezeRuntimeSnapshot(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	tempDir := t.TempDir()
+	temporaryDir = tempDir
+	mode = "count"
+	modulePath = "github.com/example/project"
+	tearDown = func(coverprofile, _ string) (string, error) {
+		return "", os.WriteFile(coverprofile, []byte("mode: count\ngithub.com/example/project/lib/lib.go:2.1,2.10 1 0\n"), 0o644)
+	}
+
+	result := PreflightBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"lib/lib.go": filebitmap.FromActiveRange(2, 2),
+		},
+	})
+	if result.Reason != "" {
+		t.Fatalf("unexpected reason: %s", result.Reason)
+	}
+	if runtimeSnapshot != nil {
+		t.Fatal("preflight must not set the final runtime snapshot")
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "global_coverage_preflight.out")); !os.IsNotExist(err) {
+		t.Fatalf("expected preflight profile to be removed, stat err: %v", err)
+	}
+}
+
+func TestFinalizeBackfillRejectsInvalidCoverageProfile(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	if err := os.WriteFile(profilePath, []byte("mode: count\npkg/file.go:2.1,2.10 1 0 extra\npkg/other.go:3.1,3.10 1 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode = "count"
+	tearDown = func(_, _ string) (string, error) { return "", nil }
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
+	ConfigureBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"pkg/file.go": filebitmap.FromActiveRange(2, 2),
+		},
+		ActualSkips: 1,
+	})
+
+	result := FinalizeBackfill()
+	if result.Reason != "coverage profile invalid" {
+		t.Fatalf("expected invalid profile reason, got %q", result.Reason)
+	}
+	updated, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "mode: count\npkg/file.go:2.1,2.10 1 0 extra\npkg/other.go:3.1,3.10 1 0\n"
+	if string(updated) != expected {
+		t.Fatalf("profile should not have changed:\n%s", string(updated))
+	}
+}
+
+func TestFinalizeBackfillRewritesAtomicProfile(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	content := `mode: atomic
+github.com/example/project/lib/lib.go:2.1,2.10 1 0
+github.com/example/project/lib/lib.go:3.1,3.10 1 4
+`
+	if err := os.WriteFile(profilePath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode = "atomic"
+	modulePath = "github.com/example/project"
+	tearDown = func(_, _ string) (string, error) { return "", nil }
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
+	ConfigureBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"lib/lib.go": filebitmap.FromActiveRange(2, 3),
+		},
+		ActualSkips: 1,
+	})
+
+	result := FinalizeBackfill()
+	if result.Reason != "" {
+		t.Fatalf("unexpected reason: %s", result.Reason)
+	}
+	if !result.Applied {
+		t.Fatal("expected atomic profile backfill to be applied")
+	}
+	updated, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `mode: atomic
+github.com/example/project/lib/lib.go:2.1,2.10 1 1
+github.com/example/project/lib/lib.go:3.1,3.10 1 4
+`
+	if string(updated) != expected {
+		t.Fatalf("unexpected profile contents:\n%s", string(updated))
+	}
+}
+
+func TestFinalizeBackfillFailsClosedWhenCoverageDoesNotMatchProfile(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	if err := os.WriteFile(profilePath, []byte("mode: count\npkg/file.go:2.1,2.10 1 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode = "count"
+	tearDown = func(_, _ string) (string, error) { return "", nil }
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
+	ConfigureBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"pkg/other.go": filebitmap.FromActiveRange(2, 2),
+		},
+		ActualSkips: 1,
+	})
+
+	result := FinalizeBackfill()
+	if result.Reason != "coverage paths unmatched" {
+		t.Fatalf("expected unmatched reason, got %q", result.Reason)
+	}
+	updated, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(updated) != "mode: count\npkg/file.go:2.1,2.10 1 0\n" {
+		t.Fatalf("profile should not have changed: %s", string(updated))
+	}
+}
+
+func TestFinalizeBackfillAllowsMatchingAlreadyCoveredBlocks(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	if err := os.WriteFile(profilePath, []byte("mode: count\npkg/file.go:2.1,2.10 1 3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode = "count"
+	tearDown = func(_, _ string) (string, error) { return "", nil }
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
+	ConfigureBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"pkg/file.go": filebitmap.FromActiveRange(2, 2),
+		},
+		ActualSkips: 1,
+	})
+
+	result := FinalizeBackfill()
+	if result.Reason != "" {
+		t.Fatalf("unexpected reason: %s", result.Reason)
+	}
+	if result.Applied {
+		t.Fatal("backfill should not rewrite already covered blocks")
+	}
+	if result.Coverage != 1 {
+		t.Fatalf("expected full coverage, got %v", result.Coverage)
 	}
 }
