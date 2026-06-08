@@ -8,6 +8,7 @@
 package tools
 
 import (
+	_ "github.com/DataDog/orchestrion" // integration
+
 	_ "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting" // integration
-	_ "github.com/DataDog/orchestrion"                                                 // integration
 )
