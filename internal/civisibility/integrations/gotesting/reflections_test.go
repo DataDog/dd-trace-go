@@ -66,6 +66,8 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	exerciseAdditionalFeaturePathSelection(t)
 	exerciseParallelEFDSelection(t)
 	exerciseMetadataOnlyPropagationSuppression(t)
+	exerciseITRCoverageBackfillState(t)
+	exerciseNarrowingFlagParsing(t)
 }
 
 // TestGetInternalTestArray tests the getInternalTestArray function.

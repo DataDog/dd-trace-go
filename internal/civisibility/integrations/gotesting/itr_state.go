@@ -38,6 +38,7 @@ type itrState struct {
 	coverageBackfillReady bool
 	disabledReason        string
 	actualSkips           atomic.Uint64
+	unskippedCoverage     atomic.Uint64
 }
 
 type itrSkipDecision struct {
@@ -116,7 +117,7 @@ func (s *itrState) hasSkippableTests() bool {
 }
 
 func (s *itrState) decisionFor(testInfo *testingTInfo, execMeta *testExecutionMetadata, isUnskippable bool) itrSkipDecision {
-	if !s.testsSkippingEnabled() || execMeta.isAttemptToFix || execMeta.isAModifiedTest {
+	if s == nil || s.settings == nil || !s.settings.ItrEnabled || !s.settings.TestsSkipping {
 		return itrSkipDecision{}
 	}
 
@@ -124,14 +125,22 @@ func (s *itrState) decisionFor(testInfo *testingTInfo, execMeta *testExecutionMe
 	if len(candidates) == 0 {
 		return itrSkipDecision{}
 	}
+	coverageCandidate := s.coverageCandidateNeedsBackfill(candidates)
+
+	if !s.testsSkippingEnabled() || execMeta.isAttemptToFix || execMeta.isAModifiedTest {
+		s.markUnskippedCoverageCandidate(coverageCandidate)
+		return itrSkipDecision{}
+	}
 
 	if isUnskippable {
+		s.markUnskippedCoverageCandidate(coverageCandidate)
 		return itrSkipDecision{forcedRun: true}
 	}
 
 	if s.coverageActive {
 		for _, candidate := range candidates {
 			if candidate.MissingLineCodeCoverage {
+				s.markUnskippedCoverageCandidate(coverageCandidate)
 				return itrSkipDecision{}
 			}
 		}
@@ -151,6 +160,32 @@ func (s *itrState) skippableCandidates(testInfo *testingTInfo) []net.SkippableRe
 	return suiteMap[testInfo.testName]
 }
 
+func (s *itrState) coverageCandidateNeedsBackfill(candidates []net.SkippableResponseDataAttributes) bool {
+	if s == nil || !s.coverageActive {
+		return false
+	}
+	for _, candidate := range candidates {
+		if !candidate.MissingLineCodeCoverage {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *itrState) recordUnskippedCoverageCandidate(testInfo *testingTInfo) {
+	if s == nil {
+		return
+	}
+	s.markUnskippedCoverageCandidate(s.coverageCandidateNeedsBackfill(s.skippableCandidates(testInfo)))
+}
+
+func (s *itrState) markUnskippedCoverageCandidate(coverageCandidate bool) {
+	if s == nil || !coverageCandidate {
+		return
+	}
+	s.unskippedCoverage.Add(1)
+}
+
 func (s *itrState) markActualSkip() uint64 {
 	if s == nil {
 		return 0
@@ -165,10 +200,20 @@ func (s *itrState) actualSkipCount() int {
 	return int(s.actualSkips.Load())
 }
 
+func (s *itrState) unskippedCoverageCandidateCount() int {
+	if s == nil {
+		return 0
+	}
+	return int(s.unskippedCoverage.Load())
+}
+
 func finalizeITRCoverageBackfill() (float64, bool, bool) {
 	state := currentITRState()
 	if !state.coverageActive || !state.coverageBackfillReady || state.response == nil {
 		return 0, false, true
+	}
+	if state.unskippedCoverageCandidateCount() > 0 {
+		return 0, false, state.actualSkipCount() == 0
 	}
 
 	coverage.ConfigureBackfill(coverage.BackfillInput{
@@ -206,17 +251,34 @@ func testFlagSetFromArgs(name string) bool {
 		if arg == "--" {
 			break
 		}
-		if flagArgMatches(arg, name) || flagArgMatches(arg, shortName) {
+		if flagArgNarrows(arg, name) || flagArgNarrows(arg, shortName) {
 			return true
 		}
 	}
 	return false
 }
 
-func flagArgMatches(arg, name string) bool {
-	return arg == "-"+name || arg == "--"+name ||
-		strings.HasPrefix(arg, "-"+name+"=") ||
-		strings.HasPrefix(arg, "--"+name+"=")
+func flagArgNarrows(arg, name string) bool {
+	for _, prefix := range []string{"-" + name, "--" + name} {
+		if arg == prefix {
+			return flagValueNarrows(name, "", false)
+		}
+		if value, ok := strings.CutPrefix(arg, prefix+"="); ok {
+			return flagValueNarrows(name, value, true)
+		}
+	}
+	return false
+}
+
+func flagValueNarrows(name, value string, hasValue bool) bool {
+	if strings.TrimPrefix(name, "test.") != "short" {
+		return true
+	}
+	if !hasValue {
+		return true
+	}
+	parsed, err := strconv.ParseBool(value)
+	return err != nil || parsed
 }
 
 func testFlagSetFromFlagVisit(name string) bool {

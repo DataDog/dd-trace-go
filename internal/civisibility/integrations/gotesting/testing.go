@@ -253,6 +253,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		// Set some required tags from the execution metadata
 		cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
 		if cancelExecution {
+			currentITRState().recordUnskippedCoverageCandidate(testInfo)
 			if !execMeta.hasAdditionalFeatureWrapper {
 				// Disabled fast-path executions close their test event before the normal defer is registered.
 				checkModuleAndSuite(module, suite)

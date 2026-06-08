@@ -42,7 +42,7 @@ func TestMain(m *testing.M) {
 	const scenarioStarted = "**** [Scenario %s started] ****\n\n"
 	// We need to spawn separated test process for each scenario
 	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection"}
-	if testing.CoverMode() != "" {
+	if coverageModeSupportsITRBackfill() {
 		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
 	}
 
@@ -102,6 +102,15 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(0)
+}
+
+func coverageModeSupportsITRBackfill() bool {
+	switch testing.CoverMode() {
+	case "count", "atomic":
+		return true
+	default:
+		return false
+	}
 }
 
 func runFlakyTestRetriesTests(m *testing.M) {

@@ -1,0 +1,136 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
+package gotesting
+
+import (
+	"os"
+	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+)
+
+func exerciseITRCoverageBackfillState(t *testing.T) {
+	previousState := activeITRState.Load()
+	t.Cleanup(func() {
+		activeITRState.Store(previousState)
+	})
+
+	state := newExerciseITRState()
+	skipDecision := state.decisionFor(exerciseTestInfo("TestSafeSkip"), &testExecutionMetadata{}, false)
+	if !skipDecision.skip || skipDecision.forcedRun {
+		t.Fatal("expected safe coverage candidate to be skipped")
+	}
+	state.markActualSkip()
+
+	forcedDecision := state.decisionFor(exerciseTestInfo("TestForcedRun"), &testExecutionMetadata{}, true)
+	if forcedDecision.skip || !forcedDecision.forcedRun {
+		t.Fatal("expected unskippable coverage candidate to be forced to run")
+	}
+	if got := state.unskippedCoverageCandidateCount(); got != 1 {
+		t.Fatalf("expected one unskipped coverage candidate, got %d", got)
+	}
+
+	activeITRState.Store(state)
+	if _, corrected, publish := finalizeITRCoverageBackfill(); corrected || publish {
+		t.Fatal("expected coverage publishing to be suppressed after partial aggregate backfill became unsafe")
+	}
+
+	state = newExerciseITRState()
+	missingDecision := state.decisionFor(exerciseTestInfo("TestMissingCoverage"), &testExecutionMetadata{}, false)
+	if missingDecision.skip || missingDecision.forcedRun {
+		t.Fatal("expected missing-line-coverage candidate to run without a forced-run tag")
+	}
+	if got := state.unskippedCoverageCandidateCount(); got != 0 {
+		t.Fatalf("missing-line-coverage-only candidates must not poison backfill state, got %d", got)
+	}
+
+	mixedDecision := state.decisionFor(exerciseTestInfo("TestMixedCoverage"), &testExecutionMetadata{}, false)
+	if mixedDecision.skip || mixedDecision.forcedRun {
+		t.Fatal("expected mixed missing/non-missing candidate to run")
+	}
+	if got := state.unskippedCoverageCandidateCount(); got != 1 {
+		t.Fatalf("expected mixed candidate to poison backfill state, got %d", got)
+	}
+
+	state = newExerciseITRState()
+	state.recordUnskippedCoverageCandidate(exerciseTestInfo("TestSafeSkip"))
+	if got := state.unskippedCoverageCandidateCount(); got != 1 {
+		t.Fatalf("expected pre-decision cancellation to poison backfill state, got %d", got)
+	}
+}
+
+func exerciseNarrowingFlagParsing(t *testing.T) {
+	previousArgs := os.Args
+	t.Cleanup(func() {
+		os.Args = previousArgs
+	})
+
+	shortCases := []struct {
+		args []string
+		want bool
+	}{
+		{args: []string{"-short"}, want: true},
+		{args: []string{"-short=true"}, want: true},
+		{args: []string{"-short=false"}, want: false},
+		{args: []string{"-test.short=0"}, want: false},
+		{args: []string{"--short=false"}, want: false},
+		{args: []string{"-short=not-bool"}, want: true},
+	}
+	for _, tc := range shortCases {
+		os.Args = append([]string{"gotesting.test"}, tc.args...)
+		if got := testFlagSetFromArgs("test.short"); got != tc.want {
+			t.Fatalf("test.short args %v: expected %t, got %t", tc.args, tc.want, got)
+		}
+	}
+
+	os.Args = []string{"gotesting.test", "-run=TestFoo"}
+	if !testFlagSetFromArgs("test.run") {
+		t.Fatal("expected explicit -run to be treated as narrowing")
+	}
+
+	os.Args = []string{"gotesting.test", "--", "-run=TestFoo"}
+	if testFlagSetFromArgs("test.run") {
+		t.Fatal("expected args after -- to be ignored")
+	}
+}
+
+func newExerciseITRState() *itrState {
+	return &itrState{
+		settings:              &net.SettingsResponseData{ItrEnabled: true, TestsSkipping: true},
+		coverageActive:        true,
+		coverageBackfillReady: true,
+		response: &net.SkippableTestsResponse{
+			Skippables: map[string]map[string][]net.SkippableResponseDataAttributes{
+				"suite_test.go": {
+					"TestSafeSkip": {
+						{Suite: "suite_test.go", Name: "TestSafeSkip"},
+					},
+					"TestForcedRun": {
+						{Suite: "suite_test.go", Name: "TestForcedRun"},
+					},
+					"TestMissingCoverage": {
+						{Suite: "suite_test.go", Name: "TestMissingCoverage", MissingLineCodeCoverage: true},
+					},
+					"TestMixedCoverage": {
+						{Suite: "suite_test.go", Name: "TestMixedCoverage", MissingLineCodeCoverage: true},
+						{Suite: "suite_test.go", Name: "TestMixedCoverage"},
+					},
+				},
+			},
+		},
+	}
+}
+
+func exerciseTestInfo(testName string) *testingTInfo {
+	return &testingTInfo{
+		commonInfo: commonInfo{
+			moduleName: "module",
+			suiteName:  "suite_test.go",
+			testName:   testName,
+			identity:   newTestIdentity("module", "suite_test.go", testName),
+		},
+	}
+}
