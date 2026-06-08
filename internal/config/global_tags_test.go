@@ -13,9 +13,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
+
+// newGlobalTagsTestConfig builds a Config whose globalTags has no apply callback,
+// so SetGlobalTag/HandleRC mechanics can be exercised without the runtime-id side
+// effect. The apply wiring is covered separately by TestGlobalTagsRuntimeIDApply.
+func newGlobalTagsTestConfig() *Config {
+	return &Config{
+		overrides:  make(map[string]programmaticOverride),
+		globalTags: newDynamicConfig("trace_tags", nil, OriginDefault, equalMap[string], nil),
+	}
+}
 
 func TestEqualMap(t *testing.T) {
 	t.Run("equal regardless of order", func(t *testing.T) {
@@ -39,12 +51,12 @@ func TestEqualMap(t *testing.T) {
 
 func TestGlobalTags(t *testing.T) {
 	t.Run("nil by default", func(t *testing.T) {
-		cfg := loadConfig()
+		cfg := newGlobalTagsTestConfig()
 		assert.Nil(t, cfg.GlobalTags())
 	})
 
 	t.Run("SetGlobalTag accumulates and overwrites by key", func(t *testing.T) {
-		cfg := loadConfig()
+		cfg := newGlobalTagsTestConfig()
 		cfg.SetGlobalTag("a", "1", telemetry.OriginCode)
 		cfg.SetGlobalTag("b", "2", telemetry.OriginCode)
 		cfg.SetGlobalTag("a", "3", telemetry.OriginCode) // overwrite
@@ -55,7 +67,7 @@ func TestGlobalTags(t *testing.T) {
 	})
 
 	t.Run("env-sourced origin is sticky across programmatic adds", func(t *testing.T) {
-		cfg := loadConfig()
+		cfg := newGlobalTagsTestConfig()
 		cfg.SetGlobalTag("env-tag", "v", telemetry.OriginEnvVar)
 		cfg.SetGlobalTag("code-tag", "v", telemetry.OriginCode)
 		_, origin := cfg.GlobalTagsConfig().Baseline()
@@ -63,14 +75,14 @@ func TestGlobalTags(t *testing.T) {
 	})
 
 	t.Run("programmatic-only origin is OriginCode", func(t *testing.T) {
-		cfg := loadConfig()
+		cfg := newGlobalTagsTestConfig()
 		cfg.SetGlobalTag("code-tag", "v", telemetry.OriginCode)
 		_, origin := cfg.GlobalTagsConfig().Baseline()
 		assert.Equal(t, telemetry.OriginCode, origin)
 	})
 
 	t.Run("SetGlobalTag clones, leaving prior snapshots intact", func(t *testing.T) {
-		cfg := loadConfig()
+		cfg := newGlobalTagsTestConfig()
 		cfg.SetGlobalTag("a", "1", telemetry.OriginCode)
 		first := cfg.GlobalTags()
 		cfg.SetGlobalTag("b", "2", telemetry.OriginCode)
@@ -82,13 +94,13 @@ func TestGlobalTags(t *testing.T) {
 		rec := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(rec)()
 
-		cfg := loadConfig()
+		cfg := newGlobalTagsTestConfig()
 		cfg.SetGlobalTag("a", "1", telemetry.OriginCode)
 		assertTelemetryReport(t, rec.Configuration, "trace_tags", "a:1", telemetry.OriginCode)
 	})
 
 	t.Run("HandleRC update then reset to startup baseline", func(t *testing.T) {
-		cfg := loadConfig()
+		cfg := newGlobalTagsTestConfig()
 		cfg.SetGlobalTag("startup", "yes", telemetry.OriginEnvVar)
 		dc := cfg.GlobalTagsConfig()
 
@@ -104,7 +116,7 @@ func TestGlobalTags(t *testing.T) {
 		rec := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(rec)()
 
-		cfg := loadConfig()
+		cfg := newGlobalTagsTestConfig()
 		cfg.SetGlobalTag("startup", "yes", telemetry.OriginEnvVar)
 		dc := cfg.GlobalTagsConfig()
 
@@ -117,8 +129,8 @@ func TestGlobalTags(t *testing.T) {
 		assertTelemetryReport(t, rec.Configuration, "trace_tags", "startup:yes", telemetry.OriginEnvVar)
 	})
 
-	t.Run("identical RC update is deduped", func(t *testing.T) {
-		cfg := loadConfig()
+	t.Run("identical RC update is deduped (no apply)", func(t *testing.T) {
+		cfg := newGlobalTagsTestConfig()
 		dc := cfg.GlobalTagsConfig()
 		rc := map[string]any{"a": "1"}
 		require.True(t, dc.HandleRC(&rc))
@@ -127,7 +139,7 @@ func TestGlobalTags(t *testing.T) {
 	})
 
 	t.Run("concurrent SetGlobalTag is race-safe", func(t *testing.T) {
-		cfg := loadConfig()
+		cfg := newGlobalTagsTestConfig()
 		const n = 50
 		var wg sync.WaitGroup
 		wg.Add(n)
@@ -139,5 +151,36 @@ func TestGlobalTags(t *testing.T) {
 		}
 		wg.Wait()
 		assert.Len(t, cfg.GlobalTags(), n)
+	})
+}
+
+// TestGlobalTagsRuntimeIDApply verifies that loadConfig wires the runtime-id apply
+// callback, so the runtime ID is (re)added to the global tags whenever they change
+// (in particular after a Remote Config update replaces the map).
+func TestGlobalTagsRuntimeIDApply(t *testing.T) {
+	t.Run("addRuntimeIDToGlobalTags adds the runtime ID", func(t *testing.T) {
+		m := map[string]any{"a": "1"}
+		assert.True(t, addRuntimeIDToGlobalTags(m))
+		assert.Equal(t, globalconfig.RuntimeID(), m[ext.RuntimeID])
+	})
+
+	t.Run("addRuntimeIDToGlobalTags is nil-safe", func(t *testing.T) {
+		assert.False(t, addRuntimeIDToGlobalTags(nil))
+	})
+
+	t.Run("loadConfig wires the apply on SetGlobalTag", func(t *testing.T) {
+		cfg := loadConfig()
+		cfg.SetGlobalTag("a", "1", telemetry.OriginCode)
+		assert.Equal(t, globalconfig.RuntimeID(), cfg.GlobalTags()[ext.RuntimeID])
+	})
+
+	t.Run("RC update re-adds the runtime ID to the stored map", func(t *testing.T) {
+		cfg := loadConfig()
+		dc := cfg.GlobalTagsConfig()
+		rc := map[string]any{"rc": "tag"}
+		dc.HandleRC(&rc)
+		tags := cfg.GlobalTags()
+		assert.Equal(t, "tag", tags["rc"])
+		assert.Equal(t, globalconfig.RuntimeID(), tags[ext.RuntimeID])
 	})
 }

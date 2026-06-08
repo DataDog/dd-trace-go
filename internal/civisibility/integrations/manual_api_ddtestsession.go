@@ -60,17 +60,17 @@ func CreateTestSession(options ...TestSessionStartOption) TestSession {
 	EnsureCiVisibilityInitialization()
 
 	sessionTags := []tracer.StartSpanOption{
-		tracer.Tag(constants.TestType, constants.TestTypeTest),
-		tracer.Tag(constants.TestCommand, defaults.command),
-		tracer.Tag(constants.TestCommandWorkingDirectory, defaults.workingDirectory),
+		ciVisibilityTag(constants.TestType, constants.TestTypeTest),
+		ciVisibilityTag(constants.TestCommand, defaults.command),
+		ciVisibilityTag(constants.TestCommandWorkingDirectory, defaults.workingDirectory),
 	}
 
 	operationName := "test_session"
 	if defaults.framework != "" {
 		operationName = fmt.Sprintf("%s.%s", strings.ToLower(defaults.framework), operationName)
 		sessionTags = append(sessionTags,
-			tracer.Tag(constants.TestFramework, defaults.framework),
-			tracer.Tag(constants.TestFrameworkVersion, defaults.frameworkVersion))
+			ciVisibilityTag(constants.TestFramework, defaults.framework),
+			ciVisibilityTag(constants.TestFrameworkVersion, defaults.frameworkVersion))
 	}
 
 	resourceName := fmt.Sprintf("%s.%s", operationName, defaults.command)
@@ -83,7 +83,7 @@ func CreateTestSession(options ...TestSessionStartOption) TestSession {
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	sessionID := span.Context().SpanID()
-	span.SetTag(constants.TestSessionIDTag, fmt.Sprint(sessionID))
+	setCIVisibilitySpanTag(span, constants.TestSessionIDTag, fmt.Sprint(sessionID))
 
 	s := &tslvTestSession{
 		sessionID:        sessionID,
@@ -156,12 +156,12 @@ func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption)
 	}
 	t.modules = map[string]TestModule{}
 
-	t.span.SetTag(constants.TestCommandExitCode, exitCode)
+	setCIVisibilitySpanTag(t.span, constants.TestCommandExitCode, exitCode)
 	if exitCode == 0 {
-		t.span.SetTag(constants.TestStatus, constants.TestStatusPass)
+		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusPass)
 	} else {
 		t.SetError(WithErrorInfo("ExitCode", "exit code is not zero.", ""))
-		t.span.SetTag(constants.TestStatus, constants.TestStatusFail)
+		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusFail)
 	}
 
 	t.span.Finish(tracer.FinishTime(defaults.finishTime))

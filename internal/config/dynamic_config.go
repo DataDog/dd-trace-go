@@ -27,6 +27,19 @@ func equal[T comparable](a, b T) bool {
 	return a == b
 }
 
+// equalSlice compares two slices element-wise (order-sensitive).
+func equalSlice[T comparable](a, b []T) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // equalMap compares two maps of comparable keys and any values, comparing
 // values with ==. It is used as the change detector for map-valued dynamic
 // configs (e.g. global tags). Note: == panics if a value is non-comparable
@@ -53,25 +66,35 @@ type DynamicConfig[T any] struct {
 	cfgName       string
 	startupOrigin telemetry.Origin // used on RC reset; updated by setBaseline
 	equal         func(T, T) bool  // compares values to avoid unnecessary updates
+	// executes any config-specific operations to propagate the update properly, returns whether the update was applied
+	apply func(T) bool
 }
 
 // newDynamicConfig creates a DynamicConfig with the given telemetry name, initial value,
-// the origin that produced that initial value, and a comparator used to detect changes.
+// the origin that produced that initial value, a comparator used to detect changes,
+// and an optional apply callback invoked when the value changes (pass nil if not needed).
 // The startupOrigin is used when RC resets the field back to its startup value.
-func newDynamicConfig[T any](name string, val T, origin telemetry.Origin, equal func(T, T) bool) *DynamicConfig[T] {
-	dc := &DynamicConfig[T]{cfgName: name, equal: equal}
+func newDynamicConfig[T any](name string, val T, origin telemetry.Origin, equal func(T, T) bool, apply func(T) bool) *DynamicConfig[T] {
+	dc := &DynamicConfig[T]{cfgName: name, equal: equal, apply: apply}
 	dc.setBaseline(val, origin)
 	return dc
 }
 
 // setBaseline sets both the current value and the startup value for a field.
 // The startup value is what the field reverts to when RC is reset or revoked.
+// If an apply callback was registered and the new value differs from the current
+// value, the callback fires after the lock is released.
 func (dc *DynamicConfig[T]) setBaseline(val T, origin telemetry.Origin) {
 	dc.mu.Lock()
-	defer dc.mu.Unlock()
+	changed := !dc.equal(dc.current, val)
 	dc.current = val
 	dc.startup = val
 	dc.startupOrigin = origin
+	apply := dc.apply
+	dc.mu.Unlock()
+	if changed && apply != nil {
+		apply(val)
+	}
 }
 
 // Get returns the current value.
@@ -90,11 +113,11 @@ func (dc *DynamicConfig[T]) Baseline() (T, telemetry.Origin) {
 
 // HandleRC processes a remote config update. If val is non-nil, the value is
 // updated; if nil, the field is reset to its startup value.
-// Reports the new value to telemetry when changed.
+// Reports the new value to telemetry when changed and invokes the apply
+// callback (if registered) outside the lock.
 // Returns true if the value was changed.
 func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
 	dc.mu.Lock()
-	defer dc.mu.Unlock()
 	var changed bool
 	var origin telemetry.Origin
 	if val != nil {
@@ -110,8 +133,14 @@ func (dc *DynamicConfig[T]) HandleRC(val *T) bool {
 		}
 		origin = dc.startupOrigin
 	}
+	newVal := dc.current
+	apply := dc.apply
 	if changed {
-		configtelemetry.Report(dc.cfgName, dc.current, origin)
+		configtelemetry.Report(dc.cfgName, newVal, origin)
+	}
+	dc.mu.Unlock()
+	if changed && apply != nil {
+		apply(newVal)
 	}
 	return changed
 }

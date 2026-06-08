@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -262,19 +261,10 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	if updated {
 		telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 	}
-	updated = t.config.headerAsTags.handleRC(merged.HeaderTags.toSlice())
-	if updated {
-		telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
-	}
-	// globalTags: re-add the runtime ID to RC-provided tags (matching the previous
-	// apply hook) so spans keep their runtime-id tag. HandleRC self-reports telemetry;
-	// on reset (nil) the startup baseline (which already includes the runtime ID) is
-	// restored.
-	rcTags := merged.Tags.toMap()
-	if rcTags != nil {
-		(*rcTags)[ext.RuntimeID] = globalconfig.RuntimeID()
-	}
-	t.config.internalConfig.GlobalTagsConfig().HandleRC(rcTags)
+	t.config.internalConfig.HeaderAsTagsConfig().HandleRC(merged.HeaderTags.toSlice())
+	// globalTags: the runtime ID is re-added by the apply callback registered on
+	// the internal/config DynamicConfig, so a plain HandleRC suffices here.
+	t.config.internalConfig.GlobalTagsConfig().HandleRC(merged.Tags.toMap())
 
 	t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled)
 

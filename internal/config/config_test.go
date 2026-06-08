@@ -919,3 +919,62 @@ func TestCIVisibilityAgentlessActive(t *testing.T) {
 		})
 	}
 }
+
+func TestAgentTimeout(t *testing.T) {
+	t.Run("default is 10s when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("DD_TRACE_AGENT_TIMEOUT overrides default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "30")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 30*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("invalid DD_TRACE_AGENT_TIMEOUT falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "not-a-number")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("negative DD_TRACE_AGENT_TIMEOUT falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "-5")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("SetAgentTimeout updates value", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		cfg.SetAgentTimeout(45*time.Second, OriginCalculated)
+		assert.Equal(t, 45*time.Second, cfg.AgentTimeout())
+	})
+}

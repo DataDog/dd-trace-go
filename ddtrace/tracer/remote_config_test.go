@@ -483,7 +483,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			// Telemetry
 			assertCalled(t, telemetryClient,
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-env", Origin: telemetry.OriginDefault},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-env", Origin: telemetry.OriginEnvVar},
 				},
 			)
 		},
@@ -535,7 +535,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			// Telemetry
 			assertCalled(t, telemetryClient,
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-in-code", Origin: telemetry.OriginDefault},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-in-code", Origin: telemetry.OriginCode},
 				},
 			)
 		},
@@ -647,9 +647,11 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, globalconfig.RuntimeID(), runtimeID)
 		runtimeIDTag := ext.RuntimeID + ":" + globalconfig.RuntimeID()
 
-		// Telemetry
+		// Telemetry. An RC update reports the tag set before the runtime-id apply
+		// callback runs, so the runtime ID is not part of the reported value (the
+		// span still receives it — see the runtime-id assertion above).
 		assertCalled(t, telemetryClient, []telemetry.Configuration{
-			{Name: "trace_tags", Value: "key3:val3,key4:val4," + runtimeIDTag, Origin: telemetry.OriginRemoteConfig},
+			{Name: "trace_tags", Value: "key3:val3,key4:val4", Origin: telemetry.OriginRemoteConfig},
 		},
 		)
 
@@ -771,7 +773,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-from-rc", Origin: telemetry.OriginRemoteConfig},
 					{
 						Name:   "trace_tags",
-						Value:  "ddtag:from-rc," + ext.RuntimeID + ":" + globalconfig.RuntimeID(),
+						Value:  "ddtag:from-rc",
 						Origin: telemetry.OriginRemoteConfig,
 					},
 				})
@@ -797,7 +799,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				if tt.expectedSamplingRate == rcSamplingRate {
 					samplingRateOrigin = telemetry.OriginRemoteConfig
 				}
-				headerTagOrigin := telemetry.OriginDefault
+				headerTagOrigin := telemetry.OriginEnvVar
 				if tt.expectedHeaderTag == rcHeaderTag {
 					headerTagOrigin = telemetry.OriginRemoteConfig
 				}
@@ -807,10 +809,16 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				if tt.expectedSpanTag == rcSpanTag {
 					spanTagOrigin = telemetry.OriginRemoteConfig
 				}
+				// An RC update reports the tag set before the runtime-id apply runs (so the
+				// runtime ID is absent); a reset reports the startup baseline, which has it.
+				spanTagValue := "ddtag:" + tt.expectedSpanTag
+				if spanTagOrigin != telemetry.OriginRemoteConfig {
+					spanTagValue += "," + ext.RuntimeID + ":" + globalconfig.RuntimeID()
+				}
 				assertCalled(t, telemetryClient, []telemetry.Configuration{
 					{Name: "trace_sample_rate", Value: tt.expectedSamplingRate, Origin: samplingRateOrigin},
 					{Name: "trace_header_tags", Value: "X-Test-Header:" + tt.expectedHeaderTag, Origin: headerTagOrigin},
-					{Name: "trace_tags", Value: "ddtag:" + tt.expectedSpanTag + "," + ext.RuntimeID + ":" + globalconfig.RuntimeID(), Origin: spanTagOrigin},
+					{Name: "trace_tags", Value: spanTagValue, Origin: spanTagOrigin},
 				})
 			})
 		}

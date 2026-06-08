@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
@@ -154,6 +155,57 @@ func TestEnsureSettingsInitializationNilClientFactoryDoesNotStartUpload(t *testi
 	}
 	uploadRepositoryChangesFunc = func() (int64, error) {
 		t.Fatal("repository upload should not start without a CI Visibility client")
+		return 0, nil
+	}
+
+	require.NotPanics(t, func() {
+		ensureSettingsInitialization("service")
+	})
+	assert.Equal(t, civisibilitynet.SettingsResponseData{}, ciVisibilitySettings)
+	assert.Len(t, closeActions, 0)
+}
+
+func TestEnsureSettingsInitializationGitUploadDisabledDoesNotStartUploadOrRetrySettings(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
+	t.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
+
+	settingsCalls := 0
+	newCIVisibilityClientWithServiceNameFunc = func(_ string) civisibilitynet.Client {
+		return &mockCIVisibilityClient{
+			getSettings: func() (*civisibilitynet.SettingsResponseData, error) {
+				settingsCalls++
+				return &civisibilitynet.SettingsResponseData{RequireGit: true}, nil
+			},
+		}
+	}
+	uploadRepositoryChangesFunc = func() (int64, error) {
+		t.Fatal("repository upload should not start when git upload is disabled")
+		return 0, nil
+	}
+
+	require.NotPanics(t, func() {
+		ensureSettingsInitialization("service")
+	})
+	assert.Equal(t, 1, settingsCalls)
+	assert.True(t, ciVisibilitySettings.RequireGit)
+	assert.Len(t, closeActions, 0)
+}
+
+func TestEnsureSettingsInitializationGitUploadDisabledSettingsErrorDoesNotRegisterCloseAction(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
+	t.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
+
+	newCIVisibilityClientWithServiceNameFunc = func(_ string) civisibilitynet.Client {
+		return &mockCIVisibilityClient{
+			getSettings: func() (*civisibilitynet.SettingsResponseData, error) {
+				return nil, nil
+			},
+		}
+	}
+	uploadRepositoryChangesFunc = func() (int64, error) {
+		t.Fatal("repository upload should not start when git upload is disabled")
 		return 0, nil
 	}
 

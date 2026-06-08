@@ -206,9 +206,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
-        with:
-          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@834c46e7077b7e3bad26f80b5748d7177ea40d9a
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -330,9 +328,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
-        with:
-          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@834c46e7077b7e3bad26f80b5748d7177ea40d9a
 
       - name: Compress artifact
         if: ${{ always() }}
