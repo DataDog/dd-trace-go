@@ -150,6 +150,21 @@ func orchestrionScenario() fixtureScenario {
 	case "repo-wide-backend-coverage":
 		defaultScenario.coverage = repoWideCoverage
 		return defaultScenario
+	case "disables-skips-when-response-includes-out-of-process-test":
+		defaultScenario.tests = []mockci.SkippableTest{
+			{Suite: "app_test.go", Name: "TestCoversLib"},
+			{Suite: "other_package_test.go", Name: "TestOutsideProcess"},
+		}
+		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
+		defaultScenario.expectSkippingEnabled = "false"
+		return defaultScenario
+	case "disables-skips-when-response-has-parameters":
+		defaultScenario.tests = []mockci.SkippableTest{
+			{Suite: "app_test.go", Name: "TestCoversLib", Parameters: `{"case":"one"}`},
+		}
+		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
+		defaultScenario.expectSkippingEnabled = "false"
+		return defaultScenario
 	case "disables-skips-without-backend-coverage":
 		defaultScenario.coverage = nil
 		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}

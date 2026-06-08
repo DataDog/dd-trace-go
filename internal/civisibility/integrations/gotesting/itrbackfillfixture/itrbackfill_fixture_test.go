@@ -67,6 +67,8 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 			"fixtures/itrbackfill/orchestrion/otherlib/otherlib.go",
 		}},
 		{name: "repo-wide-backend-coverage", coverMode: "count", withProfile: true},
+		{name: "disables-skips-when-response-includes-out-of-process-test", coverMode: "count", withProfile: true},
+		{name: "disables-skips-when-response-has-parameters", coverMode: "count", withProfile: true},
 		{name: "disables-skips-without-backend-coverage", coverMode: "count", withProfile: true},
 		{name: "disables-skips-when-backend-coverage-does-not-match-profile", coverMode: "count", withProfile: true},
 		{name: "narrowing-run", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "TestCoversLib"}},

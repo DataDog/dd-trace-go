@@ -156,24 +156,6 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 	settings := integrations.GetSettings()
 	itrState := newITRState(settings)
 
-	// Check if the test is going to be skipped by ITR
-	if settings.ItrEnabled {
-		coverageEnabled := coverage.CanCollectPerTestCoverage()
-		session.SetTag(constants.CodeCoverageEnabled, strconv.FormatBool(coverageEnabled))
-		testsSkippingEnabled := strconv.FormatBool(itrState.testsSkippingEnabled())
-		session.SetTag(constants.ITRTestsSkippingEnabled, testsSkippingEnabled)
-		utils.AddCITagsMap(map[string]string{constants.ITRTestsSkippingEnabled: testsSkippingEnabled})
-
-		if itrState.testsSkippingEnabled() {
-			session.SetTag(constants.ITRTestsSkippingType, "test")
-
-			// Check if the test is going to be skipped by ITR
-			if itrState.hasSkippableTests() {
-				session.SetTag(constants.ITRTestsSkipped, "false")
-			}
-		}
-	}
-
 	// Extract info from internal tests
 	testInfos = make([]*testingTInfo, len(*internalTests))
 	for idx, test := range *internalTests {
@@ -196,6 +178,25 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 		addSuitesCounters(suiteName, 1)
 
 		testInfos[idx] = testInfo
+	}
+	itrState.validateCoverageBackfillScope(testInfos)
+
+	// Check if the test is going to be skipped by ITR
+	if settings != nil && settings.ItrEnabled {
+		coverageEnabled := coverage.CanCollectPerTestCoverage()
+		session.SetTag(constants.CodeCoverageEnabled, strconv.FormatBool(coverageEnabled))
+		testsSkippingEnabled := strconv.FormatBool(itrState.testsSkippingEnabled())
+		session.SetTag(constants.ITRTestsSkippingEnabled, testsSkippingEnabled)
+		utils.AddCITagsMap(map[string]string{constants.ITRTestsSkippingEnabled: testsSkippingEnabled})
+
+		if itrState.testsSkippingEnabled() {
+			session.SetTag(constants.ITRTestsSkippingType, "test")
+
+			// Check if the test is going to be skipped by ITR
+			if itrState.hasSkippableTests() {
+				session.SetTag(constants.ITRTestsSkipped, "false")
+			}
+		}
 	}
 
 	// Create new instrumented internal tests

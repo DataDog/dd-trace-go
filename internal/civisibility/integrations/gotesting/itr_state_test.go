@@ -25,6 +25,16 @@ func exerciseITRCoverageBackfillState(t *testing.T) {
 	}
 	state.markActualSkip()
 
+	state.validateCoverageBackfillScope([]*testingTInfo{
+		exerciseTestInfo("TestSafeSkip"),
+		exerciseTestInfo("TestForcedRun"),
+		exerciseTestInfo("TestMissingCoverage"),
+		exerciseTestInfo("TestMixedCoverage"),
+	})
+	if !state.coverageBackfillReady || state.disabledReason != "" {
+		t.Fatalf("expected in-process skippable response to stay safe, ready=%t reason=%q", state.coverageBackfillReady, state.disabledReason)
+	}
+
 	forcedDecision := state.decisionFor(exerciseTestInfo("TestForcedRun"), &testExecutionMetadata{}, true)
 	if forcedDecision.skip || !forcedDecision.forcedRun {
 		t.Fatal("expected unskippable coverage candidate to be forced to run")
@@ -36,6 +46,34 @@ func exerciseITRCoverageBackfillState(t *testing.T) {
 	activeITRState.Store(state)
 	if _, corrected, publish := finalizeITRCoverageBackfill(); corrected || publish {
 		t.Fatal("expected coverage publishing to be suppressed after partial aggregate backfill became unsafe")
+	}
+
+	state = newExerciseITRState()
+	state.validateCoverageBackfillScope([]*testingTInfo{exerciseTestInfo("TestSafeSkip")})
+	if state.coverageBackfillReady {
+		t.Fatal("expected out-of-process skippable response to disable coverage backfill")
+	}
+	if state.disabledReason != itrBackfillReasonResponseScope {
+		t.Fatalf("expected response scope reason, got %q", state.disabledReason)
+	}
+	scopeDecision := state.decisionFor(exerciseTestInfo("TestSafeSkip"), &testExecutionMetadata{}, false)
+	if scopeDecision.skip || scopeDecision.forcedRun {
+		t.Fatal("expected unsafe response-scope candidate to run without forced-run tag")
+	}
+
+	state = newExerciseITRState()
+	state.response.Skippables["suite_test.go"]["TestSafeSkip"][0].Parameters = `{"case":"one"}`
+	state.validateCoverageBackfillScope([]*testingTInfo{
+		exerciseTestInfo("TestSafeSkip"),
+		exerciseTestInfo("TestForcedRun"),
+		exerciseTestInfo("TestMissingCoverage"),
+		exerciseTestInfo("TestMixedCoverage"),
+	})
+	if state.coverageBackfillReady {
+		t.Fatal("expected parameterized skippable response to disable coverage backfill")
+	}
+	if state.disabledReason != itrBackfillReasonParameterized {
+		t.Fatalf("expected parameterized reason, got %q", state.disabledReason)
 	}
 
 	state = newExerciseITRState()

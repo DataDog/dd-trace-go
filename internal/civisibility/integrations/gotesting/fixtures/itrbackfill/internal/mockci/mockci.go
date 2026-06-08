@@ -27,6 +27,7 @@ import (
 type SkippableTest struct {
 	Suite                   string
 	Name                    string
+	Parameters              string
 	MissingLineCodeCoverage bool
 }
 
@@ -243,6 +244,7 @@ func (s *Server) handleSkippable(w http.ResponseWriter, tests []SkippableTest, c
 			Attributes struct {
 				Suite                   string `json:"suite"`
 				Name                    string `json:"name"`
+				Parameters              string `json:"parameters,omitempty"`
 				MissingLineCodeCoverage bool   `json:"_missing_line_code_coverage,omitempty"`
 			} `json:"attributes"`
 		} `json:"data"`
@@ -261,11 +263,13 @@ func (s *Server) handleSkippable(w http.ResponseWriter, tests []SkippableTest, c
 			Attributes struct {
 				Suite                   string `json:"suite"`
 				Name                    string `json:"name"`
+				Parameters              string `json:"parameters,omitempty"`
 				MissingLineCodeCoverage bool   `json:"_missing_line_code_coverage,omitempty"`
 			} `json:"attributes"`
 		}{ID: test.Name, Type: "test"}
 		item.Attributes.Suite = test.Suite
 		item.Attributes.Name = test.Name
+		item.Attributes.Parameters = test.Parameters
 		item.Attributes.MissingLineCodeCoverage = test.MissingLineCodeCoverage
 		response.Data = append(response.Data, item)
 	}

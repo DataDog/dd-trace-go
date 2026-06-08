@@ -27,6 +27,8 @@ const (
 	itrBackfillReasonUnsupportedMode    = "coverage mode unsupported"
 	itrBackfillReasonNarrowingFlags     = "narrowing test flags present"
 	itrBackfillReasonBazelUnsupported   = "bazel coverage mode unsupported"
+	itrBackfillReasonResponseScope      = "skippable response outside current test process"
+	itrBackfillReasonParameterized      = "skippable response has unsupported test parameters"
 )
 
 var activeITRState atomic.Pointer[itrState]
@@ -114,6 +116,56 @@ func (s *itrState) testsSkippingEnabled() bool {
 
 func (s *itrState) hasSkippableTests() bool {
 	return s != nil && s.response != nil && len(s.response.Skippables) > 0
+}
+
+// validateCoverageBackfillScope keeps response-level aggregate coverage tied to
+// the current test binary. If the skippable response contains candidates that
+// cannot be executed by this process, its meta.coverage aggregate may include
+// coverage from tests this process will never skip.
+func (s *itrState) validateCoverageBackfillScope(testInfos []*testingTInfo) {
+	if s == nil || !s.coverageActive || !s.coverageBackfillReady || s.response == nil || len(s.response.Skippables) == 0 {
+		return
+	}
+
+	localTests := localTestLookup(testInfos)
+	for suiteName, tests := range s.response.Skippables {
+		for testName, candidates := range tests {
+			if localTests[suiteName][testName] {
+				for _, candidate := range candidates {
+					if strings.TrimSpace(candidate.Parameters) != "" {
+						s.disableCoverageBackfill(itrBackfillReasonParameterized)
+						return
+					}
+				}
+				continue
+			}
+			s.disableCoverageBackfill(itrBackfillReasonResponseScope)
+			return
+		}
+	}
+}
+
+// localTestLookup indexes the top-level tests known to the current testing.M.
+func localTestLookup(testInfos []*testingTInfo) map[string]map[string]bool {
+	localTests := make(map[string]map[string]bool, len(testInfos))
+	for _, testInfo := range testInfos {
+		if testInfo == nil {
+			continue
+		}
+		testsByName, ok := localTests[testInfo.suiteName]
+		if !ok {
+			testsByName = map[string]bool{}
+			localTests[testInfo.suiteName] = testsByName
+		}
+		testsByName[testInfo.testName] = true
+	}
+	return localTests
+}
+
+// disableCoverageBackfill prevents ITR skips while preserving ordinary local coverage publication.
+func (s *itrState) disableCoverageBackfill(reason string) {
+	s.coverageBackfillReady = false
+	s.disabledReason = reason
 }
 
 func (s *itrState) decisionFor(testInfo *testingTInfo, execMeta *testExecutionMetadata, isUnskippable bool) itrSkipDecision {
