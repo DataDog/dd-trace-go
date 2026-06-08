@@ -80,6 +80,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA":                             {},
 	"DD_GIT_REPOSITORY_URL":                                           {},
 	"DD_GIT_TAG":                                                      {},
+	"DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS":               {},
 	"DD_HAPROXY_SPOA_HEALTHCHECK_PORT":                                {},
 	"DD_HAPROXY_SPOA_HOST":                                            {},
 	"DD_HAPROXY_SPOA_PORT":                                            {},

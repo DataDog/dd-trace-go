@@ -113,17 +113,27 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 			tracer.Tag(ext.Component, tr.component),
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
-			tracer.ChildOf(parentSpanCtx),
+		}
+		if cfg.propagationAsSpanLinks && parentSpanCtx != nil {
+			// Record the producer span as a span link
+			link := tracer.SpanLink{
+				TraceID:     parentSpanCtx.TraceIDLower(),
+				TraceIDHigh: parentSpanCtx.TraceIDUpper(),
+				SpanID:      parentSpanCtx.SpanID(),
+			}
+			opts = append(opts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
+		} else {
+			opts = append(opts, tracer.ChildOf(parentSpanCtx))
+			// If there are span links as a result of context extraction, add them as a StartSpanOption
+			if parentSpanCtx != nil && parentSpanCtx.SpanLinks() != nil {
+				opts = append(opts, tracer.WithSpanLinks(parentSpanCtx.SpanLinks()))
+			}
 		}
 		if cfg.serviceName != "" {
 			opts = append(opts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 		}
 		if cfg.measured {
 			opts = append(opts, tracer.Measured())
-		}
-		// If there are span links as a result of context extraction, add them as a StartSpanOption
-		if parentSpanCtx != nil && parentSpanCtx.SpanLinks() != nil {
-			opts = append(opts, tracer.WithSpanLinks(parentSpanCtx.SpanLinks()))
 		}
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {

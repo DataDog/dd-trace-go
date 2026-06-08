@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
 const (
@@ -201,6 +202,91 @@ func TestInferredPubsubPushSpans(t *testing.T) {
 		assert.Equal(t, "http.request", httpSpan.OperationName())
 		assert.Equal(t, float64(1), pubsubSpan.Tag("_dd.inferred_span"))
 		assert.True(t, httpSpan.ParentID() == pubsubSpan.SpanID())
+	})
+}
+
+func TestInferredPubsubPushSpansWithPropagationAsSpanLinks(t *testing.T) {
+	t.Setenv("DD_SERVICE", "pubsub-push-server")
+	t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
+	t.Setenv("DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS", "true")
+	ResetCfg()
+	defer ResetCfg()
+
+	srvURL := "https://my-service.example.com/push-endpoint"
+
+	t.Run("inferred span should carry a span link to the producer, not reparent", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		// Simulate a producer that injected its trace context into the push request.
+		producerSpan, _ := tracer.StartSpanFromContext(t.Context(), "producer")
+		req, err := http.NewRequest("POST", srvURL, nil)
+		require.NoError(t, err)
+		for k, v := range pubsubPushHeaders() {
+			req.Header.Set(k, v)
+		}
+		require.NoError(t, tracer.Inject(producerSpan.Context(), tracer.HTTPHeadersCarrier(req.Header)))
+		producerSpan.Finish()
+
+		_, _, finishSpans := StartRequestSpan(req)
+		finishSpans(200, nil)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 3) // producer, http.request, pubsub.receive
+
+		// Locate spans by operation name
+		var producerFinished, httpSpan, pubsubSpan *mocktracer.Span
+		for _, s := range spans {
+			switch s.OperationName() {
+			case "producer":
+				producerFinished = s
+			case "http.request":
+				httpSpan = s
+			case "pubsub.receive":
+				pubsubSpan = s
+			}
+		}
+		require.NotNil(t, producerFinished)
+		require.NotNil(t, httpSpan)
+		require.NotNil(t, pubsubSpan)
+
+		// pubsub.receive must NOT inherit the producer trace.
+		assert.NotEqual(t, producerFinished.TraceID(), pubsubSpan.TraceID(), "pubsub.receive should start a new trace")
+		assert.Equal(t, uint64(0), pubsubSpan.ParentID(), "pubsub.receive should have no parent")
+
+		// The producer span must be recorded as a span link on pubsub.receive.
+		links := pubsubSpan.Links()
+		require.Len(t, links, 1, "expected exactly one span link on pubsub.receive")
+		assert.Equal(t, producerFinished.SpanID(), links[0].SpanID)
+
+		// http.request must still be a child of pubsub.receive (not of the producer).
+		assert.Equal(t, pubsubSpan.SpanID(), httpSpan.ParentID())
+	})
+
+	t.Run("inferred span has no span link when no producer trace context is present", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("POST", srvURL, nil)
+		require.NoError(t, err)
+		for k, v := range pubsubPushHeaders() {
+			req.Header.Set(k, v)
+		}
+
+		_, _, finishSpans := StartRequestSpan(req)
+		finishSpans(200, nil)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+
+		var pubsubSpan *mocktracer.Span
+		for _, s := range spans {
+			if s.OperationName() == "pubsub.receive" {
+				pubsubSpan = s
+			}
+		}
+		require.NotNil(t, pubsubSpan)
+		assert.Nil(t, pubsubSpan.Links(), "no span links expected when there is no producer trace context")
 	})
 }
 

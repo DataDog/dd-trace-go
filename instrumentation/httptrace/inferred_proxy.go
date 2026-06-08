@@ -183,6 +183,16 @@ func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
 
 	pubsubSpanContext, pubsubErr := extractInferredPubsubSpan(headers)
 	if pubsubErr == nil {
+		if cfg.pubsubPropagationAsSpanLinks && spanParentCtx != nil {
+			// Record the producer span as a span link, keeping producer and consumer traces separate.
+			link := tracer.SpanLink{
+				TraceID:     spanParentCtx.TraceIDLower(),
+				TraceIDHigh: spanParentCtx.TraceIDUpper(),
+				SpanID:      spanParentCtx.SpanID(),
+			}
+			inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
+			return startInferredPubsubSpan(pubsubSpanContext, nil, inferredStartSpanOpts...)
+		}
 		return startInferredPubsubSpan(pubsubSpanContext, spanParentCtx, inferredStartSpanOpts...)
 	} else {
 		log.Debug("%s\n", pubsubErr.Error())
