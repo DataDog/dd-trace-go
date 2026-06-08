@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -292,9 +293,7 @@ func ConfigureBackfill(input BackfillInput) {
 	defer coverageStateMu.Unlock()
 
 	copiedCoverage := make(map[string]*filebitmap.FileBitmap, len(input.BackendCoverage))
-	for file, bitmap := range input.BackendCoverage {
-		copiedCoverage[file] = bitmap
-	}
+	maps.Copy(copiedCoverage, input.BackendCoverage)
 	backfillInput = &BackfillInput{
 		BackendCoverage: copiedCoverage,
 		ActualSkips:     input.ActualSkips,

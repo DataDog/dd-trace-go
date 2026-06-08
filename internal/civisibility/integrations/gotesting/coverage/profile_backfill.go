@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -198,10 +199,8 @@ func coveragePathCandidates(profileFile string) []string {
 		if value == "." || value == "" {
 			return
 		}
-		for _, existing := range candidates {
-			if existing == value {
-				return
-			}
+		if slices.Contains(candidates, value) {
+			return
 		}
 		candidates = append(candidates, value)
 	}

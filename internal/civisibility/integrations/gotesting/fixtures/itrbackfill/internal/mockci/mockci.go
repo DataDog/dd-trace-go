@@ -20,6 +20,7 @@ import (
 	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 // SkippableTest describes one backend ITR candidate returned by the mock.
@@ -265,7 +266,7 @@ func writeSettings(w http.ResponseWriter, settings net.SettingsResponseData) {
 func applyEnv(updates map[string]string) func() {
 	previous := map[string]*string{}
 	for key, value := range updates {
-		if current, ok := os.LookupEnv(key); ok {
+		if current, ok := env.Lookup(key); ok {
 			copy := current
 			previous[key] = &copy
 		} else {
