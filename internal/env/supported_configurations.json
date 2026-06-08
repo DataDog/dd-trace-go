@@ -371,6 +371,13 @@
         "default": "8125"
       }
     ],
+    "DD_DOGSTATSD_URL": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "http://localhost:8125"
+      }
+    ],
     "DD_DYNAMIC_INSTRUMENTATION_ENABLED": [
       {
         "implementation": "A",
@@ -1625,6 +1632,13 @@
       }
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_TRACE_UNIVERSAL_VERSION_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
