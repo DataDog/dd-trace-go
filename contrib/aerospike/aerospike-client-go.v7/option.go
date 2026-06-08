@@ -6,8 +6,6 @@
 package aerospike
 
 import (
-	"math"
-
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
 
@@ -15,7 +13,6 @@ type clientConfig struct {
 	serviceName   string
 	serviceSource string
 	operationName string
-	analyticsRate float64
 }
 
 // ClientOption describes options for the Aerospike integration.
@@ -34,7 +31,6 @@ func defaults(cfg *clientConfig) {
 	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.serviceSource = string(instrumentation.PackageAerospikeClientGoV7)
 	cfg.operationName = instr.OperationName(instrumentation.ComponentDefault, nil)
-	cfg.analyticsRate = instr.AnalyticsRate(false)
 }
 
 // WithService sets the given service name for the connection.
@@ -42,28 +38,5 @@ func WithService(name string) ClientOptionFn {
 	return func(cfg *clientConfig) {
 		cfg.serviceName = name
 		cfg.serviceSource = instrumentation.ServiceSourceWithServiceOption
-	}
-}
-
-// WithAnalytics enables Trace Analytics for all started spans.
-func WithAnalytics(on bool) ClientOptionFn {
-	return func(cfg *clientConfig) {
-		if on {
-			cfg.analyticsRate = 1.0
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
-	}
-}
-
-// WithAnalyticsRate sets the sampling rate for Trace Analytics events
-// correlated to started spans.
-func WithAnalyticsRate(rate float64) ClientOptionFn {
-	return func(cfg *clientConfig) {
-		if rate >= 0.0 && rate <= 1.0 {
-			cfg.analyticsRate = rate
-		} else {
-			cfg.analyticsRate = math.NaN()
-		}
 	}
 }
