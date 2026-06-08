@@ -17,18 +17,9 @@ import (
 
 	as "github.com/aerospike/aerospike-client-go/v7"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing"
 )
-
-const componentName = "aerospike/aerospike-client-go.v7"
-
-var instr *instrumentation.Instrumentation
-
-func init() {
-	instr = instrumentation.Load(instrumentation.PackageAerospikeClientGoV7)
-}
 
 // WrapClient wraps an aerospike.Client so that all requests are traced using
 // the default tracer with the service name "aerospike".
@@ -38,7 +29,7 @@ func WrapClient(client *as.Client, opts ...ClientOption) *Client {
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	instr.Logger().Debug("contrib/aerospike/aerospike-client-go.v7: Wrapping Client: %#v", cfg)
+	tracing.Instr.Logger().Debug("contrib/aerospike/aerospike-client-go.v7: Wrapping Client: %#v", cfg)
 	return &Client{
 		Client:  client,
 		cfg:     cfg,
@@ -64,16 +55,7 @@ func (c *Client) WithContext(ctx context.Context) *Client {
 
 // startSpan starts a span from the context set with WithContext.
 func (c *Client) startSpan(resourceName string) *tracer.Span {
-	opts := []tracer.StartSpanOption{
-		tracer.SpanType(ext.SpanTypeAerospike),
-		instrumentation.ServiceNameWithSource(c.cfg.serviceName, c.cfg.serviceSource),
-		tracer.ResourceName(resourceName),
-		tracer.Tag(ext.Component, componentName),
-		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-		tracer.Tag(ext.DBSystem, ext.DBSystemAerospike),
-	}
-	span, _ := tracer.StartSpanFromContext(c.context, c.cfg.operationName, opts...)
-	return span
+	return tracing.StartSpan(c.context, c.cfg.serviceName, c.cfg.serviceSource, c.cfg.operationName, resourceName)
 }
 
 // wrapped methods:

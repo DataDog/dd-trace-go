@@ -15,27 +15,14 @@ aspects:
     advice:
       - inject-declarations:
           imports:
-            context: context
-            ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
-            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
-            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            tracing: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing
           template: |-
-            var __dd_aerospike_instr = instrumentation.Load(instrumentation.PackageAerospikeClientGoV7)
-
-            func __dd_startAerospikeSpan(resourceName string) *tracer.Span {
-              span, _ := tracer.StartSpanFromContext(context.Background(), __dd_aerospike_instr.OperationName(instrumentation.ComponentDefault, nil),
-                tracer.SpanType(ext.SpanTypeAerospike),
-                instrumentation.ServiceNameWithSource(__dd_aerospike_instr.ServiceName(instrumentation.ComponentDefault, nil), string(instrumentation.PackageAerospikeClientGoV7)),
-                tracer.ResourceName(resourceName),
-                tracer.Tag(ext.Component, "aerospike/aerospike-client-go.v7"),
-                tracer.Tag(ext.SpanKind, ext.SpanKindClient),
-                tracer.Tag(ext.DBSystem, ext.DBSystemAerospike),
-              )
-              return span
+            func __dd_startAerospikeSpan(resourceName string) *tracing.Span {
+              return tracing.StartDefaultSpan(resourceName)
             }
 
-            func __dd_finishAerospikeSpan(span *tracer.Span, err error) {
-              span.Finish(tracer.WithError(err))
+            func __dd_finishAerospikeSpan(span *tracing.Span, err error) {
+              tracing.FinishSpan(span, err)
             }
 
   - id: Client.Operation.Error

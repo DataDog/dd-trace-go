@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing"
 )
 
 const (
@@ -58,9 +59,9 @@ func validateAerospikeSpan(t *testing.T, span *mocktracer.Span, resourceName str
 		"operation name should be aerospike.command")
 	assert.Equal(t, resourceName, span.Tag(ext.ResourceName),
 		"resource name should match the operation")
-	assert.Equal(t, componentName, span.Tag(ext.Component),
+	assert.Equal(t, tracing.ComponentName, span.Tag(ext.Component),
 		"component should be set to aerospike component name")
-	assert.Equal(t, componentName, span.Integration(),
+	assert.Equal(t, tracing.ComponentName, span.Integration(),
 		"integration should be set to aerospike component name")
 	assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind),
 		"span.kind should be set to client")

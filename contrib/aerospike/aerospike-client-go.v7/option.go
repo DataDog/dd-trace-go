@@ -7,6 +7,7 @@ package aerospike
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing"
 )
 
 type clientConfig struct {
@@ -28,9 +29,9 @@ func (fn ClientOptionFn) apply(cfg *clientConfig) {
 }
 
 func defaults(cfg *clientConfig) {
-	cfg.serviceName = instr.ServiceName(instrumentation.ComponentDefault, nil)
+	cfg.serviceName = tracing.Instr.ServiceName(instrumentation.ComponentDefault, nil)
 	cfg.serviceSource = string(instrumentation.PackageAerospikeClientGoV7)
-	cfg.operationName = instr.OperationName(instrumentation.ComponentDefault, nil)
+	cfg.operationName = tracing.Instr.OperationName(instrumentation.ComponentDefault, nil)
 }
 
 // WithService sets the given service name for the connection.
