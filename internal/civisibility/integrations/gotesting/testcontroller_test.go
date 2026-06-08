@@ -865,10 +865,6 @@ func runIntelligentTestRunnerWithCoverageBackfillTests(m *testing.M) {
 		},
 		{
 			Suite: "testing_test.go",
-			Name:  "TestRetryAlwaysFail",
-		},
-		{
-			Suite: "testing_test.go",
 			Name:  "TestNormalPassingAfterRetryAlwaysFail",
 		},
 	},
