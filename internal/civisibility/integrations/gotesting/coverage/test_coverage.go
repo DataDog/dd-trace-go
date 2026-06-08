@@ -76,13 +76,14 @@ type (
 
 	// BackfillResult describes one idempotent coverage backfill finalization.
 	BackfillResult struct {
-		Applied       bool
-		Reason        string
-		Coverage      float64
-		ProfilePath   string
-		MatchedFiles  int
-		MatchedBlocks int
-		UpdatedBlocks int
+		Applied               bool
+		Reason                string
+		Coverage              float64
+		ProfilePath           string
+		MatchedFiles          int
+		UnmatchedBackendFiles int
+		MatchedBlocks         int
+		UpdatedBlocks         int
 	}
 
 	runtimeCoverageSnapshot struct {
@@ -336,6 +337,15 @@ func PreflightBackfill(input BackfillInput) BackfillResult {
 		return BackfillResult{Reason: "coverage profile invalid", ProfilePath: preflightPath}
 	}
 	result := profile.applyBackfill(input.BackendCoverage)
+	if result.unmatchedBackendFiles > 0 {
+		return BackfillResult{
+			Reason:                "coverage paths unmatched",
+			ProfilePath:           preflightPath,
+			MatchedFiles:          result.matchedFiles,
+			UnmatchedBackendFiles: result.unmatchedBackendFiles,
+			MatchedBlocks:         result.matchedBlocks,
+		}
+	}
 	if result.matchedBlocks == 0 {
 		return BackfillResult{Reason: "coverage paths unmatched", ProfilePath: preflightPath, MatchedFiles: result.matchedFiles}
 	}
@@ -345,12 +355,13 @@ func PreflightBackfill(input BackfillInput) BackfillResult {
 		coverage = float64(result.coveredStmts) / float64(result.totalStatements)
 	}
 	return BackfillResult{
-		Applied:       result.updatedBlocks > 0,
-		Coverage:      coverage,
-		ProfilePath:   preflightPath,
-		MatchedFiles:  result.matchedFiles,
-		MatchedBlocks: result.matchedBlocks,
-		UpdatedBlocks: result.updatedBlocks,
+		Applied:               result.updatedBlocks > 0,
+		Coverage:              coverage,
+		ProfilePath:           preflightPath,
+		MatchedFiles:          result.matchedFiles,
+		UnmatchedBackendFiles: result.unmatchedBackendFiles,
+		MatchedBlocks:         result.matchedBlocks,
+		UpdatedBlocks:         result.updatedBlocks,
 	}
 }
 
@@ -393,6 +404,16 @@ func FinalizeBackfill() BackfillResult {
 		return backfillResult
 	}
 	result := profile.applyBackfill(backfillInput.BackendCoverage)
+	if result.unmatchedBackendFiles > 0 {
+		backfillResult = BackfillResult{
+			Reason:                "coverage paths unmatched",
+			ProfilePath:           snapshot.path,
+			MatchedFiles:          result.matchedFiles,
+			UnmatchedBackendFiles: result.unmatchedBackendFiles,
+			MatchedBlocks:         result.matchedBlocks,
+		}
+		return backfillResult
+	}
 	if result.matchedBlocks == 0 {
 		backfillResult = BackfillResult{Reason: "coverage paths unmatched", ProfilePath: snapshot.path, MatchedFiles: result.matchedFiles}
 		return backfillResult
@@ -409,12 +430,13 @@ func FinalizeBackfill() BackfillResult {
 		coverage = float64(result.coveredStmts) / float64(result.totalStatements)
 	}
 	backfillResult = BackfillResult{
-		Applied:       result.updatedBlocks > 0,
-		Coverage:      coverage,
-		ProfilePath:   snapshot.path,
-		MatchedFiles:  result.matchedFiles,
-		MatchedBlocks: result.matchedBlocks,
-		UpdatedBlocks: result.updatedBlocks,
+		Applied:               result.updatedBlocks > 0,
+		Coverage:              coverage,
+		ProfilePath:           snapshot.path,
+		MatchedFiles:          result.matchedFiles,
+		UnmatchedBackendFiles: result.unmatchedBackendFiles,
+		MatchedBlocks:         result.matchedBlocks,
+		UpdatedBlocks:         result.updatedBlocks,
 	}
 	return backfillResult
 }
@@ -575,14 +597,10 @@ func parseCoverProfile(filename string) (map[string][]coverageBlock, error) {
 			continue
 		}
 
-		// Split the line into the file and block parts
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) < 2 {
+		fileName, blockInfo, err := splitCoverageProfileLine(line)
+		if err != nil {
 			continue
 		}
-
-		fileName := parts[0]
-		blockInfo := parts[1]
 
 		// Split the block info by space
 		infoParts := strings.Fields(blockInfo)
@@ -697,13 +715,10 @@ func getCoverageStatementsInfo(filename string) (totalStatements, coveredStateme
 			continue
 		}
 
-		// Split the line into the file and block parts
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) < 2 {
+		_, blockInfo, err := splitCoverageProfileLine(line)
+		if err != nil {
 			continue
 		}
-
-		blockInfo := parts[1] // Block data, including line info and statement counts
 
 		// Split the block info by space
 		infoParts := strings.Fields(blockInfo)

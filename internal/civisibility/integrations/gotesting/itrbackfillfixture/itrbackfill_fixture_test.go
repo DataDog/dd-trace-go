@@ -19,16 +19,19 @@ import (
 
 func TestITRCoverageBackfillManualFixture(t *testing.T) {
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "manual")
+	goCache := sharedFixtureGoCache(t)
 	for _, test := range []struct {
 		name     string
 		extraEnv []string
 	}{
 		{name: "manual-count"},
 		{name: "manual-codecoverage-disabled", extraEnv: []string{"DD_ITR_BACKFILL_CODE_COVERAGE=false"}},
+		{name: "manual-flaky-retry", extraEnv: []string{"DD_ITR_BACKFILL_FLAKY_RETRY=true"}},
+		{name: "manual-partial-coverage", extraEnv: []string{"DD_ITR_BACKFILL_PARTIAL_COVERAGE=true"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			profile := filepath.Join(t.TempDir(), test.name+".out")
-			runFixtureCommand(t, fixtureDir, test.name, profile, test.extraEnv,
+			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv,
 				"go", "test", "-mod=readonly", "./...",
 				"-cover", "-covermode=count", "-coverpkg", "./...",
 				"-count=1", "-coverprofile", profile)
@@ -40,6 +43,7 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
 	assertOrchestrionFixtureDoesNotUseManualRunM(t, fixtureDir)
+	goCache := sharedFixtureGoCache(t)
 
 	for _, test := range []struct {
 		name          string
@@ -72,7 +76,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 				args = append(args, "-coverprofile", profile)
 			}
 			args = append(args, test.extraTestArgs...)
-			runFixtureCommand(t, fixtureDir, test.name, profile, test.extraEnv, args...)
+			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, args...)
 			if test.withProfile {
 				assertProfileBackfilled(t, profile, "fixtures/itrbackfill/orchestrion/lib/lib.go")
 			}
@@ -80,12 +84,22 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 	}
 }
 
-func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile string, extraEnv []string, args ...string) {
+func sharedFixtureGoCache(t *testing.T) string {
+	t.Helper()
+
+	goCache := filepath.Join(t.TempDir(), "gocache")
+	if err := os.MkdirAll(goCache, 0o755); err != nil {
+		t.Fatalf("create fixture Go cache: %v", err)
+	}
+	return goCache
+}
+
+func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache string, extraEnv []string, args ...string) {
 	t.Helper()
 
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = fixtureDir
-	cmd.Env = isolatedFixtureEnv(t, scenario)
+	cmd.Env = isolatedFixtureEnv(t, scenario, goCache)
 	cmd.Env = append(cmd.Env, extraEnv...)
 
 	var output bytes.Buffer
@@ -101,7 +115,7 @@ func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile string, extra
 	}
 }
 
-func isolatedFixtureEnv(t *testing.T, scenario string) []string {
+func isolatedFixtureEnv(t *testing.T, scenario, goCache string) []string {
 	t.Helper()
 
 	tempRoot := t.TempDir()
@@ -124,6 +138,9 @@ func isolatedFixtureEnv(t *testing.T, scenario string) []string {
 	if !envHasKey(env, "GOMODCACHE") {
 		env = append(env, "GOMODCACHE="+goEnv(t, "GOMODCACHE"))
 	}
+	if goCache == "" {
+		goCache = filepath.Join(tempRoot, "gocache")
+	}
 
 	env = append(env,
 		"DD_ITR_BACKFILL_FIXTURE=1",
@@ -132,7 +149,7 @@ func isolatedFixtureEnv(t *testing.T, scenario string) []string {
 		"DD_ENV=itr-backfill-"+scenario,
 		"HOME="+filepath.Join(tempRoot, "home"),
 		"XDG_CACHE_HOME="+filepath.Join(tempRoot, "xdg"),
-		"GOCACHE="+filepath.Join(tempRoot, "gocache"),
+		"GOCACHE="+goCache,
 		"GOWORK=off",
 		"GOFLAGS=",
 	)

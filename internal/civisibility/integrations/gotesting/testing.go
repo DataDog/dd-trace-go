@@ -272,7 +272,9 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			currentITRState().markActualSkip()
 			session.SetTag(constants.ITRTestsSkipped, "true")
 			session.SetTag(constants.ITRTestsSkippingCount, numOfTestsSkipped.Add(1))
-			checkModuleAndSuite(module, suite)
+			if !execMeta.hasAdditionalFeatureWrapper {
+				checkModuleAndSuite(module, suite)
+			}
 			t.Skip(constants.SkippedByITRReason)
 			return
 		}

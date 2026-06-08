@@ -30,11 +30,12 @@ type orderedCoverProfileLine struct {
 }
 
 type profileBackfillResult struct {
-	matchedFiles    int
-	matchedBlocks   int
-	updatedBlocks   int
-	totalStatements int
-	coveredStmts    int
+	matchedFiles          int
+	unmatchedBackendFiles int
+	matchedBlocks         int
+	updatedBlocks         int
+	totalStatements       int
+	coveredStmts          int
 }
 
 func parseOrderedCoverProfile(filename string) (*orderedCoverProfile, error) {
@@ -95,13 +96,11 @@ func validCoverageProfileHeader(line string) bool {
 }
 
 func parseCoverageLine(line string) (coverageBlock, string, error) {
-	parts := strings.SplitN(line, ":", 2)
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
-		return coverageBlock{}, "", fmt.Errorf("missing file name")
+	fileName, blockInfo, err := splitCoverageProfileLine(line)
+	if err != nil {
+		return coverageBlock{}, "", err
 	}
-
-	fileName := parts[0]
-	infoParts := strings.Fields(parts[1])
+	infoParts := strings.Fields(blockInfo)
 	if len(infoParts) != 3 {
 		return coverageBlock{}, "", fmt.Errorf("expected three block fields")
 	}
@@ -126,8 +125,8 @@ func parseCoverageLine(line string) (coverageBlock, string, error) {
 	if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil || err6 != nil {
 		return coverageBlock{}, "", fmt.Errorf("invalid block number")
 	}
-	if startLine <= 0 || startCol <= 0 || endLine <= 0 || endCol <= 0 || numStmt <= 0 || count < 0 {
-		return coverageBlock{}, "", fmt.Errorf("invalid non-positive block value")
+	if startLine <= 0 || startCol <= 0 || endLine <= 0 || endCol <= 0 || numStmt < 0 || count < 0 {
+		return coverageBlock{}, "", fmt.Errorf("invalid negative or non-positive block value")
 	}
 	if endLine < startLine || (endLine == startLine && endCol < startCol) {
 		return coverageBlock{}, "", fmt.Errorf("invalid block ordering")
@@ -143,9 +142,18 @@ func parseCoverageLine(line string) (coverageBlock, string, error) {
 	}, fileName, nil
 }
 
+func splitCoverageProfileLine(line string) (string, string, error) {
+	separator := strings.LastIndex(line, ":")
+	if separator <= 0 || strings.TrimSpace(line[:separator]) == "" {
+		return "", "", fmt.Errorf("missing file name")
+	}
+	return line[:separator], line[separator+1:], nil
+}
+
 func (p *orderedCoverProfile) applyBackfill(backendCoverage map[string]*filebitmap.FileBitmap) profileBackfillResult {
 	result := profileBackfillResult{}
-	matchedFiles := map[string]struct{}{}
+	matchedProfileFiles := map[string]struct{}{}
+	backendFilesWithMatchedBlocks := map[string]struct{}{}
 
 	for idx := range p.lines {
 		line := &p.lines[idx]
@@ -158,16 +166,17 @@ func (p *orderedCoverProfile) applyBackfill(backendCoverage map[string]*filebitm
 			result.coveredStmts += line.block.numStmt
 		}
 
-		bitmap, fileMatched := backfillBitmapForProfileFile(line.fileName, backendCoverage)
+		backendFile, bitmap, fileMatched := backfillBitmapForProfileFile(line.fileName, backendCoverage)
 		if !fileMatched {
 			continue
 		}
-		matchedFiles[line.fileName] = struct{}{}
+		matchedProfileFiles[line.fileName] = struct{}{}
 		if !bitmap.IntersectsLineRange(line.block.startLine, line.block.endLine) {
 			continue
 		}
 
 		result.matchedBlocks++
+		backendFilesWithMatchedBlocks[backendFile] = struct{}{}
 		if line.block.count == 0 {
 			line.block.count = 1
 			result.coveredStmts += line.block.numStmt
@@ -175,17 +184,31 @@ func (p *orderedCoverProfile) applyBackfill(backendCoverage map[string]*filebitm
 		}
 	}
 
-	result.matchedFiles = len(matchedFiles)
+	result.matchedFiles = len(matchedProfileFiles)
+	result.unmatchedBackendFiles = unmatchedActiveBackendFiles(backendCoverage, backendFilesWithMatchedBlocks)
 	return result
 }
 
-func backfillBitmapForProfileFile(profileFile string, backendCoverage map[string]*filebitmap.FileBitmap) (*filebitmap.FileBitmap, bool) {
-	for _, candidate := range coveragePathCandidates(profileFile) {
-		if bitmap, ok := backendCoverage[candidate]; ok {
-			return bitmap, true
+func unmatchedActiveBackendFiles(backendCoverage map[string]*filebitmap.FileBitmap, backendFilesWithMatchedBlocks map[string]struct{}) int {
+	unmatched := 0
+	for backendFile, bitmap := range backendCoverage {
+		if bitmap == nil || !bitmap.HasActiveBits() {
+			continue
+		}
+		if _, ok := backendFilesWithMatchedBlocks[backendFile]; !ok {
+			unmatched++
 		}
 	}
-	return nil, false
+	return unmatched
+}
+
+func backfillBitmapForProfileFile(profileFile string, backendCoverage map[string]*filebitmap.FileBitmap) (string, *filebitmap.FileBitmap, bool) {
+	for _, candidate := range coveragePathCandidates(profileFile) {
+		if bitmap, ok := backendCoverage[candidate]; ok {
+			return candidate, bitmap, true
+		}
+	}
+	return "", nil, false
 }
 
 func coveragePathCandidates(profileFile string) []string {

@@ -28,28 +28,46 @@ func TestMain(m *testing.M) {
 		TestsSkipping:           true,
 		CodeCoverage:            os.Getenv("DD_ITR_BACKFILL_CODE_COVERAGE") != "false",
 		RequireGit:              false,
-		FlakyTestRetriesEnabled: false,
+		FlakyTestRetriesEnabled: os.Getenv("DD_ITR_BACKFILL_FLAKY_RETRY") == "true",
 	}
 	expectCoverageRequests := os.Getenv("DD_ITR_BACKFILL_CODE_COVERAGE") != "false"
+	expectSkipped := true
+	expectSkippingEnabled := "true"
+	coverage := map[string][]byte{
+		manualLibPath: filebitmap.FromActiveRange(1, 64).ToArray(),
+	}
+	if os.Getenv("DD_ITR_BACKFILL_PARTIAL_COVERAGE") == "true" {
+		coverage["internal/civisibility/integrations/gotesting/fixtures/itrbackfill/manual/lib/unmatched.go"] = filebitmap.FromActiveRange(1, 64).ToArray()
+		expectSkipped = false
+		expectSkippingEnabled = "false"
+	}
 	server := mockci.Start(settings, []mockci.SkippableTest{
 		{Suite: "app_test.go", Name: "TestCoversLib"},
-	}, map[string][]byte{
-		manualLibPath: filebitmap.FromActiveRange(1, 64).ToArray(),
-	})
+	}, coverage)
 	defer server.Close()
 
 	exitCode := gotesting.RunM(m)
 	if server.SkippableRequests() != 1 {
 		panic("expected exactly one skippable request")
 	}
-	if !server.HasEventMeta("TestCoversLib", constants.TestSkippedByITR, "true") {
-		panic("expected TestCoversLib to be skipped by ITR")
+	skippedByITR := server.HasEventMeta("TestCoversLib", constants.TestSkippedByITR, "true")
+	if skippedByITR != expectSkipped {
+		panic("unexpected ITR skip decision")
+	}
+	if value, ok := server.SessionMeta(constants.ITRTestsSkippingEnabled); !ok || value != expectSkippingEnabled {
+		panic("unexpected ITR tests skipping enabled tag")
 	}
 	if coverageValue, ok := server.SessionCoverage(constants.CodeCoveragePercentageOfTotalLines); !ok || coverageValue <= 0 {
 		panic("expected corrected session coverage")
 	}
 	if !expectCoverageRequests && server.CoverageRequests() > 0 {
 		panic("unexpected coverage upload request count")
+	}
+	if server.EventTypeCount(constants.SpanTypeTestModule) != 1 {
+		panic("expected exactly one test module event")
+	}
+	if server.EventTypeCount(constants.SpanTypeTestSuite) != 1 {
+		panic("expected exactly one test suite event")
 	}
 	os.Exit(exitCode)
 }

@@ -721,6 +721,11 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	finishedSpans := mTracer.FinishedSpans()
 	showResourcesNameFromSpans(finishedSpans)
 
+	if testing.CoverMode() != "" {
+		checkIntelligentTestRunnerWithMissingBackendCoverage(finishedSpans)
+		os.Exit(0)
+	}
+
 	// 1 session span
 	// 1 module span
 	// 4 suite span (testing_test.go, testify_test.go, testify_test.go/MySuite and reflections_test.go)
@@ -810,6 +815,85 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 
 	fmt.Println("All tests passed.")
 	os.Exit(0)
+}
+
+func checkIntelligentTestRunnerWithMissingBackendCoverage(finishedSpans []*mocktracer.Span) {
+	// When Go coverage is active but the skippable response has no backend
+	// coverage metadata, ITR skips must be disabled to avoid publishing an
+	// under-reported coverprofile.
+	checkSpansByResourceName(finishedSpans, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetFieldPointerFrom", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetInternalTestArray", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetInternalBenchmarkArray", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestCommonPrivateFields_AddLevel", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetBenchmarkPrivateFields", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01/sub03", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestParallelSubTests", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestParallelSubTests/parallel_subtest_1", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestParallelSubTests/parallel_subtest_2", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestParallelSubTests/parallel_subtest_3", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 1)
+	testifySub01 := checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite", 1)[0]
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01", 1)
+
+	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
+		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+	}
+
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 6)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 6)[0]
+	if trrSpan.Tag(constants.TestRetryReason) != "auto_test_retry" {
+		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "auto_test_retry", trrSpan.Tag(constants.TestRetryReason)))
+	}
+
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 0)
+	checkSpansByTagValue(finishedSpans, constants.TestSkippedByITR, "true", 0)
+	checkSpansByTagValue(finishedSpans, constants.TestSkipReason, constants.SkippedByITRReason, 0)
+	checkSpansByTagValue(finishedSpans, constants.TestStatus, constants.TestStatusSkip, 1)
+	checkSpansByTagValue(finishedSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+	checkSpansByTagValue(finishedSpans, constants.TestUnskippable, "true", 7)
+	checkSpansByTagValue(finishedSpans, constants.TestForcedToRun, "true", 0)
+
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
+
+	checkSpansByType(finishedSpans,
+		32,
+		1,
+		1,
+		4,
+		31,
+		0)
+
+	checkCapabilitiesTags(finishedSpans)
+
+	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	if len(sessionSpans) != 1 {
+		panic(fmt.Sprintf("expected exactly one session span, got %d", len(sessionSpans)))
+	}
+	if got := sessionSpans[0].Tag(constants.CodeCoverageEnabled); got != "false" {
+		panic(fmt.Sprintf("expected %s=false when ITR is enabled without backend coverage, got %v", constants.CodeCoverageEnabled, got))
+	}
+	checkITRTestsSkippingEnabledTag(finishedSpans, "false")
+
+	checkLogs()
 }
 
 func runTestManagementTests(m *testing.M) {

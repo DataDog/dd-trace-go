@@ -150,6 +150,17 @@ func (s *Server) HasEventMeta(resourceContains, key, value string) bool {
 	return false
 }
 
+// EventTypeCount returns the number of captured test-cycle events with the requested type.
+func (s *Server) EventTypeCount(eventType string) int {
+	count := 0
+	for _, event := range s.Events() {
+		if event.Type == eventType {
+			count++
+		}
+	}
+	return count
+}
+
 // SessionCoverage returns the session coverage metric when it was reported.
 func (s *Server) SessionCoverage(metricName string) (float64, bool) {
 	for _, event := range s.Events() {
