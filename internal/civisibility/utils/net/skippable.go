@@ -79,7 +79,7 @@ type (
 		ResponseTestsCount     int
 	}
 
-	// cachedSkippableTests stores the filtered skippable payload plus original response count.
+	// cachedSkippableTests stores the skippable payload plus original response count.
 	cachedSkippableTests struct {
 		CorrelationID      string                                                  `json:"correlation_id"`
 		Skippables         map[string]map[string][]SkippableResponseDataAttributes `json:"skippables"`
@@ -92,10 +92,9 @@ type (
 )
 
 const (
-	coverageBackfillReasonMissing  = "backend coverage metadata missing"
-	coverageBackfillReasonInvalid  = "backend coverage metadata invalid"
-	coverageBackfillReasonEmpty    = "backend coverage metadata empty"
-	coverageBackfillReasonFiltered = "skippable response filtered while coverage metadata is present"
+	coverageBackfillReasonMissing = "backend coverage metadata missing"
+	coverageBackfillReasonInvalid = "backend coverage metadata invalid"
+	coverageBackfillReasonEmpty   = "backend coverage metadata empty"
 )
 
 func (c *client) GetSkippableTests() (*SkippableTestsResponse, error) {
@@ -169,13 +168,7 @@ func (c *client) GetSkippableTests() (*SkippableTestsResponse, error) {
 			responseTestsCount := len(responseObject.Data)
 			telemetry.ITRSkippableTestsResponseTests(float64(responseTestsCount))
 			skippableTestsMap := map[string]map[string][]SkippableResponseDataAttributes{}
-			filteredOutTests := false
 			for _, data := range responseObject.Data {
-				if !c.matchesTestConfigurations(data.Attributes.Configurations) {
-					filteredOutTests = true
-					continue
-				}
-
 				var ok bool
 				var testsMap map[string][]SkippableResponseDataAttributes
 				if testsMap, ok = skippableTestsMap[data.Attributes.Suite]; !ok {
@@ -188,12 +181,6 @@ func (c *client) GetSkippableTests() (*SkippableTestsResponse, error) {
 				} else {
 					testsMap[data.Attributes.Name] = []SkippableResponseDataAttributes{data.Attributes}
 				}
-			}
-
-			if coveragePresent && filteredOutTests {
-				coverageSafe = false
-				coverageReason = coverageBackfillReasonFiltered
-				coverage = nil
 			}
 
 			value := cachedSkippableTests{
@@ -220,37 +207,6 @@ func (c *client) GetSkippableTests() (*SkippableTestsResponse, error) {
 	return result.toResponse(), nil
 }
 
-func (c *client) matchesTestConfigurations(config testConfigurations) bool {
-	if config.OsPlatform != "" && c.testConfigurations.OsPlatform != "" &&
-		config.OsPlatform != c.testConfigurations.OsPlatform {
-		return false
-	}
-	if config.OsArchitecture != "" && c.testConfigurations.OsArchitecture != "" &&
-		config.OsArchitecture != c.testConfigurations.OsArchitecture {
-		return false
-	}
-	if config.OsVersion != "" && c.testConfigurations.OsVersion != "" &&
-		config.OsVersion != c.testConfigurations.OsVersion {
-		return false
-	}
-	if config.RuntimeName != "" && c.testConfigurations.RuntimeName != "" &&
-		config.RuntimeName != c.testConfigurations.RuntimeName {
-		return false
-	}
-	if config.RuntimeArchitecture != "" && c.testConfigurations.RuntimeArchitecture != "" &&
-		config.RuntimeArchitecture != c.testConfigurations.RuntimeArchitecture {
-		return false
-	}
-	if config.RuntimeVersion != "" && c.testConfigurations.RuntimeVersion != "" &&
-		config.RuntimeVersion != c.testConfigurations.RuntimeVersion {
-		return false
-	}
-	// Custom configurations are part of the request contract with the backend.
-	// The backend owns that filtering; local filtering would change the
-	// skippable-test response semantics.
-	return true
-}
-
 func parseSkippableCoverage(raw json.RawMessage) (map[string]*filebitmap.FileBitmap, bool, bool, string, bool) {
 	if len(raw) == 0 || strings.EqualFold(strings.TrimSpace(string(raw)), "null") {
 		return nil, false, false, coverageBackfillReasonMissing, false
@@ -274,7 +230,7 @@ func parseSkippableCoverage(raw json.RawMessage) (map[string]*filebitmap.FileBit
 		if err != nil {
 			return nil, true, false, coverageBackfillReasonInvalid, true
 		}
-		bitmap := filebitmap.NewFileBitmapFromBytes(decoded)
+		bitmap := newFileBitmapFromJavaBitSet(decoded)
 		if existing, ok := coverage[normalized]; ok {
 			coverage[normalized] = filebitmap.Or(existing, bitmap, false)
 		} else {
@@ -287,6 +243,9 @@ func parseSkippableCoverage(raw json.RawMessage) (map[string]*filebitmap.FileBit
 
 func normalizeSkippableCoveragePath(rawPath string) (string, error) {
 	normalized := strings.TrimSpace(strings.ReplaceAll(rawPath, "\\", "/"))
+	if strings.HasPrefix(normalized, "/") {
+		normalized = strings.TrimPrefix(normalized, "/")
+	}
 	if normalized == "" {
 		return "", fmt.Errorf("coverage path cannot be empty")
 	}
@@ -308,13 +267,48 @@ func isWindowsDrivePath(value string) bool {
 	return (drive >= 'a' && drive <= 'z') || (drive >= 'A' && drive <= 'Z')
 }
 
+func newFileBitmapFromJavaBitSet(data []byte) *filebitmap.FileBitmap {
+	// The skippable-tests API uses Java BitSet.toByteArray/valueOf semantics:
+	// bit index N represents source line N and bytes are little-endian by bit.
+	// filebitmap uses one-indexed lines with the first line stored in the most
+	// significant bit, so translate only at the API/cache boundary.
+	bitmap := filebitmap.FromLineCount(len(data) * 8)
+	for line := 1; line < len(data)*8; line++ {
+		byteIndex := line / 8
+		bitMask := byte(1 << (line % 8))
+		if data[byteIndex]&bitMask != 0 {
+			bitmap.Set(line)
+		}
+	}
+	return bitmap
+}
+
+func javaBitSetFromFileBitmap(bitmap *filebitmap.FileBitmap) []byte {
+	// See newFileBitmapFromJavaBitSet for the wire-format contract.
+	if bitmap == nil {
+		return nil
+	}
+	data := make([]byte, bitmap.BitCount()/8+1)
+	for line := 1; line <= bitmap.BitCount(); line++ {
+		if !bitmap.Get(line) {
+			continue
+		}
+		byteIndex := line / 8
+		data[byteIndex] |= byte(1 << (line % 8))
+	}
+	for len(data) > 0 && data[len(data)-1] == 0 {
+		data = data[:len(data)-1]
+	}
+	return data
+}
+
 func encodeSkippableCoverage(coverage map[string]*filebitmap.FileBitmap) map[string]string {
 	if len(coverage) == 0 {
 		return nil
 	}
 	encoded := make(map[string]string, len(coverage))
 	for file, bitmap := range coverage {
-		encoded[file] = base64.StdEncoding.EncodeToString(bitmap.ToArray())
+		encoded[file] = base64.StdEncoding.EncodeToString(javaBitSetFromFileBitmap(bitmap))
 	}
 	return encoded
 }
@@ -329,7 +323,7 @@ func decodeCachedSkippableCoverage(encoded map[string]string) map[string]*filebi
 		if err != nil {
 			return nil
 		}
-		coverage[file] = filebitmap.NewFileBitmapFromBytes(decoded)
+		coverage[file] = newFileBitmapFromJavaBitSet(decoded)
 	}
 	return coverage
 }

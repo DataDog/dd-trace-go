@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 )
 
 func TestSkippableApiRequest(t *testing.T) {
@@ -193,15 +194,15 @@ func TestSkippableApiRequestFromManifestModeIgnoresCache(t *testing.T) {
 }
 
 func TestSkippableApiRequestParsesCoverageMetadata(t *testing.T) {
-	coverageBitmap := []byte{0b10000000}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(HeaderContentType, ContentTypeJSON)
 		_ = json.NewEncoder(w).Encode(skippableResponse{
 			Meta: skippableResponseMeta{
 				CorrelationID: "correlation_id",
 				Coverage: json.RawMessage(`{
-					"./pkg/file.go": "` + base64.StdEncoding.EncodeToString(coverageBitmap) + `",
-					"pkg\\file.go": "` + base64.StdEncoding.EncodeToString([]byte{0b01000000}) + `"
+					"/pkg/file.go": "` + base64.StdEncoding.EncodeToString([]byte{0b00000010}) + `",
+					"pkg\\file.go": "` + base64.StdEncoding.EncodeToString([]byte{0b00000100}) + `",
+					"pkg/line8.go": "` + base64.StdEncoding.EncodeToString([]byte{0, 0b00000001}) + `"
 				}`),
 			},
 			Data: []skippableResponseData{
@@ -230,7 +231,18 @@ func TestSkippableApiRequestParsesCoverageMetadata(t *testing.T) {
 	assert.Contains(t, response.Coverage, "pkg/file.go")
 	assert.True(t, response.Coverage["pkg/file.go"].Get(1))
 	assert.True(t, response.Coverage["pkg/file.go"].Get(2))
+	assert.True(t, response.Coverage["pkg/line8.go"].Get(8))
 	assert.True(t, response.Skippables["suite"]["name"][0].MissingLineCodeCoverage)
+}
+
+func TestSkippableCoverageUsesJavaBitSetByteOrder(t *testing.T) {
+	decoded := newFileBitmapFromJavaBitSet([]byte{0b00000010, 0b00000001})
+	assert.True(t, decoded.Get(1))
+	assert.True(t, decoded.Get(8))
+	assert.False(t, decoded.Get(2))
+
+	assert.Equal(t, []byte{0b00000010}, javaBitSetFromFileBitmap(filebitmap.FromActiveRange(1, 1)))
+	assert.Equal(t, []byte{0, 0b00000001}, javaBitSetFromFileBitmap(filebitmap.FromActiveRange(8, 8)))
 }
 
 func TestSkippableApiRequestCoverageMetadataPresenceStates(t *testing.T) {
@@ -331,12 +343,11 @@ func TestSkippableApiRequestRejectsNonRepositoryRelativeCoveragePaths(t *testing
 		name string
 		path string
 	}{
-		{name: "absolute", path: "/tmp/repo/pkg/file.go"},
 		{name: "windows-drive", path: "C:\\repo\\pkg\\file.go"},
 		{name: "traversal", path: "pkg/../..//file.go"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			coverage := base64.StdEncoding.EncodeToString([]byte{0b10000000})
+			coverage := base64.StdEncoding.EncodeToString([]byte{0b00000010})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set(HeaderContentType, ContentTypeJSON)
 				_ = json.NewEncoder(w).Encode(skippableResponse{
@@ -365,8 +376,8 @@ func TestSkippableApiRequestRejectsNonRepositoryRelativeCoveragePaths(t *testing
 	}
 }
 
-func TestSkippableApiRequestCoverageWithFilteredConfigurationsIsUnsafe(t *testing.T) {
-	coverage := base64.StdEncoding.EncodeToString([]byte{0b10000000})
+func TestSkippableApiRequestDoesNotFilterConfigurations(t *testing.T) {
+	coverage := base64.StdEncoding.EncodeToString([]byte{0b00000010})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(HeaderContentType, ContentTypeJSON)
 		_ = json.NewEncoder(w).Encode(skippableResponse{
@@ -377,6 +388,7 @@ func TestSkippableApiRequestCoverageWithFilteredConfigurationsIsUnsafe(t *testin
 			Data: []skippableResponseData{
 				{Attributes: SkippableResponseDataAttributes{Suite: "suite", Name: "linux", Configurations: testConfigurations{OsPlatform: "linux"}}},
 				{Attributes: SkippableResponseDataAttributes{Suite: "suite", Name: "darwin", Configurations: testConfigurations{OsPlatform: "darwin"}}},
+				{Attributes: SkippableResponseDataAttributes{Suite: "suite", Name: "custom", Configurations: testConfigurations{Custom: map[string]string{"region": "eu"}}}},
 			},
 		})
 	}))
@@ -394,35 +406,9 @@ func TestSkippableApiRequestCoverageWithFilteredConfigurationsIsUnsafe(t *testin
 	response, err := client.GetSkippableTests()
 	assert.NoError(t, err)
 	assert.True(t, response.CoveragePresent)
-	assert.False(t, response.CoverageBackfillSafe)
-	assert.Equal(t, coverageBackfillReasonFiltered, response.CoverageBackfillReason)
+	assert.True(t, response.CoverageBackfillSafe)
+	assert.Empty(t, response.CoverageBackfillReason)
 	assert.Contains(t, response.Skippables["suite"], "linux")
-	assert.NotContains(t, response.Skippables["suite"], "darwin")
-}
-
-func TestSkippableApiRequestDoesNotFilterCustomConfigurations(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set(HeaderContentType, ContentTypeJSON)
-		_ = json.NewEncoder(w).Encode(skippableResponse{
-			Meta: skippableResponseMeta{
-				CorrelationID: "correlation_id",
-			},
-			Data: []skippableResponseData{
-				{Attributes: SkippableResponseDataAttributes{Suite: "suite", Name: "custom", Configurations: testConfigurations{Custom: map[string]string{"region": "eu"}}}},
-			},
-		})
-	}))
-	defer server.Close()
-
-	origEnv := saveEnv()
-	path := os.Getenv("PATH")
-	defer restoreEnv(origEnv)
-
-	setCiVisibilityEnv(path, server.URL)
-	client := NewClient().(*client)
-	client.testConfigurations.Custom = map[string]string{"region": "us"}
-
-	response, err := client.GetSkippableTests()
-	assert.NoError(t, err)
+	assert.Contains(t, response.Skippables["suite"], "darwin")
 	assert.Contains(t, response.Skippables["suite"], "custom")
 }

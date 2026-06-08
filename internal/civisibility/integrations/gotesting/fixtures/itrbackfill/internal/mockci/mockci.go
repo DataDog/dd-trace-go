@@ -253,7 +253,7 @@ func (s *Server) handleSkippable(w http.ResponseWriter, tests []SkippableTest, c
 	if coverage != nil {
 		response.Meta.Coverage = make(map[string]string, len(coverage))
 		for file, bitmap := range coverage {
-			response.Meta.Coverage[file] = base64.StdEncoding.EncodeToString(bitmap)
+			response.Meta.Coverage[file] = base64.StdEncoding.EncodeToString(javaBitSetFromGoBitmap(bitmap))
 		}
 	}
 	for _, test := range tests {
@@ -275,6 +275,21 @@ func (s *Server) handleSkippable(w http.ResponseWriter, tests []SkippableTest, c
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+func javaBitSetFromGoBitmap(bitmap []byte) []byte {
+	data := make([]byte, len(bitmap)+1)
+	for line := 1; line <= len(bitmap)*8; line++ {
+		idx := line - 1
+		if bitmap[idx/8]&byte(128>>(idx%8)) == 0 {
+			continue
+		}
+		data[line/8] |= byte(1 << (line % 8))
+	}
+	for len(data) > 0 && data[len(data)-1] == 0 {
+		data = data[:len(data)-1]
+	}
+	return data
 }
 
 func writeSettings(w http.ResponseWriter, settings net.SettingsResponseData) {

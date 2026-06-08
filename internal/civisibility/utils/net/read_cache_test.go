@@ -713,7 +713,7 @@ func TestReadCacheGetKnownTestsCachesAccumulatedPages(t *testing.T) {
 	require.Equal(t, int64(2), requestCount.Load())
 }
 
-func TestReadCacheGetSkippableTestsCachesFilteredResponse(t *testing.T) {
+func TestReadCacheGetSkippableTestsCachesResponsePerRequestConfiguration(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	root := t.TempDir()
 	var requestCount atomic.Int64
@@ -737,7 +737,7 @@ func TestReadCacheGetSkippableTestsCachesFilteredResponse(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "correlation-id", response.CorrelationID)
 	require.Contains(t, response.Skippables["suite"], "linux")
-	require.NotContains(t, response.Skippables["suite"], "darwin")
+	require.Contains(t, response.Skippables["suite"], "darwin")
 
 	second := NewClient().(*client)
 	second.testConfigurations.OsPlatform = "linux"
@@ -745,6 +745,7 @@ func TestReadCacheGetSkippableTestsCachesFilteredResponse(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "correlation-id", response.CorrelationID)
 	require.Contains(t, response.Skippables["suite"], "linux")
+	require.Contains(t, response.Skippables["suite"], "darwin")
 	require.Equal(t, int64(1), requestCount.Load())
 
 	third := NewClient().(*client)
@@ -752,6 +753,7 @@ func TestReadCacheGetSkippableTestsCachesFilteredResponse(t *testing.T) {
 	response, err = third.GetSkippableTests()
 	require.NoError(t, err)
 	require.Equal(t, "correlation-id", response.CorrelationID)
+	require.Contains(t, response.Skippables["suite"], "linux")
 	require.Contains(t, response.Skippables["suite"], "darwin")
 	require.Equal(t, int64(2), requestCount.Load())
 }
@@ -759,7 +761,7 @@ func TestReadCacheGetSkippableTestsCachesFilteredResponse(t *testing.T) {
 func TestReadCacheGetSkippableTestsCachesCoverageMetadata(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	root := t.TempDir()
-	coverageBitmap := []byte{0b10000000}
+	coverageBitmap := []byte{0b00000010}
 	var requestCount atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requestCount.Add(1)
