@@ -8,6 +8,7 @@ package gotesting
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,6 +42,9 @@ func TestMain(m *testing.M) {
 	const scenarioStarted = "**** [Scenario %s started] ****\n\n"
 	// We need to spawn separated test process for each scenario
 	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection"}
+	if testing.CoverMode() != "" {
+		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
+	}
 
 	if internal.BoolEnv(scenarios[0], false) {
 		fmt.Printf(scenarioStarted, scenarios[0])
@@ -63,6 +67,9 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[6], false) {
 		fmt.Printf(scenarioStarted, scenarios[6])
 		runParallelEarlyFlakyTestDetectionTests(m)
+	} else if len(scenarios) > 7 && internal.BoolEnv(scenarios[7], false) {
+		fmt.Printf(scenarioStarted, scenarios[7])
+		runIntelligentTestRunnerWithCoverageBackfillTests(m)
 	} else if internal.BoolEnv("Bypass", false) {
 		os.Exit(m.Run())
 	} else {
@@ -114,7 +121,8 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	},
 		false, nil,
 		false, nil,
-		false)
+		false,
+		nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -274,7 +282,8 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	},
 		false, nil,
 		false, nil,
-		false)
+		false,
+		nil)
 	defer server.Close()
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -408,7 +417,8 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	},
 		false, nil,
 		false, nil,
-		false)
+		false,
+		nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -532,7 +542,8 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	},
 		false, nil,
 		false, nil,
-		impactedTests)
+		impactedTests,
+		nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -704,7 +715,8 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 		},
 	},
 		false, nil,
-		false)
+		false,
+		nil)
 	defer server.Close()
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -817,6 +829,61 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	os.Exit(0)
 }
 
+func runIntelligentTestRunnerWithCoverageBackfillTests(m *testing.M) {
+	backendCoverage := map[string][]byte{
+		"internal/civisibility/integrations/gotesting/testing.go": {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+	}
+	server := setUpHTTPServer(true, true, false, nil, true, []net.SkippableResponseDataAttributes{
+		{
+			Suite: "testing_test.go",
+			Name:  "TestMyTest01",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestMyTest02",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "Test_Foo",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestRetryWithPanic",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestRetryWithFail",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestRetryAlwaysFail",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestNormalPassingAfterRetryAlwaysFail",
+		},
+	},
+		false, nil,
+		false,
+		backendCoverage)
+	defer server.Close()
+
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+
+	exitCode := RunM(m)
+	if exitCode != 0 {
+		panic("expected the exit code to be 0. All tests should pass (failed ones should be skipped by ITR).")
+	}
+
+	finishedSpans := mTracer.FinishedSpans()
+	showResourcesNameFromSpans(finishedSpans)
+	checkIntelligentTestRunnerWithCoverageBackfill(finishedSpans)
+
+	fmt.Println("All tests passed.")
+	os.Exit(0)
+}
+
 func checkIntelligentTestRunnerWithMissingBackendCoverage(finishedSpans []*mocktracer.Span) {
 	// When Go coverage is active but the skippable response has no backend
 	// coverage metadata, ITR skips must be disabled to avoid publishing an
@@ -896,6 +963,21 @@ func checkIntelligentTestRunnerWithMissingBackendCoverage(finishedSpans []*mockt
 	checkLogs()
 }
 
+func checkIntelligentTestRunnerWithCoverageBackfill(finishedSpans []*mocktracer.Span) {
+	checkSpansByTagValue(finishedSpans, constants.TestStatus, constants.TestStatusSkip, 6)
+	checkSpansByTagValue(finishedSpans, constants.TestSkippedByITR, "true", 5)
+	checkSpansByTagValue(finishedSpans, constants.TestSkipReason, constants.SkippedByITRReason, 5)
+	checkSpansByTagValue(finishedSpans, constants.TestFinalStatus, constants.TestStatusSkip, 6)
+	checkSpansByTagValue(finishedSpans, constants.TestUnskippable, "true", 7)
+	checkSpansByTagValue(finishedSpans, constants.TestForcedToRun, "true", 1)
+	checkITRTestsSkippingEnabledTag(finishedSpans, "true")
+
+	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	if len(sessionSpans) != 1 {
+		panic(fmt.Sprintf("expected exactly one session span, got %d", len(sessionSpans)))
+	}
+}
+
 func runTestManagementTests(m *testing.M) {
 	// mock the settings api to enable quarantine and disable tests
 	server := setUpHTTPServer(false, false, false, nil, false, nil, true,
@@ -943,7 +1025,8 @@ func runTestManagementTests(m *testing.M) {
 				},
 			},
 		},
-		false)
+		false,
+		nil)
 
 	defer server.Close()
 
@@ -1187,7 +1270,8 @@ type (
 	}
 
 	skippableResponseMeta struct {
-		CorrelationID string `json:"correlation_id"`
+		CorrelationID string            `json:"correlation_id"`
+		Coverage      map[string]string `json:"coverage,omitempty"`
 	}
 
 	skippableResponseData struct {
@@ -1206,7 +1290,8 @@ func setUpHTTPServer(
 	itrData []net.SkippableResponseDataAttributes,
 	testManagement bool,
 	testManagementData *net.TestManagementTestsResponseDataModules,
-	impactedTests bool) *httptest.Server {
+	impactedTests bool,
+	itrCoverage map[string][]byte) *httptest.Server {
 	// Reset the collected logs for the new server instance.
 	logsEntries = nil
 	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
@@ -1280,6 +1365,12 @@ func setUpHTTPServer(
 					CorrelationID: "correlation_id",
 				},
 				Data: []skippableResponseData{},
+			}
+			if itrCoverage != nil {
+				response.Meta.Coverage = make(map[string]string, len(itrCoverage))
+				for file, bitmap := range itrCoverage {
+					response.Meta.Coverage[file] = base64.StdEncoding.EncodeToString(bitmap)
+				}
 			}
 			for i, data := range itrData {
 				response.Data = append(response.Data, skippableResponseData{

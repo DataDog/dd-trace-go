@@ -153,6 +153,7 @@ func splitCoverageProfileLine(line string) (string, string, error) {
 func (p *orderedCoverProfile) applyBackfill(backendCoverage map[string]*filebitmap.FileBitmap) profileBackfillResult {
 	result := profileBackfillResult{}
 	matchedProfileFiles := map[string]struct{}{}
+	backendFilesWithMatchedProfile := map[string]struct{}{}
 	backendFilesWithMatchedBlocks := map[string]struct{}{}
 
 	for idx := range p.lines {
@@ -171,6 +172,7 @@ func (p *orderedCoverProfile) applyBackfill(backendCoverage map[string]*filebitm
 			continue
 		}
 		matchedProfileFiles[line.fileName] = struct{}{}
+		backendFilesWithMatchedProfile[backendFile] = struct{}{}
 		if !bitmap.IntersectsLineRange(line.block.startLine, line.block.endLine) {
 			continue
 		}
@@ -185,14 +187,17 @@ func (p *orderedCoverProfile) applyBackfill(backendCoverage map[string]*filebitm
 	}
 
 	result.matchedFiles = len(matchedProfileFiles)
-	result.unmatchedBackendFiles = unmatchedActiveBackendFiles(backendCoverage, backendFilesWithMatchedBlocks)
+	result.unmatchedBackendFiles = unmatchedActiveLocalBackendFiles(backendCoverage, backendFilesWithMatchedProfile, backendFilesWithMatchedBlocks)
 	return result
 }
 
-func unmatchedActiveBackendFiles(backendCoverage map[string]*filebitmap.FileBitmap, backendFilesWithMatchedBlocks map[string]struct{}) int {
+func unmatchedActiveLocalBackendFiles(backendCoverage map[string]*filebitmap.FileBitmap, backendFilesWithMatchedProfile map[string]struct{}, backendFilesWithMatchedBlocks map[string]struct{}) int {
 	unmatched := 0
 	for backendFile, bitmap := range backendCoverage {
 		if bitmap == nil || !bitmap.HasActiveBits() {
+			continue
+		}
+		if _, ok := backendFilesWithMatchedProfile[backendFile]; !ok {
 			continue
 		}
 		if _, ok := backendFilesWithMatchedBlocks[backendFile]; !ok {
@@ -200,6 +205,67 @@ func unmatchedActiveBackendFiles(backendCoverage map[string]*filebitmap.FileBitm
 		}
 	}
 	return unmatched
+}
+
+func validateBackendCoverageSourceFiles(backendCoverage map[string]*filebitmap.FileBitmap) profileBackfillResult {
+	result := profileBackfillResult{}
+	for backendFile, bitmap := range backendCoverage {
+		if bitmap == nil || !bitmap.HasActiveBits() {
+			continue
+		}
+		if backendCoverageSourceFileExists(backendFile) {
+			result.matchedFiles++
+		} else {
+			result.unmatchedBackendFiles++
+		}
+	}
+	return result
+}
+
+func backendCoverageSourceFileExists(backendFile string) bool {
+	for _, candidate := range backendCoverageSourceFileCandidates(backendFile) {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+func backendCoverageSourceFileCandidates(backendFile string) []string {
+	candidates := make([]string, 0, 3)
+	addCandidate := func(value string) {
+		if value == "" || slices.Contains(candidates, value) {
+			return
+		}
+		candidates = append(candidates, value)
+	}
+
+	backendFile = strings.TrimPrefix(path.Clean(strings.ReplaceAll(backendFile, "\\", "/")), "./")
+	resolved := utils.ResolveSourceFilePathFromCITags(backendFile)
+	if resolved.FilesystemKnown {
+		addCandidate(resolved.FilesystemPath)
+	}
+	if repoRoot := repositoryRootFromModuleInfo(); repoRoot != "" {
+		addCandidate(filepath.Join(repoRoot, filepath.FromSlash(backendFile)))
+	}
+	if moduleDir != "" {
+		addCandidate(filepath.Join(moduleDir, filepath.FromSlash(backendFile)))
+	}
+	return candidates
+}
+
+func repositoryRootFromModuleInfo() string {
+	if moduleDir == "" {
+		return ""
+	}
+	repoRoot := moduleDir
+	if moduleRepoPrefix := moduleRepositoryRelativePrefix(modulePath); moduleRepoPrefix != "" {
+		for range strings.SplitSeq(moduleRepoPrefix, "/") {
+			repoRoot = filepath.Dir(repoRoot)
+		}
+	}
+	return repoRoot
 }
 
 func backfillBitmapForProfileFile(profileFile string, backendCoverage map[string]*filebitmap.FileBitmap) (string, *filebitmap.FileBitmap, bool) {
@@ -274,10 +340,14 @@ func moduleRepositoryRelativePrefix(module string) string {
 }
 
 func isSemanticImportVersionSegment(segment string) bool {
-	if len(segment) < 2 || segment[0] != 'v' || segment[1] < '2' || segment[1] > '9' {
+	if len(segment) < 2 || segment[0] != 'v' {
 		return false
 	}
-	for _, char := range segment[2:] {
+	version, err := strconv.Atoi(segment[1:])
+	if err != nil || version < 2 {
+		return false
+	}
+	for _, char := range segment[1:] {
 		if char < '0' || char > '9' {
 			return false
 		}

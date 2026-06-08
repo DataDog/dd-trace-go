@@ -303,8 +303,9 @@ func ConfigureBackfill(input BackfillInput) {
 	backfillResult = BackfillResult{}
 }
 
-// PreflightBackfill validates that backend coverage can match the runtime
-// profile before ITR is allowed to skip tests in coverage-active runs.
+// PreflightBackfill validates that runtime coverage can later be backfilled.
+// Path matching is deferred to FinalizeBackfill because producing a coverage
+// profile before testing.M.Run completes mutates Go's runtime coverage state.
 func PreflightBackfill(input BackfillInput) BackfillResult {
 	coverageStateMu.Lock()
 	defer coverageStateMu.Unlock()
@@ -318,51 +319,18 @@ func PreflightBackfill(input BackfillInput) BackfillResult {
 	if !CanCollect() {
 		return BackfillResult{Reason: "coverage mode unsupported"}
 	}
-	if err := ensureTemporaryDirLocked(); err != nil {
-		return BackfillResult{Reason: "runtime coverage unavailable"}
-	}
-
-	preflightPath := filepath.Join(temporaryDir, "global_coverage_preflight.out")
-	if _, err := tearDown(preflightPath, ""); err != nil {
-		return BackfillResult{Reason: "runtime coverage unavailable"}
-	}
-	defer func() {
-		if err := os.Remove(preflightPath); err != nil {
-			log.Debug("civisibility.cov: error removing coverage preflight file: %s", err.Error())
-		}
-	}()
-
-	profile, err := parseOrderedCoverProfile(preflightPath)
-	if err != nil {
-		return BackfillResult{Reason: "coverage profile invalid", ProfilePath: preflightPath}
-	}
-	result := profile.applyBackfill(input.BackendCoverage)
+	result := validateBackendCoverageSourceFiles(input.BackendCoverage)
 	if result.unmatchedBackendFiles > 0 {
 		return BackfillResult{
 			Reason:                "coverage paths unmatched",
-			ProfilePath:           preflightPath,
 			MatchedFiles:          result.matchedFiles,
 			UnmatchedBackendFiles: result.unmatchedBackendFiles,
-			MatchedBlocks:         result.matchedBlocks,
 		}
 	}
-	if result.matchedBlocks == 0 {
-		return BackfillResult{Reason: "coverage paths unmatched", ProfilePath: preflightPath, MatchedFiles: result.matchedFiles}
+	if result.matchedFiles == 0 {
+		return BackfillResult{Reason: "coverage paths unmatched"}
 	}
-
-	coverage := 0.0
-	if result.totalStatements > 0 {
-		coverage = float64(result.coveredStmts) / float64(result.totalStatements)
-	}
-	return BackfillResult{
-		Applied:               result.updatedBlocks > 0,
-		Coverage:              coverage,
-		ProfilePath:           preflightPath,
-		MatchedFiles:          result.matchedFiles,
-		UnmatchedBackendFiles: result.unmatchedBackendFiles,
-		MatchedBlocks:         result.matchedBlocks,
-		UpdatedBlocks:         result.updatedBlocks,
-	}
+	return BackfillResult{}
 }
 
 // FinalizeBackfill applies backend coverage to the runtime snapshot once.

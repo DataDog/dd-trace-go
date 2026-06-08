@@ -6,6 +6,7 @@
 package net
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -755,6 +756,43 @@ func TestReadCacheGetSkippableTestsCachesFilteredResponse(t *testing.T) {
 	require.Equal(t, int64(2), requestCount.Load())
 }
 
+func TestReadCacheGetSkippableTestsCachesCoverageMetadata(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	root := t.TempDir()
+	coverageBitmap := []byte{0b10000000}
+	var requestCount atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestCount.Add(1)
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		require.NoError(t, json.NewEncoder(w).Encode(skippableResponse{
+			Meta: skippableResponseMeta{
+				CorrelationID: "correlation-id",
+				Coverage:      json.RawMessage(`{"pkg/file.go":"` + base64.StdEncoding.EncodeToString(coverageBitmap) + `"}`),
+			},
+			Data: []skippableResponseData{
+				{Attributes: SkippableResponseDataAttributes{
+					Suite:                   "suite",
+					Name:                    "test",
+					MissingLineCodeCoverage: true,
+				}},
+			},
+		}))
+	}))
+	defer server.Close()
+	setupReadCacheEndpointEnv(t, server.URL, root, &now)
+
+	first := NewClient()
+	response, err := first.GetSkippableTests()
+	require.NoError(t, err)
+	requireCachedSkippableCoverageMetadata(t, response)
+
+	second := NewClient()
+	response, err = second.GetSkippableTests()
+	require.NoError(t, err)
+	requireCachedSkippableCoverageMetadata(t, response)
+	require.Equal(t, int64(1), requestCount.Load())
+}
+
 func TestReadCacheGetTestManagementCachesWithoutNewCommitPrecondition(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	root := t.TempDir()
@@ -844,7 +882,7 @@ func readCacheTestKeyAndPaths(t *testing.T, c *client, endpoint string, semantic
 
 	requestHash, err := readCacheHashJSON(semanticRequest)
 	require.NoError(t, err)
-	endpointScope := readCacheEndpointScope{Endpoint: endpoint, EndpointVersion: readCacheEndpointVersion, RequestHash: requestHash}
+	endpointScope := readCacheEndpointScope{Endpoint: endpoint, EndpointVersion: readCacheEndpointVersionFor(endpoint), RequestHash: requestHash}
 	cacheKey, err := readCacheKey(c.readCacheBaseScope(), endpointScope)
 	require.NoError(t, err)
 	paths, err := readCachePathsForKey(cacheKey)
@@ -858,7 +896,7 @@ func newReadCacheTestEntry[T any](t *testing.T, c *client, endpoint string, sema
 
 	requestHash, err := readCacheHashJSON(semanticRequest)
 	require.NoError(t, err)
-	endpointScope := readCacheEndpointScope{Endpoint: endpoint, EndpointVersion: readCacheEndpointVersion, RequestHash: requestHash}
+	endpointScope := readCacheEndpointScope{Endpoint: endpoint, EndpointVersion: readCacheEndpointVersionFor(endpoint), RequestHash: requestHash}
 	cacheKey, err := readCacheKey(c.readCacheBaseScope(), endpointScope)
 	require.NoError(t, err)
 	paths, err := readCachePathsForKey(cacheKey)
@@ -871,6 +909,19 @@ func newReadCacheTestEntry[T any](t *testing.T, c *client, endpoint string, sema
 		EndpointScope:     endpointScope,
 		Response:          value,
 	}, paths
+}
+
+func requireCachedSkippableCoverageMetadata(t *testing.T, response *SkippableTestsResponse) {
+	t.Helper()
+
+	require.Equal(t, "correlation-id", response.CorrelationID)
+	require.True(t, response.CoveragePresent)
+	require.True(t, response.CoverageBackfillSafe)
+	require.Empty(t, response.CoverageBackfillReason)
+	require.Contains(t, response.Coverage, "pkg/file.go")
+	require.True(t, response.Coverage["pkg/file.go"].Get(1))
+	require.Contains(t, response.Skippables["suite"], "test")
+	require.True(t, response.Skippables["suite"]["test"][0].MissingLineCodeCoverage)
 }
 
 func writeReadCacheTestEntry[T any](t *testing.T, path string, entry readCacheEntry[T]) {

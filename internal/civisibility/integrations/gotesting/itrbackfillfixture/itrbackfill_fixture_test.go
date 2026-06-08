@@ -35,7 +35,7 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 				"go", "test", "-mod=readonly", "./...",
 				"-cover", "-covermode=count", "-coverpkg", "./...",
 				"-count=1", "-coverprofile", profile)
-			assertProfileBackfilled(t, profile, "fixtures/itrbackfill/manual/lib/lib.go")
+			assertProfileContainsPositiveCounts(t, profile, "fixtures/itrbackfill/manual/lib/lib.go")
 		})
 	}
 }
@@ -57,8 +57,8 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 		{name: "atomic", coverMode: "atomic", withProfile: true},
 		{name: "no-coverprofile", coverMode: "count"},
 		{name: "codecoverage-disabled", coverMode: "count", withProfile: true, extraEnv: []string{"DD_ITR_BACKFILL_CODE_COVERAGE=false"}},
-		{name: "missing-line", coverMode: "count", withProfile: true},
-		{name: "mixed-missing-line", coverMode: "count", withProfile: true, profilePaths: []string{
+		{name: "runs-candidate-marked-missing-line-coverage", coverMode: "count", withProfile: true},
+		{name: "skips-safe-candidate-runs-missing-line-candidate", coverMode: "count", withProfile: true, profilePaths: []string{
 			"fixtures/itrbackfill/orchestrion/lib/lib.go",
 			"fixtures/itrbackfill/orchestrion/otherlib/otherlib.go",
 		}},
@@ -66,10 +66,11 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 			"fixtures/itrbackfill/orchestrion/lib/lib.go",
 			"fixtures/itrbackfill/orchestrion/otherlib/otherlib.go",
 		}},
-		{name: "missing-coverage", coverMode: "count", withProfile: true},
-		{name: "unmatched-coverage", coverMode: "count", withProfile: true},
+		{name: "repo-wide-backend-coverage", coverMode: "count", withProfile: true},
+		{name: "disables-skips-without-backend-coverage", coverMode: "count", withProfile: true},
+		{name: "disables-skips-when-backend-coverage-does-not-match-profile", coverMode: "count", withProfile: true},
 		{name: "narrowing-run", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "TestCoversLib"}},
-		{name: "unsupported-set", coverMode: "set", withProfile: true},
+		{name: "disables-skips-for-set-covermode", coverMode: "set", withProfile: true},
 		{name: "no-skippable", coverMode: "count", withProfile: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -91,7 +92,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 				if len(profilePaths) == 0 {
 					profilePaths = []string{"fixtures/itrbackfill/orchestrion/lib/lib.go"}
 				}
-				assertProfileBackfilled(t, profile, profilePaths...)
+				assertProfileContainsPositiveCounts(t, profile, profilePaths...)
 			}
 		})
 	}
@@ -189,7 +190,7 @@ func goEnv(t *testing.T, name string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func assertProfileBackfilled(t *testing.T, profile string, pathContains ...string) {
+func assertProfileContainsPositiveCounts(t *testing.T, profile string, pathContains ...string) {
 	t.Helper()
 
 	if len(pathContains) == 0 {

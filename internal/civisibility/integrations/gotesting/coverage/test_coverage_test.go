@@ -366,50 +366,62 @@ func TestFinalizeBackfillMatchesNestedSemanticImportModulePaths(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)
 
-	profilePath := filepath.Join(t.TempDir(), "coverage.out")
-	profileLine := "github.com/example/project/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/lib.go:9.19,13.2 3 0"
-	if err := os.WriteFile(profilePath, []byte("mode: count\n"+profileLine+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	for _, version := range []string{"v2", "v10"} {
+		t.Run(version, func(t *testing.T) {
+			ResetForTesting()
+			profilePath := filepath.Join(t.TempDir(), "coverage.out")
+			profileLine := "github.com/example/project/" + version + "/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/lib.go:9.19,13.2 3 0"
+			if err := os.WriteFile(profilePath, []byte("mode: count\n"+profileLine+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 
-	mode = "count"
-	modulePath = "github.com/example/project/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion"
-	tearDown = func(_, _ string) (string, error) { return "", nil }
-	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
-	ConfigureBackfill(BackfillInput{
-		BackendCoverage: map[string]*filebitmap.FileBitmap{
-			"internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/lib.go": filebitmap.FromActiveRange(9, 13),
-		},
-		ActualSkips: 1,
-	})
+			mode = "count"
+			modulePath = "github.com/example/project/" + version + "/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion"
+			tearDown = func(_, _ string) (string, error) { return "", nil }
+			runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
+			ConfigureBackfill(BackfillInput{
+				BackendCoverage: map[string]*filebitmap.FileBitmap{
+					"internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/lib.go": filebitmap.FromActiveRange(9, 13),
+				},
+				ActualSkips: 1,
+			})
 
-	result := FinalizeBackfill()
-	if result.Reason != "" {
-		t.Fatalf("unexpected reason: %s", result.Reason)
-	}
-	if !result.Applied {
-		t.Fatal("expected nested module path backfill to be applied")
-	}
+			result := FinalizeBackfill()
+			if result.Reason != "" {
+				t.Fatalf("unexpected reason: %s", result.Reason)
+			}
+			if !result.Applied {
+				t.Fatal("expected nested module path backfill to be applied")
+			}
 
-	updated, err := os.ReadFile(profilePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(updated), profileLine[:strings.LastIndex(profileLine, " ")]+" 1") {
-		t.Fatalf("expected profile count to be backfilled, got:\n%s", string(updated))
+			updated, err := os.ReadFile(profilePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(updated), profileLine[:strings.LastIndex(profileLine, " ")]+" 1") {
+				t.Fatalf("expected profile count to be backfilled, got:\n%s", string(updated))
+			}
+		})
 	}
 }
 
-func TestPreflightBackfillDoesNotFreezeRuntimeSnapshot(t *testing.T) {
+func TestPreflightBackfillDoesNotEmitRuntimeCoverage(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)
 
-	tempDir := t.TempDir()
-	temporaryDir = tempDir
+	moduleDir = t.TempDir()
+	if err := os.MkdirAll(filepath.Join(moduleDir, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "lib", "lib.go"), []byte("package lib\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	mode = "count"
 	modulePath = "github.com/example/project"
-	tearDown = func(coverprofile, _ string) (string, error) {
-		return "", os.WriteFile(coverprofile, []byte("mode: count\ngithub.com/example/project/lib/lib.go:2.1,2.10 1 0\n"), 0o644)
+	tearDownCalls := 0
+	tearDown = func(_, _ string) (string, error) {
+		tearDownCalls++
+		return "", nil
 	}
 
 	result := PreflightBackfill(BackfillInput{
@@ -420,39 +432,76 @@ func TestPreflightBackfillDoesNotFreezeRuntimeSnapshot(t *testing.T) {
 	if result.Reason != "" {
 		t.Fatalf("unexpected reason: %s", result.Reason)
 	}
+	if tearDownCalls != 0 {
+		t.Fatalf("preflight must not emit a runtime coverage profile, got %d tearDown calls", tearDownCalls)
+	}
 	if runtimeSnapshot != nil {
 		t.Fatal("preflight must not set the final runtime snapshot")
 	}
-	if _, err := os.Stat(filepath.Join(tempDir, "global_coverage_preflight.out")); !os.IsNotExist(err) {
-		t.Fatalf("expected preflight profile to be removed, stat err: %v", err)
-	}
 }
 
-func TestPreflightBackfillFailsClosedOnPartialCoverageMatch(t *testing.T) {
+func TestPreflightBackfillFailsClosedOnMissingSourceFile(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)
 
-	tempDir := t.TempDir()
-	temporaryDir = tempDir
+	moduleDir = t.TempDir()
 	mode = "count"
-	tearDown = func(coverprofile, _ string) (string, error) {
-		return "", os.WriteFile(coverprofile, []byte("mode: count\npkg/matched.go:2.1,2.10 1 0\n"), 0o644)
+	modulePath = "github.com/example/project"
+	tearDown = func(_, _ string) (string, error) {
+		t.Fatal("preflight must not emit a runtime coverage profile")
+		return "", nil
 	}
 
 	result := PreflightBackfill(BackfillInput{
 		BackendCoverage: map[string]*filebitmap.FileBitmap{
-			"pkg/matched.go":   filebitmap.FromActiveRange(2, 2),
-			"pkg/unmatched.go": filebitmap.FromActiveRange(3, 3),
+			"pkg/missing.go": filebitmap.FromActiveRange(2, 2),
 		},
 	})
 	if result.Reason != "coverage paths unmatched" {
 		t.Fatalf("expected unmatched reason, got %q", result.Reason)
 	}
-	if result.MatchedBlocks != 1 {
-		t.Fatalf("expected one matched block before fail-closed, got %d", result.MatchedBlocks)
-	}
 	if result.UnmatchedBackendFiles != 1 {
 		t.Fatalf("expected one unmatched backend file, got %d", result.UnmatchedBackendFiles)
+	}
+}
+
+func TestFinalizeBackfillIgnoresBackendFilesOutsideLocalProfile(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	original := "mode: count\npkg/matched.go:2.1,2.10 1 0\n"
+	if err := os.WriteFile(profilePath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode = "count"
+	tearDown = func(_, _ string) (string, error) { return "", nil }
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
+	ConfigureBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"pkg/matched.go":             filebitmap.FromActiveRange(2, 2),
+			"other-process/unmatched.go": filebitmap.FromActiveRange(3, 3),
+		},
+		ActualSkips: 1,
+	})
+
+	result := FinalizeBackfill()
+	if result.Reason != "" {
+		t.Fatalf("unexpected reason: %q", result.Reason)
+	}
+	if result.MatchedBlocks != 1 {
+		t.Fatalf("expected one matched block, got %d", result.MatchedBlocks)
+	}
+	if result.UnmatchedBackendFiles != 0 {
+		t.Fatalf("expected unrelated backend files to be ignored, got %d unmatched", result.UnmatchedBackendFiles)
+	}
+	updated, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "pkg/matched.go:2.1,2.10 1 1") {
+		t.Fatalf("expected matched profile block to be backfilled, got:\n%s", string(updated))
 	}
 }
 
@@ -489,7 +538,7 @@ func TestFinalizeBackfillRejectsInvalidCoverageProfile(t *testing.T) {
 	}
 }
 
-func TestFinalizeBackfillFailsClosedOnPartialCoverageMatch(t *testing.T) {
+func TestFinalizeBackfillFailsClosedOnLocalCoverageLineMismatch(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)
 
@@ -504,8 +553,7 @@ func TestFinalizeBackfillFailsClosedOnPartialCoverageMatch(t *testing.T) {
 	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
 	ConfigureBackfill(BackfillInput{
 		BackendCoverage: map[string]*filebitmap.FileBitmap{
-			"pkg/matched.go":   filebitmap.FromActiveRange(2, 2),
-			"pkg/unmatched.go": filebitmap.FromActiveRange(3, 3),
+			"pkg/matched.go": filebitmap.FromActiveRange(3, 3),
 		},
 		ActualSkips: 1,
 	})
@@ -514,8 +562,8 @@ func TestFinalizeBackfillFailsClosedOnPartialCoverageMatch(t *testing.T) {
 	if result.Reason != "coverage paths unmatched" {
 		t.Fatalf("expected unmatched reason, got %q", result.Reason)
 	}
-	if result.MatchedBlocks != 1 {
-		t.Fatalf("expected one matched block before fail-closed, got %d", result.MatchedBlocks)
+	if result.MatchedBlocks != 0 {
+		t.Fatalf("expected no matched blocks before fail-closed, got %d", result.MatchedBlocks)
 	}
 	if result.UnmatchedBackendFiles != 1 {
 		t.Fatalf("expected one unmatched backend file, got %d", result.UnmatchedBackendFiles)
