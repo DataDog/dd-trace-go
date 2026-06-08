@@ -243,8 +243,8 @@ func parseSkippableCoverage(raw json.RawMessage) (map[string]*filebitmap.FileBit
 
 func normalizeSkippableCoveragePath(rawPath string) (string, error) {
 	normalized := strings.TrimSpace(strings.ReplaceAll(rawPath, "\\", "/"))
-	if strings.HasPrefix(normalized, "/") {
-		normalized = strings.TrimPrefix(normalized, "/")
+	if trimmed, ok := strings.CutPrefix(normalized, "/"); ok {
+		normalized = trimmed
 	}
 	if normalized == "" {
 		return "", fmt.Errorf("coverage path cannot be empty")
