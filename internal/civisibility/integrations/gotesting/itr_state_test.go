@@ -39,14 +39,6 @@ func exerciseITRCoverageBackfillState(t *testing.T) {
 	if forcedDecision.skip || !forcedDecision.forcedRun {
 		t.Fatal("expected unskippable coverage candidate to be forced to run")
 	}
-	if got := state.unskippedCoverageCandidateCount(); got != 1 {
-		t.Fatalf("expected one unskipped coverage candidate, got %d", got)
-	}
-
-	activeITRState.Store(state)
-	if _, corrected, publish := finalizeITRCoverageBackfill(); corrected || publish {
-		t.Fatal("expected coverage publishing to be suppressed after partial aggregate backfill became unsafe")
-	}
 
 	state = newExerciseITRState()
 	state.validateCoverageBackfillScope([]*testingTInfo{exerciseTestInfo("TestSafeSkip")})
@@ -57,8 +49,8 @@ func exerciseITRCoverageBackfillState(t *testing.T) {
 		t.Fatalf("expected response scope reason, got %q", state.disabledReason)
 	}
 	scopeDecision := state.decisionFor(exerciseTestInfo("TestSafeSkip"), &testExecutionMetadata{}, false)
-	if scopeDecision.skip || scopeDecision.forcedRun {
-		t.Fatal("expected unsafe response-scope candidate to run without forced-run tag")
+	if !scopeDecision.skip || scopeDecision.forcedRun {
+		t.Fatal("expected response-scope validation to disable backfill without disabling ITR skip")
 	}
 
 	state = newExerciseITRState()
@@ -75,28 +67,24 @@ func exerciseITRCoverageBackfillState(t *testing.T) {
 	if state.disabledReason != itrBackfillReasonParameterized {
 		t.Fatalf("expected parameterized reason, got %q", state.disabledReason)
 	}
+	parameterizedDecision := state.decisionFor(exerciseTestInfo("TestSafeSkip"), &testExecutionMetadata{}, false)
+	if parameterizedDecision.skip || parameterizedDecision.forcedRun {
+		t.Fatal("expected parameterized skippable candidate not to match the non-parameterized test")
+	}
+	safeDecisionWithParameterizedResponse := state.decisionFor(exerciseTestInfo("TestForcedRun"), &testExecutionMetadata{}, false)
+	if !safeDecisionWithParameterizedResponse.skip || safeDecisionWithParameterizedResponse.forcedRun {
+		t.Fatal("expected unrelated safe candidate to remain skippable when backfill is disabled by parameters")
+	}
 
 	state = newExerciseITRState()
 	missingDecision := state.decisionFor(exerciseTestInfo("TestMissingCoverage"), &testExecutionMetadata{}, false)
 	if missingDecision.skip || missingDecision.forcedRun {
 		t.Fatal("expected missing-line-coverage candidate to run without a forced-run tag")
 	}
-	if got := state.unskippedCoverageCandidateCount(); got != 0 {
-		t.Fatalf("missing-line-coverage-only candidates must not poison backfill state, got %d", got)
-	}
 
 	mixedDecision := state.decisionFor(exerciseTestInfo("TestMixedCoverage"), &testExecutionMetadata{}, false)
 	if mixedDecision.skip || mixedDecision.forcedRun {
 		t.Fatal("expected mixed missing/non-missing candidate to run")
-	}
-	if got := state.unskippedCoverageCandidateCount(); got != 1 {
-		t.Fatalf("expected mixed candidate to poison backfill state, got %d", got)
-	}
-
-	state = newExerciseITRState()
-	state.recordUnskippedCoverageCandidate(exerciseTestInfo("TestSafeSkip"))
-	if got := state.unskippedCoverageCandidateCount(); got != 1 {
-		t.Fatalf("expected pre-decision cancellation to poison backfill state, got %d", got)
 	}
 }
 

@@ -376,7 +376,7 @@ func TestSkippableApiRequestCoverageWithFilteredConfigurationsIsUnsafe(t *testin
 			},
 			Data: []skippableResponseData{
 				{Attributes: SkippableResponseDataAttributes{Suite: "suite", Name: "linux", Configurations: testConfigurations{OsPlatform: "linux"}}},
-				{Attributes: SkippableResponseDataAttributes{Suite: "suite", Name: "custom", Configurations: testConfigurations{Custom: map[string]string{"region": "eu"}}}},
+				{Attributes: SkippableResponseDataAttributes{Suite: "suite", Name: "darwin", Configurations: testConfigurations{OsPlatform: "darwin"}}},
 			},
 		})
 	}))
@@ -397,5 +397,32 @@ func TestSkippableApiRequestCoverageWithFilteredConfigurationsIsUnsafe(t *testin
 	assert.False(t, response.CoverageBackfillSafe)
 	assert.Equal(t, coverageBackfillReasonFiltered, response.CoverageBackfillReason)
 	assert.Contains(t, response.Skippables["suite"], "linux")
-	assert.NotContains(t, response.Skippables["suite"], "custom")
+	assert.NotContains(t, response.Skippables["suite"], "darwin")
+}
+
+func TestSkippableApiRequestDoesNotFilterCustomConfigurations(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		_ = json.NewEncoder(w).Encode(skippableResponse{
+			Meta: skippableResponseMeta{
+				CorrelationID: "correlation_id",
+			},
+			Data: []skippableResponseData{
+				{Attributes: SkippableResponseDataAttributes{Suite: "suite", Name: "custom", Configurations: testConfigurations{Custom: map[string]string{"region": "eu"}}}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+
+	setCiVisibilityEnv(path, server.URL)
+	client := NewClient().(*client)
+	client.testConfigurations.Custom = map[string]string{"region": "us"}
+
+	response, err := client.GetSkippableTests()
+	assert.NoError(t, err)
+	assert.Contains(t, response.Skippables["suite"], "custom")
 }

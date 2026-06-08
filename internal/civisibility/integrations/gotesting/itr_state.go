@@ -40,7 +40,6 @@ type itrState struct {
 	coverageBackfillReady bool
 	disabledReason        string
 	actualSkips           atomic.Uint64
-	unskippedCoverage     atomic.Uint64
 }
 
 type itrSkipDecision struct {
@@ -111,7 +110,7 @@ func (s *itrState) testsSkippingEnabled() bool {
 	if !s.settings.ItrEnabled || !s.settings.TestsSkipping {
 		return false
 	}
-	return !s.coverageActive || s.coverageBackfillReady
+	return true
 }
 
 func (s *itrState) hasSkippableTests() bool {
@@ -162,7 +161,8 @@ func localTestLookup(testInfos []*testingTInfo) map[string]map[string]bool {
 	return localTests
 }
 
-// disableCoverageBackfill prevents ITR skips while preserving ordinary local coverage publication.
+// disableCoverageBackfill prevents aggregate backend coverage from being applied
+// while preserving the normal ITR skip decision.
 func (s *itrState) disableCoverageBackfill(reason string) {
 	s.coverageBackfillReady = false
 	s.disabledReason = reason
@@ -177,22 +177,18 @@ func (s *itrState) decisionFor(testInfo *testingTInfo, execMeta *testExecutionMe
 	if len(candidates) == 0 {
 		return itrSkipDecision{}
 	}
-	coverageCandidate := s.coverageCandidateNeedsBackfill(candidates)
 
 	if !s.testsSkippingEnabled() || execMeta.isAttemptToFix || execMeta.isAModifiedTest {
-		s.markUnskippedCoverageCandidate(coverageCandidate)
 		return itrSkipDecision{}
 	}
 
 	if isUnskippable {
-		s.markUnskippedCoverageCandidate(coverageCandidate)
 		return itrSkipDecision{forcedRun: true}
 	}
 
 	if s.coverageActive {
 		for _, candidate := range candidates {
 			if candidate.MissingLineCodeCoverage {
-				s.markUnskippedCoverageCandidate(coverageCandidate)
 				return itrSkipDecision{}
 			}
 		}
@@ -209,33 +205,18 @@ func (s *itrState) skippableCandidates(testInfo *testingTInfo) []net.SkippableRe
 	if !ok {
 		return nil
 	}
-	return suiteMap[testInfo.testName]
-}
-
-func (s *itrState) coverageCandidateNeedsBackfill(candidates []net.SkippableResponseDataAttributes) bool {
-	if s == nil || !s.coverageActive {
-		return false
-	}
+	candidates := suiteMap[testInfo.testName]
+	matching := make([]net.SkippableResponseDataAttributes, 0, len(candidates))
 	for _, candidate := range candidates {
-		if !candidate.MissingLineCodeCoverage {
-			return true
+		// Java includes parameters in the test identifier. Go tests do not have
+		// a parameter identifier here, so parameterized candidates must not match
+		// the non-parameterized top-level test.
+		if strings.TrimSpace(candidate.Parameters) != "" {
+			continue
 		}
+		matching = append(matching, candidate)
 	}
-	return false
-}
-
-func (s *itrState) recordUnskippedCoverageCandidate(testInfo *testingTInfo) {
-	if s == nil {
-		return
-	}
-	s.markUnskippedCoverageCandidate(s.coverageCandidateNeedsBackfill(s.skippableCandidates(testInfo)))
-}
-
-func (s *itrState) markUnskippedCoverageCandidate(coverageCandidate bool) {
-	if s == nil || !coverageCandidate {
-		return
-	}
-	s.unskippedCoverage.Add(1)
+	return matching
 }
 
 func (s *itrState) markActualSkip() uint64 {
@@ -252,20 +233,10 @@ func (s *itrState) actualSkipCount() int {
 	return int(s.actualSkips.Load())
 }
 
-func (s *itrState) unskippedCoverageCandidateCount() int {
-	if s == nil {
-		return 0
-	}
-	return int(s.unskippedCoverage.Load())
-}
-
 func finalizeITRCoverageBackfill() (float64, bool, bool) {
 	state := currentITRState()
 	if !state.coverageActive || !state.coverageBackfillReady || state.response == nil {
 		return 0, false, true
-	}
-	if state.unskippedCoverageCandidateCount() > 0 {
-		return 0, false, state.actualSkipCount() == 0
 	}
 
 	coverage.ConfigureBackfill(coverage.BackfillInput{

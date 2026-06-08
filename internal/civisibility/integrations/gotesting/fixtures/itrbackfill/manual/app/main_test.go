@@ -33,13 +33,13 @@ func TestMain(m *testing.M) {
 	expectCoverageRequests := os.Getenv("DD_ITR_BACKFILL_CODE_COVERAGE") != "false"
 	expectSkipped := true
 	expectSkippingEnabled := "true"
+	expectPositiveCoverage := true
 	coverage := map[string][]byte{
 		manualLibPath: filebitmap.FromActiveRange(1, 64).ToArray(),
 	}
 	if os.Getenv("DD_ITR_BACKFILL_PARTIAL_COVERAGE") == "true" {
 		coverage["internal/civisibility/integrations/gotesting/fixtures/itrbackfill/manual/lib/unmatched.go"] = filebitmap.FromActiveRange(1, 64).ToArray()
-		expectSkipped = false
-		expectSkippingEnabled = "false"
+		expectPositiveCoverage = false
 	}
 	server := mockci.Start(settings, []mockci.SkippableTest{
 		{Suite: "app_test.go", Name: "TestCoversLib"},
@@ -57,8 +57,9 @@ func TestMain(m *testing.M) {
 	if value, ok := server.SessionMeta(constants.ITRTestsSkippingEnabled); !ok || value != expectSkippingEnabled {
 		panic("unexpected ITR tests skipping enabled tag")
 	}
-	if coverageValue, ok := server.SessionCoverage(constants.CodeCoveragePercentageOfTotalLines); !ok || coverageValue <= 0 {
-		panic("expected corrected session coverage")
+	coverageValue, hasCoverage := server.SessionCoverage(constants.CodeCoveragePercentageOfTotalLines)
+	if !hasCoverage || (expectPositiveCoverage && coverageValue <= 0) {
+		panic("unexpected session coverage")
 	}
 	if !expectCoverageRequests && server.CoverageRequests() > 0 {
 		panic("unexpected coverage upload request count")

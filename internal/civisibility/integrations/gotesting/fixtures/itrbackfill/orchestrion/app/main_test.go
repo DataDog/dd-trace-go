@@ -28,6 +28,7 @@ type fixtureScenario struct {
 	coverage                map[string][]byte
 	expectTests             map[string]testExpectation
 	expectCoverage          bool
+	expectPositiveCoverage  bool
 	expectCoverageRequests  *bool
 	expectSkippableRequests int
 	expectSkippingEnabled   string
@@ -77,7 +78,7 @@ func TestMain(m *testing.M) {
 		panic("unexpected ITR tests skipping enabled tag")
 	}
 	coverageValue, hasCoverage := server.SessionCoverage(constants.CodeCoveragePercentageOfTotalLines)
-	if hasCoverage != scenario.expectCoverage || (scenario.expectCoverage && coverageValue <= 0) {
+	if hasCoverage != scenario.expectCoverage || (scenario.expectPositiveCoverage && coverageValue <= 0) {
 		panic("expected corrected session coverage")
 	}
 	if scenario.expectCoverageRequests != nil && (server.CoverageRequests() > 0) != *scenario.expectCoverageRequests {
@@ -108,6 +109,7 @@ func orchestrionScenario() fixtureScenario {
 		coverage:                validCoverage,
 		expectTests:             map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusSkip, skipped: true}},
 		expectCoverage:          true,
+		expectPositiveCoverage:  true,
 		expectSkippableRequests: 1,
 		expectSkippingEnabled:   "true",
 	}
@@ -150,40 +152,36 @@ func orchestrionScenario() fixtureScenario {
 	case "repo-wide-backend-coverage":
 		defaultScenario.coverage = repoWideCoverage
 		return defaultScenario
-	case "disables-skips-when-response-includes-out-of-process-test":
+	case "backfill-disabled-when-response-includes-out-of-process-test":
 		defaultScenario.tests = []mockci.SkippableTest{
 			{Suite: "app_test.go", Name: "TestCoversLib"},
 			{Suite: "other_package_test.go", Name: "TestOutsideProcess"},
 		}
-		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
-		defaultScenario.expectSkippingEnabled = "false"
+		defaultScenario.expectPositiveCoverage = false
 		return defaultScenario
-	case "disables-skips-when-response-has-parameters":
+	case "backfill-disabled-when-response-has-parameters":
 		defaultScenario.tests = []mockci.SkippableTest{
 			{Suite: "app_test.go", Name: "TestCoversLib", Parameters: `{"case":"one"}`},
 		}
 		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
-		defaultScenario.expectSkippingEnabled = "false"
 		return defaultScenario
-	case "disables-skips-without-backend-coverage":
+	case "backfill-disabled-without-backend-coverage":
 		defaultScenario.coverage = nil
-		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
-		defaultScenario.expectSkippingEnabled = "false"
+		defaultScenario.expectPositiveCoverage = false
 		return defaultScenario
-	case "disables-skips-when-backend-coverage-does-not-match-profile":
+	case "backfill-disabled-when-backend-coverage-does-not-match-profile":
 		defaultScenario.coverage = map[string][]byte{
 			"internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/other.go": filebitmap.FromActiveRange(1, 64).ToArray(),
 		}
-		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
-		defaultScenario.expectSkippingEnabled = "false"
+		defaultScenario.expectPositiveCoverage = false
 		return defaultScenario
-	case "narrowing-run", "disables-skips-for-set-covermode", "no-skippable":
+	case "narrowing-run", "backfill-disabled-for-set-covermode", "no-skippable":
 		if os.Getenv("DD_ITR_BACKFILL_SCENARIO") == "no-skippable" {
 			defaultScenario.tests = nil
+			defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
 		} else {
-			defaultScenario.expectSkippingEnabled = "false"
+			defaultScenario.expectPositiveCoverage = false
 		}
-		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
 		return defaultScenario
 	default:
 		panic("unknown ITR backfill fixture scenario")

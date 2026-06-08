@@ -21,13 +21,14 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "manual")
 	goCache := sharedFixtureGoCache(t)
 	for _, test := range []struct {
-		name     string
-		extraEnv []string
+		name              string
+		extraEnv          []string
+		skipProfileAssert bool
 	}{
 		{name: "manual-count"},
 		{name: "manual-codecoverage-disabled", extraEnv: []string{"DD_ITR_BACKFILL_CODE_COVERAGE=false"}},
 		{name: "manual-flaky-retry", extraEnv: []string{"DD_ITR_BACKFILL_FLAKY_RETRY=true"}},
-		{name: "manual-partial-coverage", extraEnv: []string{"DD_ITR_BACKFILL_PARTIAL_COVERAGE=true"}},
+		{name: "manual-partial-coverage", extraEnv: []string{"DD_ITR_BACKFILL_PARTIAL_COVERAGE=true"}, skipProfileAssert: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			profile := filepath.Join(t.TempDir(), test.name+".out")
@@ -35,7 +36,9 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 				"go", "test", "-mod=readonly", "./...",
 				"-cover", "-covermode=count", "-coverpkg", "./...",
 				"-count=1", "-coverprofile", profile)
-			assertProfileContainsPositiveCounts(t, profile, "fixtures/itrbackfill/manual/lib/lib.go")
+			if !test.skipProfileAssert {
+				assertProfileContainsPositiveCounts(t, profile, "fixtures/itrbackfill/manual/lib/lib.go")
+			}
 		})
 	}
 }
@@ -46,12 +49,13 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 	goCache := sharedFixtureGoCache(t)
 
 	for _, test := range []struct {
-		name          string
-		coverMode     string
-		withProfile   bool
-		extraEnv      []string
-		extraTestArgs []string
-		profilePaths  []string
+		name              string
+		coverMode         string
+		withProfile       bool
+		extraEnv          []string
+		extraTestArgs     []string
+		profilePaths      []string
+		skipProfileAssert bool
 	}{
 		{name: "positive", coverMode: "count", withProfile: true},
 		{name: "atomic", coverMode: "atomic", withProfile: true},
@@ -67,12 +71,12 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 			"fixtures/itrbackfill/orchestrion/otherlib/otherlib.go",
 		}},
 		{name: "repo-wide-backend-coverage", coverMode: "count", withProfile: true},
-		{name: "disables-skips-when-response-includes-out-of-process-test", coverMode: "count", withProfile: true},
-		{name: "disables-skips-when-response-has-parameters", coverMode: "count", withProfile: true},
-		{name: "disables-skips-without-backend-coverage", coverMode: "count", withProfile: true},
-		{name: "disables-skips-when-backend-coverage-does-not-match-profile", coverMode: "count", withProfile: true},
-		{name: "narrowing-run", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "TestCoversLib"}},
-		{name: "disables-skips-for-set-covermode", coverMode: "set", withProfile: true},
+		{name: "backfill-disabled-when-response-includes-out-of-process-test", coverMode: "count", withProfile: true, skipProfileAssert: true},
+		{name: "backfill-disabled-when-response-has-parameters", coverMode: "count", withProfile: true},
+		{name: "backfill-disabled-without-backend-coverage", coverMode: "count", withProfile: true, skipProfileAssert: true},
+		{name: "backfill-disabled-when-backend-coverage-does-not-match-profile", coverMode: "count", withProfile: true, skipProfileAssert: true},
+		{name: "narrowing-run", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "TestCoversLib"}, skipProfileAssert: true},
+		{name: "backfill-disabled-for-set-covermode", coverMode: "set", withProfile: true, skipProfileAssert: true},
 		{name: "no-skippable", coverMode: "count", withProfile: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -89,7 +93,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 			}
 			args = append(args, test.extraTestArgs...)
 			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, args...)
-			if test.withProfile {
+			if test.withProfile && !test.skipProfileAssert {
 				profilePaths := test.profilePaths
 				if len(profilePaths) == 0 {
 					profilePaths = []string{"fixtures/itrbackfill/orchestrion/lib/lib.go"}

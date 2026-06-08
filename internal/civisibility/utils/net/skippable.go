@@ -245,14 +245,9 @@ func (c *client) matchesTestConfigurations(config testConfigurations) bool {
 		config.RuntimeVersion != c.testConfigurations.RuntimeVersion {
 		return false
 	}
-	for key, expected := range config.Custom {
-		if c.testConfigurations.Custom == nil {
-			return false
-		}
-		if actual, ok := c.testConfigurations.Custom[key]; !ok || actual != expected {
-			return false
-		}
-	}
+	// Custom configurations are part of the request contract with the backend.
+	// The backend owns that filtering; local filtering would change the
+	// skippable-test response semantics.
 	return true
 }
 
