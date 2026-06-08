@@ -23,9 +23,9 @@ aspects:
             var __dd_aerospike_instr = instrumentation.Load(instrumentation.PackageAerospikeClientGoV7)
 
             func __dd_startAerospikeSpan(resourceName string) *tracer.Span {
-              span, _ := tracer.StartSpanFromContext(context.Background(), "aerospike.command",
+              span, _ := tracer.StartSpanFromContext(context.Background(), __dd_aerospike_instr.OperationName(instrumentation.ComponentDefault, nil),
                 tracer.SpanType(ext.SpanTypeAerospike),
-                instrumentation.ServiceNameWithSource("aerospike", string(instrumentation.PackageAerospikeClientGoV7)),
+                instrumentation.ServiceNameWithSource(__dd_aerospike_instr.ServiceName(instrumentation.ComponentDefault, nil), string(instrumentation.PackageAerospikeClientGoV7)),
                 tracer.ResourceName(resourceName),
                 tracer.Tag(ext.Component, "aerospike/aerospike-client-go.v7"),
                 tracer.Tag(ext.SpanKind, ext.SpanKindClient),
