@@ -27,6 +27,22 @@ func equal[T comparable](a, b T) bool {
 	return a == b
 }
 
+// equalMap compares two maps of comparable keys and any values, comparing
+// values with ==. It is used as the change detector for map-valued dynamic
+// configs (e.g. global tags). Note: == panics if a value is non-comparable
+// (e.g. a slice); callers must only store comparable values.
+func equalMap[K comparable](x, y map[K]any) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	for k, v := range x {
+		if yv, ok := y[k]; !ok || yv != v {
+			return false
+		}
+	}
+	return true
+}
+
 // DynamicConfig is a thread-safe, RC-aware value store for a single configuration field.
 // It tracks both the current value and the startup baseline (for RC reset).
 // Consumers read via Get().

@@ -168,10 +168,6 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler RateSampler
 
-	// globalTags holds a set of tags that will be automatically applied to
-	// all spans.
-	globalTags dynamicConfig[map[string]any]
-
 	// ddTransport specifies the Datadog transport used to send msgpack traces and stats to the agent.
 	ddTransport ddTransport
 
@@ -281,11 +277,10 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
 		tags := internal.ParseTagString(v)
 		internal.CleanGitMetadataTags(tags)
-		for key, val := range tags {
-			WithGlobalTag(key, val)(c)
-		}
 		// TODO: should we track the origin of these tags individually?
-		c.globalTags.setOrigin(telemetry.OriginEnvVar)
+		for key, val := range tags {
+			c.internalConfig.SetGlobalTag(key, val, telemetry.OriginEnvVar, internalconfig.ProductTracer)
+		}
 	}
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
@@ -323,18 +318,19 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
-	globalTags := c.globalTags.get()
+	globalTags := c.internalConfig.GlobalTags()
+	_, globalTagsOrigin := c.internalConfig.GlobalTagsConfig().Baseline()
 	if c.internalConfig.Env() == "" {
 		if v, ok := globalTags["env"]; ok {
 			if e, ok := v.(string); ok {
-				c.internalConfig.SetEnv(e, c.globalTags.Origin(), internalconfig.ProductTracer)
+				c.internalConfig.SetEnv(e, globalTagsOrigin, internalconfig.ProductTracer)
 			}
 		}
 	}
 	if c.internalConfig.Version() == "" {
 		if v, ok := globalTags["version"]; ok {
 			if ver, ok := v.(string); ok {
-				c.internalConfig.SetVersion(ver, c.globalTags.Origin(), internalconfig.ProductTracer)
+				c.internalConfig.SetVersion(ver, globalTagsOrigin, internalconfig.ProductTracer)
 			}
 		}
 	}
@@ -342,7 +338,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.internalConfig.ServiceName() == "" {
 		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
-				c.internalConfig.SetServiceName(s, c.globalTags.Origin(), internalconfig.ProductTracer)
+				c.internalConfig.SetServiceName(s, globalTagsOrigin, internalconfig.ProductTracer)
 				globalconfig.SetServiceName(s)
 			}
 		} else {
@@ -405,16 +401,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		globalconfig.SetDogstatsdAddr(addr)
 		c.dogstatsdAddr = addr
 	}
-	// Re-initialize the globalTags config with the value constructed from the environment and start options
-	// This allows persisting the initial value of globalTags for future resets and updates.
-	globalTagsOrigin := c.globalTags.Origin()
-	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
 	// Update the llmobs config with stuff needed from the tracer.
 	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
-		DDTags:     c.globalTags.get(),
+		DDTags:     c.internalConfig.GlobalTags(),
 		Env:        c.internalConfig.Env(),
 		Service:    c.internalConfig.ServiceName(),
 		Version:    c.internalConfig.Version(),
@@ -794,7 +786,7 @@ func statsTags(c *config) []string {
 	if v := c.internalConfig.Hostname(); v != "" {
 		tags = append(tags, "host:"+v)
 	}
-	for k, v := range c.globalTags.get() {
+	for k, v := range c.internalConfig.GlobalTags() {
 		if vstr, ok := v.(string); ok {
 			tags = append(tags, k+":"+vstr)
 		}
@@ -1009,25 +1001,8 @@ func WithPeerServiceMapping(from, to string) StartOption {
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v any) StartOption {
 	return func(c *config) {
-		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]any{}, telemetry.OriginDefault)
-		}
-		c.globalTags.set(func(current map[string]any) map[string]any {
-			current[k] = v
-			return current
-		})
+		c.internalConfig.SetGlobalTag(k, v, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
-}
-
-// initGlobalTags initializes the globalTags config with the provided init value
-func (c *config) initGlobalTags(init map[string]any, origin telemetry.Origin) {
-	apply := func(tags map[string]any) bool {
-		// always set the runtime ID on updates
-		tags[ext.RuntimeID] = globalconfig.RuntimeID()
-		return true
-	}
-	c.globalTags = newDynamicConfig("trace_tags", init, apply, equalMap[string])
-	c.globalTags.setOrigin(origin)
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default

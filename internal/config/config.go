@@ -115,6 +115,10 @@ type Config struct {
 	dynamicInstrumentationEnabled *DynamicConfig[bool]
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
+	// globalTags holds a set of tags applied to all spans. It is runtime-updatable
+	// via Remote Config (RC key tracing_tags) and resets to its startup baseline
+	// when an RC update is withdrawn.
+	globalTags *DynamicConfig[map[string]any]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled    bool
 	ciVisibilityAgentless  bool
@@ -245,6 +249,11 @@ func loadConfig() *Config {
 
 	enabled, origin := p.GetBoolWithOrigin("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, origin, equal[bool])
+
+	// globalTags starts empty; the tracer parses DD_TAGS/OTEL_RESOURCE_ATTRIBUTES
+	// and programmatic WithGlobalTag options and populates the baseline via
+	// SetGlobalTag. The telemetry name is "trace_tags" (the RC key is tracing_tags).
+	cfg.globalTags = newDynamicConfig("trace_tags", nil, OriginDefault, equalMap[string])
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -538,6 +547,48 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, prod
 	}
 	c.globalSampleRate.setBaseline(rate, origin)
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
+}
+
+// GlobalTags returns the current set of global tags applied to all spans.
+// The returned map must not be mutated by callers; it is shared with the tracer
+// and replaced (never mutated in place) on Remote Config updates.
+func (c *Config) GlobalTags() map[string]any {
+	return c.globalTags.Get()
+}
+
+// GlobalTagsConfig returns the DynamicConfig for global tags. The tracer's
+// Remote Config handler uses it to apply tracing_tags updates and resets.
+func (c *Config) GlobalTagsConfig() *DynamicConfig[map[string]any] {
+	return c.globalTags
+}
+
+// SetGlobalTag adds (or overwrites) a single global tag. It is additive, like
+// SetServiceMapping, so it carries no cross-product gate. The update is an
+// atomic read-modify-write of the startup baseline guarded by c.mu, making it
+// safe under concurrent calls; it is only invoked while applying StartOptions.
+func (c *Config) SetGlobalTag(key string, value any, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	cur, curOrigin := c.globalTags.Baseline()
+	nm := make(map[string]any, len(cur)+1)
+	maps.Copy(nm, cur)
+	nm[key] = value
+	eff := higherTagOrigin(curOrigin, origin)
+	c.globalTags.setBaseline(nm, eff)
+	c.mu.Unlock()
+	configtelemetry.Report("trace_tags", nm, eff)
+}
+
+// higherTagOrigin returns the more authoritative origin for global-tag
+// accumulation. An env-sourced origin (OriginEnvVar) is sticky: once any tag
+// comes from the environment, a later programmatic add does not downgrade the
+// reported origin. This reproduces the legacy behavior where trace_tags was
+// reported with OriginEnvVar whenever DD_TAGS/OTEL_RESOURCE_ATTRIBUTES
+// contributed a tag.
+func higherTagOrigin(current, incoming telemetry.Origin) telemetry.Origin {
+	if current == telemetry.OriginEnvVar || incoming == telemetry.OriginEnvVar {
+		return telemetry.OriginEnvVar
+	}
+	return incoming
 }
 
 func (c *Config) DynamicInstrumentationEnabled() bool {

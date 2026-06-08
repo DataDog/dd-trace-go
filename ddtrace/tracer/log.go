@@ -92,7 +92,7 @@ func checkEndpoint(c *http.Client, endpoint string, protocol float64) error {
 // JSON format.
 func logStartup(t *tracer) {
 	tags := make(map[string]string)
-	for k, v := range t.config.globalTags.get() {
+	for k, v := range t.config.internalConfig.GlobalTags() {
 		tags[k] = fmt.Sprintf("%v", v)
 	}
 

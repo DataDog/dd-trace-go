@@ -620,7 +620,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Nil(t, err)
 		defer stop()
 
-		require.Equal(t, telemetry.OriginEnvVar, tracer.config.globalTags.cfgOrigin)
+		_, gtOrigin := tracer.config.internalConfig.GlobalTagsConfig().Baseline()
+		require.Equal(t, telemetry.OriginEnvVar, gtOrigin)
 
 		// Apply RC. Assert global tags have the RC tags key3:val3,key4:val4 applied + runtime ID
 		input := remoteconfig.ProductUpdate{
@@ -675,7 +676,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		// Telemetry
 		assertCalled(t, telemetryClient, []telemetry.Configuration{
-			{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: telemetry.OriginDefault},
+			{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: telemetry.OriginEnvVar},
 		},
 		)
 	})
@@ -800,7 +801,9 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				if tt.expectedHeaderTag == rcHeaderTag {
 					headerTagOrigin = telemetry.OriginRemoteConfig
 				}
-				spanTagOrigin := telemetry.OriginDefault
+				// DD_TAGS=ddtag:from-env is set, so trace_tags resets report OriginEnvVar (the
+				// startup baseline origin), matching the migrated dynamic-config behavior.
+				spanTagOrigin := telemetry.OriginEnvVar
 				if tt.expectedSpanTag == rcSpanTag {
 					spanTagOrigin = telemetry.OriginRemoteConfig
 				}

@@ -263,6 +263,9 @@ var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
 	"SetPeerServiceMapping": func(c *Config, origin telemetry.Origin) {
 		c.SetPeerServiceMapping("old-peer", "new-peer", origin)
 	},
+	"SetGlobalTag": func(c *Config, origin telemetry.Origin) {
+		c.SetGlobalTag("tag-key", "tag-value", origin)
+	},
 }
 
 // TestAllSettersReportTelemetry verifies Set* methods report telemetry with seqID > defaultSeqID.
