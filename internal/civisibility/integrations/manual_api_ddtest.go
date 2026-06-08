@@ -67,7 +67,7 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 	resourceName := fmt.Sprintf("%s.%s", suite.name, name)
 
 	// Test tags should include suite, module, and session tags so the backend can calculate the suite, module, and session fingerprint from the test.
-	testTags := append(slices.Clone(suite.tags), tracer.Tag(constants.TestName, name))
+	testTags := append(slices.Clone(suite.tags), ciVisibilityTag(constants.TestName, name))
 	testOpts := append(fillCommonTags([]tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.SpanType(constants.SpanTypeTest),
@@ -76,10 +76,10 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	if suite.module.session != nil {
-		span.SetTag(constants.TestSessionIDTag, fmt.Sprint(suite.module.session.sessionID))
+		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, fmt.Sprint(suite.module.session.sessionID))
 	}
-	span.SetTag(constants.TestModuleIDTag, fmt.Sprint(suite.module.moduleID))
-	span.SetTag(constants.TestSuiteIDTag, fmt.Sprint(suite.suiteID))
+	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, fmt.Sprint(suite.module.moduleID))
+	setCIVisibilitySpanTag(span, constants.TestSuiteIDTag, fmt.Sprint(suite.suiteID))
 	testID := span.Context().SpanID()
 
 	t := &tslvTest{
@@ -137,15 +137,15 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 
 	switch status {
 	case ResultStatusPass:
-		t.span.SetTag(constants.TestStatus, constants.TestStatusPass)
+		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusPass)
 	case ResultStatusFail:
-		t.span.SetTag(constants.TestStatus, constants.TestStatusFail)
+		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusFail)
 	case ResultStatusSkip:
-		t.span.SetTag(constants.TestStatus, constants.TestStatusSkip)
+		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusSkip)
 	}
 
 	if defaults.skipReason != "" {
-		t.span.SetTag(constants.TestSkipReason, defaults.skipReason)
+		setCIVisibilitySpanTag(t.span, constants.TestSkipReason, defaults.skipReason)
 	}
 
 	if globalEventFinishHook != nil {
@@ -332,10 +332,10 @@ func resolveTestSourcePath(runtimePath string) utils.SourceFilePath {
 
 // SetBenchmarkData sets benchmark data for the test.
 func (t *tslvTest) SetBenchmarkData(measureType string, data map[string]any) {
-	t.span.SetTag(constants.TestType, constants.TestTypeBenchmark)
+	setCIVisibilitySpanTag(t.span, constants.TestType, constants.TestTypeBenchmark)
 	t.setContextValue(constants.TestType, constants.TestTypeBenchmark)
 	for k, v := range data {
-		t.span.SetTag(fmt.Sprintf("benchmark.%s.%s", measureType, k), v)
+		setCIVisibilitySpanTag(t.span, fmt.Sprintf("benchmark.%s.%s", measureType, k), v)
 	}
 }
 
