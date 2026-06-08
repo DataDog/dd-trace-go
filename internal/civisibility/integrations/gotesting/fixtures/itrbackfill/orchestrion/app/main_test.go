@@ -17,16 +17,24 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
-const orchestrionLibPath = "internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/lib.go"
+const (
+	orchestrionLibPath      = "internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/lib.go"
+	orchestrionOtherLibPath = "internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/otherlib/otherlib.go"
+)
 
 type fixtureScenario struct {
 	tests                   []mockci.SkippableTest
 	coverage                map[string][]byte
-	expectSkipped           bool
+	expectTests             map[string]testExpectation
 	expectCoverage          bool
 	expectCoverageRequests  *bool
 	expectSkippableRequests int
 	expectSkippingEnabled   string
+}
+
+type testExpectation struct {
+	status  string
+	skipped bool
 }
 
 func TestMain(m *testing.M) {
@@ -55,9 +63,14 @@ func TestMain(m *testing.M) {
 	if server.SkippableRequests() != scenario.expectSkippableRequests {
 		panic("unexpected skippable request count")
 	}
-	skippedByITR := server.HasEventMeta("TestCoversLib", constants.TestSkippedByITR, "true")
-	if skippedByITR != scenario.expectSkipped {
-		panic("unexpected ITR skip decision")
+	for testName, expectation := range scenario.expectTests {
+		if !server.HasEventResourceMeta(testName, constants.TestStatus, expectation.status) {
+			panic("unexpected test status for " + testName)
+		}
+		skippedByITR := server.HasEventMeta(testName, constants.TestSkippedByITR, "true")
+		if skippedByITR != expectation.skipped {
+			panic("unexpected ITR skip decision for " + testName)
+		}
 	}
 	if value, ok := server.SessionMeta(constants.ITRTestsSkippingEnabled); !ok || value != scenario.expectSkippingEnabled {
 		panic("unexpected ITR tests skipping enabled tag")
@@ -76,12 +89,19 @@ func orchestrionScenario() fixtureScenario {
 	validCoverage := map[string][]byte{
 		orchestrionLibPath: filebitmap.FromActiveRange(1, 64).ToArray(),
 	}
+	multiPackageCoverage := map[string][]byte{
+		orchestrionLibPath:      filebitmap.FromActiveRange(1, 64).ToArray(),
+		orchestrionOtherLibPath: filebitmap.FromActiveRange(1, 64).ToArray(),
+	}
+	otherLibCoverage := map[string][]byte{
+		orchestrionOtherLibPath: filebitmap.FromActiveRange(1, 64).ToArray(),
+	}
 	defaultScenario := fixtureScenario{
 		tests: []mockci.SkippableTest{
 			{Suite: "app_test.go", Name: "TestCoversLib"},
 		},
 		coverage:                validCoverage,
-		expectSkipped:           true,
+		expectTests:             map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusSkip, skipped: true}},
 		expectCoverage:          true,
 		expectSkippableRequests: 1,
 		expectSkippingEnabled:   "true",
@@ -98,18 +118,40 @@ func orchestrionScenario() fixtureScenario {
 		defaultScenario.tests = []mockci.SkippableTest{
 			{Suite: "app_test.go", Name: "TestCoversLib", MissingLineCodeCoverage: true},
 		}
-		defaultScenario.expectSkipped = false
+		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
+		return defaultScenario
+	case "mixed-missing-line":
+		defaultScenario.tests = []mockci.SkippableTest{
+			{Suite: "app_test.go", Name: "TestCoversLib", MissingLineCodeCoverage: true},
+			{Suite: "app_test.go", Name: "TestCoversOtherLib"},
+		}
+		defaultScenario.coverage = otherLibCoverage
+		defaultScenario.expectTests = map[string]testExpectation{
+			"TestCoversLib":      {status: constants.TestStatusPass},
+			"TestCoversOtherLib": {status: constants.TestStatusSkip, skipped: true},
+		}
+		return defaultScenario
+	case "multi-package":
+		defaultScenario.tests = []mockci.SkippableTest{
+			{Suite: "app_test.go", Name: "TestCoversLib"},
+			{Suite: "app_test.go", Name: "TestCoversOtherLib"},
+		}
+		defaultScenario.coverage = multiPackageCoverage
+		defaultScenario.expectTests = map[string]testExpectation{
+			"TestCoversLib":      {status: constants.TestStatusSkip, skipped: true},
+			"TestCoversOtherLib": {status: constants.TestStatusSkip, skipped: true},
+		}
 		return defaultScenario
 	case "missing-coverage":
 		defaultScenario.coverage = nil
-		defaultScenario.expectSkipped = false
+		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
 		defaultScenario.expectSkippingEnabled = "false"
 		return defaultScenario
 	case "unmatched-coverage":
 		defaultScenario.coverage = map[string][]byte{
 			"internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib/other.go": filebitmap.FromActiveRange(1, 64).ToArray(),
 		}
-		defaultScenario.expectSkipped = false
+		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
 		defaultScenario.expectSkippingEnabled = "false"
 		return defaultScenario
 	case "narrowing-run", "unsupported-set", "no-skippable":
@@ -118,7 +160,7 @@ func orchestrionScenario() fixtureScenario {
 		} else {
 			defaultScenario.expectSkippingEnabled = "false"
 		}
-		defaultScenario.expectSkipped = false
+		defaultScenario.expectTests = map[string]testExpectation{"TestCoversLib": {status: constants.TestStatusPass}}
 		return defaultScenario
 	default:
 		panic("unknown ITR backfill fixture scenario")

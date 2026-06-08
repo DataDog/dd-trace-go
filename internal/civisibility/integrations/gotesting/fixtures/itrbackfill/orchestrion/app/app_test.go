@@ -9,11 +9,18 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/lib"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/otherlib"
 )
 
 func TestCoversLib(t *testing.T) {
 	if lib.Answer() != 42 {
 		t.Fatal("unexpected answer")
+	}
+}
+
+func TestCoversOtherLib(t *testing.T) {
+	if otherlib.Double(21) != 42 {
+		t.Fatal("unexpected doubled value")
 	}
 }
 

@@ -51,12 +51,21 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 		withProfile   bool
 		extraEnv      []string
 		extraTestArgs []string
+		profilePaths  []string
 	}{
 		{name: "positive", coverMode: "count", withProfile: true},
 		{name: "atomic", coverMode: "atomic", withProfile: true},
 		{name: "no-coverprofile", coverMode: "count"},
 		{name: "codecoverage-disabled", coverMode: "count", withProfile: true, extraEnv: []string{"DD_ITR_BACKFILL_CODE_COVERAGE=false"}},
 		{name: "missing-line", coverMode: "count", withProfile: true},
+		{name: "mixed-missing-line", coverMode: "count", withProfile: true, profilePaths: []string{
+			"fixtures/itrbackfill/orchestrion/lib/lib.go",
+			"fixtures/itrbackfill/orchestrion/otherlib/otherlib.go",
+		}},
+		{name: "multi-package", coverMode: "count", withProfile: true, profilePaths: []string{
+			"fixtures/itrbackfill/orchestrion/lib/lib.go",
+			"fixtures/itrbackfill/orchestrion/otherlib/otherlib.go",
+		}},
 		{name: "missing-coverage", coverMode: "count", withProfile: true},
 		{name: "unmatched-coverage", coverMode: "count", withProfile: true},
 		{name: "narrowing-run", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "TestCoversLib"}},
@@ -78,7 +87,11 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 			args = append(args, test.extraTestArgs...)
 			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, args...)
 			if test.withProfile {
-				assertProfileBackfilled(t, profile, "fixtures/itrbackfill/orchestrion/lib/lib.go")
+				profilePaths := test.profilePaths
+				if len(profilePaths) == 0 {
+					profilePaths = []string{"fixtures/itrbackfill/orchestrion/lib/lib.go"}
+				}
+				assertProfileBackfilled(t, profile, profilePaths...)
 			}
 		})
 	}
@@ -176,8 +189,12 @@ func goEnv(t *testing.T, name string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func assertProfileBackfilled(t *testing.T, profile, libPathContains string) {
+func assertProfileBackfilled(t *testing.T, profile string, pathContains ...string) {
 	t.Helper()
+
+	if len(pathContains) == 0 {
+		t.Fatalf("expected at least one profile path assertion for %s", profile)
+	}
 
 	file, err := os.Open(profile)
 	if err != nil {
@@ -185,25 +202,37 @@ func assertProfileBackfilled(t *testing.T, profile, libPathContains string) {
 	}
 	defer file.Close()
 
+	found := make(map[string]bool, len(pathContains))
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if !strings.Contains(filepath.ToSlash(line), libPathContains) {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
-		}
-		count, err := strconv.Atoi(fields[2])
-		if err == nil && count > 0 {
-			return
+		slashedLine := filepath.ToSlash(line)
+		for _, path := range pathContains {
+			if found[path] || !strings.Contains(slashedLine, path) {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) < 3 {
+				continue
+			}
+			count, err := strconv.Atoi(fields[2])
+			if err == nil && count > 0 {
+				found[path] = true
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
 	}
-	t.Fatalf("expected %s to contain a backfilled positive count for %s", profile, libPathContains)
+	missing := make([]string, 0, len(pathContains))
+	for _, path := range pathContains {
+		if !found[path] {
+			missing = append(missing, path)
+		}
+	}
+	if len(missing) > 0 {
+		t.Fatalf("expected %s to contain a positive count for %s", profile, strings.Join(missing, ", "))
+	}
 }
 
 func assertOrchestrionFixtureDoesNotUseManualRunM(t *testing.T, fixtureDir string) {

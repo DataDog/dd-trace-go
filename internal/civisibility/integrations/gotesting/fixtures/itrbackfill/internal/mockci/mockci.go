@@ -150,6 +150,20 @@ func (s *Server) HasEventMeta(resourceContains, key, value string) bool {
 	return false
 }
 
+// HasEventResourceMeta returns true when a test-cycle event resource contains
+// resourceContains and, when key is not empty, has the requested meta tag value.
+func (s *Server) HasEventResourceMeta(resourceContains, key, value string) bool {
+	for _, event := range s.Events() {
+		if !strings.Contains(event.Content.Resource, resourceContains) {
+			continue
+		}
+		if key == "" || event.Content.Meta[key] == value {
+			return true
+		}
+	}
+	return false
+}
+
 // EventTypeCount returns the number of captured test-cycle events with the requested type.
 func (s *Server) EventTypeCount(eventType string) int {
 	count := 0
