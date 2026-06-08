@@ -193,7 +193,7 @@ var packages = map[Package]PackageInfo{
 		EnvVarPrefix:  "AEROSPIKE",
 		naming: map[Component]componentNames{
 			ComponentDefault: {
-				useDDServiceV0:     false,
+				useDDServiceV0:     true,
 				buildServiceNameV0: staticName("aerospike"),
 				buildOpNameV0:      staticName("aerospike.command"),
 				buildOpNameV1:      staticName("aerospike.command"),
