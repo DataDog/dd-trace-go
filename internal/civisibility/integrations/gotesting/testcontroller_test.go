@@ -1352,7 +1352,7 @@ func setUpHTTPServer(
 			if itrCoverage != nil {
 				response.Meta.Coverage = make(map[string]string, len(itrCoverage))
 				for file, bitmap := range itrCoverage {
-					response.Meta.Coverage[file] = base64.StdEncoding.EncodeToString(javaBitSetFromGoBitmap(bitmap))
+					response.Meta.Coverage[file] = base64.StdEncoding.EncodeToString(bitmap)
 				}
 			}
 			for i, data := range itrData {
@@ -1407,21 +1407,6 @@ func setUpHTTPServer(
 	os.Setenv(constants.APIKeyEnvironmentVariable, "12345")
 
 	return server
-}
-
-func javaBitSetFromGoBitmap(bitmap []byte) []byte {
-	data := make([]byte, len(bitmap)+1)
-	for line := 1; line <= len(bitmap)*8; line++ {
-		idx := line - 1
-		if bitmap[idx/8]&byte(128>>(idx%8)) == 0 {
-			continue
-		}
-		data[line/8] |= byte(1 << (line % 8))
-	}
-	for len(data) > 0 && data[len(data)-1] == 0 {
-		data = data[:len(data)-1]
-	}
-	return data
 }
 
 func getSpansWithType(spans []*mocktracer.Span, spanType string) []*mocktracer.Span {

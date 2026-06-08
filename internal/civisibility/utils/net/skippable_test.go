@@ -200,9 +200,9 @@ func TestSkippableApiRequestParsesCoverageMetadata(t *testing.T) {
 			Meta: skippableResponseMeta{
 				CorrelationID: "correlation_id",
 				Coverage: json.RawMessage(`{
-					"/pkg/file.go": "` + base64.StdEncoding.EncodeToString([]byte{0b00000010}) + `",
-					"pkg\\file.go": "` + base64.StdEncoding.EncodeToString([]byte{0b00000100}) + `",
-					"pkg/line8.go": "` + base64.StdEncoding.EncodeToString([]byte{0, 0b00000001}) + `"
+						"/pkg/file.go": "` + base64.StdEncoding.EncodeToString([]byte{0b10000000}) + `",
+						"pkg\\file.go": "` + base64.StdEncoding.EncodeToString([]byte{0b01000000}) + `",
+						"pkg/line8.go": "` + base64.StdEncoding.EncodeToString([]byte{0b00000001}) + `"
 				}`),
 			},
 			Data: []skippableResponseData{
@@ -235,14 +235,14 @@ func TestSkippableApiRequestParsesCoverageMetadata(t *testing.T) {
 	assert.True(t, response.Skippables["suite"]["name"][0].MissingLineCodeCoverage)
 }
 
-func TestSkippableCoverageUsesJavaBitSetByteOrder(t *testing.T) {
-	decoded := newFileBitmapFromJavaBitSet([]byte{0b00000010, 0b00000001})
+func TestSkippableCoverageUsesFileBitmapByteOrder(t *testing.T) {
+	decoded := filebitmap.NewFileBitmapFromBytes([]byte{0b10000001})
 	assert.True(t, decoded.Get(1))
 	assert.True(t, decoded.Get(8))
 	assert.False(t, decoded.Get(2))
 
-	assert.Equal(t, []byte{0b00000010}, javaBitSetFromFileBitmap(filebitmap.FromActiveRange(1, 1)))
-	assert.Equal(t, []byte{0, 0b00000001}, javaBitSetFromFileBitmap(filebitmap.FromActiveRange(8, 8)))
+	assert.Equal(t, []byte{0b10000000}, filebitmap.FromActiveRange(1, 1).ToArray())
+	assert.Equal(t, []byte{0b00000001}, filebitmap.FromActiveRange(8, 8).ToArray())
 }
 
 func TestSkippableApiRequestCoverageMetadataPresenceStates(t *testing.T) {
@@ -347,7 +347,7 @@ func TestSkippableApiRequestRejectsNonRepositoryRelativeCoveragePaths(t *testing
 		{name: "traversal", path: "pkg/../..//file.go"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			coverage := base64.StdEncoding.EncodeToString([]byte{0b00000010})
+			coverage := base64.StdEncoding.EncodeToString([]byte{0b10000000})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set(HeaderContentType, ContentTypeJSON)
 				_ = json.NewEncoder(w).Encode(skippableResponse{
@@ -377,7 +377,7 @@ func TestSkippableApiRequestRejectsNonRepositoryRelativeCoveragePaths(t *testing
 }
 
 func TestSkippableApiRequestDoesNotFilterConfigurations(t *testing.T) {
-	coverage := base64.StdEncoding.EncodeToString([]byte{0b00000010})
+	coverage := base64.StdEncoding.EncodeToString([]byte{0b10000000})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(HeaderContentType, ContentTypeJSON)
 		_ = json.NewEncoder(w).Encode(skippableResponse{

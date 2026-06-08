@@ -761,7 +761,7 @@ func TestReadCacheGetSkippableTestsCachesResponsePerRequestConfiguration(t *test
 func TestReadCacheGetSkippableTestsCachesCoverageMetadata(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	root := t.TempDir()
-	coverageBitmap := []byte{0b00000010}
+	coverageBitmap := []byte{0b10000000}
 	var requestCount atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requestCount.Add(1)
