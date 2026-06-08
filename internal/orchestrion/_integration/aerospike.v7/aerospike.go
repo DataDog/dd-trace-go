@@ -9,6 +9,7 @@ package aerospikev7
 
 import (
 	"context"
+	"net"
 	"strconv"
 	"testing"
 
@@ -16,42 +17,23 @@ import (
 	as "github.com/aerospike/aerospike-client-go/v7"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	tclog "github.com/testcontainers/testcontainers-go/log"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct {
-	container testcontainers.Container
-	client    *as.Client
+	client *as.Client
 }
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
 
-	req := testcontainers.ContainerRequest{
-		Image:        "aerospike:ce-7.2.0.6",
-		ExposedPorts: []string{"3000/tcp"},
-		WaitingFor:   wait.ForListeningPort("3000/tcp"),
-	}
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-		Logger:           tclog.TestLogger(t),
-	})
-	containers.AssertTestContainersError(t, err)
-	containers.RegisterContainerCleanup(t, container)
-	tc.container = container
+	_, addr := containers.StartAerospikeTestContainer(t)
 
-	host, err := container.Host(ctx)
+	host, portStr, err := net.SplitHostPort(addr)
 	require.NoError(t, err)
-
-	mappedPort, err := container.MappedPort(ctx, "3000/tcp")
-	require.NoError(t, err)
-	port, err := strconv.Atoi(mappedPort.Port())
+	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 
 	require.NoError(t,
