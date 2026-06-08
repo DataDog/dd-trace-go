@@ -149,7 +149,11 @@ func TestRetryWithFail(t *testing.T) {
 }
 
 //dd:test.unskippable
-func TestNormalPassingAfterRetryAlwaysFail(_ *testing.T) {}
+func TestNormalPassingAfterRetryAlwaysFail(t *testing.T) {
+	if os.Getenv(forceNormalPassingFailureEnv) == "1" {
+		t.Fatal("forced failure")
+	}
+}
 
 var run atomic.Int32
 
