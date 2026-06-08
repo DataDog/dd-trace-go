@@ -41,16 +41,16 @@ func TestScan_Fixture(t *testing.T) {
 	}
 }
 
-func TestScan_RealRepoTracerHasUnmigratedReads(t *testing.T) {
-	// Smoke test: a top-level run over the real tracer should find DD_SITE
-	// (used inside ddtrace/tracer/option.go).
+func TestScan_RealRepoFindsUnmigratedReads(t *testing.T) {
+	// Smoke test: DD_APPSEC_ENABLED is read directly in internal/appsec/config
+	// and is outside the tracer migration scope, so it should always appear as
+	// an unmigrated call site.
 	root := filepath.Join("..", "..")
 	got, err := scan(root, defaultRecognizers(), defaultExcludes(root))
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
-	sites := got["DD_SITE"]
-	if len(sites) == 0 {
-		t.Fatalf("expected DD_SITE call sites in real repo, got none")
+	if len(got["DD_APPSEC_ENABLED"]) == 0 {
+		t.Fatal("expected DD_APPSEC_ENABLED call sites in real repo, got none")
 	}
 }

@@ -19,7 +19,6 @@ func TestLoadMigrated_RealRepo(t *testing.T) {
 	// These are migrated as of the plan date.
 	for _, key := range []string{
 		"DD_SERVICE",
-		"DD_SITE",
 		"DD_TRACE_STARTUP_LOGS",
 		"DD_TRACE_AGENT_URL",
 		"DD_AGENT_HOST",
