@@ -119,6 +119,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/DataDog/dd-trace-go/orchestrion/all/v2 => ../../../../../../../orchestrion/all
-
 replace github.com/DataDog/dd-trace-go/v2 => ../../../../../../..
