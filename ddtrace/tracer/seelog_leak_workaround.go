@@ -8,7 +8,7 @@ package tracer
 import (
 	"github.com/cihub/seelog"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -20,7 +20,7 @@ import (
 //
 // [1] github.com/DataDog/datadog-agent/pkg/util/log
 func init() {
-	if env.Get("DD_TRACE_DEBUG_SEELOG_WORKAROUND") == "false" {
+	if !internalconfig.Get().SeelogWorkaroundEnabled() {
 		return
 	}
 

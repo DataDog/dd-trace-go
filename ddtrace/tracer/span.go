@@ -28,6 +28,7 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -1231,7 +1232,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 			}
 		}
 		var traceID string
-		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true) && s.context.traceID.HasUpper() {
+		if internalconfig.Get().TraceID128BitLoggingEnabled() && s.context.traceID.HasUpper() {
 			traceID = s.context.TraceID()
 		} else {
 			traceID = fmt.Sprintf("%d", s.traceID)

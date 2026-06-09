@@ -172,6 +172,18 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
+	// appKey is the Datadog application key (DD_APP_KEY).
+	appKey string
+	// ciVisibilityAgentlessURL is a custom agentless endpoint for CI Visibility (DD_CIVISIBILITY_AGENTLESS_URL).
+	ciVisibilityAgentlessURL string
+	// experimentalFlaggingProviderEnabled enables the experimental OpenFeature RC provider (DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED).
+	experimentalFlaggingProviderEnabled bool
+	// spanPoolEnabled enables the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED).
+	spanPoolEnabled bool
+	// traceID128BitLoggingEnabled controls whether 128-bit trace IDs are logged in the span log format (DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED).
+	traceID128BitLoggingEnabled bool
+	// seelogWorkaroundEnabled controls the seelog goroutine-leak workaround (DD_TRACE_DEBUG_SEELOG_WORKAROUND).
+	seelogWorkaroundEnabled bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -268,7 +280,13 @@ func loadConfig() *Config {
 	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
+	cfg.traceID128BitLoggingEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
+	cfg.appKey = p.GetString("DD_APP_KEY", "")
+	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
+	cfg.experimentalFlaggingProviderEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
+	cfg.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
+	cfg.seelogWorkaroundEnabled = p.GetBool("DD_TRACE_DEBUG_SEELOG_WORKAROUND", true)
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
@@ -1218,4 +1236,40 @@ func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ..
 	}
 	c.sendRetries = retries
 	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
+func (c *Config) AppKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.appKey
+}
+
+func (c *Config) CIVisibilityAgentlessURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentlessURL
+}
+
+func (c *Config) ExperimentalFlaggingProviderEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.experimentalFlaggingProviderEnabled
+}
+
+func (c *Config) SpanPoolEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanPoolEnabled
+}
+
+func (c *Config) TraceID128BitLoggingEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.traceID128BitLoggingEnabled
+}
+
+func (c *Config) SeelogWorkaroundEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.seelogWorkaroundEnabled
 }

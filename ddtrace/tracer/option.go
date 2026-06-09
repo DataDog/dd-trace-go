@@ -240,7 +240,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
 		ProjectName:      env.Get(envLLMObsProjectName),
 	}
-	c.spanPoolEnabled = internal.BoolEnv(envSpanPoolEnabled, false)
+	c.spanPoolEnabled = c.internalConfig.SpanPoolEnabled()
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -362,7 +362,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		Version:    c.internalConfig.Version(),
 		AgentURL:   c.internalConfig.AgentURL(),
 		APIKey:     c.internalConfig.APIKey(),
-		APPKey:     env.Get("DD_APP_KEY"),
+		APPKey:     c.internalConfig.AppKey(),
 		HTTPClient: c.httpClient,
 		Site:       env.Get("DD_SITE"),
 	}
