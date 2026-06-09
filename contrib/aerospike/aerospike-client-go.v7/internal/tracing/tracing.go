@@ -44,11 +44,18 @@ func StartSpan(ctx context.Context, serviceName, serviceSource, operationName, r
 }
 
 // StartDefaultSpan starts a span from context.Background() using the service
-// and operation names resolved from the instrumentation registry. Used by the
-// Orchestrion advice template where no client config is in scope.
+// and operation names resolved from the instrumentation registry.
 func StartDefaultSpan(resourceName string) *Span {
+	return StartSpanWithContext(context.Background(), resourceName)
+}
+
+// StartSpanWithContext starts a span from the provided context using the
+// service and operation names resolved from the instrumentation registry.
+// Used by the Orchestrion advice template, which stores and retrieves the
+// context via WithContext.
+func StartSpanWithContext(ctx context.Context, resourceName string) *Span {
 	return StartSpan(
-		context.Background(),
+		ctx,
 		Instr.ServiceName(instrumentation.ComponentDefault, nil),
 		string(instrumentation.PackageAerospikeClientGoV7),
 		Instr.OperationName(instrumentation.ComponentDefault, nil),
