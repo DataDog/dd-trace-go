@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -262,18 +261,13 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	if updated {
 		telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 	}
-	updated = t.config.headerAsTags.handleRC(merged.HeaderTags.toSlice())
-	if updated {
-		telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
-	}
+	t.config.internalConfig.HeaderAsTagsConfig().HandleRC(merged.HeaderTags.toSlice())
 	updated = t.config.globalTags.handleRC(merged.Tags.toMap())
 	if updated {
 		telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
 	}
 
-	if telem := t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled); telem != nil {
-		telemConfigs = append(telemConfigs, *telem)
-	}
+	t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled)
 
 	if merged.Enabled != nil {
 		if t.config.enabled.get() && !*merged.Enabled {
@@ -292,47 +286,33 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 }
 
 // Handle enabling or disabling of Dynamic Instrumentation / Live Debugger.
-//
-// Returns a telemetry configuration if the value changed.
-func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) *telemetry.Configuration {
-	// Do not overwrite a "false" value coming from the
-	// DD_DYNAMIC_INSTRUMENTATION_ENABLED env var, or from other local sources.
-	explicitOrigins := []telemetry.Origin{
-		telemetry.OriginCode,
-		telemetry.OriginDDConfig,
-		telemetry.OriginEnvVar,
-		telemetry.OriginLocalStableConfig,
-		telemetry.OriginManagedStableConfig,
-	}
-	enabled, origin := t.config.dynamicInstrumentationEnabled.getCurrentAndOrigin()
-	if !enabled && slices.Contains(explicitOrigins, origin) {
-		return nil
+func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) {
+	cfg := t.config.internalConfig.DynamicInstrumentationEnabledConfig()
+
+	// Do not overwrite a "false" value coming from any explicit local source
+	// (env var, stable config, programmatic API).
+	baselineEnabled, baselineOrigin := cfg.Baseline()
+	if !baselineEnabled && baselineOrigin != telemetry.OriginDefault {
+		return
 	}
 
-	if !t.config.dynamicInstrumentationEnabled.handleRC(val) {
-		return nil
+	if !cfg.HandleRC(val) {
+		return
 	}
 
 	// The value changed; subscribe or unsubscribe from the Live Debugging RC
 	// product.
-	if t.config.dynamicInstrumentationEnabled.get() {
+	if cfg.Get() {
 		log.Info("Dynamic Instrumentation starting through Remote Config update")
-		err := t.startDynamicInstrumentationRCSubscriptions()
-		if err != nil {
+		if err := t.startDynamicInstrumentationRCSubscriptions(); err != nil {
 			log.Error("failed to start Dynamic Instrumentation subscriptions: %s", err)
-			return nil
 		}
 	} else {
 		log.Info("Dynamic Instrumentation stopping through Remote Config update")
-		err := t.stopDynamicInstrumentationRCSubscriptions()
-		if err != nil {
+		if err := t.stopDynamicInstrumentationRCSubscriptions(); err != nil {
 			log.Error("failed to stop Dynamic Instrumentation subscriptions: %s", err)
-			return nil
 		}
 	}
-
-	telem := t.config.dynamicInstrumentationEnabled.toTelemetry()
-	return &telem
 }
 
 type dynamicInstrumentationRCProbeConfig struct {
@@ -489,7 +469,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 
 	var dynamicInstrumentationError, apmTracingError error
 
-	if t.config.dynamicInstrumentationEnabled.get() {
+	if t.config.internalConfig.DynamicInstrumentationEnabled() {
 		dynamicInstrumentationError = t.startDynamicInstrumentationRCSubscriptions()
 	}
 

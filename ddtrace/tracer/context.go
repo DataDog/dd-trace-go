@@ -15,6 +15,15 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
+// activeSpanContextKey is a context key for the snapshotted SpanContext.
+// When a Span is stored in a Go context via ContextWithSpan, we also snapshot
+// its SpanContext so that StartSpanFromContext reads the original parent
+// identity (traceID, spanID, sampling priority) even after the *Span is
+// recycled and its s.context field replaced. This does NOT protect the
+// underlying trace from being finished or flushed; callers must ensure the
+// parent's trace lifetime exceeds child span creation.
+type activeSpanContextKey struct{}
+
 // ContextWithSpan returns a copy of the given context which includes the span s.
 // If ctx is nil, a new background context is created to avoid panicking.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
@@ -23,6 +32,10 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 		ctx = context.Background()
 	}
 	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
+	if s != nil {
+		// Snapshot the SpanContext so it survives span pool recycling.
+		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, s.Context())
+	}
 	return contextWithPropagatedLLMSpan(newCtx, s)
 }
 
@@ -91,6 +104,9 @@ func StartSpanFromContext(ctx context.Context, operationName string, opts ...Sta
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
 		ctx = context.Background()
+	} else if sc, ok := ctx.Value(activeSpanContextKey{}).(*SpanContext); ok && sc != nil {
+		// Prefer the snapshotted SpanContext to handle span pool recycling.
+		optsLocal = append(optsLocal, ChildOf(sc))
 	} else if s, ok := SpanFromContext(ctx); ok {
 		optsLocal = append(optsLocal, ChildOf(s.Context()))
 	}

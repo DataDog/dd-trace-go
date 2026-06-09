@@ -73,8 +73,8 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		defaultHeaders["Datadog-Entity-ID"] = eid
 	}
 
-	// Determine if agentless mode is enabled through an environment variable.
-	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
+	// Determine if agentless mode is enabled (sourced from internal/config).
+	agentlessEnabled := config.internalConfig.CIVisibilityAgentless()
 
 	testCycleURL := ""
 	if agentlessEnabled {
@@ -130,6 +130,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 //
 //	An io.ReadCloser for reading the response body, and an error if the operation fails.
 func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) {
+	defer p.Close()
 	ciVisibilityPayload := &ciVisibilityPayload{payload: p, serializationTime: 0}
 	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {
