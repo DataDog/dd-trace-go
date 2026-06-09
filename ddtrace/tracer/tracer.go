@@ -969,7 +969,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable
 
 	// add global tags
-	span.setTags(t.config.internalConfig.GlobalTags())
+	span.setTags(cSnap.GlobalTags)
 
 	if newSvc, ok := t.config.internalConfig.ServiceMapping(span.service); ok {
 		span.service = newSvc

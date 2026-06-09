@@ -213,14 +213,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
-		tags := internal.ParseTagString(v)
-		internal.CleanGitMetadataTags(tags)
-		// TODO: should we track the origin of these tags individually?
-		for key, val := range tags {
-			c.internalConfig.SetGlobalTag(key, val, telemetry.OriginEnvVar, internalconfig.ProductTracer)
-		}
-	}
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
 		c.enabled.setOrigin(telemetry.OriginEnvVar)
@@ -673,7 +665,8 @@ func statsTags(c *config) []string {
 	if v := c.internalConfig.Hostname(); v != "" {
 		tags = append(tags, "host:"+v)
 	}
-	for k, v := range c.internalConfig.GlobalTags() {
+	globalTags := c.internalConfig.GlobalTags()
+	for k, v := range globalTags {
 		if vstr, ok := v.(string); ok {
 			tags = append(tags, k+":"+vstr)
 		}

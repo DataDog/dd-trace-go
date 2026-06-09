@@ -85,9 +85,8 @@ func startTelemetry(c *config) telemetry.Client {
 	for k, v := range c.internalConfig.ServiceMappings() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "service_mapping_" + k, Value: v})
 	}
-	for k, v := range c.internalConfig.GlobalTags() {
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "global_tag_" + k, Value: v})
-	}
+	// global_tag_<key> telemetry is reported by internal/config (loadConfig for
+	// DD_TAGS and SetGlobalTag for programmatic tags); no per-key loop here.
 	rules := append(c.spanRules, c.traceRules...)
 	for _, rule := range rules {
 		var service string

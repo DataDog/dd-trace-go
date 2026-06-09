@@ -6,18 +6,30 @@
 package config
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-// addRuntimeIDToGlobalTags is the apply callback for globalTags. The runtime ID
-// must appear on every span (via the global tags applied at span start), so it
-// is (re)added whenever the tag set changes — in particular after a Remote
-// Config update replaces the whole map, which would otherwise drop it.
-func addRuntimeIDToGlobalTags(tags map[string]any) bool {
-	if tags == nil {
-		return false
+// parseGlobalTagsFromEnv reads DD_TAGS and returns the parsed tags with the
+// origin reported by the provider. OTEL_RESOURCE_ATTRIBUTES is handled
+// transparently: the provider remaps it onto DD_TAGS (see
+// provider/otelenvconfigsource.go), so reading DD_TAGS picks up both sources in
+// the correct precedence order. Git-metadata tags are stripped, matching the
+// legacy tracer behavior, so they don't leak onto every span.
+func parseGlobalTagsFromEnv(p *provider.Provider) (map[string]any, telemetry.Origin) {
+	v, origin := p.GetStringWithOrigin("DD_TAGS", "")
+	if v == "" {
+		return nil, origin
 	}
-	tags[ext.RuntimeID] = globalconfig.RuntimeID()
-	return true
+	parsed := internal.ParseTagString(v)
+	internal.CleanGitMetadataTags(parsed)
+	if len(parsed) == 0 {
+		return nil, origin
+	}
+	tags := make(map[string]any, len(parsed))
+	for k, val := range parsed {
+		tags[k] = val
+	}
+	return tags, origin
 }

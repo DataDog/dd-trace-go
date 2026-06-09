@@ -647,11 +647,11 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, globalconfig.RuntimeID(), runtimeID)
 		runtimeIDTag := ext.RuntimeID + ":" + globalconfig.RuntimeID()
 
-		// Telemetry. An RC update reports the tag set before the runtime-id apply
-		// callback runs, so the runtime ID is not part of the reported value (the
-		// span still receives it — see the runtime-id assertion above).
+		// Telemetry. The runtime ID is injected into the RC tag set before HandleRC
+		// publishes it, so it is part of the reported value (and the span receives it
+		// — see the runtime-id assertion above).
 		assertCalled(t, telemetryClient, []telemetry.Configuration{
-			{Name: "trace_tags", Value: "key3:val3,key4:val4", Origin: telemetry.OriginRemoteConfig},
+			{Name: "trace_tags", Value: "key3:val3,key4:val4," + runtimeIDTag, Origin: telemetry.OriginRemoteConfig},
 		},
 		)
 
@@ -773,7 +773,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-from-rc", Origin: telemetry.OriginRemoteConfig},
 					{
 						Name:   "trace_tags",
-						Value:  "ddtag:from-rc",
+						Value:  "ddtag:from-rc," + ext.RuntimeID + ":" + globalconfig.RuntimeID(),
 						Origin: telemetry.OriginRemoteConfig,
 					},
 				})
@@ -809,12 +809,10 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				if tt.expectedSpanTag == rcSpanTag {
 					spanTagOrigin = telemetry.OriginRemoteConfig
 				}
-				// An RC update reports the tag set before the runtime-id apply runs (so the
-				// runtime ID is absent); a reset reports the startup baseline, which has it.
-				spanTagValue := "ddtag:" + tt.expectedSpanTag
-				if spanTagOrigin != telemetry.OriginRemoteConfig {
-					spanTagValue += "," + ext.RuntimeID + ":" + globalconfig.RuntimeID()
-				}
+				// The runtime ID is injected into the RC tag set before HandleRC, and a
+				// reset restores the startup baseline (which has it), so it is always part
+				// of the reported trace_tags value.
+				spanTagValue := "ddtag:" + tt.expectedSpanTag + "," + ext.RuntimeID + ":" + globalconfig.RuntimeID()
 				assertCalled(t, telemetryClient, []telemetry.Configuration{
 					{Name: "trace_sample_rate", Value: tt.expectedSamplingRate, Origin: samplingRateOrigin},
 					{Name: "trace_header_tags", Value: "X-Test-Header:" + tt.expectedHeaderTag, Origin: headerTagOrigin},
