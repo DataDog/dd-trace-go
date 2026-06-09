@@ -172,6 +172,9 @@ type tracer struct {
 	// runtimeMetrics is submitting runtime metrics to the agent using statsd.
 	runtimeMetrics *runtimemetrics.Emitter
 
+	// otelRuntimeMetrics holds the OTLP runtime metrics pipeline when enabled.
+	otelRuntimeMetrics *otelRuntimeMetrics
+
 	// telemetry is the telemetry client for the tracer.
 	telemetry telemetry.Client
 
@@ -578,10 +581,23 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
 	if c.internalConfig.RuntimeMetricsEnabled() {
-		log.Debug("Runtime metrics enabled.")
-		t.wg.Go(func() {
-			t.reportRuntimeMetrics(defaultMetricsReportInterval)
-		})
+		if isOTLPMetricsEnabled() {
+			log.Debug("Runtime metrics enabled via OTLP with OTel-native naming.")
+			orm, err := startOTLPRuntimeMetrics()
+			if err != nil {
+				log.Error("Failed to start OTLP runtime metrics, falling back to DogStatsD: %v", err)
+				t.wg.Go(func() {
+					t.reportRuntimeMetrics(defaultMetricsReportInterval)
+				})
+			} else {
+				t.otelRuntimeMetrics = orm
+			}
+		} else {
+			log.Debug("Runtime metrics enabled via DogStatsD.")
+			t.wg.Go(func() {
+				t.reportRuntimeMetrics(defaultMetricsReportInterval)
+			})
+		}
 	}
 	if c.internalConfig.DebugAbandonedSpans() {
 		log.Info("Abandoned spans logs enabled.")
@@ -1093,6 +1109,9 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	if t.runtimeMetrics != nil {
 		t.runtimeMetrics.Stop()
+	}
+	if t.otelRuntimeMetrics != nil {
+		t.otelRuntimeMetrics.stop()
 	}
 	t.statsd.Close()
 	if t.dataStreams != nil {
