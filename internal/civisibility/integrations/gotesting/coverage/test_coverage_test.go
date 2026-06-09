@@ -405,6 +405,12 @@ func TestFinalizeBackfillMatchesNestedSemanticImportModulePaths(t *testing.T) {
 	}
 }
 
+func TestModuleRepositoryRelativePrefixRejectsLeadingZeroSemanticImportVersion(t *testing.T) {
+	if got := moduleRepositoryRelativePrefix("github.com/example/project/v02/internal/package"); got != "" {
+		t.Fatalf("expected v02 not to be treated as a semantic import version, got %q", got)
+	}
+}
+
 func TestPreflightBackfillDoesNotEmitRuntimeCoverage(t *testing.T) {
 	ResetForTesting()
 	t.Cleanup(ResetForTesting)

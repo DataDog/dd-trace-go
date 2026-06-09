@@ -343,7 +343,11 @@ func isSemanticImportVersionSegment(segment string) bool {
 	if len(segment) < 2 || segment[0] != 'v' {
 		return false
 	}
-	version, err := strconv.Atoi(segment[1:])
+	digits := segment[1:]
+	if len(digits) > 1 && digits[0] == '0' {
+		return false
+	}
+	version, err := strconv.Atoi(digits)
 	if err != nil || version < 2 {
 		return false
 	}

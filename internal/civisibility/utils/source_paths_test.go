@@ -233,6 +233,15 @@ func TestResolveSourceFilePath(t *testing.T) {
 			expectedKnown:      true,
 		},
 		{
+			name:               "leading zero version is not a semantic import suffix",
+			runtimePath:        "github.com/myorg/myrepo/v02/pkg/foo_test.go",
+			tags:               map[string]string{constants.CIWorkspacePath: workspace, constants.GitRepositoryURL: "https://github.com/myorg/myrepo.git"},
+			mainModulePath:     "github.com/myorg/myrepo/v02",
+			expectedRelative:   "v02/pkg/foo_test.go",
+			expectedFilesystem: "/ci/workspace/v02/pkg/foo_test.go",
+			expectedKnown:      true,
+		},
+		{
 			name:               "v2x is not a semantic import suffix",
 			runtimePath:        "github.com/myorg/myrepo/v2x/pkg/foo_test.go",
 			tags:               map[string]string{constants.CIWorkspacePath: workspace, constants.GitRepositoryURL: "https://github.com/myorg/myrepo.git"},
