@@ -643,8 +643,6 @@ func TestTextMapPropagator(t *testing.T) {
 	})
 
 	t.Run("InjectExtract", func(t *testing.T) {
-		old := traceID128BitEnabled.Swap(true)
-		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		t.Setenv(headerPropagationStyleExtract, "datadog")
 		t.Setenv(headerPropagationStyleInject, "datadog")
 		propagator := NewPropagator(&PropagatorConfig{

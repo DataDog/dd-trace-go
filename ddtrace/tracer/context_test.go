@@ -157,13 +157,11 @@ func TestStartSpanFromContextRace(t *testing.T) {
 }
 
 func Test128(t *testing.T) {
-	_, _, _, stop, err := startTestTracer(t)
-	assert.Nil(t, err)
-	defer stop()
-
 	t.Run("disable 128 bit trace ids", func(t *testing.T) {
-		old := traceID128BitEnabled.Swap(false)
-		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
+		_, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
 		span, _ := StartSpanFromContext(context.Background(), "http.request")
 		assert.NotZero(t, span.Context().TraceID())
 		w3cCtx := span.Context()
@@ -178,6 +176,9 @@ func Test128(t *testing.T) {
 
 	t.Run("enable 128 bit trace ids", func(t *testing.T) {
 		// DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED is true by default
+		_, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
 		span128, _ := StartSpanFromContext(context.Background(), "http.request")
 		assert.NotZero(t, span128.Context().TraceID())
 		w3cCtx := span128.Context()

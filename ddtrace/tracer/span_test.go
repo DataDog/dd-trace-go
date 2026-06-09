@@ -1384,12 +1384,11 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-only", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, but 128bit format is not present in
 		// the span. So only the lower 64 bits should be logged in decimal form.
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		assert.Nil(err)
 		defer stop()
-		old := traceID128BitEnabled.Swap(false)
-		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		span := tracer.StartSpan("test.request")
 		span.traceID = 12345678
 		span.spanID = 87654321
@@ -1401,8 +1400,6 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-with-generation", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, and a 128-bit trace id, so
 		// a quoted 32 byte hex string should be printed for the dd.trace_id.
-		old := traceID128BitEnabled.Swap(true)
-		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		t.Setenv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", "true")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
@@ -1420,8 +1417,7 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-with-small-upper-bits", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, and a 128-bit trace id, so
 		// a quoted 32 byte hex string should be printed for the dd.trace_id.
-		old := traceID128BitEnabled.Swap(false)
-		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		assert.Nil(err)
@@ -1437,12 +1433,11 @@ func TestSpanLog(t *testing.T) {
 	t.Run("128-bit-logging-with-empty-upper-bits", func(t *testing.T) {
 		// Logging 128-bit trace ids is enabled, but the upper 64 bits
 		// are empty, so the dd.trace_id should be printed as raw digits (not hex).
+		t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "false")
 		assert := assert.New(t)
 		tracer, _, _, stop, err := startTestTracer(t, WithService("tracer.test"), WithEnv("testenv"))
 		assert.Nil(err)
 		defer stop()
-		old := traceID128BitEnabled.Swap(false)
-		defer func(v bool) { traceID128BitEnabled.Store(v) }(old)
 		span := tracer.StartSpan("test.request", WithSpanID(87654321))
 		span.Finish()
 		assert.False(span.context.traceID.HasUpper()) // it should not have generated upper bits

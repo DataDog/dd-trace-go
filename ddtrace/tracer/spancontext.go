@@ -31,17 +31,6 @@ import (
 
 const TraceIDZero string = "00000000000000000000000000000000"
 
-// traceID128BitEnabled caches DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED
-// at init time so that newSpanContext avoids calling BoolEnv on every span.
-// It is re-set by newConfig on every tracer start so that restarts pick up
-// any changed value. The init here ensures it is correct even when using
-// mocktracer (which does not call newConfig).
-var traceID128BitEnabled atomic.Bool
-
-func init() {
-	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true))
-}
-
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
 
 // traceID in big endian, i.e. <upper><lower>
@@ -272,17 +261,13 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			return true
 		})
 	}
-	// We generate a new upper trace ID when the trace is brand new (no parent)
-	// or when the parent is baggage only, since baggage only parents should
-	// not propagate their trace IDs
-	if (parent == nil || parent.baggageOnly) && traceID128BitEnabled.Load() { // +checklocksignore - Read-only after init.
-		// add 128 bit trace id, if enabled, formatted as big-endian:
-		// <32-bit unix seconds> <32 bits of zero> <64 random bits>
+
+	// Generate the upper 64 bits of a 128-bit trace ID when this is a new
+	// root span (no parent, or baggage-only parent that doesn't propagate IDs).
+	if (parent == nil || parent.baggageOnly) && internalconfig.Get().TraceID128BitEnabled() { // +checklocksignore - Read-only after init.
+		// Format: <32-bit unix seconds> <32 bits of zero> <64 random bits>
 		id128 := time.Duration(span.start) / time.Second
-		// casting from int64 -> uint32 should be safe since the start time won't be
-		// negative, and the seconds should fit within 32-bits for the foreseeable future.
-		// (We only want 32 bits of time, then the rest is zero)
-		tUp := uint64(uint32(id128)) << 32 // We need the time at the upper 32 bits of the uint
+		tUp := uint64(uint32(id128)) << 32
 		context.traceID.SetUpper(tUp)
 	}
 	if context.trace == nil {
