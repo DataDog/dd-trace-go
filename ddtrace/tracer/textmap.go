@@ -17,8 +17,7 @@ import (
 	"maps"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -180,8 +179,9 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cfg.BaggageHeader = DefaultBaggageHeader
 	}
 	cp := new(chainedPropagator)
-	cp.onlyExtractFirst = internal.BoolEnv(headerPropagationExtractFirst, false)
-	cp.propagationBehaviorExtract = env.Get(headerPropagationBehaviorExtract)
+	icfg := internalconfig.Get()
+	cp.onlyExtractFirst = icfg.PropagationExtractFirst()
+	cp.propagationBehaviorExtract = icfg.PropagationBehaviorExtract()
 	switch cp.propagationBehaviorExtract {
 	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
 		// valid
@@ -196,8 +196,8 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cp.extractors = propagators
 		return cp
 	}
-	injectorsPs := env.Get(headerPropagationStyleInject)
-	extractorsPs := env.Get(headerPropagationStyleExtract)
+	injectorsPs := icfg.PropagationStyleInject()
+	extractorsPs := icfg.PropagationStyleExtract()
 	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
 	return cp
