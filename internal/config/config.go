@@ -180,8 +180,6 @@ type Config struct {
 	experimentalFlaggingProviderEnabled bool
 	// spanPoolEnabled enables the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED).
 	spanPoolEnabled bool
-	// traceID128BitLoggingEnabled controls whether 128-bit trace IDs are logged in the span log format (DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED).
-	traceID128BitLoggingEnabled bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -278,7 +276,6 @@ func loadConfig() *Config {
 	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
-	cfg.traceID128BitLoggingEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.appKey = p.GetString("DD_APP_KEY", "")
 	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
@@ -1257,10 +1254,4 @@ func (c *Config) SpanPoolEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.spanPoolEnabled
-}
-
-func (c *Config) TraceID128BitLoggingEnabled() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.traceID128BitLoggingEnabled
 }
