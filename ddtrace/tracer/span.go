@@ -28,7 +28,6 @@ import (
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/errortrace"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -1218,7 +1217,8 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := getGlobalTracer(); tr != nil {
+		tr := getGlobalTracer()
+		if tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
@@ -1232,7 +1232,11 @@ func (s *Span) Format(f fmt.State, c rune) {
 			}
 		}
 		var traceID string
-		if internalconfig.Get().TraceID128BitLoggingEnabled() && s.context.traceID.HasUpper() {
+		log128 := true
+		if rt, ok := tr.(*tracer); ok {
+			log128 = rt.TracerConf().TraceID128BitLoggingEnabled
+		}
+		if log128 && s.context.traceID.HasUpper() {
 			traceID = s.context.TraceID()
 		} else {
 			traceID = fmt.Sprintf("%d", s.traceID)

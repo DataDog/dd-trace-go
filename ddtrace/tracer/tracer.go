@@ -48,19 +48,20 @@ import (
 )
 
 type TracerConf struct { //nolint:revive
-	CanComputeStats      bool
-	CanDropP0s           bool
-	DebugAbandonedSpans  bool
-	Disabled             bool
-	PartialFlush         bool
-	PartialFlushMinSpans int
-	PeerServiceDefaults  bool
-	PeerServiceMappings  map[string]string
-	EnvTag               string
-	VersionTag           string
-	ServiceTag           string
-	TracingAsTransport   bool
-	isLambdaFunction     bool
+	CanComputeStats             bool
+	CanDropP0s                  bool
+	DebugAbandonedSpans         bool
+	Disabled                    bool
+	PartialFlush                bool
+	PartialFlushMinSpans        int
+	PeerServiceDefaults         bool
+	PeerServiceMappings         map[string]string
+	EnvTag                      string
+	VersionTag                  string
+	ServiceTag                  string
+	TracingAsTransport          bool
+	isLambdaFunction            bool
+	TraceID128BitLoggingEnabled bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -1182,19 +1183,20 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 func (t *tracer) TracerConf() TracerConf {
 	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
 	return TracerConf{
-		CanComputeStats:      t.config.canComputeStats(),
-		CanDropP0s:           t.config.canDropP0s(),
-		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
-		Disabled:             !t.config.enabled.get(),
-		PartialFlush:         pfEnabled,
-		PartialFlushMinSpans: pfMin,
-		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
-		PeerServiceMappings:  t.config.internalConfig.PeerServiceMappings(),
-		EnvTag:               t.config.internalConfig.Env(),
-		VersionTag:           t.config.internalConfig.Version(),
-		ServiceTag:           t.config.internalConfig.ServiceName(),
-		TracingAsTransport:   t.config.tracingAsTransport,
-		isLambdaFunction:     t.config.internalConfig.IsLambdaFunction(),
+		CanComputeStats:             t.config.canComputeStats(),
+		CanDropP0s:                  t.config.canDropP0s(),
+		DebugAbandonedSpans:         t.config.internalConfig.DebugAbandonedSpans(),
+		Disabled:                    !t.config.enabled.get(),
+		PartialFlush:                pfEnabled,
+		PartialFlushMinSpans:        pfMin,
+		PeerServiceDefaults:         t.config.internalConfig.PeerServiceDefaultsEnabled(),
+		PeerServiceMappings:         t.config.internalConfig.PeerServiceMappings(),
+		EnvTag:                      t.config.internalConfig.Env(),
+		VersionTag:                  t.config.internalConfig.Version(),
+		ServiceTag:                  t.config.internalConfig.ServiceName(),
+		TracingAsTransport:          t.config.tracingAsTransport,
+		isLambdaFunction:            t.config.internalConfig.IsLambdaFunction(),
+		TraceID128BitLoggingEnabled: t.config.internalConfig.TraceID128BitLoggingEnabled(),
 	}
 }
 
