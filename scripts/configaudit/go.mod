@@ -2,8 +2,6 @@ module github.com/DataDog/dd-trace-go/v2/scripts/configaudit
 
 go 1.25.0
 
-replace github.com/DataDog/dd-trace-go/v2 => ../..
-
 require golang.org/x/tools v0.45.0
 
 require (
