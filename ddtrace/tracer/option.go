@@ -39,7 +39,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -186,15 +185,8 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled dynamicConfig[bool]
 
-	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
-	// Only used for telemetry currently.
-	orchestrionCfg orchestrionConfig
-
 	// traceSampleRules holds the trace sampling rules
 	traceSampleRules dynamicConfig[[]SamplingRule]
-
-	// headerAsTags holds the header as tags configuration.
-	headerAsTags dynamicConfig[[]string]
 
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
@@ -206,21 +198,6 @@ type config struct {
 	spanPoolEnabled bool
 }
 
-// orchestrionConfig contains Orchestrion configuration.
-type (
-	orchestrionConfig struct {
-		// Enabled indicates whether this tracer was instanciated via Orchestrion.
-		Enabled bool `json:"enabled"`
-
-		// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
-		Metadata *orchestrionMetadata `json:"metadata,omitempty"`
-	}
-	orchestrionMetadata struct {
-		// Version is the version of the orchestrion tool that was used to instrument the application.
-		Version string `json:"version,omitempty"`
-	}
-)
-
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -229,14 +206,6 @@ type StartOption func(*config)
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
 	c.internalConfig = internalconfig.CreateNew()
-
-	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
-	// the baked-in values. We do this early so that opts can be used to override the baked-in values,
-	// which is necessary for some tests to work properly.
-	c.orchestrionCfg.Enabled = orchestrion.Enabled()
-	if orchestrion.Version != "" {
-		c.orchestrionCfg.Metadata = &orchestrionMetadata{Version: orchestrion.Version}
-	}
 
 	c.sampler = NewAllSampler()
 
@@ -247,12 +216,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		if err := c.internalConfig.HostnameLookupError(); err != nil {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
-	}
-	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
-	if v := env.Get("DD_TRACE_HEADER_TAGS"); v != "" {
-		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
-		// Required to ensure that the startup header tags are set on reset.
-		c.headerAsTags.setStartup(c.headerAsTags.get())
 	}
 	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
 		tags := internal.ParseTagString(v)
@@ -1285,8 +1248,7 @@ func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
-		c.headerAsTags = newDynamicConfig("trace_header_tags", headerAsTags, setHeaderTags, equalSlice[string])
-		setHeaderTags(headerAsTags)
+		c.internalConfig.SetHeaderAsTags(headerAsTags, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1479,21 +1441,6 @@ func (t *dummyTransport) TraceIDs() []uint64 {
 	ids := t.traceIDs
 	t.traceIDs = nil
 	return ids
-}
-
-// setHeaderTags sets the global header tags.
-// Always resets the global value and returns true.
-func setHeaderTags(headerAsTags []string) bool {
-	globalconfig.ClearHeaderTags()
-	for _, h := range headerAsTags {
-		header, tag := normalizer.HeaderTag(h)
-		if len(header) == 0 || len(tag) == 0 {
-			log.Debug("Header-tag input is in unsupported format; dropping input value %q", h)
-			continue
-		}
-		globalconfig.SetHeaderTag(header, tag)
-	}
-	return true
 }
 
 // UserMonitoringConfig is used to configure what is used to identify a user.
