@@ -30,6 +30,17 @@ make config-audit
 (cd scripts/configaudit && GOWORK=off go run . -root ../.. -format json) > /tmp/audit.json
 ```
 
+## Suppressing intentional reads
+
+If a direct env-var read is intentional and not a migration candidate, annotate
+the line with `//nolint:configaudit`:
+
+```go
+} else if v := env.Get("DD_ENV"); v != "" { //nolint:configaudit — intentional: ...
+```
+
+The scanner skips any call site whose source line carries this annotation.
+
 ## CI
 
 The `.github/workflows/config-audit.yml` workflow runs the audit on every PR and

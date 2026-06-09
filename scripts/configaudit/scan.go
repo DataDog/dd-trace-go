@@ -96,6 +96,7 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 			if excluded(filename, exclude) {
 				continue
 			}
+			suppressed := suppressedLines(file, pkg)
 			ast.Inspect(file, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok || len(call.Args) == 0 {
@@ -113,6 +114,9 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 					return true
 				}
 				pos := pkg.Fset.Position(call.Pos())
+				if suppressed[pos.Line] {
+					return true
+				}
 				out[key] = append(out[key], CallSite{
 					File:    pos.Filename,
 					Line:    pos.Line,
@@ -124,6 +128,21 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 		}
 	}
 	return out, nil
+}
+
+// suppressedLines returns the set of 1-based line numbers in file that carry
+// a //nolint:configaudit annotation. Calls on those lines are intentionally
+// not migrated and are excluded from the audit output.
+func suppressedLines(file *ast.File, pkg *packages.Package) map[int]bool {
+	out := map[int]bool{}
+	for _, cg := range file.Comments {
+		for _, c := range cg.List {
+			if strings.Contains(c.Text, "nolint:configaudit") {
+				out[pkg.Fset.Position(c.Pos()).Line] = true
+			}
+		}
+	}
+	return out
 }
 
 // callIdentity decides whether the call matches one of our recognizers, and

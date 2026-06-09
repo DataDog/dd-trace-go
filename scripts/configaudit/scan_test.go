@@ -44,6 +44,10 @@ func TestScan_Fixture(t *testing.T) {
 	if len(got["DD_SITE"]) != 1 {
 		t.Errorf("DD_SITE call-site count = %d, want 1", len(got["DD_SITE"]))
 	}
+	// DD_ENV is suppressed with //nolint:configaudit and must not appear.
+	if len(got["DD_ENV"]) != 0 {
+		t.Errorf("DD_ENV should be suppressed, got %d call sites", len(got["DD_ENV"]))
+	}
 }
 
 func TestScan_RealRepoFindsUnmigratedReads(t *testing.T) {

@@ -18,4 +18,5 @@ func ReadAll() {
 	_ = envGet(ddSiteKey)
 	_ = boolEnv("DD_PROFILING_ENABLED", false)
 	_ = intEnv("DD_TRACE_AGENT_PORT", 8126)
+	_ = envGet("DD_ENV") //nolint:configaudit — intentional direct read, not a migration candidate
 }
