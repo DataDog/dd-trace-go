@@ -422,7 +422,7 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 			u := mockAgentEndpoint(t, "/v0.4/traces")
 			c, err := newTestConfig(func(c *config) {
 				c.ddTransport = p
-				c.sendRetries = test.configRetries
+				c.internalConfig.SetSendRetries(test.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 				c.internalConfig.SetAgentURL(u, internalconfig.OriginCode)
 			})

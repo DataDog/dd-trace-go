@@ -359,10 +359,10 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 	})
 }
 
-// TestSQLCommentUsesUpdatedInheritedTags verifies that when env, version, and
+// TestSQLCommentUsesUpdatedSpanSnapshotTags verifies that when env, version, and
 // peer.service are set on a span after creation, SQLCommentCarrier.Inject reads
-// the updated values from context.inherited rather than stale initial values.
-func TestSQLCommentUsesUpdatedInheritedTags(t *testing.T) {
+// the updated values from context.spanSnapshot rather than stale initial values.
+func TestSQLCommentUsesUpdatedSpanSnapshotTags(t *testing.T) {
 	trc, err := newTracer(WithService("my-svc"))
 	require.NoError(t, err)
 	defer globalconfig.SetServiceName("")
