@@ -315,8 +315,7 @@ func loadConfig() *Config {
 
 	// Internal metrics default to off in Lambda: they add per-invocation statsd
 	// overhead for little value and are not usable as distributions there.
-cfg.internalMetricsEnabled = p.GetBool("DD_TRACE_INTERNAL_METRICS_ENABLED", !cfg.isLambdaFunction)
-	cfg.internalMetricsEnabled = internalMetricsEnabled
+	cfg.internalMetricsEnabled = p.GetBool("DD_TRACE_INTERNAL_METRICS_ENABLED", !cfg.isLambdaFunction)
 
 	// Hostname lookup, if DD_TRACE_REPORT_HOSTNAME is true
 	// If the hostname lookup fails, an error is set and the hostname is not reported
