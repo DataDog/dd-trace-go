@@ -281,12 +281,8 @@ func loadConfig() *Config {
 	}
 
 	// Internal metrics default to off in Lambda: they add per-invocation statsd
-	// overhead for little value and are not usable as distributions there. If the
-	// user has explicitly set DD_TRACE_INTERNAL_METRICS_ENABLED, that value wins.
-	internalMetricsEnabled, internalMetricsOrigin := p.GetBoolWithOrigin("DD_TRACE_INTERNAL_METRICS_ENABLED", true)
-	if internalMetricsOrigin == telemetry.OriginDefault && cfg.isLambdaFunction {
-		internalMetricsEnabled = false
-	}
+	// overhead for little value and are not usable as distributions there.
+cfg.internalMetricsEnabled = p.GetBool("DD_TRACE_INTERNAL_METRICS_ENABLED", !cfg.isLambdaFunction)
 	cfg.internalMetricsEnabled = internalMetricsEnabled
 
 	// Hostname lookup, if DD_TRACE_REPORT_HOSTNAME is true
