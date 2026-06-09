@@ -110,7 +110,7 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 				if !ok {
 					return true
 				}
-				if !strings.HasPrefix(key, "DD_") && !strings.HasPrefix(key, "DD-") {
+				if !strings.HasPrefix(key, "DD_") && !strings.HasPrefix(key, "DD-") && !strings.HasPrefix(key, "OTEL_") {
 					return true
 				}
 				pos := pkg.Fset.Position(call.Pos())
