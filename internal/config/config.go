@@ -182,8 +182,6 @@ type Config struct {
 	spanPoolEnabled bool
 	// traceID128BitLoggingEnabled controls whether 128-bit trace IDs are logged in the span log format (DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED).
 	traceID128BitLoggingEnabled bool
-	// seelogWorkaroundEnabled controls the seelog goroutine-leak workaround (DD_TRACE_DEBUG_SEELOG_WORKAROUND).
-	seelogWorkaroundEnabled bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -286,7 +284,6 @@ func loadConfig() *Config {
 	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
 	cfg.experimentalFlaggingProviderEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
 	cfg.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
-	cfg.seelogWorkaroundEnabled = p.GetBool("DD_TRACE_DEBUG_SEELOG_WORKAROUND", true)
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
@@ -1266,10 +1263,4 @@ func (c *Config) TraceID128BitLoggingEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.traceID128BitLoggingEnabled
-}
-
-func (c *Config) SeelogWorkaroundEnabled() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.seelogWorkaroundEnabled
 }
