@@ -92,11 +92,8 @@ var (
 	_ = newClientArgument
 )
 
-// TestCaseConcurrent verifies that Orchestrion-injected spans are correctly
-// linked to a parent span even when goroutines call client methods without
-// explicitly passing a context (i.e. relying on GLS propagation).
-// If this test fails it confirms that GLS does not propagate across goroutine
-// boundaries and a WithContext injection fix is required.
+// TestCaseConcurrent verifies that spans started in goroutines are correctly
+// linked to a parent span when WithContext is called inside each goroutine.
 type TestCaseConcurrent struct {
 	client *as.Client
 }
@@ -136,28 +133,13 @@ func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// withContext calls the orchestrion-injected WithContext method if present
-	// (resolved at runtime via interface assertion so the file compiles without
-	// orchestrion). Without orchestrion the context is not stored and GLS takes
-	// over, which works for same-goroutine calls but not across goroutine
-	// boundaries — hence the explicit propagation here.
-	withContext := func(c *as.Client, ctx context.Context) *as.Client {
-		type withContexter interface {
-			WithContext(context.Context) *as.Client
-		}
-		if wc, ok := any(c).(withContexter); ok {
-			return wc.WithContext(ctx)
-		}
-		return c
-	}
-
 	errs := make([]as.Error, n)
 	var wg sync.WaitGroup
 	wg.Add(n)
 	for i := range n {
 		go func(i int) {
 			defer wg.Done()
-			errs[i] = withContext(tc.client, ctx).Put(nil, keys[i], as.BinMap{"value": i})
+			errs[i] = tc.client.WithContext(ctx).Put(nil, keys[i], as.BinMap{"value": i})
 		}(i)
 	}
 	wg.Wait()
