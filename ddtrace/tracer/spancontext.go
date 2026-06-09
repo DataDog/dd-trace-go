@@ -39,7 +39,7 @@ const TraceIDZero string = "00000000000000000000000000000000"
 var traceID128BitEnabled atomic.Bool
 
 func init() {
-	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true))
+	traceID128BitEnabled.Store(internalconfig.Get().TraceID128BitEnabled())
 }
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
