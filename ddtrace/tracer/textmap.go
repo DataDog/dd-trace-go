@@ -17,7 +17,8 @@ import (
 	"maps"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -148,6 +149,21 @@ type PropagatorConfig struct {
 	// BaggageHeader specifies the map key that will be used to store the baggage key-value pairs.
 	// It defaults to DefaultBaggageHeader.
 	BaggageHeader string
+
+	// InjectStyle overrides DD_TRACE_PROPAGATION_STYLE_INJECT. When set by the
+	// tracer, the value comes from internalConfig (which supports stable config).
+	// Direct callers that leave this empty get the env var fallback.
+	InjectStyle string
+
+	// ExtractStyle overrides DD_TRACE_PROPAGATION_STYLE_EXTRACT. Same semantics as InjectStyle.
+	ExtractStyle string
+
+	// BehaviorExtract overrides DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT. Same semantics as InjectStyle.
+	BehaviorExtract string
+
+	// ExtractFirst overrides DD_TRACE_PROPAGATION_EXTRACT_FIRST. Non-nil means
+	// the tracer has explicitly set the value via internalConfig.
+	ExtractFirst *bool
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
@@ -179,9 +195,16 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cfg.BaggageHeader = DefaultBaggageHeader
 	}
 	cp := new(chainedPropagator)
-	icfg := internalconfig.Get()
-	cp.onlyExtractFirst = icfg.PropagationExtractFirst()
-	cp.propagationBehaviorExtract = icfg.PropagationBehaviorExtract()
+	if cfg.ExtractFirst != nil {
+		cp.onlyExtractFirst = *cfg.ExtractFirst
+	} else {
+		cp.onlyExtractFirst = internal.BoolEnv(headerPropagationExtractFirst, false)
+	}
+	if cfg.BehaviorExtract != "" {
+		cp.propagationBehaviorExtract = cfg.BehaviorExtract
+	} else {
+		cp.propagationBehaviorExtract = env.Get(headerPropagationBehaviorExtract)
+	}
 	switch cp.propagationBehaviorExtract {
 	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
 		// valid
@@ -196,8 +219,14 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cp.extractors = propagators
 		return cp
 	}
-	injectorsPs := icfg.PropagationStyleInject()
-	extractorsPs := icfg.PropagationStyleExtract()
+	injectorsPs := cfg.InjectStyle
+	if injectorsPs == "" {
+		injectorsPs = env.Get(headerPropagationStyleInject)
+	}
+	extractorsPs := cfg.ExtractStyle
+	if extractorsPs == "" {
+		extractorsPs = env.Get(headerPropagationStyleExtract)
+	}
 	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
 	return cp
