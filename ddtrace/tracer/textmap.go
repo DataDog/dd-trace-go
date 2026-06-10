@@ -201,35 +201,32 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	} else {
 		cp.onlyExtractFirst = internal.BoolEnv(headerPropagationExtractFirst, false)
 	}
-	if cfg.BehaviorExtract != "" {
-		cp.propagationBehaviorExtract = cfg.BehaviorExtract
-	} else {
-		cp.propagationBehaviorExtract = env.Get(headerPropagationBehaviorExtract)
+	if cfg.BehaviorExtract == "" {
+		cfg.BehaviorExtract = env.Get(headerPropagationBehaviorExtract)
 	}
-	switch cp.propagationBehaviorExtract {
+	switch cfg.BehaviorExtract {
 	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
 		// valid
 	default:
-		if cp.propagationBehaviorExtract != "" {
-			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cp.propagationBehaviorExtract)
+		if cfg.BehaviorExtract != "" {
+			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cfg.BehaviorExtract)
 		}
-		cp.propagationBehaviorExtract = propagationBehaviorExtractContinue
+		cfg.BehaviorExtract = propagationBehaviorExtractContinue
 	}
+	cp.propagationBehaviorExtract = cfg.BehaviorExtract
 	if len(propagators) > 0 {
 		cp.injectors = propagators
 		cp.extractors = propagators
 		return cp
 	}
-	injectorsPs := cfg.InjectStyle
-	if injectorsPs == "" {
-		injectorsPs = env.Get(headerPropagationStyleInject)
+	if cfg.InjectStyle == "" {
+		cfg.InjectStyle = env.Get(headerPropagationStyleInject)
 	}
-	extractorsPs := cfg.ExtractStyle
-	if extractorsPs == "" {
-		extractorsPs = env.Get(headerPropagationStyleExtract)
+	if cfg.ExtractStyle == "" {
+		cfg.ExtractStyle = env.Get(headerPropagationStyleExtract)
 	}
-	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
-	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
+	cp.injectors, cp.injectorNames = getPropagators(cfg, cfg.InjectStyle)
+	cp.extractors, cp.extractorsNames = getPropagators(cfg, cfg.ExtractStyle)
 	return cp
 }
 
