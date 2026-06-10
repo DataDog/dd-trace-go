@@ -164,24 +164,13 @@ type PropagatorConfig struct {
 
 	// ExtractFirst, when true, stops extraction after the first successful
 	// extractor rather than trying all of them.
-	// A nil pointer means the value will be read from the environment.
+	// A nil pointer means the value is unset.
 	ExtractFirst *bool
 }
-
-// Note: InjectStyle, ExtractStyle, BehaviorExtract, and ExtractFirst fall back
-// to their corresponding DD_TRACE_PROPAGATION_* environment variables when
-// left at their zero values. The tracer populates them from its configuration
-// (which also supports declarative config) before calling NewPropagator.
 
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
 // To use the defaults, nil may be provided in place of the config.
-//
-// The inject and extract propagators are determined using environment variables
-// with the following order of precedence:
-//  1. DD_TRACE_PROPAGATION_STYLE_INJECT
-//  2. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
-//  3. If none of the above, use default values
 func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
@@ -202,6 +191,11 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cfg.BaggageHeader = DefaultBaggageHeader
 	}
 	cp := new(chainedPropagator)
+	// For each propagation setting, the PropagatorConfig field takes precedence.
+	// When left at its zero value, the corresponding DD_TRACE_PROPAGATION_*
+	// environment variable is read as a fallback. The tracer always populates
+	// these fields from its configuration (including declarative/stable config)
+	// before calling NewPropagator.
 	if cfg.ExtractFirst != nil {
 		cp.onlyExtractFirst = *cfg.ExtractFirst
 	} else {
