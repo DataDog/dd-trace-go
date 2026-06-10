@@ -25,6 +25,7 @@ type SpanStartSnapshot struct {
 	DebugAbandonedSpans     bool
 	ProfilerHotspotsEnabled bool
 	ProfilerEndpoints       bool
+	SpanPoolEnabled         bool
 }
 
 // SpanStartSnapshot returns a snapshot of the config fields read by
@@ -44,5 +45,6 @@ func (c *Config) SpanStartSnapshot() SpanStartSnapshot {
 		DebugAbandonedSpans:     c.debugAbandonedSpans,
 		ProfilerHotspotsEnabled: c.profilerHotspots,
 		ProfilerEndpoints:       c.profilerEndpoints,
+		SpanPoolEnabled:         c.spanPoolEnabled,
 	}
 }

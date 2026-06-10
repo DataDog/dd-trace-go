@@ -945,11 +945,10 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if !t.config.enabled.get() {
 		return nil
 	}
-	span := spanStart(operationName, &t.sharedAttrs, t.config.internalConfig.SpanPoolEnabled(), options...)
-
 	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
 	cSnap := t.config.internalConfig.SpanStartSnapshot()
+	span := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
 
 	if span.service == "" {
 		span.service = cSnap.ServiceName
