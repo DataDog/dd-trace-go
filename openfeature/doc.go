@@ -271,6 +271,28 @@
 // Exposure events are buffered and flushed periodically to the Datadog Agent
 // (default: every 1 second, configurable via ExposureFlushInterval).
 //
+// # Evaluation Count Tracking
+//
+// The provider emits windowed per-(flag, variant, allocation, rule, subject, context)
+// evaluation counts to the "flagevaluation" EVP track, giving server-side flags the same
+// volume visibility as the browser SDK.
+//
+// Evaluation count tracking is controlled by the DD_FLAGGING_EVALUATION_COUNTS_ENABLED
+// environment variable (default: true). When disabled, the writer is nil and the hook is
+// not registered, incurring zero per-evaluation overhead.
+//
+// Capacity is controlled via two environment variables:
+//   - DD_FLAGGING_EVALUATION_PER_FLAG_CAP (default: 10000): max full-fidelity tuples per flag
+//   - DD_FLAGGING_EVALUATION_MAP_CAPACITY (default: 65536): global cap across all flags
+//
+// When a flag exceeds its per-flag cap, new tuples collapse into a degraded (rollup)
+// bucket keyed by (flag, variant, allocation, rule, reason). Rollup events are
+// distinguishable on the wire by the absence of targeting_key and context.evaluation.
+//
+// The flush interval is configurable via EvaluationFlushInterval in ProviderConfig
+// (default: 10 seconds, matching the browser SDK). Memory bounds are approximately
+// 400 B/entry × globalCap, yielding ~27 MB worst case.
+//
 // # Performance Considerations
 //
 //   - Regex patterns are compiled once and cached for reuse
