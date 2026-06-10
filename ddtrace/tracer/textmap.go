@@ -191,11 +191,11 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cfg.BaggageHeader = DefaultBaggageHeader
 	}
 	cp := new(chainedPropagator)
-	// For each propagation setting, the PropagatorConfig field takes precedence.
-	// When left at its zero value, the corresponding DD_TRACE_PROPAGATION_*
-	// environment variable is read as a fallback. The tracer always populates
-	// these fields from its configuration (including declarative/stable config)
-	// before calling NewPropagator.
+	// For each propagation setting, the PropagatorConfig field takes precedence
+	// over its corresponding DD_TRACE_PROPAGATION_* environment variable.
+	// When NewPropagator is called directly (not via tracer.Start), these fields
+	// are typically zero and the environment variable is used. When called by the
+	// tracer, they are pre-populated from the tracer's configuration.
 	if cfg.ExtractFirst != nil {
 		cp.onlyExtractFirst = *cfg.ExtractFirst
 	} else {
