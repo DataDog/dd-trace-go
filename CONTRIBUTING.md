@@ -304,6 +304,14 @@ The `configinverter` tool provides a command to add new environment variable key
 go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY
 ```
 
+For example, the following environment variables were added for server-side evaluation count tracking:
+
+```sh
+go run ./scripts/configinverter/main.go add DD_FLAGGING_EVALUATION_COUNTS_ENABLED
+go run ./scripts/configinverter/main.go add DD_FLAGGING_EVALUATION_PER_FLAG_CAP
+go run ./scripts/configinverter/main.go add DD_FLAGGING_EVALUATION_MAP_CAPACITY
+```
+
 After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
 If the key already exists in the registry because another language already registred it this step can be skipped.
 Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
