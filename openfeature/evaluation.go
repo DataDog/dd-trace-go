@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -199,6 +200,63 @@ func primitiveToString(v any) string {
 	default:
 		return ""
 	}
+}
+
+type evaluationAggregator struct {
+	mu           sync.Mutex
+	full         map[uint64]*evaluationEntry
+	degraded     map[uint64]*evaluationEntry
+	perFlagFull  map[string]int
+	perFlagCap   int
+	globalCap    int
+	globalCount  int
+}
+
+func newEvaluationAggregator(perFlagCap, globalCap int) *evaluationAggregator {
+	return &evaluationAggregator{
+		full:        make(map[uint64]*evaluationEntry),
+		degraded:    make(map[uint64]*evaluationEntry),
+		perFlagFull: make(map[string]int),
+		perFlagCap:  perFlagCap,
+		globalCap:   globalCap,
+	}
+}
+
+// add records a single flag evaluation. The hash is computed outside the lock to minimise contention.
+func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs map[string]any, errorType, errorMessage string, runtimeDefault bool, nowMs int64) {
+	h := hashKey(key)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if e, ok := a.full[h]; ok {
+		e.count++
+		e.lastEvaluation = nowMs
+		return
+	}
+	a.full[h] = &evaluationEntry{
+		count:           1,
+		firstEvaluation: nowMs,
+		lastEvaluation:  nowMs,
+		targetingKey:    key.targetingKey,
+		contextAttrs:    contextAttrs,
+	}
+	a.perFlagFull[key.flagKey]++
+	a.globalCount++
+}
+
+// drain swaps full and degraded maps with fresh ones, resets counters, and returns the old maps.
+func (a *evaluationAggregator) drain() (full map[uint64]*evaluationEntry, degraded map[uint64]*evaluationEntry) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	full = a.full
+	degraded = a.degraded
+	a.full = make(map[uint64]*evaluationEntry)
+	a.degraded = make(map[uint64]*evaluationEntry)
+	a.perFlagFull = make(map[string]int)
+	a.globalCount = 0
+	return full, degraded
 }
 
 // flattenAndExtractPrimitive flattens the OpenFeature evaluation context and returns
