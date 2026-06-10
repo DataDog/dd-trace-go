@@ -12,14 +12,17 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 type traceWriter interface {
@@ -99,7 +102,30 @@ func (h *agentTraceWriter) stop() {
 
 // newPayload returns a new payload based on the trace protocol.
 func (h *agentTraceWriter) newPayload() payload {
-	return newPayload(h.config.internalConfig.TraceProtocol())
+	payload := newPayload(h.config.internalConfig.TraceProtocol())
+	if payload.protocol() == traceProtocolV04 {
+		return payload
+	}
+	// pre-allocate payloadV1 with field values
+	payloadV1 := payload.(*safePayload).p.(*payloadV1)
+	payloadV1.SetLanguageName("go")
+	payloadV1.SetLanguageVersion(runtime.Version())
+	payloadV1.SetTracerVersion(version.Tag)
+	payloadV1.SetRuntimeID(globalconfig.RuntimeID())
+	if v := h.config.internalConfig.Env(); v != "" {
+		payloadV1.SetEnv(v)
+	}
+	if v := h.config.internalConfig.Hostname(); v != "" {
+		payloadV1.SetHostname(v)
+	}
+	if v := h.config.internalConfig.Version(); v != "" {
+		payloadV1.SetAppVersion(v)
+	}
+	if cid := globalinternal.ContainerID(); cid != "" {
+		payloadV1.SetContainerID(cid)
+	}
+
+	return payload
 }
 
 // flush will push any currently buffered traces to the server.
@@ -124,8 +150,7 @@ func (h *agentTraceWriter) flush() {
 			// standard library. See dd-trace-go#976
 			h.statsd.Count("datadog.tracer.queue.enqueued.traces", int64(atomic.SwapUint32(&h.tracesQueued, 0)), nil, 1)
 			if p.protocol() == traceProtocolV1 {
-				sp := p.(*safePayload)
-				putPayloadV1(sp.p.(*payloadV1))
+				p.(*safePayload).p.(*payloadV1).handoff(pv1StateFlushDone)
 			} else {
 				p.clear()
 			}
@@ -136,7 +161,9 @@ func (h *agentTraceWriter) flush() {
 
 		stats := p.stats()
 		var err error
-		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
+		sendRetries := h.config.internalConfig.SendRetries()
+		retryInterval := h.config.internalConfig.RetryInterval()
+		for attempt := 0; attempt <= sendRetries; attempt++ {
 			log.Debug("Attempt to send payload: size: %d traces: %d\n", stats.size, stats.itemCount)
 			var rc io.ReadCloser
 			rc, err = h.config.ddTransport.send(p)
@@ -150,11 +177,11 @@ func (h *agentTraceWriter) flush() {
 				return
 			}
 
-			if attempt+1%5 == 0 {
-				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
+			if (attempt+1)%5 == 0 {
+				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error())
 			}
 			p.reset()
-			time.Sleep(h.config.internalConfig.RetryInterval())
+			time.Sleep(retryInterval)
 		}
 		h.statsd.Count("datadog.tracer.traces_dropped", int64(stats.itemCount), []string{"reason:send_failed"}, 1)
 		log.Error("lost %d traces: %v", stats.itemCount, err.Error())

@@ -280,6 +280,13 @@
         "default": "true"
       }
     ],
+    "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED": [
       {
         "implementation": "A",
@@ -362,6 +369,13 @@
         "implementation": "A",
         "type": "int",
         "default": "8125"
+      }
+    ],
+    "DD_DOGSTATSD_URL": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "http://localhost:8125"
       }
     ],
     "DD_DYNAMIC_INSTRUMENTATION_ENABLED": [
@@ -1001,6 +1015,13 @@
         "default": "1.0"
       }
     ],
+    "DD_TRACE_AGENT_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "10"
+      }
+    ],
     "DD_TRACE_AGENT_URL": [
       {
         "implementation": "C",
@@ -1041,13 +1062,6 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
-      }
-    ],
-    "DD_TRACE_CLIENT_HOSTNAME_COMPAT": [
-      {
-        "implementation": "A",
-        "type": "string",
-        "default": null
       }
     ],
     "DD_TRACE_CLIENT_IP_ENABLED": [
@@ -1323,6 +1337,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_INTERNAL_METRICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_TRACE_KAFKA_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -1426,6 +1447,13 @@
         "implementation": "A",
         "type": "map",
         "default": ""
+      }
+    ],
+    "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "continue"
       }
     ],
     "DD_TRACE_PROPAGATION_EXTRACT_FIRST": [
@@ -1554,6 +1582,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_SEND_RETRIES": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "0"
+      }
+    ],
     "DD_TRACE_SOURCE_HOSTNAME": [
       {
         "implementation": "A",
@@ -1566,6 +1601,13 @@
         "implementation": "B",
         "type": "string",
         "default": "v0"
+      }
+    ],
+    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_SQL_ANALYTICS_ENABLED": [
@@ -1597,6 +1639,13 @@
       }
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_TRACE_UNIVERSAL_VERSION_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",

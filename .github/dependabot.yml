@@ -1,0 +1,57 @@
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+
+updates:
+  # GitHub Actions — pins to commit SHAs already used in workflows;
+  # Dependabot keeps those SHAs current, preventing stale action hijacks.
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/"
+      - "/.github/actions/codecov-upload"
+      - "/.github/actions/dd-ci-upload"
+      - "/.github/actions/pr-status-updater"
+      - "/.github/actions/setup-go"
+      - "/.github/actions/supported_configurations_validation"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 2
+
+  # Docker — updates base image digests (sha256 pins) to latest verified digests.
+  - package-ecosystem: "docker"
+    directories:
+      - "/contrib/azure/apim-callout/cmd/apim-callout"
+      - "/contrib/envoyproxy/go-control-plane/cmd/serviceextensions"
+      - "/contrib/haproxy/stream-processing-offload/cmd/spoa"
+      - "/contrib/k8s.io/gateway-api/cmd/request-mirror"
+      - "/internal/apps"
+      - "/internal/setup-smoke-test"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    groups:
+      docker:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 2

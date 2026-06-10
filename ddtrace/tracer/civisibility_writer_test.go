@@ -38,6 +38,7 @@ type failingCiVisibilityTransport struct {
 }
 
 func (t *failingCiVisibilityTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
 	t.sendAttempts++
 
 	ciVisibilityPayload := &ciVisibilityPayload{payload: p, serializationTime: 0}
@@ -107,7 +108,7 @@ func TestCiVisibilityTraceWriterFlushRetries(t *testing.T) {
 			}
 			c, err := newTestConfig(func(c *config) {
 				c.ddTransport = p
-				c.sendRetries = test.configRetries
+				c.internalConfig.SetSendRetries(test.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
 			})
 			assert.NoError(err)
@@ -159,7 +160,7 @@ func TestCiVisibilityTraceWriterClosesHTTPResponseBody(t *testing.T) {
 			headers:          map[string]string{"Content-Type": "application/msgpack"},
 			agentless:        false,
 		}
-		c.sendRetries = 0
+		c.internalConfig.SetSendRetries(0, internalconfig.OriginCode)
 	})
 	assert.NoError(err)
 

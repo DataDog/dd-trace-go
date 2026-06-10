@@ -315,13 +315,13 @@ func TestInvalidAgentURL(t *testing.T) {
 	// invalid socket URL
 	t.Setenv("DD_TRACE_AGENT_URL", "var/run/datadog/apm.socket")
 	tp := new(log.RecordLogger)
-	tracer, err := newTracer(WithLogger(tp))
+	tracer, err := newTracer(WithLogger(tp), withNoopInfoHTTPClient())
 	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
 	tp.Ignore(commonLogIgnore...)
 	logStartup(tracer)
-	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`) // v1.0 endpoint is not available for invalid agent
 	if !found {
 		t.Fatal("Expected to find log entry")
 	}
@@ -333,13 +333,13 @@ func TestAgentURLConflict(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("DD_TRACE_AGENT_URL", "unix://var/run/datadog/apm.socket")
 	tp := new(log.RecordLogger)
-	tracer, err := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"))
+	tracer, err := newTracer(WithLogger(tp), WithUDS("var/run/datadog/apm.socket"), WithAgentAddr("localhost:8126"), withNoopInfoHTTPClient())
 	assert.Nil(err)
 	defer tracer.Stop()
 	tp.Reset()
 	tp.Ignore(commonLogIgnore...)
 	logStartup(tracer)
-	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`)
+	logEntry, found := findLogEntry(tp.Logs(), `"agent_url":"http://localhost:8126/v0.4/traces"`) // v1.0 endpoint is not available
 	if !found {
 		t.Fatal("Expected to find log entry")
 	}

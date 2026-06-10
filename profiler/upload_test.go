@@ -10,10 +10,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 	maininternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 
 	"github.com/stretchr/testify/assert"
@@ -42,7 +46,8 @@ func TestTryUploadUDS(t *testing.T) {
 		t.Skip("Unix domain sockets are non-functional on windows.")
 	}
 	profiles := make(chan profileMeta, 1)
-	server := httptest.NewUnstartedServer(&fakeBackend{profiles: profiles})
+	backend := &fakeBackend{profiles: profiles}
+	server := httptest.NewUnstartedServer(backend)
 	udsPath := "/tmp/com.datadoghq.dd-trace-go.profiler.test.sock"
 	l, err := net.Listen("unix", udsPath)
 	if err != nil {
@@ -53,51 +58,58 @@ func TestTryUploadUDS(t *testing.T) {
 	server.Start()
 	defer server.Close()
 
-	p, err := unstartedProfiler(
+	require.NoError(t, Start(
 		WithUDS(udsPath),
-	)
-	require.NoError(t, err)
-	err = p.doRequest(testBatch)
-	require.NoError(t, err)
-	profile := <-profiles
+		WithProfileTypes(),
+		WithPeriod(10*time.Millisecond),
+	))
+	defer Stop()
 
-	assert := assert.New(t)
-	assert.Subset(profile.tags, []string{
-		"host:my-host",
-		"runtime:go",
-	})
+	profile := backend.ReceiveProfile(t)
+	assert.Contains(t, profile.tags, "runtime:go")
 }
 
 func Test202Accepted(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer server.Close()
-	p, err := unstartedProfiler(
-		WithAgentAddr(server.Listener.Addr().String()),
+	// startTestProfiler's fakeBackend returns 202; ReceiveProfile confirms
+	// the profiler treats 202 as success and continues uploading.
+	backend := startTestProfiler(t, 1,
+		WithProfileTypes(),
+		WithPeriod(10*time.Millisecond),
 		WithService("my-service"),
 		WithEnv("my-env"),
 		WithTags("tag1:1", "tag2:2"),
 	)
-	require.NoError(t, err)
-	err = p.doRequest(testBatch)
-	require.NoError(t, err)
+	backend.ReceiveProfile(t)
 }
 
 func TestOldAgent(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	ch := make(chan struct{}, 2)
+	server, client := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/profiling/v1/input" {
+			return
+		}
 		w.WriteHeader(http.StatusNotFound)
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
 	}))
 	defer server.Close()
-	p, err := unstartedProfiler(
-		WithAgentAddr(server.Listener.Addr().String()),
-		WithService("my-service"),
-		WithEnv("my-env"),
-		WithTags("tag1:1", "tag2:2"),
-	)
-	require.NoError(t, err)
-	err = p.doRequest(testBatch)
-	assert.Equal(t, errOldAgent, err)
+	rl := &log.RecordLogger{}
+	defer log.UseLogger(rl)()
+
+	Start(WithHTTPClient(client), WithProfileTypes(), WithPeriod(time.Millisecond))
+	defer Stop()
+	<-ch
+	<-ch
+	log.Flush()
+	logs := rl.Logs()
+	const want = "Datadog Agent is not accepting profiles"
+	if !slices.ContainsFunc(logs, func(s string) bool {
+		return strings.Contains(s, "Datadog Agent is not accepting profiles")
+	}) {
+		t.Errorf("didn't see log message containing %s, got: %s", want, logs)
+	}
 }
 
 func setContainerEntityIDs(t *testing.T, cid, eid string) {
