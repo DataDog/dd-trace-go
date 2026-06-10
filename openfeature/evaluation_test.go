@@ -378,6 +378,134 @@ func TestEvaluationAggregator_GlobalCapIncrementExistingDegraded(t *testing.T) {
 	}
 }
 
+func TestEvaluationAggregator_FairnessEviction(t *testing.T) {
+	a := newEvaluationAggregator(10, 2)
+
+	// Add flag-a/user1, flag-a/user2 → fills global cap (globalCount=2)
+	key1 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-1"}
+	key2 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-2"}
+	a.add(key1, nil, "", "", false, 1000)
+	a.add(key2, nil, "", "", false, 1000)
+
+	if a.globalCount != 2 {
+		t.Fatalf("expected globalCount=2 after filling cap, got %d", a.globalCount)
+	}
+
+	// Add flag-b/user3 (cold flag, never seen) → fairness fires
+	keyB := evaluationAggregationKey{flagKey: "flag-b", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-3"}
+	a.add(keyB, nil, "", "", false, 2000)
+
+	// len(full) == 2 (one flag-a entry + flag-b/user3)
+	if len(a.full) != 2 {
+		t.Errorf("expected len(full)==2, got %d", len(a.full))
+	}
+	// len(degraded) == 1 (the evicted flag-a entry rolled into degraded)
+	if len(a.degraded) != 1 {
+		t.Errorf("expected len(degraded)==1, got %d", len(a.degraded))
+	}
+	// perFlagFull["flag-b"] == 1
+	if a.perFlagFull["flag-b"] != 1 {
+		t.Errorf("expected perFlagFull[flag-b]==1, got %d", a.perFlagFull["flag-b"])
+	}
+	// perFlagFull["flag-a"] == 1 (was 2, one evicted)
+	if a.perFlagFull["flag-a"] != 1 {
+		t.Errorf("expected perFlagFull[flag-a]==1, got %d", a.perFlagFull["flag-a"])
+	}
+	// globalCount == 2
+	if a.globalCount != 2 {
+		t.Errorf("expected globalCount==2, got %d", a.globalCount)
+	}
+	// The degraded entry for flag-a has count == 1 (the evicted entry's count)
+	dk := evaluationDegradedKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH"}
+	dh := hashDegradedKey(dk)
+	de := a.degraded[dh]
+	if de == nil {
+		t.Fatal("expected degraded entry for flag-a not found")
+	}
+	if de.count != 1 {
+		t.Errorf("expected degraded count==1, got %d", de.count)
+	}
+}
+
+func TestEvaluationAggregator_FairnessOnlyForColdFlags(t *testing.T) {
+	a := newEvaluationAggregator(10, 2)
+
+	// Add flag-a/user1, flag-a/user2 → fills global cap
+	key1 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-1"}
+	key2 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-2"}
+	a.add(key1, nil, "", "", false, 1000)
+	a.add(key2, nil, "", "", false, 1000)
+
+	if a.globalCount != 2 {
+		t.Fatalf("expected globalCount=2 after filling cap, got %d", a.globalCount)
+	}
+
+	// Add flag-a/user3 (NOT cold — flag-a already has entries) → should go to degraded normally, no eviction
+	key3 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-3"}
+	a.add(key3, nil, "", "", false, 2000)
+
+	// len(full) == 2 (no change)
+	if len(a.full) != 2 {
+		t.Errorf("expected len(full)==2, got %d", len(a.full))
+	}
+	// len(degraded) == 1 (flag-a/user3 degraded)
+	if len(a.degraded) != 1 {
+		t.Errorf("expected len(degraded)==1, got %d", len(a.degraded))
+	}
+	// perFlagFull["flag-a"] == 2 (unchanged by the degraded insert)
+	if a.perFlagFull["flag-a"] != 2 {
+		t.Errorf("expected perFlagFull[flag-a]==2, got %d", a.perFlagFull["flag-a"])
+	}
+}
+
+func TestEvaluationAggregator_FairnessCountFolded(t *testing.T) {
+	a := newEvaluationAggregator(10, 2)
+
+	// Add flag-a/user1 with count incremented 5 times (add same key 5 times)
+	key1 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-1"}
+	for i := 0; i < 5; i++ {
+		a.add(key1, nil, "", "", false, int64(1000+i))
+	}
+
+	// Add flag-a/user2 → fills global cap (globalCount=2)
+	key2 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-2"}
+	a.add(key2, nil, "", "", false, 2000)
+
+	if a.globalCount != 2 {
+		t.Fatalf("expected globalCount=2 after filling cap, got %d", a.globalCount)
+	}
+
+	// Add flag-b/user1 (cold) → fairness evicts one flag-a entry
+	keyB := evaluationAggregationKey{flagKey: "flag-b", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-1"}
+	a.add(keyB, nil, "", "", false, 3000)
+
+	// Determine which flag-a entry was evicted (victim is the one with most count = user-1 with count 5,
+	// but scan order is map iteration; either could be evicted. We check total preservation.)
+	// Assert degraded entry for flag-a exists
+	dk := evaluationDegradedKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH"}
+	dh := hashDegradedKey(dk)
+	de := a.degraded[dh]
+	if de == nil {
+		t.Fatal("expected degraded entry for flag-a not found")
+	}
+
+	// Sum full counts for flag-a + degraded count for flag-a == 6 (total evaluations preserved)
+	var fullFlagACount int64
+	for h, entry := range a.full {
+		if k, ok := a.keys[h]; ok && k.flagKey == "flag-a" {
+			fullFlagACount += entry.count
+		}
+	}
+	total := fullFlagACount + de.count
+	if total != 6 {
+		t.Errorf("expected total flag-a evaluations==6 (preserved), got %d (full=%d, degraded=%d)", total, fullFlagACount, de.count)
+	}
+	// degraded count should equal the evicted entry's original count
+	if de.count != 5 && de.count != 1 {
+		t.Errorf("expected degraded count to be 5 or 1 (the evicted entry's count), got %d", de.count)
+	}
+}
+
 func TestEvaluationAggregator_DrainResetsGlobalCount(t *testing.T) {
 	a := newEvaluationAggregator(2, 2)
 

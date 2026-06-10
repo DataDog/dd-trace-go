@@ -268,28 +268,90 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 
 	// Check global cap before inserting into full.
 	if a.globalCount >= a.globalCap {
-		// Route to degraded (rollup) bucket.
-		dk := evaluationDegradedKey{
-			flagKey:          key.flagKey,
-			variant:          key.variant,
-			allocationKey:    key.allocationKey,
-			targetingRuleKey: key.targetingRuleKey,
-			reason:           key.reason,
-		}
-		dh := hashDegradedKey(dk)
-		if de, ok := a.degraded[dh]; ok {
-			de.count++
-			de.lastEvaluation = nowMs
-		} else {
-			a.degraded[dh] = &evaluationEntry{
-				count:           1,
-				firstEvaluation: nowMs,
-				lastEvaluation:  nowMs,
+		// Fairness eviction: if this flag has never been seen this window, evict one entry
+		// from the noisiest flag so every flag gets at least one full-fidelity event.
+		if a.perFlagFull[key.flagKey] == 0 {
+			// Find victim flag: the flag with the highest perFlagFull count.
+			var victimFlag string
+			var victimCount int
+			for f, c := range a.perFlagFull {
+				if c > victimCount {
+					victimCount = c
+					victimFlag = f
+				}
 			}
-			a.degradedKeys[dh] = dk
+			if victimFlag != "" {
+				// Find any full entry belonging to the victim flag.
+				var evictedHash uint64
+				var found bool
+				for h, k := range a.keys {
+					if k.flagKey == victimFlag {
+						evictedHash = h
+						found = true
+						break
+					}
+				}
+				if found {
+					evictedKey := a.keys[evictedHash]
+					evictedEntry := a.full[evictedHash]
+
+					// Build degraded key from evicted entry and fold count.
+					dk := evaluationDegradedKey{
+						flagKey:          evictedKey.flagKey,
+						variant:          evictedKey.variant,
+						allocationKey:    evictedKey.allocationKey,
+						targetingRuleKey: evictedKey.targetingRuleKey,
+						reason:           evictedKey.reason,
+					}
+					dh := hashDegradedKey(dk)
+					if de, ok := a.degraded[dh]; ok {
+						de.count += evictedEntry.count
+						if evictedEntry.lastEvaluation > de.lastEvaluation {
+							de.lastEvaluation = evictedEntry.lastEvaluation
+						}
+					} else {
+						a.degraded[dh] = &evaluationEntry{
+							count:           evictedEntry.count,
+							firstEvaluation: evictedEntry.firstEvaluation,
+							lastEvaluation:  evictedEntry.lastEvaluation,
+						}
+						a.degradedKeys[dh] = dk
+					}
+
+					// Remove evicted entry from full.
+					delete(a.full, evictedHash)
+					delete(a.keys, evictedHash)
+					a.perFlagFull[victimFlag]--
+					a.globalCount--
+					// Fall through to insert the cold flag below.
+				}
+			}
 		}
-		// Do NOT increment perFlagFull or globalCount for degraded inserts.
-		return
+
+		// If still at cap (no eviction happened or victim not found), route to degraded.
+		if a.globalCount >= a.globalCap {
+			dk := evaluationDegradedKey{
+				flagKey:          key.flagKey,
+				variant:          key.variant,
+				allocationKey:    key.allocationKey,
+				targetingRuleKey: key.targetingRuleKey,
+				reason:           key.reason,
+			}
+			dh := hashDegradedKey(dk)
+			if de, ok := a.degraded[dh]; ok {
+				de.count++
+				de.lastEvaluation = nowMs
+			} else {
+				a.degraded[dh] = &evaluationEntry{
+					count:           1,
+					firstEvaluation: nowMs,
+					lastEvaluation:  nowMs,
+				}
+				a.degradedKeys[dh] = dk
+			}
+			// Do NOT increment perFlagFull or globalCount for degraded inserts.
+			return
+		}
 	}
 
 	// Under cap: insert into full.
