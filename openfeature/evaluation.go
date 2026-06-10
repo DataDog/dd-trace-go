@@ -266,6 +266,32 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 		return
 	}
 
+	// Check global cap before inserting into full.
+	if a.globalCount >= a.globalCap {
+		// Route to degraded (rollup) bucket.
+		dk := evaluationDegradedKey{
+			flagKey:          key.flagKey,
+			variant:          key.variant,
+			allocationKey:    key.allocationKey,
+			targetingRuleKey: key.targetingRuleKey,
+			reason:           key.reason,
+		}
+		dh := hashDegradedKey(dk)
+		if de, ok := a.degraded[dh]; ok {
+			de.count++
+			de.lastEvaluation = nowMs
+		} else {
+			a.degraded[dh] = &evaluationEntry{
+				count:           1,
+				firstEvaluation: nowMs,
+				lastEvaluation:  nowMs,
+			}
+			a.degradedKeys[dh] = dk
+		}
+		// Do NOT increment perFlagFull or globalCount for degraded inserts.
+		return
+	}
+
 	// Under cap: insert into full.
 	a.full[h] = &evaluationEntry{
 		count:           1,

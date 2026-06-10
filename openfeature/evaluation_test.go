@@ -306,3 +306,109 @@ func TestHashContext_Deterministic(t *testing.T) {
 		t.Error("expected different hashes for different attrs")
 	}
 }
+
+func TestEvaluationAggregator_GlobalCapRoutesToDegraded(t *testing.T) {
+	a := newEvaluationAggregator(100, 3)
+
+	// Add 3 distinct tuples for different flags → all go to full, globalCount==3
+	key1 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", targetingKey: "user-1"}
+	key2 := evaluationAggregationKey{flagKey: "flag-b", variant: "off", targetingKey: "user-2"}
+	key3 := evaluationAggregationKey{flagKey: "flag-c", variant: "on", targetingKey: "user-3"}
+
+	a.add(key1, nil, "", "", false, 1000)
+	a.add(key2, nil, "", "", false, 1000)
+	a.add(key3, nil, "", "", false, 1000)
+
+	if a.globalCount != 3 {
+		t.Errorf("expected globalCount=3 after adding 3 entries, got %d", a.globalCount)
+	}
+
+	// Add a 4th tuple for a new flag → global cap is hit, should go to degraded
+	key4 := evaluationAggregationKey{flagKey: "flag-d", variant: "on", targetingKey: "user-4"}
+	a.add(key4, nil, "", "", false, 2000)
+
+	// globalCount should still be 3 (degraded inserts don't increment it)
+	if a.globalCount != 3 {
+		t.Errorf("expected globalCount=3 after degraded insert, got %d", a.globalCount)
+	}
+
+	full, degraded, _, _ := a.drain()
+	if len(full) != 3 {
+		t.Errorf("expected 3 full entries, got %d", len(full))
+	}
+	if len(degraded) != 1 {
+		t.Errorf("expected 1 degraded entry, got %d", len(degraded))
+	}
+}
+
+func TestEvaluationAggregator_GlobalCapIncrementExistingDegraded(t *testing.T) {
+	a := newEvaluationAggregator(100, 2)
+
+	// Add 2 entries to fill global cap (flag-a/user1, flag-a/user2)
+	key1 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-1"}
+	key2 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-2"}
+	a.add(key1, nil, "", "", false, 1000)
+	a.add(key2, nil, "", "", false, 1000)
+
+	if a.globalCount != 2 {
+		t.Errorf("expected globalCount=2 after filling cap, got %d", a.globalCount)
+	}
+
+	// Add 2 more entries with same degraded key (flag-a, variant=on, reason=TARGETING_MATCH)
+	// Both should go to the same degraded bucket
+	key3 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-3"}
+	key4 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH", targetingKey: "user-4"}
+	a.add(key3, nil, "", "", false, 1000)
+	a.add(key4, nil, "", "", false, 2000)
+
+	_, degraded, _, _ := a.drain()
+	if len(degraded) != 1 {
+		t.Fatalf("expected 1 degraded bucket, got %d", len(degraded))
+	}
+
+	// Find the degraded entry and verify count == 2
+	dk := evaluationDegradedKey{flagKey: "flag-a", variant: "on", reason: "TARGETING_MATCH"}
+	dh := hashDegradedKey(dk)
+	entry := degraded[dh]
+	if entry == nil {
+		t.Fatal("expected degraded entry not found")
+	}
+	if entry.count != 2 {
+		t.Errorf("expected degraded count=2, got %d", entry.count)
+	}
+}
+
+func TestEvaluationAggregator_DrainResetsGlobalCount(t *testing.T) {
+	a := newEvaluationAggregator(2, 2)
+
+	// Fill to global cap
+	key1 := evaluationAggregationKey{flagKey: "flag-a", variant: "on", targetingKey: "user-1"}
+	key2 := evaluationAggregationKey{flagKey: "flag-b", variant: "on", targetingKey: "user-2"}
+	a.add(key1, nil, "", "", false, 1000)
+	a.add(key2, nil, "", "", false, 1000)
+
+	if a.globalCount != 2 {
+		t.Errorf("expected globalCount=2 before drain, got %d", a.globalCount)
+	}
+
+	// Drain
+	a.drain()
+
+	// After drain, globalCount should be 0
+	if a.globalCount != 0 {
+		t.Errorf("expected globalCount=0 after drain, got %d", a.globalCount)
+	}
+
+	// Verify that new entries can be added after drain
+	key3 := evaluationAggregationKey{flagKey: "flag-c", variant: "on", targetingKey: "user-3"}
+	a.add(key3, nil, "", "", false, 2000)
+
+	if a.globalCount != 1 {
+		t.Errorf("expected globalCount=1 after adding entry post-drain, got %d", a.globalCount)
+	}
+
+	full, _, _, _ := a.drain()
+	if len(full) != 1 {
+		t.Errorf("expected 1 full entry after drain, got %d", len(full))
+	}
+}
