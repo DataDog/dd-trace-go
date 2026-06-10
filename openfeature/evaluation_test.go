@@ -6,8 +6,15 @@
 package openfeature
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strconv"
+	"sync"
 	"testing"
+
+	jsoniter "github.com/json-iterator/go"
 )
 
 func TestEvaluationAggregator_AddIncrement(t *testing.T) {
@@ -538,5 +545,211 @@ func TestEvaluationAggregator_DrainResetsGlobalCount(t *testing.T) {
 	full, _, _, _ := a.drain()
 	if len(full) != 1 {
 		t.Errorf("expected 1 full entry after drain, got %d", len(full))
+	}
+}
+
+// TestEvaluationWriter_EndToEndFlush verifies the full path from aggregator.add() through
+// flush() to a fake agent receiving correct evaluationPayload JSON (Task 10).
+func TestEvaluationWriter_EndToEndFlush(t *testing.T) {
+	var (
+		mu               sync.Mutex
+		receivedBodies   [][]byte
+		receivedPaths    []string
+		receivedMethods  []string
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := make([]byte, 0)
+		buf := make([]byte, 4096)
+		for {
+			n, err := r.Body.Read(buf)
+			if n > 0 {
+				body = append(body, buf[:n]...)
+			}
+			if err != nil {
+				break
+			}
+		}
+		mu.Lock()
+		receivedBodies = append(receivedBodies, body)
+		receivedPaths = append(receivedPaths, r.URL.Path)
+		receivedMethods = append(receivedMethods, r.Method)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	agentURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse server URL: %v", err)
+	}
+
+	agg := newEvaluationAggregator(100, 1000)
+	w := &evaluationWriter{
+		aggregator: agg,
+		httpClient: http.DefaultClient,
+		agentURL:   agentURL,
+		jsonConfig: jsoniter.Config{}.Froze(),
+		context: evaluationDDContext{
+			Service: "test-svc",
+			Version: "1.0.0",
+			Env:     "test",
+		},
+		stopChan: make(chan struct{}),
+	}
+
+	// Add one evaluation to the aggregator.
+	key := evaluationAggregationKey{
+		flagKey:      "flag-e2e",
+		variant:      "enabled",
+		allocationKey: "alloc-1",
+		reason:       "targeting_match",
+		targetingKey: "user-e2e",
+		contextHash:  0,
+	}
+	agg.add(key, map[string]any{"env": "prod"}, "", "", false, 1000)
+
+	// Flush directly.
+	w.flush()
+
+	// Verify the fake server received exactly one POST to the evaluation endpoint.
+	mu.Lock()
+	paths := make([]string, len(receivedPaths))
+	methods := make([]string, len(receivedMethods))
+	bodies := make([][]byte, len(receivedBodies))
+	copy(paths, receivedPaths)
+	copy(methods, receivedMethods)
+	copy(bodies, receivedBodies)
+	mu.Unlock()
+
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(paths))
+	}
+	if paths[0] != evaluationEndpoint {
+		t.Errorf("expected path %q, got %q", evaluationEndpoint, paths[0])
+	}
+	if methods[0] != "POST" {
+		t.Errorf("expected method POST, got %q", methods[0])
+	}
+
+	// Decode and verify the payload.
+	var payload evaluationPayload
+	if err := json.Unmarshal(bodies[0], &payload); err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+
+	if len(payload.FlagEvaluations) != 1 {
+		t.Fatalf("expected 1 FlagEvaluation, got %d", len(payload.FlagEvaluations))
+	}
+
+	ev := payload.FlagEvaluations[0]
+	if ev.Flag.Key != "flag-e2e" {
+		t.Errorf("expected flag.key=%q, got %q", "flag-e2e", ev.Flag.Key)
+	}
+	if ev.EvaluationCount != 1 {
+		t.Errorf("expected evaluation_count=1, got %d", ev.EvaluationCount)
+	}
+	if ev.TargetingKey != "user-e2e" {
+		t.Errorf("expected targeting_key=%q, got %q", "user-e2e", ev.TargetingKey)
+	}
+	if ev.Variant == nil || ev.Variant.Key != "enabled" {
+		t.Errorf("expected variant.key=%q, got %v", "enabled", ev.Variant)
+	}
+
+	// Verify the DD context in the payload.
+	if payload.Context.Service != "test-svc" {
+		t.Errorf("expected context.service=%q, got %q", "test-svc", payload.Context.Service)
+	}
+}
+
+// TestEvaluationWriter_OverflowEventsOmitTargetingKey verifies that rollup (degraded) events
+// omit targeting_key and context.evaluation in the JSON output (Task 11).
+func TestEvaluationWriter_OverflowEventsOmitTargetingKey(t *testing.T) {
+	// perFlagCap=1 means the second distinct tuple for flag-a goes to degraded.
+	agg := newEvaluationAggregator(1, 100)
+
+	key1 := evaluationAggregationKey{
+		flagKey:      "flag-a",
+		variant:      "on",
+		reason:       "targeting_match",
+		targetingKey: "user-1",
+		contextHash:  0,
+	}
+	key2 := evaluationAggregationKey{
+		flagKey:      "flag-a",
+		variant:      "on",
+		reason:       "targeting_match",
+		targetingKey: "user-2", // different targeting key → overflows to degraded
+		contextHash:  1,
+	}
+
+	agg.add(key1, map[string]any{"env": "prod"}, "", "", false, 1000)
+	agg.add(key2, map[string]any{"env": "staging"}, "", "", false, 2000)
+
+	full, degraded, keys, degradedKeys := agg.drain()
+
+	if len(full) != 1 {
+		t.Fatalf("expected 1 full-fidelity entry, got %d", len(full))
+	}
+	if len(degraded) != 1 {
+		t.Fatalf("expected 1 degraded entry, got %d", len(degraded))
+	}
+
+	events := buildEvaluationEvents(full, degraded, keys, degradedKeys)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+
+	// Separate full-fidelity and degraded events.
+	var fullEv, degradedEv *evaluationEvent
+	for i := range events {
+		ev := &events[i]
+		if ev.TargetingKey != "" {
+			fullEv = ev
+		} else {
+			degradedEv = ev
+		}
+	}
+
+	if fullEv == nil {
+		t.Fatal("expected one full-fidelity event with non-empty targeting_key")
+	}
+	if degradedEv == nil {
+		t.Fatal("expected one degraded event with empty targeting_key")
+	}
+
+	// Full-fidelity event assertions.
+	if fullEv.TargetingKey == "" {
+		t.Error("full-fidelity event should have non-empty targeting_key")
+	}
+	if fullEv.Context == nil {
+		t.Error("full-fidelity event should have non-nil context")
+	}
+	if fullEv.Context != nil && fullEv.Context.Evaluation == nil {
+		t.Error("full-fidelity event should have non-nil context.evaluation")
+	}
+
+	// Degraded event assertions: targeting_key must be empty, context must be nil.
+	if degradedEv.TargetingKey != "" {
+		t.Errorf("degraded event targeting_key should be empty, got %q", degradedEv.TargetingKey)
+	}
+	if degradedEv.Context != nil {
+		t.Errorf("degraded event context should be nil, got %+v", degradedEv.Context)
+	}
+
+	// Verify JSON serialization: targeting_key and context must be absent (omitempty).
+	data, err := json.Marshal(degradedEv)
+	if err != nil {
+		t.Fatalf("failed to marshal degraded event: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("failed to unmarshal degraded event JSON: %v", err)
+	}
+	if _, ok := raw["targeting_key"]; ok {
+		t.Error("degraded event JSON should not contain targeting_key field")
+	}
+	if _, ok := raw["context"]; ok {
+		t.Error("degraded event JSON should not contain context field")
 	}
 }
