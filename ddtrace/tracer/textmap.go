@@ -150,21 +150,28 @@ type PropagatorConfig struct {
 	// It defaults to DefaultBaggageHeader.
 	BaggageHeader string
 
-	// InjectStyle overrides DD_TRACE_PROPAGATION_STYLE_INJECT. When set by the
-	// tracer, the value comes from internalConfig (which supports stable config).
-	// Direct callers that leave this empty get the env var fallback.
+	// InjectStyle specifies the propagation style(s) used for injection,
+	// as a comma-separated list (e.g. "datadog,tracecontext").
 	InjectStyle string
 
-	// ExtractStyle overrides DD_TRACE_PROPAGATION_STYLE_EXTRACT. Same semantics as InjectStyle.
+	// ExtractStyle specifies the propagation style(s) used for extraction,
+	// as a comma-separated list (e.g. "datadog,tracecontext").
 	ExtractStyle string
 
-	// BehaviorExtract overrides DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT. Same semantics as InjectStyle.
+	// BehaviorExtract controls what happens when an incoming trace context is
+	// found: "continue" (default), "restart", or "ignore".
 	BehaviorExtract string
 
-	// ExtractFirst overrides DD_TRACE_PROPAGATION_EXTRACT_FIRST. Non-nil means
-	// the tracer has explicitly set the value via internalConfig.
+	// ExtractFirst, when true, stops extraction after the first successful
+	// extractor rather than trying all of them.
+	// A nil pointer means the value will be read from the environment.
 	ExtractFirst *bool
 }
+
+// Note: InjectStyle, ExtractStyle, BehaviorExtract, and ExtractFirst fall back
+// to their corresponding DD_TRACE_PROPAGATION_* environment variables when
+// left at their zero values. The tracer populates them from its configuration
+// (which also supports declarative config) before calling NewPropagator.
 
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
