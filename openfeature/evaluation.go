@@ -206,6 +206,8 @@ type evaluationAggregator struct {
 	mu           sync.Mutex
 	full         map[uint64]*evaluationEntry
 	degraded     map[uint64]*evaluationEntry
+	keys         map[uint64]evaluationAggregationKey  // parallel to full
+	degradedKeys map[uint64]evaluationDegradedKey     // parallel to degraded
 	perFlagFull  map[string]int
 	perFlagCap   int
 	globalCap    int
@@ -214,11 +216,13 @@ type evaluationAggregator struct {
 
 func newEvaluationAggregator(perFlagCap, globalCap int) *evaluationAggregator {
 	return &evaluationAggregator{
-		full:        make(map[uint64]*evaluationEntry),
-		degraded:    make(map[uint64]*evaluationEntry),
-		perFlagFull: make(map[string]int),
-		perFlagCap:  perFlagCap,
-		globalCap:   globalCap,
+		full:         make(map[uint64]*evaluationEntry),
+		degraded:     make(map[uint64]*evaluationEntry),
+		keys:         make(map[uint64]evaluationAggregationKey),
+		degradedKeys: make(map[uint64]evaluationDegradedKey),
+		perFlagFull:  make(map[string]int),
+		perFlagCap:   perFlagCap,
+		globalCap:    globalCap,
 	}
 }
 
@@ -229,11 +233,40 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	// Fast path: existing full-fidelity entry.
 	if e, ok := a.full[h]; ok {
 		e.count++
 		e.lastEvaluation = nowMs
 		return
 	}
+
+	// New tuple for this flag — check per-flag cap.
+	if a.perFlagFull[key.flagKey] >= a.perFlagCap {
+		// Route to degraded (rollup) bucket.
+		dk := evaluationDegradedKey{
+			flagKey:          key.flagKey,
+			variant:          key.variant,
+			allocationKey:    key.allocationKey,
+			targetingRuleKey: key.targetingRuleKey,
+			reason:           key.reason,
+		}
+		dh := hashDegradedKey(dk)
+		if de, ok := a.degraded[dh]; ok {
+			de.count++
+			de.lastEvaluation = nowMs
+		} else {
+			a.degraded[dh] = &evaluationEntry{
+				count:           1,
+				firstEvaluation: nowMs,
+				lastEvaluation:  nowMs,
+			}
+			a.degradedKeys[dh] = dk
+		}
+		// Do NOT increment perFlagFull or globalCount for degraded inserts.
+		return
+	}
+
+	// Under cap: insert into full.
 	a.full[h] = &evaluationEntry{
 		count:           1,
 		firstEvaluation: nowMs,
@@ -241,22 +274,32 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 		targetingKey:    key.targetingKey,
 		contextAttrs:    contextAttrs,
 	}
+	a.keys[h] = key
 	a.perFlagFull[key.flagKey]++
 	a.globalCount++
 }
 
 // drain swaps full and degraded maps with fresh ones, resets counters, and returns the old maps.
-func (a *evaluationAggregator) drain() (full map[uint64]*evaluationEntry, degraded map[uint64]*evaluationEntry) {
+func (a *evaluationAggregator) drain() (
+	full map[uint64]*evaluationEntry,
+	degraded map[uint64]*evaluationEntry,
+	keys map[uint64]evaluationAggregationKey,
+	degradedKeys map[uint64]evaluationDegradedKey,
+) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	full = a.full
 	degraded = a.degraded
+	keys = a.keys
+	degradedKeys = a.degradedKeys
 	a.full = make(map[uint64]*evaluationEntry)
 	a.degraded = make(map[uint64]*evaluationEntry)
+	a.keys = make(map[uint64]evaluationAggregationKey)
+	a.degradedKeys = make(map[uint64]evaluationDegradedKey)
 	a.perFlagFull = make(map[string]int)
 	a.globalCount = 0
-	return full, degraded
+	return full, degraded, keys, degradedKeys
 }
 
 // flattenAndExtractPrimitive flattens the OpenFeature evaluation context and returns
