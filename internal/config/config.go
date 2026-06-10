@@ -117,6 +117,9 @@ type Config struct {
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
+	// internalMetricsEnabled enables the tracer's internal metrics (statsd) client.
+	// Value from DD_TRACE_INTERNAL_METRICS_ENABLED, default true.
+	internalMetricsEnabled bool
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled      bool
 	traceAnalyticsEnabled        bool
@@ -315,6 +318,10 @@ func loadConfig() *Config {
 			cfg.isLambdaFunction = true
 		}
 	}
+
+	// Internal metrics default to off in Lambda: they add per-invocation statsd
+	// overhead for little value and are not usable as distributions there.
+	cfg.internalMetricsEnabled = p.GetBool("DD_TRACE_INTERNAL_METRICS_ENABLED", !cfg.isLambdaFunction)
 
 	// Hostname lookup, if DD_TRACE_REPORT_HOSTNAME is true
 	// If the hostname lookup fails, an error is set and the hostname is not reported
@@ -781,6 +788,12 @@ func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin, product ..
 	}
 	c.debugStack = enabled
 	configtelemetry.Report("DD_TRACE_DEBUG_STACK", enabled, origin)
+}
+
+func (c *Config) InternalMetricsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.internalMetricsEnabled
 }
 
 func (c *Config) StatsComputationEnabled() bool {

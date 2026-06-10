@@ -1337,6 +1337,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_INTERNAL_METRICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_TRACE_KAFKA_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
