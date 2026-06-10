@@ -6,6 +6,10 @@
 package openfeature
 
 import (
+	"hash/fnv"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -72,4 +76,149 @@ type evaluationEvent struct {
 type evaluationPayload struct {
 	Context         evaluationDDContext `json:"context"`
 	FlagEvaluations []evaluationEvent   `json:"flagEvaluations"`
+}
+
+// evaluationAggregationKey is the full-fidelity aggregation key.
+// Matches the (flag, variant, allocation, rule, reason, subject, context) tuple the browser SDK uses.
+type evaluationAggregationKey struct {
+	flagKey          string
+	variant          string
+	allocationKey    string
+	targetingRuleKey string
+	reason           string
+	targetingKey     string
+	contextHash      uint64
+}
+
+// evaluationDegradedKey is the rollup key used when the per-flag cap is exceeded.
+// It drops subject/context dimensions, preserving only (flag, variant, allocation, rule, reason).
+type evaluationDegradedKey struct {
+	flagKey          string
+	variant          string
+	allocationKey    string
+	targetingRuleKey string
+	reason           string
+}
+
+// evaluationEntry holds per-window count and timestamps for one aggregation bucket.
+type evaluationEntry struct {
+	count           int64
+	firstEvaluation int64
+	lastEvaluation  int64
+	// Full-fidelity fields (nil for degraded entries)
+	targetingKey string
+	contextAttrs map[string]any
+}
+
+// hashKey computes a stable FNV-1a 64-bit hash for the given aggregation key.
+// Called outside the aggregator mutex to minimize lock hold time.
+func hashKey(k evaluationAggregationKey) uint64 {
+	h := fnv.New64a()
+	for _, s := range []string{k.flagKey, k.variant, k.allocationKey, k.targetingRuleKey, k.reason, k.targetingKey} {
+		_, _ = h.Write([]byte(s))
+		_, _ = h.Write([]byte{0})
+	}
+	var buf [8]byte
+	buf[0] = byte(k.contextHash)
+	buf[1] = byte(k.contextHash >> 8)
+	buf[2] = byte(k.contextHash >> 16)
+	buf[3] = byte(k.contextHash >> 24)
+	buf[4] = byte(k.contextHash >> 32)
+	buf[5] = byte(k.contextHash >> 40)
+	buf[6] = byte(k.contextHash >> 48)
+	buf[7] = byte(k.contextHash >> 56)
+	_, _ = h.Write(buf[:])
+	return h.Sum64()
+}
+
+// hashDegradedKey computes an FNV-1a hash for the degraded (rollup) key.
+func hashDegradedKey(k evaluationDegradedKey) uint64 {
+	h := fnv.New64a()
+	for _, s := range []string{k.flagKey, k.variant, k.allocationKey, k.targetingRuleKey, k.reason} {
+		_, _ = h.Write([]byte(s))
+		_, _ = h.Write([]byte{0})
+	}
+	return h.Sum64()
+}
+
+// hashContext hashes the primitive evaluation context attributes for use in the aggregation key.
+// Sorts keys for determinism, skips non-primitive values.
+func hashContext(attrs map[string]any) uint64 {
+	if len(attrs) == 0 {
+		return 0
+	}
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	h := fnv.New64a()
+	for _, k := range keys {
+		_, _ = h.Write([]byte(k))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(primitiveToString(attrs[k])))
+		_, _ = h.Write([]byte{0})
+	}
+	return h.Sum64()
+}
+
+// primitiveToString converts a primitive value to its string representation for hashing.
+func primitiveToString(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case bool:
+		if val {
+			return "true"
+		}
+		return "false"
+	case int:
+		return strconv.Itoa(val)
+	case int8:
+		return strconv.FormatInt(int64(val), 10)
+	case int16:
+		return strconv.FormatInt(int64(val), 10)
+	case int32:
+		return strconv.FormatInt(int64(val), 10)
+	case int64:
+		return strconv.FormatInt(val, 10)
+	case uint:
+		return strconv.FormatUint(uint64(val), 10)
+	case uint8:
+		return strconv.FormatUint(uint64(val), 10)
+	case uint16:
+		return strconv.FormatUint(uint64(val), 10)
+	case uint32:
+		return strconv.FormatUint(uint64(val), 10)
+	case uint64:
+		return strconv.FormatUint(val, 10)
+	case float32:
+		return strconv.FormatFloat(float64(val), 'f', -1, 32)
+	case float64:
+		return strconv.FormatFloat(val, 'f', -1, 64)
+	default:
+		return ""
+	}
+}
+
+// flattenAndExtractPrimitive flattens the OpenFeature evaluation context and returns
+// only primitive-typed attributes in a single map. One allocation total.
+func flattenAndExtractPrimitive(attrs map[string]any) map[string]any {
+	if len(attrs) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(attrs))
+	for k, v := range attrs {
+		if strings.HasPrefix(k, "targetingKey") {
+			continue
+		}
+		switch v.(type) {
+		case string, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+			result[k] = v
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
