@@ -267,17 +267,19 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	flushedBuckets := 0
 	// Given we use a constant PayloadAggregationKey there should only ever be 1 of these, but to be forward
 	// compatible in case this ever changes we can just iterate through all of them.
+	sendRetries := c.cfg.internalConfig.SendRetries()
+	retryInterval := c.cfg.internalConfig.RetryInterval()
 	for _, csp := range csps {
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
 		var err error
-		for attempt := 0; attempt <= c.cfg.sendRetries; attempt++ {
+		for attempt := 0; attempt <= sendRetries; attempt++ {
 			err = c.cfg.ddTransport.sendStats(csp, obfVersion)
 			if err == nil {
 				break
 			}
-			if attempt < c.cfg.sendRetries {
-				time.Sleep(c.cfg.internalConfig.RetryInterval())
+			if attempt < sendRetries {
+				time.Sleep(retryInterval)
 			}
 		}
 		if err != nil {
