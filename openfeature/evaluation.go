@@ -34,7 +34,7 @@ import (
 
 const (
 	defaultEvaluationFlushInterval = 10 * time.Second
-	evaluationEndpoint             = "/evp_proxy/v2/api/v2/flagevaluation"
+	evaluationEndpoint             = "/evp_proxy/v2/api/v2/flagevaluations"
 	defaultEvaluationPerFlagCap    = 10_000
 	defaultEvaluationGlobalCap     = 65_536
 	envEvaluationPerFlagCap        = "DD_FLAGGING_EVALUATION_PER_FLAG_CAP"

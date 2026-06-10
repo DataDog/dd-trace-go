@@ -273,7 +273,7 @@
 //
 // # Evaluation Count Tracking
 //
-// The provider emits windowed per-(flag, variant, allocation, rule, subject, context)
+// The provider emits windowed per-(flag, variant, allocation, rule, reason, subject, context)
 // evaluation counts to the "flagevaluation" EVP track, giving server-side flags the same
 // volume visibility as the browser SDK.
 //
