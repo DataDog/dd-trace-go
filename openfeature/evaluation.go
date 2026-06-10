@@ -125,8 +125,11 @@ type evaluationEntry struct {
 	firstEvaluation int64
 	lastEvaluation  int64
 	// Full-fidelity fields (nil for degraded entries)
-	targetingKey string
-	contextAttrs map[string]any
+	targetingKey   string
+	contextAttrs   map[string]any
+	errorType      string
+	errorMessage   string
+	runtimeDefault bool
 }
 
 // hashKey computes a stable FNV-1a 64-bit hash for the given aggregation key.
@@ -379,6 +382,9 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 		lastEvaluation:  nowMs,
 		targetingKey:    key.targetingKey,
 		contextAttrs:    contextAttrs,
+		errorType:       errorType,
+		errorMessage:    errorMessage,
+		runtimeDefault:  runtimeDefault,
 	}
 	a.keys[h] = key
 	a.perFlagFull[key.flagKey]++
@@ -551,13 +557,14 @@ func buildEvaluationEvents(
 	for h, entry := range full {
 		k := keys[h]
 		ev := evaluationEvent{
-			Flag:            evaluationFlag{Key: k.flagKey},
-			EvaluationCount: entry.count,
-			FirstEvaluation: entry.firstEvaluation,
-			LastEvaluation:  entry.lastEvaluation,
-			Timestamp:       now,
-			Reason:          k.reason,
-			TargetingKey:    entry.targetingKey,
+			Flag:               evaluationFlag{Key: k.flagKey},
+			EvaluationCount:    entry.count,
+			FirstEvaluation:    entry.firstEvaluation,
+			LastEvaluation:     entry.lastEvaluation,
+			Timestamp:          now,
+			Reason:             k.reason,
+			TargetingKey:       entry.targetingKey,
+			RuntimeDefaultUsed: entry.runtimeDefault,
 		}
 		if k.variant != "" {
 			ev.Variant = &evaluationVariant{Key: k.variant}
@@ -572,6 +579,12 @@ func buildEvaluationEvents(
 			ev.Context = &evaluationEventContext{
 				Evaluation: entry.contextAttrs,
 				DD:         nil,
+			}
+		}
+		if entry.errorType != "" || entry.errorMessage != "" {
+			ev.Error = &evaluationError{
+				Type:    entry.errorType,
+				Message: entry.errorMessage,
 			}
 		}
 		events = append(events, ev)
