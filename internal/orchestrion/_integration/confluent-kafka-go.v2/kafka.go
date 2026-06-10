@@ -44,6 +44,8 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	tc.produceMessage(t)
 	tc.consumeMessage(ctx, t)
+	tc.produceMessageWithNilDeliveryChannel(t)
+	tc.consumeMessage(ctx, t)
 }
 
 func (tc *TestCase) kafkaBootstrapServers() string {
@@ -74,6 +76,29 @@ func (tc *TestCase) produceMessage(t *testing.T) {
 		Key:   []byte("key2"),
 		Value: []byte("value2"),
 	}, delivery)
+	require.NoError(t, err, "failed to send message")
+}
+
+func (tc *TestCase) produceMessageWithNilDeliveryChannel(t *testing.T) {
+	t.Helper()
+
+	cfg := &kafka.ConfigMap{
+		"bootstrap.servers":   tc.kafkaBootstrapServers(),
+		"go.delivery.reports": true,
+	}
+
+	producer, err := kafka.NewProducer(cfg)
+	require.NoError(t, err, "failed to create producer")
+	defer producer.Close()
+
+	err = producer.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{
+			Topic:     &topic,
+			Partition: partition,
+		},
+		Key:   []byte("key2"),
+		Value: []byte("value2"),
+	}, nil)
 	require.NoError(t, err, "failed to send message")
 }
 
