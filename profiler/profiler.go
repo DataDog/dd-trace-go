@@ -113,7 +113,9 @@ type profiler struct {
 	seq             uint64         // seq is the value of the profile_seq tag
 	pendingProfiles sync.WaitGroup // signal that profile collection is done, for stopping CPU profiling
 
-	// lastTrace is the last time an execution trace was collected
+	// lastTrace is the last time an execution trace was collected. Its zero
+	// value is also load-bearing: it is used (via IsZero) to detect the first
+	// trace, which is never delayed. See executionTraceSchedule.
 	lastTrace time.Time
 }
 

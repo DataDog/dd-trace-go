@@ -178,6 +178,15 @@ var profileTypes = map[ProfileType]profileType{
 		Name:     "execution-trace",
 		Filename: "go.trace",
 		Collect: func(p *profiler) ([]byte, error) {
+			// Delay the trace so that it overlaps the CPU profiling
+			// window, otherwise timelines may lack CPU samples (see
+			// executionTraceSchedule).
+			_, cpuEnabled := p.cfg.types[CPUProfile]
+			delay, duration := executionTraceSchedule(p.cfg.period, p.cfg.cpuDuration, cpuEnabled, p.lastTrace.IsZero())
+			if delay > 0 && p.interruptibleSleep(delay) {
+				// The profiler was stopped while waiting to start the trace.
+				return nil, errProfilerStopped
+			}
 			p.lastTrace = time.Now()
 			buf := new(bytes.Buffer)
 			outBuf := new(bytes.Buffer)
@@ -188,7 +197,7 @@ var profileTypes = map[ProfileType]profileType{
 			traceLogCPUProfileRate(p.cfg.cpuProfileRate)
 			select {
 			case <-p.exit: // Profiling was stopped
-			case <-time.After(p.cfg.period): // The profiling cycle has ended
+			case <-time.After(duration): // The profiling cycle has ended
 			case <-lt.done: // The trace size limit was exceeded
 			}
 			trace.Stop()
@@ -205,6 +214,28 @@ var profileTypes = map[ProfileType]profileType{
 		Filename: "goroutineleak.pprof",
 		Collect:  collectGenericProfile("goroutineleak", goroutineLeakProfile),
 	},
+}
+
+// executionTraceSchedule decides when the execution trace should start and how
+// long it should run for. By default the trace covers the whole profiling
+// period (delay 0, duration period).
+//
+// When CPU profiling is enabled and runs for less than the full period, the CPU
+// profiler is scheduled at the end of the period (see the CPUProfile collector).
+// In that case an undelayed trace would start at the beginning of the period
+// and, for busy services, hit its size limit well before CPU profiling begins,
+// leaving timelines without any CPU samples. To keep CPU samples in timelines we
+// delay the trace by (period - cpuDuration) so that it overlaps the CPU
+// profiling window, and shorten its duration to cpuDuration so the cycle does
+// not overrun the profiling period.
+//
+// The first trace (firstTrace) is never delayed so that we still capture startup
+// activity, which is generally quite different from steady state.
+func executionTraceSchedule(period, cpuDuration time.Duration, cpuEnabled, firstTrace bool) (delay, duration time.Duration) {
+	if cpuEnabled && !firstTrace && cpuDuration > 0 && cpuDuration < period {
+		return period - cpuDuration, cpuDuration
+	}
+	return 0, period
 }
 
 // traceLogCPUProfileRate logs the cpuProfileRate to the execution tracer if
