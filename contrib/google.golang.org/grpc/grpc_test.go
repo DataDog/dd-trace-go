@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/tap"
 )
 
 func TestUnary(t *testing.T) {
@@ -197,7 +199,7 @@ func TestStreaming(t *testing.T) {
 					"expected grpc method name to be set in span: %v", span)
 			}
 
-			switch span.OperationName() { //checks spankind and component without fallthrough
+			switch span.OperationName() { // checks spankind and component without fallthrough
 			case "grpc.client":
 				assert.Equal(t, "google.golang.org/grpc", span.Tag(ext.Component),
 					" expected component to be grpc-go in span %v", span)
@@ -536,6 +538,92 @@ func TestStreamSendsErrorCode(t *testing.T) {
 	assert.NotNilf(t, span, "at least one span should contain error code, the spans were:\n%v", spans)
 }
 
+func TestStreamRetryable(t *testing.T) {
+	serviceConfig := `{
+		"methodConfig": [{
+             "name": [
+               {"service": "grpc.Fixture", "method": "Ping"},
+               {"service": "grpc.Fixture", "method": "StreamPing"}
+             ],
+            "retryPolicy": {
+              "maxAttempts": 3,
+              "initialBackoff": "0.000000001s",
+              "maxBackoff": "0.000000001s",
+              "backoffMultiplier": 2,
+              "retryableStatusCodes": [
+                "UNAVAILABLE"
+              ]
+            }
+		}]
+    }`
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var unaryAttempts atomic.Int64
+	var streamAttempts atomic.Int64
+	serverOpts := []grpc.ServerOption{
+		grpc.UnaryInterceptor(UnaryServerInterceptor()),
+		grpc.StreamInterceptor(StreamServerInterceptor()),
+		grpc.InTapHandle(func(ctx context.Context, info *tap.Info) (context.Context, error) {
+			switch info.FullMethodName {
+			case fixturepb.Fixture_Ping_FullMethodName:
+				unaryAttempts.Add(1)
+			case fixturepb.Fixture_StreamPing_FullMethodName:
+				streamAttempts.Add(1)
+			}
+			return ctx, status.Error(codes.Unavailable, "not now")
+		}),
+	}
+	dialOpts := []grpc.DialOption{
+		// Override the service config
+		grpc.WithDisableServiceConfig(),
+		grpc.WithDefaultServiceConfig(serviceConfig),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(UnaryClientInterceptor()),
+		grpc.WithStreamInterceptor(StreamClientInterceptor()),
+		// Transparent retries are invisible to interceptors, but not stats handlers.
+		grpc.WithStatsHandler(NewClientStatsHandler()),
+	}
+
+	rig, err := newRigWithOptions(serverOpts, dialOpts)
+	require.NoError(t, err, "error setting up rig")
+	t.Cleanup(func() { _ = rig.Close() })
+
+	ctx := t.Context()
+	req := &fixturepb.FixtureRequest{Name: "pass"}
+
+	_, err = rig.client.Ping(ctx, req)
+	require.Error(t, err, "unary should return error")
+	require.EqualValues(t, 3, unaryAttempts.Load(), "unary should attempt more than once")
+
+	stream, err := rig.client.StreamPing(ctx)
+	require.NoError(t, err, "no error should be returned after creating stream client")
+
+	// Skip stream.Send() to avoid marking the request as ineligible for retry
+	_, err = stream.Recv()
+	require.Error(t, err, "stream should return error")
+	require.EqualValues(t, 3, streamAttempts.Load(), "stream should attempt more than once")
+	require.NoError(t, rig.Close())
+
+	// Ensure we have the expected number of childSpans
+	var parentSpans []*mocktracer.Span
+	var childSpans []*mocktracer.Span
+	for _, s := range mt.FinishedSpans() {
+		if s.Tag(ext.SpanKind) != ext.SpanKindClient {
+			continue
+		}
+		if s.ParentID() == 0 {
+			parentSpans = append(parentSpans, s)
+		} else {
+			childSpans = append(childSpans, s)
+		}
+	}
+
+	wantChildren := int(unaryAttempts.Load() + streamAttempts.Load())
+	require.Len(t, parentSpans, 2, "should have a span for initiated request")
+	require.Len(t, childSpans, wantChildren, "should have a span for each attempt")
+}
+
 // rig contains all of the servers and connections we'd need for a
 // grpc integration test
 type rig struct {
@@ -552,11 +640,11 @@ func (r *rig) Close() error {
 	return r.conn.Close()
 }
 
-func newRigWithInterceptors(
-	serverInterceptors []grpc.ServerOption,
-	clientInterceptors []grpc.DialOption,
+func newRigWithOptions(
+	serverOpts []grpc.ServerOption,
+	dialOpts []grpc.DialOption,
 ) (*rig, error) {
-	server := grpc.NewServer(serverInterceptors...)
+	server := grpc.NewServer(serverOpts...)
 	fixtureSrv := fixturepb.NewFixtureServer()
 	fixturepb.RegisterFixtureServer(server, fixtureSrv)
 
@@ -568,7 +656,7 @@ func newRigWithInterceptors(
 	// start our test fixtureServer.
 	go server.Serve(li)
 
-	conn, err := grpc.Dial("localhost:"+port, clientInterceptors...)
+	conn, err := grpc.Dial("localhost:"+port, dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error dialing: %s", err)
 	}
@@ -583,20 +671,20 @@ func newRigWithInterceptors(
 }
 
 func newRig(traceClient bool, opts ...Option) (*rig, error) {
-	serverInterceptors := []grpc.ServerOption{
+	serverOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(UnaryServerInterceptor(opts...)),
 		grpc.StreamInterceptor(StreamServerInterceptor(opts...)),
 	}
-	clientInterceptors := []grpc.DialOption{
+	dialOpts := []grpc.DialOption{
 		grpc.WithInsecure(),
 	}
 	if traceClient {
-		clientInterceptors = append(clientInterceptors,
+		dialOpts = append(dialOpts,
 			grpc.WithUnaryInterceptor(UnaryClientInterceptor(opts...)),
 			grpc.WithStreamInterceptor(StreamClientInterceptor(opts...)),
 		)
 	}
-	return newRigWithInterceptors(serverInterceptors, clientInterceptors)
+	return newRigWithOptions(serverOpts, dialOpts)
 }
 
 // waitForSpans polls the mock tracer until the expected number of spans
@@ -1163,7 +1251,7 @@ func TestIssue2050(t *testing.T) {
 		grpc.WithUnaryInterceptor(UnaryClientInterceptor()),
 		grpc.WithStreamInterceptor(StreamClientInterceptor()),
 	}
-	rig, err := newRigWithInterceptors(serverInterceptors, clientInterceptors)
+	rig, err := newRigWithOptions(serverInterceptors, clientInterceptors)
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, rig.Close()) }()
 
