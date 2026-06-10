@@ -713,7 +713,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			if len(trace.spans) > 0 {
 				t.traceWriter.add(trace.spans)
 			}
-			releaseSpans(t.config.spanPoolEnabled, spansToRelease)
+			releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -742,7 +742,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 					if len(trace.spans) > 0 {
 						t.traceWriter.add(trace.spans)
 					}
-					releaseSpans(t.config.spanPoolEnabled, spansToRelease)
+					releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
 				default:
 					break loop
 				}
@@ -945,7 +945,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	if !t.config.enabled.get() {
 		return nil
 	}
-	span := spanStart(operationName, &t.sharedAttrs, t.config.spanPoolEnabled, options...)
+	span := spanStart(operationName, &t.sharedAttrs, t.config.internalConfig.SpanPoolEnabled(), options...)
 
 	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.

@@ -1255,3 +1255,13 @@ func (c *Config) SpanPoolEnabled() bool {
 	defer c.mu.RUnlock()
 	return c.spanPoolEnabled
 }
+
+func (c *Config) SetSpanPoolEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.spanPoolEnabled = enabled
+	configtelemetry.Report("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", enabled, origin)
+}
