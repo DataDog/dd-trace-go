@@ -6,12 +6,30 @@
 package openfeature
 
 import (
+	"bytes"
+	"cmp"
+	"context"
+	"fmt"
 	"hash/fnv"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	jsoniter "github.com/json-iterator/go"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 const (
@@ -410,4 +428,233 @@ func flattenAndExtractPrimitive(attrs map[string]any) map[string]any {
 		return nil
 	}
 	return result
+}
+
+// evaluationWriter manages buffering and flushing of flag evaluation count events to the Datadog Agent.
+type evaluationWriter struct {
+	aggregator    *evaluationAggregator
+	flushInterval time.Duration
+	httpClient    *http.Client
+	agentURL      *url.URL
+	context       evaluationDDContext
+	ticker        *time.Ticker
+	stopChan      chan struct{}
+	mu            sync.Mutex
+	stopped       bool
+	jsonConfig    jsoniter.API
+}
+
+// newEvaluationWriter creates a new evaluation writer with the given configuration.
+// Returns nil if the kill switch DD_FLAGGING_EVALUATION_COUNTS_ENABLED=false.
+func newEvaluationWriter(config ProviderConfig) *evaluationWriter {
+	if !internal.BoolEnv(envEvaluationCountsEnabled, true) {
+		return nil
+	}
+
+	perFlagCap := internal.IntEnv(envEvaluationPerFlagCap, defaultEvaluationPerFlagCap)
+	globalCap := internal.IntEnv(envEvaluationGlobalCap, defaultEvaluationGlobalCap)
+
+	agentURL := internal.AgentURLFromEnv()
+	var httpClient *http.Client
+	if agentURL.Scheme == "unix" {
+		httpClient = internal.UDSClient(agentURL.Path, defaultHTTPTimeout)
+		agentURL = internal.UnixDataSocketURL(agentURL.Path)
+	} else {
+		httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
+	}
+
+	executable, _ := os.Executable()
+
+	return &evaluationWriter{
+		aggregator:    newEvaluationAggregator(perFlagCap, globalCap),
+		flushInterval: cmp.Or(config.EvaluationFlushInterval, defaultEvaluationFlushInterval),
+		httpClient:    httpClient,
+		agentURL:      agentURL,
+		stopChan:      make(chan struct{}),
+		jsonConfig:    jsoniter.Config{}.Froze(),
+		context: evaluationDDContext{
+			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
+			Version: env.Get("DD_VERSION"),
+			Env:     env.Get("DD_ENV"),
+		},
+	}
+}
+
+// start begins the periodic flushing of flag evaluation count events.
+func (w *evaluationWriter) start() {
+	w.ticker = time.NewTicker(w.flushInterval)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error("openfeature: evaluation writer recovered panic: %s", r)
+				var errAttr slog.Attr
+				if err, ok := r.(error); ok {
+					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
+				} else {
+					errAttr = slog.Any("panic", r)
+				}
+				telemetrylog.Error("openfeature: evaluation writer recovered panic", errAttr)
+			}
+			w.stop()
+		}()
+
+		for {
+			select {
+			case <-w.ticker.C:
+				w.flush()
+			case <-w.stopChan:
+				return
+			}
+		}
+	}()
+}
+
+// flush drains the aggregator and sends batched evaluation events to the agent.
+func (w *evaluationWriter) flush() {
+	w.mu.Lock()
+	if w.stopped {
+		w.mu.Unlock()
+		return
+	}
+	full, degraded, keys, degradedKeys := w.aggregator.drain()
+	w.mu.Unlock()
+
+	if len(full) == 0 && len(degraded) == 0 {
+		return
+	}
+
+	events := buildEvaluationEvents(full, degraded, keys, degradedKeys)
+	if len(events) == 0 {
+		return
+	}
+
+	if err := w.sendToAgent(evaluationPayload{
+		Context:         w.context,
+		FlagEvaluations: events,
+	}); err != nil {
+		log.Error("openfeature: failed to send evaluation events: %v", err.Error())
+	} else {
+		log.Debug("openfeature: successfully sent %d evaluation events", len(events))
+	}
+}
+
+// buildEvaluationEvents converts drained aggregator state into a slice of evaluationEvent.
+func buildEvaluationEvents(
+	full map[uint64]*evaluationEntry,
+	degraded map[uint64]*evaluationEntry,
+	keys map[uint64]evaluationAggregationKey,
+	degradedKeys map[uint64]evaluationDegradedKey,
+) []evaluationEvent {
+	now := time.Now().UnixMilli()
+	events := make([]evaluationEvent, 0, len(full)+len(degraded))
+
+	for h, entry := range full {
+		k := keys[h]
+		ev := evaluationEvent{
+			Flag:            evaluationFlag{Key: k.flagKey},
+			EvaluationCount: entry.count,
+			FirstEvaluation: entry.firstEvaluation,
+			LastEvaluation:  entry.lastEvaluation,
+			Timestamp:       now,
+			Reason:          k.reason,
+			TargetingKey:    entry.targetingKey,
+		}
+		if k.variant != "" {
+			ev.Variant = &evaluationVariant{Key: k.variant}
+		}
+		if k.allocationKey != "" {
+			ev.Allocation = &evaluationAllocation{Key: k.allocationKey}
+		}
+		if k.targetingRuleKey != "" {
+			ev.TargetingRule = &evaluationTargetingRule{Key: k.targetingRuleKey}
+		}
+		if entry.contextAttrs != nil {
+			ev.Context = &evaluationEventContext{
+				Evaluation: entry.contextAttrs,
+				DD:         nil,
+			}
+		}
+		events = append(events, ev)
+	}
+
+	for h, entry := range degraded {
+		dk := degradedKeys[h]
+		ev := evaluationEvent{
+			Flag:            evaluationFlag{Key: dk.flagKey},
+			EvaluationCount: entry.count,
+			FirstEvaluation: entry.firstEvaluation,
+			LastEvaluation:  entry.lastEvaluation,
+			Timestamp:       now,
+			Reason:          dk.reason,
+		}
+		if dk.variant != "" {
+			ev.Variant = &evaluationVariant{Key: dk.variant}
+		}
+		if dk.allocationKey != "" {
+			ev.Allocation = &evaluationAllocation{Key: dk.allocationKey}
+		}
+		if dk.targetingRuleKey != "" {
+			ev.TargetingRule = &evaluationTargetingRule{Key: dk.targetingRuleKey}
+		}
+		events = append(events, ev)
+	}
+
+	return events
+}
+
+// sendToAgent sends the evaluation payload to the Datadog Agent via EVP proxy.
+func (w *evaluationWriter) sendToAgent(payload evaluationPayload) error {
+	var bytesBuffer bytes.Buffer
+	encoder := w.jsonConfig.NewEncoder(&bytesBuffer)
+	if err := encoder.Encode(payload); err != nil {
+		return fmt.Errorf("failed to encode evaluation payload: %w", err)
+	}
+
+	u := *w.agentURL
+	u.Path = evaluationEndpoint
+	requestURL := u.String()
+
+	req, err := http.NewRequestWithContext(context.Background(), "POST", requestURL, &bytesBuffer)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(evpSubdomainHeader, evpSubdomainValue)
+	req.Header.Set("DD-EVP-ORIGIN", "dd-trace-go")
+	req.Header.Set("DD-EVP-ORIGIN-VERSION", version.Tag)
+
+	log.Debug("openfeature: sending evaluation events to %s", requestURL)
+
+	resp, err := w.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// stop stops the evaluation writer.
+func (w *evaluationWriter) stop() {
+	w.mu.Lock()
+	if w.stopped {
+		w.mu.Unlock()
+		return
+	}
+	w.stopped = true
+	w.mu.Unlock()
+
+	close(w.stopChan)
+
+	if w.ticker != nil {
+		w.ticker.Stop()
+	}
+
+	log.Debug("openfeature: evaluation writer stopped")
 }
