@@ -172,13 +172,13 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
-	// appKey is the Datadog application key (DD_APP_KEY).
+	// appKey is the Datadog application key.
 	appKey string
-	// ciVisibilityAgentlessURL is a custom agentless endpoint for CI Visibility (DD_CIVISIBILITY_AGENTLESS_URL).
+	// ciVisibilityAgentlessURL is a custom agentless endpoint for CI Visibility.
 	ciVisibilityAgentlessURL string
-	// experimentalFlaggingProviderEnabled enables the experimental OpenFeature RC provider (DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED).
+	// experimentalFlaggingProviderEnabled enables the experimental OpenFeature RC provider.
 	experimentalFlaggingProviderEnabled bool
-	// spanPoolEnabled enables the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED).
+	// spanPoolEnabled enables the experimental span pool.
 	spanPoolEnabled bool
 }
 
