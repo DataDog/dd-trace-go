@@ -172,13 +172,13 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
-	// propagationStyleInject specifies the propagation style for injection (DD_TRACE_PROPAGATION_STYLE_INJECT).
+	// propagationStyleInject specifies the propagation style for injection.
 	propagationStyleInject string
-	// propagationStyleExtract specifies the propagation style for extraction (DD_TRACE_PROPAGATION_STYLE_EXTRACT).
+	// propagationStyleExtract specifies the propagation style for extraction.
 	propagationStyleExtract string
-	// propagationBehaviorExtract controls what happens when an incoming trace context is found (DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT).
+	// propagationBehaviorExtract controls what happens when an incoming trace context is found.
 	propagationBehaviorExtract string
-	// propagationExtractFirst, when true, stops extraction after the first successful extractor (DD_TRACE_PROPAGATION_EXTRACT_FIRST).
+	// propagationExtractFirst, when true, stops extraction after the first successful extractor.
 	propagationExtractFirst bool
 }
 
