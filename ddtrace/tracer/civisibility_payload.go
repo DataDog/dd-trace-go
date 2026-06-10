@@ -147,6 +147,7 @@ func (p *ciVisibilityPayload) writeEnvelope(env string, events []byte) *ciTestCy
 		visibilityPayload.Metadata["test"] = testSessionMap
 	}
 
+	visibilityPayload.Metadata = truncateCIVisibilityMetadata(visibilityPayload.Metadata)
 	return visibilityPayload
 }
 

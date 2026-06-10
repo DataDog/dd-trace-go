@@ -212,7 +212,7 @@ func (e *ciVisibilityEvent) Finish(opts ...FinishOption) {
 	// Rebuild Content.Meta once with the final span state, under the span
 	// lock to avoid racing with the serialization worker.
 	e.span.mu.Lock()
-	e.Content.Meta = e.span.meta.Map(true)
+	e.Content.Meta = truncateCIVisibilityMetaValues(e.span.meta.Map(true))
 	e.Content.Metrics = e.span.metrics
 	e.span.mu.Unlock()
 }
@@ -290,6 +290,13 @@ func createTestEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTag)
 	tSpan.SuiteID = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTag)
 	tSpan.CorrelationID = span.getAndRemoveMeta(constants.ItrCorrelationIDTag)
+	tSpan.Meta = finalizeCIVisibilityMeta(
+		tSpan.Meta,
+		constants.TestSessionIDTag,
+		constants.TestModuleIDTag,
+		constants.TestSuiteIDTag,
+		constants.ItrCorrelationIDTag,
+	)
 	tSpan.SpanID = span.spanID
 	tSpan.TraceID = span.traceID
 	return &ciVisibilityEvent{
@@ -317,6 +324,12 @@ func createTestSuiteEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTag)
 	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTag)
 	tSpan.SuiteID = getAndRemoveMetaToUInt64(span, constants.TestSuiteIDTag)
+	tSpan.Meta = finalizeCIVisibilityMeta(
+		tSpan.Meta,
+		constants.TestSessionIDTag,
+		constants.TestModuleIDTag,
+		constants.TestSuiteIDTag,
+	)
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeTestSuite,
@@ -341,6 +354,7 @@ func createTestModuleEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan.ParentID = 0
 	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTag)
 	tSpan.ModuleID = getAndRemoveMetaToUInt64(span, constants.TestModuleIDTag)
+	tSpan.Meta = finalizeCIVisibilityMeta(tSpan.Meta, constants.TestSessionIDTag, constants.TestModuleIDTag)
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeTestModule,
@@ -364,6 +378,7 @@ func createTestSessionEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
 	tSpan.ParentID = 0
 	tSpan.SessionID = getAndRemoveMetaToUInt64(span, constants.TestSessionIDTag)
+	tSpan.Meta = finalizeCIVisibilityMeta(tSpan.Meta, constants.TestSessionIDTag)
 	return &ciVisibilityEvent{
 		span:    span,
 		Type:    constants.SpanTypeTestSession,
@@ -385,6 +400,7 @@ func createTestSessionEventFromSpan(span *Span) *ciVisibilityEvent {
 // +checklocksignore — Post-finish: reads finished span fields for CI visibility event creation.
 func createSpanEventFromSpan(span *Span) *ciVisibilityEvent {
 	tSpan := createTslvSpan(span)
+	tSpan.Meta = truncateCIVisibilityMetaValues(tSpan.Meta)
 	tSpan.SpanID = span.spanID
 	tSpan.TraceID = span.traceID
 	return &ciVisibilityEvent{
@@ -419,6 +435,13 @@ func createTslvSpan(span *Span) tslvSpan {
 		Meta:     span.meta.Map(true),
 		Metrics:  span.metrics,
 	}
+}
+
+func finalizeCIVisibilityMeta(meta map[string]string, keys ...string) map[string]string {
+	for _, key := range keys {
+		delete(meta, key)
+	}
+	return truncateCIVisibilityMetaValues(meta)
 }
 
 // getAndRemoveMetaToUInt64 retrieves a metadata value from a span, removes it, and converts it to a uint64.
