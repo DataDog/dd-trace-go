@@ -31,7 +31,7 @@ func TestEvaluationAggregator_AddIncrement(t *testing.T) {
 	a.add(key, ctx, "", "", false, 1000)
 	a.add(key, ctx, "", "", false, 2000)
 
-	full, _, _, _ := a.drain()
+	full, _, _, _, _, _ := a.drain()
 	if len(full) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(full))
 	}
@@ -59,7 +59,7 @@ func TestEvaluationAggregator_AddDistinctKeys(t *testing.T) {
 	a.add(key1, nil, "", "", false, 1000)
 	a.add(key2, nil, "", "", false, 1000)
 
-	full, _, _, _ := a.drain()
+	full, _, _, _, _, _ := a.drain()
 	if len(full) != 2 {
 		t.Errorf("expected 2 entries, got %d", len(full))
 	}
@@ -71,12 +71,15 @@ func TestEvaluationAggregator_DrainResets(t *testing.T) {
 
 	a.add(key, nil, "", "", false, 1000)
 
-	full, degraded, keys, degradedKeys := a.drain()
+	full, degraded, ultraDegraded, keys, degradedKeys, ultraDegradedKeys := a.drain()
 	if len(full) != 1 {
 		t.Errorf("expected 1 entry before reset, got %d", len(full))
 	}
 	if degraded == nil {
 		t.Error("expected degraded map to be non-nil")
+	}
+	if ultraDegraded == nil {
+		t.Error("expected ultraDegraded map to be non-nil")
 	}
 	if len(keys) != 1 {
 		t.Errorf("expected keys map len=1, got %d", len(keys))
@@ -84,9 +87,12 @@ func TestEvaluationAggregator_DrainResets(t *testing.T) {
 	if degradedKeys == nil {
 		t.Error("expected degradedKeys map to be non-nil")
 	}
+	if ultraDegradedKeys == nil {
+		t.Error("expected ultraDegradedKeys map to be non-nil")
+	}
 
 	// After drain, aggregator should be empty.
-	full2, _, keys2, _ := a.drain()
+	full2, _, _, keys2, _, _ := a.drain()
 	if len(full2) != 0 {
 		t.Errorf("expected empty full after drain, got %d entries", len(full2))
 	}
@@ -135,7 +141,7 @@ func TestEvaluationAggregator_PerFlagSoftCap(t *testing.T) {
 		t.Errorf("expected perFlagFull[flag-a]=3 after cap hit, got %d", got)
 	}
 
-	full, degraded, _, _ := a.drain()
+	full, degraded, _, _, _, _ := a.drain()
 	if len(full) != 3 {
 		t.Errorf("expected 3 full entries, got %d", len(full))
 	}
@@ -168,7 +174,7 @@ func TestEvaluationAggregator_DegradedBucketIncrement(t *testing.T) {
 	}
 	a.add(key4, nil, "", "", false, 2000)
 
-	_, degraded, _, _ := a.drain()
+	_, degraded, _, _, _, _ := a.drain()
 	if len(degraded) != 1 {
 		t.Fatalf("expected 1 degraded entry, got %d", len(degraded))
 	}
@@ -202,7 +208,7 @@ func TestEvaluationAggregator_PerFlagCapDoesNotAffectOtherFlags(t *testing.T) {
 	keyB := evaluationAggregationKey{flagKey: "flag-b", variant: "on", targetingKey: "user-0"}
 	a.add(keyB, nil, "", "", false, 1000)
 
-	full, degraded, _, _ := a.drain()
+	full, degraded, _, _, _, _ := a.drain()
 	if len(full) != 3 {
 		t.Errorf("expected 3 full entries (2 flag-a + 1 flag-b), got %d", len(full))
 	}
@@ -222,7 +228,7 @@ func TestEvaluationAggregator_DrainResetsKeyMaps(t *testing.T) {
 	a.add(keyFull2, nil, "", "", false, 1000)
 	a.add(keyOver, nil, "", "", false, 2000) // goes to degraded
 
-	full, degraded, keys, degradedKeys := a.drain()
+	full, degraded, _, keys, degradedKeys, _ := a.drain()
 
 	if len(full) != 2 {
 		t.Errorf("expected 2 full entries, got %d", len(full))
@@ -244,7 +250,7 @@ func TestEvaluationAggregator_DrainResetsKeyMaps(t *testing.T) {
 	}
 
 	// After drain, internal maps should be reset.
-	full2, _, keys2, degradedKeys2 := a.drain()
+	full2, _, _, keys2, degradedKeys2, _ := a.drain()
 	if len(full2) != 0 {
 		t.Errorf("expected empty full after drain, got %d", len(full2))
 	}
@@ -339,7 +345,7 @@ func TestEvaluationAggregator_GlobalCapRoutesToDegraded(t *testing.T) {
 		t.Errorf("expected globalCount=3 after degraded insert, got %d", a.globalCount)
 	}
 
-	full, degraded, _, _ := a.drain()
+	full, degraded, _, _, _, _ := a.drain()
 	if len(full) != 3 {
 		t.Errorf("expected 3 full entries, got %d", len(full))
 	}
@@ -368,7 +374,7 @@ func TestEvaluationAggregator_GlobalCapIncrementExistingDegraded(t *testing.T) {
 	a.add(key3, nil, "", "", false, 1000)
 	a.add(key4, nil, "", "", false, 2000)
 
-	_, degraded, _, _ := a.drain()
+	_, degraded, _, _, _, _ := a.drain()
 	if len(degraded) != 1 {
 		t.Fatalf("expected 1 degraded bucket, got %d", len(degraded))
 	}
@@ -427,7 +433,7 @@ func TestEvaluationAggregator_FairnessEviction(t *testing.T) {
 	dh := hashDegradedKey(dk)
 	de := a.degraded[dh]
 	if de == nil {
-		t.Fatal("expected degraded entry for flag-a not found")
+		t.Fatalf("expected degraded entry for flag-a not found; degraded map: %v", a.degraded)
 	}
 	if de.count != 1 {
 		t.Errorf("expected degraded count==1, got %d", de.count)
@@ -493,7 +499,7 @@ func TestEvaluationAggregator_FairnessCountFolded(t *testing.T) {
 	dh := hashDegradedKey(dk)
 	de := a.degraded[dh]
 	if de == nil {
-		t.Fatal("expected degraded entry for flag-a not found")
+		t.Fatalf("expected degraded entry for flag-a not found; degraded map: %v", a.degraded)
 	}
 
 	// Sum full counts for flag-a + degraded count for flag-a == 6 (total evaluations preserved)
@@ -542,9 +548,64 @@ func TestEvaluationAggregator_DrainResetsGlobalCount(t *testing.T) {
 		t.Errorf("expected globalCount=1 after adding entry post-drain, got %d", a.globalCount)
 	}
 
-	full, _, _, _ := a.drain()
+	full, _, _, _, _, _ := a.drain()
 	if len(full) != 1 {
 		t.Errorf("expected 1 full entry after drain, got %d", len(full))
+	}
+}
+
+func TestEvaluationAggregator_UltraDegradedOverflow(t *testing.T) {
+	// degradedCap = globalCap = 2; perFlagCap = 1 so every second distinct tuple per flag goes to degraded.
+	a := newEvaluationAggregator(1, 2)
+
+	// Fill full map: flag-a/on and flag-b/on (globalCount == 2).
+	a.add(evaluationAggregationKey{flagKey: "flag-a", variant: "on", targetingKey: "u0"}, nil, "", "", false, 1000)
+	a.add(evaluationAggregationKey{flagKey: "flag-b", variant: "on", targetingKey: "u0"}, nil, "", "", false, 1000)
+
+	// These will hit the per-flag cap and go to degraded.
+	// (flag-a, on, , default) and (flag-b, on, , default) → 2 degraded entries → fills degradedCap.
+	a.add(evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "default", targetingKey: "u1"}, nil, "", "", false, 1000)
+	a.add(evaluationAggregationKey{flagKey: "flag-b", variant: "on", reason: "default", targetingKey: "u1"}, nil, "", "", false, 1000)
+
+	if a.degradedCount != 2 {
+		t.Fatalf("expected degradedCount=2, got %d", a.degradedCount)
+	}
+
+	// Next degraded insert should overflow to ultra-degraded.
+	a.add(evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "error", targetingKey: "u2"}, nil, "", "", false, 2000)
+
+	if len(a.ultraDegraded) != 1 {
+		t.Fatalf("expected 1 ultra-degraded entry, got %d", len(a.ultraDegraded))
+	}
+	uk := evaluationUltraDegradedKey{flagKey: "flag-a", variant: "on"}
+	uh := hashUltraDegradedKey(uk)
+	ue := a.ultraDegraded[uh]
+	if ue == nil {
+		t.Fatal("expected ultra-degraded entry for flag-a not found")
+	}
+	if ue.count != 1 {
+		t.Errorf("expected ultra-degraded count=1, got %d", ue.count)
+	}
+
+	// Adding the same ultra-degraded key again increments it.
+	a.add(evaluationAggregationKey{flagKey: "flag-a", variant: "on", reason: "error", targetingKey: "u3"}, nil, "", "", false, 3000)
+	if ue.count != 2 {
+		t.Errorf("expected ultra-degraded count=2 after second overflow, got %d", ue.count)
+	}
+
+	// drain resets degradedCount and ultraDegraded.
+	_, degraded, ultraDegraded, _, _, _ := a.drain()
+	if len(degraded) != 2 {
+		t.Errorf("expected 2 degraded entries after drain, got %d", len(degraded))
+	}
+	if len(ultraDegraded) != 1 {
+		t.Errorf("expected 1 ultra-degraded entry after drain, got %d", len(ultraDegraded))
+	}
+	if a.degradedCount != 0 {
+		t.Errorf("expected degradedCount=0 after drain, got %d", a.degradedCount)
+	}
+	if len(a.ultraDegraded) != 0 {
+		t.Errorf("expected empty ultraDegraded after drain, got %d", len(a.ultraDegraded))
 	}
 }
 
@@ -686,7 +747,7 @@ func TestEvaluationWriter_OverflowEventsOmitTargetingKey(t *testing.T) {
 	agg.add(key1, map[string]any{"env": "prod"}, "", "", false, 1000)
 	agg.add(key2, map[string]any{"env": "staging"}, "", "", false, 2000)
 
-	full, degraded, keys, degradedKeys := agg.drain()
+	full, degraded, ultraDegraded, keys, degradedKeys, ultraDegradedKeys := agg.drain()
 
 	if len(full) != 1 {
 		t.Fatalf("expected 1 full-fidelity entry, got %d", len(full))
@@ -695,7 +756,7 @@ func TestEvaluationWriter_OverflowEventsOmitTargetingKey(t *testing.T) {
 		t.Fatalf("expected 1 degraded entry, got %d", len(degraded))
 	}
 
-	events := buildEvaluationEvents(full, degraded, keys, degradedKeys)
+	events := buildEvaluationEvents(full, degraded, ultraDegraded, keys, degradedKeys, ultraDegradedKeys)
 	if len(events) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(events))
 	}

@@ -286,8 +286,12 @@
 //   - DD_FLAGGING_EVALUATION_MAP_CAPACITY (default: 65536): global cap across all flags
 //
 // When a flag exceeds its per-flag cap, new tuples collapse into a degraded (rollup)
-// bucket keyed by (flag, variant, allocation, rule, reason). Rollup events are
-// distinguishable on the wire by the absence of targeting_key and context.evaluation.
+// bucket keyed by (flag, variant, allocation, reason) — equivalent to the OTel
+// feature_flag.evaluations metric dimensions. If the degraded map itself reaches the
+// global cap, further overflow collapses into an ultra-degraded bucket keyed by
+// (flag, variant) only, which is bounded by flag config size rather than traffic.
+// Rollup events are distinguishable on the wire by the absence of targeting_key and
+// context.evaluation; ultra-degraded events additionally omit allocation and reason.
 //
 // The flush interval is configurable via EvaluationFlushInterval in ProviderConfig
 // (default: 10 seconds, matching the browser SDK). Memory bounds are approximately

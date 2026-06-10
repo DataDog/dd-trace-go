@@ -42,6 +42,54 @@ func (h *evaluationHook) After(
 		return nil
 	}
 
+	// Runtime default was used when the flag resolved to a default (no targeting match)
+	// or was disabled — the caller's supplied default value was returned.
+	runtimeDefault := flagEvaluationDetails.Reason == of.DefaultReason ||
+		flagEvaluationDetails.Reason == of.DisabledReason
+	h.record(hookContext, flagEvaluationDetails, runtimeDefault)
+	return nil
+}
+
+// Error is called by the OpenFeature SDK when flag evaluation fails (e.g. FLAG_NOT_FOUND,
+// TYPE_MISMATCH). After is not called in this path, so we must record here too.
+// The caller's runtime default was used, so runtimeDefault=true.
+func (h *evaluationHook) Error(
+	ctx context.Context,
+	hookContext of.HookContext,
+	err error,
+	_ of.HookHints,
+) {
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
+	if h.writer == nil {
+		return
+	}
+
+	// Build a minimal InterfaceEvaluationDetails from the hook context.
+	// Variant and metadata are empty for error cases; the error code/message
+	// are carried by the OpenFeature SDK on the outer resolution detail.
+	details := of.InterfaceEvaluationDetails{
+		Value: nil,
+		EvaluationDetails: of.EvaluationDetails{
+			FlagKey:  hookContext.FlagKey(),
+			FlagType: hookContext.FlagType(),
+			ResolutionDetail: of.ResolutionDetail{
+				Reason: of.ErrorReason,
+			},
+		},
+	}
+	h.record(hookContext, details, true)
+}
+
+func (h *evaluationHook) record(
+	hookContext of.HookContext,
+	flagEvaluationDetails of.InterfaceEvaluationDetails,
+	runtimeDefault bool,
+) {
 	metadata := flagEvaluationDetails.FlagMetadata
 
 	var allocationKey string
@@ -85,8 +133,7 @@ func (h *evaluationHook) After(
 		contextHash:      contextHash,
 	}
 
-	h.writer.aggregator.add(key, contextAttrs, errorType, errorMessage, false, time.Now().UnixMilli())
-	return nil
+	h.writer.aggregator.add(key, contextAttrs, errorType, errorMessage, runtimeDefault, time.Now().UnixMilli())
 }
 
 // internReason maps an OpenFeature Reason to the lowercase string representation

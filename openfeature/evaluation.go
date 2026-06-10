@@ -110,13 +110,20 @@ type evaluationAggregationKey struct {
 }
 
 // evaluationDegradedKey is the rollup key used when the per-flag cap is exceeded.
-// It drops subject/context dimensions, preserving only (flag, variant, allocation, rule, reason).
+// Drops subject/context/rule dimensions, preserving (flag, variant, allocation, reason).
+// Equivalent to the OTel feature_flag.evaluations metric dimensions.
 type evaluationDegradedKey struct {
-	flagKey          string
-	variant          string
-	allocationKey    string
-	targetingRuleKey string
-	reason           string
+	flagKey       string
+	variant       string
+	allocationKey string
+	reason        string
+}
+
+// evaluationUltraDegradedKey is the final fallback key used when the degraded map cap is exceeded.
+// Preserves only (flag, variant) — bounded by flag config size, not by traffic.
+type evaluationUltraDegradedKey struct {
+	flagKey string
+	variant string
 }
 
 // evaluationEntry holds per-window count and timestamps for one aggregation bucket.
@@ -156,7 +163,17 @@ func hashKey(k evaluationAggregationKey) uint64 {
 // hashDegradedKey computes an FNV-1a hash for the degraded (rollup) key.
 func hashDegradedKey(k evaluationDegradedKey) uint64 {
 	h := fnv.New64a()
-	for _, s := range []string{k.flagKey, k.variant, k.allocationKey, k.targetingRuleKey, k.reason} {
+	for _, s := range []string{k.flagKey, k.variant, k.allocationKey, k.reason} {
+		_, _ = h.Write([]byte(s))
+		_, _ = h.Write([]byte{0})
+	}
+	return h.Sum64()
+}
+
+// hashUltraDegradedKey computes an FNV-1a hash for the ultra-degraded key.
+func hashUltraDegradedKey(k evaluationUltraDegradedKey) uint64 {
+	h := fnv.New64a()
+	for _, s := range []string{k.flagKey, k.variant} {
 		_, _ = h.Write([]byte(s))
 		_, _ = h.Write([]byte{0})
 	}
@@ -224,26 +241,31 @@ func primitiveToString(v any) string {
 }
 
 type evaluationAggregator struct {
-	mu           sync.Mutex
-	full         map[uint64]*evaluationEntry
-	degraded     map[uint64]*evaluationEntry
-	keys         map[uint64]evaluationAggregationKey  // parallel to full
-	degradedKeys map[uint64]evaluationDegradedKey     // parallel to degraded
-	perFlagFull  map[string]int
-	perFlagCap   int
-	globalCap    int
-	globalCount  int
+	mu                 sync.Mutex
+	full               map[uint64]*evaluationEntry
+	degraded           map[uint64]*evaluationEntry
+	ultraDegraded      map[uint64]*evaluationEntry
+	keys               map[uint64]evaluationAggregationKey
+	degradedKeys       map[uint64]evaluationDegradedKey
+	ultraDegradedKeys  map[uint64]evaluationUltraDegradedKey
+	perFlagFull        map[string]int
+	perFlagCap         int
+	globalCap          int
+	globalCount        int
+	degradedCount      int
 }
 
 func newEvaluationAggregator(perFlagCap, globalCap int) *evaluationAggregator {
 	return &evaluationAggregator{
-		full:         make(map[uint64]*evaluationEntry),
-		degraded:     make(map[uint64]*evaluationEntry),
-		keys:         make(map[uint64]evaluationAggregationKey),
-		degradedKeys: make(map[uint64]evaluationDegradedKey),
-		perFlagFull:  make(map[string]int),
-		perFlagCap:   perFlagCap,
-		globalCap:    globalCap,
+		full:              make(map[uint64]*evaluationEntry),
+		degraded:          make(map[uint64]*evaluationEntry),
+		ultraDegraded:     make(map[uint64]*evaluationEntry),
+		keys:              make(map[uint64]evaluationAggregationKey),
+		degradedKeys:      make(map[uint64]evaluationDegradedKey),
+		ultraDegradedKeys: make(map[uint64]evaluationUltraDegradedKey),
+		perFlagFull:       make(map[string]int),
+		perFlagCap:        perFlagCap,
+		globalCap:         globalCap,
 	}
 }
 
@@ -254,36 +276,34 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Fast path: existing full-fidelity entry.
+	// Fast path A: existing full-fidelity entry.
 	if e, ok := a.full[h]; ok {
 		e.count++
 		e.lastEvaluation = nowMs
 		return
 	}
 
-	// New tuple for this flag — check per-flag cap.
-	if a.perFlagFull[key.flagKey] >= a.perFlagCap {
-		// Route to degraded (rollup) bucket.
-		dk := evaluationDegradedKey{
-			flagKey:          key.flagKey,
-			variant:          key.variant,
-			allocationKey:    key.allocationKey,
-			targetingRuleKey: key.targetingRuleKey,
-			reason:           key.reason,
-		}
-		dh := hashDegradedKey(dk)
+	dk := evaluationDegradedKey{
+		flagKey:       key.flagKey,
+		variant:       key.variant,
+		allocationKey: key.allocationKey,
+		reason:        key.reason,
+	}
+	dh := hashDegradedKey(dk)
+
+	// Fast path C/E: existing degraded entry (per-flag or global cap already hit).
+	if a.perFlagFull[key.flagKey] >= a.perFlagCap || a.globalCount >= a.globalCap {
 		if de, ok := a.degraded[dh]; ok {
 			de.count++
 			de.lastEvaluation = nowMs
-		} else {
-			a.degraded[dh] = &evaluationEntry{
-				count:           1,
-				firstEvaluation: nowMs,
-				lastEvaluation:  nowMs,
-			}
-			a.degradedKeys[dh] = dk
+			return
 		}
-		// Do NOT increment perFlagFull or globalCount for degraded inserts.
+	}
+
+	// New tuple for this flag — check per-flag cap.
+	if a.perFlagFull[key.flagKey] >= a.perFlagCap {
+		// Route to degraded; overflow to ultra-degraded if degraded cap hit.
+		a.addToDegraded(dk, dh, nowMs)
 		return
 	}
 
@@ -292,7 +312,6 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 		// Fairness eviction: if this flag has never been seen this window, evict one entry
 		// from the noisiest flag so every flag gets at least one full-fidelity event.
 		if a.perFlagFull[key.flagKey] == 0 {
-			// Find victim flag: the flag with the highest perFlagFull count.
 			var victimFlag string
 			var victimCount int
 			for f, c := range a.perFlagFull {
@@ -302,12 +321,11 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 				}
 			}
 			if victimFlag != "" {
-				// Find any full entry belonging to the victim flag.
 				var evictedHash uint64
 				var found bool
-				for h, k := range a.keys {
-					if k.flagKey == victimFlag {
-						evictedHash = h
+				for eh, ek := range a.keys {
+					if ek.flagKey == victimFlag {
+						evictedHash = eh
 						found = true
 						break
 					}
@@ -315,31 +333,27 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 				if found {
 					evictedKey := a.keys[evictedHash]
 					evictedEntry := a.full[evictedHash]
-
-					// Build degraded key from evicted entry and fold count.
-					dk := evaluationDegradedKey{
-						flagKey:          evictedKey.flagKey,
-						variant:          evictedKey.variant,
-						allocationKey:    evictedKey.allocationKey,
-						targetingRuleKey: evictedKey.targetingRuleKey,
-						reason:           evictedKey.reason,
+					edk := evaluationDegradedKey{
+						flagKey:       evictedKey.flagKey,
+						variant:       evictedKey.variant,
+						allocationKey: evictedKey.allocationKey,
+						reason:        evictedKey.reason,
 					}
-					dh := hashDegradedKey(dk)
-					if de, ok := a.degraded[dh]; ok {
+					edh := hashDegradedKey(edk)
+					if de, ok := a.degraded[edh]; ok {
 						de.count += evictedEntry.count
 						if evictedEntry.lastEvaluation > de.lastEvaluation {
 							de.lastEvaluation = evictedEntry.lastEvaluation
 						}
 					} else {
-						a.degraded[dh] = &evaluationEntry{
+						a.degraded[edh] = &evaluationEntry{
 							count:           evictedEntry.count,
 							firstEvaluation: evictedEntry.firstEvaluation,
 							lastEvaluation:  evictedEntry.lastEvaluation,
 						}
-						a.degradedKeys[dh] = dk
+						a.degradedKeys[edh] = edk
+						a.degradedCount++
 					}
-
-					// Remove evicted entry from full.
 					delete(a.full, evictedHash)
 					delete(a.keys, evictedHash)
 					a.perFlagFull[victimFlag]--
@@ -349,28 +363,9 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 			}
 		}
 
-		// If still at cap (no eviction happened or victim not found), route to degraded.
+		// If still at cap (no eviction or victim not found), route to degraded.
 		if a.globalCount >= a.globalCap {
-			dk := evaluationDegradedKey{
-				flagKey:          key.flagKey,
-				variant:          key.variant,
-				allocationKey:    key.allocationKey,
-				targetingRuleKey: key.targetingRuleKey,
-				reason:           key.reason,
-			}
-			dh := hashDegradedKey(dk)
-			if de, ok := a.degraded[dh]; ok {
-				de.count++
-				de.lastEvaluation = nowMs
-			} else {
-				a.degraded[dh] = &evaluationEntry{
-					count:           1,
-					firstEvaluation: nowMs,
-					lastEvaluation:  nowMs,
-				}
-				a.degradedKeys[dh] = dk
-			}
-			// Do NOT increment perFlagFull or globalCount for degraded inserts.
+			a.addToDegraded(dk, dh, nowMs)
 			return
 		}
 	}
@@ -391,27 +386,70 @@ func (a *evaluationAggregator) add(key evaluationAggregationKey, contextAttrs ma
 	a.globalCount++
 }
 
-// drain swaps full and degraded maps with fresh ones, resets counters, and returns the old maps.
+// addToDegraded inserts or increments a degraded bucket. If the degraded map is at globalCap,
+// overflows into the ultra-degraded (flag, variant) bucket instead, preserving total counts.
+// Must be called with a.mu held.
+func (a *evaluationAggregator) addToDegraded(dk evaluationDegradedKey, dh uint64, nowMs int64) {
+	if de, ok := a.degraded[dh]; ok {
+		de.count++
+		de.lastEvaluation = nowMs
+		return
+	}
+	// New degraded key — check degraded cap.
+	if a.degradedCount >= a.globalCap {
+		// Overflow to ultra-degraded.
+		uk := evaluationUltraDegradedKey{flagKey: dk.flagKey, variant: dk.variant}
+		uh := hashUltraDegradedKey(uk)
+		if ue, ok := a.ultraDegraded[uh]; ok {
+			ue.count++
+			ue.lastEvaluation = nowMs
+		} else {
+			a.ultraDegraded[uh] = &evaluationEntry{
+				count:           1,
+				firstEvaluation: nowMs,
+				lastEvaluation:  nowMs,
+			}
+			a.ultraDegradedKeys[uh] = uk
+		}
+		return
+	}
+	a.degraded[dh] = &evaluationEntry{
+		count:           1,
+		firstEvaluation: nowMs,
+		lastEvaluation:  nowMs,
+	}
+	a.degradedKeys[dh] = dk
+	a.degradedCount++
+}
+
+// drain swaps all maps with fresh ones, resets counters, and returns the old maps.
 func (a *evaluationAggregator) drain() (
 	full map[uint64]*evaluationEntry,
 	degraded map[uint64]*evaluationEntry,
+	ultraDegraded map[uint64]*evaluationEntry,
 	keys map[uint64]evaluationAggregationKey,
 	degradedKeys map[uint64]evaluationDegradedKey,
+	ultraDegradedKeys map[uint64]evaluationUltraDegradedKey,
 ) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
 	full = a.full
 	degraded = a.degraded
+	ultraDegraded = a.ultraDegraded
 	keys = a.keys
 	degradedKeys = a.degradedKeys
+	ultraDegradedKeys = a.ultraDegradedKeys
 	a.full = make(map[uint64]*evaluationEntry)
 	a.degraded = make(map[uint64]*evaluationEntry)
+	a.ultraDegraded = make(map[uint64]*evaluationEntry)
 	a.keys = make(map[uint64]evaluationAggregationKey)
 	a.degradedKeys = make(map[uint64]evaluationDegradedKey)
+	a.ultraDegradedKeys = make(map[uint64]evaluationUltraDegradedKey)
 	a.perFlagFull = make(map[string]int)
 	a.globalCount = 0
-	return full, degraded, keys, degradedKeys
+	a.degradedCount = 0
+	return
 }
 
 // flattenAndExtractPrimitive flattens the OpenFeature evaluation context and returns
@@ -522,14 +560,14 @@ func (w *evaluationWriter) flush() {
 		w.mu.Unlock()
 		return
 	}
-	full, degraded, keys, degradedKeys := w.aggregator.drain()
+	full, degraded, ultraDegraded, keys, degradedKeys, ultraDegradedKeys := w.aggregator.drain()
 	w.mu.Unlock()
 
-	if len(full) == 0 && len(degraded) == 0 {
+	if len(full) == 0 && len(degraded) == 0 && len(ultraDegraded) == 0 {
 		return
 	}
 
-	events := buildEvaluationEvents(full, degraded, keys, degradedKeys)
+	events := buildEvaluationEvents(full, degraded, ultraDegraded, keys, degradedKeys, ultraDegradedKeys)
 	if len(events) == 0 {
 		return
 	}
@@ -548,11 +586,13 @@ func (w *evaluationWriter) flush() {
 func buildEvaluationEvents(
 	full map[uint64]*evaluationEntry,
 	degraded map[uint64]*evaluationEntry,
+	ultraDegraded map[uint64]*evaluationEntry,
 	keys map[uint64]evaluationAggregationKey,
 	degradedKeys map[uint64]evaluationDegradedKey,
+	ultraDegradedKeys map[uint64]evaluationUltraDegradedKey,
 ) []evaluationEvent {
 	now := time.Now().UnixMilli()
-	events := make([]evaluationEvent, 0, len(full)+len(degraded))
+	events := make([]evaluationEvent, 0, len(full)+len(degraded)+len(ultraDegraded))
 
 	for h, entry := range full {
 		k := keys[h]
@@ -606,8 +646,20 @@ func buildEvaluationEvents(
 		if dk.allocationKey != "" {
 			ev.Allocation = &evaluationAllocation{Key: dk.allocationKey}
 		}
-		if dk.targetingRuleKey != "" {
-			ev.TargetingRule = &evaluationTargetingRule{Key: dk.targetingRuleKey}
+		events = append(events, ev)
+	}
+
+	for h, entry := range ultraDegraded {
+		uk := ultraDegradedKeys[h]
+		ev := evaluationEvent{
+			Flag:            evaluationFlag{Key: uk.flagKey},
+			EvaluationCount: entry.count,
+			FirstEvaluation: entry.firstEvaluation,
+			LastEvaluation:  entry.lastEvaluation,
+			Timestamp:       now,
+		}
+		if uk.variant != "" {
+			ev.Variant = &evaluationVariant{Key: uk.variant}
 		}
 		events = append(events, ev)
 	}

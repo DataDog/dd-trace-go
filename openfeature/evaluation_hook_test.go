@@ -48,7 +48,7 @@ func TestEvaluationHook_After_Basic(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	full, _, keys, _ := writer.aggregator.drain()
+	full, _, _, keys, _, _ := writer.aggregator.drain()
 	if len(full) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(full))
 	}
@@ -135,7 +135,7 @@ func TestEvaluationHook_After_ContextCancelled(t *testing.T) {
 		t.Fatal("expected error for cancelled context, got nil")
 	}
 
-	full, _, _, _ := writer.aggregator.drain()
+	full, _, _, _, _, _ := writer.aggregator.drain()
 	if len(full) != 0 {
 		t.Errorf("expected 0 entries for cancelled context, got %d", len(full))
 	}
@@ -170,7 +170,7 @@ func TestEvaluationHook_After_WithTargetingKey(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	full, _, _, _ := writer.aggregator.drain()
+	full, _, _, _, _, _ := writer.aggregator.drain()
 	if len(full) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(full))
 	}
