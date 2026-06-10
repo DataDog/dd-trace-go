@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/tinylib/msgp/msgp"
@@ -841,4 +842,59 @@ func TestRemapWithMultipleSetAttributes(t *testing.T) {
 	assert.Contains(metrics, fmt.Sprintf("%s:%s", "_dd1.sr.eausr", "1"))
 	meta := fmt.Sprintf("%v", p[0]["meta"])
 	assert.Contains(meta, fmt.Sprintf("%s:%s", "http.status_code", "200"))
+}
+
+func TestToReservedAttributesOtelSemantics(t *testing.T) {
+	assert := assert.New(t)
+
+	// Under OTel semantics, reserved tags are passed through unchanged.
+	k, v := toReservedAttributes("operation.name", attribute.StringValue("Op"), true)
+	assert.Equal("operation.name", k)
+	assert.Equal("Op", v)
+
+	k, _ = toReservedAttributes("analytics.event", attribute.BoolValue(true), true)
+	assert.Equal("analytics.event", k)
+
+	k, v = toReservedAttributes("http.response.status_code", attribute.IntValue(500), true)
+	assert.Equal("http.response.status_code", k)
+	assert.Equal(int64(500), v)
+
+	// Without OTel semantics, the same tags are remapped to Datadog conventions.
+	k, _ = toReservedAttributes("operation.name", attribute.StringValue("Op"), false)
+	assert.Equal(ext.SpanName, k)
+	k, _ = toReservedAttributes("http.response.status_code", attribute.IntValue(500), false)
+	assert.Equal("http.status_code", k)
+}
+
+// TestRemapStatusCodeOtelSemantics verifies that under OTel semantics the bridge keeps
+// http.response.status_code instead of remapping it to the legacy http.status_code tag.
+func TestRemapStatusCodeOtelSemantics(t *testing.T) {
+	assert := assert.New(t)
+
+	// Reload global config on cleanup so the flag doesn't leak; LIFO order runs this
+	// after t.Setenv restores the env.
+	t.Cleanup(func() { internalconfig.CreateNew() })
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+	internalconfig.CreateNew()
+
+	_, payloads, cleanup := mockTracerProvider(t, tracer.WithEnv("test_env"), tracer.WithService("test_serv"))
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	_, sp := tr.Start(context.Background(), "otel_span_name",
+		oteltrace.WithSpanKind(oteltrace.SpanKindServer))
+	sp.SetAttributes(attribute.Int("http.response.status_code", 200))
+	sp.End()
+
+	tracer.Flush()
+	traces, err := waitForPayload(payloads)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	p := traces[0]
+	meta := fmt.Sprintf("%v", p[0]["meta"])
+	metrics := fmt.Sprintf("%v", p[0]["metrics"])
+	// No legacy string remap; OTel key retained as a numeric tag.
+	assert.NotContains(meta, "http.status_code")
+	assert.Contains(metrics, "http.response.status_code:200")
 }

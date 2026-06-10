@@ -219,10 +219,11 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 // The list of reserved tags might be extended in the future.
 // Any other non-reserved tags will be set as provided.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
+	otelSemantics := s.oteltracer.otelSemanticsEnabled
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, kv := range kv {
-		if k, v := toReservedAttributes(string(kv.Key), kv.Value); k != "" {
+		if k, v := toReservedAttributes(string(kv.Key), kv.Value, otelSemantics); k != "" {
 			s.attributes[k] = v
 		}
 	}
@@ -230,7 +231,11 @@ func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 
 // toReservedAttributes recognizes a set of span attributes that have a special meaning.
 // These tags should supersede other values.
-func toReservedAttributes(k string, v attribute.Value) (string, any) {
+func toReservedAttributes(k string, v attribute.Value, otelSemantics bool) (string, any) {
+	if otelSemantics {
+		// Under OTel semantics, set every attribute as-is (no DD reserved-tag remapping).
+		return k, v.AsInterface()
+	}
 	switch k {
 	case "operation.name":
 		if ops := strings.ToLower(v.AsString()); ops != "" {
