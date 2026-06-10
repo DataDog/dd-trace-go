@@ -33,23 +33,23 @@ const (
 
 var instr = internal.Instr
 
-func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
+func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string, dsmEnabled bool) {
 	switch operation {
 	case "Publish":
-		handlePublish(ctx, span, in)
+		handlePublish(ctx, span, in, dsmEnabled)
 	case "PublishBatch":
-		handlePublishBatch(ctx, span, in)
+		handlePublishBatch(ctx, span, in, dsmEnabled)
 	}
 }
 
-func handlePublish(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func handlePublish(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, dsmEnabled bool) {
 	params, ok := in.Parameters.(*sns.PublishInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PublishInput params")
 		return
 	}
 
-	traceContext, err := getTraceContext(ctx, span, destinationName(params.TopicArn, params.TargetArn), int64(publishInputSize(params)))
+	traceContext, err := getTraceContext(ctx, span, destinationName(params.TopicArn, params.TargetArn), int64(publishInputSize(params)), dsmEnabled)
 	if err != nil {
 		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 		return
@@ -67,7 +67,7 @@ func handlePublish(ctx context.Context, span *tracer.Span, in middleware.Initial
 	injectTraceContext(traceContext, params.MessageAttributes)
 }
 
-func handlePublishBatch(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func handlePublishBatch(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, dsmEnabled bool) {
 	params, ok := in.Parameters.(*sns.PublishBatchInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PublishBatch params")
@@ -82,6 +82,7 @@ func handlePublishBatch(ctx context.Context, span *tracer.Span, in middleware.In
 			span,
 			destinationName(params.TopicArn, nil),
 			int64(publishBatchEntrySize(&params.PublishBatchRequestEntries[i])),
+			dsmEnabled,
 		)
 		if err != nil {
 			instr.Logger().Debug("Unable to get trace context: %s", err.Error())
@@ -101,22 +102,24 @@ func handlePublishBatch(ctx context.Context, span *tracer.Span, in middleware.In
 	}
 }
 
-func getTraceContext(ctx context.Context, span *tracer.Span, destination string, payloadSize int64) (types.MessageAttributeValue, error) {
+func getTraceContext(ctx context.Context, span *tracer.Span, destination string, payloadSize int64, dsmEnabled bool) (types.MessageAttributeValue, error) {
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
 		return types.MessageAttributeValue{}, err
 	}
 
-	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
-		ctx,
-		options.CheckpointParams{PayloadSize: payloadSize},
-		"direction:out",
-		"type:sns",
-		"topic:"+destination,
-	)
-	if ok {
-		datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
+	if dsmEnabled {
+		checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+			ctx,
+			options.CheckpointParams{PayloadSize: payloadSize},
+			"direction:out",
+			"type:sns",
+			"topic:"+destination,
+		)
+		if ok {
+			datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
+		}
 	}
 
 	jsonBytes, err := json.Marshal(carrier)

@@ -62,7 +62,7 @@ func TestEnrichOperation(t *testing.T) {
 		require.True(t, ok)
 	}
 
-	EnrichOperation(spanCtx, span, input, "PutEvents")
+	EnrichOperation(spanCtx, span, input, "PutEvents", true)
 
 	require.Len(t, params.Entries, 2)
 
@@ -148,7 +148,7 @@ func TestInjectTraceContext(t *testing.T) {
 			expectedPathway, ok := datastreams.PathwayFromContext(expectedCtx)
 			require.True(t, ok)
 
-			carrier, err := getTraceContext(spanCtx, span, &tt.entry, 123456789)
+			carrier, err := getTraceContext(spanCtx, span, &tt.entry, 123456789, true)
 			require.NoError(t, err)
 
 			injectTraceContext(carrier, &tt.entry)
@@ -240,6 +240,39 @@ func TestInjectTraceContextSizeLimit(t *testing.T) {
 			tt.expected(t, &tt.entry)
 		})
 	}
+}
+
+func TestEnrichOperationDSMDisabled(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	baseCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+	span, spanCtx := tracer.StartSpanFromContext(baseCtx, "test-span")
+
+	input := middleware.InitializeInput{
+		Parameters: &eventbridge.PutEventsInput{
+			Entries: []types.PutEventsRequestEntry{
+				{
+					Detail:       aws.String(`{"key": "value"}`),
+					EventBusName: aws.String("test-bus"),
+					DetailType:   aws.String("order.created"),
+				},
+			},
+		},
+	}
+
+	EnrichOperation(spanCtx, span, input, "PutEvents", false)
+
+	params := input.Parameters.(*eventbridge.PutEventsInput)
+	require.Len(t, params.Entries, 1)
+	require.NotNil(t, params.Entries[0].Detail)
+	var detail map[string]interface{}
+	err := json.Unmarshal([]byte(*params.Entries[0].Detail), &detail)
+	require.NoError(t, err)
+	assert.Contains(t, detail, datadogKey)
+	ddData, ok := detail[datadogKey].(map[string]interface{})
+	require.True(t, ok)
+	assert.NotContains(t, ddData, pathwayContextKey)
 }
 
 func TestEventBridgeEdgeTags(t *testing.T) {

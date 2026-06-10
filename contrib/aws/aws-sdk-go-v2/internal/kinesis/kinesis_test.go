@@ -55,7 +55,7 @@ func TestEnrichOperation(t *testing.T) {
 	expectedPathway, ok := expectedKinesisPathway(spanCtx, "orders-stream", int64(putRecordsEntrySize(&params.Records[0])))
 	require.True(t, ok)
 
-	EnrichOperation(spanCtx, span, input, "PutRecords")
+	EnrichOperation(spanCtx, span, input, "PutRecords", true)
 
 	for _, record := range params.Records {
 		var payload map[string]interface{}
@@ -81,6 +81,32 @@ func TestEnrichOperation(t *testing.T) {
 	}
 }
 
+func TestEnrichOperationDSMDisabled(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	baseCtx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
+	span, spanCtx := tracer.StartSpanFromContext(baseCtx, "test-span")
+
+	input := middleware.InitializeInput{
+		Parameters: &kinesis.PutRecordInput{
+			StreamName:   aws.String("my-stream"),
+			Data:         []byte(`{"message":"hello"}`),
+			PartitionKey: aws.String("pk"),
+		},
+	}
+
+	EnrichOperation(spanCtx, span, input, "PutRecord", false)
+
+	params := input.Parameters.(*kinesis.PutRecordInput)
+	var payload map[string]interface{}
+	err := json.Unmarshal(params.Data, &payload)
+	require.NoError(t, err)
+	ddData, ok := payload[datadogKey].(map[string]interface{})
+	require.True(t, ok)
+	assert.NotContains(t, ddData, pathwayContextKey)
+}
+
 func TestInjectTraceContextSkipsMalformedData(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
@@ -94,7 +120,7 @@ func TestInjectTraceContextSkipsMalformedData(t *testing.T) {
 		PartitionKey: aws.String("pk-1"),
 	}
 
-	EnrichOperation(spanCtx, span, middleware.InitializeInput{Parameters: params}, "PutRecord")
+	EnrichOperation(spanCtx, span, middleware.InitializeInput{Parameters: params}, "PutRecord", true)
 	assert.Equal(t, []byte("not-json"), params.Data)
 }
 
