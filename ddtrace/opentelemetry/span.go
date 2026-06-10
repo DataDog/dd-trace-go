@@ -43,7 +43,9 @@ func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.p
 func (s *span) SetName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.attributes[ext.SpanName] = strings.ToLower(name)
+	// OTel span name maps to the Datadog resource (the OTLP span-name field); the
+	// operation name is DD-only and left to the span's computed semantics.
+	s.attributes[ext.ResourceName] = name
 }
 
 // spanEvent holds information about span events
