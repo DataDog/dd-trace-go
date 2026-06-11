@@ -11,7 +11,7 @@ name: Build Metrics
 # - Cold cache measurement: cleans build cache before each measurement to capture full compilation cost
 # - Warm module cache: runs go mod download (untimed) so measurement reflects compilation, not network
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
-# - Runs on: Pull requests (when this file or any go.mod changes) and pushes to main
+# - Runs on: Pull requests (when this file, scripts/*, orchestrion.yml, or any go.mod changes) and pushes to main
 # - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version
 #
 # Dashboard: View trends in Datadog CI Visibility (filter @git.branch:main, split by build.toolchain)
@@ -21,12 +21,18 @@ on:
   pull_request:
     paths:
       - .github/workflows/build-metrics.yml
+      - scripts/measure_build.sh
+      - scripts/publish_build_metrics.sh
+      - '**/orchestrion.yml'
       - '**/go.mod'
   push:
     branches:
       - main
     paths:
       - .github/workflows/build-metrics.yml
+      - scripts/measure_build.sh
+      - scripts/publish_build_metrics.sh
+      - '**/orchestrion.yml'
       - '**/go.mod'
   workflow_dispatch:
 
@@ -44,7 +50,58 @@ jobs:
       fail-fast: false
       matrix:
         mode: [standard, orchestrion]
-        sample: [net_http]
+        sample:
+          - 99designs.gqlgen
+          - aws.v1
+          - aws.v2
+          - chi.v5
+          - civisibility
+          - civisibility_failnow
+          - civisibility_failnow_benchmark
+          - civisibility_failnow_retry
+          - confluent-kafka-go.v1
+          - confluent-kafka-go.v2
+          - dd-span
+          - echo.v4
+          - fiber.v2
+          - gcp_pubsub.v1
+          - gcp_pubsub.v2
+          - gin
+          - gls
+          - go-elasticsearch
+          - go-redis.v0
+          - go-redis.v7
+          - go-redis.v8
+          - go-redis.v9
+          - gocql
+          - gorilla_mux
+          - gorm
+          - graph-gophers
+          - graphql-go
+          - grpc
+          - ibm_sarama
+          - julienschmidt_httprouter
+          - k8s_client_go
+          - logrus
+          - mongo
+          - mongo.v2
+          - net_http
+          - os
+          - parallel_testing_retries
+          - pgx
+          - redigo
+          - rueidis
+          - segmentio_kafka.v0
+          - shopify_sarama
+          - slog
+          - sql
+          - twirp
+          - twirp_quantize
+          - twmb_franz_go
+          - valkey-go
+          - valyala_fasthttp
+          - vault
+          - zerolog
     runs-on: ubuntu-latest
     name: Build Metrics (${{ matrix.sample }}, ${{ matrix.mode }})
     steps:
