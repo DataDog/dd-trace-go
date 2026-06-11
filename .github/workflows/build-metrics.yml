@@ -85,7 +85,7 @@ jobs:
       # Install datadog-ci using the same pattern as dd-ci-upload action
       - name: Set datadog-ci platform
         if: steps.dd-sts.outcome == 'success'
-        run: echo "DD_CI_CLI_BUILD=linux-x64" >> $GITHUB_ENV
+        run: echo "DD_CI_CLI_BUILD=linux-x64" >> "$GITHUB_ENV"
 
       - name: Cache datadog-ci
         if: steps.dd-sts.outcome == 'success'
