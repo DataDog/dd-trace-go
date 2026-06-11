@@ -43,26 +43,32 @@ fi
 message "Reading metrics from $METRICS_FILE"
 SAMPLE=$(jq -r '.sample' "$METRICS_FILE")
 MODE=$(jq -r '.mode' "$METRICS_FILE")
-DURATION=$(jq -r '.metrics.build_duration_seconds' "$METRICS_FILE")
 SIZE=$(jq -r '.metrics.binary_size_bytes' "$METRICS_FILE")
 GO_VERSION=$(jq -r '.go_version' "$METRICS_FILE")
 ORCHESTRION_VERSION=$(jq -r '.orchestrion_version // empty' "$METRICS_FILE")
 
+# Read all duration samples into a bash array
+mapfile -t DURATIONS < <(jq -r '.metrics.build_duration_samples[]' "$METRICS_FILE")
+
 message "Parsed metrics:"
 message "  Sample: $SAMPLE"
 message "  Mode: $MODE"
-message "  Duration: ${DURATION}s"
+message "  Durations: ${DURATIONS[*]}s"
 message "  Size: $SIZE bytes"
 message "  Go version: $GO_VERSION"
 if [[ -n "$ORCHESTRION_VERSION" ]]; then
   message "  Orchestrion version: $ORCHESTRION_VERSION"
 fi
 
-# Publish measures to CI Visibility
+# Publish measures to CI Visibility — one indexed measure per duration sample, one size sample
 message "Publishing measures to Datadog CI Visibility..."
+MEASURE_ARGS=(--measures "go.build.binary_size_bytes:${SIZE}")
+for i in "${!DURATIONS[@]}"; do
+  MEASURE_ARGS+=(--measures "go.build.duration_seconds.${i}:${DURATIONS[$i]}")
+done
+
 DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
-  --measures "go.build.duration_seconds:${DURATION}" \
-  --measures "go.build.binary_size_bytes:${SIZE}" ||
+  "${MEASURE_ARGS[@]}" ||
   die "Failed to publish measures"
 
 # Publish tags
