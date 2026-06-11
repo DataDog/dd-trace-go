@@ -148,7 +148,7 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
 - `--sample NAME` - Sample to build (default: net_http)
 - `--mode MODE` - Build mode: `standard` or `orchestrion` (required)
 - `--output PATH` - Output JSON file path (default: stdout)
-- `--repeats N` - Number of build repeats for median (default: 3)
+- `--repeats N` - Number of build repeats (default: 3)
 
 **Output format:**
 ```json
@@ -156,7 +156,7 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
   "sample": "net_http",
   "mode": "orchestrion",
   "metrics": {
-    "build_duration_seconds": 312.4,
+    "build_duration_samples": [312.4, 308.1, 315.7],
     "binary_size_bytes": 48217344
   },
   "go_version": "1.25.0",
@@ -164,9 +164,11 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
 }
 ```
 
+`build_duration_samples` contains one entry per `--repeats` run. `binary_size_bytes` is taken from the last build.
+
 ### publish_build_metrics.sh
 
-Publishes build metrics to Datadog CI Visibility using `datadog-ci`. Attaches measures (`go.build.duration_seconds`, `go.build.binary_size_bytes`) and tags (`build.toolchain`, `build.sample`, `build.cache`, `go.version`, `orchestrion.version`) to the current CI job span.
+Publishes build metrics to Datadog CI Visibility using `datadog-ci`. Attaches measures (`go.build.duration_seconds.0`, `go.build.duration_seconds.1`, ..., `go.build.binary_size_bytes`) and tags (`build.toolchain`, `build.sample`, `build.cache`, `go.version`, `orchestrion.version`) to the current CI job span. Each element of `build_duration_samples` is published as an individually-indexed measure.
 
 ```bash
 # Set environment and publish
