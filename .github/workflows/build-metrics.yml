@@ -59,7 +59,6 @@ jobs:
           - civisibility_failnow
           - civisibility_failnow_benchmark
           - civisibility_failnow_retry
-          - civisibilitytest
           - confluent-kafka-go.v1
           - confluent-kafka-go.v2
           - dd-span
