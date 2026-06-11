@@ -6,6 +6,7 @@
 package pgx
 
 import (
+	"context"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,24 +34,31 @@ const (
 var interval = 10 * time.Second
 
 // pollPoolStats calls (*pgxpool).Stats on the pool at a predetermined interval. It pushes the pool Stats off to the statsd client.
-func pollPoolStats(statsd instrumentation.StatsdClient, pool *pgxpool.Pool, tags []string) {
-	// TODO: Create stop condition for pgx on db.Close
+// The goroutine exits when ctx is canceled.
+func pollPoolStats(ctx context.Context, statsd instrumentation.StatsdClient, pool *pgxpool.Pool, tags []string) {
 	instr.Logger().Debug("contrib/jackc/pgx.v5: Traced pool connection found: Pool stats will be gathered and sent every %v.", interval)
-	for range time.NewTicker(interval).C {
-		instr.Logger().Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")
-		stat := pool.Stat()
-		statsd.Gauge(AcquireCount, float64(stat.AcquireCount()), tags, 1)
-		statsd.Timing(AcquireDuration, stat.AcquireDuration(), tags, 1)
-		statsd.Gauge(AcquiredConns, float64(stat.AcquiredConns()), tags, 1)
-		statsd.Gauge(CanceledAcquireCount, float64(stat.CanceledAcquireCount()), tags, 1)
-		statsd.Gauge(ConstructingConns, float64(stat.ConstructingConns()), tags, 1)
-		statsd.Gauge(EmptyAcquireCount, float64(stat.EmptyAcquireCount()), tags, 1)
-		statsd.Gauge(IdleConns, float64(stat.IdleConns()), tags, 1)
-		statsd.Gauge(MaxConns, float64(stat.MaxConns()), tags, 1)
-		statsd.Gauge(TotalConns, float64(stat.TotalConns()), tags, 1)
-		statsd.Gauge(NewConnsCount, float64(stat.NewConnsCount()), tags, 1)
-		statsd.Gauge(MaxLifetimeDestroyCount, float64(stat.MaxLifetimeDestroyCount()), tags, 1)
-		statsd.Gauge(MaxIdleDestroyCount, float64(stat.MaxIdleDestroyCount()), tags, 1)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			instr.Logger().Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")
+			stat := pool.Stat()
+			statsd.Gauge(AcquireCount, float64(stat.AcquireCount()), tags, 1)
+			statsd.Timing(AcquireDuration, stat.AcquireDuration(), tags, 1)
+			statsd.Gauge(AcquiredConns, float64(stat.AcquiredConns()), tags, 1)
+			statsd.Gauge(CanceledAcquireCount, float64(stat.CanceledAcquireCount()), tags, 1)
+			statsd.Gauge(ConstructingConns, float64(stat.ConstructingConns()), tags, 1)
+			statsd.Gauge(EmptyAcquireCount, float64(stat.EmptyAcquireCount()), tags, 1)
+			statsd.Gauge(IdleConns, float64(stat.IdleConns()), tags, 1)
+			statsd.Gauge(MaxConns, float64(stat.MaxConns()), tags, 1)
+			statsd.Gauge(TotalConns, float64(stat.TotalConns()), tags, 1)
+			statsd.Gauge(NewConnsCount, float64(stat.NewConnsCount()), tags, 1)
+			statsd.Gauge(MaxLifetimeDestroyCount, float64(stat.MaxLifetimeDestroyCount()), tags, 1)
+			statsd.Gauge(MaxIdleDestroyCount, float64(stat.MaxIdleDestroyCount()), tags, 1)
+		}
 	}
 }
 
