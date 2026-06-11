@@ -292,8 +292,8 @@ var SensitiveConfigurations = map[string]struct{}{
 	"OTEL_EXPORTER_OTLP_TRACES_HEADERS":  {},
 }
 
-// keyAliases maps aliases to supported configuration keys.
-var keyAliases = map[string][]string{
+// KeyAliases maps canonical configuration keys to their known aliases.
+var KeyAliases = map[string][]string{
 	"DD_API_KEY":                    {"DD-API-KEY"},
 	"DD_APPSEC_STACK_TRACE_ENABLED": {"DD_APPSEC_STACK_TRACE_ENABLE"},
 }
