@@ -98,7 +98,7 @@ func IsSensitive(name string) bool {
 	if _, ok := SensitiveConfigurations[name]; ok {
 		return true
 	}
-	for key, aliases := range keyAliases {
+	for key, aliases := range KeyAliases {
 		if _, ok := SensitiveConfigurations[key]; !ok {
 			continue
 		}
