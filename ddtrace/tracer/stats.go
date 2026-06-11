@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 
@@ -270,6 +271,8 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	sendRetries := c.cfg.internalConfig.SendRetries()
 	retryInterval := c.cfg.internalConfig.RetryInterval()
 	for _, csp := range csps {
+		csp.RuntimeID = globalconfig.RuntimeID()
+		csp.Service = c.cfg.internalConfig.ServiceName()
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
 		var err error
