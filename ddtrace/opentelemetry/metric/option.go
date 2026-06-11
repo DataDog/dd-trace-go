@@ -13,6 +13,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 // config holds the configuration for the MeterProvider
@@ -25,6 +27,7 @@ type config struct {
 	temporalitySelector    metric.TemporalitySelector
 	producers              []metric.Producer
 	disableRuntimeProducer bool
+	ddConfig               *internalconfig.Config
 }
 
 // newConfig creates a default configuration. The export interval and timeout
