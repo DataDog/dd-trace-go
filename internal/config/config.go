@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
@@ -172,6 +173,10 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
+	// traceSamplingRules holds the RC-aware trace sampling rules (DD_TRACE_SAMPLING_RULES).
+	traceSamplingRules *DynamicConfig[[]samplingrules.SamplingRule]
+	// spanSamplingRules holds the single-span sampling rules (DD_SPAN_SAMPLING_RULES).
+	spanSamplingRules []samplingrules.SamplingRule
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -331,6 +336,22 @@ func loadConfig() *Config {
 	}
 
 	cfg.apiKey = env.Get("DD_API_KEY")
+
+	rawTrace, traceOrigin := p.GetStringWithOrigin("DD_TRACE_SAMPLING_RULES", "")
+	traceRules, err := samplingrules.UnmarshalSamplingRules([]byte(rawTrace), samplingrules.SamplingRuleTrace)
+	if err != nil {
+		log.Warn("DIAGNOSTICS Error(s) parsing DD_TRACE_SAMPLING_RULES: %s", err)
+	}
+	cfg.traceSamplingRules = newDynamicConfig("trace_sample_rules", traceRules, traceOrigin, samplingrules.EqualsFalseNegative, nil)
+	configtelemetry.ReportDefault("trace_sample_rules", traceRules)
+
+	rawSpan := p.GetString("DD_SPAN_SAMPLING_RULES", "")
+	spanRules, err := samplingrules.UnmarshalSamplingRules([]byte(rawSpan), samplingrules.SamplingRuleSpan)
+	if err != nil {
+		log.Warn("DIAGNOSTICS Error(s) parsing DD_SPAN_SAMPLING_RULES: %s", err)
+	}
+	cfg.spanSamplingRules = spanRules
+	configtelemetry.ReportDefault("span_sample_rules", spanRules)
 
 	return cfg
 }
@@ -1218,4 +1239,40 @@ func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ..
 	}
 	c.sendRetries = retries
 	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
+func (c *Config) TraceSamplingRules() []samplingrules.SamplingRule {
+	return c.traceSamplingRules.Get()
+}
+
+// TraceSamplingRulesConfig returns the DynamicConfig for trace sampling rules.
+// Used by the tracer's RC handler to apply remote-config updates.
+func (c *Config) TraceSamplingRulesConfig() *DynamicConfig[[]samplingrules.SamplingRule] {
+	return c.traceSamplingRules
+}
+
+func (c *Config) SetTraceSamplingRules(rules []samplingrules.SamplingRule, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_SAMPLING_RULES", origin, rules, product...) {
+		return
+	}
+	c.traceSamplingRules.setBaseline(rules, origin)
+	configtelemetry.Report("trace_sample_rules", rules, origin)
+}
+
+func (c *Config) SpanSamplingRules() []samplingrules.SamplingRule {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanSamplingRules
+}
+
+func (c *Config) SetSpanSamplingRules(rules []samplingrules.SamplingRule, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_SPAN_SAMPLING_RULES", origin, rules, product...) {
+		return
+	}
+	c.spanSamplingRules = rules
+	configtelemetry.Report("span_sample_rules", rules, origin)
 }

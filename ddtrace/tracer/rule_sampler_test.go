@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -53,7 +54,7 @@ func TestRegexEqualFalseNegative(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			assert.Equal(t, test.expectedEqual, regexEqualsFalseNegative(test.regex1, test.regex2))
+			assert.Equal(t, test.expectedEqual, samplingrules.RegexEqualsFalseNegative(test.regex1, test.regex2))
 		})
 
 	}
@@ -188,14 +189,8 @@ func TestSamplingRuleProvenanceMarshal(t *testing.T) {
 		jsonStr string
 	}{
 		{
-			name: "marshal and unmarshal",
-			rule: SamplingRule{
-				Service:  regexp.MustCompile("svc"),
-				Name:     regexp.MustCompile("op-name"),
-				Resource: regexp.MustCompile("abc-.*"),
-				Rate:     0.1,
-				globRule: &jsonRule{Name: "op-name", Service: "svc", Resource: "abc-*"},
-			},
+			name:    "marshal and unmarshal",
+			rule:    TraceSamplingRules(Rule{ServiceGlob: "svc", NameGlob: "op-name", ResourceGlob: "abc-*", Rate: 0.1})[0],
 			jsonStr: `{"service":"svc","name":"op-name","resource":"abc-*","sample_rate":0.1}`,
 		},
 	}
@@ -203,7 +198,7 @@ func TestSamplingRuleProvenanceMarshal(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// Same rule with provenance "customer"
-			for _, prov := range provenances {
+			for _, prov := range []Provenance{Local, Customer, Dynamic} {
 				test.rule.Provenance = prov
 				data, err := test.rule.MarshalJSON()
 				assert.NoError(t, err)

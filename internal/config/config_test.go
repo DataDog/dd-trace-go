@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -262,6 +263,12 @@ var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
 	},
 	"SetPeerServiceMapping": func(c *Config, origin telemetry.Origin) {
 		c.SetPeerServiceMapping("old-peer", "new-peer", origin)
+	},
+	"SetTraceSamplingRules": func(c *Config, origin telemetry.Origin) {
+		c.SetTraceSamplingRules([]samplingrules.SamplingRule{}, origin)
+	},
+	"SetSpanSamplingRules": func(c *Config, origin telemetry.Origin) {
+		c.SetSpanSamplingRules([]samplingrules.SamplingRule{}, origin)
 	},
 }
 

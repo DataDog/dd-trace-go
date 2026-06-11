@@ -202,11 +202,9 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		}
 
 		assertTelemetryConfig(t, telemetryClient.Configuration, "trace_sample_rate", 0.5, telemetry.OriginRemoteConfig)
-		assert.Contains(t, telemetryClient.Configuration, telemetry.Configuration{
-			Name:   "trace_sample_rules",
-			Value:  `[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"}]`,
-			Origin: telemetry.OriginRemoteConfig,
-		})
+		assertTelemetryConfig(t, telemetryClient.Configuration, "trace_sample_rules",
+			`[{"service":"my-service","name":"web.request","resource":"abc","sample_rate":1,"provenance":"customer"}]`,
+			telemetry.OriginRemoteConfig)
 	})
 
 	t.Run("DD_TRACE_SAMPLING_RULES=0.0 and RC rule rate=1.0 and revert", func(t *testing.T) {
@@ -298,7 +296,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			{
 				Name:   "trace_sample_rules",
 				Value:  `[{"service":"my-service","name":"web.request","resource":"*","sample_rate":0}]`,
-				Origin: telemetry.OriginDefault,
+				Origin: telemetry.OriginEnvVar,
 			},
 		})
 	})
