@@ -103,7 +103,7 @@ jobs:
 
       - name: Add datadog-ci to PATH
         if: steps.dd-sts.outcome == 'success'
-        run: echo "${{ github.workspace }}" >> $GITHUB_PATH
+        run: echo "${{ github.workspace }}" >> "$GITHUB_PATH"
 
       - name: Publish measures to CI Visibility
         if: steps.dd-sts.outcome == 'success'
