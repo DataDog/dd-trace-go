@@ -1120,6 +1120,18 @@ func WithStatsComputation(enabled bool) StartOption {
 	}
 }
 
+// WithStatsAdditionalTags configures additional tag keys to extract from spans
+// and use as extra aggregation dimensions for client-side stats. For example,
+// setting tags to []string{"region", "tenant_id"} will cause stats to be
+// grouped by those tag values in addition to the standard dimensions.
+// This can also be configured by setting DD_TRACE_STATS_ADDITIONAL_TAGS
+// (comma-separated list of tag keys).
+func WithStatsAdditionalTags(tags []string) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsAdditionalTags(tags, internalconfig.OriginCode)
+	}
+}
+
 // WithDynamicInstrumentationEnabled enables or disables dynamic
 // instrumentation, allowing the tracer to place probes for the Live Debugger
 // and Dynamic Instrumentation products.

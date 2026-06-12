@@ -241,6 +241,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_SQL_ANALYTICS_ENABLED":                                  {},
 	"DD_TRACE_SQL_COMMENT_INJECTION_MODE":                             {},
 	"DD_TRACE_STARTUP_LOGS":                                           {},
+	"DD_TRACE_STATS_ADDITIONAL_TAGS":                                  {},
 	"DD_TRACE_STATS_COMPUTATION_ENABLED":                              {},
 	"DD_TRACE_TWIRP_ANALYTICS_ENABLED":                                {},
 	"DD_TRACE_UNIVERSAL_VERSION_ENABLED":                              {},

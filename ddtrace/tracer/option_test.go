@@ -1909,6 +1909,43 @@ func TestWithStatsComputation(t *testing.T) {
 	})
 }
 
+func TestWithStatsAdditionalTags(t *testing.T) {
+	t.Run("default-empty", func(t *testing.T) {
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Empty(t, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("set-via-option", func(t *testing.T) {
+		c, err := newTestConfig(WithStatsAdditionalTags([]string{"region", "tenant_id"}))
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"region", "tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("set-via-env", func(t *testing.T) {
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "region,tenant_id")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"region", "tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("env-with-spaces", func(t *testing.T) {
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", " region , tenant_id ")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"region", "tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("env-empty", func(t *testing.T) {
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "")
+		c, err := newTestConfig()
+		assert.NoError(t, err)
+		assert.Empty(t, c.internalConfig.StatsAdditionalTags())
+	})
+	t.Run("option-overrides-env", func(t *testing.T) {
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "region")
+		c, err := newTestConfig(WithStatsAdditionalTags([]string{"tenant_id"}))
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"tenant_id"}, c.internalConfig.StatsAdditionalTags())
+	})
+}
+
 func TestWithStartSpanConfig(t *testing.T) {
 	var (
 		assert  = assert.New(t)
