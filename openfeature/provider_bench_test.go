@@ -8,6 +8,7 @@ package openfeature
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/open-feature/go-sdk/openfeature"
 )
@@ -355,10 +356,8 @@ func BenchmarkFlagEvaluationOTelOnly(b *testing.B) {
 // BenchmarkFlagEvaluationOTelPlusEVP measures the marginal cost of adding the new EVP
 // flagevaluation hook alongside the existing OTel hook (Path A + Path B) (CONT-08 / D-11).
 //
-// NOTE: The EVP hook is a signature-only stub in plan 01; the hook body panics with
-// "not implemented". In this benchmark, the hook is constructed but NOT wired into
-// provider.Hooks() — wiring is done in plan 02. This benchmark compiles and runs cleanly
-// as a scaffold; plan 02 will wire the hook and the overhead numbers will be meaningful.
+// The EVP writer uses a 24-hour flush interval (effectively infinite) so no HTTP round-trip
+// is in the hot path — this benchmarks only the hook + aggregator cost (RESEARCH Pitfall 4).
 func BenchmarkFlagEvaluationOTelPlusEVP(b *testing.B) {
 	profiles := []struct {
 		name      string
@@ -372,16 +371,13 @@ func BenchmarkFlagEvaluationOTelPlusEVP(b *testing.B) {
 
 	for _, p := range profiles {
 		b.Run(p.name, func(b *testing.B) {
-			// OTel+EVP: provider with OTel hook + EVP hook stub constructed.
-			// The EVP hook is created here to verify compilation; plan 02 wires it
-			// into provider.Hooks() and the aggregation buffer.
-			provider := newDatadogProvider(ProviderConfig{})
-			provider.exposureHook = nil // isolate hook overhead
-			// provider.flagEvalHook is set by newDatadogProvider (OTel hook)
-
-			// Construct the EVP hook stub — verifies the signature compiles.
-			// TODO(plan-02): wire evalHook into provider.flagEvalHook2 / Hooks().
-			_ = newFlagEvaluationHook(nil) // nil writer — hook body panics; not called directly
+			// OTel+EVP: provider with both OTel hook and EVP hook wired.
+			// The EVP writer uses a 24-hour flush interval so no HTTP round-trip
+			// is in the hot path — benchmarks hook + aggregator cost only.
+			provider := newDatadogProvider(ProviderConfig{
+				FlagEvaluationFlushInterval: 24 * time.Hour, // never flush during bench
+			})
+			provider.exposureHook = nil // isolate hook overhead; no exposure cost
 
 			config := makeBenchmarkConfig(p.numFlags)
 			provider.updateConfiguration(config)
