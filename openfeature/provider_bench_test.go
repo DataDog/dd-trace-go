@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -297,8 +298,8 @@ func BenchmarkFlagEvaluationNoop(b *testing.B) {
 		b.Run(p.name, func(b *testing.B) {
 			// Noop: provider with no hooks (nil out hooks after construction)
 			provider := newDatadogProvider(ProviderConfig{})
-			provider.flagEvalHook = nil  // no OTel hook
-			provider.exposureHook = nil  // no exposure hook
+			provider.flagEvalHook = nil // no OTel hook
+			provider.exposureHook = nil // no exposure hook
 			config := makeBenchmarkConfig(p.numFlags)
 			provider.updateConfiguration(config)
 
@@ -308,9 +309,13 @@ func BenchmarkFlagEvaluationNoop(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
+			i := 0
 			for b.Loop() {
-				// Rotate user targeting key to simulate p.numUsers distinct users
-				flatCtx["targetingKey"] = "bench-user-" + string(rune('0'+b.N%p.numUsers%10))
+				// Rotate user targeting key to simulate p.numUsers distinct users.
+				// Use a per-iteration counter (not b.N, which is a single fixed total
+				// under b.Loop()) so the cardinality profile is actually exercised (WR-04).
+				flatCtx["targetingKey"] = "bench-user-" + strconv.Itoa(i%p.numUsers)
+				i++
 				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
 			}
 		})
@@ -345,8 +350,10 @@ func BenchmarkFlagEvaluationOTelOnly(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
+			i := 0
 			for b.Loop() {
-				flatCtx["targetingKey"] = "bench-user-" + string(rune('0'+b.N%p.numUsers%10))
+				flatCtx["targetingKey"] = "bench-user-" + strconv.Itoa(i%p.numUsers)
+				i++
 				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
 			}
 		})
@@ -388,8 +395,10 @@ func BenchmarkFlagEvaluationOTelPlusEVP(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
+			i := 0
 			for b.Loop() {
-				flatCtx["targetingKey"] = "bench-user-" + string(rune('0'+b.N%p.numUsers%10))
+				flatCtx["targetingKey"] = "bench-user-" + strconv.Itoa(i%p.numUsers)
+				i++
 				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
 			}
 		})
