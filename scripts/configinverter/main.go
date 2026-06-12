@@ -244,7 +244,11 @@ func check(input string) error {
 		return fmt.Errorf("error re-encoding JSON for sort check: %w", err)
 	}
 	normalized := bytes.TrimRight(buf.Bytes(), "\n")
-	if !bytes.Equal(bytes.TrimRight(rawJSON, "\n"), normalized) {
+	// Normalize CRLF to LF before comparing: on Windows the file may be checked out
+	// with CRLF line endings (git core.autocrlf), but the canonical encoding always
+	// uses LF. We validate content and sort order, not platform-specific line endings.
+	rawNormalized := bytes.ReplaceAll(rawJSON, []byte("\r\n"), []byte("\n"))
+	if !bytes.Equal(bytes.TrimRight(rawNormalized, "\n"), normalized) {
 		failures = append(failures, "JSON is not sorted or not in canonical format; run `go run ./scripts/configinverter/main.go generate` to fix")
 	}
 
