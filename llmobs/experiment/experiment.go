@@ -27,7 +27,8 @@ import (
 var (
 	errRequiresProjectName = errors.New(`a project name must be provided for the experiment, either configured via the DD_LLMOBS_PROJECT_NAME
 environment variable, using the global tracer.WithLLMObsProjectName option, or experiment.WithProjectName option`)
-	errRequiresAppKey = errors.New(`an app key must be provided for the experiment in agentless mode configured via the DD_APP_KEY environment variable`)
+	errRequiresAPIKey = errors.New(`an API key must be provided for the experiment, configured via the DD_API_KEY environment variable`)
+	errRequiresAppKey = errors.New(`an app key must be provided for the experiment, configured via the DD_APP_KEY environment variable`)
 )
 
 const (
@@ -266,8 +267,11 @@ func New(name string, task Task, ds *dataset.Dataset, evaluators []Evaluator, op
 	if cfg.projectName == "" {
 		return nil, errRequiresProjectName
 	}
-	if ll.Config.ResolvedAgentlessEnabled && ll.Config.TracerConfig.APPKey == "" {
+	if ll.Config.TracerConfig.APPKey == "" {
 		return nil, errRequiresAppKey
+	}
+	if ll.Config.TracerConfig.APIKey == "" {
+		return nil, errRequiresAPIKey
 	}
 
 	if cfg.tags == nil {

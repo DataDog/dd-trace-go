@@ -115,52 +115,90 @@ func TestDatasetCreation(t *testing.T) {
 	t.Run("missing-dd-app-key-agentless", func(t *testing.T) {
 		t.Setenv("DD_API_KEY", testAPIKey)
 		t.Setenv("DD_APP_KEY", "")
-
-		// Use agentless mode to trigger app key requirement
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(true)))
+		// Start tracer directly (without testTracer) so that DD_APP_KEY stays unset.
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsProjectName("test-project"),
+				tracer.WithLLMObsAgentlessEnabled(true),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
+			testtracer.WithMockResponses(createMockHandler()),
+		)
 		defer tt.Stop()
-
-		records := []Record{
-			{
-				Input:          map[string]any{"question": "test"},
-				ExpectedOutput: "answer",
-			},
-		}
 
 		_, err := Create(
 			context.Background(),
 			"test-dataset",
-			records,
+			[]Record{{Input: map[string]any{"question": "test"}, ExpectedOutput: "answer"}},
 		)
 
-		// Should fail - datasets require DD_APP_KEY in agentless mode
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "an app key must be provided")
 	})
 	t.Run("missing-dd-app-key-agent-mode", func(t *testing.T) {
+		// DD_APP_KEY is always required — agent mode no longer supported for datasets.
+		// Start tracer directly (without testTracer) to avoid default app key being set.
+		t.Setenv("DD_API_KEY", testAPIKey)
 		t.Setenv("DD_APP_KEY", "")
-
-		// Use agent mode - app key should not be required
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(false)))
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsProjectName("test-project"),
+				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
+			testtracer.WithMockResponses(createMockHandler()),
+		)
 		defer tt.Stop()
 
-		records := []Record{
-			{
-				Input:          map[string]any{"question": "test"},
-				ExpectedOutput: "answer",
-			},
-		}
-
-		ds, err := Create(
+		_, err := Create(
 			context.Background(),
 			"test-dataset",
-			records,
+			[]Record{{Input: map[string]any{"question": "test"}, ExpectedOutput: "answer"}},
 		)
 
-		// Should succeed - app key not required in agent mode
-		require.NoError(t, err)
-		assert.NotNil(t, ds)
-		assert.Equal(t, "test-dataset", ds.Name())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "an app key must be provided")
+	})
+	t.Run("missing-dd-api-key-agent-mode", func(t *testing.T) {
+		// DD_API_KEY is always required because datasets go directly to the API.
+		t.Setenv("DD_API_KEY", "")
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsProjectName("test-project"),
+				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
+			testtracer.WithMockResponses(createMockHandler()),
+		)
+		defer tt.Stop()
+
+		_, err := Create(
+			context.Background(),
+			"test-dataset",
+			[]Record{{Input: map[string]any{"question": "test"}, ExpectedOutput: "answer"}},
+		)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "an API key must be provided")
 	})
 	t.Run("missing-project-name", func(t *testing.T) {
 
@@ -553,30 +591,78 @@ func TestDatasetPull(t *testing.T) {
 	t.Run("pull-missing-dd-app-key-agentless", func(t *testing.T) {
 		t.Setenv("DD_API_KEY", testAPIKey)
 		t.Setenv("DD_APP_KEY", "")
-
-		// Use agentless mode to trigger app key requirement
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(true)))
+		// Start tracer directly (without testTracer) so that DD_APP_KEY stays unset.
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsProjectName("test-project"),
+				tracer.WithLLMObsAgentlessEnabled(true),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
+			testtracer.WithMockResponses(createMockHandler()),
+		)
 		defer tt.Stop()
 
 		_, err := Pull(context.Background(), "existing-dataset")
 
-		// Should fail - datasets require DD_APP_KEY in agentless mode
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "an app key must be provided")
 	})
 	t.Run("pull-missing-dd-app-key-agent-mode", func(t *testing.T) {
+		// DD_APP_KEY is always required — agent mode no longer supported for datasets.
+		// Start tracer directly (without testTracer) to avoid default app key being set.
+		t.Setenv("DD_API_KEY", testAPIKey)
 		t.Setenv("DD_APP_KEY", "")
-
-		// Use agent mode - app key should not be required
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(false)))
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsProjectName("test-project"),
+				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
+			testtracer.WithMockResponses(createMockHandler()),
+		)
 		defer tt.Stop()
 
-		ds, err := Pull(context.Background(), "existing-dataset")
+		_, err := Pull(context.Background(), "existing-dataset")
 
-		// Should succeed - app key not required in agent mode
-		require.NoError(t, err)
-		assert.NotNil(t, ds)
-		assert.Equal(t, "existing-dataset", ds.Name())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "an app key must be provided")
+	})
+	t.Run("pull-missing-dd-api-key-agent-mode", func(t *testing.T) {
+		// DD_API_KEY is always required because datasets go directly to the API.
+		t.Setenv("DD_API_KEY", "")
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsProjectName("test-project"),
+				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
+			testtracer.WithMockResponses(createMockHandler()),
+		)
+		defer tt.Stop()
+
+		_, err := Pull(context.Background(), "existing-dataset")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "an API key must be provided")
 	})
 	t.Run("pull-dataset-with-non-map-input", func(t *testing.T) {
 		// Return records with string input (not a map) - this simulates a dataset created externally
@@ -840,15 +926,13 @@ func TestDatasetPull(t *testing.T) {
 	})
 	t.Run("pull-with-version-option", func(t *testing.T) {
 		var capturedQuery url.Values
-		var capturedHeaders http.Header
 
 		h := func(r *http.Request) *http.Response {
 			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
 
-			// v2 project-scoped records endpoint — capture the query params and headers
+			// v2 project-scoped records endpoint — capture the query params
 			if strings.HasPrefix(path, "/api/v2/llm-obs/v1/") && strings.Contains(path, "/records") && r.Method == http.MethodGet {
 				capturedQuery = r.URL.Query()
-				capturedHeaders = r.Header.Clone()
 				rawJSON := `{
 					"data": [
 						{"id":"record-1","input":{"q":"v2 record"},"expected_output":"ans"}
@@ -910,9 +994,6 @@ func TestDatasetPull(t *testing.T) {
 		// Confirm filter[version]=2 was sent in the records request
 		require.NotNil(t, capturedQuery, "records request should have been made")
 		assert.Equal(t, "2", capturedQuery.Get("filter[version]"))
-
-		// Confirm the auth header was sent on the v2 records path
-		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "auth header must be present on v2 records path")
 
 		// Confirm ds.Version() reflects the requested version, not the dataset's current_version (5)
 		assert.Equal(t, 2, ds.Version(), "Version() must return the pulled version, not the latest current_version")
@@ -1051,17 +1132,19 @@ func TestDDAppKeyHeader(t *testing.T) {
 	})
 	t.Run("dd-app-key-header-agent-mode", func(t *testing.T) {
 		var capturedHeaders http.Header
+		var capturedPath string
 		h := func(r *http.Request) *http.Response {
 			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
 
 			if strings.Contains(path, "/api/unstable/llm-obs/v1/datasets") {
 				capturedHeaders = r.Header.Clone()
+				capturedPath = r.URL.Path
 			}
 			// Let the default dataset mock handler handle the response
 			return createMockHandler()(r)
 		}
 
-		// Force agent mode explicitly
+		// Even in agent mode, DNE endpoints always go direct to the API with the app key header.
 		tt := testTracer(t,
 			testtracer.WithTracerStartOpts(
 				tracer.WithLLMObsAgentlessEnabled(false),
@@ -1087,32 +1170,29 @@ func TestDDAppKeyHeader(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should always be set in agent mode")
-		assert.Empty(t, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should not be set in agent mode")
+		assert.NotContains(t, capturedPath, "/evp_proxy/v2", "DNE endpoints should bypass the EVP proxy path")
+		assert.Empty(t, capturedHeaders.Get("X-Datadog-EVP-Subdomain"), "DNE endpoints should not set the EVP proxy header")
+		assert.Equal(t, testAPIKey, capturedHeaders.Get("DD-API-KEY"), "DD-API-KEY header should be set: DNE endpoints always use direct API regardless of agent mode")
+		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set: DNE endpoints always use direct API regardless of agent mode")
 	})
-	t.Run("needs-app-key-header-agent-mode", func(t *testing.T) {
-		t.Setenv("DD_APP_KEY", "") // No app key provided
-
-		var capturedHeaders http.Header
-		h := func(r *http.Request) *http.Response {
-			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
-
-			if strings.Contains(path, "/api/unstable/llm-obs/v1/datasets") {
-				capturedHeaders = r.Header.Clone()
-			}
-			// Let the default dataset mock handler handle the response
-			return createMockHandler()(r)
-		}
-
-		// Force agent mode explicitly
-		tt := testTracer(t,
+	t.Run("no-app-key-returns-error", func(t *testing.T) {
+		// DD_APP_KEY is always required — agent mode no longer supported for datasets.
+		// Start tracer directly (without testTracer) to avoid default app key being set.
+		t.Setenv("DD_API_KEY", testAPIKey)
+		t.Setenv("DD_APP_KEY", "")
+		tt := testtracer.Start(t,
 			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsProjectName("test-project"),
 				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
 			),
 			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-				Endpoints: []string{"/evp_proxy/v2/"}, // Agent supports evp_proxy
+				Endpoints: []string{"/evp_proxy/v2/"},
 			}),
-			testtracer.WithMockResponses(h),
+			testtracer.WithMockResponses(createMockHandler()),
 		)
 		defer tt.Stop()
 
@@ -1122,11 +1202,8 @@ func TestDDAppKeyHeader(t *testing.T) {
 				ExpectedOutput: "answer",
 			},
 		})
-		require.NoError(t, err)
-
-		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should be set when no app key is provided in agent mode")
-		assert.Empty(t, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should not be set when no app key is provided")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "an app key must be provided")
 	})
 }
 
@@ -1201,6 +1278,8 @@ func generateRandomRecords(n int) []*Record {
 }
 
 func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
+	t.Setenv("DD_API_KEY", testAPIKey)
+	t.Setenv("DD_APP_KEY", testAppKey)
 	tracerOpts := []tracer.StartOption{
 		tracer.WithLLMObsEnabled(true),
 		tracer.WithLLMObsMLApp("test-app"),
