@@ -28,16 +28,16 @@ func newFlagEvaluationHook(w *flagEvaluationWriter) *flagEvaluationHook {
 // Using Finally (not After) ensures error-path and provider-not-ready evaluations are counted (CONT-09).
 // Mirrors flageval_metrics.go's Finally stage; the EVP hook is a separate registered hook (D-06).
 func (h *flagEvaluationHook) Finally(
-	ctx context.Context,
+	_ context.Context,
 	hookContext of.HookContext,
 	details of.InterfaceEvaluationDetails,
 	_ of.HookHints,
 ) {
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
+	// Do NOT gate buffering on the evaluation context. In real servers ctx is
+	// frequently the request context, which may already be cancelled by the time
+	// Finally runs — and record() is a non-blocking in-memory add with no network
+	// call. Gating on ctx.Done() would silently drop legitimate evaluation counts
+	// (undercuts Gate-7 for cancelled-request evals) (WR-03).
 	if h.writer == nil {
 		return
 	}

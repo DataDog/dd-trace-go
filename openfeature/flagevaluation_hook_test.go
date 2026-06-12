@@ -214,10 +214,9 @@ func TestFlagEvaluationHookFinally(t *testing.T) {
 	})
 }
 
-// TestFlagEvaluationHookContextCancelled verifies that a cancelled context causes
-// Finally to return without recording (context safety / no zombie writes).
-//
-// It must fail RED: the hook's Finally method panics with "not implemented".
+// TestFlagEvaluationHookContextCancelled verifies that a cancelled context does NOT
+// drop the evaluation: record() is a non-blocking in-memory add, so a cancelled
+// request context must still be counted (Gate-7 / WR-03).
 func TestFlagEvaluationHookContextCancelled(t *testing.T) {
 	w := setupTestWriter(t)
 	hook := newFlagEvaluationHook(w)
@@ -234,7 +233,7 @@ func TestFlagEvaluationHookContextCancelled(t *testing.T) {
 	defer w.aggregator.mu.Unlock()
 
 	total := len(w.aggregator.full) + len(w.aggregator.degraded) + len(w.aggregator.ultraDeg)
-	if total != 0 {
-		t.Errorf("expected no entries when context is cancelled, got %d", total)
+	if total != 1 {
+		t.Errorf("expected the cancelled-context evaluation to still be counted, got %d entries", total)
 	}
 }
