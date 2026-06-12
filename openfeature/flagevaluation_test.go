@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	of "github.com/open-feature/go-sdk/openfeature"
 )
 
 // setupTestAggregator creates a flagEvaluationAggregator with small caps for testing.
@@ -26,6 +28,7 @@ func setupTestAggregator(t *testing.T) *flagEvaluationAggregator {
 		globalCap:   10, // small cap to trigger overflow in tests
 		perFlagCap:  3,
 		degradedCap: 3,
+		ultraDegCap: defaultEvalUltraDegradedCap, // real default keeps the multi-tier cascade from collapsing into the sentinel
 	}
 }
 
@@ -323,6 +326,7 @@ func TestAggregatorConcurrentMinMax(t *testing.T) {
 		globalCap:   100_000, // large enough not to overflow during this test
 		perFlagCap:  100_000,
 		degradedCap: 100_000,
+		ultraDegCap: defaultEvalUltraDegradedCap,
 	}
 
 	d := evalDetails{
@@ -382,6 +386,7 @@ func TestSaturationCountPreservation(t *testing.T) {
 		globalCap:   5,
 		perFlagCap:  2,
 		degradedCap: 3,
+		ultraDegCap: defaultEvalUltraDegradedCap,
 	}
 	nowMs := time.Now().UnixMilli()
 
@@ -569,6 +574,266 @@ func TestAggregatorCapOverflow(t *testing.T) {
 		}
 		if totalCounted != calls {
 			t.Errorf("count preservation violated: Σ(all tiers)=%d, expected=%d", totalCounted, calls)
+		}
+	})
+}
+
+// TestPruneContextDeterministic guards Finding #1 (nondeterministic context pruning).
+// A >256-field context must prune to an IDENTICAL kept subset (and therefore an identical
+// hash) on every call, and two independently-built maps with the same logical entries must
+// hash equal. On the pre-fix code (map-range cap BEFORE sort) the kept subset is random, so
+// the hash varies across iterations and identical logical contexts fragment into separate
+// buckets.
+func TestPruneContextDeterministic(t *testing.T) {
+	const fields = 400 // > maxContextFields (256)
+	build := func() map[string]any {
+		m := make(map[string]any, fields)
+		for i := range fields {
+			m[fmt.Sprintf("key%04d", i)] = fmt.Sprintf("value%04d", i)
+		}
+		return m
+	}
+
+	first := hashContext(pruneContext(build()))
+	for range 50 {
+		got := hashContext(pruneContext(build()))
+		if got != first {
+			t.Fatalf("pruneContext+hashContext nondeterministic over >256 fields: got %d, want %d", got, first)
+		}
+	}
+
+	// Two independently-built maps with the SAME 400 logical entries must hash equal.
+	if a, b := hashContext(pruneContext(build())), hashContext(pruneContext(build())); a != b {
+		t.Errorf("identical logical contexts hashed differently: %d != %d", a, b)
+	}
+}
+
+// TestPruneContextOversizedStringDeterministic guards Finding #1 with an oversized-string
+// skip among >256 fields: the oversized-string skip must be applied against a deterministic
+// key ordering, so the kept subset (and hash) is stable across iterations.
+func TestPruneContextOversizedStringDeterministic(t *testing.T) {
+	const fields = 400
+	longVal := strings.Repeat("x", maxFieldLength+44) // > maxFieldLength → skipped
+	build := func() map[string]any {
+		m := make(map[string]any, fields)
+		for i := range fields {
+			m[fmt.Sprintf("key%04d", i)] = fmt.Sprintf("value%04d", i)
+		}
+		m["zzz-oversized"] = longVal // sorts last; deterministically skipped
+		return m
+	}
+
+	first := hashContext(pruneContext(build()))
+	for range 50 {
+		got := hashContext(pruneContext(build()))
+		if got != first {
+			t.Fatalf("oversized-string prune nondeterministic: got %d, want %d", got, first)
+		}
+	}
+
+	// The oversized value must never appear in the pruned subset.
+	pruned := pruneContext(build())
+	if _, ok := pruned["zzz-oversized"]; ok {
+		t.Error("oversized string value should be skipped from pruned context")
+	}
+}
+
+// TestHashContextCanonicalEncoding guards Finding #2 (non-canonical context hash encoding).
+// Distinct contexts must not alias: int 1 vs string "1" must differ, and '='/'\n'-bearing
+// values/keys must not be able to fake a multi-field context. Drives a subset through
+// aggregator.add and asserts SEPARATE full-tier buckets.
+func TestHashContextCanonicalEncoding(t *testing.T) {
+	t.Run("int 1 != string 1", func(t *testing.T) {
+		if hashContext(map[string]any{"x": 1}) == hashContext(map[string]any{"x": "1"}) {
+			t.Error("type-tagged encoding must distinguish int 1 from string \"1\"")
+		}
+	})
+
+	t.Run("'=' in key/value cannot alias a multi-field context", func(t *testing.T) {
+		// {"a=b":"c"} vs {"a":"b=c"} render identically under key+"="+value with no
+		// length delimiter; canonical encoding must keep them distinct.
+		if hashContext(map[string]any{"a=b": "c"}) == hashContext(map[string]any{"a": "b=c"}) {
+			t.Error("'=' in key/value must not alias across fields")
+		}
+	})
+
+	t.Run("'\\n' in value cannot alias a multi-field context", func(t *testing.T) {
+		// {"a":"x\ny":"z"} would, under key+"="+value+"\n", collide with a two-field map.
+		if hashContext(map[string]any{"a": "x\ny", "b": "z"}) == hashContext(map[string]any{"a": "x", "y=z": ""}) {
+			t.Error("'\\n' in value must not alias a multi-field context")
+		}
+	})
+
+	t.Run("distinct contexts land in separate full-tier buckets via add()", func(t *testing.T) {
+		agg := setupTestAggregator(t)
+		nowMs := time.Now().UnixMilli()
+		d := evalDetails{flagKey: "f", variant: "on", reason: "targeting_match"}
+		agg.add(d, map[string]any{"x": 1}, nowMs)
+		agg.add(d, map[string]any{"x": "1"}, nowMs)
+
+		agg.mu.Lock()
+		defer agg.mu.Unlock()
+		if len(agg.full) != 2 {
+			t.Errorf("expected 2 full-tier buckets for int 1 vs string \"1\", got %d", len(agg.full))
+		}
+	})
+}
+
+// TestUltraDegradedCapBounded guards Finding #3 (ultra-degraded tier unbounded). With a
+// small positive ultraDegCap, many distinct flag keys must NOT grow ultraDeg without bound:
+// len(ultraDeg) <= ultraDegCap+1 (the +1 is the sentinel overflow bucket) and counts are
+// preserved (Σ across tiers == add() calls).
+func TestUltraDegradedCapBounded(t *testing.T) {
+	const cap = 3
+	agg := &flagEvaluationAggregator{
+		full:        make(map[evaluationAggregationKey]*evaluationEntry),
+		degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
+		ultraDeg:    make(map[evaluationUltraDegradedKey]*evaluationEntry),
+		perFlagFull: make(map[string]int),
+		globalCap:   0, // force everything straight into the ultra-degraded tier
+		perFlagCap:  100_000,
+		degradedCap: 0,
+		ultraDegCap: cap,
+	}
+	nowMs := time.Now().UnixMilli()
+
+	const calls = 100
+	for i := range calls {
+		d := evalDetails{
+			flagKey: fmt.Sprintf("dynamic-flag-%d", i), // every key distinct
+			variant: "on",
+			reason:  "targeting_match",
+		}
+		agg.add(d, nil, nowMs)
+	}
+
+	agg.mu.Lock()
+	defer agg.mu.Unlock()
+
+	if len(agg.ultraDeg) > cap+1 {
+		t.Errorf("ultra-degraded cardinality %d exceeds ultraDegCap+1 (%d) — tier not bounded", len(agg.ultraDeg), cap+1)
+	}
+
+	var total int64
+	for _, e := range agg.full {
+		total += e.count
+	}
+	for _, e := range agg.degraded {
+		total += e.count
+	}
+	for _, e := range agg.ultraDeg {
+		total += e.count
+	}
+	if total != calls {
+		t.Errorf("count preservation violated under ultraDegCap: Σ(all tiers)=%d, expected=%d", total, calls)
+	}
+
+	// The sentinel overflow bucket must be present and carry the over-cap counts.
+	if _, ok := agg.ultraDeg[evaluationUltraDegradedKey{flagKey: ultraDegradedOverflowFlagKey}]; !ok {
+		t.Errorf("expected sentinel overflow bucket %q in ultra-degraded tier", ultraDegradedOverflowFlagKey)
+	}
+}
+
+// TestRecordAfterStopIsNoop guards Finding #4 (record() can enqueue after shutdown). After
+// stop(), record() must NOT enqueue into the never-drained events channel; the event must be
+// counted as dropped instead. On the pre-fix code (no stopped check in record()) the event is
+// enqueued and silently lost.
+func TestRecordAfterStopIsNoop(t *testing.T) {
+	w := newFlagEvaluationWriter(ProviderConfig{})
+
+	// Do NOT start the worker. stop() must still be safe (ticker==nil path) and mark stopped.
+	w.stop()
+
+	before := w.dropped.Load()
+
+	// Build a minimal hook context + details to drive record().
+	hookCtx := of.NewHookContext(
+		"test-flag",
+		of.Boolean,
+		false,
+		of.NewClientMetadata(""),
+		of.Metadata{Name: "test-provider"},
+		of.NewEvaluationContext("user-1", nil),
+	)
+	details := of.InterfaceEvaluationDetails{
+		Value: true,
+		EvaluationDetails: of.EvaluationDetails{
+			FlagKey:  "test-flag",
+			FlagType: of.Boolean,
+			ResolutionDetail: of.ResolutionDetail{
+				Variant: "on",
+				Reason:  of.TargetingMatchReason,
+			},
+		},
+	}
+
+	w.record(hookCtx, details)
+
+	if got := len(w.events); got != 0 {
+		t.Errorf("record() after stop() enqueued %d event(s); expected 0 (no-op into never-drained channel)", got)
+	}
+	if got := w.dropped.Load(); got != before+1 {
+		t.Errorf("record() after stop() must count the event as dropped: dropped=%d, expected=%d", got, before+1)
+	}
+}
+
+// TestExtractEvalDetailsPrefersErrorMessage guards Finding #5 (error payload uses ErrorCode
+// instead of OpenFeature's ErrorMessage). ErrorMessage is preferred when present; ErrorCode is
+// the fallback only when ErrorMessage is empty.
+func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
+	mkHookCtx := func() of.HookContext {
+		return of.NewHookContext(
+			"test-flag",
+			of.Boolean,
+			false,
+			of.NewClientMetadata(""),
+			of.Metadata{Name: "test-provider"},
+			of.NewEvaluationContext("user-1", nil),
+		)
+	}
+
+	t.Run("ErrorMessage present is preferred over ErrorCode", func(t *testing.T) {
+		hc := mkHookCtx()
+		details := of.InterfaceEvaluationDetails{
+			EvaluationDetails: of.EvaluationDetails{
+				ResolutionDetail: of.ResolutionDetail{
+					Reason:       of.ErrorReason,
+					ErrorCode:    of.GeneralCode,
+					ErrorMessage: "boom",
+				},
+			},
+		}
+		if got := extractEvalDetails(hc, details).errorMessage; got != "boom" {
+			t.Errorf("expected errorMessage=\"boom\", got %q", got)
+		}
+	})
+
+	t.Run("empty ErrorMessage falls back to ErrorCode", func(t *testing.T) {
+		hc := mkHookCtx()
+		details := of.InterfaceEvaluationDetails{
+			EvaluationDetails: of.EvaluationDetails{
+				ResolutionDetail: of.ResolutionDetail{
+					Reason:    of.ErrorReason,
+					ErrorCode: of.TypeMismatchCode,
+				},
+			},
+		}
+		if got := extractEvalDetails(hc, details).errorMessage; got != string(of.TypeMismatchCode) {
+			t.Errorf("expected errorMessage=%q (ErrorCode fallback), got %q", string(of.TypeMismatchCode), got)
+		}
+	})
+
+	t.Run("both empty yields empty errorMessage", func(t *testing.T) {
+		hc := mkHookCtx()
+		details := of.InterfaceEvaluationDetails{
+			EvaluationDetails: of.EvaluationDetails{
+				ResolutionDetail: of.ResolutionDetail{
+					Reason: of.TargetingMatchReason,
+				},
+			},
+		}
+		if got := extractEvalDetails(hc, details).errorMessage; got != "" {
+			t.Errorf("expected empty errorMessage, got %q", got)
 		}
 	})
 }

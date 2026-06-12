@@ -51,6 +51,17 @@ const (
 	defaultEvalPerFlagCap  = 10_000 // bounds full-fidelity buckets per flag
 	defaultEvalDegradedCap = 10_000 // bounds degraded map
 
+	// defaultEvalUltraDegradedCap bounds the number of distinct ultra-degraded buckets.
+	// The ultra-degraded key is (flagKey, variant) and the flag key is caller-supplied, so a
+	// dynamic/malicious flag key would otherwise grow this map without bound. Distinct keys
+	// beyond the cap collapse into a single count-preserving sentinel overflow bucket.
+	defaultEvalUltraDegradedCap = 10_000
+
+	// ultraDegradedOverflowFlagKey is the reserved flag key for the single sentinel bucket
+	// that absorbs counts for all over-cap distinct ultra-degraded keys, so the total
+	// evaluation count is preserved even when the ultra-degraded cardinality is capped.
+	ultraDegradedOverflowFlagKey = "__other__"
+
 	// defaultEvalEventBufferSize bounds the async hand-off queue between the (hot-path)
 	// Finally hook and the background aggregation worker. On overflow the hook drops the
 	// event and increments a counter rather than blocking the evaluation.
@@ -66,16 +77,21 @@ const (
 //     count can never be attributed to the wrong flag/variant/reason/allocation.
 //
 //  2. contextHash is a 64-bit FNV-1a digest of the pruned evaluation context (see
-//     hashContext, hashed over sorted keys for determinism). The context is map[string]any
-//     and therefore not comparable, so it cannot be a struct field — the digest stands in
-//     for it. The digest is deterministic and low-collision but NOT collision-proof.
+//     hashContext). The context is map[string]any and therefore not comparable, so it
+//     cannot be a struct field — the digest stands in for it. The digest is computed over a
+//     CANONICAL encoding: keys are sorted (deterministic ordering), and each field is
+//     written as a length-delimited key plus a type-tagged, length-delimited value. Distinct
+//     contexts therefore cannot ALIAS by construction — int 1 vs string "1" carry different
+//     type tags, and '=' / '\n' inside a key or value cannot fake a field boundary.
 //
 // What a contextHash collision actually does — and why it is acceptable:
 //
-//	A collision requires two evaluations that are identical on ALL FIVE exact dimensions
-//	AND whose *different* contexts happen to hash to the same uint64. When that occurs, the
-//	second evaluation matches the existing bucket on add()'s fast path and increments its
-//	count (the `if e, ok := a.full[fullKey]; ok` branch below). Consequences:
+//	With the canonical encoding above, a collision is no longer a systematic encoding alias;
+//	it is a genuine 64-bit FNV-1a hash collision: two evaluations identical on ALL FIVE
+//	exact dimensions AND whose *different* canonical encodings happen to hash to the same
+//	uint64. When that occurs, the second evaluation matches the existing bucket on add()'s
+//	fast path and increments its count (the `if e, ok := a.full[fullKey]; ok` branch below).
+//	Consequences:
 //
 //	  - COUNT-PRESERVING: the evaluation count is merged into the existing bucket, never
 //	    dropped. The invariant Σ(counts across all tiers) == number of add() calls still
@@ -87,12 +103,9 @@ const (
 //	    Context is a best-effort dimension that the degraded/ultra tiers drop entirely by
 //	    design, so a collision is strictly less lossy than ordinary degradation.
 //
-//	Probability is bounded by the cap: the full tier holds at most globalCap (65536)
-//	buckets, so there are <= ~65k distinct digests per flush window. Birthday bound
-//	~= 65536^2 / 2^65 ~= 1.2e-10 per window. This is internal telemetry over the customer's
-//	own context — not a trust boundary — so a keyed/crypto hash (e.g. SipHash) is
-//	unwarranted, and a wider (128-bit) digest would buy only context-label fidelity at that
-//	1e-10 tail. Deliberately not done.
+//	This is internal telemetry over the customer's own context — not a trust boundary — so a
+//	keyed/crypto hash (e.g. SipHash) is unwarranted, and a wider (128-bit) digest would buy
+//	only marginal context-label fidelity. Deliberately not done.
 type evaluationAggregationKey struct {
 	flagKey       string
 	variant       string
@@ -112,7 +125,9 @@ type evaluationDegradedKey struct {
 }
 
 // evaluationUltraDegradedKey is the key for the ultra-degraded aggregation map.
-// Contains only flag key + variant; bounded by flag×variant enumeration.
+// Contains only flag key + variant. Because flagKey is caller-supplied, the distinct
+// cardinality of this map is bounded EXPLICITLY by ultraDegCap (see addToUltraDegraded);
+// over-cap distinct keys collapse into a single count-preserving sentinel bucket.
 type evaluationUltraDegradedKey struct {
 	flagKey string
 	variant string
@@ -141,6 +156,7 @@ type flagEvaluationAggregator struct {
 	globalCap   int
 	perFlagCap  int
 	degradedCap int
+	ultraDegCap int // bounds distinct ultra-degraded buckets; <=0 is treated as the default
 }
 
 // flagEvaluationEvent matches flagevaluation.json — required fields always present;
@@ -212,7 +228,7 @@ type flagEvaluationWriter struct {
 	ddContext     flagEvalDDContext // service/env/version — same source as exposureContext
 	ticker        *time.Ticker
 	stopChan      chan struct{}
-	stopped       bool
+	stopped       atomic.Bool // single idempotency gate for stop(); also read lock-free by record()
 	jsonConfig    jsoniter.API
 
 	// Asynchronous hand-off: the Finally hook enqueues a cheap snapshot here; a single
@@ -283,6 +299,7 @@ func newFlagEvaluationWriter(config ProviderConfig) *flagEvaluationWriter {
 			globalCap:   defaultEvalGlobalCap,
 			perFlagCap:  defaultEvalPerFlagCap,
 			degradedCap: defaultEvalDegradedCap,
+			ultraDegCap: defaultEvalUltraDegradedCap,
 		},
 	}
 }
@@ -325,13 +342,13 @@ func (w *flagEvaluationWriter) start() {
 
 // stop stops the flush ticker and marks the writer as stopped.
 func (w *flagEvaluationWriter) stop() {
-	w.aggregator.mu.Lock()
-	if w.stopped {
-		w.aggregator.mu.Unlock()
+	// Single idempotency gate: the atomic Swap is the ONLY guard for both "mark stopped" and
+	// the downstream close(stopChan). A second/concurrent stop() sees Swap return true and
+	// returns early, so stopChan is closed exactly once (no double-close panic). record() reads
+	// this flag lock-free to no-op post-stop enqueues.
+	if w.stopped.Swap(true) {
 		return
 	}
-	w.stopped = true
-	w.aggregator.mu.Unlock()
 
 	// Signal the worker to drain the queue and do a final flush.
 	close(w.stopChan)
@@ -458,6 +475,13 @@ func (w *flagEvaluationWriter) flush() {
 // queue is full the event is dropped and counted (best-effort), never blocking the
 // evaluation. Called from the Finally hook after every evaluation.
 func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
+	// Post-stop no-op: after stop() the worker no longer drains w.events, so enqueuing would
+	// silently lose the event. Check the atomic gate lock-free (reading under the aggregator
+	// lock would add hot-path contention) and count the event as dropped so it stays observable.
+	if w.stopped.Load() {
+		w.dropped.Add(1)
+		return
+	}
 	ev := evalEvent{
 		d:     extractEvalDetails(hookContext, details),
 		attrs: hookContext.EvaluationContext().Attributes(), // SDK returns an owned copy
@@ -647,8 +671,14 @@ func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 
 // addToUltraDegraded adds an entry to the ultra-degraded map (only flag key + variant).
 // Called with the aggregator lock held.
-// Ultra-degraded has no explicit cap — it is naturally bounded by the flag×variant
-// enumeration. The globalCap enforcement applies only to the full tier.
+//
+// The ultra-degraded tier is EXPLICITLY capped by ultraDegCap (with <=0 treated as
+// defaultEvalUltraDegradedCap). Because flagKey is caller-supplied, an unbounded number of
+// dynamic/malicious flag keys would otherwise grow this map without bound (reviewer concern
+// #8). When creating a NEW bucket would exceed the effective cap, the count is routed into a
+// single count-preserving sentinel overflow bucket (flag key ultraDegradedOverflowFlagKey,
+// empty variant) instead. Existing buckets always increment normally, so the total
+// evaluation count is preserved (Σ across tiers == add() calls).
 func (a *flagEvaluationAggregator) addToUltraDegraded(d evalDetails, nowMs int64) {
 	ultraKey := evaluationUltraDegradedKey{
 		flagKey: d.flagKey,
@@ -666,7 +696,35 @@ func (a *flagEvaluationAggregator) addToUltraDegraded(d evalDetails, nowMs int64
 		return
 	}
 
-	// New ultra-degraded bucket — always created (naturally bounded by flag×variant).
+	// New ultra-degraded bucket — enforce the explicit cap. Resolve the effective cap with
+	// the zero-value footgun policy: a non-positive ultraDegCap means "use the default" so a
+	// forgotten field does not silently route everything to the sentinel.
+	cap := a.ultraDegCap
+	if cap <= 0 {
+		cap = defaultEvalUltraDegradedCap
+	}
+	if len(a.ultraDeg) >= cap {
+		// Cap reached — collapse this and all further over-cap distinct keys into a single
+		// sentinel overflow bucket so the count is preserved without unbounded growth.
+		overflowKey := evaluationUltraDegradedKey{flagKey: ultraDegradedOverflowFlagKey}
+		if e, ok := a.ultraDeg[overflowKey]; ok {
+			e.count++
+			if nowMs < e.firstEvaluation {
+				e.firstEvaluation = nowMs
+			}
+			if nowMs > e.lastEvaluation {
+				e.lastEvaluation = nowMs
+			}
+			return
+		}
+		a.ultraDeg[overflowKey] = &evaluationEntry{
+			count:           1,
+			firstEvaluation: nowMs,
+			lastEvaluation:  nowMs,
+		}
+		return
+	}
+
 	a.ultraDeg[ultraKey] = &evaluationEntry{
 		count:           1,
 		firstEvaluation: nowMs,
@@ -674,15 +732,33 @@ func (a *flagEvaluationAggregator) addToUltraDegraded(d evalDetails, nowMs int64
 	}
 }
 
+// context value type discriminators for the canonical hash encoding. Each distinct Go type
+// gets a distinct tag byte so that, e.g., int 1 and string "1" cannot render identically.
+const (
+	ctxTagString  byte = 's'
+	ctxTagBool    byte = 'b'
+	ctxTagInt     byte = 'i'
+	ctxTagInt64   byte = 'l'
+	ctxTagInt32   byte = 'j'
+	ctxTagFloat64 byte = 'f'
+	ctxTagFloat32 byte = 'g'
+	ctxTagOther   byte = 'o'
+)
+
 // hashContext computes a deterministic 64-bit FNV-1a hash of the pruned context map for
 // use as a discriminator inside evaluationAggregationKey. The enumerable struct fields
 // (flagKey, variant, allocationKey, reason, targetingKey) are exact string comparisons and
-// cannot collide; contextHash is a probabilistic supplement for context identity only —
-// it is low-collision but NOT collision-proof.
+// cannot collide.
 //
-// A digest collision is count-preserving (it merges into an existing bucket via add()'s
-// fast path, costing only context-attribute fidelity, never a count) — see the
-// evaluationAggregationKey doc for the full collision analysis.
+// The per-field encoding is CANONICAL: each field is written as a length-delimited key
+// (fixed-width 8-byte big-endian length + key bytes) followed by a type-tag byte and a
+// length-delimited rendered value. Because both key and value are length-delimited and the
+// value is type-tagged, distinct contexts cannot ALIAS by construction: int 1 and string
+// "1" carry different tags, and '=' / '\n' embedded in a key or value can no longer be
+// mistaken for a field delimiter. A digest collision is therefore now a genuine 64-bit hash
+// collision, not a systematic encoding alias. A collision is still count-preserving (it
+// merges into an existing bucket via add()'s fast path, costing only context-attribute
+// fidelity, never a count) — see the evaluationAggregationKey doc for the full analysis.
 func hashContext(attrs map[string]any) uint64 {
 	if len(attrs) == 0 {
 		return 0
@@ -703,55 +779,93 @@ func hashContext(attrs map[string]any) uint64 {
 	var buf []byte
 	for _, k := range keys {
 		buf = buf[:0]
-		buf = append(buf, k...)
-		buf = append(buf, '=')
-		buf = appendContextValue(buf, attrs[k])
-		buf = append(buf, '\n')
+		buf = appendLengthDelimited(buf, []byte(k)) // length-delimited key
+		buf = appendContextValue(buf, attrs[k])     // tag + length-delimited value
 		_, _ = h.Write(buf)
 	}
 	return h.Sum64()
 }
 
-// appendContextValue appends a deterministic string form of v to buf, avoiding allocation
-// for the common scalar types; rare/complex types fall back to fmt. The hash is only an
-// in-memory, per-flush-window discriminator, so the exact formatting is irrelevant as long
-// as it is deterministic within a run.
+// appendLengthDelimited writes a fixed-width 8-byte big-endian length prefix followed by the
+// raw bytes, so the boundary between fields is unambiguous regardless of the byte content.
+func appendLengthDelimited(buf, b []byte) []byte {
+	var lenBuf [8]byte
+	n := uint64(len(b))
+	for i := range 8 {
+		lenBuf[7-i] = byte(n)
+		n >>= 8
+	}
+	buf = append(buf, lenBuf[:]...)
+	return append(buf, b...)
+}
+
+// appendContextValue appends a CANONICAL, length-delimited rendering of v to buf: a type-tag
+// byte (distinct per Go type) followed by a length-delimited rendered value. This avoids
+// allocation for the common scalar types; rare/complex types fall back to fmt. The encoding
+// only needs to be deterministic within a run and collision-free across distinct values.
 func appendContextValue(buf []byte, v any) []byte {
+	var scratch [32]byte
+	tmp := scratch[:0]
+	var tag byte
 	switch x := v.(type) {
 	case string:
-		return append(buf, x...)
+		tag = ctxTagString
+		tmp = append(tmp, x...)
 	case bool:
-		return strconv.AppendBool(buf, x)
+		tag = ctxTagBool
+		tmp = strconv.AppendBool(tmp, x)
 	case int:
-		return strconv.AppendInt(buf, int64(x), 10)
+		tag = ctxTagInt
+		tmp = strconv.AppendInt(tmp, int64(x), 10)
 	case int64:
-		return strconv.AppendInt(buf, x, 10)
+		tag = ctxTagInt64
+		tmp = strconv.AppendInt(tmp, x, 10)
 	case int32:
-		return strconv.AppendInt(buf, int64(x), 10)
+		tag = ctxTagInt32
+		tmp = strconv.AppendInt(tmp, int64(x), 10)
 	case float64:
-		return strconv.AppendFloat(buf, x, 'g', -1, 64)
+		tag = ctxTagFloat64
+		tmp = strconv.AppendFloat(tmp, x, 'g', -1, 64)
 	case float32:
-		return strconv.AppendFloat(buf, float64(x), 'g', -1, 32)
+		tag = ctxTagFloat32
+		tmp = strconv.AppendFloat(tmp, float64(x), 'g', -1, 32)
 	default:
-		return append(buf, fmt.Sprintf("%v", x)...)
+		tag = ctxTagOther
+		tmp = append(tmp, fmt.Sprintf("%v", x)...)
 	}
+	buf = append(buf, tag)
+	return appendLengthDelimited(buf, tmp)
 }
 
 // pruneContext applies 256-field / 256-char limits before buffering.
 // Mirrors worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH exactly.
 // Must be called AFTER flattenContext() (from flatten.go) to expand nested objects first.
+//
+// The kept subset is DETERMINISTIC: keys are sorted BEFORE the oversized-string skip and the
+// 256-field cap are applied, so two logically-identical contexts always prune to the exact
+// same subset (and therefore the same hashContext digest). Ranging the map directly (Go map
+// iteration is randomized) would cut a different 256-field subset each call and fragment
+// otherwise-identical contexts into separate aggregation buckets.
 func pruneContext(raw map[string]any) map[string]any {
 	if len(raw) == 0 {
 		return nil
 	}
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	out := make(map[string]any, min(len(raw), maxContextFields))
 	count := 0
-	for k, v := range raw {
+	for _, k := range keys {
 		if count >= maxContextFields {
 			break
 		}
+		v := raw[k]
 		if s, ok := v.(string); ok && len(s) > maxFieldLength {
 			// Skip oversized string values (matches worker.ts pruneFields behavior).
+			// Applied against the deterministic ordering so the kept subset is stable.
 			continue
 		}
 		out[k] = v
@@ -772,8 +886,10 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 	if reason == "" {
 		reason = "unknown"
 	}
-	var errMsg string
-	if details.ErrorCode != "" {
+	// Prefer OpenFeature's human-readable ErrorMessage; fall back to the ErrorCode string only
+	// when ErrorMessage is empty (some providers populate just the code).
+	errMsg := details.ErrorMessage
+	if errMsg == "" && details.ErrorCode != "" {
 		errMsg = string(details.ErrorCode)
 	}
 	return evalDetails{
