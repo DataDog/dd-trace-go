@@ -68,44 +68,24 @@ const (
 	defaultEvalEventBufferSize = 4096
 )
 
-// evaluationAggregationKey identifies one full-tier aggregation bucket. Its identity is
-// split into two parts with very different collision properties:
+// evaluationAggregationKey identifies one full-tier aggregation bucket. Its identity splits
+// into two parts with different collision properties:
 //
 //  1. Enumerable dimensions — flagKey, variant, allocationKey, reason, targetingKey — are
-//     stored as EXACT string fields and compared byte-for-byte by Go map equality. Two
-//     structurally distinct values can NEVER alias on these dimensions. In particular, a
-//     count can never be attributed to the wrong flag/variant/reason/allocation.
+//     EXACT string fields compared byte-for-byte by Go map equality, so they can NEVER alias:
+//     a count is never attributed to the wrong flag/variant/reason/allocation.
 //
-//  2. contextHash is a 64-bit FNV-1a digest of the pruned evaluation context (see
-//     hashContext). The context is map[string]any and therefore not comparable, so it
-//     cannot be a struct field — the digest stands in for it. The digest is computed over a
-//     CANONICAL encoding: keys are sorted (deterministic ordering), and each field is
-//     written as a length-delimited key plus a type-tagged, length-delimited value. Distinct
-//     contexts therefore cannot ALIAS by construction — int 1 vs string "1" carry different
-//     type tags, and '=' / '\n' inside a key or value cannot fake a field boundary.
+//  2. contextHash is a 64-bit FNV-1a digest of the pruned context (map[string]any, not
+//     comparable, so it cannot be a struct field — see hashContext for the canonical encoding
+//     that makes distinct contexts non-aliasing).
 //
-// What a contextHash collision actually does — and why it is acceptable:
-//
-//	With the canonical encoding above, a collision is no longer a systematic encoding alias;
-//	it is a genuine 64-bit FNV-1a hash collision: two evaluations identical on ALL FIVE
-//	exact dimensions AND whose *different* canonical encodings happen to hash to the same
-//	uint64. When that occurs, the second evaluation matches the existing bucket on add()'s
-//	fast path and increments its count (the `if e, ok := a.full[fullKey]; ok` branch below).
-//	Consequences:
-//
-//	  - COUNT-PRESERVING: the evaluation count is merged into the existing bucket, never
-//	    dropped. The invariant Σ(counts across all tiers) == number of add() calls still
-//	    holds. This is exactly what TestSaturationCountPreservation guards.
-//	  - NO MISATTRIBUTION: the count still belongs to the correct flag/variant/reason/
-//	    allocation — those dimensions are exact, not hashed.
-//	  - SOLE CASUALTY is context-attribute fidelity: the bucket retains the FIRST context's
-//	    attrs, so the colliding evaluation's distinct attrs are not separately reported.
-//	    Context is a best-effort dimension that the degraded/ultra tiers drop entirely by
-//	    design, so a collision is strictly less lossy than ordinary degradation.
-//
-//	This is internal telemetry over the customer's own context — not a trust boundary — so a
-//	keyed/crypto hash (e.g. SipHash) is unwarranted, and a wider (128-bit) digest would buy
-//	only marginal context-label fidelity. Deliberately not done.
+// A contextHash collision is therefore a genuine 64-bit hash collision, not an encoding alias:
+// the second evaluation merges into the existing bucket via add()'s fast path. This is
+// count-preserving (Σ(counts across tiers) == add() calls — TestSaturationCountPreservation)
+// and never misattributing (the exact dimensions still match); the sole casualty is
+// context-attribute fidelity, which the degraded/ultra tiers already drop by design. This is
+// internal telemetry over the customer's own context, not a trust boundary, so a keyed/crypto
+// hash or a wider digest is unwarranted — deliberately not done.
 type evaluationAggregationKey struct {
 	flagKey       string
 	variant       string
@@ -143,6 +123,30 @@ type evaluationEntry struct {
 	targetingKey string
 	contextAttrs map[string]any
 	errorMessage string
+}
+
+// observe records one more evaluation against an existing bucket: it bumps the count and
+// widens the [firstEvaluation, lastEvaluation] window to include nowMs. Every existing-bucket
+// path across the three tiers funnels through here so the count++/min/max logic lives once.
+func (e *evaluationEntry) observe(nowMs int64) {
+	e.count++
+	if nowMs < e.firstEvaluation {
+		e.firstEvaluation = nowMs
+	}
+	if nowMs > e.lastEvaluation {
+		e.lastEvaluation = nowMs
+	}
+}
+
+// newEvaluationEntry returns a fresh bucket for nowMs with count 1 and first==last==nowMs.
+// Callers set any tier-specific fields (runtimeDefault, targetingKey, contextAttrs,
+// errorMessage) on the returned entry.
+func newEvaluationEntry(nowMs int64) *evaluationEntry {
+	return &evaluationEntry{
+		count:           1,
+		firstEvaluation: nowMs,
+		lastEvaluation:  nowMs,
+	}
 }
 
 // flagEvaluationAggregator holds the three-tier aggregation maps.
@@ -393,17 +397,12 @@ func (w *flagEvaluationWriter) flush() {
 	nowMs := time.Now().UnixMilli()
 	var events []flagEvaluationEvent
 
-	// Full tier events.
+	// Full tier: required fields + variant + allocation + targeting_key + context + error;
+	// runtime_default decorates this tier.
 	for key, e := range full {
-		ev := flagEvaluationEvent{
-			Timestamp:       nowMs,
-			Flag:            flagEvalFlag{Key: key.flagKey},
-			FirstEvaluation: e.firstEvaluation,
-			LastEvaluation:  e.lastEvaluation,
-			EvaluationCount: e.count,
-			RuntimeDefault:  e.runtimeDefault,
-			TargetingKey:    e.targetingKey,
-		}
+		ev := baseFlagEvaluationEvent(key.flagKey, e, nowMs)
+		ev.RuntimeDefault = e.runtimeDefault
+		ev.TargetingKey = e.targetingKey
 		if key.variant != "" {
 			ev.Variant = &flagEvalVariant{Key: key.variant}
 		}
@@ -419,16 +418,11 @@ func (w *flagEvaluationWriter) flush() {
 		events = append(events, ev)
 	}
 
-	// Degraded tier events (no targeting_key, no context.evaluation).
+	// Degraded tier: required fields + variant + allocation; no targeting_key, no context.
+	// runtime_default decorates this tier.
 	for key, e := range degraded {
-		ev := flagEvaluationEvent{
-			Timestamp:       nowMs,
-			Flag:            flagEvalFlag{Key: key.flagKey},
-			FirstEvaluation: e.firstEvaluation,
-			LastEvaluation:  e.lastEvaluation,
-			EvaluationCount: e.count,
-			RuntimeDefault:  e.runtimeDefault,
-		}
+		ev := baseFlagEvaluationEvent(key.flagKey, e, nowMs)
+		ev.RuntimeDefault = e.runtimeDefault
 		if key.variant != "" {
 			ev.Variant = &flagEvalVariant{Key: key.variant}
 		}
@@ -438,15 +432,9 @@ func (w *flagEvaluationWriter) flush() {
 		events = append(events, ev)
 	}
 
-	// Ultra-degraded tier events (only required fields + flag + variant).
+	// Ultra-degraded tier: required fields + flag + variant only. Never sets runtime_default.
 	for key, e := range ultraDeg {
-		ev := flagEvaluationEvent{
-			Timestamp:       nowMs,
-			Flag:            flagEvalFlag{Key: key.flagKey},
-			FirstEvaluation: e.firstEvaluation,
-			LastEvaluation:  e.lastEvaluation,
-			EvaluationCount: e.count,
-		}
+		ev := baseFlagEvaluationEvent(key.flagKey, e, nowMs)
 		if key.variant != "" {
 			ev.Variant = &flagEvalVariant{Key: key.variant}
 		}
@@ -466,6 +454,20 @@ func (w *flagEvaluationWriter) flush() {
 		log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
 	} else {
 		log.Debug("openfeature: successfully sent %d flag evaluation events", len(events))
+	}
+}
+
+// baseFlagEvaluationEvent builds a flagEvaluationEvent with ONLY the five required schema
+// fields (timestamp, flag.key, first/last evaluation, evaluation_count). It is tier-agnostic
+// and sets no optional field — RuntimeDefault and the rest are decoration applied by each tier
+// loop in flush() after the call.
+func baseFlagEvaluationEvent(flagKey string, e *evaluationEntry, nowMs int64) flagEvaluationEvent {
+	return flagEvaluationEvent{
+		Timestamp:       nowMs,
+		Flag:            flagEvalFlag{Key: flagKey},
+		FirstEvaluation: e.firstEvaluation,
+		LastEvaluation:  e.lastEvaluation,
+		EvaluationCount: e.count,
 	}
 }
 
@@ -578,22 +580,11 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 		contextHash:   hashContext(contextAttrs),
 	}
 
-	// Fast path: this exact full-tier bucket already exists → increment its count.
-	//
-	// This branch is ALSO where a contextHash collision lands (see the
-	// evaluationAggregationKey doc): if two evaluations share all five exact dimensions and
-	// their differing contexts hash equal, the second matches here and merges into the
-	// first's bucket. The count is preserved — never dropped, never misattributed; only the
-	// second context's distinct attrs are not separately recorded. This is the
-	// count-preserving guarantee TestSaturationCountPreservation asserts.
+	// Fast path: this exact full-tier bucket already exists → increment its count. This is
+	// also where a contextHash collision lands, merging count-preservingly into the existing
+	// bucket (see the evaluationAggregationKey doc for the collision analysis).
 	if e, ok := a.full[fullKey]; ok {
-		e.count++
-		if nowMs < e.firstEvaluation {
-			e.firstEvaluation = nowMs
-		}
-		if nowMs > e.lastEvaluation {
-			e.lastEvaluation = nowMs
-		}
+		e.observe(nowMs)
 		return
 	}
 
@@ -644,13 +635,7 @@ func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 	}
 
 	if e, ok := a.degraded[degKey]; ok {
-		e.count++
-		if nowMs < e.firstEvaluation {
-			e.firstEvaluation = nowMs
-		}
-		if nowMs > e.lastEvaluation {
-			e.lastEvaluation = nowMs
-		}
+		e.observe(nowMs)
 		return
 	}
 
@@ -661,12 +646,9 @@ func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 		return
 	}
 
-	a.degraded[degKey] = &evaluationEntry{
-		count:           1,
-		firstEvaluation: nowMs,
-		lastEvaluation:  nowMs,
-		runtimeDefault:  d.runtimeDefault,
-	}
+	e := newEvaluationEntry(nowMs)
+	e.runtimeDefault = d.runtimeDefault
+	a.degraded[degKey] = e
 }
 
 // addToUltraDegraded adds an entry to the ultra-degraded map (only flag key + variant).
@@ -686,50 +668,30 @@ func (a *flagEvaluationAggregator) addToUltraDegraded(d evalDetails, nowMs int64
 	}
 
 	if e, ok := a.ultraDeg[ultraKey]; ok {
-		e.count++
-		if nowMs < e.firstEvaluation {
-			e.firstEvaluation = nowMs
-		}
-		if nowMs > e.lastEvaluation {
-			e.lastEvaluation = nowMs
-		}
+		e.observe(nowMs)
 		return
 	}
 
 	// New ultra-degraded bucket — enforce the explicit cap. Resolve the effective cap with
 	// the zero-value footgun policy: a non-positive ultraDegCap means "use the default" so a
 	// forgotten field does not silently route everything to the sentinel.
-	cap := a.ultraDegCap
-	if cap <= 0 {
-		cap = defaultEvalUltraDegradedCap
+	effectiveCap := a.ultraDegCap
+	if effectiveCap <= 0 {
+		effectiveCap = defaultEvalUltraDegradedCap
 	}
-	if len(a.ultraDeg) >= cap {
+	if len(a.ultraDeg) >= effectiveCap {
 		// Cap reached — collapse this and all further over-cap distinct keys into a single
 		// sentinel overflow bucket so the count is preserved without unbounded growth.
 		overflowKey := evaluationUltraDegradedKey{flagKey: ultraDegradedOverflowFlagKey}
 		if e, ok := a.ultraDeg[overflowKey]; ok {
-			e.count++
-			if nowMs < e.firstEvaluation {
-				e.firstEvaluation = nowMs
-			}
-			if nowMs > e.lastEvaluation {
-				e.lastEvaluation = nowMs
-			}
+			e.observe(nowMs)
 			return
 		}
-		a.ultraDeg[overflowKey] = &evaluationEntry{
-			count:           1,
-			firstEvaluation: nowMs,
-			lastEvaluation:  nowMs,
-		}
+		a.ultraDeg[overflowKey] = newEvaluationEntry(nowMs)
 		return
 	}
 
-	a.ultraDeg[ultraKey] = &evaluationEntry{
-		count:           1,
-		firstEvaluation: nowMs,
-		lastEvaluation:  nowMs,
-	}
+	a.ultraDeg[ultraKey] = newEvaluationEntry(nowMs)
 }
 
 // context value type discriminators for the canonical hash encoding. Each distinct Go type
@@ -745,20 +707,14 @@ const (
 	ctxTagOther   byte = 'o'
 )
 
-// hashContext computes a deterministic 64-bit FNV-1a hash of the pruned context map for
-// use as a discriminator inside evaluationAggregationKey. The enumerable struct fields
-// (flagKey, variant, allocationKey, reason, targetingKey) are exact string comparisons and
-// cannot collide.
+// hashContext computes a deterministic 64-bit FNV-1a hash of the pruned context map, used as
+// the contextHash discriminator inside evaluationAggregationKey.
 //
-// The per-field encoding is CANONICAL: each field is written as a length-delimited key
-// (fixed-width 8-byte big-endian length + key bytes) followed by a type-tag byte and a
-// length-delimited rendered value. Because both key and value are length-delimited and the
-// value is type-tagged, distinct contexts cannot ALIAS by construction: int 1 and string
-// "1" carry different tags, and '=' / '\n' embedded in a key or value can no longer be
-// mistaken for a field delimiter. A digest collision is therefore now a genuine 64-bit hash
-// collision, not a systematic encoding alias. A collision is still count-preserving (it
-// merges into an existing bucket via add()'s fast path, costing only context-attribute
-// fidelity, never a count) — see the evaluationAggregationKey doc for the full analysis.
+// The per-field encoding is CANONICAL — each field is a length-delimited key followed by a
+// type-tag byte and a length-delimited value — so distinct contexts cannot ALIAS by
+// construction (int 1 vs string "1" differ by tag; '=' / '\n' cannot fake a field boundary).
+// Any digest collision is thus a genuine 64-bit hash collision, which is count-preserving (see
+// the evaluationAggregationKey doc).
 func hashContext(attrs map[string]any) uint64 {
 	if len(attrs) == 0 {
 		return 0
