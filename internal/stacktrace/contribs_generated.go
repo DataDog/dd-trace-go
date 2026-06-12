@@ -500,6 +500,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/kr/text",
 		"github.com/kylelemons/godebug",
 		"github.com/labstack/echo/v4",
+		"github.com/labstack/echo/v5",
 		"github.com/labstack/gommon",
 		"github.com/leodido/go-urn",
 		"github.com/lib/pq",
