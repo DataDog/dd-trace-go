@@ -147,6 +147,17 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	// Mark the POST replayable so net/http transparently retries on a fresh
 	// connection when an idle UDS conn was silently closed by the agent.
 	// http.NewRequest already populates req.GetBody for *bytes.Buffer bodies.
+	//
+	// Duplication risk: if the agent received and processed the payload before
+	// resetting the connection (read-side ECONNRESET), a retry will deliver the
+	// same ClientStatsPayload twice. The agent does not deduplicate stats the
+	// way it deduplicates traces (by span ID), so a duplicate payload can
+	// overcount metrics for that flush window. This is an accepted trade-off:
+	// the read-side reset is the rarer path (stdlib already recovers from
+	// pre-write failures transparently via the Idempotency-Key path), and a
+	// transient one-window overcount that self-corrects on the next flush is
+	// less harmful than silently dropping stats. For EPIPE and write-side
+	// resets the retry is always safe — the bytes never reached the agent.
 	req.Header.Set(idempotencyKeyHeader, newIdempotencyKey())
 	resp, err := t.doWithStaleConnRetry(req)
 	if err != nil {
