@@ -45,6 +45,10 @@ type ProviderConfig struct {
 	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
 	// Default: 1 second
 	ExposureFlushInterval time.Duration
+
+	// FlagEvaluationFlushInterval is the interval for flushing EVP flag evaluation events.
+	// Default: 10 seconds (D-05 contract value). Leave zero to use the default.
+	FlagEvaluationFlushInterval time.Duration
 }
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
