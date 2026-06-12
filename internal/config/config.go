@@ -283,14 +283,11 @@ func loadConfig() *Config {
 	headerTags, headerTagsOrigin := parseHeaderAsTagsFromEnv(p)
 	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], propagateHeaderAsTagsToGlobalConfig)
 
-	// globalTags is seeded from DD_TAGS (the provider remaps OTEL_RESOURCE_ATTRIBUTES
-	// onto it, in precedence order). Programmatic WithGlobalTag options and the runtime
-	// ID are added later by the tracer via SetGlobalTag. The telemetry name is
-	// "trace_tags" (the RC key is tracing_tags).
-	globalTags, globalTagsOrigin := parseGlobalTagsFromEnv(p)
+	rawTags, globalTagsOrigin := p.GetStringWithOrigin("DD_TAGS", "")
+	globalTags := parseGlobalTags(rawTags)
 	cfg.globalTags = newDynamicConfig("trace_tags", globalTags, globalTagsOrigin, equalMap[string], nil)
 	for k, v := range globalTags {
-		configtelemetry.Report("global_tag_"+k, v, globalTagsOrigin)
+		reportGlobalTagTelemetry(k, v, globalTagsOrigin)
 	}
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
@@ -634,29 +631,27 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, prod
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 
-// GlobalTags returns the current set of global tags applied to all spans.
-// The returned map must not be mutated by callers: it is shared with the tracer
-// and is always replaced wholesale (never mutated in place) on updates and Remote
-// Config changes, so readers may hold the reference without locking.
+// GlobalTags returns the current set of global tags applied to all spans. The
+// returned map must not be mutated; it is shared with the tracer and replaced
+// wholesale (never mutated in place) on updates, so readers need no lock.
 func (c *Config) GlobalTags() map[string]any {
 	return c.globalTags.Get()
 }
 
-// GlobalTagsConfig returns the DynamicConfig for global tags. The tracer's
-// Remote Config handler uses it to apply tracing_tags updates and resets.
+// GlobalTagsConfig returns the DynamicConfig for global tags, used by the
+// tracer's Remote Config handler to apply tracing_tags updates and resets.
 func (c *Config) GlobalTagsConfig() *DynamicConfig[map[string]any] {
 	return c.globalTags
 }
 
-// SetGlobalTag adds (or overwrites) a single global tag. Like SetServiceMapping
-// it is additive, so it carries no cross-product gate. The aggregate's startup
-// origin is whatever loadConfig established from DD_TAGS and is preserved across
-// programmatic adds: the provider already resolved source precedence, so a later
-// programmatic tag does not change where the tag set as a whole "came from" (this
-// also keeps the runtime-id add from downgrading an env-sourced origin). The
-// read-modify-write of the baseline is guarded by c.mu, making it safe under
-// concurrent calls. The aggregate (trace_tags) reports the preserved origin; the
-// per-key global_tag_ entry reports this call's origin.
+// reportGlobalTagTelemetry reports the per-key "global_tag_<key>" telemetry.
+func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
+	configtelemetry.Report("global_tag_"+key, value, origin)
+}
+
+// SetGlobalTag adds or overwrites a single global tag. Like SetServiceMapping it
+// is additive, so it carries no cross-product gate. The read-modify-write of the
+// startup baseline is guarded by c.mu.
 func (c *Config) SetGlobalTag(key string, value any, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	cur, curOrigin := c.globalTags.Baseline()
@@ -665,8 +660,7 @@ func (c *Config) SetGlobalTag(key string, value any, origin telemetry.Origin, pr
 	nm[key] = value
 	c.globalTags.setBaseline(nm, curOrigin)
 	c.mu.Unlock()
-	configtelemetry.Report("trace_tags", nm, curOrigin)
-	configtelemetry.Report("global_tag_"+key, value, origin)
+	reportGlobalTagTelemetry(key, value, origin)
 }
 
 func (c *Config) DynamicInstrumentationEnabled() bool {

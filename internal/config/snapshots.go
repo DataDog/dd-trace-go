@@ -25,8 +25,7 @@ type SpanStartSnapshot struct {
 	DebugAbandonedSpans     bool
 	ProfilerHotspotsEnabled bool
 	ProfilerEndpoints       bool
-	// GlobalTags is the set of tags applied to every span. The map is shared and
-	// must not be mutated; see Config.GlobalTags.
+	// The map is shared and must not be mutated; see Config.GlobalTags.
 	GlobalTags map[string]any
 }
 
@@ -34,7 +33,7 @@ type SpanStartSnapshot struct {
 // tracer.StartSpan. Service mappings are not included because the lookup key
 // (the resolved span service) isn't known until after this snapshot is read.
 func (c *Config) SpanStartSnapshot() SpanStartSnapshot {
-	// globalTags has its own lock; read it before c.mu so we never hold both.
+	// SetGlobalTag takes c.mu then globalTags's lock; read globalTags outside c.mu to avoid inversion.
 	tags := c.globalTags.Get()
 	c.mu.RLock()
 	defer c.mu.RUnlock()
