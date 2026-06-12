@@ -66,10 +66,10 @@ func makeEvalDetails(variant string, reason of.Reason, errorCode of.ErrorCode, m
 }
 
 // TestIsRuntimeDefault verifies the runtime-default detection rule.
-// Primary signal: variant=="" → true.
-// Secondary signal: reason==DEFAULT or reason==DISABLED → true even if variant is non-empty.
-//
-// It must fail RED: isRuntimeDefault panics with "not implemented".
+// Signal: absent variant key. Our evaluator sets a variant ONLY on a matched
+// allocation (TARGETING_MATCH/SPLIT/STATIC); every DEFAULT/DISABLED/ERROR path
+// leaves the variant empty. A present variant therefore means a real assignment,
+// never a default — regardless of the reported reason.
 func TestIsRuntimeDefault(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -82,13 +82,18 @@ func TestIsRuntimeDefault(t *testing.T) {
 			want:    true,
 		},
 		{
-			name:    "reason DEFAULT is runtime default",
+			name:    "empty variant with DEFAULT reason is runtime default",
 			details: makeEvalDetails("", of.DefaultReason, ""),
 			want:    true,
 		},
 		{
-			name:    "reason DISABLED is runtime default",
+			name:    "empty variant with DISABLED reason is runtime default",
 			details: makeEvalDetails("", of.DisabledReason, ""),
+			want:    true,
+		},
+		{
+			name:    "empty variant with ERROR reason is runtime default",
+			details: makeEvalDetails("", of.ErrorReason, of.FlagNotFoundCode),
 			want:    true,
 		},
 		{
@@ -107,14 +112,18 @@ func TestIsRuntimeDefault(t *testing.T) {
 			want:    false,
 		},
 		{
-			name:    "empty variant with ERROR reason is runtime default (primary: variant absent)",
-			details: makeEvalDetails("", of.ErrorReason, of.FlagNotFoundCode),
-			want:    true,
+			// Divergent case: a present variant means a real assignment even if the
+			// reason is DISABLED. The old secondary reason-clause wrongly returned true.
+			name:    "variant present with DISABLED reason is NOT runtime default",
+			details: makeEvalDetails("on", of.DisabledReason, ""),
+			want:    false,
 		},
 		{
-			name:    "variant present with DEFAULT reason is runtime default (secondary belt-and-suspenders)",
-			details: makeEvalDetails("default-variant", of.DefaultReason, ""),
-			want:    true,
+			// Divergent case: a present variant means a real assignment even if the
+			// reason is DEFAULT. The old secondary reason-clause wrongly returned true.
+			name:    "variant present with DEFAULT reason is NOT runtime default",
+			details: makeEvalDetails("on", of.DefaultReason, ""),
+			want:    false,
 		},
 	}
 

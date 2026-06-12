@@ -45,11 +45,9 @@ func (h *flagEvaluationHook) Finally(
 }
 
 // isRuntimeDefault returns true when the caller's supplied default value was returned.
-// Primary signal: absent variant key (flag-not-found, provider-not-ready, type-mismatch, no allocation).
-// Secondary: explicit DEFAULT or DISABLED reason (belt-and-suspenders).
+// Signal: absent variant key. Our evaluator sets a variant ONLY on a matched allocation
+// (reason TARGETING_MATCH/SPLIT/STATIC); every DEFAULT/DISABLED/ERROR path leaves the variant
+// empty (see evaluator.go). A present variant therefore means a real assignment, not a default.
 func isRuntimeDefault(details of.InterfaceEvaluationDetails) bool {
-	if details.Variant == "" {
-		return true
-	}
-	return details.Reason == of.DefaultReason || details.Reason == of.DisabledReason
+	return details.Variant == ""
 }
