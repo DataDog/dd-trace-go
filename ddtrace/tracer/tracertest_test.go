@@ -183,10 +183,10 @@ var testTraceProtocols = []testTraceProtocol{
 // It sets the global tracer (required for span.Finish to push chunks through the pipeline).
 func newTracerTest(tb testing.TB, agent *testAgent, opts ...StartOption) *tracer {
 	tb.Helper()
-	transport := newHTTPTransport(agent.URL()+tracesAPIPath, agent.URL()+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, true), datadogHeaders())
 	baseOpts := []StartOption{
-		withTransport(transport),
+		WithAgentAddr(agent.Addr()),
 		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
+		withNoopStats(),
 	}
 	tr, err := newTracer(append(baseOpts, opts...)...)
 	require.NoError(tb, err)

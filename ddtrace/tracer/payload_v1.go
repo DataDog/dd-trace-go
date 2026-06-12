@@ -548,7 +548,7 @@ func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyVa
 // It is called from push() to perform incremental encoding while the spans
 // are still valid (before any span-pool release).
 func (p *payloadV1) encodeTraceChunk(chunk traceChunk, st *stringTable) {
-	p.buf = msgp.AppendMapHeader(p.buf, 7) // 7 fields per chunk
+	p.buf = msgp.AppendMapHeader(p.buf, 6) // 6 fields per chunk
 
 	// priority
 	p.buf = encodeField(p.buf, fullSetBitmap, 1, chunk.priority, st)
@@ -561,9 +561,6 @@ func (p *payloadV1) encodeTraceChunk(chunk traceChunk, st *stringTable) {
 
 	// spans
 	p.encodeSpans(fullSetBitmap, 4, chunk.spans, st)
-
-	// droppedTrace
-	p.buf = encodeField(p.buf, fullSetBitmap, 5, chunk.droppedTrace, st)
 
 	// traceID
 	p.buf = encodeField(p.buf, fullSetBitmap, 6, chunk.traceID, st)
@@ -582,7 +579,9 @@ func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, s
 	p.buf = append(p.buf, byte(fieldID))
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(tc))) // number of chunks
 	for _, chunk := range tc {
-		p.buf = msgp.AppendMapHeader(p.buf, 7) // number of fields in chunk
+		// droppedTrace (field 5) is intentionally omitted: it is set by the agent,
+		// not by tracers. Emitting it causes the agent to reject the payload.
+		p.buf = msgp.AppendMapHeader(p.buf, 6) // number of fields in chunk
 
 		// priority
 		p.buf = encodeField(p.buf, fullSetBitmap, 1, chunk.priority, st)
@@ -595,9 +594,6 @@ func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, s
 
 		// spans
 		p.encodeSpans(fullSetBitmap, 4, chunk.spans, st)
-
-		// droppedTrace
-		p.buf = encodeField(p.buf, fullSetBitmap, 5, chunk.droppedTrace, st)
 
 		// traceID
 		p.buf = encodeField(p.buf, fullSetBitmap, 6, chunk.traceID, st)
@@ -627,7 +623,17 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			p.buf = msgp.AppendMapHeader(p.buf, 0)
 			continue
 		}
-		p.buf = msgp.AppendMapHeader(p.buf, 16) // number of fields in span
+		// span_kind (field 16) is only emitted when it maps to a known value
+		// (1-5). Omit the field and use a 15-field map if it isn't set.
+		spanKindVal := uint32(0)
+		if sk, ok := span.meta.Get(ext.SpanKind); ok {
+			spanKindVal = getSpanKindValue(sk)
+		}
+		nFields := uint32(15)
+		if spanKindVal != 0 {
+			nFields = 16
+		}
+		p.buf = msgp.AppendMapHeader(p.buf, nFields) // number of fields in span
 
 		p.buf = encodeStringField(p.buf, fullSetBitmap, 1, span.service, st)
 		p.buf = encodeStringField(p.buf, fullSetBitmap, 2, span.name, st)
@@ -656,7 +662,7 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			p.buf = st.serialize(lang, p.buf)
 		}
 
-		component, spanKind := "", ""
+		component := ""
 		// Map(false) returns the underlying flat map directly (no copy, no promoted attrs).
 		for k, v := range span.meta.Map(false) {
 			// Span links are serialized separately in the payload, so
@@ -667,9 +673,6 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			// Grab common attributes early to avoid map lookups later on.
 			if k == ext.Component {
 				component = v
-			}
-			if k == ext.SpanKind {
-				spanKind = v
 			}
 			count++
 			p.buf = st.serialize(k, p.buf)
@@ -705,14 +708,16 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		p.encodeSpanEvents(fullSetBitmap, 12, span.spanEvents, st)
 
 		// Promoted attrs (env, version) live in promotedAttrs, not in the flat map,
-		// so they are retrieved via accessor methods. component and spanKind were
-		// captured during the Range iteration above.
+		// so they are retrieved via accessor methods. component was captured during
+		// the Range iteration above; spanKindVal was resolved before the map header.
 		env, _ := span.meta.Env()
 		version, _ := span.meta.Version()
 		p.buf = encodeStringField(p.buf, fullSetBitmap, 13, env, st)
 		p.buf = encodeStringField(p.buf, fullSetBitmap, 14, version, st)
 		p.buf = encodeStringField(p.buf, fullSetBitmap, 15, component, st)
-		p.buf = encodeField(p.buf, fullSetBitmap, 16, getSpanKindValue(spanKind), st)
+		if spanKindVal != 0 {
+			p.buf = encodeField(p.buf, fullSetBitmap, 16, spanKindVal, st)
+		}
 	}
 	return true, nil
 }
