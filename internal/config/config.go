@@ -342,7 +342,7 @@ func loadConfig() *Config {
 		cfg.reportHostname = true
 	}
 
-	cfg.apiKey = env.Get("DD_API_KEY")
+	cfg.apiKey = p.GetString("DD_API_KEY", "")
 
 	return cfg
 }

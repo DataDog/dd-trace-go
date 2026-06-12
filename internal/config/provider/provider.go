@@ -33,6 +33,7 @@ type idAwareConfigSource interface {
 // telemetryBlocklist contains config keys whose values must not be reported to
 // telemetry because they are secrets (e.g. credentials).
 var telemetryBlocklist = map[string]bool{
+	"DD_API_KEY": true,
 	"DD_APP_KEY": true,
 }
 
