@@ -23,12 +23,10 @@ func setupTestAggregator(t *testing.T) *flagEvaluationAggregator {
 	return &flagEvaluationAggregator{
 		full:        make(map[evaluationAggregationKey]*evaluationEntry),
 		degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
-		ultraDeg:    make(map[evaluationUltraDegradedKey]*evaluationEntry),
 		perFlagFull: make(map[string]int),
 		globalCap:   10, // small cap to trigger overflow in tests
 		perFlagCap:  3,
 		degradedCap: 3,
-		ultraDegCap: defaultEvalUltraDegradedCap, // real default keeps the multi-tier cascade from collapsing into the sentinel
 	}
 }
 
@@ -36,16 +34,14 @@ func setupTestAggregator(t *testing.T) *flagEvaluationAggregator {
 // Unlike setupTestAggregator (which fixes small caps), each cap is a parameter so a test can
 // drive a specific tier-overflow scenario. The cap NUMBERS are load-bearing — callers pass
 // the exact values their scenario requires.
-func newTestAggregator(globalCap, perFlagCap, degradedCap, ultraDegCap int) *flagEvaluationAggregator {
+func newTestAggregator(globalCap, perFlagCap, degradedCap int) *flagEvaluationAggregator {
 	return &flagEvaluationAggregator{
 		full:        make(map[evaluationAggregationKey]*evaluationEntry),
 		degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
-		ultraDeg:    make(map[evaluationUltraDegradedKey]*evaluationEntry),
 		perFlagFull: make(map[string]int),
 		globalCap:   globalCap,
 		perFlagCap:  perFlagCap,
 		degradedCap: degradedCap,
-		ultraDegCap: ultraDegCap,
 	}
 }
 
@@ -179,8 +175,10 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 			optionalAbsent: []string{"targeting_key", "context"},
 		},
 		{
-			name: "ultra-degraded tier has only required fields",
-			// Ultra-degraded: only flag key + counts; no variant, allocation, targeting, context.
+			name: "required-only event omits all optional fields",
+			// A bare event carrying only flag key + counts; no variant, allocation, targeting,
+			// context. (This shape is no longer emitted by an ultra-degraded tier, but the
+			// schema must still accept a required-fields-only event.)
 			event: flagEvaluationEvent{
 				Timestamp:       nowMs,
 				Flag:            flagEvalFlag{Key: "test-flag"},
@@ -322,7 +320,7 @@ func TestAggregatorCollisionSafety(t *testing.T) {
 // Must be run with -race to satisfy the race-free requirement.
 func TestAggregatorConcurrentMinMax(t *testing.T) {
 	// Caps large enough not to overflow during this test.
-	agg := newTestAggregator(100_000, 100_000, 100_000, defaultEvalUltraDegradedCap)
+	agg := newTestAggregator(100_000, 100_000, 100_000)
 
 	d := evalDetails{
 		flagKey: "concurrent-flag",
@@ -361,31 +359,21 @@ func TestAggregatorConcurrentMinMax(t *testing.T) {
 	}
 }
 
-// TestSaturationCountPreservation is the regression guard against a silent drop at
-// globalCap overflow. It asserts that the sum of all evaluation counts across ALL tiers
-// (full + degraded + ultra-degraded) equals the total number of add() calls, even after
-// BOTH globalCap AND perFlagCap have been exhausted.
-//
-// This test MUST FAIL on the pre-fix code (negative control proving the silent drop), and
-// MUST PASS after rerouting the globalCap-overflow return into the ultra-degraded tier.
+// TestSaturationCountPreservation is the regression guard against a SILENT drop at saturation
+// in the 2-tier design. Because the degraded tier is now terminal (overflow is dropped, not
+// cascaded), the invariant is: Σ(full+degraded counts) + droppedDegradedOverflow == add() calls.
+// No evaluation may vanish without being COUNTED — silent loss is the defect this guards against.
 func TestSaturationCountPreservation(t *testing.T) {
 	// Use small caps so we can saturate them quickly.
 	// globalCap=5 means only 5 full-tier buckets ever created.
 	// perFlagCap=2 means after 2 distinct full-tier buckets per flag, it overflows to degraded.
-	// degradedCap=3 means only 3 degraded buckets; further overflow goes to ultra-degraded.
-	agg := newTestAggregator(5, 2, 3, defaultEvalUltraDegradedCap)
+	// degradedCap=3 means only 3 degraded buckets; further overflow is dropped(counted).
+	agg := newTestAggregator(5, 2, 3)
 	nowMs := time.Now().UnixMilli()
 
-	// We drive 100 distinct evaluations. Each call to add() must contribute exactly 1
-	// count unit to one of the three tiers. After all calls, the Σ must equal 100.
-	//
-	// Strategy: use 20 different flag keys × 5 distinct allocationKey combos so that:
-	//  - The first 2 per flag go into the full tier (perFlagCap=2).
-	//  - The next ones overflow to degraded (bounded by degradedCap=3).
-	//  - Once degraded is also full, overflow to ultra-degraded.
-	//  - Once globalCap(5) is hit, any flag's attempt-count not yet at perFlagCap routes
-	//    through the globalCap branch — the defect being guarded against is that this branch
-	//    returns silently instead of routing to ultra-degraded.
+	// Drive 100 distinct evaluations. Each add() must contribute exactly 1 count unit to either
+	// the full tier, the degraded tier, or the droppedDegradedOverflow counter. After all calls,
+	// Σ(full+degraded) + dropped must equal 100 — nothing silently lost.
 	const totalCalls = 100
 	for i := range totalCalls {
 		flagIdx := i % 20
@@ -400,7 +388,7 @@ func TestSaturationCountPreservation(t *testing.T) {
 		agg.add(d, nil, nowMs)
 	}
 
-	// Sum counts across all three tiers.
+	// Sum counts across both tiers plus the observable drop counter.
 	agg.mu.Lock()
 	defer agg.mu.Unlock()
 
@@ -411,16 +399,14 @@ func TestSaturationCountPreservation(t *testing.T) {
 	for _, e := range agg.degraded {
 		totalCounted += e.count
 	}
-	for _, e := range agg.ultraDeg {
-		totalCounted += e.count
-	}
+	totalCounted += agg.droppedDegradedOverflow
 
 	if totalCounted != totalCalls {
 		t.Errorf(
-			"count preservation violated: Σ(full+degraded+ultraDeg)=%d, expected=%d (add() calls); "+
-				"silent drops detected (full buckets=%d, degraded buckets=%d, ultraDeg buckets=%d)",
+			"count preservation violated: Σ(full+degraded)+dropped=%d, expected=%d (add() calls); "+
+				"silent drops detected (full buckets=%d, degraded buckets=%d, droppedDegradedOverflow=%d)",
 			totalCounted, totalCalls,
-			len(agg.full), len(agg.degraded), len(agg.ultraDeg),
+			len(agg.full), len(agg.degraded), agg.droppedDegradedOverflow,
 		)
 	}
 }
@@ -470,7 +456,7 @@ func TestAggregatorCapOverflow(t *testing.T) {
 		}
 	})
 
-	t.Run("degradedCap overflow routes to ultra-degraded", func(t *testing.T) {
+	t.Run("degradedCap overflow is dropped and counted", func(t *testing.T) {
 		agg := setupTestAggregator(t) // degradedCap=3
 		nowMs := time.Now().UnixMilli()
 
@@ -489,8 +475,8 @@ func TestAggregatorCapOverflow(t *testing.T) {
 			}
 		}
 
-		// Continue adding until degradedCap is also exhausted.
-		// At that point, ultra-degraded must receive new entries.
+		// Continue adding until degradedCap is also exhausted. At that point — with no ultra
+		// tier — new degraded buckets must be dropped and COUNTED (droppedDegradedOverflow).
 		for i := range 10 {
 			d := evalDetails{
 				flagKey: fmt.Sprintf("overflow-flag-%d", i),
@@ -512,8 +498,11 @@ func TestAggregatorCapOverflow(t *testing.T) {
 		agg.mu.Lock()
 		defer agg.mu.Unlock()
 
-		if len(agg.ultraDeg) == 0 {
-			t.Error("expected ultra-degraded buckets after degradedCap overflow")
+		if len(agg.degraded) > agg.degradedCap {
+			t.Errorf("degraded tier %d exceeds degradedCap %d — terminal tier not bounded", len(agg.degraded), agg.degradedCap)
+		}
+		if agg.droppedDegradedOverflow == 0 {
+			t.Error("expected droppedDegradedOverflow > 0 after degradedCap exhaustion (drops must be counted, not silent)")
 		}
 	})
 
@@ -522,10 +511,9 @@ func TestAggregatorCapOverflow(t *testing.T) {
 		nowMs := time.Now().UnixMilli()
 
 		// Add 50 distinct evaluations (each a unique flag key).
-		// globalCap=10 caps the full tier; overflow goes to ultra-degraded.
-		// The full tier must stay at or below globalCap.
-		// The total count across all tiers must equal the number of add() calls
-		// (no silent drops).
+		// globalCap=10 caps the full tier; overflow cascades to degraded (then drops if degraded
+		// is also full). The full tier must stay at or below globalCap, and the total count
+		// across both tiers plus the drop counter must equal the number of add() calls.
 		const calls = 50
 		for i := range calls {
 			d := evalDetails{
@@ -547,7 +535,7 @@ func TestAggregatorCapOverflow(t *testing.T) {
 			t.Errorf("full-tier buckets %d exceeds globalCap %d", len(agg.full), agg.globalCap)
 		}
 
-		// Every add() call must have produced a count unit in some tier (no silent drops).
+		// Every add() call must have produced a count unit somewhere observable (no silent drops).
 		var totalCounted int64
 		for _, e := range agg.full {
 			totalCounted += e.count
@@ -555,11 +543,9 @@ func TestAggregatorCapOverflow(t *testing.T) {
 		for _, e := range agg.degraded {
 			totalCounted += e.count
 		}
-		for _, e := range agg.ultraDeg {
-			totalCounted += e.count
-		}
+		totalCounted += agg.droppedDegradedOverflow
 		if totalCounted != calls {
-			t.Errorf("count preservation violated: Σ(all tiers)=%d, expected=%d", totalCounted, calls)
+			t.Errorf("count preservation violated: Σ(full+degraded)+dropped=%d, expected=%d", totalCounted, calls)
 		}
 	})
 }
@@ -678,14 +664,15 @@ func TestHashContextCanonicalEncoding(t *testing.T) {
 	})
 }
 
-// TestUltraDegradedCapBounded guards Finding #3 (ultra-degraded tier unbounded). With a
-// small positive ultraDegCap, many distinct flag keys must NOT grow ultraDeg without bound:
-// len(ultraDeg) <= ultraDegCap+1 (the +1 is the sentinel overflow bucket) and counts are
-// preserved (Σ across tiers == add() calls).
-func TestUltraDegradedCapBounded(t *testing.T) {
+// TestDegradedCapBounded guards reviewer concern #8 (unbounded dynamic/abusive flag keys) under
+// the 2-tier design. With the degraded tier as the terminal tier, an unbounded number of distinct
+// flag keys must NOT grow the degraded map without bound: len(degraded) <= degradedCap, and the
+// over-cap counts must be DROPPED-AND-COUNTED (droppedDegradedOverflow), never silently lost.
+// Σ(full+degraded counts) + droppedDegradedOverflow must equal the add() call count.
+func TestDegradedCapBounded(t *testing.T) {
 	const cap = 3
-	// globalCap=0 and degradedCap=0 force everything straight into the ultra-degraded tier.
-	agg := newTestAggregator(0, 100_000, 0, cap)
+	// globalCap=0 forces every distinct full key straight past the full tier into degraded.
+	agg := newTestAggregator(0, 100_000, cap)
 	nowMs := time.Now().UnixMilli()
 
 	const calls = 100
@@ -701,8 +688,8 @@ func TestUltraDegradedCapBounded(t *testing.T) {
 	agg.mu.Lock()
 	defer agg.mu.Unlock()
 
-	if len(agg.ultraDeg) > cap+1 {
-		t.Errorf("ultra-degraded cardinality %d exceeds ultraDegCap+1 (%d) — tier not bounded", len(agg.ultraDeg), cap+1)
+	if len(agg.degraded) > cap {
+		t.Errorf("degraded cardinality %d exceeds degradedCap (%d) — terminal tier not bounded", len(agg.degraded), cap)
 	}
 
 	var total int64
@@ -712,16 +699,14 @@ func TestUltraDegradedCapBounded(t *testing.T) {
 	for _, e := range agg.degraded {
 		total += e.count
 	}
-	for _, e := range agg.ultraDeg {
-		total += e.count
-	}
+	total += agg.droppedDegradedOverflow
 	if total != calls {
-		t.Errorf("count preservation violated under ultraDegCap: Σ(all tiers)=%d, expected=%d", total, calls)
+		t.Errorf("count preservation violated under degradedCap: Σ(full+degraded)+dropped=%d, expected=%d", total, calls)
 	}
 
-	// The sentinel overflow bucket must be present and carry the over-cap counts.
-	if _, ok := agg.ultraDeg[evaluationUltraDegradedKey{flagKey: ultraDegradedOverflowFlagKey}]; !ok {
-		t.Errorf("expected sentinel overflow bucket %q in ultra-degraded tier", ultraDegradedOverflowFlagKey)
+	// The over-cap counts must be observable in the drop counter.
+	if agg.droppedDegradedOverflow == 0 {
+		t.Errorf("expected droppedDegradedOverflow > 0 when distinct keys exceed degradedCap")
 	}
 }
 

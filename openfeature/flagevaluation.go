@@ -47,20 +47,19 @@ const (
 	maxFieldLength   = 256
 
 	// Aggregation caps.
-	defaultEvalGlobalCap   = 65_536 // bounds full-tier buckets only; degraded/ultra are bounded separately
-	defaultEvalPerFlagCap  = 10_000 // bounds full-fidelity buckets per flag
-	defaultEvalDegradedCap = 10_000 // bounds degraded map
-
-	// defaultEvalUltraDegradedCap bounds the number of distinct ultra-degraded buckets.
-	// The ultra-degraded key is (flagKey, variant) and the flag key is caller-supplied, so a
-	// dynamic/malicious flag key would otherwise grow this map without bound. Distinct keys
-	// beyond the cap collapse into a single count-preserving sentinel overflow bucket.
-	defaultEvalUltraDegradedCap = 10_000
-
-	// ultraDegradedOverflowFlagKey is the reserved flag key for the single sentinel bucket
-	// that absorbs counts for all over-cap distinct ultra-degraded keys, so the total
-	// evaluation count is preserved even when the ultra-degraded cardinality is capped.
-	ultraDegradedOverflowFlagKey = "__other__"
+	//
+	// SPIKE cq7 (2-tier resize): the cascade is now full → degraded → drop(counted). With no
+	// ultra-degraded backstop, degradedCap must hold the FULL legitimate degraded cardinality at
+	// the team's >=2,500-flag scale target, or legitimate counts would be dropped. The measured
+	// legitimate degraded cardinality at 2,500 flags (Σ variants×allocations×reasons over a
+	// realistic flag mix) is 21,662 distinct buckets (see flagevaluation_scale_test.go); so
+	// degradedCap is raised to 32,768 (~1.5x headroom). globalCap (full-tier) is raised to
+	// 131,072 so a realistic 2,500-flag × multi-context workload keeps full-fidelity buckets
+	// before degrading rather than dropping them — overflow from full still cascades to degraded,
+	// which is now sized to hold it.
+	defaultEvalGlobalCap   = 131_072 // bounds full-tier buckets only; degraded is bounded separately
+	defaultEvalPerFlagCap  = 10_000  // bounds full-fidelity buckets per flag
+	defaultEvalDegradedCap = 32_768  // bounds degraded map; overflow is dropped(counted), no ultra tier
 
 	// defaultEvalEventBufferSize bounds the async hand-off queue between the (hot-path)
 	// Finally hook and the background aggregation worker. On overflow the hook drops the
@@ -83,7 +82,7 @@ const (
 // the second evaluation merges into the existing bucket via add()'s fast path. This is
 // count-preserving (Σ(counts across tiers) == add() calls — TestSaturationCountPreservation)
 // and never misattributing (the exact dimensions still match); the sole casualty is
-// context-attribute fidelity, which the degraded/ultra tiers already drop by design. This is
+// context-attribute fidelity, which the degraded tier already drops by design. This is
 // internal telemetry over the customer's own context, not a trust boundary, so a keyed/crypto
 // hash or a wider digest is unwarranted — deliberately not done.
 type evaluationAggregationKey struct {
@@ -95,22 +94,16 @@ type evaluationAggregationKey struct {
 	contextHash   uint64 // context is map[string]any (not comparable); hash is a discriminator only
 }
 
-// evaluationDegradedKey is the key for the degraded aggregation map.
-// Drops targeting key, context, and targeting rule key relative to the full key.
+// evaluationDegradedKey is the key for the degraded aggregation map — the terminal aggregation
+// tier in the 2-tier design (full → degraded → drop). Drops targeting key, context, and
+// targeting rule key relative to the full key. This is EXACTLY the OTel feature_flag.evaluations
+// cardinality. When a NEW degraded bucket would exceed degradedCap, the count is dropped and
+// counted (aggregator.dropped) rather than cascading to a further-degraded tier.
 type evaluationDegradedKey struct {
 	flagKey       string
 	variant       string
 	allocationKey string
 	reason        string
-}
-
-// evaluationUltraDegradedKey is the key for the ultra-degraded aggregation map.
-// Contains only flag key + variant. Because flagKey is caller-supplied, the distinct
-// cardinality of this map is bounded EXPLICITLY by ultraDegCap (see addToUltraDegraded);
-// over-cap distinct keys collapse into a single count-preserving sentinel bucket.
-type evaluationUltraDegradedKey struct {
-	flagKey string
-	variant string
 }
 
 // evaluationEntry holds per-window counts and time bounds for one aggregation bucket.
@@ -149,22 +142,25 @@ func newEvaluationEntry(nowMs int64) *evaluationEntry {
 	}
 }
 
-// flagEvaluationAggregator holds the three-tier aggregation maps.
+// flagEvaluationAggregator holds the two-tier aggregation maps (full → degraded → drop).
 type flagEvaluationAggregator struct {
 	mu          sync.Mutex
 	full        map[evaluationAggregationKey]*evaluationEntry
 	degraded    map[evaluationDegradedKey]*evaluationEntry
-	ultraDeg    map[evaluationUltraDegradedKey]*evaluationEntry
 	perFlagFull map[string]int // flagKey → count of full-fidelity entries for this flag
 	globalCount int
 	globalCap   int
 	perFlagCap  int
 	degradedCap int
-	ultraDegCap int // bounds distinct ultra-degraded buckets; <=0 is treated as the default
+	// dropped counts evaluations whose count was lost because a NEW degraded bucket would have
+	// exceeded degradedCap (the terminal tier in the 2-tier design). It is the observable signal
+	// that legitimate counts are being dropped and that degradedCap should be raised. It is
+	// distinct from flagEvaluationWriter.dropped (which counts async-queue backpressure drops).
+	droppedDegradedOverflow int64
 }
 
 // flagEvaluationEvent matches flagevaluation.json — required fields always present;
-// optional fields use omitempty (absent = schema-valid for degraded/ultra-degraded tiers).
+// optional fields use omitempty (absent = schema-valid for the degraded tier).
 type flagEvaluationEvent struct {
 	Timestamp       int64                 `json:"timestamp"`
 	Flag            flagEvalFlag          `json:"flag"`
@@ -298,12 +294,10 @@ func newFlagEvaluationWriter(config ProviderConfig) *flagEvaluationWriter {
 		aggregator: flagEvaluationAggregator{
 			full:        make(map[evaluationAggregationKey]*evaluationEntry),
 			degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
-			ultraDeg:    make(map[evaluationUltraDegradedKey]*evaluationEntry),
 			perFlagFull: make(map[string]int),
 			globalCap:   defaultEvalGlobalCap,
 			perFlagCap:  defaultEvalPerFlagCap,
 			degradedCap: defaultEvalDegradedCap,
-			ultraDegCap: defaultEvalUltraDegradedCap,
 		},
 	}
 }
@@ -375,24 +369,35 @@ func (w *flagEvaluationWriter) flush() {
 
 	w.aggregator.mu.Lock()
 
-	// Under lock: drain all three maps.
+	// Under lock: drain both maps.
 	full := w.aggregator.full
 	degraded := w.aggregator.degraded
-	ultraDeg := w.aggregator.ultraDeg
 
-	if (len(full) + len(degraded) + len(ultraDeg)) == 0 {
+	// Surface degraded-overflow drops (the terminal-tier backstop in the 2-tier design) so an
+	// undersized degradedCap is observable rather than a silent loss of legitimate counts.
+	degradedOverflow := w.aggregator.droppedDegradedOverflow
+
+	if (len(full) + len(degraded)) == 0 {
+		w.aggregator.droppedDegradedOverflow = 0
 		w.aggregator.mu.Unlock()
+		if degradedOverflow > 0 {
+			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
+		}
 		return
 	}
 
 	// Reset maps.
 	w.aggregator.full = make(map[evaluationAggregationKey]*evaluationEntry)
 	w.aggregator.degraded = make(map[evaluationDegradedKey]*evaluationEntry)
-	w.aggregator.ultraDeg = make(map[evaluationUltraDegradedKey]*evaluationEntry)
 	w.aggregator.perFlagFull = make(map[string]int)
 	w.aggregator.globalCount = 0
+	w.aggregator.droppedDegradedOverflow = 0
 
 	w.aggregator.mu.Unlock()
+
+	if degradedOverflow > 0 {
+		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
+	}
 
 	nowMs := time.Now().UnixMilli()
 	var events []flagEvaluationEvent
@@ -428,15 +433,6 @@ func (w *flagEvaluationWriter) flush() {
 		}
 		if key.allocationKey != "" {
 			ev.Allocation = &flagEvalAllocation{Key: key.allocationKey}
-		}
-		events = append(events, ev)
-	}
-
-	// Ultra-degraded tier: required fields + flag + variant only. Never sets runtime_default.
-	for key, e := range ultraDeg {
-		ev := baseFlagEvaluationEvent(key.flagKey, e, nowMs)
-		if key.variant != "" {
-			ev.Variant = &flagEvalVariant{Key: key.variant}
 		}
 		events = append(events, ev)
 	}
@@ -559,7 +555,7 @@ func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error 
 
 // add records one evaluation observation into the appropriate aggregation tier.
 // Must be called WITHOUT the aggregator lock held (it acquires the lock internally).
-// Implements the three-tier cascade: full → degraded → ultra-degraded.
+// Implements the two-tier cascade: full → degraded → drop(counted).
 //
 // Per-flag attempt counting: perFlagFull[flag] is incremented on every call for a flag
 // (whether or not a full-tier bucket is actually created). This ensures that once
@@ -602,11 +598,12 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 
 	// Check globalCap before creating a new full-tier bucket.
 	if a.globalCount >= a.globalCap {
-		// Global cap full — count must not be lost.
-		// Route into ultra-degraded (flag key + counts only) so the count signal is preserved.
-		// The per-flag attempt counter was already incremented above; once it reaches
-		// perFlagCap this flag will route through addToDegraded instead.
-		a.addToUltraDegraded(d, nowMs)
+		// Global full-tier cap full — count must not be lost. Route into the degraded tier
+		// (which drops targeting_key + context), sized to hold the legitimate degraded
+		// cardinality at the >=2,500-flag scale target. The per-flag attempt counter was
+		// already incremented above; once it reaches perFlagCap this flag routes through
+		// addToDegraded directly as well.
+		a.addToDegraded(d, nowMs)
 		return
 	}
 
@@ -624,8 +621,13 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 }
 
 // addToDegraded adds an entry to the degraded map (drops targeting_key + context).
-// Called with the aggregator lock held.
-// The degraded map is capped by degradedCap; overflow routes to ultra-degraded.
+// Called with the aggregator lock held. Degraded is the TERMINAL aggregation tier in the
+// 2-tier design: when a NEW degraded bucket would exceed degradedCap, the evaluation's count is
+// DROPPED and counted (droppedDegradedOverflow) rather than cascading to a further-degraded
+// tier. degradedCap is sized (defaultEvalDegradedCap) to hold the legitimate degraded
+// cardinality at the >=2,500-flag scale target, so this drop only fires under cardinality far
+// beyond that target (e.g. an unbounded dynamic/abusive flag key — reviewer concern #8) and the
+// dropped counter makes such overflow observable.
 func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 	degKey := evaluationDegradedKey{
 		flagKey:       d.flagKey,
@@ -641,57 +643,15 @@ func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 
 	// New degraded bucket — check degradedCap.
 	if len(a.degraded) >= a.degradedCap {
-		// degradedCap exceeded — fall through to ultra-degraded.
-		a.addToUltraDegraded(d, nowMs)
+		// degradedCap exceeded — terminal tier full. Drop the count but keep it observable so an
+		// undersized cap surfaces in the flush warning instead of silently losing legitimate data.
+		a.droppedDegradedOverflow++
 		return
 	}
 
 	e := newEvaluationEntry(nowMs)
 	e.runtimeDefault = d.runtimeDefault
 	a.degraded[degKey] = e
-}
-
-// addToUltraDegraded adds an entry to the ultra-degraded map (only flag key + variant).
-// Called with the aggregator lock held.
-//
-// The ultra-degraded tier is EXPLICITLY capped by ultraDegCap (with <=0 treated as
-// defaultEvalUltraDegradedCap). Because flagKey is caller-supplied, an unbounded number of
-// dynamic/malicious flag keys would otherwise grow this map without bound (reviewer concern
-// #8). When creating a NEW bucket would exceed the effective cap, the count is routed into a
-// single count-preserving sentinel overflow bucket (flag key ultraDegradedOverflowFlagKey,
-// empty variant) instead. Existing buckets always increment normally, so the total
-// evaluation count is preserved (Σ across tiers == add() calls).
-func (a *flagEvaluationAggregator) addToUltraDegraded(d evalDetails, nowMs int64) {
-	ultraKey := evaluationUltraDegradedKey{
-		flagKey: d.flagKey,
-		variant: d.variant,
-	}
-
-	if e, ok := a.ultraDeg[ultraKey]; ok {
-		e.observe(nowMs)
-		return
-	}
-
-	// New ultra-degraded bucket — enforce the explicit cap. Resolve the effective cap with
-	// the zero-value footgun policy: a non-positive ultraDegCap means "use the default" so a
-	// forgotten field does not silently route everything to the sentinel.
-	effectiveCap := a.ultraDegCap
-	if effectiveCap <= 0 {
-		effectiveCap = defaultEvalUltraDegradedCap
-	}
-	if len(a.ultraDeg) >= effectiveCap {
-		// Cap reached — collapse this and all further over-cap distinct keys into a single
-		// sentinel overflow bucket so the count is preserved without unbounded growth.
-		overflowKey := evaluationUltraDegradedKey{flagKey: ultraDegradedOverflowFlagKey}
-		if e, ok := a.ultraDeg[overflowKey]; ok {
-			e.observe(nowMs)
-			return
-		}
-		a.ultraDeg[overflowKey] = newEvaluationEntry(nowMs)
-		return
-	}
-
-	a.ultraDeg[ultraKey] = newEvaluationEntry(nowMs)
 }
 
 // context value type discriminators for the canonical hash encoding. Each distinct Go type

@@ -26,7 +26,6 @@ func setupTestWriter(t *testing.T) *flagEvaluationWriter {
 		aggregator: flagEvaluationAggregator{
 			full:        make(map[evaluationAggregationKey]*evaluationEntry),
 			degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
-			ultraDeg:    make(map[evaluationUltraDegradedKey]*evaluationEntry),
 			perFlagFull: make(map[string]int),
 			globalCap:   10,
 			perFlagCap:  3,
@@ -203,7 +202,7 @@ func TestFlagEvaluationHookFinally(t *testing.T) {
 			w.aggregator.mu.Lock()
 			defer w.aggregator.mu.Unlock()
 
-			total := len(w.aggregator.full) + len(w.aggregator.degraded) + len(w.aggregator.ultraDeg)
+			total := len(w.aggregator.full) + len(w.aggregator.degraded)
 			if total == 0 {
 				t.Error("expected Finally to record an entry, got none")
 			}
@@ -240,7 +239,7 @@ func TestFlagEvaluationHookContextCancelled(t *testing.T) {
 	w.aggregator.mu.Lock()
 	defer w.aggregator.mu.Unlock()
 
-	total := len(w.aggregator.full) + len(w.aggregator.degraded) + len(w.aggregator.ultraDeg)
+	total := len(w.aggregator.full) + len(w.aggregator.degraded)
 	if total != 1 {
 		t.Errorf("expected the cancelled-context evaluation to still be counted, got %d entries", total)
 	}
