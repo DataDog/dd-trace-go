@@ -276,6 +276,10 @@ type flagEvalBenchProfile struct {
 var flagEvalBenchProfiles = []flagEvalBenchProfile{
 	{"typical/100flags_50users_10fields", 100, 50, 10},
 	{"stress/10flags_1000users_250fields", 10, 1000, 250},
+	// scale profile targets the team's >=2,500-flag goal. Flag count is the dimension under
+	// test, so it dominates; users/fields are kept modest (500/20) so the flag-cardinality
+	// signal is not swamped by per-evaluation context cost and the suite stays tractable.
+	{"scale/2500flags_500users_20fields", 2500, 500, 20},
 }
 
 // runFlagEvalBenchmark drives evaluations through a real OpenFeature client so the provider's
@@ -392,4 +396,68 @@ func BenchmarkFlagEvaluationEVPRecord(b *testing.B) {
 			}
 		})
 	}
+}
+
+// scaleBenchProfile is the >=2,500-flag profile (the team's scale target) selected from
+// flagEvalBenchProfiles by name. It panics if the profile is removed so the scale benches
+// fail loudly rather than silently degrade to a smaller config.
+func scaleBenchProfile() flagEvalBenchProfile {
+	const name = "scale/2500flags_500users_20fields"
+	for _, p := range flagEvalBenchProfiles {
+		if p.name == name {
+			return p
+		}
+	}
+	panic("scale profile " + name + " missing from flagEvalBenchProfiles")
+}
+
+// BenchmarkFlagEvaluationOTelPlusEVPParallel measures concurrent server-side evaluation
+// through a real OpenFeature client with BOTH the OTel hook and the new EVP flagevaluation
+// hook enabled, at the >=2,500-flag scale profile (oleksii review #5). Because every
+// concurrent evaluation funnels through the EVP writer's single aggregator mutex
+// (flagEvaluationAggregator.add), this is the bench that surfaces lock contention under
+// realistic multi-goroutine server load — exactly what the parallel reviewer concern asks for.
+//
+// Each goroutine rotates its own flag key and targeting key across the full cardinality so the
+// aggregator sees a realistic spread of buckets, not a single hot key. The 24h flush interval
+// keeps the EVP writer from flushing mid-run so no HTTP round-trip enters the hot path.
+//
+// Run command:
+//
+//	GOFLAGS=-mod=readonly go test ./openfeature -run='^$' \
+//	  -bench='^BenchmarkFlagEvaluationOTelPlusEVPParallel$' -benchmem -count=2 -cpu=8
+func BenchmarkFlagEvaluationOTelPlusEVPParallel(b *testing.B) {
+	p := scaleBenchProfile()
+
+	provider := newDatadogProvider(ProviderConfig{FlagEvaluationFlushInterval: 24 * time.Hour})
+	// Disable only the exposure hook; OTel hook + EVP hook + aggregator all run, so this
+	// measures the combined Path A + Path B cost under contention.
+	provider.exposureHook = nil
+
+	config := makeBenchmarkConfig(p.numFlags)
+	provider.updateConfiguration(config)
+
+	initCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := openfeature.SetProviderWithContextAndWait(initCtx, provider); err != nil {
+		cancel()
+		b.Fatalf("set provider: %v", err)
+	}
+	cancel()
+	client := openfeature.NewClient("flageval-bench-parallel")
+
+	flagKeys := boolBenchmarkFlagKeys(config)
+	attrs := makeBenchmarkAttrs(p.numFields)
+	ctx := context.Background()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			evalCtx := openfeature.NewEvaluationContext("bench-user-"+strconv.Itoa(i%p.numUsers), attrs)
+			_ = client.Boolean(ctx, flagKeys[i%len(flagKeys)], false, evalCtx)
+			i++
+		}
+	})
 }
