@@ -469,8 +469,21 @@ func (p *DatadogProvider) evaluate(
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
 ) (res evaluationResult) {
+	// Capture the evaluation time once, at evaluation entry — the most-correct "eval time". It is
+	// reused for the allocation time-window checks (passed into evaluateFlag) and stamped into the
+	// result metadata below, so the EVP flagevaluation hook records eval-time instead of the later
+	// hook-fire time, with no extra time.Now() on the eval path.
+	evalNow := time.Now()
 	log.Debug("openfeature: evaluating flag %q", flagKey)
 	defer func() {
+		// Stamp eval-time into metadata on EVERY return path (matched, default, disabled, error,
+		// ctx-cancelled, no-config, not-found). On the matched path the metadata map already exists
+		// (allocation key + doLog), so this only adds a key; on other paths it allocates a 1-entry
+		// map. Read back by extractEvalDetails for the EVP first/last_evaluation bounds.
+		if res.Metadata == nil {
+			res.Metadata = make(map[string]any, 1)
+		}
+		res.Metadata[metadataEvalTimeKey] = evalNow.UnixMilli()
 		log.Debug("openfeature: evaluated flag %q: value=%v, reason=%s, error=%v", flagKey, res.Value, res.Reason, res.Error)
 	}()
 
@@ -506,8 +519,8 @@ func (p *DatadogProvider) evaluate(
 		}
 	}
 
-	// Evaluate the flag (pass context for potential future use in evaluateFlag)
-	return evaluateFlag(flag, defaultValue, flatCtx)
+	// Evaluate the flag, sharing the eval-time captured at entry.
+	return evaluateFlag(flag, defaultValue, flatCtx, evalNow)
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.

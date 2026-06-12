@@ -258,6 +258,10 @@ type evalDetails struct {
 	targetingKey   string
 	errorMessage   string
 	runtimeDefault bool
+	// evalTimeMs is the evaluation timestamp (UnixMilli) captured by the provider at eval entry
+	// and passed through flag metadata. 0 when absent (e.g. a non-Datadog provider), in which case
+	// record() falls back to the hook-fire time.
+	evalTimeMs int64
 }
 
 // newFlagEvaluationWriter creates a new flag evaluation writer.
@@ -478,10 +482,18 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 		w.dropped.Add(1)
 		return
 	}
+	d := extractEvalDetails(hookContext, details)
+	// Use the evaluation time captured by the provider (most-correct; see metadataEvalTimeKey).
+	// Fall back to the hook-fire time only when absent (e.g. a non-Datadog provider that did not
+	// stamp it), so the first/last_evaluation bounds are always populated.
+	nowMs := d.evalTimeMs
+	if nowMs == 0 {
+		nowMs = time.Now().UnixMilli()
+	}
 	ev := evalEvent{
-		d:     extractEvalDetails(hookContext, details),
+		d:     d,
 		attrs: hookContext.EvaluationContext().Attributes(), // SDK returns an owned copy
-		nowMs: time.Now().UnixMilli(),
+		nowMs: nowMs,
 	}
 	select {
 	case w.events <- ev:
@@ -876,6 +888,8 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 	if errMsg == "" && details.ErrorCode != "" {
 		errMsg = string(details.ErrorCode)
 	}
+	// Evaluation time, stamped by DatadogProvider.evaluate at eval entry. 0 when absent.
+	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
 	return evalDetails{
 		flagKey:        hookContext.FlagKey(),
 		variant:        details.Variant,
@@ -884,5 +898,6 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		targetingKey:   hookContext.EvaluationContext().TargetingKey(),
 		errorMessage:   errMsg,
 		runtimeDefault: isRuntimeDefault(details),
+		evalTimeMs:     evalTimeMs,
 	}
 }

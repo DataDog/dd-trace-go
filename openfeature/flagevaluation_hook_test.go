@@ -136,6 +136,69 @@ func TestIsRuntimeDefault(t *testing.T) {
 	}
 }
 
+// TestExtractEvalDetailsReadsEvalTime verifies the provider-stamped evaluation time
+// (metadataEvalTimeKey) is read into evalDetails.evalTimeMs, and is 0 when absent.
+func TestExtractEvalDetailsReadsEvalTime(t *testing.T) {
+	const evalTime int64 = 1_717_171_717_123
+	tests := []struct {
+		name string
+		md   of.FlagMetadata
+		want int64
+	}{
+		{"eval-time present", of.FlagMetadata{metadataEvalTimeKey: evalTime}, evalTime},
+		{"eval-time present alongside allocation key", of.FlagMetadata{metadataAllocationKey: "alloc-1", metadataEvalTimeKey: evalTime}, evalTime},
+		{"eval-time absent", of.FlagMetadata{metadataAllocationKey: "alloc-1"}, 0},
+		{"nil metadata", nil, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hookCtx := makeHookContext("flag-x", "user-1", nil)
+			details := makeEvalDetails("on", of.TargetingMatchReason, "", tc.md)
+			if got := extractEvalDetails(hookCtx, details).evalTimeMs; got != tc.want {
+				t.Errorf("evalTimeMs = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRecordUsesEvalTimeFromMetadata verifies record() stamps the aggregated entry's
+// first/last evaluation from the provider-supplied eval-time (metadataEvalTimeKey), and
+// falls back to the hook-fire time only when that metadata is absent. Fails on the prior
+// behavior, which always used time.Now() in record().
+func TestRecordUsesEvalTimeFromMetadata(t *testing.T) {
+	t.Run("uses provider eval-time", func(t *testing.T) {
+		const evalTime int64 = 1_700_000_000_000 // a fixed time in the past, distinct from now
+		w := setupTestWriter(t)
+		w.record(makeHookContext("flag-y", "user-2", nil),
+			makeEvalDetails("on", of.TargetingMatchReason, "", of.FlagMetadata{metadataEvalTimeKey: evalTime}))
+		w.aggregate(<-w.events)
+
+		if len(w.aggregator.full) != 1 {
+			t.Fatalf("expected 1 full-tier entry, got %d", len(w.aggregator.full))
+		}
+		for _, e := range w.aggregator.full {
+			if e.firstEvaluation != evalTime || e.lastEvaluation != evalTime {
+				t.Errorf("entry first/last = %d/%d, want %d (provider eval-time)", e.firstEvaluation, e.lastEvaluation, evalTime)
+			}
+		}
+	})
+
+	t.Run("falls back to hook-fire time when absent", func(t *testing.T) {
+		before := time.Now().UnixMilli()
+		w := setupTestWriter(t)
+		w.record(makeHookContext("flag-z", "user-3", nil),
+			makeEvalDetails("on", of.TargetingMatchReason, "")) // no eval-time metadata
+		w.aggregate(<-w.events)
+		after := time.Now().UnixMilli()
+
+		for _, e := range w.aggregator.full {
+			if e.firstEvaluation < before || e.firstEvaluation > after {
+				t.Errorf("fallback first=%d not within hook-fire window [%d,%d]", e.firstEvaluation, before, after)
+			}
+		}
+	})
+}
+
 // TestFlagEvaluationHookFinally verifies that the Finally hook records an entry for
 // success, error-reason, and provider-not-ready paths.
 //

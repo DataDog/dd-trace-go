@@ -34,9 +34,12 @@ type evaluationResult struct {
 	Metadata map[string]any
 }
 
-// evaluateFlag evaluates a feature flag with the given context.
+// evaluateFlag evaluates a feature flag with the given context. The caller supplies the
+// evaluation time (now) so a single timestamp is shared between the allocation time-window
+// checks here and the EVP eval-time metadata stamped by DatadogProvider.evaluate — avoiding a
+// second time.Now() on the evaluation path.
 // It returns the variant value, reason, and any error that occurred.
-func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluationResult {
+func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time) evaluationResult {
 	if flag == nil {
 		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
@@ -48,8 +51,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 		}
 	}
 
-	// Evaluate allocations in order - first match wins
-	now := time.Now()
+	// Evaluate allocations in order - first match wins (using the caller-supplied eval time)
 	for _, allocation := range flag.Allocations {
 		split, matched, err := evaluateAllocation(allocation, context, now)
 		if err != nil {
