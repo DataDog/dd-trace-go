@@ -32,68 +32,103 @@ func setupTestAggregator(t *testing.T) *flagEvaluationAggregator {
 	}
 }
 
+// newTestAggregator builds a flagEvaluationAggregator with explicit, caller-supplied caps.
+// Unlike setupTestAggregator (which fixes small caps), each cap is a parameter so a test can
+// drive a specific tier-overflow scenario. The cap NUMBERS are load-bearing — callers pass
+// the exact values their scenario requires.
+func newTestAggregator(globalCap, perFlagCap, degradedCap, ultraDegCap int) *flagEvaluationAggregator {
+	return &flagEvaluationAggregator{
+		full:        make(map[evaluationAggregationKey]*evaluationEntry),
+		degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
+		ultraDeg:    make(map[evaluationUltraDegradedKey]*evaluationEntry),
+		perFlagFull: make(map[string]int),
+		globalCap:   globalCap,
+		perFlagCap:  perFlagCap,
+		degradedCap: degradedCap,
+		ultraDegCap: ultraDegCap,
+	}
+}
+
 // TestPruneContext verifies that pruneContext applies the 256-field / 256-char limits
 // before evaluation context enters the aggregation buffer.
 //
 // It must fail RED: pruneContext panics with "not implemented".
 func TestPruneContext(t *testing.T) {
-	t.Run("300 fields truncated to exactly 256", func(t *testing.T) {
-		raw := make(map[string]any, 300)
-		for i := range 300 {
-			raw[fmt.Sprintf("key%d", i)] = fmt.Sprintf("value%d", i)
-		}
+	tests := []struct {
+		name   string
+		input  map[string]any
+		assert func(t *testing.T, out map[string]any)
+	}{
+		{
+			name: "300 fields truncated to exactly 256",
+			input: func() map[string]any {
+				raw := make(map[string]any, 300)
+				for i := range 300 {
+					raw[fmt.Sprintf("key%d", i)] = fmt.Sprintf("value%d", i)
+				}
+				return raw
+			}(),
+			assert: func(t *testing.T, out map[string]any) {
+				if len(out) != 256 {
+					t.Errorf("expected exactly 256 fields after prune, got %d", len(out))
+				}
+			},
+		},
+		{
+			name: "string value exceeding 256 chars is dropped",
+			input: map[string]any{
+				"short": "ok",
+				"long":  strings.Repeat("x", 300), // 300 chars > maxFieldLength(256)
+			},
+			assert: func(t *testing.T, out map[string]any) {
+				if _, ok := out["long"]; ok {
+					t.Error("expected long string value to be dropped from pruned context")
+				}
+				if _, ok := out["short"]; !ok {
+					t.Error("expected short string value to be retained in pruned context")
+				}
+			},
+		},
+		{
+			name:  "nil input returns nil",
+			input: nil,
+			assert: func(t *testing.T, out map[string]any) {
+				if out != nil {
+					t.Errorf("expected nil for nil input, got %v", out)
+				}
+			},
+		},
+		{
+			name:  "empty input returns nil or empty",
+			input: map[string]any{},
+			assert: func(t *testing.T, out map[string]any) {
+				if out != nil && len(out) != 0 {
+					t.Errorf("expected nil or empty for empty input, got %v", out)
+				}
+			},
+		},
+		{
+			name: "non-string values are retained regardless of notional length",
+			input: map[string]any{
+				"intVal":  42,
+				"boolVal": true,
+			},
+			assert: func(t *testing.T, out map[string]any) {
+				if out["intVal"] == nil {
+					t.Error("expected integer value to be retained")
+				}
+				if out["boolVal"] == nil {
+					t.Error("expected boolean value to be retained")
+				}
+			},
+		},
+	}
 
-		out := pruneContext(raw)
-
-		if len(out) != 256 {
-			t.Errorf("expected exactly 256 fields after prune, got %d", len(out))
-		}
-	})
-
-	t.Run("string value exceeding 256 chars is dropped", func(t *testing.T) {
-		longVal := strings.Repeat("x", 300) // 300 chars > maxFieldLength(256)
-		raw := map[string]any{
-			"short": "ok",
-			"long":  longVal,
-		}
-
-		out := pruneContext(raw)
-
-		if _, ok := out["long"]; ok {
-			t.Error("expected long string value to be dropped from pruned context")
-		}
-		if _, ok := out["short"]; !ok {
-			t.Error("expected short string value to be retained in pruned context")
-		}
-	})
-
-	t.Run("nil input returns nil", func(t *testing.T) {
-		out := pruneContext(nil)
-		if out != nil {
-			t.Errorf("expected nil for nil input, got %v", out)
-		}
-	})
-
-	t.Run("empty input returns nil or empty", func(t *testing.T) {
-		out := pruneContext(map[string]any{})
-		if out != nil && len(out) != 0 {
-			t.Errorf("expected nil or empty for empty input, got %v", out)
-		}
-	})
-
-	t.Run("non-string values are retained regardless of notional length", func(t *testing.T) {
-		raw := map[string]any{
-			"intVal":  42,
-			"boolVal": true,
-		}
-		out := pruneContext(raw)
-		if out["intVal"] == nil {
-			t.Error("expected integer value to be retained")
-		}
-		if out["boolVal"] == nil {
-			t.Error("expected boolean value to be retained")
-		}
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.assert(t, pruneContext(tc.input))
+		})
+	}
 }
 
 // TestFlagEvaluationPayloadSchema verifies that full, degraded, and ultra-degraded events
@@ -104,122 +139,90 @@ func TestPruneContext(t *testing.T) {
 func TestFlagEvaluationPayloadSchema(t *testing.T) {
 	nowMs := time.Now().UnixMilli()
 
-	t.Run("full tier has all required fields", func(t *testing.T) {
-		event := flagEvaluationEvent{
-			Timestamp:       nowMs,
-			Flag:            flagEvalFlag{Key: "test-flag"},
-			FirstEvaluation: nowMs,
-			LastEvaluation:  nowMs,
-			EvaluationCount: 1,
-			Variant:         &flagEvalVariant{Key: "on"},
-			TargetingKey:    "user-123",
-			Context: &flagEvalEventContext{
-				Evaluation: map[string]any{"country": "US"},
+	requiredFields := []string{"timestamp", "flag", "first_evaluation", "last_evaluation", "evaluation_count"}
+
+	tierTests := []struct {
+		name           string
+		event          flagEvaluationEvent
+		requiredFlgKey bool     // full tier additionally asserts flag.key is present
+		optionalAbsent []string // optional fields that must NOT appear for this tier
+	}{
+		{
+			name: "full tier has all required fields",
+			event: flagEvaluationEvent{
+				Timestamp:       nowMs,
+				Flag:            flagEvalFlag{Key: "test-flag"},
+				FirstEvaluation: nowMs,
+				LastEvaluation:  nowMs,
+				EvaluationCount: 1,
+				Variant:         &flagEvalVariant{Key: "on"},
+				TargetingKey:    "user-123",
+				Context: &flagEvalEventContext{
+					Evaluation: map[string]any{"country": "US"},
+				},
 			},
-		}
+			requiredFlgKey: true,
+		},
+		{
+			name: "degraded tier omits targeting_key and context.evaluation",
+			// Degraded tier: no targeting_key, no context.evaluation; variant + allocation present.
+			event: flagEvaluationEvent{
+				Timestamp:       nowMs,
+				Flag:            flagEvalFlag{Key: "test-flag"},
+				FirstEvaluation: nowMs,
+				LastEvaluation:  nowMs,
+				EvaluationCount: 5,
+				Variant:         &flagEvalVariant{Key: "on"},
+				Allocation:      &flagEvalAllocation{Key: "default"},
+				// TargetingKey / Context intentionally absent.
+			},
+			optionalAbsent: []string{"targeting_key", "context"},
+		},
+		{
+			name: "ultra-degraded tier has only required fields",
+			// Ultra-degraded: only flag key + counts; no variant, allocation, targeting, context.
+			event: flagEvaluationEvent{
+				Timestamp:       nowMs,
+				Flag:            flagEvalFlag{Key: "test-flag"},
+				FirstEvaluation: nowMs,
+				LastEvaluation:  nowMs,
+				EvaluationCount: 1000,
+				// All optional fields intentionally absent.
+			},
+			optionalAbsent: []string{"targeting_key", "variant", "allocation", "targeting_rule", "error", "context", "runtime_default_used"},
+		},
+	}
 
-		b, err := json.Marshal(event)
-		if err != nil {
-			t.Fatalf("failed to marshal full event: %v", err)
-		}
-
-		var m map[string]any
-		if err := json.Unmarshal(b, &m); err != nil {
-			t.Fatalf("failed to unmarshal: %v", err)
-		}
-
-		// Required fields must be present
-		for _, req := range []string{"timestamp", "flag", "first_evaluation", "last_evaluation", "evaluation_count"} {
-			if _, ok := m[req]; !ok {
-				t.Errorf("full tier: required field %q missing from marshaled JSON", req)
+	for _, tc := range tierTests {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := json.Marshal(tc.event)
+			if err != nil {
+				t.Fatalf("failed to marshal event: %v", err)
 			}
-		}
-
-		// flag.key must be present
-		if flagObj, ok := m["flag"].(map[string]any); !ok {
-			t.Error("full tier: flag is not an object")
-		} else if _, ok := flagObj["key"]; !ok {
-			t.Error("full tier: flag.key missing")
-		}
-	})
-
-	t.Run("degraded tier omits targeting_key and context.evaluation", func(t *testing.T) {
-		// Degraded tier: no targeting_key, no context.evaluation; variant + allocation present
-		event := flagEvaluationEvent{
-			Timestamp:       nowMs,
-			Flag:            flagEvalFlag{Key: "test-flag"},
-			FirstEvaluation: nowMs,
-			LastEvaluation:  nowMs,
-			EvaluationCount: 5,
-			Variant:         &flagEvalVariant{Key: "on"},
-			Allocation:      &flagEvalAllocation{Key: "default"},
-			// TargetingKey:   intentionally absent
-			// Context:        intentionally absent
-		}
-
-		b, err := json.Marshal(event)
-		if err != nil {
-			t.Fatalf("failed to marshal degraded event: %v", err)
-		}
-
-		var m map[string]any
-		if err := json.Unmarshal(b, &m); err != nil {
-			t.Fatalf("failed to unmarshal: %v", err)
-		}
-
-		// Required fields must be present
-		for _, req := range []string{"timestamp", "flag", "first_evaluation", "last_evaluation", "evaluation_count"} {
-			if _, ok := m[req]; !ok {
-				t.Errorf("degraded tier: required field %q missing", req)
+			var m map[string]any
+			if err := json.Unmarshal(b, &m); err != nil {
+				t.Fatalf("failed to unmarshal: %v", err)
 			}
-		}
 
-		// targeting_key must be absent
-		if _, ok := m["targeting_key"]; ok {
-			t.Error("degraded tier: targeting_key should be absent")
-		}
-
-		// context must be absent
-		if _, ok := m["context"]; ok {
-			t.Error("degraded tier: context should be absent")
-		}
-	})
-
-	t.Run("ultra-degraded tier has only required fields", func(t *testing.T) {
-		// Ultra-degraded: only flag key + counts; no variant, allocation, targeting, context
-		event := flagEvaluationEvent{
-			Timestamp:       nowMs,
-			Flag:            flagEvalFlag{Key: "test-flag"},
-			FirstEvaluation: nowMs,
-			LastEvaluation:  nowMs,
-			EvaluationCount: 1000,
-			// All optional fields intentionally absent
-		}
-
-		b, err := json.Marshal(event)
-		if err != nil {
-			t.Fatalf("failed to marshal ultra-degraded event: %v", err)
-		}
-
-		var m map[string]any
-		if err := json.Unmarshal(b, &m); err != nil {
-			t.Fatalf("failed to unmarshal: %v", err)
-		}
-
-		// Required fields must be present
-		for _, req := range []string{"timestamp", "flag", "first_evaluation", "last_evaluation", "evaluation_count"} {
-			if _, ok := m[req]; !ok {
-				t.Errorf("ultra-degraded tier: required field %q missing", req)
+			for _, req := range requiredFields {
+				if _, ok := m[req]; !ok {
+					t.Errorf("required field %q missing from marshaled JSON", req)
+				}
 			}
-		}
-
-		// Optional fields must be absent
-		for _, opt := range []string{"targeting_key", "variant", "allocation", "targeting_rule", "error", "context", "runtime_default_used"} {
-			if _, ok := m[opt]; ok {
-				t.Errorf("ultra-degraded tier: optional field %q should be absent", opt)
+			if tc.requiredFlgKey {
+				if flagObj, ok := m["flag"].(map[string]any); !ok {
+					t.Error("flag is not an object")
+				} else if _, ok := flagObj["key"]; !ok {
+					t.Error("flag.key missing")
+				}
 			}
-		}
-	})
+			for _, opt := range tc.optionalAbsent {
+				if _, ok := m[opt]; ok {
+					t.Errorf("optional field %q should be absent", opt)
+				}
+			}
+		})
+	}
 
 	t.Run("first_evaluation and last_evaluation meet minimum constraint", func(t *testing.T) {
 		// Schema minimum: 1759276800000 (2025-08-01 Unix ms)
@@ -318,16 +321,8 @@ func TestAggregatorCollisionSafety(t *testing.T) {
 // produce count==1000 and firstEvaluation<=lastEvaluation.
 // Must be run with -race to satisfy the race-free requirement.
 func TestAggregatorConcurrentMinMax(t *testing.T) {
-	agg := &flagEvaluationAggregator{
-		full:        make(map[evaluationAggregationKey]*evaluationEntry),
-		degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
-		ultraDeg:    make(map[evaluationUltraDegradedKey]*evaluationEntry),
-		perFlagFull: make(map[string]int),
-		globalCap:   100_000, // large enough not to overflow during this test
-		perFlagCap:  100_000,
-		degradedCap: 100_000,
-		ultraDegCap: defaultEvalUltraDegradedCap,
-	}
+	// Caps large enough not to overflow during this test.
+	agg := newTestAggregator(100_000, 100_000, 100_000, defaultEvalUltraDegradedCap)
 
 	d := evalDetails{
 		flagKey: "concurrent-flag",
@@ -378,16 +373,7 @@ func TestSaturationCountPreservation(t *testing.T) {
 	// globalCap=5 means only 5 full-tier buckets ever created.
 	// perFlagCap=2 means after 2 distinct full-tier buckets per flag, it overflows to degraded.
 	// degradedCap=3 means only 3 degraded buckets; further overflow goes to ultra-degraded.
-	agg := &flagEvaluationAggregator{
-		full:        make(map[evaluationAggregationKey]*evaluationEntry),
-		degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
-		ultraDeg:    make(map[evaluationUltraDegradedKey]*evaluationEntry),
-		perFlagFull: make(map[string]int),
-		globalCap:   5,
-		perFlagCap:  2,
-		degradedCap: 3,
-		ultraDegCap: defaultEvalUltraDegradedCap,
-	}
+	agg := newTestAggregator(5, 2, 3, defaultEvalUltraDegradedCap)
 	nowMs := time.Now().UnixMilli()
 
 	// We drive 100 distinct evaluations. Each call to add() must contribute exactly 1
@@ -643,26 +629,39 @@ func TestPruneContextOversizedStringDeterministic(t *testing.T) {
 // values/keys must not be able to fake a multi-field context. Drives a subset through
 // aggregator.add and asserts SEPARATE full-tier buckets.
 func TestHashContextCanonicalEncoding(t *testing.T) {
-	t.Run("int 1 != string 1", func(t *testing.T) {
-		if hashContext(map[string]any{"x": 1}) == hashContext(map[string]any{"x": "1"}) {
-			t.Error("type-tagged encoding must distinguish int 1 from string \"1\"")
-		}
-	})
+	// Distinct contexts must hash differently — no aliasing across type or delimiter tricks.
+	inequalityTests := []struct {
+		name       string
+		mapA, mapB map[string]any
+	}{
+		{
+			// Type-tagged encoding must distinguish int 1 from string "1".
+			name: "int 1 != string 1",
+			mapA: map[string]any{"x": 1},
+			mapB: map[string]any{"x": "1"},
+		},
+		{
+			// {"a=b":"c"} vs {"a":"b=c"} render identically under key+"="+value with no
+			// length delimiter; canonical encoding must keep them distinct.
+			name: "'=' in key/value cannot alias a multi-field context",
+			mapA: map[string]any{"a=b": "c"},
+			mapB: map[string]any{"a": "b=c"},
+		},
+		{
+			// Under key+"="+value+"\n", a newline in a value would collide with a two-field map.
+			name: "'\\n' in value cannot alias a multi-field context",
+			mapA: map[string]any{"a": "x\ny", "b": "z"},
+			mapB: map[string]any{"a": "x", "y=z": ""},
+		},
+	}
 
-	t.Run("'=' in key/value cannot alias a multi-field context", func(t *testing.T) {
-		// {"a=b":"c"} vs {"a":"b=c"} render identically under key+"="+value with no
-		// length delimiter; canonical encoding must keep them distinct.
-		if hashContext(map[string]any{"a=b": "c"}) == hashContext(map[string]any{"a": "b=c"}) {
-			t.Error("'=' in key/value must not alias across fields")
-		}
-	})
-
-	t.Run("'\\n' in value cannot alias a multi-field context", func(t *testing.T) {
-		// {"a":"x\ny":"z"} would, under key+"="+value+"\n", collide with a two-field map.
-		if hashContext(map[string]any{"a": "x\ny", "b": "z"}) == hashContext(map[string]any{"a": "x", "y=z": ""}) {
-			t.Error("'\\n' in value must not alias a multi-field context")
-		}
-	})
+	for _, tc := range inequalityTests {
+		t.Run(tc.name, func(t *testing.T) {
+			if hashContext(tc.mapA) == hashContext(tc.mapB) {
+				t.Errorf("canonical encoding must distinguish %v from %v", tc.mapA, tc.mapB)
+			}
+		})
+	}
 
 	t.Run("distinct contexts land in separate full-tier buckets via add()", func(t *testing.T) {
 		agg := setupTestAggregator(t)
@@ -685,16 +684,8 @@ func TestHashContextCanonicalEncoding(t *testing.T) {
 // preserved (Σ across tiers == add() calls).
 func TestUltraDegradedCapBounded(t *testing.T) {
 	const cap = 3
-	agg := &flagEvaluationAggregator{
-		full:        make(map[evaluationAggregationKey]*evaluationEntry),
-		degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
-		ultraDeg:    make(map[evaluationUltraDegradedKey]*evaluationEntry),
-		perFlagFull: make(map[string]int),
-		globalCap:   0, // force everything straight into the ultra-degraded tier
-		perFlagCap:  100_000,
-		degradedCap: 0,
-		ultraDegCap: cap,
-	}
+	// globalCap=0 and degradedCap=0 force everything straight into the ultra-degraded tier.
+	agg := newTestAggregator(0, 100_000, 0, cap)
 	nowMs := time.Now().UnixMilli()
 
 	const calls = 100
@@ -792,48 +783,54 @@ func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 		)
 	}
 
-	t.Run("ErrorMessage present is preferred over ErrorCode", func(t *testing.T) {
-		hc := mkHookCtx()
-		details := of.InterfaceEvaluationDetails{
-			EvaluationDetails: of.EvaluationDetails{
-				ResolutionDetail: of.ResolutionDetail{
-					Reason:       of.ErrorReason,
-					ErrorCode:    of.GeneralCode,
-					ErrorMessage: "boom",
+	tests := []struct {
+		name             string
+		details          of.InterfaceEvaluationDetails
+		wantErrorMessage string
+	}{
+		{
+			name: "ErrorMessage present is preferred over ErrorCode",
+			details: of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					ResolutionDetail: of.ResolutionDetail{
+						Reason:       of.ErrorReason,
+						ErrorCode:    of.GeneralCode,
+						ErrorMessage: "boom",
+					},
 				},
 			},
-		}
-		if got := extractEvalDetails(hc, details).errorMessage; got != "boom" {
-			t.Errorf("expected errorMessage=\"boom\", got %q", got)
-		}
-	})
+			wantErrorMessage: "boom",
+		},
+		{
+			name: "empty ErrorMessage falls back to ErrorCode",
+			details: of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					ResolutionDetail: of.ResolutionDetail{
+						Reason:    of.ErrorReason,
+						ErrorCode: of.TypeMismatchCode,
+					},
+				},
+			},
+			wantErrorMessage: string(of.TypeMismatchCode),
+		},
+		{
+			name: "both empty yields empty errorMessage",
+			details: of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					ResolutionDetail: of.ResolutionDetail{
+						Reason: of.TargetingMatchReason,
+					},
+				},
+			},
+			wantErrorMessage: "",
+		},
+	}
 
-	t.Run("empty ErrorMessage falls back to ErrorCode", func(t *testing.T) {
-		hc := mkHookCtx()
-		details := of.InterfaceEvaluationDetails{
-			EvaluationDetails: of.EvaluationDetails{
-				ResolutionDetail: of.ResolutionDetail{
-					Reason:    of.ErrorReason,
-					ErrorCode: of.TypeMismatchCode,
-				},
-			},
-		}
-		if got := extractEvalDetails(hc, details).errorMessage; got != string(of.TypeMismatchCode) {
-			t.Errorf("expected errorMessage=%q (ErrorCode fallback), got %q", string(of.TypeMismatchCode), got)
-		}
-	})
-
-	t.Run("both empty yields empty errorMessage", func(t *testing.T) {
-		hc := mkHookCtx()
-		details := of.InterfaceEvaluationDetails{
-			EvaluationDetails: of.EvaluationDetails{
-				ResolutionDetail: of.ResolutionDetail{
-					Reason: of.TargetingMatchReason,
-				},
-			},
-		}
-		if got := extractEvalDetails(hc, details).errorMessage; got != "" {
-			t.Errorf("expected empty errorMessage, got %q", got)
-		}
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractEvalDetails(mkHookCtx(), tc.details).errorMessage; got != tc.wantErrorMessage {
+				t.Errorf("errorMessage = %q, want %q", got, tc.wantErrorMessage)
+			}
+		})
+	}
 }

@@ -142,102 +142,81 @@ func TestIsRuntimeDefault(t *testing.T) {
 //
 // It must fail RED: the hook's Finally method panics with "not implemented".
 func TestFlagEvaluationHookFinally(t *testing.T) {
-	t.Run("success path records entry", func(t *testing.T) {
-		w := setupTestWriter(t)
-		hook := newFlagEvaluationHook(w)
+	runtimeDefaultTrue := true
 
-		hookCtx := makeHookContext("test-flag", "user-123", map[string]any{"country": "US"})
-		details := makeEvalDetails("on", of.TargetingMatchReason, "", of.FlagMetadata{
-			metadataAllocationKey: "default-alloc",
-		})
+	tests := []struct {
+		name               string
+		flagKey            string
+		targetingKey       string
+		attrs              map[string]any
+		variant            string
+		reason             of.Reason
+		errorCode          of.ErrorCode
+		metadata           []of.FlagMetadata
+		wantRuntimeDefault *bool // when set, assert the recorded full-tier entry's runtimeDefault
+	}{
+		{
+			name:         "success path records entry",
+			flagKey:      "test-flag",
+			targetingKey: "user-123",
+			attrs:        map[string]any{"country": "US"},
+			variant:      "on",
+			reason:       of.TargetingMatchReason,
+			metadata:     []of.FlagMetadata{{metadataAllocationKey: "default-alloc"}},
+		},
+		{
+			name:         "error-reason path records entry (flag-not-found)",
+			flagKey:      "missing-flag",
+			targetingKey: "user-123",
+			reason:       of.ErrorReason,
+			errorCode:    of.FlagNotFoundCode,
+		},
+		{
+			name:      "provider-not-ready path records entry",
+			flagKey:   "any-flag",
+			reason:    of.ErrorReason,
+			errorCode: of.ProviderNotReadyCode,
+		},
+		{
+			name:               "DEFAULT reason path records entry with runtime_default_used=true",
+			flagKey:            "absent-flag",
+			targetingKey:       "user-456",
+			reason:             of.DefaultReason,
+			wantRuntimeDefault: &runtimeDefaultTrue,
+		},
+	}
 
-		hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := setupTestWriter(t)
+			hook := newFlagEvaluationHook(w)
 
-		// record() enqueues asynchronously; drain the one event into the aggregator so the
-		// assertions below observe it deterministically (no worker runs in this test).
-		w.aggregate(<-w.events)
+			hookCtx := makeHookContext(tc.flagKey, tc.targetingKey, tc.attrs)
+			details := makeEvalDetails(tc.variant, tc.reason, tc.errorCode, tc.metadata...)
 
-		w.aggregator.mu.Lock()
-		defer w.aggregator.mu.Unlock()
+			hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
 
-		total := len(w.aggregator.full) + len(w.aggregator.degraded) + len(w.aggregator.ultraDeg)
-		if total == 0 {
-			t.Error("expected Finally to record an entry on success path, got none")
-		}
-	})
+			// record() enqueues asynchronously; drain the one event into the aggregator so the
+			// assertions below observe it deterministically (no worker runs in this test).
+			w.aggregate(<-w.events)
 
-	t.Run("error-reason path records entry (flag-not-found)", func(t *testing.T) {
-		w := setupTestWriter(t)
-		hook := newFlagEvaluationHook(w)
+			w.aggregator.mu.Lock()
+			defer w.aggregator.mu.Unlock()
 
-		hookCtx := makeHookContext("missing-flag", "user-123", nil)
-		details := makeEvalDetails("", of.ErrorReason, of.FlagNotFoundCode)
-
-		hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
-
-		// record() enqueues asynchronously; drain the one event into the aggregator so the
-		// assertions below observe it deterministically (no worker runs in this test).
-		w.aggregate(<-w.events)
-
-		w.aggregator.mu.Lock()
-		defer w.aggregator.mu.Unlock()
-
-		total := len(w.aggregator.full) + len(w.aggregator.degraded) + len(w.aggregator.ultraDeg)
-		if total == 0 {
-			t.Error("expected Finally to record an entry on error-reason path, got none")
-		}
-	})
-
-	t.Run("provider-not-ready path records entry", func(t *testing.T) {
-		w := setupTestWriter(t)
-		hook := newFlagEvaluationHook(w)
-
-		hookCtx := makeHookContext("any-flag", "", nil)
-		details := makeEvalDetails("", of.ErrorReason, of.ProviderNotReadyCode)
-
-		hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
-
-		// record() enqueues asynchronously; drain the one event into the aggregator so the
-		// assertions below observe it deterministically (no worker runs in this test).
-		w.aggregate(<-w.events)
-
-		w.aggregator.mu.Lock()
-		defer w.aggregator.mu.Unlock()
-
-		total := len(w.aggregator.full) + len(w.aggregator.degraded) + len(w.aggregator.ultraDeg)
-		if total == 0 {
-			t.Error("expected Finally to record an entry on provider-not-ready path, got none")
-		}
-	})
-
-	t.Run("DEFAULT reason path records entry with runtime_default_used=true", func(t *testing.T) {
-		w := setupTestWriter(t)
-		hook := newFlagEvaluationHook(w)
-
-		hookCtx := makeHookContext("absent-flag", "user-456", nil)
-		details := makeEvalDetails("", of.DefaultReason, "")
-
-		hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
-
-		// record() enqueues asynchronously; drain the one event into the aggregator so the
-		// assertions below observe it deterministically (no worker runs in this test).
-		w.aggregate(<-w.events)
-
-		w.aggregator.mu.Lock()
-		defer w.aggregator.mu.Unlock()
-
-		total := len(w.aggregator.full) + len(w.aggregator.degraded) + len(w.aggregator.ultraDeg)
-		if total == 0 {
-			t.Error("expected Finally to record an entry on DEFAULT-reason path, got none")
-		}
-
-		// The recorded entry should have runtimeDefault=true
-		for _, e := range w.aggregator.full {
-			if !e.runtimeDefault {
-				t.Error("expected runtimeDefault=true for DEFAULT-reason evaluation")
+			total := len(w.aggregator.full) + len(w.aggregator.degraded) + len(w.aggregator.ultraDeg)
+			if total == 0 {
+				t.Error("expected Finally to record an entry, got none")
 			}
-		}
-	})
+
+			if tc.wantRuntimeDefault != nil {
+				for _, e := range w.aggregator.full {
+					if e.runtimeDefault != *tc.wantRuntimeDefault {
+						t.Errorf("expected runtimeDefault=%v, got %v", *tc.wantRuntimeDefault, e.runtimeDefault)
+					}
+				}
+			}
+		})
+	}
 }
 
 // TestFlagEvaluationHookContextCancelled verifies that a cancelled context does NOT

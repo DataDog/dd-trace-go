@@ -6,7 +6,6 @@
 package openfeature
 
 import (
-	"reflect"
 	"testing"
 
 	of "github.com/open-feature/go-sdk/openfeature"
@@ -20,90 +19,78 @@ import (
 // When the killswitch is unset or "true": the EVP hook IS registered.
 // The OTel flagEvalHook is present in Hooks() in BOTH cases.
 func TestFlagEvaluationKillswitch(t *testing.T) {
-	t.Run("killswitch disabled: EVP hook absent from Hooks(), OTel hook present", func(t *testing.T) {
-		t.Setenv(flagEvalCountsEnabledEnvVar, "false")
+	tests := []struct {
+		name           string
+		envValue       string
+		wantEVPEnabled bool
+	}{
+		{
+			name:           "killswitch disabled: EVP hook absent from Hooks(), OTel hook present",
+			envValue:       "false",
+			wantEVPEnabled: false,
+		},
+		{
+			// "1" exercises the default-true behavior (any truthy value enables the EVP path).
+			name:           "killswitch enabled (unset = default true): EVP hook present in Hooks()",
+			envValue:       "1",
+			wantEVPEnabled: true,
+		},
+		{
+			name:           "killswitch explicitly true: EVP hook present in Hooks()",
+			envValue:       "true",
+			wantEVPEnabled: true,
+		},
+	}
 
-		p := newDatadogProvider(ProviderConfig{})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(flagEvalCountsEnabledEnvVar, tc.envValue)
 
-		if p.flagEvalWriter != nil {
-			t.Error("expected flagEvalWriter to be nil when killswitch is disabled")
-		}
-		if p.flagEvalEVPHook != nil {
-			t.Error("expected flagEvalEVPHook to be nil when killswitch is disabled")
-		}
+			p := newDatadogProvider(ProviderConfig{})
 
-		hooks := p.Hooks()
-
-		// OTel hook must still be present.
-		otelPresent := false
-		for _, h := range hooks {
-			if _, ok := h.(*flagEvalHook); ok {
-				otelPresent = true
+			if tc.wantEVPEnabled {
+				if p.flagEvalWriter == nil {
+					t.Error("expected flagEvalWriter to be non-nil when killswitch is enabled")
+				}
+				if p.flagEvalEVPHook == nil {
+					t.Error("expected flagEvalEVPHook to be non-nil when killswitch is enabled")
+				}
+			} else {
+				if p.flagEvalWriter != nil {
+					t.Error("expected flagEvalWriter to be nil when killswitch is disabled")
+				}
+				if p.flagEvalEVPHook != nil {
+					t.Error("expected flagEvalEVPHook to be nil when killswitch is disabled")
+				}
 			}
-		}
-		if !otelPresent {
-			t.Error("expected OTel flagEvalHook to be present in Hooks() even when killswitch is disabled")
-		}
 
-		// EVP hook must be absent.
-		for _, h := range hooks {
-			if _, ok := h.(*flagEvaluationHook); ok {
-				t.Errorf("expected EVP flagEvaluationHook to be absent from Hooks() when killswitch is disabled, but found one: %v", reflect.TypeOf(h))
+			hooks := p.Hooks()
+
+			otelPresent := false
+			evpPresent := false
+			for _, h := range hooks {
+				switch h.(type) {
+				case *flagEvalHook:
+					otelPresent = true
+				case *flagEvaluationHook:
+					evpPresent = true
+				}
 			}
-		}
-	})
 
-	t.Run("killswitch enabled (unset = default true): EVP hook present in Hooks()", func(t *testing.T) {
-		// Ensure the env var is unset to test the default-true behavior.
-		t.Setenv(flagEvalCountsEnabledEnvVar, "1")
-
-		p := newDatadogProvider(ProviderConfig{})
-
-		if p.flagEvalWriter == nil {
-			t.Error("expected flagEvalWriter to be non-nil when killswitch is enabled (default)")
-		}
-		if p.flagEvalEVPHook == nil {
-			t.Error("expected flagEvalEVPHook to be non-nil when killswitch is enabled (default)")
-		}
-
-		hooks := p.Hooks()
-
-		// Both OTel and EVP hooks must be present.
-		otelPresent := false
-		evpPresent := false
-		for _, h := range hooks {
-			switch h.(type) {
-			case *flagEvalHook:
-				otelPresent = true
-			case *flagEvaluationHook:
-				evpPresent = true
+			// The OTel hook must be present in EVERY case — the killswitch never affects it.
+			if !otelPresent {
+				t.Error("expected OTel flagEvalHook to be present in Hooks() regardless of the killswitch")
 			}
-		}
-		if !otelPresent {
-			t.Error("expected OTel flagEvalHook to be present in Hooks() when killswitch is enabled")
-		}
-		if !evpPresent {
-			t.Error("expected EVP flagEvaluationHook to be present in Hooks() when killswitch is enabled")
-		}
-	})
 
-	t.Run("killswitch explicitly true: EVP hook present in Hooks()", func(t *testing.T) {
-		t.Setenv(flagEvalCountsEnabledEnvVar, "true")
-
-		p := newDatadogProvider(ProviderConfig{})
-
-		hooks := p.Hooks()
-
-		evpPresent := false
-		for _, h := range hooks {
-			if _, ok := h.(*flagEvaluationHook); ok {
-				evpPresent = true
+			if evpPresent != tc.wantEVPEnabled {
+				if tc.wantEVPEnabled {
+					t.Error("expected EVP flagEvaluationHook to be present in Hooks() when killswitch is enabled")
+				} else {
+					t.Errorf("expected EVP flagEvaluationHook to be absent from Hooks() when killswitch is disabled, but found one")
+				}
 			}
-		}
-		if !evpPresent {
-			t.Error("expected EVP flagEvaluationHook to be present in Hooks() when killswitch is explicitly 'true'")
-		}
-	})
+		})
+	}
 }
 
 // Compile-time assertion: flagEvaluationHook implements the OpenFeature Hook interface.

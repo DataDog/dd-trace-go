@@ -15,103 +15,69 @@ import (
 	"github.com/open-feature/go-sdk/openfeature"
 )
 
-// BenchmarkBooleanEvaluation benchmarks boolean flag evaluation
-func BenchmarkBooleanEvaluation(b *testing.B) {
-	provider := newDatadogProvider(ProviderConfig{})
-	config := createTestConfig()
-	provider.updateConfiguration(config)
-
-	ctx := context.Background()
-	flatCtx := openfeature.FlattenedContext{
-		"targetingKey": "user-123",
-		"country":      "US",
+// BenchmarkEvaluationByType benchmarks each typed evaluation method. Every sub-benchmark
+// shares the same provider/config setup and differs only in the eval method, default value,
+// flag key, and one distinct flatCtx field — exactly as the former per-type BenchmarkXEvaluation
+// functions did. The parent name is deliberately OUTSIDE the BenchmarkFlagEvaluation prefix so
+// the EVP overhead filter (-bench='^BenchmarkFlagEvaluation') never selects it.
+func BenchmarkEvaluationByType(b *testing.B) {
+	cases := []struct {
+		name    string
+		flatCtx openfeature.FlattenedContext
+		eval    func(p *DatadogProvider, ctx context.Context, flatCtx openfeature.FlattenedContext)
+	}{
+		{
+			name:    "Boolean",
+			flatCtx: openfeature.FlattenedContext{"targetingKey": "user-123", "country": "US"},
+			eval: func(p *DatadogProvider, ctx context.Context, flatCtx openfeature.FlattenedContext) {
+				_ = p.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+			},
+		},
+		{
+			name:    "String",
+			flatCtx: openfeature.FlattenedContext{"targetingKey": "user-123", "age": 25},
+			eval: func(p *DatadogProvider, ctx context.Context, flatCtx openfeature.FlattenedContext) {
+				_ = p.StringEvaluation(ctx, "string-flag", "default", flatCtx)
+			},
+		},
+		{
+			name:    "Int",
+			flatCtx: openfeature.FlattenedContext{"targetingKey": "user-123", "premium": "yes"},
+			eval: func(p *DatadogProvider, ctx context.Context, flatCtx openfeature.FlattenedContext) {
+				_ = p.IntEvaluation(ctx, "int-flag", 5, flatCtx)
+			},
+		},
+		{
+			name:    "Float",
+			flatCtx: openfeature.FlattenedContext{"targetingKey": "user-123", "tier": "premium"},
+			eval: func(p *DatadogProvider, ctx context.Context, flatCtx openfeature.FlattenedContext) {
+				_ = p.FloatEvaluation(ctx, "float-flag", 0.0, flatCtx)
+			},
+		},
+		{
+			name:    "Object",
+			flatCtx: openfeature.FlattenedContext{"targetingKey": "user-123", "requests": 1500},
+			eval: func(p *DatadogProvider, ctx context.Context, flatCtx openfeature.FlattenedContext) {
+				_ = p.ObjectEvaluation(ctx, "json-flag", nil, flatCtx)
+			},
+		},
 	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			provider := newDatadogProvider(ProviderConfig{})
+			provider.updateConfiguration(createTestConfig())
 
-	for b.Loop() {
-		_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
-	}
-}
+			ctx := context.Background()
+			flatCtx := tc.flatCtx
 
-// BenchmarkStringEvaluation benchmarks string flag evaluation
-func BenchmarkStringEvaluation(b *testing.B) {
-	provider := newDatadogProvider(ProviderConfig{})
-	config := createTestConfig()
-	provider.updateConfiguration(config)
+			b.ReportAllocs()
+			b.ResetTimer()
 
-	ctx := context.Background()
-	flatCtx := openfeature.FlattenedContext{
-		"targetingKey": "user-123",
-		"age":          25,
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for b.Loop() {
-		_ = provider.StringEvaluation(ctx, "string-flag", "default", flatCtx)
-	}
-}
-
-// BenchmarkIntEvaluation benchmarks integer flag evaluation
-func BenchmarkIntEvaluation(b *testing.B) {
-	provider := newDatadogProvider(ProviderConfig{})
-	config := createTestConfig()
-	provider.updateConfiguration(config)
-
-	ctx := context.Background()
-	flatCtx := openfeature.FlattenedContext{
-		"targetingKey": "user-123",
-		"premium":      "yes",
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for b.Loop() {
-		_ = provider.IntEvaluation(ctx, "int-flag", 5, flatCtx)
-	}
-}
-
-// BenchmarkFloatEvaluation benchmarks float flag evaluation
-func BenchmarkFloatEvaluation(b *testing.B) {
-	provider := newDatadogProvider(ProviderConfig{})
-	config := createTestConfig()
-	provider.updateConfiguration(config)
-
-	ctx := context.Background()
-	flatCtx := openfeature.FlattenedContext{
-		"targetingKey": "user-123",
-		"tier":         "premium",
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for b.Loop() {
-		_ = provider.FloatEvaluation(ctx, "float-flag", 0.0, flatCtx)
-	}
-}
-
-// BenchmarkObjectEvaluation benchmarks object flag evaluation
-func BenchmarkEvaluation(b *testing.B) {
-	provider := newDatadogProvider(ProviderConfig{})
-	config := createTestConfig()
-	provider.updateConfiguration(config)
-
-	ctx := context.Background()
-	flatCtx := openfeature.FlattenedContext{
-		"targetingKey": "user-123",
-		"requests":     1500,
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for b.Loop() {
-		_ = provider.ObjectEvaluation(ctx, "json-flag", nil, flatCtx)
+			for b.Loop() {
+				tc.eval(provider, ctx, flatCtx)
+			}
+		})
 	}
 }
 
@@ -312,16 +278,15 @@ var flagEvalBenchProfiles = []flagEvalBenchProfile{
 	{"stress/10flags_1000users_250fields", 10, 1000, 250},
 }
 
-// runFlagEvalBenchmark drives evaluations through a real OpenFeature client so the
-// provider's registered hooks actually run. Calling provider.BooleanEvaluation directly
-// would bypass Hooks(), so neither the OTel nor the EVP hook would execute and all three
-// columns would measure the same bare evaluator. Both the evaluated flag key and the
-// targeting key rotate, so flag- and user-cardinality are exercised.
+// runFlagEvalBenchmark drives evaluations through a real OpenFeature client so the provider's
+// registered hooks actually run — calling provider.BooleanEvaluation directly would bypass
+// Hooks() and every column would measure the same bare evaluator. Flag and targeting keys
+// rotate to exercise flag- and user-cardinality.
 //
-// configureHooks nils whichever provider hooks the tier under test should exclude. It runs
-// before the provider is registered; Init does not recreate hooks, so the choice sticks.
-// The provider uses a 24h flush interval, so the EVP writer never flushes during the run —
-// no HTTP round-trip enters the hot path, isolating hook + aggregator cost.
+// configureHooks nils whichever provider hooks the tier under test should exclude (it runs
+// before registration; Init does not recreate hooks, so the choice sticks). The 24h flush
+// interval keeps the EVP writer from flushing during the run, so no HTTP round-trip enters
+// the hot path — isolating hook + aggregator cost.
 func runFlagEvalBenchmark(b *testing.B, configureHooks func(p *DatadogProvider)) {
 	b.Helper()
 	for _, p := range flagEvalBenchProfiles {
@@ -393,13 +358,11 @@ func BenchmarkFlagEvaluationOTelPlusEVP(b *testing.B) {
 	})
 }
 
-// BenchmarkFlagEvaluationEVPRecord isolates the EVP hook's synchronous hot-path cost — the
-// scalar extraction + shallow context copy (EvaluationContext().Attributes()) + non-blocking
-// enqueue that runs on the evaluation goroutine. A discard drainer empties the queue so it
-// never fills, and the asynchronous aggregation (flatten/prune/hash/add, performed by the
-// real worker off the hot path) is NOT attributed here. This is the latency a flag
-// evaluation actually pays when the EVP path is enabled — distinct from the client
-// benchmarks above, whose process-wide allocs/wall-clock also capture the worker's work.
+// BenchmarkFlagEvaluationEVPRecord isolates the EVP hook's synchronous hot-path cost: scalar
+// extraction + shallow context copy + non-blocking enqueue, all on the evaluation goroutine.
+// A discard drainer keeps the queue empty so the asynchronous aggregation (flatten/prune/hash/
+// add, done by the real worker off the hot path) is NOT attributed here — this is the latency a
+// flag evaluation actually pays when the EVP path is enabled.
 func BenchmarkFlagEvaluationEVPRecord(b *testing.B) {
 	for _, p := range flagEvalBenchProfiles {
 		b.Run(p.name, func(b *testing.B) {
