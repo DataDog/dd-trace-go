@@ -413,6 +413,13 @@
         "default": null
       }
     ],
+    "DD_FLAGGING_EVALUATION_COUNTS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "FIX_ME",
+        "default": "FIX_ME"
+      }
+    ],
     "DD_GIT_BRANCH": [
       {
         "implementation": "A",

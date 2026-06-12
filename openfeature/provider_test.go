@@ -255,8 +255,10 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 
 	hooks := provider.Hooks()
-	if len(hooks) != 2 {
-		t.Errorf("expected 2 hooks (exposure + flag eval metrics), got %d", len(hooks))
+	// 3 hooks: exposure hook + OTel flag eval metrics hook + EVP flagevaluation hook.
+	// The EVP hook is enabled by default (DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true).
+	if len(hooks) != 3 {
+		t.Errorf("expected 3 hooks (exposure + flag eval metrics + EVP flagevaluation), got %d", len(hooks))
 	}
 }
 
