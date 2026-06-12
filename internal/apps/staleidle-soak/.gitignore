@@ -1,0 +1,3 @@
+# Soak run artifacts — JSON results + agent log + restart log.
+# These are inputs for ad-hoc analysis on the PR / ticket, not source.
+results/

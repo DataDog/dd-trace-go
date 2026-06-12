@@ -1,0 +1,50 @@
+# Compose file for the APMS-19533 stale-idle UDS soak harness.
+#
+# Stands up a single datadog-agent container with the APM receiver listening on
+# a UDS socket bind-mounted to the host, so a host-side load driver can write
+# to it the same way the customer's tracer does.
+#
+# The agent image is pinned to v7.77.1 to match the customer's environment
+# exactly (APMS-19533). The DD_API_KEY value is intentionally bogus —
+# the bug we're verifying lives in the agent's *receiver* layer (UDS listener,
+# connection lifecycle, backpressure), which accepts payloads regardless of
+# whether shipping downstream succeeds.
+#
+# Usage is documented in ./README.md and the orchestrator at ./soak.sh.
+
+services:
+  agent:
+    image: datadog/agent:7.77.1
+    container_name: staleidle-soak-agent
+    # Run as root inside the container so the UDS socket the agent creates
+    # under /var/run/datadog/ is host-readable/writable regardless of the
+    # host user's UID. The trace-agent UDS receiver itself does not require
+    # root; this is purely to keep the host-side bind mount usable without
+    # post-hoc chmod.
+    user: "0:0"
+    environment:
+      DD_API_KEY: invalid_but_fine_for_receiver_layer
+      DD_APM_ENABLED: "true"
+      DD_APM_NON_LOCAL_TRAFFIC: "true"
+      DD_APM_RECEIVER_SOCKET: /var/run/datadog/apm.socket
+      DD_LOG_LEVEL: info
+      # When the agent can't auto-detect a hostname (e.g. running outside
+      # k8s/EC2 with no /etc/hostname propagated) it exits. Setting an
+      # explicit name keeps it alive.
+      DD_HOSTNAME: staleidle-soak
+      # Disable everything we don't need so the container starts fast and
+      # restarts cleanly.
+      DD_USE_DOGSTATSD: "false"
+      DD_LOGS_ENABLED: "false"
+      DD_PROCESS_AGENT_ENABLED: "false"
+    volumes:
+      - ${SOAK_UDS_DIR:-/tmp/staleidle-uds}:/var/run/datadog
+    healthcheck:
+      # Healthy as soon as the trace-agent has created the UDS socket. Using
+      # the socket file as the readiness signal is more robust than calling
+      # `agent health` (which also checks unrelated subsystems).
+      test: ["CMD-SHELL", "test -S /var/run/datadog/apm.socket"]
+      interval: 2s
+      start_period: 30s
+      timeout: 5s
+      retries: 30
