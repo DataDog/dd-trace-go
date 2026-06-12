@@ -30,6 +30,9 @@ type oteltracer struct {
 	noop.Tracer // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
 	provider    *TracerProvider
 	DD          tracer.Tracer
+	// otelSemanticsEnabled is resolved once when the provider is created, so spans
+	// don't read the global configuration on every SetAttributes call.
+	otelSemanticsEnabled bool
 }
 
 func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltrace.SpanStartOption) (context.Context, oteltrace.Span) {
