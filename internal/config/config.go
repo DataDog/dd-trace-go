@@ -175,6 +175,14 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
+	// propagationStyleInject specifies the propagation style for injection.
+	propagationStyleInject string
+	// propagationStyleExtract specifies the propagation style for extraction.
+	propagationStyleExtract string
+	// propagationBehaviorExtract controls what happens when an incoming trace context is found.
+	propagationBehaviorExtract string
+	// propagationExtractFirst, when true, stops extraction after the first successful extractor.
+	propagationExtractFirst bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -272,6 +280,10 @@ func loadConfig() *Config {
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
+	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
+	cfg.propagationStyleExtract = p.GetString("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "")
+	cfg.propagationBehaviorExtract = p.GetString("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "")
+	cfg.propagationExtractFirst = p.GetBool("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
@@ -1231,4 +1243,28 @@ func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ..
 	}
 	c.sendRetries = retries
 	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
+func (c *Config) PropagationStyleInject() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationStyleInject
+}
+
+func (c *Config) PropagationStyleExtract() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationStyleExtract
+}
+
+func (c *Config) PropagationBehaviorExtract() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationBehaviorExtract
+}
+
+func (c *Config) PropagationExtractFirst() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationExtractFirst
 }
