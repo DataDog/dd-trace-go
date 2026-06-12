@@ -431,10 +431,9 @@ func TestAggregatorCapOverflow(t *testing.T) {
 		// At that point, ultra-degraded must receive new entries.
 		for i := range 10 {
 			d := evalDetails{
-				flagKey:  fmt.Sprintf("overflow-flag-%d", i),
-				variant:  "on",
-				reason:   "targeting_match",
-				targetingKey: fmt.Sprintf("user-%d", i),
+				flagKey: fmt.Sprintf("overflow-flag-%d", i),
+				variant: "on",
+				reason:  "targeting_match",
 			}
 			// Force each into degraded by also filling its full tier
 			for j := range 4 {
@@ -463,9 +462,9 @@ func TestAggregatorCapOverflow(t *testing.T) {
 		// Add many distinct evaluations; global count must not exceed globalCap
 		for i := range 50 {
 			d := evalDetails{
-				flagKey:  fmt.Sprintf("flag-%d", i),
-				variant:  "on",
-				reason:   "targeting_match",
+				flagKey: fmt.Sprintf("flag-%d", i),
+				variant: "on",
+				reason:  "targeting_match",
 			}
 			agg.add(d, nil, nowMs)
 		}

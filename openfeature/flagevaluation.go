@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -44,7 +45,7 @@ const (
 	maxFieldLength   = 256
 
 	// Aggregation caps (D-08/D-09/CONT-10).
-	defaultEvalGlobalCap   = 65_536 // bounds total distinct buckets across all tiers
+	defaultEvalGlobalCap   = 65_536 // bounds full-tier buckets only; degraded/ultra are bounded separately (WR-02)
 	defaultEvalPerFlagCap  = 10_000 // bounds full-fidelity buckets per flag
 	defaultEvalDegradedCap = 10_000 // bounds degraded map (absent from POC — Gate 8 fix)
 )
@@ -53,13 +54,12 @@ const (
 // contextHash is a uint64 FNV-1a hash of the pruned context — NOT the sole map key.
 // Replaces the FNV-1a-keyed map from PR #4874 POC (CONT-05 / source_comment_id 3395004724).
 type evaluationAggregationKey struct {
-	flagKey          string
-	variant          string
-	allocationKey    string
-	targetingRuleKey string
-	reason           string
-	targetingKey     string
-	contextHash      uint64 // context is map[string]any (not comparable); hash is a discriminator only
+	flagKey       string
+	variant       string
+	allocationKey string
+	reason        string
+	targetingKey  string
+	contextHash   uint64 // context is map[string]any (not comparable); hash is a discriminator only
 }
 
 // evaluationDegradedKey is the key for the degraded aggregation map.
@@ -106,38 +106,42 @@ type flagEvaluationAggregator struct {
 // flagEvaluationEvent matches flagevaluation.json — required fields always present;
 // optional fields use omitempty (absent = schema-valid for degraded/ultra-degraded tiers).
 type flagEvaluationEvent struct {
-	Timestamp       int64                  `json:"timestamp"`
-	Flag            flagEvalFlag           `json:"flag"`
-	FirstEvaluation int64                  `json:"first_evaluation"`
-	LastEvaluation  int64                  `json:"last_evaluation"`
-	EvaluationCount int64                  `json:"evaluation_count"`
-	RuntimeDefault  bool                   `json:"runtime_default_used,omitempty"`
-	TargetingKey    string                 `json:"targeting_key,omitempty"`
-	Variant         *flagEvalVariant       `json:"variant,omitempty"`
-	Allocation      *flagEvalAllocation    `json:"allocation,omitempty"`
-	TargetingRule   *flagEvalTargetingRule `json:"targeting_rule,omitempty"`
-	Error           *flagEvalError         `json:"error,omitempty"`
-	Context         *flagEvalEventContext  `json:"context,omitempty"`
+	Timestamp       int64                 `json:"timestamp"`
+	Flag            flagEvalFlag          `json:"flag"`
+	FirstEvaluation int64                 `json:"first_evaluation"`
+	LastEvaluation  int64                 `json:"last_evaluation"`
+	EvaluationCount int64                 `json:"evaluation_count"`
+	RuntimeDefault  bool                  `json:"runtime_default_used,omitempty"`
+	TargetingKey    string                `json:"targeting_key,omitempty"`
+	Variant         *flagEvalVariant      `json:"variant,omitempty"`
+	Allocation      *flagEvalAllocation   `json:"allocation,omitempty"`
+	Error           *flagEvalError        `json:"error,omitempty"`
+	Context         *flagEvalEventContext `json:"context,omitempty"`
 }
 
 // flagEvalFlag holds the flag key.
-type flagEvalFlag struct{ Key string `json:"key"` }
+type flagEvalFlag struct {
+	Key string `json:"key"`
+}
 
 // flagEvalVariant holds the variant key.
-type flagEvalVariant struct{ Key string `json:"key"` }
+type flagEvalVariant struct {
+	Key string `json:"key"`
+}
 
 // flagEvalAllocation holds the allocation key.
-type flagEvalAllocation struct{ Key string `json:"key"` }
-
-// flagEvalTargetingRule holds the targeting rule key.
-type flagEvalTargetingRule struct{ Key string `json:"key"` }
+type flagEvalAllocation struct {
+	Key string `json:"key"`
+}
 
 // flagEvalError holds the error message.
-type flagEvalError struct{ Message string `json:"message"` }
+type flagEvalError struct {
+	Message string `json:"message"`
+}
 
 // flagEvalEventContext holds the per-event context object.
 type flagEvalEventContext struct {
-	Evaluation map[string]any `json:"evaluation,omitempty"`
+	Evaluation map[string]any     `json:"evaluation,omitempty"`
 	DD         *flagEvalContextDD `json:"dd,omitempty"`
 }
 
@@ -175,14 +179,13 @@ type flagEvaluationWriter struct {
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
 // Used only by flagEvaluationHook; does NOT replace extraction in flageval_metrics.go.
 type evalDetails struct {
-	flagKey          string
-	variant          string
-	reason           string
-	allocationKey    string
-	targetingRuleKey string
-	targetingKey     string
-	errorMessage     string
-	runtimeDefault   bool
+	flagKey        string
+	variant        string
+	reason         string
+	allocationKey  string
+	targetingKey   string
+	errorMessage   string
+	runtimeDefault bool
 }
 
 // newFlagEvaluationWriter creates a new flag evaluation writer.
@@ -319,9 +322,6 @@ func (w *flagEvaluationWriter) flush() {
 		if key.allocationKey != "" {
 			ev.Allocation = &flagEvalAllocation{Key: key.allocationKey}
 		}
-		if key.targetingRuleKey != "" {
-			ev.TargetingRule = &flagEvalTargetingRule{Key: key.targetingRuleKey}
-		}
 		if e.errorMessage != "" {
 			ev.Error = &flagEvalError{Message: e.errorMessage}
 		}
@@ -450,13 +450,12 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 
 	// Build the full key using struct fields (collision-safe — CONT-05).
 	fullKey := evaluationAggregationKey{
-		flagKey:          d.flagKey,
-		variant:          d.variant,
-		allocationKey:    d.allocationKey,
-		targetingRuleKey: d.targetingRuleKey,
-		reason:           d.reason,
-		targetingKey:     d.targetingKey,
-		contextHash:      hashContext(contextAttrs),
+		flagKey:       d.flagKey,
+		variant:       d.variant,
+		allocationKey: d.allocationKey,
+		reason:        d.reason,
+		targetingKey:  d.targetingKey,
+		contextHash:   hashContext(contextAttrs),
 	}
 
 	// Check if this exact full-tier bucket already exists → fast-path increment.
@@ -576,9 +575,17 @@ func hashContext(attrs map[string]any) uint64 {
 	if len(attrs) == 0 {
 		return 0
 	}
+	// Hash over a deterministic key ordering. Go map iteration is randomized,
+	// and FNV-1a is order-sensitive, so ranging the map directly would produce a
+	// different hash for identical contexts and fragment aggregation buckets (CR-01).
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	h := fnv.New64a()
-	for k, v := range attrs {
-		_, _ = fmt.Fprintf(h, "%s=%v\n", k, v)
+	for _, k := range keys {
+		_, _ = fmt.Fprintf(h, "%s=%v\n", k, attrs[k])
 	}
 	return h.Sum64()
 }
