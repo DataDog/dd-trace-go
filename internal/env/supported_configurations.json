@@ -416,8 +416,8 @@
     "DD_FLAGGING_EVALUATION_COUNTS_ENABLED": [
       {
         "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_GIT_BRANCH": [
@@ -985,6 +985,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED": [
@@ -1608,13 +1615,6 @@
         "implementation": "B",
         "type": "string",
         "default": "v0"
-      }
-    ],
-    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
-      {
-        "implementation": "A",
-        "type": "boolean",
-        "default": "false"
       }
     ],
     "DD_TRACE_SQL_ANALYTICS_ENABLED": [
