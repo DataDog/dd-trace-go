@@ -232,3 +232,170 @@ func BenchmarkConcurrentEvaluations(b *testing.B) {
 		}
 	})
 }
+
+// makeBenchmarkConfig creates a test config with the specified number of flags.
+// Extends createTestConfig() for benchmark load profiles.
+func makeBenchmarkConfig(numFlags int) *universalFlagsConfiguration {
+	config := createTestConfig()
+	for i := len(config.Flags); i < numFlags; i++ {
+		flagKey := "bench-flag-" + string(rune('a'+i%26)) + string(rune('0'+i/26%10))
+		config.Flags[flagKey] = &flag{
+			Key:           flagKey,
+			Enabled:       true,
+			VariationType: valueTypeBoolean,
+			Variations: map[string]*variant{
+				"on": {Key: "on", Value: true},
+			},
+			Allocations: []*allocation{
+				{
+					Key:   "alloc-bench",
+					Rules: []*rule{},
+					Splits: []*split{
+						{Shards: []*shard{}, VariationKey: "on"},
+					},
+				},
+			},
+		}
+	}
+	return config
+}
+
+// makeBenchmarkContext creates a FlattenedContext with numFields attributes.
+func makeBenchmarkContext(numFields int) openfeature.FlattenedContext {
+	ctx := openfeature.FlattenedContext{
+		"targetingKey": "bench-user-001",
+	}
+	for i := 1; i < numFields; i++ {
+		ctx["field"+string(rune('a'+i%26))] = "value"
+	}
+	return ctx
+}
+
+// BenchmarkFlagEvaluationNoop measures the raw evaluation cost with zero hooks —
+// the pure evaluator baseline for the three-column overhead comparison (CONT-08 / D-11).
+//
+// Profile: typical (100 flags, 50-user simulation, 10-field context).
+// Profile: stress  (10 flags, 1000-user simulation, 250-field context — near degraded trigger).
+//
+// Run command:
+//
+//	GOFLAGS=-mod=readonly go test ./openfeature -run='^$' -bench='^BenchmarkFlagEvaluation' \
+//	  -benchmem -count=3 -cpu=8
+func BenchmarkFlagEvaluationNoop(b *testing.B) {
+	profiles := []struct {
+		name      string
+		numFlags  int
+		numUsers  int
+		numFields int
+	}{
+		{"typical/100flags_50users_10fields", 100, 50, 10},
+		{"stress/10flags_1000users_250fields", 10, 1000, 250},
+	}
+
+	for _, p := range profiles {
+		b.Run(p.name, func(b *testing.B) {
+			// Noop: provider with no hooks (nil out hooks after construction)
+			provider := newDatadogProvider(ProviderConfig{})
+			provider.flagEvalHook = nil  // no OTel hook
+			provider.exposureHook = nil  // no exposure hook
+			config := makeBenchmarkConfig(p.numFlags)
+			provider.updateConfiguration(config)
+
+			ctx := context.Background()
+			flatCtx := makeBenchmarkContext(p.numFields)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				// Rotate user targeting key to simulate p.numUsers distinct users
+				flatCtx["targetingKey"] = "bench-user-" + string(rune('0'+b.N%p.numUsers%10))
+				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+			}
+		})
+	}
+}
+
+// BenchmarkFlagEvaluationOTelOnly measures the evaluation cost with only the existing
+// OTel feature_flag.evaluations hook (Path A — preserved baseline) (CONT-08 / D-11).
+func BenchmarkFlagEvaluationOTelOnly(b *testing.B) {
+	profiles := []struct {
+		name      string
+		numFlags  int
+		numUsers  int
+		numFields int
+	}{
+		{"typical/100flags_50users_10fields", 100, 50, 10},
+		{"stress/10flags_1000users_250fields", 10, 1000, 250},
+	}
+
+	for _, p := range profiles {
+		b.Run(p.name, func(b *testing.B) {
+			// OTel-only: provider with flagEvalHook (OTel) but no EVP hook
+			provider := newDatadogProvider(ProviderConfig{})
+			provider.exposureHook = nil // no exposure hook — isolate OTel cost only
+			// provider.flagEvalHook is set by newDatadogProvider — keep it
+			config := makeBenchmarkConfig(p.numFlags)
+			provider.updateConfiguration(config)
+
+			ctx := context.Background()
+			flatCtx := makeBenchmarkContext(p.numFields)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				flatCtx["targetingKey"] = "bench-user-" + string(rune('0'+b.N%p.numUsers%10))
+				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+			}
+		})
+	}
+}
+
+// BenchmarkFlagEvaluationOTelPlusEVP measures the marginal cost of adding the new EVP
+// flagevaluation hook alongside the existing OTel hook (Path A + Path B) (CONT-08 / D-11).
+//
+// NOTE: The EVP hook is a signature-only stub in plan 01; the hook body panics with
+// "not implemented". In this benchmark, the hook is constructed but NOT wired into
+// provider.Hooks() — wiring is done in plan 02. This benchmark compiles and runs cleanly
+// as a scaffold; plan 02 will wire the hook and the overhead numbers will be meaningful.
+func BenchmarkFlagEvaluationOTelPlusEVP(b *testing.B) {
+	profiles := []struct {
+		name      string
+		numFlags  int
+		numUsers  int
+		numFields int
+	}{
+		{"typical/100flags_50users_10fields", 100, 50, 10},
+		{"stress/10flags_1000users_250fields", 10, 1000, 250},
+	}
+
+	for _, p := range profiles {
+		b.Run(p.name, func(b *testing.B) {
+			// OTel+EVP: provider with OTel hook + EVP hook stub constructed.
+			// The EVP hook is created here to verify compilation; plan 02 wires it
+			// into provider.Hooks() and the aggregation buffer.
+			provider := newDatadogProvider(ProviderConfig{})
+			provider.exposureHook = nil // isolate hook overhead
+			// provider.flagEvalHook is set by newDatadogProvider (OTel hook)
+
+			// Construct the EVP hook stub — verifies the signature compiles.
+			// TODO(plan-02): wire evalHook into provider.flagEvalHook2 / Hooks().
+			_ = newFlagEvaluationHook(nil) // nil writer — hook body panics; not called directly
+
+			config := makeBenchmarkConfig(p.numFlags)
+			provider.updateConfiguration(config)
+
+			ctx := context.Background()
+			flatCtx := makeBenchmarkContext(p.numFields)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				flatCtx["targetingKey"] = "bench-user-" + string(rune('0'+b.N%p.numUsers%10))
+				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+			}
+		})
+	}
+}
