@@ -138,9 +138,9 @@ func BenchmarkEvaluationWithVaryingContextSize(b *testing.B) {
 				"country":      "US",
 			}
 
-			// Add additional fields to the context
+			// Add additional fields with unique names so all numFields are distinct.
 			for i := 1; i < size.numFields; i++ {
-				flatCtx[string(rune('a'+i))] = i
+				flatCtx["field"+strconv.Itoa(i)] = i
 			}
 
 			b.ReportAllocs()
@@ -170,9 +170,9 @@ func BenchmarkEvaluationWithVaryingFlagCounts(b *testing.B) {
 			provider := newDatadogProvider(ProviderConfig{})
 			config := createTestConfig()
 
-			// Add additional flags
+			// Add additional flags with unique monotonic keys so cardinality is exercised.
 			for i := len(config.Flags); i < count.numFlags; i++ {
-				flagKey := string(rune('a' + i))
+				flagKey := "flag-" + strconv.Itoa(i)
 				config.Flags[flagKey] = &flag{
 					Key:           flagKey,
 					Enabled:       true,
@@ -237,10 +237,12 @@ func BenchmarkConcurrentEvaluations(b *testing.B) {
 
 // makeBenchmarkConfig creates a test config with the specified number of flags.
 // Extends createTestConfig() for benchmark load profiles.
+// Flag keys are unique monotonic integers ("bench-flag-N") so the claimed cardinality
+// is fully exercised without wrapping (WR-04).
 func makeBenchmarkConfig(numFlags int) *universalFlagsConfiguration {
 	config := createTestConfig()
 	for i := len(config.Flags); i < numFlags; i++ {
-		flagKey := "bench-flag-" + string(rune('a'+i%26)) + string(rune('0'+i/26%10))
+		flagKey := "bench-flag-" + strconv.Itoa(i)
 		config.Flags[flagKey] = &flag{
 			Key:           flagKey,
 			Enabled:       true,
@@ -263,12 +265,14 @@ func makeBenchmarkConfig(numFlags int) *universalFlagsConfiguration {
 }
 
 // makeBenchmarkContext creates a FlattenedContext with numFields attributes.
+// Field names are "fieldN" with a monotonic index so all numFields are distinct and
+// the claimed context cardinality is fully exercised without wrapping (WR-04).
 func makeBenchmarkContext(numFields int) openfeature.FlattenedContext {
 	ctx := openfeature.FlattenedContext{
 		"targetingKey": "bench-user-001",
 	}
 	for i := 1; i < numFields; i++ {
-		ctx["field"+string(rune('a'+i%26))] = "value"
+		ctx["field"+strconv.Itoa(i)] = "value"
 	}
 	return ctx
 }

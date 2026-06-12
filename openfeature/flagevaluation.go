@@ -50,9 +50,44 @@ const (
 	defaultEvalDegradedCap = 10_000 // bounds degraded map (absent from POC — Gate 8 fix)
 )
 
-// evaluationAggregationKey is a struct-keyed map key (collision-free for enumerable dims).
-// contextHash is a uint64 FNV-1a hash of the pruned context — NOT the sole map key.
-// Replaces the FNV-1a-keyed map from PR #4874 POC (CONT-05 / source_comment_id 3395004724).
+// evaluationAggregationKey identifies one full-tier aggregation bucket. Its identity is
+// split into two parts with very different collision properties:
+//
+//  1. Enumerable dimensions — flagKey, variant, allocationKey, reason, targetingKey — are
+//     stored as EXACT string fields and compared byte-for-byte by Go map equality. Two
+//     structurally distinct values can NEVER alias on these dimensions. In particular, a
+//     count can never be attributed to the wrong flag/variant/reason/allocation.
+//
+//  2. contextHash is a 64-bit FNV-1a digest of the pruned evaluation context (see
+//     hashContext, hashed over sorted keys for determinism). The context is map[string]any
+//     and therefore not comparable, so it cannot be a struct field — the digest stands in
+//     for it. The digest is deterministic and low-collision but NOT collision-proof.
+//
+// What a contextHash collision actually does — and why it is acceptable (D-13 / CONT-05):
+//
+//	A collision requires two evaluations that are identical on ALL FIVE exact dimensions
+//	AND whose *different* contexts happen to hash to the same uint64. When that occurs, the
+//	second evaluation matches the existing bucket on add()'s fast path and increments its
+//	count (the `if e, ok := a.full[fullKey]; ok` branch below). Consequences:
+//
+//	  - COUNT-PRESERVING: the evaluation count is merged into the existing bucket, never
+//	    dropped. The invariant Σ(counts across all tiers) == number of add() calls still
+//	    holds. This is exactly what TestSaturationCountPreservation guards.
+//	  - NO MISATTRIBUTION: the count still belongs to the correct flag/variant/reason/
+//	    allocation — those dimensions are exact, not hashed.
+//	  - SOLE CASUALTY is context-attribute fidelity: the bucket retains the FIRST context's
+//	    attrs, so the colliding evaluation's distinct attrs are not separately reported.
+//	    Context is a best-effort dimension that the degraded/ultra tiers drop entirely by
+//	    design, so a collision is strictly less lossy than ordinary degradation.
+//
+//	Probability is bounded by the cap: the full tier holds at most globalCap (65536)
+//	buckets, so there are <= ~65k distinct digests per flush window. Birthday bound
+//	~= 65536^2 / 2^65 ~= 1.2e-10 per window. This is internal telemetry over the customer's
+//	own context — not a trust boundary — so a keyed/crypto hash (e.g. SipHash) is
+//	unwarranted, and a wider (128-bit) digest would buy only context-label fidelity at that
+//	1e-10 tail. Deliberately not done.
+//
+// (CONT-05 / source_comment_id 3395004724; resolution recorded as decision D-13.)
 type evaluationAggregationKey struct {
 	flagKey       string
 	variant       string
@@ -448,7 +483,7 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Build the full key using struct fields (collision-safe — CONT-05).
+	// Build the full key: exact struct fields for enumerable dims + 64-bit FNV context digest (CONT-05).
 	fullKey := evaluationAggregationKey{
 		flagKey:       d.flagKey,
 		variant:       d.variant,
@@ -458,7 +493,14 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 		contextHash:   hashContext(contextAttrs),
 	}
 
-	// Check if this exact full-tier bucket already exists → fast-path increment.
+	// Fast path: this exact full-tier bucket already exists → increment its count.
+	//
+	// This branch is ALSO where a contextHash collision lands (see the
+	// evaluationAggregationKey doc): if two evaluations share all five exact dimensions and
+	// their differing contexts hash equal, the second matches here and merges into the
+	// first's bucket. The count is preserved — never dropped, never misattributed; only the
+	// second context's distinct attrs are not separately recorded. This is the
+	// count-preserving guarantee TestSaturationCountPreservation asserts.
 	if e, ok := a.full[fullKey]; ok {
 		e.count++
 		if nowMs < e.firstEvaluation {
@@ -484,8 +526,11 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 
 	// Check globalCap before creating a new full-tier bucket.
 	if a.globalCount >= a.globalCap {
-		// Global cap full — attempt counted above; no new bucket created.
-		// The next attempt for this flag may eventually overflow perFlagCap → degraded.
+		// Global cap full — count must not be lost (CONT-10/D-08/D-09).
+		// Route into ultra-degraded (flag key + counts only) so the count signal is preserved.
+		// The per-flag attempt counter was already incremented above; once it reaches
+		// perFlagCap this flag will route through addToDegraded instead.
+		a.addToUltraDegraded(d, nowMs)
 		return
 	}
 
@@ -568,9 +613,15 @@ func (a *flagEvaluationAggregator) addToUltraDegraded(d evalDetails, nowMs int64
 	}
 }
 
-// hashContext computes a FNV-1a hash of the pruned context map for use as a
-// discriminator inside evaluationAggregationKey. The struct key itself is collision-safe
-// across all enumerable dimensions; the hash supplements context identity only.
+// hashContext computes a deterministic 64-bit FNV-1a hash of the pruned context map for
+// use as a discriminator inside evaluationAggregationKey. The enumerable struct fields
+// (flagKey, variant, allocationKey, reason, targetingKey) are exact string comparisons and
+// cannot collide; contextHash is a probabilistic supplement for context identity only —
+// it is low-collision but NOT collision-proof (CONT-05).
+//
+// A digest collision is count-preserving (it merges into an existing bucket via add()'s
+// fast path, costing only context-attribute fidelity, never a count) — see the
+// evaluationAggregationKey doc and decision D-13 for the full collision analysis.
 func hashContext(attrs map[string]any) uint64 {
 	if len(attrs) == 0 {
 		return 0
