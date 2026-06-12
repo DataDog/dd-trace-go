@@ -1568,6 +1568,34 @@ func TestOTLPExportModeStatsSkipped(t *testing.T) {
 	assert.Equal(t, spanCount, totalSpans, "all spans should be retained in OTLP mode, not dropped by nil concentrator")
 }
 
+func TestOTLPExportModeSpanEvents(t *testing.T) {
+	// OTLP mode must mark spans supportsEvents so serializeSpanEvents doesn't
+	// string-tag events into a "events" meta tag (which convertEvents can't read).
+	assert := assert.New(t)
+	tr, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+	assert.NoError(err)
+	defer tr.Stop()
+
+	s := tr.StartSpan("op")
+	assert.True(s.supportsEvents, "spans must support native events in OTLP export mode")
+	s.AddEvent("exception", WithSpanEventAttributes(map[string]any{
+		"exception.type":    "*errors.errorString",
+		"exception.message": "boom",
+	}))
+	s.Finish()
+
+	// Events are preserved on the span (not string-tagged away).
+	assert.NotEmpty(s.spanEvents, "span events should be preserved for native OTLP export")
+	_, hasEventsTag := s.meta.Get("events")
+	assert.False(hasEventsTag, "span events must not be string-tagged in OTLP export mode")
+
+	// convertSpan emits a native OTLP event carrying its attributes.
+	otlp := convertSpan(s, "svc")
+	assert.Len(otlp.Events, 1)
+	assert.Equal("exception", otlp.Events[0].Name)
+	assert.NotEmpty(otlp.Events[0].Attributes)
+}
+
 func TestTracerConcurrent(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport, flush, stop, err := startTestTracer(t)
