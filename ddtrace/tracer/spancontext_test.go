@@ -1299,7 +1299,7 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 func TestTraceIDHexEncoded(t *testing.T) {
 	var tid traceID
 	tid.value[15] = 5
-	tid.computeAndCacheHex()
+	tid.cacheHex()
 	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
 }
 

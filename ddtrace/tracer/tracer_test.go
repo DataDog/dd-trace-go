@@ -970,7 +970,7 @@ func TestPropagationDefaults(t *testing.T) {
 	pctx := propagated
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, pctx.traceID)
+	assert.Equal(ctx.traceID.value, pctx.traceID.value)
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
@@ -1015,7 +1015,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 	assert.Nil(err)
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, propagated.traceID)
+	assert.Equal(ctx.traceID.value, propagated.traceID.value)
 	assert.Equal(ctx.spanID, propagated.spanID)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
 	assert.Equal(ctx.baggage, propagated.baggage)
