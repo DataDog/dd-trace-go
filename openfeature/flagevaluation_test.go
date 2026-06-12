@@ -552,10 +552,10 @@ func TestAggregatorCapOverflow(t *testing.T) {
 
 // TestPruneContextDeterministic guards Finding #1 (nondeterministic context pruning).
 // A >256-field context must prune to an IDENTICAL kept subset (and therefore an identical
-// hash) on every call, and two independently-built maps with the same logical entries must
-// hash equal. On the pre-fix code (map-range cap BEFORE sort) the kept subset is random, so
-// the hash varies across iterations and identical logical contexts fragment into separate
-// buckets.
+// canonical key) on every call, and two independently-built maps with the same logical entries
+// must produce an equal key. On the pre-fix code (map-range cap BEFORE sort) the kept subset is
+// random, so the key varies across iterations and identical logical contexts fragment into
+// separate buckets.
 func TestPruneContextDeterministic(t *testing.T) {
 	const fields = 400 // > maxContextFields (256)
 	build := func() map[string]any {
@@ -566,17 +566,17 @@ func TestPruneContextDeterministic(t *testing.T) {
 		return m
 	}
 
-	first := hashContext(pruneContext(build()))
+	first := canonicalContextKey(pruneContext(build()))
 	for range 50 {
-		got := hashContext(pruneContext(build()))
+		got := canonicalContextKey(pruneContext(build()))
 		if got != first {
-			t.Fatalf("pruneContext+hashContext nondeterministic over >256 fields: got %d, want %d", got, first)
+			t.Fatalf("pruneContext+canonicalContextKey nondeterministic over >256 fields: keys differ across iterations")
 		}
 	}
 
-	// Two independently-built maps with the SAME 400 logical entries must hash equal.
-	if a, b := hashContext(pruneContext(build())), hashContext(pruneContext(build())); a != b {
-		t.Errorf("identical logical contexts hashed differently: %d != %d", a, b)
+	// Two independently-built maps with the SAME 400 logical entries must produce an equal key.
+	if a, b := canonicalContextKey(pruneContext(build())), canonicalContextKey(pruneContext(build())); a != b {
+		t.Errorf("identical logical contexts produced different canonical keys")
 	}
 }
 
@@ -595,11 +595,11 @@ func TestPruneContextOversizedStringDeterministic(t *testing.T) {
 		return m
 	}
 
-	first := hashContext(pruneContext(build()))
+	first := canonicalContextKey(pruneContext(build()))
 	for range 50 {
-		got := hashContext(pruneContext(build()))
+		got := canonicalContextKey(pruneContext(build()))
 		if got != first {
-			t.Fatalf("oversized-string prune nondeterministic: got %d, want %d", got, first)
+			t.Fatalf("oversized-string prune nondeterministic: canonical keys differ across iterations")
 		}
 	}
 
@@ -610,12 +610,13 @@ func TestPruneContextOversizedStringDeterministic(t *testing.T) {
 	}
 }
 
-// TestHashContextCanonicalEncoding guards Finding #2 (non-canonical context hash encoding).
-// Distinct contexts must not alias: int 1 vs string "1" must differ, and '='/'\n'-bearing
-// values/keys must not be able to fake a multi-field context. Drives a subset through
-// aggregator.add and asserts SEPARATE full-tier buckets.
-func TestHashContextCanonicalEncoding(t *testing.T) {
-	// Distinct contexts must hash differently — no aliasing across type or delimiter tricks.
+// TestCanonicalContextKeyEncoding guards oleksii #2 (comparable canonical-context key replaces
+// the lossy FNV-1a discriminator). Distinct contexts must produce DISTINCT keys — int 1 vs
+// string "1" must differ, and '='/'\n'-bearing values/keys must not fake a multi-field context.
+// Because the full canonical encoding IS the map key (no hash), distinct contexts ALWAYS land
+// in separate full-tier buckets via add() with ZERO misattribution.
+func TestCanonicalContextKeyEncoding(t *testing.T) {
+	// Distinct contexts must produce distinct keys — no aliasing across type or delimiter tricks.
 	inequalityTests := []struct {
 		name       string
 		mapA, mapB map[string]any
@@ -643,23 +644,64 @@ func TestHashContextCanonicalEncoding(t *testing.T) {
 
 	for _, tc := range inequalityTests {
 		t.Run(tc.name, func(t *testing.T) {
-			if hashContext(tc.mapA) == hashContext(tc.mapB) {
-				t.Errorf("canonical encoding must distinguish %v from %v", tc.mapA, tc.mapB)
+			if canonicalContextKey(tc.mapA) == canonicalContextKey(tc.mapB) {
+				t.Errorf("canonical key must distinguish %v from %v", tc.mapA, tc.mapB)
 			}
 		})
 	}
 
-	t.Run("distinct contexts land in separate full-tier buckets via add()", func(t *testing.T) {
+	// Logically-identical contexts must produce the SAME key (so they aggregate into one bucket).
+	t.Run("identical contexts produce identical keys", func(t *testing.T) {
+		a := canonicalContextKey(map[string]any{"x": 1, "y": "two"})
+		b := canonicalContextKey(map[string]any{"y": "two", "x": 1})
+		if a != b {
+			t.Errorf("logically-identical contexts produced different canonical keys")
+		}
+	})
+
+	// Each distinct-context case must land in its OWN full-tier bucket via add() — the count is
+	// never misattributed to the other context (the defect the lossy FNV discriminator risked).
+	for _, tc := range inequalityTests {
+		t.Run("distinct buckets via add(): "+tc.name, func(t *testing.T) {
+			agg := setupTestAggregator(t)
+			nowMs := time.Now().UnixMilli()
+			d := evalDetails{flagKey: "f", variant: "on", reason: "targeting_match"}
+			agg.add(d, tc.mapA, nowMs)
+			agg.add(d, tc.mapB, nowMs)
+
+			agg.mu.Lock()
+			defer agg.mu.Unlock()
+			if len(agg.full) != 2 {
+				t.Errorf("expected 2 full-tier buckets for distinct contexts %v vs %v, got %d", tc.mapA, tc.mapB, len(agg.full))
+			}
+			// Zero misattribution: every bucket holds exactly the one count it received.
+			for k, e := range agg.full {
+				if e.count != 1 {
+					t.Errorf("bucket %+v has count %d; distinct contexts must not merge (misattribution)", k, e.count)
+				}
+			}
+		})
+	}
+
+	// A multi-field context with a key/value containing '\n' and '=' must still aggregate
+	// identically with itself (re-adding increments the SAME bucket, not a third).
+	t.Run("re-adding identical multi-field context increments same bucket", func(t *testing.T) {
 		agg := setupTestAggregator(t)
 		nowMs := time.Now().UnixMilli()
 		d := evalDetails{flagKey: "f", variant: "on", reason: "targeting_match"}
-		agg.add(d, map[string]any{"x": 1}, nowMs)
-		agg.add(d, map[string]any{"x": "1"}, nowMs)
+		ctx := map[string]any{"a": "x\ny", "b": 7, "c=d": true}
+		agg.add(d, ctx, nowMs)
+		agg.add(d, map[string]any{"b": 7, "a": "x\ny", "c=d": true}, nowMs) // same logical context, different insertion order
 
 		agg.mu.Lock()
 		defer agg.mu.Unlock()
-		if len(agg.full) != 2 {
-			t.Errorf("expected 2 full-tier buckets for int 1 vs string \"1\", got %d", len(agg.full))
+		if len(agg.full) != 1 {
+			t.Errorf("expected 1 full-tier bucket for identical context, got %d", len(agg.full))
+		}
+		for _, e := range agg.full {
+			if e.count != 2 {
+				t.Errorf("expected count 2 for re-added identical context, got %d", e.count)
+			}
 		}
 	})
 }

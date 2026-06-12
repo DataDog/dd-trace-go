@@ -10,7 +10,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"log/slog"
 	"net/http"
@@ -67,31 +66,30 @@ const (
 	defaultEvalEventBufferSize = 4096
 )
 
-// evaluationAggregationKey identifies one full-tier aggregation bucket. Its identity splits
-// into two parts with different collision properties:
+// evaluationAggregationKey identifies one full-tier aggregation bucket. Every field is an
+// EXACT, comparable string compared byte-for-byte by Go map equality, so distinct keys can
+// NEVER alias into the same bucket:
 //
-//  1. Enumerable dimensions — flagKey, variant, allocationKey, reason, targetingKey — are
-//     EXACT string fields compared byte-for-byte by Go map equality, so they can NEVER alias:
-//     a count is never attributed to the wrong flag/variant/reason/allocation.
+//   - The enumerable dimensions (flagKey, variant, allocationKey, reason, targetingKey) are
+//     the raw evaluation strings.
+//   - contextKey is the EXACT canonical type-tagged, length-delimited encoding of the pruned
+//     context (see canonicalContextKey). Because it is the full encoding — not a lossy 64-bit
+//     digest — two distinct contexts ALWAYS produce distinct contextKey strings (oleksii #2):
+//     int 1 vs string "1" differ by type tag, and '='/'\n'-bearing values cannot fake a field
+//     boundary thanks to the length prefixes. There is no hash, so there is no hash collision,
+//     so a count can never be misattributed to the wrong context. Go's map hashes and compares
+//     the full struct key (including contextKey) natively.
 //
-//  2. contextHash is a 64-bit FNV-1a digest of the pruned context (map[string]any, not
-//     comparable, so it cannot be a struct field — see hashContext for the canonical encoding
-//     that makes distinct contexts non-aliasing).
-//
-// A contextHash collision is therefore a genuine 64-bit hash collision, not an encoding alias:
-// the second evaluation merges into the existing bucket via add()'s fast path. This is
-// count-preserving (Σ(counts across tiers) == add() calls — TestSaturationCountPreservation)
-// and never misattributing (the exact dimensions still match); the sole casualty is
-// context-attribute fidelity, which the degraded tier already drops by design. This is
-// internal telemetry over the customer's own context, not a trust boundary, so a keyed/crypto
-// hash or a wider digest is unwarranted — deliberately not done.
+// The contextKey string is stored once per full-tier bucket; its memory footprint is therefore
+// bounded by the number of full-tier buckets (globalCap) and the pruned context size
+// (256 fields × 256 chars), and measured in BenchmarkFlagEvaluationOTelPlusEVPParallel.
 type evaluationAggregationKey struct {
 	flagKey       string
 	variant       string
 	allocationKey string
 	reason        string
 	targetingKey  string
-	contextHash   uint64 // context is map[string]any (not comparable); hash is a discriminator only
+	contextKey    string // exact canonical encoding of the pruned context; comparable, not a digest
 }
 
 // evaluationDegradedKey is the key for the degraded aggregation map — the terminal aggregation
@@ -566,19 +564,20 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Build the full key: exact struct fields for enumerable dims + 64-bit FNV context digest.
+	// Build the full key: exact, comparable strings for every dimension including the canonical
+	// context encoding. No hash, so distinct contexts get distinct buckets (oleksii #2).
 	fullKey := evaluationAggregationKey{
 		flagKey:       d.flagKey,
 		variant:       d.variant,
 		allocationKey: d.allocationKey,
 		reason:        d.reason,
 		targetingKey:  d.targetingKey,
-		contextHash:   hashContext(contextAttrs),
+		contextKey:    canonicalContextKey(contextAttrs),
 	}
 
-	// Fast path: this exact full-tier bucket already exists → increment its count. This is
-	// also where a contextHash collision lands, merging count-preservingly into the existing
-	// bucket (see the evaluationAggregationKey doc for the collision analysis).
+	// Fast path: this exact full-tier bucket already exists → increment its count. Because
+	// contextKey is the full canonical encoding (not a digest), this fast path is hit only by a
+	// genuinely identical pruned context — never by an aliasing collision.
 	if e, ok := a.full[fullKey]; ok {
 		e.observe(nowMs)
 		return
@@ -654,7 +653,7 @@ func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 	a.degraded[degKey] = e
 }
 
-// context value type discriminators for the canonical hash encoding. Each distinct Go type
+// context value type discriminators for the canonical key encoding. Each distinct Go type
 // gets a distinct tag byte so that, e.g., int 1 and string "1" cannot render identically.
 const (
 	ctxTagString  byte = 's'
@@ -667,39 +666,35 @@ const (
 	ctxTagOther   byte = 'o'
 )
 
-// hashContext computes a deterministic 64-bit FNV-1a hash of the pruned context map, used as
-// the contextHash discriminator inside evaluationAggregationKey.
+// canonicalContextKey builds the EXACT, comparable string key for the pruned context map,
+// used as the contextKey field of evaluationAggregationKey.
 //
-// The per-field encoding is CANONICAL — each field is a length-delimited key followed by a
-// type-tag byte and a length-delimited value — so distinct contexts cannot ALIAS by
-// construction (int 1 vs string "1" differ by tag; '=' / '\n' cannot fake a field boundary).
-// Any digest collision is thus a genuine 64-bit hash collision, which is count-preserving (see
-// the evaluationAggregationKey doc).
-func hashContext(attrs map[string]any) uint64 {
+// The encoding is CANONICAL — each field is a length-delimited key followed by a type-tag byte
+// and a length-delimited value — so distinct contexts cannot ALIAS by construction (int 1 vs
+// string "1" differ by tag; '=' / '\n' cannot fake a field boundary). Unlike the prior FNV-1a
+// digest, the full encoding is emitted AS THE KEY, so Go's map compares it byte-for-byte: there
+// is no hash and therefore no hash collision, so distinct contexts ALWAYS land in distinct
+// full-tier buckets (oleksii #2). The returned string is stored once per full-tier bucket.
+func canonicalContextKey(attrs map[string]any) string {
 	if len(attrs) == 0 {
-		return 0
+		return ""
 	}
-	// Hash over a deterministic key ordering. Go map iteration is randomized,
-	// and FNV-1a is order-sensitive, so ranging the map directly would produce a
-	// different hash for identical contexts and fragment aggregation buckets.
+	// Encode over a deterministic key ordering. Go map iteration is randomized, and the
+	// concatenated encoding is order-sensitive, so ranging the map directly would produce a
+	// different key for identical contexts and fragment aggregation buckets.
 	keys := make([]string, 0, len(attrs))
 	for k := range attrs {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	h := fnv.New64a()
-	// Reuse one scratch buffer across fields and write the bytes directly. FNV's Write
-	// neither retains the slice nor allocates, so hashing an N-field context costs ~1
-	// allocation instead of the per-field reflection allocation of fmt.Fprintf — the
-	// dominant per-evaluation cost of this hook for large contexts.
+	// Build the encoding into a single buffer, then convert once to a string for the key. The
+	// per-field append uses the same canonical, allocation-light path as before.
 	var buf []byte
 	for _, k := range keys {
-		buf = buf[:0]
 		buf = appendLengthDelimited(buf, []byte(k)) // length-delimited key
 		buf = appendContextValue(buf, attrs[k])     // tag + length-delimited value
-		_, _ = h.Write(buf)
 	}
-	return h.Sum64()
+	return string(buf)
 }
 
 // appendLengthDelimited writes a fixed-width 8-byte big-endian length prefix followed by the
@@ -759,7 +754,7 @@ func appendContextValue(buf []byte, v any) []byte {
 //
 // The kept subset is DETERMINISTIC: keys are sorted BEFORE the oversized-string skip and the
 // 256-field cap are applied, so two logically-identical contexts always prune to the exact
-// same subset (and therefore the same hashContext digest). Ranging the map directly (Go map
+// same subset (and therefore the same canonicalContextKey). Ranging the map directly (Go map
 // iteration is randomized) would cut a different 256-field subset each call and fragment
 // otherwise-identical contexts into separate aggregation buckets.
 func pruneContext(raw map[string]any) map[string]any {

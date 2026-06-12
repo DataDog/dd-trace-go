@@ -78,7 +78,7 @@ func legitimateDegradedCardinality(flags []scaleFlagShape) int {
 // (so counts accumulate). It returns the total number of add() calls made.
 //
 // The context cardinality knob (numContexts) is what splits the FULL tier: the full key includes
-// targetingKey + contextHash, so more distinct subjects => more full buckets => earlier full-tier
+// targetingKey + contextKey, so more distinct subjects => more full buckets => earlier full-tier
 // saturation => earlier cascade into degraded (and potentially ultra).
 func driveScale(agg *flagEvaluationAggregator, flags []scaleFlagShape, numContexts, evalsPerCombo int) int64 {
 	nowMs := time.Now().UnixMilli()
