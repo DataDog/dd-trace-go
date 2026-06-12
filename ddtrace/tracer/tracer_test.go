@@ -325,7 +325,7 @@ func TestTracerStartSpan(t *testing.T) {
 			ext.PriorityAutoReject,
 			ext.PriorityAutoKeep,
 		}, span.metrics[keySamplingPriority])
-		assert.Equal("-1", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal("-1", span.context.trace.propagatingTag(keyDecisionMaker))
 		// A span is not measured unless made so specifically
 		_, ok := span.meta.Get(keyMeasured)
 		assert.False(ok)
@@ -340,7 +340,7 @@ func TestTracerStartSpan(t *testing.T) {
 		assert.NoError(t, err)
 		span := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true))
 		assert.Equal(t, float64(ext.PriorityUserKeep), span.metrics[keySamplingPriority])
-		assert.Equal(t, "-4", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-4", span.context.trace.propagatingTag(keyDecisionMaker))
 	})
 
 	t.Run("name", func(t *testing.T) {
@@ -423,7 +423,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoKeep), span.metrics[keySamplingPriority])
-		assert.Equal(t, "-1", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-1", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -442,7 +442,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, uint32(0), tracerstats.Count(tracerstats.DroppedP0Traces))
 		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionKeep, span.context.trace.samplingDecision)
 	})
 
@@ -459,7 +459,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, uint32(1), tracerstats.Count(tracerstats.DroppedP0Traces))
 		assert.Equal(t, uint32(2), tracerstats.Count(tracerstats.DroppedP0Spans))
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionNone, span.context.trace.samplingDecision)
 	})
 
@@ -501,7 +501,7 @@ func TestSamplingDecision(t *testing.T) {
 		assert.Equal(t, float64(ext.PriorityAutoReject), span.metrics[keySamplingPriority])
 		// this trace won't be sent to the agent,
 		// therefore not necessary to populate keyDecisionMaker
-		assert.Equal(t, "", span.context.trace.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "", span.context.trace.propagatingTag(keyDecisionMaker))
 		assert.Equal(t, decisionDrop, span.context.trace.samplingDecision)
 	})
 
@@ -1065,7 +1065,7 @@ func TestTracerSamplingPriorityPropagation(t *testing.T) {
 	root := tracer.StartSpan("web.request", Tag(ext.ManualKeep, true))
 	child := tracer.StartSpan("db.query", ChildOf(root.Context()))
 	assert.EqualValues(2, root.metrics[keySamplingPriority])
-	assert.Equal("-4", root.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-4", root.context.trace.propagatingTag(keyDecisionMaker))
 	assert.EqualValues(2, child.metrics[keySamplingPriority])
 	assert.EqualValues(2., *root.context.trace.priority.Load())
 	assert.EqualValues(2., *child.context.trace.priority.Load())
@@ -1084,7 +1084,7 @@ func TestTracerSamplingPriorityEmptySpanCtx(t *testing.T) {
 	}
 	child := tracer.StartSpan("db.query", ChildOf(spanCtx))
 	assert.EqualValues(1, child.metrics[keySamplingPriority])
-	assert.Equal("-1", child.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-1", child.context.trace.propagatingTag(keyDecisionMaker))
 }
 
 func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
@@ -1102,7 +1102,7 @@ func TestTracerDDUpstreamServicesManualKeep(t *testing.T) {
 	grandChild := tracer.StartSpan("db.query", ChildOf(child.Context()))
 	grandChild.SetTag(ext.ManualDrop, true)
 	grandChild.SetTag(ext.ManualKeep, true)
-	assert.Equal("-4", grandChild.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-4", grandChild.context.trace.propagatingTag(keyDecisionMaker))
 }
 
 func TestTracerBaggageImmutability(t *testing.T) {
@@ -1375,7 +1375,7 @@ func TestTracerPrioritySampler(t *testing.T) {
 	s := tr.newEnvSpan("pylons", "")
 	assert.Equal(1., s.metrics[keySamplingPriorityRate])
 	assert.Equal(1., s.metrics[keySamplingPriority])
-	assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
+	assert.Equal("-1", s.context.trace.propagatingTag(keyDecisionMaker))
 	p, ok := s.context.SamplingPriority()
 	assert.True(ok)
 	assert.EqualValues(p, s.metrics[keySamplingPriority])
@@ -1428,9 +1428,9 @@ func TestTracerPrioritySampler(t *testing.T) {
 		assert.Equal(tt.rate, s.metrics[keySamplingPriorityRate], strconv.Itoa(i))
 		prio, ok := s.metrics[keySamplingPriority]
 		if prio > 0 {
-			assert.Equal("-1", s.context.trace.propagatingTags[keyDecisionMaker])
+			assert.Equal("-1", s.context.trace.propagatingTag(keyDecisionMaker))
 		} else {
-			assert.Equal("", s.context.trace.propagatingTags[keyDecisionMaker])
+			assert.Equal("", s.context.trace.propagatingTag(keyDecisionMaker))
 		}
 		assert.True(ok)
 		assert.Contains([]float64{0, 1}, prio)
@@ -2787,7 +2787,7 @@ func TestUserMonitoring(t *testing.T) {
 		v, _ := s.meta.Get(keyUserID)
 		assert.Equal(t, id, v)
 		encoded := base64.StdEncoding.EncodeToString([]byte(id))
-		assert.Equal(t, encoded, s.context.trace.propagatingTags[keyPropagatedUserID])
+		assert.Equal(t, encoded, s.context.trace.propagatingTag(keyPropagatedUserID))
 		v, _ = s.meta.Get(keyPropagatedUserID)
 		assert.Equal(t, encoded, v)
 	})
@@ -2800,8 +2800,7 @@ func TestUserMonitoring(t *testing.T) {
 		assert.True(t, ok)
 		_, ok = s.meta.Get(keyPropagatedUserID)
 		assert.False(t, ok)
-		_, ok = s.context.trace.propagatingTags[keyPropagatedUserID]
-		assert.False(t, ok)
+		assert.False(t, s.context.trace.hasPropagatingTag(keyPropagatedUserID))
 	})
 
 	// This tests data races for trace.propagatingTags reads/writes through public API.
