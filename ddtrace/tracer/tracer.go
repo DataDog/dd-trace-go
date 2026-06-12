@@ -25,6 +25,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal/tracerstats"
+	otelmetric "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry/metric"
 	traceinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -271,7 +272,18 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	if t.config.internalConfig.RuntimeMetricsV2Enabled() {
+	otelRuntimeMetricsShouldBeEnabled := t.config.internalConfig.RuntimeMetricsOtelEnabled() &&
+		t.config.internalConfig.OTLPExportMetricsMode() &&
+		(t.config.internalConfig.RuntimeMetricsV2Enabled() || t.config.internalConfig.RuntimeMetricsEnabled())
+
+	if otelRuntimeMetricsShouldBeEnabled {
+		if err := otelmetric.Start(gocontext.Background()); err != nil {
+			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
+		} else {
+			log.Debug("OTel runtime metrics enabled.")
+		}
+	} else if t.config.internalConfig.RuntimeMetricsV2Enabled() {
+		// DD statsd path — only when OTel runtime metrics are not active.
 		l := slog.New(slogHandler{})
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
@@ -1093,6 +1105,13 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	if t.runtimeMetrics != nil {
 		t.runtimeMetrics.Stop()
+	}
+	{
+		ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 5*time.Second)
+		defer cancel()
+		if err := otelmetric.Stop(ctx); err != nil {
+			log.Error("Failed to shut down OTel meter provider: %v", err.Error())
+		}
 	}
 	t.statsd.Close()
 	if t.dataStreams != nil {

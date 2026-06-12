@@ -152,9 +152,14 @@ func registerTelemetry(cfg *config) {
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
 }
 
-// registerNoopTelemetry reports that OTel metrics are disabled.
+// registerNoopTelemetry reports that the Datadog OTel MeterProvider is returning a
+// no-op implementation because OTel-only metrics are not enabled (see isOtelOnlyMetricsEnabled).
 func registerNoopTelemetry() {
-	// No telemetry to report when metrics are disabled
+	telemetry.RegisterAppConfigs(telemetry.Configuration{
+		Name:   "ddtrace.otel_metrics.meter_provider",
+		Value:  "noop",
+		Origin: telemetry.OriginCalculated,
+	})
 }
 
 // parseMilliseconds parses a string value as milliseconds.
