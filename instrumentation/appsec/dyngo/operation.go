@@ -97,9 +97,14 @@ type operation struct {
 	disabled bool
 	mu       sync.RWMutex
 
-	// inContext is used to determine if RegisterOperation was called to put the Operation in the context tree.
-	// If so we need to remove it from the context tree when the Operation is finished.
-	inContext bool
+	// glsPop, when non-nil, releases the contextKey entry that
+	// RegisterOperation pushed onto the orchestrion GLS context stack for this
+	// operation. It is captured via orchestrion.GLSPopFunc at push time, so it
+	// is goroutine-scoped: invoking it from a different goroutine is a no-op,
+	// preventing FinishOperation from corrupting an unrelated goroutine's GLS
+	// stack. nil means RegisterOperation was never called for this operation,
+	// so FinishOperation must not pop anything. Guarded by mu.
+	glsPop func()
 }
 
 func (o *operation) Parent() Operation {
@@ -200,8 +205,21 @@ func StartAndRegisterOperation[O Operation, E ArgOf[O]](ctx context.Context, op 
 // RegisterOperation registers the operation in the context tree. All operations that plan to have children operations
 // should call this function to ensure the operation is properly linked in the context tree.
 func RegisterOperation(ctx context.Context, op Operation) context.Context {
-	op.unwrap().inContext = true
-	return orchestrion.CtxWithValue(ctx, contextKey{}, op)
+	o := op.unwrap()
+	ctx = orchestrion.CtxWithValue(ctx, contextKey{}, op)
+	// Capture a goroutine-scoped popper for the contextKey entry CtxWithValue
+	// just pushed onto the GLS stack, so FinishOperation releases it exactly
+	// once, on the goroutine that pushed it. Invoking it on a different
+	// goroutine is a no-op, so a cross-goroutine finish cannot corrupt an
+	// unrelated goroutine's GLS stack. GLSPopFunc returns a no-op when
+	// orchestrion is disabled. First registration wins.
+	// See https://github.com/DataDog/orchestrion/issues/782.
+	o.mu.Lock()
+	if o.glsPop == nil {
+		o.glsPop = orchestrion.GLSPopFunc(contextKey{})
+	}
+	o.mu.Unlock()
+	return ctx
 }
 
 // FinishOperation finishes the operation along with its results and emits a
@@ -214,12 +232,20 @@ func FinishOperation[O Operation, E ResultOf[O]](op O, results E) {
 	o.mu.RLock()
 	defer o.mu.RUnlock() // Deferred and stacked on top of the previously deferred call to o.disable()
 
-	if o.inContext {
-		orchestrion.GLSPopValue(contextKey{})
+	if o.disabled {
+		// Already finished. Returning before the GLS pop below makes this
+		// idempotent: a second FinishOperation must not pop the GLS again, or
+		// it would remove an unrelated entry still in flight on this goroutine
+		// (the bug this guards against — the pop previously ran before this
+		// check). See https://github.com/DataDog/orchestrion/issues/782.
+		return
 	}
 
-	if o.disabled {
-		return
+	// Release the contextKey entry RegisterOperation pushed onto the GLS stack,
+	// if any. glsPop is goroutine-scoped and a no-op when orchestrion is
+	// disabled or when invoked on a goroutine other than the one that pushed.
+	if o.glsPop != nil {
+		o.glsPop()
 	}
 
 	var current Operation = op
