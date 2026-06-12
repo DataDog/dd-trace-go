@@ -22,6 +22,7 @@ import (
 	rt "runtime/trace"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -34,7 +35,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -180,6 +180,54 @@ type Span struct {
 
 	// +checklocks:mu
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+
+	// +checklocks:mu
+	// glsPop, when non-nil, releases the ActiveSpanKey entry that
+	// ContextWithSpan pushed onto the orchestrion GLS context stack for this
+	// span. It is captured via orchestrion.GLSPopFunc at push time, so it is
+	// goroutine-scoped: invoking it from a different goroutine is a no-op,
+	// preventing Finish from corrupting an unrelated goroutine's GLS stack.
+	// nil means no push was performed for this span (e.g., a manual StartSpan
+	// without a subsequent ContextWithSpan), so Finish must not pop anything.
+	// Set exactly once (first-push-wins) so a double Finish doesn't trigger a
+	// second pop on the same stack — see TestFinishIsIdempotentOnGLS.
+	glsPop func() `msg:"-"`
+
+	// glsReclaimable is set to true when the span is finished. It is read,
+	// lock-free, from the orchestrion GLS push path (on a possibly different
+	// goroutine) to reclaim this span's stale GLS entry. A finished span is
+	// no longer a live scope, so it is safe to drop from any goroutine's GLS
+	// stack. This bounds GLS growth when a span is pushed via ContextWithSpan
+	// on one goroutine but finished on another (the cross-goroutine pop never
+	// runs on the pushing goroutine). It is an atomic (not mu-guarded) because
+	// the reader is a different goroutine that must not take s.mu on the hot
+	// push path. See GLSReclaimable and contextStack.Push.
+	glsReclaimable atomic.Bool `msg:"-"`
+}
+
+// GLSReclaimable reports whether this span has been finished and may therefore
+// be reclaimed from an orchestrion goroutine-local-storage (GLS) stack. The
+// orchestrion GLS push path calls this (via a narrow interface) to drop stale
+// span entries that were pushed on one goroutine but finished on another. It
+// is safe to call from any goroutine and on a nil receiver.
+func (s *Span) GLSReclaimable() bool {
+	return s != nil && s.glsReclaimable.Load()
+}
+
+// setGLSPopOnce records the goroutine-scoped popper for this span's
+// ActiveSpanKey entry on the orchestrion GLS stack. It is set exactly once
+// (first-push-wins) so that repeated ContextWithSpan calls for the same
+// span don't overwrite (and leak) the original push's popper. nil
+// arguments are ignored. The companion call is in Finish.
+func (s *Span) setGLSPopOnce(pop func()) {
+	if s == nil || pop == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.glsPop == nil {
+		s.glsPop = pop
+	}
+	s.mu.Unlock()
 }
 
 func (s *Span) clear() {
@@ -216,6 +264,12 @@ func (s *Span) clear() {
 	s.pprofCtxActive = nil
 	s.pprofCtxRestore = nil
 	s.taskEnd = nil
+	s.glsPop = nil
+	// Reset the GLS reclaim flag: this object may be handed back out by the
+	// span pool for a fresh, live span. Leaving it set would let
+	// contextStack.Push drop the reused (live) span from a GLS stack. See
+	// GLSReclaimable.
+	s.glsReclaimable.Store(false)
 	// Always keep this unlock as the last line. If we ever introduce
 	// code above that could panic, we should move it as deferred call
 	// under s.mu.Lock().
@@ -1013,8 +1067,24 @@ func (s *Span) Finish(opts ...FinishOption) {
 		}
 	}
 
-	s.finish(t)
-	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
+	if !s.finish(t) {
+		// Already finished. Do NOT touch the GLS stack: the matching pop
+		// (if any) was performed by the first Finish call. Popping again
+		// would remove an unrelated entry, corrupting trace parenting.
+		return
+	}
+
+	// Release the entry ContextWithSpan pushed onto the GLS stack, if any.
+	// glsPop is a closure captured by orchestrion.GLSPopFunc at push time
+	// and is a no-op when invoked on a different goroutine than the one
+	// that pushed — see span.glsPop docs.
+	s.mu.Lock()
+	pop := s.glsPop
+	s.glsPop = nil
+	s.mu.Unlock()
+	if pop != nil {
+		pop()
+	}
 }
 
 // SetOperationName sets or changes the operation name.
@@ -1046,7 +1116,12 @@ func (s *Span) enrichServiceSource() {
 	s.meta.Set(ext.KeyServiceSource, s.serviceSource)
 }
 
-func (s *Span) finish(finishTime int64) {
+// finish completes the span. It returns true if this call transitioned the
+// span from not-finished to finished, and false if the span had already been
+// finished. Callers use this signal to perform one-shot side effects (e.g.,
+// popping the orchestrion GLS stack) that must not run twice across repeated
+// Finish calls.
+func (s *Span) finish(finishTime int64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1055,8 +1130,15 @@ func (s *Span) finish(finishTime int64) {
 	// race, since spans are marked `finished` before we flush them.
 	if s.finished {
 		// already finished
-		return
+		return false
 	}
+
+	// Mark the span reclaimable from any goroutine's orchestrion GLS stack.
+	// Set here (once, on the transitioning Finish call) so a span finished on
+	// a different goroutine than the one that pushed it can still be dropped
+	// from the pushing goroutine's GLS stack on its next push. See
+	// GLSReclaimable and contextStack.Push.
+	s.glsReclaimable.Store(true)
 
 	s.serializeSpanLinksInMeta()
 	s.serializeSpanEvents()
@@ -1076,7 +1158,10 @@ func (s *Span) finish(finishTime int64) {
 	tracer, hasTracer := getGlobalTracer().(*tracer)
 	if hasTracer {
 		if !tracer.config.enabled.get() {
-			return
+			// Tracer is disabled, but we still transitioned this span to
+			// finished above, so report true to drive single-shot cleanup
+			// in the caller (e.g., the GLS pop in Span.Finish).
+			return true
 		}
 		if tracer.config.canDropP0s() {
 			// the agent supports dropping p0's in the client
@@ -1112,6 +1197,7 @@ func (s *Span) finish(finishTime int64) {
 		// point are attributed correctly.
 		pprof.SetGoroutineLabels(s.pprofCtxRestore)
 	}
+	return true
 }
 
 // textNonParsable specifies the text that will be assigned to resources for which the resource
