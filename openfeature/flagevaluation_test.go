@@ -30,7 +30,7 @@ func setupTestAggregator(t *testing.T) *flagEvaluationAggregator {
 }
 
 // TestPruneContext verifies that pruneContext applies the 256-field / 256-char limits
-// before evaluation context enters the aggregation buffer (D-07, CONT-03, T-DoS-mem).
+// before evaluation context enters the aggregation buffer.
 //
 // It must fail RED: pruneContext panics with "not implemented".
 func TestPruneContext(t *testing.T) {
@@ -95,7 +95,7 @@ func TestPruneContext(t *testing.T) {
 
 // TestFlagEvaluationPayloadSchema verifies that full, degraded, and ultra-degraded events
 // marshal to JSON that omits the expected optional fields per tier while always including
-// the 5 required fields (CONT-04, CONT-02).
+// the 5 required fields.
 //
 // It must fail RED: the aggregator.add method panics with "not implemented".
 func TestFlagEvaluationPayloadSchema(t *testing.T) {
@@ -268,8 +268,7 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 }
 
 // TestAggregatorCollisionSafety verifies that two distinct inputs that would collide
-// under FNV-1a-only map keying land in SEPARATE buckets under the struct-keyed map
-// (CONT-05 / source_comment_id 3395004724).
+// under FNV-1a-only map keying land in SEPARATE buckets under the struct-keyed map.
 //
 // It must fail RED: aggregator.add panics with "not implemented".
 func TestAggregatorCollisionSafety(t *testing.T) {
@@ -313,7 +312,7 @@ func TestAggregatorCollisionSafety(t *testing.T) {
 }
 
 // TestAggregatorConcurrentMinMax verifies that 1000 goroutines recording the same key
-// produce count==1000 and firstEvaluation<=lastEvaluation (CONT-06 / source_comment_id 3395176782).
+// produce count==1000 and firstEvaluation<=lastEvaluation.
 // Must be run with -race to satisfy the race-free requirement.
 func TestAggregatorConcurrentMinMax(t *testing.T) {
 	agg := &flagEvaluationAggregator{
@@ -363,14 +362,13 @@ func TestAggregatorConcurrentMinMax(t *testing.T) {
 	}
 }
 
-// TestSaturationCountPreservation is the regression guard for BLOCKER #1 (silent drop at
-// globalCap overflow). It asserts that the sum of all evaluation counts across ALL tiers
+// TestSaturationCountPreservation is the regression guard against a silent drop at
+// globalCap overflow. It asserts that the sum of all evaluation counts across ALL tiers
 // (full + degraded + ultra-degraded) equals the total number of add() calls, even after
 // BOTH globalCap AND perFlagCap have been exhausted.
 //
 // This test MUST FAIL on the pre-fix code (negative control proving the silent drop), and
-// MUST PASS after rerouting the globalCap-overflow return into the ultra-degraded tier
-// (CONT-10 / D-08 / D-09 / source_comment_id 3385309423).
+// MUST PASS after rerouting the globalCap-overflow return into the ultra-degraded tier.
 func TestSaturationCountPreservation(t *testing.T) {
 	// Use small caps so we can saturate them quickly.
 	// globalCap=5 means only 5 full-tier buckets ever created.
@@ -395,8 +393,8 @@ func TestSaturationCountPreservation(t *testing.T) {
 	//  - The next ones overflow to degraded (bounded by degradedCap=3).
 	//  - Once degraded is also full, overflow to ultra-degraded.
 	//  - Once globalCap(5) is hit, any flag's attempt-count not yet at perFlagCap routes
-	//    through the globalCap branch — the BLOCKER is that this branch returns silently
-	//    instead of routing to ultra-degraded.
+	//    through the globalCap branch — the defect being guarded against is that this branch
+	//    returns silently instead of routing to ultra-degraded.
 	const totalCalls = 100
 	for i := range totalCalls {
 		flagIdx := i % 20
@@ -437,9 +435,9 @@ func TestSaturationCountPreservation(t *testing.T) {
 }
 
 // TestAggregatorCapOverflow verifies that:
-//   - Exceeding perFlagCap routes new entries to the degraded map (CONT-10).
-//   - Exceeding degradedCap routes new entries to the ultra-degraded map (CONT-10).
-//   - Global cap bounds total bucket growth (D-08 / source_comment_id 3385309427).
+//   - Exceeding perFlagCap routes new entries to the degraded map.
+//   - Exceeding degradedCap routes new entries to the ultra-degraded map.
+//   - Global cap bounds total bucket growth.
 func TestAggregatorCapOverflow(t *testing.T) {
 	t.Run("perFlagCap overflow routes to degraded", func(t *testing.T) {
 		agg := setupTestAggregator(t) // perFlagCap=3
@@ -536,7 +534,7 @@ func TestAggregatorCapOverflow(t *testing.T) {
 		// globalCap=10 caps the full tier; overflow goes to ultra-degraded.
 		// The full tier must stay at or below globalCap.
 		// The total count across all tiers must equal the number of add() calls
-		// (no silent drops — CONT-10/D-08/D-09).
+		// (no silent drops).
 		const calls = 50
 		for i := range calls {
 			d := evalDetails{

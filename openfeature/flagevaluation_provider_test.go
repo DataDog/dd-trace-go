@@ -13,7 +13,7 @@ import (
 )
 
 // TestFlagEvaluationKillswitch verifies that DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true)
-// controls ONLY the EVP flagevaluation hook/writer, leaving the OTel flagEvalHook unaffected (PRES-01).
+// controls ONLY the EVP flagevaluation hook/writer, leaving the OTel flagEvalHook unaffected.
 //
 // When the killswitch is "false": the EVP hook (flagEvalEVPHook) is NOT registered in Hooks()
 // and flagEvalWriter is nil.
@@ -34,7 +34,7 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 
 		hooks := p.Hooks()
 
-		// OTel hook must still be present (PRES-01).
+		// OTel hook must still be present.
 		otelPresent := false
 		for _, h := range hooks {
 			if _, ok := h.(*flagEvalHook); ok {

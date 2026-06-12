@@ -17,8 +17,10 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -34,20 +36,25 @@ import (
 
 const (
 	// defaultFlagEvalFlushInterval is the flush interval for EVP flag evaluation events.
-	// D-05: dedicated 10 s timer (contract value); separate from exposureWriter's 1 s interval.
+	// Dedicated 10 s timer; separate from exposureWriter's 1 s interval.
 	defaultFlagEvalFlushInterval = 10 * time.Second
 
 	// flagEvaluationEndpoint is the EVP proxy endpoint for flag evaluation events.
 	flagEvaluationEndpoint = "/evp_proxy/v2/api/v2/flagevaluations"
 
-	// Context pruning limits (D-07) — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH.
+	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH.
 	maxContextFields = 256
 	maxFieldLength   = 256
 
-	// Aggregation caps (D-08/D-09/CONT-10).
-	defaultEvalGlobalCap   = 65_536 // bounds full-tier buckets only; degraded/ultra are bounded separately (WR-02)
+	// Aggregation caps.
+	defaultEvalGlobalCap   = 65_536 // bounds full-tier buckets only; degraded/ultra are bounded separately
 	defaultEvalPerFlagCap  = 10_000 // bounds full-fidelity buckets per flag
-	defaultEvalDegradedCap = 10_000 // bounds degraded map (absent from POC — Gate 8 fix)
+	defaultEvalDegradedCap = 10_000 // bounds degraded map
+
+	// defaultEvalEventBufferSize bounds the async hand-off queue between the (hot-path)
+	// Finally hook and the background aggregation worker. On overflow the hook drops the
+	// event and increments a counter rather than blocking the evaluation.
+	defaultEvalEventBufferSize = 4096
 )
 
 // evaluationAggregationKey identifies one full-tier aggregation bucket. Its identity is
@@ -63,7 +70,7 @@ const (
 //     and therefore not comparable, so it cannot be a struct field — the digest stands in
 //     for it. The digest is deterministic and low-collision but NOT collision-proof.
 //
-// What a contextHash collision actually does — and why it is acceptable (D-13 / CONT-05):
+// What a contextHash collision actually does — and why it is acceptable:
 //
 //	A collision requires two evaluations that are identical on ALL FIVE exact dimensions
 //	AND whose *different* contexts happen to hash to the same uint64. When that occurs, the
@@ -86,8 +93,6 @@ const (
 //	own context — not a trust boundary — so a keyed/crypto hash (e.g. SipHash) is
 //	unwarranted, and a wider (128-bit) digest would buy only context-label fidelity at that
 //	1e-10 tail. Deliberately not done.
-//
-// (CONT-05 / source_comment_id 3395004724; resolution recorded as decision D-13.)
 type evaluationAggregationKey struct {
 	flagKey       string
 	variant       string
@@ -209,6 +214,24 @@ type flagEvaluationWriter struct {
 	stopChan      chan struct{}
 	stopped       bool
 	jsonConfig    jsoniter.API
+
+	// Asynchronous hand-off: the Finally hook enqueues a cheap snapshot here; a single
+	// background worker (started in start()) drains it and performs flatten/prune/hash/
+	// aggregate off the evaluation hot path. events is bounded; on overflow the hook drops
+	// the event and bumps dropped — best-effort telemetry that never blocks the request.
+	events     chan evalEvent
+	dropped    atomic.Int64
+	workerDone chan struct{}
+}
+
+// evalEvent is the minimal snapshot the Finally hook hands to the worker. attrs is the
+// owned copy returned by EvaluationContext().Attributes(), so it is safe to read off the
+// hot path for scalar values (a nested mutable attribute the caller mutates after the call
+// returns is a documented best-effort edge).
+type evalEvent struct {
+	d     evalDetails
+	attrs map[string]any
+	nowMs int64
 }
 
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
@@ -224,7 +247,7 @@ type evalDetails struct {
 }
 
 // newFlagEvaluationWriter creates a new flag evaluation writer.
-// The writer uses the same HTTP transport setup as exposure.go (D-04).
+// The writer uses the same HTTP transport setup as exposure.go.
 func newFlagEvaluationWriter(config ProviderConfig) *flagEvaluationWriter {
 	agentURL := internal.AgentURLFromEnv()
 	var httpClient *http.Client
@@ -244,6 +267,8 @@ func newFlagEvaluationWriter(config ProviderConfig) *flagEvaluationWriter {
 		httpClient:    httpClient,
 		agentURL:      agentURL,
 		stopChan:      make(chan struct{}),
+		workerDone:    make(chan struct{}),
+		events:        make(chan evalEvent, defaultEvalEventBufferSize),
 		jsonConfig:    jsoniter.Config{}.Froze(),
 		ddContext: flagEvalDDContext{
 			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
@@ -278,14 +303,20 @@ func (w *flagEvaluationWriter) start() {
 				}
 				telemetrylog.Error("openfeature: flag evaluation writer recovered panic", errAttr)
 			}
-			w.stop()
+			// Always signal completion so stop() unblocks, even on panic.
+			close(w.workerDone)
 		}()
 
+		// Single owner of flatten/prune/hash/aggregate/flush. The hot path only enqueues;
+		// all that cost lives here, off the evaluation path.
 		for {
 			select {
+			case ev := <-w.events:
+				w.aggregate(ev)
 			case <-w.ticker.C:
 				w.flush()
 			case <-w.stopChan:
+				w.drainAndFlush()
 				return
 			}
 		}
@@ -302,11 +333,12 @@ func (w *flagEvaluationWriter) stop() {
 	w.stopped = true
 	w.aggregator.mu.Unlock()
 
-	// Signal the goroutine to stop
+	// Signal the worker to drain the queue and do a final flush.
 	close(w.stopChan)
-
-	// Stop the ticker
 	if w.ticker != nil {
+		// Worker was started: wait for its final flush before returning, then stop the
+		// ticker. (ticker is set only in start(), so it gates "was the worker started".)
+		<-w.workerDone
 		w.ticker.Stop()
 	}
 
@@ -315,15 +347,19 @@ func (w *flagEvaluationWriter) stop() {
 
 // flush drains the aggregator, assembles per-tier events, and sends them to the agent.
 func (w *flagEvaluationWriter) flush() {
+	// Surface best-effort backpressure drops (queue full) as an observable signal.
+	if d := w.dropped.Swap(0); d > 0 {
+		log.Warn("openfeature: flag evaluation queue full — dropped %d evaluation(s) under backpressure (best-effort telemetry)", d)
+	}
+
 	w.aggregator.mu.Lock()
 
 	// Under lock: drain all three maps.
 	full := w.aggregator.full
 	degraded := w.aggregator.degraded
 	ultraDeg := w.aggregator.ultraDeg
-	stopped := w.stopped
 
-	if (len(full)+len(degraded)+len(ultraDeg)) == 0 || stopped {
+	if (len(full) + len(degraded) + len(ultraDeg)) == 0 {
 		w.aggregator.mu.Unlock()
 		return
 	}
@@ -416,26 +452,51 @@ func (w *flagEvaluationWriter) flush() {
 	}
 }
 
-// record extracts evaluation details and adds them to the aggregation buffer.
-// Called from the Finally hook after every evaluation.
+// record runs on the evaluation hot path (the Finally hook). It does only cheap scalar
+// extraction plus the SDK's shallow context copy, then a non-blocking enqueue — no
+// flatten/prune/hash/aggregation happens here; the background worker does that. If the
+// queue is full the event is dropped and counted (best-effort), never blocking the
+// evaluation. Called from the Finally hook after every evaluation.
 func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
-	// Extract details.
-	d := extractEvalDetails(hookContext, details)
+	ev := evalEvent{
+		d:     extractEvalDetails(hookContext, details),
+		attrs: hookContext.EvaluationContext().Attributes(), // SDK returns an owned copy
+		nowMs: time.Now().UnixMilli(),
+	}
+	select {
+	case w.events <- ev:
+	default:
+		w.dropped.Add(1)
+	}
+}
 
-	// Flatten and prune the evaluation context.
-	attrs := hookContext.EvaluationContext().Attributes()
+// aggregate performs the deferred flatten/prune/hash and updates the aggregator. It runs
+// only on the writer's single worker goroutine.
+func (w *flagEvaluationWriter) aggregate(ev evalEvent) {
 	var contextAttrs map[string]any
-	if len(attrs) > 0 {
-		flattened := flattenContext(attrs)
+	if len(ev.attrs) > 0 {
+		flattened := flattenContext(ev.attrs)
 		contextAttrs = pruneContext(flattened)
 	}
+	w.aggregator.add(ev.d, contextAttrs, ev.nowMs)
+}
 
-	nowMs := time.Now().UnixMilli()
-	w.aggregator.add(d, contextAttrs, nowMs)
+// drainAndFlush processes any buffered events and performs a final flush. Called by the
+// worker when stopping so a final batch is not lost on shutdown.
+func (w *flagEvaluationWriter) drainAndFlush() {
+	for {
+		select {
+		case ev := <-w.events:
+			w.aggregate(ev)
+		default:
+			w.flush()
+			return
+		}
+	}
 }
 
 // sendToAgent sends the flag evaluation payload to the Datadog Agent via EVP proxy.
-// Reuses evpSubdomainHeader / evpSubdomainValue constants from exposure.go (D-04).
+// Reuses evpSubdomainHeader / evpSubdomainValue constants from exposure.go.
 func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error {
 	var bytesBuffer bytes.Buffer
 	encoder := w.jsonConfig.NewEncoder(&bytesBuffer)
@@ -472,7 +533,7 @@ func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error 
 
 // add records one evaluation observation into the appropriate aggregation tier.
 // Must be called WITHOUT the aggregator lock held (it acquires the lock internally).
-// Implements the three-tier cascade: full → degraded → ultra-degraded (CONT-04/CONT-10).
+// Implements the three-tier cascade: full → degraded → ultra-degraded.
 //
 // Per-flag attempt counting: perFlagFull[flag] is incremented on every call for a flag
 // (whether or not a full-tier bucket is actually created). This ensures that once
@@ -483,7 +544,7 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Build the full key: exact struct fields for enumerable dims + 64-bit FNV context digest (CONT-05).
+	// Build the full key: exact struct fields for enumerable dims + 64-bit FNV context digest.
 	fullKey := evaluationAggregationKey{
 		flagKey:       d.flagKey,
 		variant:       d.variant,
@@ -526,7 +587,7 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 
 	// Check globalCap before creating a new full-tier bucket.
 	if a.globalCount >= a.globalCap {
-		// Global cap full — count must not be lost (CONT-10/D-08/D-09).
+		// Global cap full — count must not be lost.
 		// Route into ultra-degraded (flag key + counts only) so the count signal is preserved.
 		// The per-flag attempt counter was already incremented above; once it reaches
 		// perFlagCap this flag will route through addToDegraded instead.
@@ -587,7 +648,7 @@ func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 // addToUltraDegraded adds an entry to the ultra-degraded map (only flag key + variant).
 // Called with the aggregator lock held.
 // Ultra-degraded has no explicit cap — it is naturally bounded by the flag×variant
-// enumeration (CONT-10). The globalCap enforcement applies only to the full tier.
+// enumeration. The globalCap enforcement applies only to the full tier.
 func (a *flagEvaluationAggregator) addToUltraDegraded(d evalDetails, nowMs int64) {
 	ultraKey := evaluationUltraDegradedKey{
 		flagKey: d.flagKey,
@@ -617,31 +678,66 @@ func (a *flagEvaluationAggregator) addToUltraDegraded(d evalDetails, nowMs int64
 // use as a discriminator inside evaluationAggregationKey. The enumerable struct fields
 // (flagKey, variant, allocationKey, reason, targetingKey) are exact string comparisons and
 // cannot collide; contextHash is a probabilistic supplement for context identity only —
-// it is low-collision but NOT collision-proof (CONT-05).
+// it is low-collision but NOT collision-proof.
 //
 // A digest collision is count-preserving (it merges into an existing bucket via add()'s
 // fast path, costing only context-attribute fidelity, never a count) — see the
-// evaluationAggregationKey doc and decision D-13 for the full collision analysis.
+// evaluationAggregationKey doc for the full collision analysis.
 func hashContext(attrs map[string]any) uint64 {
 	if len(attrs) == 0 {
 		return 0
 	}
 	// Hash over a deterministic key ordering. Go map iteration is randomized,
 	// and FNV-1a is order-sensitive, so ranging the map directly would produce a
-	// different hash for identical contexts and fragment aggregation buckets (CR-01).
+	// different hash for identical contexts and fragment aggregation buckets.
 	keys := make([]string, 0, len(attrs))
 	for k := range attrs {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	h := fnv.New64a()
+	// Reuse one scratch buffer across fields and write the bytes directly. FNV's Write
+	// neither retains the slice nor allocates, so hashing an N-field context costs ~1
+	// allocation instead of the per-field reflection allocation of fmt.Fprintf — the
+	// dominant per-evaluation cost of this hook for large contexts.
+	var buf []byte
 	for _, k := range keys {
-		_, _ = fmt.Fprintf(h, "%s=%v\n", k, attrs[k])
+		buf = buf[:0]
+		buf = append(buf, k...)
+		buf = append(buf, '=')
+		buf = appendContextValue(buf, attrs[k])
+		buf = append(buf, '\n')
+		_, _ = h.Write(buf)
 	}
 	return h.Sum64()
 }
 
-// pruneContext applies 256-field / 256-char limits before buffering (D-07).
+// appendContextValue appends a deterministic string form of v to buf, avoiding allocation
+// for the common scalar types; rare/complex types fall back to fmt. The hash is only an
+// in-memory, per-flush-window discriminator, so the exact formatting is irrelevant as long
+// as it is deterministic within a run.
+func appendContextValue(buf []byte, v any) []byte {
+	switch x := v.(type) {
+	case string:
+		return append(buf, x...)
+	case bool:
+		return strconv.AppendBool(buf, x)
+	case int:
+		return strconv.AppendInt(buf, int64(x), 10)
+	case int64:
+		return strconv.AppendInt(buf, x, 10)
+	case int32:
+		return strconv.AppendInt(buf, int64(x), 10)
+	case float64:
+		return strconv.AppendFloat(buf, x, 'g', -1, 64)
+	case float32:
+		return strconv.AppendFloat(buf, float64(x), 'g', -1, 32)
+	default:
+		return append(buf, fmt.Sprintf("%v", x)...)
+	}
+}
+
+// pruneContext applies 256-field / 256-char limits before buffering.
 // Mirrors worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH exactly.
 // Must be called AFTER flattenContext() (from flatten.go) to expand nested objects first.
 func pruneContext(raw map[string]any) map[string]any {
@@ -669,7 +765,7 @@ func pruneContext(raw map[string]any) map[string]any {
 
 // extractEvalDetails extracts EVP-relevant fields from hook context and evaluation details.
 // This helper is used only by flagEvaluationHook — it does NOT replace the extraction in
-// flageval_metrics.go (that file is untouched per D-06/PRES-01).
+// flageval_metrics.go (that file is left untouched to preserve the OTel path).
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
 	reason := strings.ToLower(string(details.Reason))

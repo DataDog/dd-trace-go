@@ -13,7 +13,7 @@ import (
 
 // flagEvaluationHook implements the OpenFeature Hook interface to record EVP flagevaluation events.
 // It uses the Finally hook stage (same as flagEvalHook) to cover success, error, and default paths.
-// This satisfies CONT-09: Finally fires on error/default paths, unlike After (PR #4874 defect).
+// Finally fires on error/default paths, unlike After.
 type flagEvaluationHook struct {
 	of.UnimplementedHook
 	writer *flagEvaluationWriter
@@ -25,8 +25,8 @@ func newFlagEvaluationHook(w *flagEvaluationWriter) *flagEvaluationHook {
 }
 
 // Finally is called after every flag evaluation (success or error).
-// Using Finally (not After) ensures error-path and provider-not-ready evaluations are counted (CONT-09).
-// Mirrors flageval_metrics.go's Finally stage; the EVP hook is a separate registered hook (D-06).
+// Using Finally (not After) ensures error-path and provider-not-ready evaluations are counted.
+// Mirrors flageval_metrics.go's Finally stage; the EVP hook is a separate registered hook.
 func (h *flagEvaluationHook) Finally(
 	_ context.Context,
 	hookContext of.HookContext,
@@ -37,7 +37,7 @@ func (h *flagEvaluationHook) Finally(
 	// frequently the request context, which may already be cancelled by the time
 	// Finally runs — and record() is a non-blocking in-memory add with no network
 	// call. Gating on ctx.Done() would silently drop legitimate evaluation counts
-	// (undercuts Gate-7 for cancelled-request evals) (WR-03).
+	// for cancelled-request evals.
 	if h.writer == nil {
 		return
 	}
@@ -47,7 +47,6 @@ func (h *flagEvaluationHook) Finally(
 // isRuntimeDefault returns true when the caller's supplied default value was returned.
 // Primary signal: absent variant key (flag-not-found, provider-not-ready, type-mismatch, no allocation).
 // Secondary: explicit DEFAULT or DISABLED reason (belt-and-suspenders).
-// Satisfies CONT-07 (source_comment_id 3395344504).
 func isRuntimeDefault(details of.InterfaceEvaluationDetails) bool {
 	if details.Variant == "" {
 		return true

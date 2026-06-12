@@ -36,7 +36,7 @@ const (
 	ffeProductEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
 	// flagEvalCountsEnabledEnvVar is the operator killswitch for the EVP flagevaluation emission path.
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
-	// while leaving the OTel feature_flag.evaluations path unaffected (PRES-01).
+	// while leaving the OTel feature_flag.evaluations path unaffected.
 	// Mirrors the internal.BoolEnv convention used by ffeProductEnvVar.
 	flagEvalCountsEnabledEnvVar = "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
 	// Default timeout for provider initialization
@@ -52,7 +52,7 @@ type ProviderConfig struct {
 	ExposureFlushInterval time.Duration
 
 	// FlagEvaluationFlushInterval is the interval for flushing EVP flag evaluation events.
-	// Default: 10 seconds (D-05 contract value). Leave zero to use the default.
+	// Default: 10 seconds. Leave zero to use the default.
 	FlagEvaluationFlushInterval time.Duration
 }
 
@@ -122,7 +122,7 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// Conditionally construct the EVP flagevaluation writer + hook.
 	// Gated by DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true).
 	// When false, both fields are left nil and the EVP path is disabled.
-	// The OTel hook (flagEvalHook above) is registered unconditionally (PRES-01).
+	// The OTel hook (flagEvalHook above) is registered unconditionally.
 	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
 		evalWriter := newFlagEvaluationWriter(config)
 		p.flagEvalWriter = evalWriter
@@ -451,7 +451,7 @@ func (p *DatadogProvider) Hooks() []openfeature.Hook {
 	if p.exposureHook != nil {
 		hooks = append(hooks, p.exposureHook)
 	}
-	// OTel hook is always registered — untouched by the EVP killswitch (PRES-01).
+	// OTel hook is always registered — untouched by the EVP killswitch.
 	if p.flagEvalHook != nil {
 		hooks = append(hooks, p.flagEvalHook)
 	}

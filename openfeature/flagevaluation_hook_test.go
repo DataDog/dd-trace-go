@@ -22,6 +22,7 @@ func setupTestWriter(t *testing.T) *flagEvaluationWriter {
 		flushInterval: 24 * time.Hour, // effectively disabled; tests control flush manually
 		jsonConfig:    jsoniter.Config{}.Froze(),
 		stopChan:      make(chan struct{}),
+		events:        make(chan evalEvent, defaultEvalEventBufferSize),
 		aggregator: flagEvaluationAggregator{
 			full:        make(map[evaluationAggregationKey]*evaluationEntry),
 			degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
@@ -64,7 +65,7 @@ func makeEvalDetails(variant string, reason of.Reason, errorCode of.ErrorCode, m
 	return d
 }
 
-// TestIsRuntimeDefault verifies the runtime-default detection rule (CONT-07 / source_comment_id 3395344504).
+// TestIsRuntimeDefault verifies the runtime-default detection rule.
 // Primary signal: variant=="" → true.
 // Secondary signal: reason==DEFAULT or reason==DISABLED → true even if variant is non-empty.
 //
@@ -128,7 +129,7 @@ func TestIsRuntimeDefault(t *testing.T) {
 }
 
 // TestFlagEvaluationHookFinally verifies that the Finally hook records an entry for
-// success, error-reason, and provider-not-ready paths (CONT-09 / source_comment_id 3385309423).
+// success, error-reason, and provider-not-ready paths.
 //
 // It must fail RED: the hook's Finally method panics with "not implemented".
 func TestFlagEvaluationHookFinally(t *testing.T) {
@@ -142,6 +143,10 @@ func TestFlagEvaluationHookFinally(t *testing.T) {
 		})
 
 		hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
+
+		// record() enqueues asynchronously; drain the one event into the aggregator so the
+		// assertions below observe it deterministically (no worker runs in this test).
+		w.aggregate(<-w.events)
 
 		w.aggregator.mu.Lock()
 		defer w.aggregator.mu.Unlock()
@@ -161,6 +166,10 @@ func TestFlagEvaluationHookFinally(t *testing.T) {
 
 		hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
 
+		// record() enqueues asynchronously; drain the one event into the aggregator so the
+		// assertions below observe it deterministically (no worker runs in this test).
+		w.aggregate(<-w.events)
+
 		w.aggregator.mu.Lock()
 		defer w.aggregator.mu.Unlock()
 
@@ -178,6 +187,10 @@ func TestFlagEvaluationHookFinally(t *testing.T) {
 		details := makeEvalDetails("", of.ErrorReason, of.ProviderNotReadyCode)
 
 		hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
+
+		// record() enqueues asynchronously; drain the one event into the aggregator so the
+		// assertions below observe it deterministically (no worker runs in this test).
+		w.aggregate(<-w.events)
 
 		w.aggregator.mu.Lock()
 		defer w.aggregator.mu.Unlock()
@@ -197,6 +210,10 @@ func TestFlagEvaluationHookFinally(t *testing.T) {
 
 		hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
 
+		// record() enqueues asynchronously; drain the one event into the aggregator so the
+		// assertions below observe it deterministically (no worker runs in this test).
+		w.aggregate(<-w.events)
+
 		w.aggregator.mu.Lock()
 		defer w.aggregator.mu.Unlock()
 
@@ -215,8 +232,8 @@ func TestFlagEvaluationHookFinally(t *testing.T) {
 }
 
 // TestFlagEvaluationHookContextCancelled verifies that a cancelled context does NOT
-// drop the evaluation: record() is a non-blocking in-memory add, so a cancelled
-// request context must still be counted (Gate-7 / WR-03).
+// drop the evaluation: record() is a non-blocking enqueue that ignores the request
+// context, so a cancelled request must still be counted.
 func TestFlagEvaluationHookContextCancelled(t *testing.T) {
 	w := setupTestWriter(t)
 	hook := newFlagEvaluationHook(w)
@@ -229,11 +246,33 @@ func TestFlagEvaluationHookContextCancelled(t *testing.T) {
 
 	hook.Finally(ctx, hookCtx, details, of.HookHints{})
 
+	// record() enqueues asynchronously; drain the one event so the assertion sees it.
+	w.aggregate(<-w.events)
+
 	w.aggregator.mu.Lock()
 	defer w.aggregator.mu.Unlock()
 
 	total := len(w.aggregator.full) + len(w.aggregator.degraded) + len(w.aggregator.ultraDeg)
 	if total != 1 {
 		t.Errorf("expected the cancelled-context evaluation to still be counted, got %d entries", total)
+	}
+}
+
+// TestFlagEvaluationBackpressureDrops verifies the explicit backpressure policy: when the
+// async hand-off queue is full, record() drops the event and counts it (observable) rather
+// than blocking the evaluation. No worker drains in this test, so the queue fills after
+// defaultEvalEventBufferSize enqueues and every further record() is a counted drop.
+func TestFlagEvaluationBackpressureDrops(t *testing.T) {
+	w := setupTestWriter(t)
+	hookCtx := makeHookContext("bp-flag", "user-1", nil)
+	details := makeEvalDetails("on", of.TargetingMatchReason, "")
+
+	const overflow = 100
+	for range defaultEvalEventBufferSize + overflow {
+		w.record(hookCtx, details) // must never block, even once the queue is full
+	}
+
+	if got := w.dropped.Load(); got != overflow {
+		t.Errorf("expected exactly %d dropped evaluations once the queue filled, got %d", overflow, got)
 	}
 }

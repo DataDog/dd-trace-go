@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -153,7 +154,9 @@ func BenchmarkEvaluationWithVaryingContextSize(b *testing.B) {
 	}
 }
 
-// BenchmarkEvaluationWithVaryingFlagCounts benchmarks evaluation with different numbers of flags in config
+// BenchmarkEvaluationWithVaryingFlagCounts benchmarks evaluation across configs with
+// different numbers of flags. The evaluated flag key rotates across all configured flags,
+// so flag-cardinality is exercised rather than repeatedly evaluating a single key.
 func BenchmarkEvaluationWithVaryingFlagCounts(b *testing.B) {
 	flagCounts := []struct {
 		name     string
@@ -203,11 +206,17 @@ func BenchmarkEvaluationWithVaryingFlagCounts(b *testing.B) {
 				"country":      "US",
 			}
 
+			// Rotate across all boolean flags so a larger config is actually exercised,
+			// not just a single repeated key.
+			flagKeys := boolBenchmarkFlagKeys(config)
+
 			b.ReportAllocs()
 			b.ResetTimer()
 
+			i := 0
 			for b.Loop() {
-				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+				_ = provider.BooleanEvaluation(ctx, flagKeys[i%len(flagKeys)], false, flatCtx)
+				i++
 			}
 		})
 	}
@@ -238,7 +247,7 @@ func BenchmarkConcurrentEvaluations(b *testing.B) {
 // makeBenchmarkConfig creates a test config with the specified number of flags.
 // Extends createTestConfig() for benchmark load profiles.
 // Flag keys are unique monotonic integers ("bench-flag-N") so the claimed cardinality
-// is fully exercised without wrapping (WR-04).
+// is fully exercised without wrapping.
 func makeBenchmarkConfig(numFlags int) *universalFlagsConfiguration {
 	config := createTestConfig()
 	for i := len(config.Flags); i < numFlags; i++ {
@@ -264,146 +273,159 @@ func makeBenchmarkConfig(numFlags int) *universalFlagsConfiguration {
 	return config
 }
 
-// makeBenchmarkContext creates a FlattenedContext with numFields attributes.
-// Field names are "fieldN" with a monotonic index so all numFields are distinct and
-// the claimed context cardinality is fully exercised without wrapping (WR-04).
-func makeBenchmarkContext(numFields int) openfeature.FlattenedContext {
-	ctx := openfeature.FlattenedContext{
-		"targetingKey": "bench-user-001",
+// boolBenchmarkFlagKeys returns the boolean flag keys in cfg in deterministic order, so a
+// benchmark can rotate the evaluated flag and exercise flag-cardinality (not just users).
+func boolBenchmarkFlagKeys(cfg *universalFlagsConfiguration) []string {
+	keys := make([]string, 0, len(cfg.Flags))
+	for k, f := range cfg.Flags {
+		if f.VariationType == valueTypeBoolean {
+			keys = append(keys, k)
+		}
 	}
-	for i := 1; i < numFields; i++ {
-		ctx["field"+strconv.Itoa(i)] = "value"
-	}
-	return ctx
+	sort.Strings(keys)
+	return keys
 }
 
-// BenchmarkFlagEvaluationNoop measures the raw evaluation cost with zero hooks —
-// the pure evaluator baseline for the three-column overhead comparison (CONT-08 / D-11).
+// makeBenchmarkAttrs builds an evaluation-context attribute map with numFields-1 distinct
+// fields (the targeting key is supplied separately to NewEvaluationContext, so the flattened
+// context has numFields entries total). Field names are "fieldN" so all are distinct.
+func makeBenchmarkAttrs(numFields int) map[string]any {
+	attrs := make(map[string]any, numFields)
+	for i := 1; i < numFields; i++ {
+		attrs["field"+strconv.Itoa(i)] = "value"
+	}
+	return attrs
+}
+
+// flagEvalBenchProfile is one load profile for the three-column overhead comparison.
+type flagEvalBenchProfile struct {
+	name      string
+	numFlags  int
+	numUsers  int
+	numFields int
+}
+
+// flagEvalBenchProfiles are shared by the Noop / OTel-only / OTel+EVP benchmarks so the
+// three columns are directly comparable.
+var flagEvalBenchProfiles = []flagEvalBenchProfile{
+	{"typical/100flags_50users_10fields", 100, 50, 10},
+	{"stress/10flags_1000users_250fields", 10, 1000, 250},
+}
+
+// runFlagEvalBenchmark drives evaluations through a real OpenFeature client so the
+// provider's registered hooks actually run. Calling provider.BooleanEvaluation directly
+// would bypass Hooks(), so neither the OTel nor the EVP hook would execute and all three
+// columns would measure the same bare evaluator. Both the evaluated flag key and the
+// targeting key rotate, so flag- and user-cardinality are exercised.
 //
-// Profile: typical (100 flags, 50-user simulation, 10-field context).
-// Profile: stress  (10 flags, 1000-user simulation, 250-field context — near degraded trigger).
+// configureHooks nils whichever provider hooks the tier under test should exclude. It runs
+// before the provider is registered; Init does not recreate hooks, so the choice sticks.
+// The provider uses a 24h flush interval, so the EVP writer never flushes during the run —
+// no HTTP round-trip enters the hot path, isolating hook + aggregator cost.
+func runFlagEvalBenchmark(b *testing.B, configureHooks func(p *DatadogProvider)) {
+	b.Helper()
+	for _, p := range flagEvalBenchProfiles {
+		b.Run(p.name, func(b *testing.B) {
+			provider := newDatadogProvider(ProviderConfig{FlagEvaluationFlushInterval: 24 * time.Hour})
+			configureHooks(provider)
+
+			config := makeBenchmarkConfig(p.numFlags)
+			provider.updateConfiguration(config)
+
+			initCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := openfeature.SetProviderWithContextAndWait(initCtx, provider); err != nil {
+				cancel()
+				b.Fatalf("set provider: %v", err)
+			}
+			cancel()
+			client := openfeature.NewClient("flageval-bench")
+
+			flagKeys := boolBenchmarkFlagKeys(config)
+			attrs := makeBenchmarkAttrs(p.numFields)
+			ctx := context.Background()
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			i := 0
+			for b.Loop() {
+				evalCtx := openfeature.NewEvaluationContext("bench-user-"+strconv.Itoa(i%p.numUsers), attrs)
+				_ = client.Boolean(ctx, flagKeys[i%len(flagKeys)], false, evalCtx)
+				i++
+			}
+		})
+	}
+}
+
+// BenchmarkFlagEvaluationNoop measures the client+provider evaluation cost with no hooks —
+// the baseline column for the three-column overhead comparison.
 //
 // Run command:
 //
 //	GOFLAGS=-mod=readonly go test ./openfeature -run='^$' -bench='^BenchmarkFlagEvaluation' \
 //	  -benchmem -count=3 -cpu=8
 func BenchmarkFlagEvaluationNoop(b *testing.B) {
-	profiles := []struct {
-		name      string
-		numFlags  int
-		numUsers  int
-		numFields int
-	}{
-		{"typical/100flags_50users_10fields", 100, 50, 10},
-		{"stress/10flags_1000users_250fields", 10, 1000, 250},
-	}
-
-	for _, p := range profiles {
-		b.Run(p.name, func(b *testing.B) {
-			// Noop: provider with no hooks (nil out hooks after construction)
-			provider := newDatadogProvider(ProviderConfig{})
-			provider.flagEvalHook = nil // no OTel hook
-			provider.exposureHook = nil // no exposure hook
-			config := makeBenchmarkConfig(p.numFlags)
-			provider.updateConfiguration(config)
-
-			ctx := context.Background()
-			flatCtx := makeBenchmarkContext(p.numFields)
-
-			b.ReportAllocs()
-			b.ResetTimer()
-
-			i := 0
-			for b.Loop() {
-				// Rotate user targeting key to simulate p.numUsers distinct users.
-				// Use a per-iteration counter (not b.N, which is a single fixed total
-				// under b.Loop()) so the cardinality profile is actually exercised (WR-04).
-				flatCtx["targetingKey"] = "bench-user-" + strconv.Itoa(i%p.numUsers)
-				i++
-				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
-			}
-		})
-	}
+	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
+		p.flagEvalHook = nil
+		p.flagEvalEVPHook = nil
+		p.flagEvalWriter = nil
+		p.exposureHook = nil
+	})
 }
 
-// BenchmarkFlagEvaluationOTelOnly measures the evaluation cost with only the existing
-// OTel feature_flag.evaluations hook (Path A — preserved baseline) (CONT-08 / D-11).
+// BenchmarkFlagEvaluationOTelOnly measures the cost with only the existing OTel
+// feature_flag.evaluations hook (Path A — the preserved baseline). The EVP hook and writer
+// are disabled so this column isolates the OTel hook's cost.
 func BenchmarkFlagEvaluationOTelOnly(b *testing.B) {
-	profiles := []struct {
-		name      string
-		numFlags  int
-		numUsers  int
-		numFields int
-	}{
-		{"typical/100flags_50users_10fields", 100, 50, 10},
-		{"stress/10flags_1000users_250fields", 10, 1000, 250},
-	}
-
-	for _, p := range profiles {
-		b.Run(p.name, func(b *testing.B) {
-			// OTel-only: provider with flagEvalHook (OTel) but no EVP hook
-			provider := newDatadogProvider(ProviderConfig{})
-			provider.exposureHook = nil // no exposure hook — isolate OTel cost only
-			// provider.flagEvalHook is set by newDatadogProvider — keep it
-			config := makeBenchmarkConfig(p.numFlags)
-			provider.updateConfiguration(config)
-
-			ctx := context.Background()
-			flatCtx := makeBenchmarkContext(p.numFields)
-
-			b.ReportAllocs()
-			b.ResetTimer()
-
-			i := 0
-			for b.Loop() {
-				flatCtx["targetingKey"] = "bench-user-" + strconv.Itoa(i%p.numUsers)
-				i++
-				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
-			}
-		})
-	}
+	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
+		p.flagEvalEVPHook = nil
+		p.flagEvalWriter = nil
+		p.exposureHook = nil
+	})
 }
 
 // BenchmarkFlagEvaluationOTelPlusEVP measures the marginal cost of adding the new EVP
-// flagevaluation hook alongside the existing OTel hook (Path A + Path B) (CONT-08 / D-11).
-//
-// The EVP writer uses a 24-hour flush interval (effectively infinite) so no HTTP round-trip
-// is in the hot path — this benchmarks only the hook + aggregator cost (RESEARCH Pitfall 4).
+// flagevaluation hook alongside the existing OTel hook (Path A + Path B). Only the exposure
+// hook is disabled; the OTel hook, EVP hook, and aggregator all run.
 func BenchmarkFlagEvaluationOTelPlusEVP(b *testing.B) {
-	profiles := []struct {
-		name      string
-		numFlags  int
-		numUsers  int
-		numFields int
-	}{
-		{"typical/100flags_50users_10fields", 100, 50, 10},
-		{"stress/10flags_1000users_250fields", 10, 1000, 250},
-	}
+	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
+		p.exposureHook = nil
+	})
+}
 
-	for _, p := range profiles {
+// BenchmarkFlagEvaluationEVPRecord isolates the EVP hook's synchronous hot-path cost — the
+// scalar extraction + shallow context copy (EvaluationContext().Attributes()) + non-blocking
+// enqueue that runs on the evaluation goroutine. A discard drainer empties the queue so it
+// never fills, and the asynchronous aggregation (flatten/prune/hash/add, performed by the
+// real worker off the hot path) is NOT attributed here. This is the latency a flag
+// evaluation actually pays when the EVP path is enabled — distinct from the client
+// benchmarks above, whose process-wide allocs/wall-clock also capture the worker's work.
+func BenchmarkFlagEvaluationEVPRecord(b *testing.B) {
+	for _, p := range flagEvalBenchProfiles {
 		b.Run(p.name, func(b *testing.B) {
-			// OTel+EVP: provider with both OTel hook and EVP hook wired.
-			// The EVP writer uses a 24-hour flush interval so no HTTP round-trip
-			// is in the hot path — benchmarks hook + aggregator cost only.
-			provider := newDatadogProvider(ProviderConfig{
-				FlagEvaluationFlushInterval: 24 * time.Hour, // never flush during bench
-			})
-			provider.exposureHook = nil // isolate hook overhead; no exposure cost
+			w := newFlagEvaluationWriter(ProviderConfig{FlagEvaluationFlushInterval: 24 * time.Hour})
 
-			config := makeBenchmarkConfig(p.numFlags)
-			provider.updateConfiguration(config)
+			// Discard drainer: keep the queue empty without aggregating, so only the
+			// synchronous enqueue cost is measured here.
+			done := make(chan struct{})
+			go func() {
+				for {
+					select {
+					case <-w.events:
+					case <-done:
+						return
+					}
+				}
+			}()
+			defer close(done)
 
-			ctx := context.Background()
-			flatCtx := makeBenchmarkContext(p.numFields)
+			hookCtx := makeHookContext("bool-flag", "bench-user", makeBenchmarkAttrs(p.numFields))
+			details := makeEvalDetails("on", openfeature.TargetingMatchReason, "")
 
 			b.ReportAllocs()
 			b.ResetTimer()
-
-			i := 0
 			for b.Loop() {
-				flatCtx["targetingKey"] = "bench-user-" + strconv.Itoa(i%p.numUsers)
-				i++
-				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+				w.record(hookCtx, details)
 			}
 		})
 	}
