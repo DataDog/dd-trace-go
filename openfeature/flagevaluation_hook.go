@@ -3,8 +3,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2025 Datadog, Inc.
 
-// Package openfeature provides the EVP flag evaluation OpenFeature hook.
-// This file contains signature-only stubs; the real implementation is in plan 02.
 package openfeature
 
 import (
@@ -28,21 +26,31 @@ func newFlagEvaluationHook(w *flagEvaluationWriter) *flagEvaluationHook {
 
 // Finally is called after every flag evaluation (success or error).
 // Using Finally (not After) ensures error-path and provider-not-ready evaluations are counted (CONT-09).
-// Plan 02 implements the body; this is a signature-only stub.
+// Mirrors flageval_metrics.go's Finally stage; the EVP hook is a separate registered hook (D-06).
 func (h *flagEvaluationHook) Finally(
 	ctx context.Context,
 	hookContext of.HookContext,
 	details of.InterfaceEvaluationDetails,
 	_ of.HookHints,
 ) {
-	panic("not implemented")
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+	if h.writer == nil {
+		return
+	}
+	h.writer.record(hookContext, details)
 }
 
 // isRuntimeDefault returns true when the caller's supplied default value was returned.
 // Primary signal: absent variant key (flag-not-found, provider-not-ready, type-mismatch, no allocation).
 // Secondary: explicit DEFAULT or DISABLED reason (belt-and-suspenders).
 // Satisfies CONT-07 (source_comment_id 3395344504).
-// Plan 02 implements the body; this is a signature-only stub.
-func isRuntimeDefault(_ of.InterfaceEvaluationDetails) bool {
-	panic("not implemented")
+func isRuntimeDefault(details of.InterfaceEvaluationDetails) bool {
+	if details.Variant == "" {
+		return true
+	}
+	return details.Reason == of.DefaultReason || details.Reason == of.DisabledReason
 }
