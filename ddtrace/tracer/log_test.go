@@ -103,11 +103,11 @@ func TestStartupLog(t *testing.T) {
 	})
 
 	t.Run("errors", func(t *testing.T) {
-		assert := assert.New(t)
 		tp := new(log.RecordLogger)
 		t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service","sample_rate": 0.234}, {"service": "other.service","sample_rate": 2}]`)
-		_, _, _, _, err := startTestTracer(t, WithLogger(tp))
-		assert.Equal("found errors when parsing sampling rules: \n\tat index 1: ignoring rule {Service:other.service Rate:2}: rate is out of [0.0, 1.0] range", err.Error())
+		_, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+		require.NoError(t, err)
+		defer stop()
 	})
 
 	t.Run("lambda", func(t *testing.T) {
@@ -146,12 +146,14 @@ func TestLogSamplingRules(t *testing.T) {
 	assert := assert.New(t)
 	tp := new(log.RecordLogger)
 	tp.Ignore(commonLogIgnore...)
+	log.UseLogger(tp)
 	t.Setenv("DD_TRACE_SAMPLING_RULES", `[{"service": "some.service", "sample_rate": 0.234}, {"service": "other.service"}, {"service": "last.service", "sample_rate": 0.56}, {"odd": "pairs"}, {"sample_rate": 9.10}]`)
-	_, _, _, _, err := startTestTracer(t, WithLogger(tp), WithEnv("test"))
-	assert.Error(err)
+	_, _, _, stop, err := startTestTracer(t, WithLogger(tp), WithEnv("test"))
+	require.NoError(t, err)
+	defer stop()
 
 	assert.Len(tp.Logs(), 1)
-	assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing sampling rules: found errors: \n\s*\tat index 4: ignoring rule \{Rate:9\.10\}: rate is out of \[0\.0, 1\.0\] range$`, tp.Logs()[0])
+	assert.Regexp(logPrefixRegexp+` WARN: DIAGNOSTICS Error\(s\) parsing DD_TRACE_SAMPLING_RULES: at index 4: ignoring rule \{Rate:9\.10\}: rate is out of \[0\.0, 1\.0\] range$`, tp.Logs()[0])
 }
 
 func TestLogDefaultSampleRate(t *testing.T) {

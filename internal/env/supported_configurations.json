@@ -868,13 +868,6 @@
         "default": "[]"
       }
     ],
-    "DD_SPAN_SAMPLING_RULES_FILE": [
-      {
-        "implementation": "A",
-        "type": "string",
-        "default": null
-      }
-    ],
     "DD_TAGS": [
       {
         "implementation": "A",
@@ -978,6 +971,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED": [
@@ -1568,13 +1568,6 @@
         "default": ""
       }
     ],
-    "DD_TRACE_SAMPLING_RULES_FILE": [
-      {
-        "implementation": "A",
-        "type": "string",
-        "default": null
-      }
-    ],
     "DD_TRACE_SARAMA_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -1601,13 +1594,6 @@
         "implementation": "B",
         "type": "string",
         "default": "v0"
-      }
-    ],
-    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
-      {
-        "implementation": "A",
-        "type": "boolean",
-        "default": "false"
       }
     ],
     "DD_TRACE_SQL_ANALYTICS_ENABLED": [
