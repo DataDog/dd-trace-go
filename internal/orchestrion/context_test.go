@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -86,6 +87,53 @@ func TestGLSPopFunc(t *testing.T) {
 
 		popFn := GLSPopFunc(key("k"))
 		popFn() // must not panic
+	})
+}
+
+func TestGLSActivate(t *testing.T) {
+	t.Run("pushes and returns a working popper", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		pop := GLSActivate(key("k"), "v")
+		require.Equal(t, "v", getDDContextStack().Peek(key("k")), "value should be on the GLS stack")
+
+		pop()
+		require.Nil(t, getDDContextStack().Peek(key("k")), "popper should remove the value")
+	})
+
+	t.Run("disabled orchestrion returns a no-op popper", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+		enabled = false // exercise the !Enabled() early return
+
+		pop := GLSActivate(key("k"), "v")
+		require.NotNil(t, pop)
+		pop() // must not panic
+	})
+}
+
+func TestGLSDeactivate(t *testing.T) {
+	t.Run("sets reclaimable and runs the popper once", func(t *testing.T) {
+		var reclaimable atomic.Bool
+		popped := 0
+		var pop GLSPopper = func() { popped++ }
+
+		GLSDeactivate(&reclaimable, &pop)
+		require.True(t, reclaimable.Load(), "span should be marked reclaimable")
+		require.Equal(t, 1, popped, "popper should run once")
+		require.Nil(t, pop, "popper should be cleared after running")
+
+		GLSDeactivate(&reclaimable, &pop) // second finish: popper already nil
+		require.Equal(t, 1, popped, "popper must not run again on a repeated finish")
+	})
+
+	t.Run("tolerates nil popper and nil pointers", func(t *testing.T) {
+		var reclaimable atomic.Bool
+		var pop GLSPopper // nil
+
+		GLSDeactivate(&reclaimable, &pop) // *pop == nil -> no invoke, no panic
+		require.True(t, reclaimable.Load())
+
+		GLSDeactivate(nil, nil) // must not panic
 	})
 }
 
