@@ -91,7 +91,7 @@ func driveScale(agg *flagEvaluationAggregator, flags []scaleFlagShape, numContex
 			for a := range f.allocations {
 				alloc := fmt.Sprintf("alloc-%d", a)
 				for _, reason := range f.reasons {
-					for e := 0; e < evalsPerCombo; e++ {
+					for range evalsPerCombo {
 						// Spread subjects across numContexts distinct targeting keys + contexts.
 						subj := ctxCounter % numContexts
 						ctxCounter++
@@ -343,7 +343,7 @@ func TestScaleHotFlagPerFlagCap(t *testing.T) {
 	// the resized degradedCap we need that many distinct (variant,alloc,reason) for this one flag.
 	const distinctVariants = 50_000
 	var calls int64
-	for v := 0; v < distinctVariants; v++ {
+	for v := range distinctVariants {
 		d := evalDetails{
 			flagKey:       "hot-flag",
 			variant:       fmt.Sprintf("v%d", v),
