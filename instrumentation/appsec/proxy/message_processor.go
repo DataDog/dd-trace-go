@@ -153,6 +153,10 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 // Once the whole body has been received, it will try to parse it following the Content-Type header
 // and if the body is not too large, it will be analyzed by the WAF
 func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
+	if reqState.Mu == nil {
+		return errors.New("received request body too early")
+	}
+
 	reqState.Mu.Lock()
 	defer reqState.Mu.Unlock()
 
@@ -240,6 +244,10 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 // Once the whole body has been received, it will try to parse it following the Content-Type header
 // and if the body is not too large, it will be analyzed by the WAF
 func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error {
+	if reqState.Mu == nil {
+		return fmt.Errorf("received response body too early: %v", reqState.State)
+	}
+
 	reqState.Mu.Lock()
 	defer reqState.Mu.Unlock()
 
