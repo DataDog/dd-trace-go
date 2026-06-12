@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
+
 	"github.com/stretchr/testify/assert"
 )
 
