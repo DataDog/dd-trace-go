@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -129,7 +128,35 @@ func TestSpanSetName(t *testing.T) {
 		t.Fatal(err.Error())
 	}
 	p := traces[0]
-	assert.Equal(strings.ToLower("NewName"), p[0]["name"])
+	// SetName sets the resource; the operation name stays the DD-computed default.
+	assert.Equal("NewName", p[0]["resource"])
+	assert.Equal("internal", p[0]["name"])
+}
+
+// TestSpanSetNameUpdatesResource verifies SetName updates the resource (the OTLP span
+// name) — e.g. otelhttp renames "GET" to the route "GET /users/{id}" after routing.
+func TestSpanSetNameUpdatesResource(t *testing.T) {
+	assert := assert.New(t)
+
+	_, payloads, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, sp := tr.Start(ctx, "GET")
+	sp.SetName("GET /users/{id}")
+	sp.End()
+
+	tracer.Flush()
+	traces, err := waitForPayload(payloads)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	p := traces[0]
+	// Resource follows the rename; operation name stays the DD-computed default.
+	assert.Equal("GET /users/{id}", p[0]["resource"])
+	assert.Equal("internal", p[0]["name"])
 }
 
 func TestSpanLink(t *testing.T) {
