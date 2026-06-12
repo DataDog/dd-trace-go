@@ -8,6 +8,7 @@ package openfeature
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +16,79 @@ import (
 
 	of "github.com/open-feature/go-sdk/openfeature"
 )
+
+// TestFlattenAndPruneContextEquivalence guards oleksii #4: the merged single-pass
+// flattenAndPruneContext must produce a pruned result byte-for-byte identical to the prior
+// two-step flattenContext + pruneContext pipeline across nested, oversized, and >256-field
+// inputs (and the determinism + 256/256 limits are preserved).
+func TestFlattenAndPruneContextEquivalence(t *testing.T) {
+	bigFields := func() map[string]any {
+		m := make(map[string]any, 400)
+		for i := range 400 {
+			m[fmt.Sprintf("key%04d", i)] = fmt.Sprintf("value%04d", i)
+		}
+		return m
+	}
+
+	cases := []struct {
+		name  string
+		input map[string]any
+	}{
+		{
+			name:  "nested objects flatten to dot notation",
+			input: map[string]any{"user": map[string]any{"id": "123", "email": "a@b.com"}, "country": "US"},
+		},
+		{
+			name:  "deeply nested + arrays",
+			input: map[string]any{"a": map[string]any{"b": map[string]any{"c": 1}}, "tags": []string{"x", "y", "z"}},
+		},
+		{
+			name:  "oversized string value is skipped",
+			input: map[string]any{"short": "ok", "long": strings.Repeat("x", maxFieldLength+10)},
+		},
+		{
+			name:  "more than 256 fields truncated to 256",
+			input: bigFields(),
+		},
+		{
+			name:  "nested oversized string among many fields",
+			input: map[string]any{"u": map[string]any{"bio": strings.Repeat("y", maxFieldLength+1), "id": 7}},
+		},
+		{
+			name:  "mixed scalar types retained",
+			input: map[string]any{"i": 42, "b": true, "f": 3.14, "s": "hi"},
+		},
+		{
+			name:  "empty input",
+			input: map[string]any{},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Reference pipeline (the two former steps) vs the merged single-pass procedure.
+			want := pruneContext(flattenContext(tc.input))
+			got := flattenAndPruneContext(tc.input)
+
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("merged flatten+prune differs from flattenContext+pruneContext:\n got=%v\nwant=%v", got, want)
+			}
+
+			// 256-field limit preserved.
+			if len(got) > maxContextFields {
+				t.Errorf("merged result has %d fields, exceeds maxContextFields %d", len(got), maxContextFields)
+			}
+
+			// Determinism: repeated calls yield an identical canonical key.
+			first := canonicalContextKey(flattenAndPruneContext(tc.input))
+			for range 25 {
+				if k := canonicalContextKey(flattenAndPruneContext(tc.input)); k != first {
+					t.Fatalf("merged flatten+prune nondeterministic: canonical keys differ across calls")
+				}
+			}
+		})
+	}
+}
 
 // setupTestAggregator creates a flagEvaluationAggregator with small caps for testing.
 // Caps are deliberately small to trigger tier-cascade behavior in unit tests.

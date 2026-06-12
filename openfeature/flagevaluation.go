@@ -490,15 +490,88 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 	}
 }
 
-// aggregate performs the deferred flatten/prune/hash and updates the aggregator. It runs
+// aggregate performs the deferred flatten/prune/key and updates the aggregator. It runs
 // only on the writer's single worker goroutine.
 func (w *flagEvaluationWriter) aggregate(ev evalEvent) {
 	var contextAttrs map[string]any
 	if len(ev.attrs) > 0 {
-		flattened := flattenContext(ev.attrs)
-		contextAttrs = pruneContext(flattened)
+		contextAttrs = flattenAndPruneContext(ev.attrs)
 	}
 	w.aggregator.add(ev.d, contextAttrs, ev.nowMs)
+}
+
+// flattenAndPruneContext is the worker-path procedure that produces the pruned context map for
+// EVP aggregation in a SINGLE traversal of the flattened keyspace (oleksii #4). It merges the
+// two former steps — flattenContext (flatten.go) + pruneContext — into one pass with the SAME
+// pruned output:
+//
+//  1. Flatten nested objects into a single-level dot-notation map (reusing flattenRecursive, so
+//     the flatten semantics stay identical to the exposure path which still calls
+//     flattenContext directly — that caller is unchanged).
+//  2. Apply the deterministic prune: sort the flattened keys, then keep the first
+//     maxContextFields that are not oversized strings (>maxFieldLength).
+//
+// Allocation win: when the flattened context already fits the limits (the common case — fewer
+// than maxContextFields fields and no oversized string), the flattened map is returned DIRECTLY,
+// so the separate pruned-output map that the old flatten→prune pipeline always allocated is
+// elided. The pruned map is allocated only when trimming actually changes the result. Output is
+// byte-for-byte identical to the previous flattenContext+pruneContext pipeline: same surviving
+// keys, same 256/256 limits, same deterministic ordering of the cut.
+func flattenAndPruneContext(attrs map[string]any) map[string]any {
+	if len(attrs) == 0 {
+		return nil
+	}
+
+	flat := make(map[string]any, len(attrs))
+	flattenRecursive("", attrs, flat)
+	if len(flat) == 0 {
+		return nil
+	}
+
+	// Determine whether any pruning is actually required: an over-cap field count or any
+	// oversized string value. If neither, the flattened map already IS the pruned result —
+	// return it directly and skip allocating a second map.
+	needsPrune := len(flat) > maxContextFields
+	if !needsPrune {
+		for _, v := range flat {
+			if s, ok := v.(string); ok && len(s) > maxFieldLength {
+				needsPrune = true
+				break
+			}
+		}
+	}
+	if !needsPrune {
+		return flat
+	}
+
+	// Deterministic prune: sort keys, then keep the first maxContextFields non-oversized values.
+	// Sorting BEFORE the oversized-string skip and the field cap makes the kept subset stable
+	// across calls (Go map iteration is randomized), so logically-identical contexts always
+	// prune to the same subset and the same canonicalContextKey.
+	keys := make([]string, 0, len(flat))
+	for k := range flat {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	out := make(map[string]any, min(len(flat), maxContextFields))
+	count := 0
+	for _, k := range keys {
+		if count >= maxContextFields {
+			break
+		}
+		v := flat[k]
+		if s, ok := v.(string); ok && len(s) > maxFieldLength {
+			// Skip oversized string values (matches worker.ts pruneFields behavior).
+			continue
+		}
+		out[k] = v
+		count++
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // drainAndFlush processes any buffered events and performs a final flush. Called by the
