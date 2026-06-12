@@ -8,6 +8,8 @@ package opentelemetry
 import (
 	"encoding/binary"
 	"errors"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -204,6 +206,40 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 		},
 	}
 	s.events = append(s.events, e)
+}
+
+// RecordError records err as an OpenTelemetry "exception" span event (with a stack
+// trace when WithStackTrace is set). Like the OTel SDK, it does not set the status.
+func (s *span) RecordError(err error, opts ...oteltrace.EventOption) {
+	if err == nil || !s.IsRecording() {
+		return
+	}
+	opts = append(opts, oteltrace.WithAttributes(
+		attribute.String("exception.type", errorTypeName(err)),
+		attribute.String("exception.message", err.Error()),
+	))
+	cfg := oteltrace.NewEventConfig(opts...)
+	if cfg.StackTrace() {
+		opts = append(opts, oteltrace.WithAttributes(
+			attribute.String("exception.stacktrace", recordStackTrace()),
+		))
+	}
+	s.AddEvent("exception", opts...)
+}
+
+// errorTypeName formats err's type like the OTel SDK's exception.type.
+func errorTypeName(err error) string {
+	t := reflect.TypeOf(err)
+	if t.PkgPath() == "" && t.Name() == "" {
+		return t.String() // builtin or pointer type, e.g. *errors.errorString
+	}
+	return t.PkgPath() + "." + t.Name()
+}
+
+func recordStackTrace() string {
+	buf := make([]byte, 2048)
+	n := runtime.Stack(buf, false)
+	return string(buf[:n])
 }
 
 // SetAttributes sets the key-value pairs as tags on the span.

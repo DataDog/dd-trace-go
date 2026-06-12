@@ -402,6 +402,75 @@ func attributesContains(attrs map[string]any, key string, val any) bool {
 	return false
 }
 
+type recordErrorTestErr struct{ msg string }
+
+func (e recordErrorTestErr) Error() string { return e.msg }
+
+func TestSpanRecordError(t *testing.T) {
+	_, _, cleanup := mockTracerProvider(t)
+	tr := otel.Tracer("")
+	defer cleanup()
+
+	eventAttrs := func(sp oteltrace.Span) map[string]any {
+		dd := sp.(*span)
+		cfg := tracer.SpanEventConfig{}
+		for _, opt := range dd.events[0].options {
+			opt(&cfg)
+		}
+		return cfg.Attributes
+	}
+
+	t.Run("records exception event with type and message", func(t *testing.T) {
+		assert := assert.New(t)
+		_, sp := tr.Start(context.Background(), "span_record_error")
+		sp.RecordError(errors.New("boom"))
+		sp.End()
+		dd := sp.(*span)
+
+		assert.Len(dd.events, 1)
+		assert.Equal("exception", dd.events[0].name)
+		attrs := eventAttrs(sp)
+		assert.True(attributesContains(attrs, "exception.type", "*errors.errorString"))
+		assert.True(attributesContains(attrs, "exception.message", "boom"))
+		// No stack trace unless explicitly requested.
+		_, hasStack := attrs["exception.stacktrace"]
+		assert.False(hasStack)
+	})
+
+	t.Run("records stack trace when requested", func(t *testing.T) {
+		assert := assert.New(t)
+		_, sp := tr.Start(context.Background(), "span_record_error_stack")
+		sp.RecordError(errors.New("boom"), oteltrace.WithStackTrace(true))
+		sp.End()
+
+		attrs := eventAttrs(sp)
+		stack, ok := attrs["exception.stacktrace"].(string)
+		assert.True(ok)
+		assert.NotEmpty(stack)
+	})
+
+	t.Run("named error type uses fully-qualified exception.type", func(t *testing.T) {
+		assert := assert.New(t)
+		_, sp := tr.Start(context.Background(), "span_record_error_named")
+		sp.RecordError(recordErrorTestErr{"boom"})
+		sp.End()
+
+		attrs := eventAttrs(sp)
+		// Named value types use the full pkg-path form, matching the OTel SDK.
+		assert.True(attributesContains(attrs,
+			"exception.type", "github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry.recordErrorTestErr"))
+	})
+
+	t.Run("nil error is a no-op", func(t *testing.T) {
+		assert := assert.New(t)
+		_, sp := tr.Start(context.Background(), "span_record_error_nil")
+		sp.RecordError(nil)
+		sp.End()
+		dd := sp.(*span)
+		assert.Empty(dd.events)
+	})
+}
+
 func TestSpanContextWithStartOptions(t *testing.T) {
 	assert := assert.New(t)
 	_, payloads, cleanup := mockTracerProvider(t)
