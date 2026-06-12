@@ -52,10 +52,8 @@ func TestRegisterTelemetry(t *testing.T) {
 			assert.NotEqual(t, envOTLPLogsHeaders, cfg.Name,
 				"%s should not be reported in configuration telemetry", envOTLPLogsHeaders)
 			if s, ok := cfg.Value.(string); ok {
-				assert.NotContains(t, s, "SENTINEL_OTLP_BASE",
-					"configuration value for %s must not contain the OTLP headers sentinel", cfg.Name)
-				assert.NotContains(t, s, "SENTINEL_OTLP_LOGS",
-					"configuration value for %s must not contain the OTLP logs headers sentinel", cfg.Name)
+				assert.NotContains(t, s, "SENTINEL_OTLP",
+					"configuration value for %s must not contain an OTLP header sentinel", cfg.Name)
 			}
 		}
 	})
