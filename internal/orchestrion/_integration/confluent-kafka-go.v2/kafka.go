@@ -45,7 +45,7 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	tc.produceMessage(t)
 	tc.consumeMessage(ctx, t)
 	tc.produceMessageWithNilDeliveryChannel(t)
-	tc.consumeMessage(ctx, t)
+	tc.consumeMessageFromNilDeliveryChannel(ctx, t)
 }
 
 func (tc *TestCase) kafkaBootstrapServers() string {
@@ -96,8 +96,8 @@ func (tc *TestCase) produceMessageWithNilDeliveryChannel(t *testing.T) {
 			Topic:     &topic,
 			Partition: partition,
 		},
-		Key:   []byte("key2"),
-		Value: []byte("value2"),
+		Key:   []byte("key3"),
+		Value: []byte("value3"),
 	}, nil)
 	require.NoError(t, err, "failed to send message")
 }
@@ -132,6 +132,38 @@ func (tc *TestCase) consumeMessage(_ context.Context, t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "key2", string(m.Key))
+}
+
+func (tc *TestCase) consumeMessageFromNilDeliveryChannel(_ context.Context, t *testing.T) {
+	t.Helper()
+
+	cfg := &kafka.ConfigMap{
+		"group.id":                 consumerGroup,
+		"bootstrap.servers":        tc.kafkaBootstrapServers(),
+		"fetch.wait.max.ms":        500,
+		"socket.timeout.ms":        1500,
+		"session.timeout.ms":       1500,
+		"enable.auto.offset.store": false,
+	}
+	c, err := kafka.NewConsumer(cfg)
+	require.NoError(t, err, "failed to create consumer")
+	defer c.Close()
+
+	err = c.Assign([]kafka.TopicPartition{
+		{Topic: &topic, Partition: 0, Offset: kafka.OffsetStored},
+	})
+	require.NoError(t, err)
+
+	m, err := backoff.RetryWithData(
+		func() (*kafka.Message, error) { return c.ReadMessage(3 * time.Second) },
+		backoff.NewExponentialBackOff(),
+	)
+	require.NoError(t, err)
+
+	_, err = c.CommitMessage(m)
+	require.NoError(t, err)
+
+	require.Equal(t, "key3", string(m.Key))
 }
 
 func (*TestCase) ExpectedTraces() trace.Traces {
