@@ -382,6 +382,11 @@ func getTestValueForType(t reflect.Type) any {
 	if t == reflect.TypeFor[*url.URL]() {
 		return &url.URL{Scheme: "http", Host: "test-agent:8126"}
 	}
+	// Optional tri-state bools (e.g. SetLLMObsAgentlessEnabled).
+	if t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Bool {
+		b := true
+		return &b
+	}
 
 	// Then check by kind
 	switch t.Kind() {
