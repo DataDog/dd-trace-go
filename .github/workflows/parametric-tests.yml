@@ -31,6 +31,9 @@ on:
 permissions:
   contents: read
 
+env:
+  SYSTEM_TESTS_REF: 08e171d1bcde254e7ca5057ee9ffab2fffcd330a # Automated: This reference is automatically updated.
+
 jobs:
   parametric-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
@@ -44,7 +47,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || env.SYSTEM_TESTS_REF }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
