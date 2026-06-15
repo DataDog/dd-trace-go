@@ -1,4 +1,9 @@
 {
+  "aerospike": {
+    "image": "aerospike:ce-7.2.0.6",
+    "ports": ["3000:3000"],
+    "options": "--name \"aerospike\""
+  },
   "redis": {
     "image": "redis:7-alpine",
     "ports": ["6379:6379"],
