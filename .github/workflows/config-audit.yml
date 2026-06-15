@@ -1,0 +1,69 @@
+name: config-audit
+
+on:
+  pull_request:
+    paths:
+      - 'internal/config/**'
+      - 'internal/env/supported_configurations.json'
+      - 'ddtrace/**'
+      - 'profiler/**'
+      - 'scripts/configaudit/**'
+      - '.github/workflows/config-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run config audit
+        run: |
+          mkdir -p out
+          (cd scripts/configaudit && GOWORK=off go run . -root ../.. -format json) > out/audit.json
+          (cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table) | tee out/audit.txt
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: config-audit
+          path: out/
+          retention-days: 14
+      - name: Post or update PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const fs = require('fs');
+            const table = fs.readFileSync('out/audit.txt', 'utf8');
+            const marker = '<!-- config-audit -->';
+            const body = `${marker}\n## Config Audit\n\`\`\`\n${table}\n\`\`\``;
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.data.find(c => c.body.startsWith(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
