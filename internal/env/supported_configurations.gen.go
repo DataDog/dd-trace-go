@@ -260,7 +260,6 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_BLRP_MAX_EXPORT_BATCH_SIZE":                                 {},
 	"OTEL_BLRP_MAX_QUEUE_SIZE":                                        {},
 	"OTEL_BLRP_SCHEDULE_DELAY":                                        {},
-	"OTEL_CLIENT_STATS_COMPUTATION_ENABLED":                           {},
 	"OTEL_EXPORTER_OTLP_ENDPOINT":                                     {},
 	"OTEL_EXPORTER_OTLP_HEADERS":                                      {},
 	"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT":                                {},
@@ -287,6 +286,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_TRACES_EXPORTER":                                            {},
 	"OTEL_TRACES_SAMPLER":                                             {},
 	"OTEL_TRACES_SAMPLER_ARG":                                         {},
+	"OTEL_TRACES_SPAN_METRICS_ENABLED":                                {},
 }
 
 // SensitiveConfigurations is the set of configuration keys whose value must not be

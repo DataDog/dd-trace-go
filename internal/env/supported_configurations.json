@@ -1764,7 +1764,7 @@
         "default": "1000"
       }
     ],
-    "OTEL_CLIENT_STATS_COMPUTATION_ENABLED": [
+    "OTEL_TRACES_SPAN_METRICS_ENABLED": [
       {
         "implementation": "A",
         "type": "FIX_ME",

@@ -297,8 +297,8 @@ func loadConfig() *Config {
 	}
 	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
-	if p.IsSet("OTEL_CLIENT_STATS_COMPUTATION_ENABLED") {
-		v := p.GetBool("OTEL_CLIENT_STATS_COMPUTATION_ENABLED", false)
+	if p.IsSet("OTEL_TRACES_SPAN_METRICS_ENABLED") {
+		v := p.GetBool("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 		cfg.otlpSpanMetricsEnabled = &v
 	}
 	cfg.otlpSemanticsMode = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
@@ -1320,7 +1320,7 @@ func (c *Config) OTLPHeaders() map[string]string {
 }
 
 // OTLPSpanMetricsEnabled reports whether SDK-computed OTLP span metrics export is active.
-// When OTEL_CLIENT_STATS_COMPUTATION_ENABLED is explicitly set, its value is returned directly.
+// When OTEL_TRACES_SPAN_METRICS_ENABLED is explicitly set, its value is returned directly.
 // When unset, it auto-enables when both OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true.
 func (c *Config) OTLPSpanMetricsEnabled() bool {
 	c.mu.RLock()
