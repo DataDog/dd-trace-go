@@ -823,6 +823,12 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "pem_no_end", input: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF", want: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF"},
 		// Embedded in params: trailing "-----" before "&safe=1" is preserved.
 		{name: "pem_embedded", input: "key=x&-----BEGIN RSA PRIVATE KEY-----BODY-----END RSA PRIVATE KEY-----&safe=1", want: "key=x&<redacted>-----&safe=1"},
+		// Label with two "PRIVATE KEY" occurrences: the first is followed by a
+		// space (not the fence), so matchPEMBodyAndEnd fails there in O(1).
+		// The scanner must continue to the second occurrence which IS directly
+		// followed by "-----BODY-----END PRIVATE KEY".  A break-on-first-failure
+		// would leave this block unredacted.
+		{name: "pem_double_label", input: "-----BEGIN PRIVATE KEY PRIVATE KEY-----BODY-----END PRIVATE KEY-----", want: "<redacted>-----"},
 
 		// SSH RSA key: ssh-rsa + optional spaces + ≥100 repetitions of [a-z0-9/\.+] or %2F/%5C/%2B.
 		// Quirk: bare '\' is absent from [a-z0-9\/\.+]; only %5C (URL-encoded '\') is accepted.
@@ -1012,16 +1018,35 @@ func BenchmarkObfuscateQueryStringDefault(b *testing.B) {
 	}
 }
 
-// TestObfuscateAdversarialCompletes is a timing regression guard: it asserts that
-// the worst-case JWT adversarial input (300 KB of repeated "eyJ") completes well
-// within 1 s.  Before the jwtSkipEnd fix this took ~5 s on typical hardware; the
-// fixed implementation runs in < 1 ms, so 1 s gives a ~1000× safety margin.
+// TestObfuscateAdversarialCompletes is a timing regression guard that covers two
+// O(N²) failure paths in matchJWT:
+//
+//  1. No dot: "eyJ"×N — consumeJWTSegment scans the full string, then the outer
+//     loop re-anchors at every 'e'.  Fixed by returning segEnd on the no-dot path.
+//
+//  2. Dot present, second header absent: "eyJ"×N + "." — the first segment scan
+//     stops at the dot, the second header check fails.  Without the fix segEnd=0
+//     so every 'e' before the dot triggers a full re-scan.  Fixed by returning
+//     segEnd on the post-dot header failure paths too.
+//
+// Pre-fix both inputs took several seconds for 300 KB.  Post-fix both run in
+// < 1 ms, so 1 s is a ~1000× safety margin.
 func TestObfuscateAdversarialCompletes(t *testing.T) {
-	input := strings.Repeat("eyJ", 100000) // 300 KB
-	start := time.Now()
-	obfuscateQueryStringDefault(input)
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Errorf("obfuscateQueryStringDefault took %v for 300 KB adversarial input (limit 1s) — possible O(N²) regression", elapsed)
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"no_dot", strings.Repeat("eyJ", 100000)},           // 300 KB
+		{"dot_suffix", strings.Repeat("eyJ", 100000) + "."}, // 300 KB + dot
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start := time.Now()
+			obfuscateQueryStringDefault(tc.input)
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Errorf("obfuscateQueryStringDefault took %v for %s adversarial input (limit 1s) — possible O(N²) regression", elapsed, tc.name)
+			}
+		})
 	}
 }
 
@@ -1034,12 +1059,16 @@ func BenchmarkObfuscateAdversarial(b *testing.B) {
 		name  string
 		input string
 	}{
-		// JWT: "eyJ" repeated — re-anchors matchJWT every 3 bytes, each
-		// consumeJWTSegment call scans the entire remaining string (e, y, J are
-		// all in classJWTSeg = [\w=-]).
+		// JWT no-dot: "eyJ" repeated — consumeJWTSegment scans the full string on
+		// each 'e' anchor (e, y, J are all in classJWTSeg = [\w=-]).
 		{"jwt_adversarial/9k", strings.Repeat("eyJ", 3000)},
 		{"jwt_adversarial/30k", strings.Repeat("eyJ", 10000)},
 		{"jwt_adversarial/100k", strings.Repeat("eyJ", 33333)},
+		// JWT dot-suffix: dot present but no second header — before the post-dot
+		// fix segEnd=0 left every 'e' before the dot triggering a full re-scan.
+		{"jwt_adversarial/dot_suffix/9k", strings.Repeat("eyJ", 3000) + "."},
+		{"jwt_adversarial/dot_suffix/30k", strings.Repeat("eyJ", 10000) + "."},
+		{"jwt_adversarial/dot_suffix/100k", strings.Repeat("eyJ", 33333) + "."},
 		// PEM: repeated "PRIVATE KEY" in the label — matchPEMPrivateKeyLiteral
 		// succeeds at every 12-byte boundary and matchPEMBodyAndEnd scans the
 		// rest of the string for each hit.
