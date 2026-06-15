@@ -44,6 +44,8 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	tc.produceMessage(t)
 	tc.consumeMessage(ctx, t)
+	tc.produceMessageWithNilDeliveryChannel(t)
+	tc.consumeMessageFromNilDeliveryChannel(ctx, t)
 }
 
 func (tc *TestCase) kafkaBootstrapServers() string {
@@ -74,6 +76,29 @@ func (tc *TestCase) produceMessage(t *testing.T) {
 		Key:   []byte("key2"),
 		Value: []byte("value2"),
 	}, delivery)
+	require.NoError(t, err, "failed to send message")
+}
+
+func (tc *TestCase) produceMessageWithNilDeliveryChannel(t *testing.T) {
+	t.Helper()
+
+	cfg := &kafka.ConfigMap{
+		"bootstrap.servers":   tc.kafkaBootstrapServers(),
+		"go.delivery.reports": true,
+	}
+
+	producer, err := kafka.NewProducer(cfg)
+	require.NoError(t, err, "failed to create producer")
+	defer producer.Close()
+
+	err = producer.Produce(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{
+			Topic:     &topic,
+			Partition: partition,
+		},
+		Key:   []byte("key3"),
+		Value: []byte("value3"),
+	}, nil)
 	require.NoError(t, err, "failed to send message")
 }
 
@@ -109,9 +134,69 @@ func (tc *TestCase) consumeMessage(_ context.Context, t *testing.T) {
 	require.Equal(t, "key2", string(m.Key))
 }
 
+func (tc *TestCase) consumeMessageFromNilDeliveryChannel(_ context.Context, t *testing.T) {
+	t.Helper()
+
+	cfg := &kafka.ConfigMap{
+		"group.id":                 consumerGroup,
+		"bootstrap.servers":        tc.kafkaBootstrapServers(),
+		"fetch.wait.max.ms":        500,
+		"socket.timeout.ms":        1500,
+		"session.timeout.ms":       1500,
+		"enable.auto.offset.store": false,
+	}
+	c, err := kafka.NewConsumer(cfg)
+	require.NoError(t, err, "failed to create consumer")
+	defer c.Close()
+
+	err = c.Assign([]kafka.TopicPartition{
+		{Topic: &topic, Partition: 0, Offset: kafka.OffsetStored},
+	})
+	require.NoError(t, err)
+
+	m, err := backoff.RetryWithData(
+		func() (*kafka.Message, error) { return c.ReadMessage(3 * time.Second) },
+		backoff.NewExponentialBackOff(),
+	)
+	require.NoError(t, err)
+
+	_, err = c.CommitMessage(m)
+	require.NoError(t, err)
+
+	require.Equal(t, "key3", string(m.Key))
+}
+
 func (*TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
+			Tags: map[string]any{
+				"name":     "kafka.produce",
+				"type":     "queue",
+				"service":  "kafka",
+				"resource": "Produce Topic " + topic,
+			},
+			Meta: map[string]string{
+				"span.kind":        "producer",
+				"component":        "confluentinc/confluent-kafka-go/kafka.v2",
+				"messaging.system": "kafka",
+			},
+			Children: trace.Traces{
+				{
+					Tags: map[string]any{
+						"name":     "kafka.consume",
+						"type":     "queue",
+						"service":  "kafka",
+						"resource": "Consume Topic " + topic,
+					},
+					Meta: map[string]string{
+						"span.kind":                         "consumer",
+						"component":                         "confluentinc/confluent-kafka-go/kafka.v2",
+						"messaging.system":                  "kafka",
+						"messaging.kafka.bootstrap.servers": "localhost",
+					},
+				},
+			},
+		}, {
 			Tags: map[string]any{
 				"name":     "kafka.produce",
 				"type":     "queue",
