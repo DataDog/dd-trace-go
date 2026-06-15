@@ -32,6 +32,7 @@ type fixtureScenario struct {
 	expectCoverageRequests  *bool
 	expectSkippableRequests int
 	expectSkippingEnabled   string
+	expectUploadedCoverage  map[string][]byte
 }
 
 type testExpectation struct {
@@ -83,6 +84,21 @@ func TestMain(m *testing.M) {
 	}
 	if scenario.expectCoverageRequests != nil && (server.CoverageRequests() > 0) != *scenario.expectCoverageRequests {
 		panic("unexpected coverage upload request count")
+	}
+	if len(scenario.expectUploadedCoverage) > 0 {
+		uploaded := server.UploadedCoverage()
+		if len(uploaded) != len(scenario.expectUploadedCoverage) {
+			panic("unexpected uploaded coverage bitmap file count")
+		}
+		for file, expected := range scenario.expectUploadedCoverage {
+			actual := uploaded[file]
+			if len(actual) == 0 {
+				panic("missing uploaded coverage bitmap for " + file)
+			}
+			if !filebitmap.NewFileBitmapFromBytes(actual).IntersectsWith(filebitmap.NewFileBitmapFromBytes(expected)) {
+				panic("uploaded coverage bitmap did not intersect expected lines for " + file)
+			}
+		}
 	}
 	os.Exit(exitCode)
 }
@@ -147,6 +163,22 @@ func orchestrionScenario() fixtureScenario {
 		defaultScenario.expectTests = map[string]testExpectation{
 			"TestCoversLib":      {status: constants.TestStatusSkip, skipped: true},
 			"TestCoversOtherLib": {status: constants.TestStatusSkip, skipped: true},
+		}
+		return defaultScenario
+	case "producer-bitmap-upload":
+		defaultScenario.tests = nil
+		defaultScenario.coverage = nil
+		defaultScenario.expectTests = map[string]testExpectation{
+			"TestCoversLib":      {status: constants.TestStatusPass},
+			"TestCoversOtherLib": {status: constants.TestStatusPass},
+		}
+		defaultScenario.expectCoverage = true
+		defaultScenario.expectPositiveCoverage = true
+		defaultScenario.expectSkippableRequests = 1
+		defaultScenario.expectSkippingEnabled = "true"
+		defaultScenario.expectUploadedCoverage = map[string][]byte{
+			orchestrionLibPath:      filebitmap.FromActiveRange(1, 64).ToArray(),
+			orchestrionOtherLibPath: filebitmap.FromActiveRange(1, 64).ToArray(),
 		}
 		return defaultScenario
 	case "repo-wide-backend-coverage":

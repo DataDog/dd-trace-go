@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -48,7 +49,7 @@ type (
 		testFile             string
 		preCoverageFilename  string
 		postCoverageFilename string
-		filesCovered         []string
+		filesCovered         []coveredFile
 	}
 
 	// coverageData holds information about coverage data with their block
@@ -65,6 +66,11 @@ type (
 		endCol    int
 		numStmt   int
 		count     int
+	}
+
+	coveredFile struct {
+		name   string
+		bitmap []byte
 	}
 
 	// BackfillInput configures backend aggregate coverage that can repair the
@@ -616,9 +622,26 @@ func parseCoverProfile(filename string) (map[string][]coverageBlock, error) {
 	return coverageData, scanner.Err()
 }
 
-// getFilesCovered subtracts the before profile from the after profile and returns the files covered
-func getFilesCovered(testFile string, before, after map[string][]coverageBlock) []string {
-	result := []string{testFile}
+// getFilesCovered subtracts the before profile from the after profile and returns the files covered.
+func getFilesCovered(testFile string, before, after map[string][]coverageBlock) []coveredFile {
+	result := []coveredFile{{name: testFile}}
+	coveredByName := map[string]*filebitmap.FileBitmap{}
+
+	addCoveredRange := func(fileName string, block coverageBlock) {
+		name := getRelativePathFromCITagsSourceRootForCoverage(fileName)
+		bitmap := coveredByName[name]
+		if bitmap == nil || bitmap.BitCount() < block.endLine {
+			next := filebitmap.FromLineCount(block.endLine)
+			if bitmap != nil {
+				next = filebitmap.Or(next, bitmap, true)
+			}
+			bitmap = next
+			coveredByName[name] = bitmap
+		}
+		for line := block.startLine; line <= block.endLine; line++ {
+			bitmap.Set(line)
+		}
+	}
 
 	for fileName, afterBlocks := range after {
 		if beforeBlocks, found := before[fileName]; found {
@@ -636,26 +659,31 @@ func getFilesCovered(testFile string, before, after map[string][]coverageBlock) 
 					// Subtract hit counts
 					diffCount := afterBlock.count - beforeBlock.count
 					if diffCount > 0 {
-						result = append(result, getRelativePathFromCITagsSourceRootForCoverage(fileName))
-						break
+						addCoveredRange(fileName, afterBlock)
 					}
 				} else if afterBlock.count > 0 {
 					// If there's no matching block in before, add the whole block from after
-					result = append(result, getRelativePathFromCITagsSourceRootForCoverage(fileName))
-					break
+					addCoveredRange(fileName, afterBlock)
 				}
 			}
 		} else {
 			// If there's no before profile for this file, add the entire after profile
 			for _, afterBlock := range afterBlocks {
 				if afterBlock.count > 0 {
-					result = append(result, getRelativePathFromCITagsSourceRootForCoverage(fileName))
-					break
+					addCoveredRange(fileName, afterBlock)
 				}
 			}
 		}
 	}
 
+	names := make([]string, 0, len(coveredByName))
+	for name := range coveredByName {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		result = append(result, coveredFile{name: name, bitmap: coveredByName[name].ToArray()})
+	}
 	return result
 }
 

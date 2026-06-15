@@ -29,6 +29,7 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 		{name: "manual-codecoverage-disabled", extraEnv: []string{"DD_ITR_BACKFILL_CODE_COVERAGE=false"}},
 		{name: "manual-flaky-retry", extraEnv: []string{"DD_ITR_BACKFILL_FLAKY_RETRY=true"}},
 		{name: "manual-partial-coverage", extraEnv: []string{"DD_ITR_BACKFILL_PARTIAL_COVERAGE=true"}, skipProfileAssert: true},
+		{name: "manual-producer-bitmap-upload", skipProfileAssert: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			profile := filepath.Join(t.TempDir(), test.name+".out")
@@ -70,6 +71,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 			"fixtures/itrbackfill/orchestrion/lib/lib.go",
 			"fixtures/itrbackfill/orchestrion/otherlib/otherlib.go",
 		}},
+		{name: "producer-bitmap-upload", coverMode: "count", withProfile: true, skipProfileAssert: true},
 		{name: "repo-wide-backend-coverage", coverMode: "count", withProfile: true},
 		{name: "backfill-disabled-when-response-includes-out-of-process-test", coverMode: "count", withProfile: true, skipProfileAssert: true},
 		{name: "backfill-disabled-when-response-has-parameters", coverMode: "count", withProfile: true},

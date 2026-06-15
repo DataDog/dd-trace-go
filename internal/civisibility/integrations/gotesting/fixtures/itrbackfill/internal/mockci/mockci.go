@@ -19,6 +19,7 @@ import (
 
 	"github.com/tinylib/msgp/msgp"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
@@ -37,9 +38,17 @@ type Server struct {
 	mu     sync.Mutex
 
 	payloads         []Payload
+	coverageUploads  []UploadedCoverageFile
+	coverageByFile   map[string][]byte
 	skippableRequest int
 	coverageRequest  int
 	restore          func()
+}
+
+// UploadedCoverageFile is one file entry captured from a code coverage upload.
+type UploadedCoverageFile struct {
+	Filename string
+	Bitmap   []byte
 }
 
 // Payload is the decoded CI Visibility test-cycle payload shape used by fixtures.
@@ -62,7 +71,7 @@ type Content struct {
 
 // Start starts the mock and configures process environment for agentless CI Visibility.
 func Start(settings net.SettingsResponseData, tests []SkippableTest, coverage map[string][]byte) *Server {
-	mock := &Server{}
+	mock := &Server{coverageByFile: make(map[string][]byte)}
 	mock.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		switch r.URL.Path {
@@ -75,11 +84,7 @@ func Start(settings net.SettingsResponseData, tests []SkippableTest, coverage ma
 			_ = drain(r.Body)
 			mock.handleSkippable(w, tests, coverage)
 		case "/api/v2/citestcov":
-			_ = drain(r.Body)
-			mock.mu.Lock()
-			mock.coverageRequest++
-			mock.mu.Unlock()
-			w.WriteHeader(http.StatusAccepted)
+			mock.handleCoverageUpload(w, r)
 		case "/api/v2/git/repository/search_commits":
 			_ = drain(r.Body)
 			w.Header().Set("Content-Type", "application/json")
@@ -138,6 +143,18 @@ func (s *Server) CoverageRequests() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.coverageRequest
+}
+
+// UploadedCoverage returns uploaded source-file bitmaps keyed by filename.
+func (s *Server) UploadedCoverage() map[string][]byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	copied := make(map[string][]byte, len(s.coverageByFile))
+	for file, bitmap := range s.coverageByFile {
+		copied[file] = append([]byte(nil), bitmap...)
+	}
+	return copied
 }
 
 // HasEventMeta returns true when an event resource containing resourceContains
@@ -275,6 +292,167 @@ func (s *Server) handleSkippable(w http.ResponseWriter, tests []SkippableTest, c
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) handleCoverageUpload(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	s.coverageRequest++
+	s.mu.Unlock()
+
+	reader, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var uploads []UploadedCoverageFile
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if part.FormName() != "coveragex" {
+			_ = drain(part)
+			continue
+		}
+		if part.Header.Get(net.HeaderContentType) != net.ContentTypeMessagePack {
+			_ = drain(part)
+			continue
+		}
+		files, err := decodeCoveragePayload(part)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		uploads = append(uploads, files...)
+	}
+
+	s.storeUploadedCoverage(uploads)
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) storeUploadedCoverage(files []UploadedCoverageFile) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, file := range files {
+		file.Bitmap = append([]byte(nil), file.Bitmap...)
+		s.coverageUploads = append(s.coverageUploads, file)
+		if len(file.Bitmap) == 0 {
+			continue
+		}
+		bitmap := append([]byte(nil), file.Bitmap...)
+		if existing := s.coverageByFile[file.Filename]; len(existing) > 0 {
+			bitmap = filebitmap.Or(
+				filebitmap.NewFileBitmapFromBytes(existing),
+				filebitmap.NewFileBitmapFromBytes(bitmap),
+				false,
+			).ToArray()
+		}
+		s.coverageByFile[file.Filename] = bitmap
+	}
+}
+
+func decodeCoveragePayload(reader io.Reader) ([]UploadedCoverageFile, error) {
+	mr := msgp.NewReader(reader)
+	fields, err := mr.ReadMapHeader()
+	if err != nil {
+		return nil, err
+	}
+	var uploads []UploadedCoverageFile
+	for i := uint32(0); i < fields; i++ {
+		key, err := mr.ReadString()
+		if err != nil {
+			return nil, err
+		}
+		switch key {
+		case "coverages":
+			count, err := mr.ReadArrayHeader()
+			if err != nil {
+				return nil, err
+			}
+			for j := uint32(0); j < count; j++ {
+				files, err := decodeCoverageEventFiles(mr)
+				if err != nil {
+					return nil, err
+				}
+				uploads = append(uploads, files...)
+			}
+		default:
+			if err := mr.Skip(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return uploads, nil
+}
+
+func decodeCoverageEventFiles(mr *msgp.Reader) ([]UploadedCoverageFile, error) {
+	fields, err := mr.ReadMapHeader()
+	if err != nil {
+		return nil, err
+	}
+	var uploads []UploadedCoverageFile
+	for i := uint32(0); i < fields; i++ {
+		key, err := mr.ReadString()
+		if err != nil {
+			return nil, err
+		}
+		switch key {
+		case "files":
+			count, err := mr.ReadArrayHeader()
+			if err != nil {
+				return nil, err
+			}
+			for j := uint32(0); j < count; j++ {
+				file, err := decodeCoverageFile(mr)
+				if err != nil {
+					return nil, err
+				}
+				uploads = append(uploads, file)
+			}
+		default:
+			if err := mr.Skip(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return uploads, nil
+}
+
+func decodeCoverageFile(mr *msgp.Reader) (UploadedCoverageFile, error) {
+	fields, err := mr.ReadMapHeader()
+	if err != nil {
+		return UploadedCoverageFile{}, err
+	}
+	var file UploadedCoverageFile
+	for i := uint32(0); i < fields; i++ {
+		key, err := mr.ReadString()
+		if err != nil {
+			return UploadedCoverageFile{}, err
+		}
+		switch key {
+		case "filename":
+			file.Filename, err = mr.ReadString()
+			if err != nil {
+				return UploadedCoverageFile{}, err
+			}
+		case "bitmap":
+			file.Bitmap, err = mr.ReadBytes(nil)
+			if err != nil {
+				return UploadedCoverageFile{}, err
+			}
+		default:
+			if err := mr.Skip(); err != nil {
+				return UploadedCoverageFile{}, err
+			}
+		}
+	}
+	return file, nil
 }
 
 func writeSettings(w http.ResponseWriter, settings net.SettingsResponseData) {

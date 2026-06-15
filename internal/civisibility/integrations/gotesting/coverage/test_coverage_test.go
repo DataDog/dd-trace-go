@@ -202,18 +202,95 @@ func TestGetFilesCovered(t *testing.T) {
 
 	testFile := "testfile.go"
 	filesCovered := getFilesCovered(testFile, before, after)
-	expectedFiles := []string{"testfile.go", "file1.go", "file3.go"}
 
-	if len(filesCovered) != len(expectedFiles) {
-		t.Errorf("Expected %d files covered, got %d", len(expectedFiles), len(filesCovered))
+	if got := coveredFileNames(filesCovered); !slices.Equal(got, []string{"testfile.go", "file1.go", "file3.go"}) {
+		t.Fatalf("unexpected covered file order: got %v", got)
+	}
+	assertCoveredFile(t, filesCovered, "testfile.go", nil)
+	assertCoveredFile(t, filesCovered, "file1.go", filebitmap.FromActiveRange(1, 1).ToArray())
+	assertCoveredFile(t, filesCovered, "file3.go", filebitmap.FromActiveRange(3, 3).ToArray())
+}
+
+func TestGetFilesCoveredBuildsBitmapForMultipleCoveredBlocks(t *testing.T) {
+	before := map[string][]coverageBlock{
+		"pkg/lib.go": {
+			{startLine: 2, startCol: 1, endLine: 3, endCol: 10, numStmt: 1, count: 0},
+			{startLine: 8, startCol: 1, endLine: 8, endCol: 10, numStmt: 1, count: 0},
+			{startLine: 12, startCol: 1, endLine: 13, endCol: 10, numStmt: 1, count: 7},
+		},
+	}
+	after := map[string][]coverageBlock{
+		"pkg/lib.go": {
+			{startLine: 2, startCol: 1, endLine: 3, endCol: 10, numStmt: 1, count: 1},
+			{startLine: 8, startCol: 1, endLine: 8, endCol: 10, numStmt: 1, count: 1},
+			{startLine: 12, startCol: 1, endLine: 13, endCol: 10, numStmt: 1, count: 7},
+		},
 	}
 
-	for _, expectedFile := range expectedFiles {
-		found := slices.Contains(filesCovered, expectedFile)
-		if !found {
-			t.Errorf("Expected file %s to be in covered files", expectedFile)
+	want := filebitmap.FromLineCount(8)
+	for _, line := range []int{2, 3, 8} {
+		want.Set(line)
+	}
+
+	filesCovered := getFilesCovered("pkg/lib_test.go", before, after)
+	assertCoveredFile(t, filesCovered, "pkg/lib_test.go", nil)
+	assertCoveredFile(t, filesCovered, "pkg/lib.go", want.ToArray())
+}
+
+func TestGetFilesCoveredSkipsZeroAndNegativeDeltas(t *testing.T) {
+	before := map[string][]coverageBlock{
+		"pkg/lib.go": {
+			{startLine: 1, startCol: 1, endLine: 1, endCol: 10, numStmt: 1, count: 2},
+			{startLine: 2, startCol: 1, endLine: 2, endCol: 10, numStmt: 1, count: 3},
+		},
+	}
+	after := map[string][]coverageBlock{
+		"pkg/lib.go": {
+			{startLine: 1, startCol: 1, endLine: 1, endCol: 10, numStmt: 1, count: 2},
+			{startLine: 2, startCol: 1, endLine: 2, endCol: 10, numStmt: 1, count: 1},
+		},
+	}
+
+	filesCovered := getFilesCovered("pkg/lib_test.go", before, after)
+	if len(filesCovered) != 1 {
+		t.Fatalf("expected only the test file entry, got %#v", filesCovered)
+	}
+	assertCoveredFile(t, filesCovered, "pkg/lib_test.go", nil)
+}
+
+func TestGetFilesCoveredUsesFileBitmapByteOrder(t *testing.T) {
+	before := map[string][]coverageBlock{}
+	after := map[string][]coverageBlock{
+		"pkg/lib.go": {
+			{startLine: 1, startCol: 1, endLine: 1, endCol: 10, numStmt: 1, count: 1},
+			{startLine: 8, startCol: 1, endLine: 8, endCol: 10, numStmt: 1, count: 1},
+		},
+	}
+
+	filesCovered := getFilesCovered("pkg/lib_test.go", before, after)
+	assertCoveredFile(t, filesCovered, "pkg/lib.go", []byte{0x81})
+}
+
+func assertCoveredFile(t *testing.T, files []coveredFile, name string, bitmap []byte) {
+	t.Helper()
+	for _, file := range files {
+		if file.name != name {
+			continue
 		}
+		if !slices.Equal(file.bitmap, bitmap) {
+			t.Fatalf("covered file %s bitmap mismatch: got %08b want %08b", name, file.bitmap, bitmap)
+		}
+		return
 	}
+	t.Fatalf("covered file %s not found in %#v", name, files)
+}
+
+func coveredFileNames(files []coveredFile) []string {
+	names := make([]string, 0, len(files))
+	for _, file := range files {
+		names = append(names, file.name)
+	}
+	return names
 }
 
 func TestCollectCoverageBeforeTestExecution(t *testing.T) {
