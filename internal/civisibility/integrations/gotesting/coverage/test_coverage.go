@@ -7,7 +7,9 @@ package coverage
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +19,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -62,18 +66,58 @@ type (
 		numStmt   int
 		count     int
 	}
+
+	// BackfillInput configures backend aggregate coverage that can repair the
+	// process-local coverage profile after ITR skips have been applied.
+	BackfillInput struct {
+		BackendCoverage map[string]*filebitmap.FileBitmap
+		ActualSkips     int
+	}
+
+	// BackfillResult describes one idempotent coverage backfill finalization.
+	BackfillResult struct {
+		Applied               bool
+		Reason                string
+		Coverage              float64
+		ProfilePath           string
+		MatchedFiles          int
+		UnmatchedBackendFiles int
+		MatchedBlocks         int
+		UpdatedBlocks         int
+	}
+
+	runtimeCoverageSnapshot struct {
+		path      string
+		temporary bool
+	}
 )
 
 var _ TestCoverage = (*testCoverage)(nil)
 
 var (
+	coverageStateMu locking.Mutex
+
 	// mode is the coverage mode.
 	mode string
 	// tearDown is the function to write the coverage counters to the file.
 	tearDown func(coverprofile string, gocoverdir string) (string, error)
+	// coverageUploadEnabled is true when per-test coverage should be sent to Datadog.
+	coverageUploadEnabled bool
 
 	// covWriter is the coverage writer for sending test coverage data to the backend.
 	covWriter *coverageWriter
+
+	// runtimeSnapshot is the single runtime coverage snapshot shared by backfill
+	// and session coverage calculation.
+	runtimeSnapshot *runtimeCoverageSnapshot
+	// runtimeSnapshotCleaned prevents duplicate cleanup of the generated temp snapshot.
+	runtimeSnapshotCleaned bool
+	// backfillInput stores backend aggregate coverage for finalization.
+	backfillInput *BackfillInput
+	// backfillFinalized records whether FinalizeBackfill has already run.
+	backfillFinalized bool
+	// backfillResult stores the idempotent finalization result.
+	backfillResult BackfillResult
 
 	// temporaryDir is the temporary directory to store coverage files.
 	temporaryDir string
@@ -84,11 +128,15 @@ var (
 )
 
 // InitializeCoverage initializes the runtime coverage.
-func InitializeCoverage(m *testing.M) {
+func InitializeCoverage(m *testing.M, uploadEnabled bool) {
 	log.Debug("civisibility.cov: initializing runtime coverage")
 	testDep, err := getTestDepsCoverage(m)
-	if err != nil || testDep == nil {
+	if err != nil {
 		log.Debug("civisibility.cov: error initializing runtime coverage: %s", err.Error())
+		return
+	}
+	if testDep == nil {
+		log.Debug("civisibility.cov: runtime coverage dependencies are unavailable")
 		return
 	}
 
@@ -99,9 +147,17 @@ func InitializeCoverage(m *testing.M) {
 		// writing the coverage counters to the file
 		return tDown(coverprofile, gocoverdir)
 	}
+	coverageUploadEnabled = uploadEnabled
+	runtimeSnapshot = nil
+	runtimeSnapshotCleaned = false
+	backfillInput = nil
+	backfillFinalized = false
+	backfillResult = BackfillResult{}
+
+	initializeModuleInfo()
 
 	// if we cannot collect we bailout early
-	if !CanCollect() {
+	if !CanCollectPerTestCoverage() {
 		return
 	}
 
@@ -122,7 +178,9 @@ func InitializeCoverage(m *testing.M) {
 		_ = os.RemoveAll(temporaryDir)
 	})
 
-	// executing go list -f '{{.Module.Path}};{{.Module.Dir}}' to get the module path and module dir
+}
+
+func initializeModuleInfo() {
 	stdOut, err := exec.Command("go", "list", "-f", "{{.Module.Path}};{{.Module.Dir}}").CombinedOutput()
 	if err != nil {
 		log.Debug("civisibility.cov: error getting module path and module dir: %s", err.Error())
@@ -140,26 +198,29 @@ func CanCollect() bool {
 	return mode == "count" || mode == "atomic"
 }
 
+// CanComputeCoverageProfile returns whether a runtime coverprofile can be produced.
+func CanComputeCoverageProfile() bool {
+	return tearDown != nil && (mode == "set" || mode == "count" || mode == "atomic")
+}
+
+// CanCollectPerTestCoverage returns whether per-test coverage upload can run.
+func CanCollectPerTestCoverage() bool {
+	return coverageUploadEnabled && CanCollect()
+}
+
 // GetCoverage returns the total coverage percentage for the test package
 func GetCoverage() float64 {
-	if !CanCollect() {
+	if !CanComputeCoverageProfile() {
 		return 0
 	}
 
-	coverageFile := filepath.Join(temporaryDir, "global_coverage.out")
-	_, err := tearDown(coverageFile, "")
+	snapshot, err := RuntimeCoverageSnapshot()
 	if err != nil {
 		log.Debug("civisibility.cov: error getting coverage file: %s", err.Error())
+		return 0
 	}
 
-	defer func(cFile string) {
-		err = os.Remove(cFile)
-		if err != nil {
-			log.Debug("civisibility.cov: error removing coverage file: %s", err.Error())
-		}
-	}(coverageFile)
-
-	totalStatements, coveredStatements, err := getCoverageStatementsInfo(coverageFile)
+	totalStatements, coveredStatements, err := getCoverageStatementsInfo(snapshot.path)
 	if err != nil {
 		log.Debug("civisibility.cov: error parsing coverage file: %s", err.Error())
 	}
@@ -169,6 +230,215 @@ func GetCoverage() float64 {
 	}
 
 	return float64(coveredStatements) / float64(totalStatements)
+}
+
+// RuntimeCoverageSnapshot returns the single coverage profile snapshot used for
+// final coverage calculation and ITR backfill.
+func RuntimeCoverageSnapshot() (*runtimeCoverageSnapshot, error) {
+	coverageStateMu.Lock()
+	defer coverageStateMu.Unlock()
+	return runtimeCoverageSnapshotLocked()
+}
+
+func runtimeCoverageSnapshotLocked() (*runtimeCoverageSnapshot, error) {
+	if runtimeSnapshot != nil {
+		return runtimeSnapshot, nil
+	}
+	if !CanComputeCoverageProfile() {
+		return nil, fmt.Errorf("runtime coverage unavailable")
+	}
+
+	if coverProfile := currentCoverProfilePath(); coverProfile != "" {
+		if _, err := os.Stat(coverProfile); err == nil {
+			runtimeSnapshot = &runtimeCoverageSnapshot{path: coverProfile}
+			return runtimeSnapshot, nil
+		}
+	}
+
+	if err := ensureTemporaryDirLocked(); err != nil {
+		return nil, err
+	}
+	coverageFile := filepath.Join(temporaryDir, "global_coverage.out")
+	if _, err := tearDown(coverageFile, ""); err != nil {
+		return nil, err
+	}
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: coverageFile, temporary: true}
+	return runtimeSnapshot, nil
+}
+
+func currentCoverProfilePath() string {
+	if coverProfileFlag := flag.Lookup("test.coverprofile"); coverProfileFlag != nil {
+		return coverProfileFlag.Value.String()
+	}
+	return ""
+}
+
+func ensureTemporaryDirLocked() error {
+	if temporaryDir != "" {
+		return nil
+	}
+	dir, err := os.MkdirTemp("", "coverage")
+	if err != nil {
+		return err
+	}
+	temporaryDir = dir
+	integrations.PushCiVisibilityCloseAction(func() {
+		_ = os.RemoveAll(dir)
+	})
+	return nil
+}
+
+// ConfigureBackfill stores backend aggregate coverage for the finalizer.
+func ConfigureBackfill(input BackfillInput) {
+	coverageStateMu.Lock()
+	defer coverageStateMu.Unlock()
+
+	copiedCoverage := make(map[string]*filebitmap.FileBitmap, len(input.BackendCoverage))
+	maps.Copy(copiedCoverage, input.BackendCoverage)
+	backfillInput = &BackfillInput{
+		BackendCoverage: copiedCoverage,
+		ActualSkips:     input.ActualSkips,
+	}
+	backfillFinalized = false
+	backfillResult = BackfillResult{}
+}
+
+// PreflightBackfill validates that runtime coverage can later be backfilled.
+// Path matching is deferred to FinalizeBackfill because producing a coverage
+// profile before testing.M.Run completes mutates Go's runtime coverage state.
+func PreflightBackfill(input BackfillInput) BackfillResult {
+	coverageStateMu.Lock()
+	defer coverageStateMu.Unlock()
+
+	if len(input.BackendCoverage) == 0 {
+		return BackfillResult{Reason: "backfill not configured"}
+	}
+	if !CanComputeCoverageProfile() {
+		return BackfillResult{Reason: "runtime coverage unavailable"}
+	}
+	if !CanCollect() {
+		return BackfillResult{Reason: "coverage mode unsupported"}
+	}
+	result := validateBackendCoverageSourceFiles(input.BackendCoverage)
+	if result.unmatchedBackendFiles > 0 {
+		return BackfillResult{
+			Reason:                "coverage paths unmatched",
+			MatchedFiles:          result.matchedFiles,
+			UnmatchedBackendFiles: result.unmatchedBackendFiles,
+		}
+	}
+	if result.matchedFiles == 0 {
+		return BackfillResult{Reason: "coverage paths unmatched"}
+	}
+	return BackfillResult{}
+}
+
+// FinalizeBackfill applies backend coverage to the runtime snapshot once.
+func FinalizeBackfill() BackfillResult {
+	coverageStateMu.Lock()
+	defer coverageStateMu.Unlock()
+
+	if backfillFinalized {
+		return backfillResult
+	}
+	backfillFinalized = true
+
+	if backfillInput == nil || len(backfillInput.BackendCoverage) == 0 {
+		backfillResult = BackfillResult{Reason: "backfill not configured"}
+		return backfillResult
+	}
+	if backfillInput.ActualSkips <= 0 {
+		backfillResult = BackfillResult{Reason: "no actual itr skips"}
+		return backfillResult
+	}
+	if !CanComputeCoverageProfile() {
+		backfillResult = BackfillResult{Reason: "runtime coverage unavailable"}
+		return backfillResult
+	}
+	if !CanCollect() {
+		backfillResult = BackfillResult{Reason: "coverage mode unsupported"}
+		return backfillResult
+	}
+
+	snapshot, err := runtimeCoverageSnapshotLocked()
+	if err != nil {
+		backfillResult = BackfillResult{Reason: "runtime coverage unavailable"}
+		return backfillResult
+	}
+
+	profile, err := parseOrderedCoverProfile(snapshot.path)
+	if err != nil {
+		backfillResult = BackfillResult{Reason: "coverage profile invalid", ProfilePath: snapshot.path}
+		return backfillResult
+	}
+	result := profile.applyBackfill(backfillInput.BackendCoverage)
+	if result.unmatchedBackendFiles > 0 {
+		backfillResult = BackfillResult{
+			Reason:                "coverage paths unmatched",
+			ProfilePath:           snapshot.path,
+			MatchedFiles:          result.matchedFiles,
+			UnmatchedBackendFiles: result.unmatchedBackendFiles,
+			MatchedBlocks:         result.matchedBlocks,
+		}
+		return backfillResult
+	}
+	if result.matchedBlocks == 0 {
+		backfillResult = BackfillResult{Reason: "coverage paths unmatched", ProfilePath: snapshot.path, MatchedFiles: result.matchedFiles}
+		return backfillResult
+	}
+	if result.updatedBlocks > 0 {
+		if err := profile.writeAtomic(snapshot.path); err != nil {
+			backfillResult = BackfillResult{Reason: "runtime coverage unavailable", ProfilePath: snapshot.path}
+			return backfillResult
+		}
+	}
+
+	coverage := 0.0
+	if result.totalStatements > 0 {
+		coverage = float64(result.coveredStmts) / float64(result.totalStatements)
+	}
+	backfillResult = BackfillResult{
+		Applied:               result.updatedBlocks > 0,
+		Coverage:              coverage,
+		ProfilePath:           snapshot.path,
+		MatchedFiles:          result.matchedFiles,
+		UnmatchedBackendFiles: result.unmatchedBackendFiles,
+		MatchedBlocks:         result.matchedBlocks,
+		UpdatedBlocks:         result.updatedBlocks,
+	}
+	return backfillResult
+}
+
+// CleanupRuntimeCoverageSnapshot removes a generated temp snapshot once.
+func CleanupRuntimeCoverageSnapshot() {
+	coverageStateMu.Lock()
+	defer coverageStateMu.Unlock()
+	if runtimeSnapshot == nil || !runtimeSnapshot.temporary || runtimeSnapshotCleaned {
+		return
+	}
+	if err := os.Remove(runtimeSnapshot.path); err != nil {
+		log.Debug("civisibility.cov: error removing coverage file: %s", err.Error())
+	}
+	runtimeSnapshotCleaned = true
+}
+
+// ResetForTesting clears package globals used by coverage tests.
+func ResetForTesting() {
+	coverageStateMu.Lock()
+	defer coverageStateMu.Unlock()
+
+	mode = ""
+	tearDown = nil
+	coverageUploadEnabled = false
+	covWriter = nil
+	runtimeSnapshot = nil
+	runtimeSnapshotCleaned = false
+	backfillInput = nil
+	backfillFinalized = false
+	backfillResult = BackfillResult{}
+	temporaryDir = ""
+	modulePath = ""
+	moduleDir = ""
 }
 
 // NewTestCoverage creates a new test coverage.
@@ -185,7 +455,7 @@ func NewTestCoverage(sessionID, moduleID, suiteID, testID uint64, testFile strin
 
 // CollectCoverageBeforeTestExecution collects coverage before test execution.
 func (t *testCoverage) CollectCoverageBeforeTestExecution() {
-	if !CanCollect() {
+	if !CanCollectPerTestCoverage() {
 		return
 	}
 
@@ -201,7 +471,7 @@ func (t *testCoverage) CollectCoverageBeforeTestExecution() {
 
 // CollectCoverageAfterTestExecution collects coverage after test execution.
 func (t *testCoverage) CollectCoverageAfterTestExecution() {
-	if !CanCollect() {
+	if !CanCollectPerTestCoverage() {
 		return
 	}
 
@@ -221,6 +491,10 @@ func (t *testCoverage) CollectCoverageAfterTestExecution() {
 
 // getCoverageData gets the coverage data.
 func (t *testCoverage) getCoverageData() error {
+	if !CanCollectPerTestCoverage() {
+		return nil
+	}
+
 	t.postCoverageFilename = filepath.Join(temporaryDir, fmt.Sprintf("%d-%d-%d-post.out", t.moduleID, t.suiteID, t.testID))
 	_, err := tearDown(t.postCoverageFilename, "")
 	if err != nil {
@@ -291,14 +565,10 @@ func parseCoverProfile(filename string) (map[string][]coverageBlock, error) {
 			continue
 		}
 
-		// Split the line into the file and block parts
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) < 2 {
+		fileName, blockInfo, err := splitCoverageProfileLine(line)
+		if err != nil {
 			continue
 		}
-
-		fileName := parts[0]
-		blockInfo := parts[1]
 
 		// Split the block info by space
 		infoParts := strings.Fields(blockInfo)
@@ -413,13 +683,10 @@ func getCoverageStatementsInfo(filename string) (totalStatements, coveredStateme
 			continue
 		}
 
-		// Split the line into the file and block parts
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) < 2 {
+		_, blockInfo, err := splitCoverageProfileLine(line)
+		if err != nil {
 			continue
 		}
-
-		blockInfo := parts[1] // Block data, including line info and statement counts
 
 		// Split the block info by space
 		infoParts := strings.Fields(blockInfo)

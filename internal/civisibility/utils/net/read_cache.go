@@ -32,6 +32,9 @@ const (
 
 	// readCacheEndpointVersion is bumped when endpoint request semantics change.
 	readCacheEndpointVersion = 1
+	// readCacheEndpointSkippableTestsVersion is bumped independently because skippable-tests
+	// cache entries include backend coverage metadata and safety state.
+	readCacheEndpointSkippableTestsVersion = 2
 
 	// readCacheScopeLocal scopes unidentified local runs by parent process.
 	readCacheScopeLocal = "local"
@@ -296,7 +299,7 @@ func readThroughShortLivedCache[T any](
 	}
 	endpointScope := readCacheEndpointScope{
 		Endpoint:        endpoint,
-		EndpointVersion: readCacheEndpointVersion,
+		EndpointVersion: readCacheEndpointVersionFor(endpoint),
 		RequestHash:     requestHash,
 	}
 	cacheKey, err := readCacheKey(baseScope, endpointScope)
@@ -356,6 +359,13 @@ func readThroughShortLivedCache[T any](
 		log.Debug("civisibility.read_cache: lock bypass [endpoint:%s key:%s]", endpoint, cacheKey)
 		return readCacheLiveValue(live)
 	}
+}
+
+func readCacheEndpointVersionFor(endpoint string) int {
+	if endpoint == readCacheEndpointSkippableTests {
+		return readCacheEndpointSkippableTestsVersion
+	}
+	return readCacheEndpointVersion
 }
 
 func readCacheLiveValue[T any](live func() (readCacheLiveResult[T], error)) (T, error) {

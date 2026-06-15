@@ -40,7 +40,7 @@ type (
 		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
 		SendCoveragePayload(ciTestCovPayload io.Reader) error
 		SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error
-		GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error)
+		GetSkippableTests() (*SkippableTestsResponse, error)
 		GetTestManagementTests() (*TestManagementTestsResponseDataModules, error)
 		SendLogs(logsPayload io.Reader) error
 	}

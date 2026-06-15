@@ -59,3 +59,5 @@ When adding new dependencies or upgrading existing ones, run [fix_modules.sh](..
 ### Testing
 
 Testing includes checking that the correct traces appear after instrumentation. See the [internal Orchestrion directory](../internal/orchestrion/_integration/) for testing files and scenarios.
+
+Some feature-owned Orchestrion acceptance tests live with their owning integration when they need a specialized harness rather than the shared trace scenario runner. For example, CI Visibility's ITR coverage backfill fixture lives under [../internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion](../internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion/) and imports only the Go `testing` integration in `orchestrion.tool.go`; it does not add a new Orchestrion aspect or integration.

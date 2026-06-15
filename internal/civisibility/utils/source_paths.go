@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -195,10 +196,18 @@ func semanticImportVersionSuffix(modulePath, repoPrefix string) (moduleDir strin
 
 // isSemanticImportVersion reports whether segment is a Go semantic import version suffix.
 func isSemanticImportVersion(segment string) bool {
-	if len(segment) < 2 || segment[0] != 'v' || segment[1] < '2' || segment[1] > '9' {
+	if len(segment) < 2 || segment[0] != 'v' {
 		return false
 	}
-	for _, r := range segment[2:] {
+	digits := segment[1:]
+	if len(digits) > 1 && digits[0] == '0' {
+		return false
+	}
+	version, err := strconv.Atoi(digits)
+	if err != nil || version < 2 {
+		return false
+	}
+	for _, r := range segment[1:] {
 		if r < '0' || r > '9' {
 			return false
 		}
