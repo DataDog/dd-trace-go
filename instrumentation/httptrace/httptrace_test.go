@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -1004,6 +1005,51 @@ func BenchmarkObfuscateQueryStringDefault(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
+			for b.Loop() {
+				obfuscateQueryStringDefault(tc.input)
+			}
+		})
+	}
+}
+
+// TestObfuscateAdversarialCompletes is a timing regression guard: it asserts that
+// the worst-case JWT adversarial input (300 KB of repeated "eyJ") completes well
+// within 1 s.  Before the jwtSkipEnd fix this took ~5 s on typical hardware; the
+// fixed implementation runs in < 1 ms, so 1 s gives a ~1000× safety margin.
+func TestObfuscateAdversarialCompletes(t *testing.T) {
+	input := strings.Repeat("eyJ", 100000) // 300 KB
+	start := time.Now()
+	obfuscateQueryStringDefault(input)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("obfuscateQueryStringDefault took %v for 300 KB adversarial input (limit 1s) — possible O(N²) regression", elapsed)
+	}
+}
+
+// BenchmarkObfuscateAdversarial demonstrates an O(N²) scaling previously
+// present.
+//
+// Pre-fix: 4× input length ≈ 16× time.  Post-fix: 4× input ≈ 4× time.
+func BenchmarkObfuscateAdversarial(b *testing.B) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		// JWT: "eyJ" repeated — re-anchors matchJWT every 3 bytes, each
+		// consumeJWTSegment call scans the entire remaining string (e, y, J are
+		// all in classJWTSeg = [\w=-]).
+		{"jwt_adversarial/9k", strings.Repeat("eyJ", 3000)},
+		{"jwt_adversarial/30k", strings.Repeat("eyJ", 10000)},
+		{"jwt_adversarial/100k", strings.Repeat("eyJ", 33333)},
+		// PEM: repeated "PRIVATE KEY" in the label — matchPEMPrivateKeyLiteral
+		// succeeds at every 12-byte boundary and matchPEMBodyAndEnd scans the
+		// rest of the string for each hit.
+		{"pem_adversarial/4k", "-----BEGIN " + strings.Repeat("PRIVATE KEY ", 170)},
+		{"pem_adversarial/12k", "-----BEGIN " + strings.Repeat("PRIVATE KEY ", 500)},
+		{"pem_adversarial/40k", "-----BEGIN " + strings.Repeat("PRIVATE KEY ", 1666)},
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.SetBytes(int64(len(tc.input)))
 			for b.Loop() {
 				obfuscateQueryStringDefault(tc.input)
 			}
