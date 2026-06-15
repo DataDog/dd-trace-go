@@ -34,6 +34,12 @@ type evaluationResult struct {
 	Metadata map[string]any
 }
 
+const (
+	metadataAllocationKey = "dd.allocation.key"
+	metadataDoLogKey      = "dd.doLog"
+	metadataSerialIDKey   = "dd.serialId"
+)
+
 // evaluateFlag evaluates a feature flag with the given context.
 // It returns the variant value, reason, and any error that occurred.
 func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluationResult {
@@ -89,6 +95,10 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any) evaluati
 				doLog = *allocation.DoLog
 			}
 			metadata[metadataDoLogKey] = doLog
+
+			if split.SerialID != nil {
+				metadata[metadataSerialIDKey] = *split.SerialID
+			}
 
 			// Determine reason:
 			//   rules matched           → TARGETING_MATCH
