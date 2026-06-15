@@ -418,9 +418,11 @@ func matchGitHubToken(s string, pos int) (int, bool) {
 //
 // matchJWT returns (matchedLen, ok, segEnd).
 // segEnd is non-zero only on failure: it reports the end of the first
-// header+segment scan when that scan succeeded but no '.' followed.  The
-// outer loop uses segEnd to suppress redundant JWT re-anchors — any 'e' inside
-// [pos, segEnd) would produce the same failing scan.
+// header+segment scan whenever that segment was fully consumed, regardless of
+// whether the failure occurred before or after the first dot.  The outer loop
+// uses segEnd to suppress redundant JWT re-anchors — any 'e' inside
+// [pos, segEnd) would produce the same failing scan (same segment chars, same
+// missing or broken second header).
 func matchJWT(s string, pos int) (n int, ok bool, segEnd int) {
 	start := pos
 	var matched bool
@@ -438,10 +440,12 @@ func matchJWT(s string, pos int) (n int, ok bool, segEnd int) {
 	}
 	pos = afterSeg + 1 // skip '.'
 	if pos, matched = consumeJWTHeader(s, pos); !matched {
-		return 0, false, 0
+		// First segment was fully scanned; suppress re-anchors within it.
+		return 0, false, afterSeg
 	}
 	if pos, matched = consumeJWTSegment(s, pos); !matched {
-		return 0, false, 0
+		// First segment was fully scanned; suppress re-anchors within it.
+		return 0, false, afterSeg
 	}
 	if pos < len(s) && s[pos] == '.' {
 		if end, matched := consumeJWTSignature(s, pos+1); matched {
@@ -467,10 +471,11 @@ func matchPEMPrivateKey(s string, pos int) (int, bool) {
 	if pos, ok = matchFoldLiteral(s, pos, "BEGIN"); !ok {
 		return 0, false
 	}
-	// Scan the label for "PRIVATE KEY" and attempt body+end from the first
-	// matching position.  Real PEM headers contain exactly one "PRIVATE KEY"
-	// occurrence; trying every label position with a full body scan is O(N²)
-	// for adversarial labels with repeated occurrences.
+	// Scan label chars for "PRIVATE KEY", attempt body+end from each hit.
+	// Because the label charset excludes '-', only the occurrence directly
+	// before the fence "-----" can produce a successful body+end match; all
+	// earlier hits fail matchHyphens in O(1).  We must continue (not break)
+	// after a failed hit to reach that final occurrence.
 	labelPos, ok := consumePEMLabelChar(s, pos)
 	if !ok {
 		return 0, false
@@ -480,9 +485,7 @@ func matchPEMPrivateKey(s string, pos int) (int, bool) {
 			if end, ok := matchPEMBodyAndEnd(s, afterKey); ok {
 				return end - start, true
 			}
-			// "PRIVATE KEY" found but body+end failed; no longer label suffix
-			// can produce a valid PEM block from this BEGIN anchor.
-			break
+			// afterKey was not at the fence; keep scanning for a later hit.
 		}
 		next, ok := consumePEMLabelChar(s, labelPos)
 		if !ok {
@@ -517,9 +520,10 @@ func matchPEMFinalPrivateKey(s string, pos int) (int, bool) {
 	if !ok {
 		return 0, false
 	}
+	bestEnd := -1
 	for {
-		if end, ok := matchPEMPrivateKeyLiteral(s, labelPos); ok {
-			return end, true
+		if end, ok := matchPEMPrivateKeyLiteral(s, labelPos); ok && end > bestEnd {
+			bestEnd = end
 		}
 		next, ok := consumePEMLabelChar(s, labelPos)
 		if !ok {
@@ -527,7 +531,10 @@ func matchPEMFinalPrivateKey(s string, pos int) (int, bool) {
 		}
 		labelPos = next
 	}
-	return 0, false
+	if bestEnd < 0 {
+		return 0, false
+	}
+	return bestEnd, true
 }
 
 // matchPEMPrivateKeyLiteral implements PRIVATE(?:\s|%20)KEY — shared by the BEGIN and END label scanners (alt 6).
