@@ -132,6 +132,8 @@ type Config struct {
 	dynamicInstrumentationEnabled *DynamicConfig[bool]
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
+	// globalTags holds a set of tags applied to all spans.
+	globalTags *DynamicConfig[map[string]any]
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags *DynamicConfig[[]string]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
@@ -287,6 +289,12 @@ func loadConfig() *Config {
 
 	headerTags, headerTagsOrigin := parseHeaderAsTagsFromEnv(p)
 	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], propagateHeaderAsTagsToGlobalConfig)
+
+	rawTags, globalTagsOrigin := p.GetStringWithOrigin("DD_TAGS", "")
+	cfg.globalTags = newDynamicConfig("trace_tags", parseGlobalTags(rawTags), globalTagsOrigin, equalMap[string], nil)
+	for k, v := range globalTags {
+		reportGlobalTagTelemetry(k, v, globalTagsOrigin)
+	}
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -647,6 +655,38 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, prod
 	}
 	c.globalSampleRate.setBaseline(rate, origin)
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
+}
+
+// GlobalTags returns the current set of global tags applied to all spans. The
+// returned map must not be mutated; it is shared with the tracer and replaced
+// wholesale (never mutated in place) on updates, so readers need no lock.
+func (c *Config) GlobalTags() map[string]any {
+	return c.globalTags.Get()
+}
+
+// GlobalTagsConfig returns the DynamicConfig for global tags, used by the
+// tracer's Remote Config handler to apply tracing_tags updates and resets.
+func (c *Config) GlobalTagsConfig() *DynamicConfig[map[string]any] {
+	return c.globalTags
+}
+
+// reportGlobalTagTelemetry reports the per-key "global_tag_<key>" telemetry.
+func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
+	configtelemetry.Report("global_tag_"+key, value, origin)
+}
+
+// SetGlobalTag adds or overwrites a single global tag. Like SetServiceMapping it
+// is additive, so it carries no cross-product gate. The read-modify-write of the
+// startup baseline is guarded by c.mu.
+func (c *Config) SetGlobalTag(key string, value any, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	cur, curOrigin := c.globalTags.Baseline()
+	nm := make(map[string]any, len(cur)+1)
+	maps.Copy(nm, cur)
+	nm[key] = value
+	c.globalTags.setBaseline(nm, curOrigin)
+	c.mu.Unlock()
+	reportGlobalTagTelemetry(key, value, origin)
 }
 
 func (c *Config) DynamicInstrumentationEnabled() bool {
