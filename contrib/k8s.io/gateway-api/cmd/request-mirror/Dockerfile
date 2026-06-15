@@ -1,12 +1,12 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.4-alpine AS builder
 ENV CGO_ENABLED=1
 
 RUN apk add --no-cache --update git build-base
 RUN --mount=type=bind,src=.,dst=/build go -C /build build -tags=appsec -o /request-mirror /build/contrib/k8s.io/gateway-api/cmd/request-mirror
 
 # Runtime stage
-FROM alpine:3.20.3
+FROM alpine:3.24.0
 
 # Set opencontainers labels for Github container registry
 LABEL org.opencontainers.image.source=https://github.com/DataDog/dd-trace-go/tree/main/contrib/k8s.io/gateway-api/

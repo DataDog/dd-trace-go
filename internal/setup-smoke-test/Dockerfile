@@ -95,7 +95,7 @@ CMD ["/usr/local/bin/smoke-test"]
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM amazonlinux:2 AS al2
+FROM amazonlinux:2023.11.20260526.0 AS al2
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
 CMD ["/usr/local/bin/smoke-test"]
 
@@ -103,7 +103,7 @@ CMD ["/usr/local/bin/smoke-test"]
 # IMPORTANT NOTE: Nothing else than the compiled program must be copied into
 # this image to preperly highlight the fact that the compiled program is running
 # out of the box in it without any further installation.
-FROM amazonlinux:2023 AS al2023
+FROM amazonlinux:2023.11.20260526.0 AS al2023
 COPY --from=build-env /src/internal/setup-smoke-test/smoke-test /usr/local/bin
 CMD ["/usr/local/bin/smoke-test"]
 
