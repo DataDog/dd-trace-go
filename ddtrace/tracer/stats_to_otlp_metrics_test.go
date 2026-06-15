@@ -66,11 +66,6 @@ func kvAttrsToMap(kvs []*otlpcommon.KeyValue) map[string]string {
 	return m
 }
 
-// scopeAttr returns the string value of a scope attribute by key.
-func scopeAttr(sm *otlpmetrics.ScopeMetrics, key string) string {
-	return kvAttrsToMap(sm.Scope.Attributes)[key]
-}
-
 // ---- sketchToHistogram ----
 
 func TestSketchToHistogramEmpty(t *testing.T) {
@@ -165,6 +160,7 @@ func TestBuildOTLPMetricsRequestStructure(t *testing.T) {
 	sm := rm[0].ScopeMetrics
 	require.Len(t, sm, 1)
 	assert.Equal(t, "dd-trace-go", sm[0].Scope.Name)
+	assert.Empty(t, sm[0].Scope.Attributes, "no service identity on scope; it belongs on the resource")
 
 	m := sm[0].Metrics
 	require.Len(t, m, 1)
@@ -199,16 +195,33 @@ func TestBuildOTLPMetricsRequestOkAndErrorDataPoints(t *testing.T) {
 }
 
 func TestBuildOTLPMetricsRequestMultipleServices(t *testing.T) {
+	// Multiple services in one payload share a single scope; the non-default service
+	// carries service.name as a data-point attribute.
 	cfg := internalconfig.CreateNew()
 	gs1 := &pb.ClientGroupedStats{Service: "svc-a", Resource: "res-a", OkSummary: encodeSketch(t, 50e6)}
 	gs2 := &pb.ClientGroupedStats{Service: "svc-b", Resource: "res-b", OkSummary: encodeSketch(t, 100e6)}
 	req := BuildOTLPMetricsRequest(makePayload("svc-a", "", "", []*pb.ClientGroupedStats{gs1, gs2}), cfg)
 	require.NotNil(t, req)
 	sm := req.ResourceMetrics[0].ScopeMetrics
-	require.Len(t, sm, 2)
-	// Scopes must be emitted in sorted service-name order.
-	assert.Equal(t, "svc-a", scopeAttr(sm[0], "service.name"))
-	assert.Equal(t, "svc-b", scopeAttr(sm[1], "service.name"))
+	require.Len(t, sm, 1, "single scope regardless of service count")
+
+	dataPoints := sm[0].Metrics[0].GetHistogram().DataPoints
+	require.Len(t, dataPoints, 2)
+
+	// svc-a matches the default → no service.name on its data point.
+	var svcAPoint, svcBPoint *otlpmetrics.HistogramDataPoint
+	for _, dp := range dataPoints {
+		m := kvAttrsToMap(dp.Attributes)
+		if m["span.name"] == "res-a" {
+			svcAPoint = dp
+		} else {
+			svcBPoint = dp
+		}
+	}
+	require.NotNil(t, svcAPoint)
+	require.NotNil(t, svcBPoint)
+	assert.NotContains(t, kvAttrsToMap(svcAPoint.Attributes), "service.name", "default service omits service.name on data point")
+	assert.Equal(t, "svc-b", kvAttrsToMap(svcBPoint.Attributes)["service.name"], "non-default service carries service.name on data point")
 }
 
 // ---- Resource attributes ----
@@ -220,7 +233,24 @@ func TestBuildMetricsResourceSDKAttributes(t *testing.T) {
 	assert.Equal(t, "datadog", m["telemetry.sdk.name"])
 	assert.Equal(t, "go", m["telemetry.sdk.language"])
 	assert.NotEmpty(t, m["telemetry.sdk.version"])
-	assert.NotContains(t, m, "service.name")
+}
+
+func TestBuildMetricsResourceServiceIdentity(t *testing.T) {
+	cfg := internalconfig.CreateNew()
+	res := buildMetricsResource(cfg, makePayload("my-svc", "prod", "2.1.0", nil), false)
+	m := kvAttrsToMap(res.Attributes)
+	assert.Equal(t, "my-svc", m["service.name"])
+	assert.Equal(t, "prod", m["deployment.environment.name"])
+	assert.Equal(t, "2.1.0", m["service.version"])
+}
+
+func TestBuildMetricsResourceServiceIdentityOmitsEmptyEnvVer(t *testing.T) {
+	cfg := internalconfig.CreateNew()
+	res := buildMetricsResource(cfg, makePayload("svc", "", "", nil), false)
+	m := kvAttrsToMap(res.Attributes)
+	assert.Equal(t, "svc", m["service.name"])
+	assert.NotContains(t, m, "deployment.environment.name")
+	assert.NotContains(t, m, "service.version")
 }
 
 func TestBuildMetricsResourceHostnameOmitted(t *testing.T) {
@@ -236,8 +266,8 @@ func TestBuildMetricsResourceProcessTagsDefaultMode(t *testing.T) {
 	payload.ProcessTags = "entrypoint.name:myapp,entrypoint.type:binary"
 	res := buildMetricsResource(cfg, payload, false /* default mode */)
 	m := kvAttrsToMap(res.Attributes)
-	assert.Equal(t, "myapp", m["dd.entrypoint.name"])
-	assert.Equal(t, "binary", m["dd.entrypoint.type"])
+	assert.Equal(t, "myapp", m["datadog.entrypoint.name"])
+	assert.Equal(t, "binary", m["datadog.entrypoint.type"])
 }
 
 func TestBuildMetricsResourceNoProcessTagsInOtelMode(t *testing.T) {
@@ -245,23 +275,7 @@ func TestBuildMetricsResourceNoProcessTagsInOtelMode(t *testing.T) {
 	payload := makePayload("svc", "", "", nil)
 	payload.ProcessTags = "entrypoint.name:myapp"
 	res := buildMetricsResource(cfg, payload, true /* otelMode */)
-	assert.NotContains(t, kvAttrsToMap(res.Attributes), "dd.entrypoint.name")
-}
-
-// ---- Scope attributes ----
-
-func TestBuildScopeAttributesAll(t *testing.T) {
-	m := kvAttrsToMap(buildScopeAttributes("my-svc", "prod", "2.1.0"))
-	assert.Equal(t, "my-svc", m["service.name"])
-	assert.Equal(t, "prod", m["deployment.environment.name"])
-	assert.Equal(t, "2.1.0", m["service.version"])
-}
-
-func TestBuildScopeAttributesOmitsEmpty(t *testing.T) {
-	m := kvAttrsToMap(buildScopeAttributes("svc", "", ""))
-	assert.Equal(t, "svc", m["service.name"])
-	assert.NotContains(t, m, "deployment.environment.name")
-	assert.NotContains(t, m, "service.version")
+	assert.NotContains(t, kvAttrsToMap(res.Attributes), "datadog.entrypoint.name")
 }
 
 // ---- Data-point attributes ----
@@ -276,14 +290,14 @@ func TestDataPointAttributesOTelMode(t *testing.T) {
 		HTTPStatusCode: 200,
 		TopLevelHits:   1,
 	}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true /* otelMode */))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "" /* defaultService */, true /* otelMode */))
 	assert.Equal(t, "/users", m["span.name"])
 	assert.Equal(t, "server", m["span.kind"])
 	assert.Equal(t, "GET", m["http.request.method"])
 	assert.Equal(t, "200", m["http.response.status_code"])
-	assert.NotContains(t, m, "dd.operation.name")
-	assert.NotContains(t, m, "dd.span.type")
-	assert.NotContains(t, m, "dd.span.top_level")
+	assert.NotContains(t, m, "datadog.operation.name")
+	assert.NotContains(t, m, "datadog.span.type")
+	assert.NotContains(t, m, "datadog.span.top_level")
 }
 
 func TestDataPointAttributesDefaultMode(t *testing.T) {
@@ -294,29 +308,29 @@ func TestDataPointAttributesDefaultMode(t *testing.T) {
 		Hits:         1,
 		TopLevelHits: 1,
 	}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false /* default mode */))
-	assert.Equal(t, "web.request", m["dd.operation.name"])
-	assert.Equal(t, "web", m["dd.span.type"])
-	assert.Equal(t, "true", m["dd.span.top_level"])
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "" /* defaultService */, false /* default mode */))
+	assert.Equal(t, "web.request", m["datadog.operation.name"])
+	assert.Equal(t, "web", m["datadog.span.type"])
+	assert.Equal(t, "true", m["datadog.span.top_level"])
 }
 
 func TestDataPointAttributesTopLevelFalseWhenNone(t *testing.T) {
 	// TopLevelHits == 0: no top-level spans in group.
 	gs := &pb.ClientGroupedStats{Resource: "child-resource", Hits: 1, TopLevelHits: 0}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
-	assert.Equal(t, "false", m["dd.span.top_level"])
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", false))
+	assert.Equal(t, "false", m["datadog.span.top_level"])
 }
 
 func TestDataPointAttributesTopLevelFalseWhenMixed(t *testing.T) {
 	// TopLevelHits < Hits: mixed group → conservatively reported as non-top-level.
 	gs := &pb.ClientGroupedStats{Resource: "mixed", Hits: 10, TopLevelHits: 5}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
-	assert.Equal(t, "false", m["dd.span.top_level"])
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", false))
+	assert.Equal(t, "false", m["datadog.span.top_level"])
 }
 
 func TestDataPointAttributesErrorStatusCode(t *testing.T) {
 	gs := &pb.ClientGroupedStats{Resource: "/err"}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */, true))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */, "", true))
 	assert.Equal(t, "ERROR", m["status.code"])
 }
 
@@ -325,7 +339,21 @@ func TestDataPointAttributesPeerTags(t *testing.T) {
 		Resource: "/users/{id}",
 		PeerTags: []string{"http.route:/users/{id}", "peer.service:db"},
 	}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, false, true))
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
 	assert.Equal(t, "/users/{id}", m["http.route"])
 	assert.Equal(t, "db", m["peer.service"])
+}
+
+func TestDataPointAttributesNonDefaultService(t *testing.T) {
+	// When gs.Service differs from defaultService, service.name is added to the data point.
+	gs := &pb.ClientGroupedStats{Service: "postgres", Resource: "SELECT"}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "my-app", false))
+	assert.Equal(t, "postgres", m["service.name"])
+}
+
+func TestDataPointAttributesDefaultServiceOmitsServiceName(t *testing.T) {
+	// When gs.Service matches defaultService, no service.name on the data point.
+	gs := &pb.ClientGroupedStats{Service: "my-app", Resource: "web.request"}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "my-app", false))
+	assert.NotContains(t, m, "service.name")
 }

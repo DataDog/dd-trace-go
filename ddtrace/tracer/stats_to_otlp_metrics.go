@@ -30,58 +30,33 @@ const spanDurationMetricName = "traces.span.sdk.metrics.duration"
 var spanMetricBounds = []float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1, 1.4, 2, 5, 10, 15}
 
 // BuildOTLPMetricsRequest converts a ClientStatsPayload into an ExportMetricsServiceRequest.
-// Each service in the payload becomes a separate InstrumentationScope so a single payload
-// can carry multiple services. The resulting histogram uses DELTA temporality.
+// Service identity (service.name, service.version, deployment.environment.name) is placed on the
+// Resource. A single InstrumentationScope is used for all data points. When a grouped-stats entry
+// carries a different service than the payload's configured default, service.name is additionally
+// emitted as a data-point attribute. The resulting histogram uses DELTA temporality.
 func BuildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) *otlpcollectormetrics.ExportMetricsServiceRequest {
 	otelMode := cfg.OTLPSemanticsMode()
 
-	// Collect data points per service across all stat buckets.
-	type svcEntry struct {
-		points []*otlpmetrics.HistogramDataPoint
-		env    string
-		ver    string
-	}
-	byService := map[string]*svcEntry{}
-
+	var allPoints []*otlpmetrics.HistogramDataPoint
 	for _, bucket := range payload.Stats {
 		bucketEnd := bucket.Start + bucket.Duration
 		for _, gs := range bucket.Stats {
-			svc := gs.Service
-			if svc == "" {
-				svc = payload.Service
-			}
-			if _, ok := byService[svc]; !ok {
-				byService[svc] = &svcEntry{env: payload.Env, ver: payload.Version}
-			}
-			pts := buildGroupDataPoints(gs, bucket.Start, bucketEnd, otelMode)
-			byService[svc].points = append(byService[svc].points, pts...)
+			pts := buildGroupDataPoints(gs, bucket.Start, bucketEnd, payload.Service, otelMode)
+			allPoints = append(allPoints, pts...)
 		}
 	}
 
-	if len(byService) == 0 {
+	if len(allPoints) == 0 {
 		return nil
 	}
 
 	resource := buildMetricsResource(cfg, payload, otelMode)
 
-	// Build scopes in deterministic order.
-	services := make([]string, 0, len(byService))
-	for svc := range byService {
-		services = append(services, svc)
-	}
-	sort.Strings(services)
-
-	scopeMetrics := make([]*otlpmetrics.ScopeMetrics, 0, len(services))
-	for _, svc := range services {
-		entry := byService[svc]
-		if len(entry.points) == 0 {
-			continue
-		}
-		scopeMetrics = append(scopeMetrics, &otlpmetrics.ScopeMetrics{
+	scopeMetrics := []*otlpmetrics.ScopeMetrics{
+		{
 			Scope: &otlpcommon.InstrumentationScope{
-				Name:       "dd-trace-go",
-				Version:    version.Tag,
-				Attributes: buildScopeAttributes(svc, entry.env, entry.ver),
+				Name:    "dd-trace-go",
+				Version: version.Tag,
 			},
 			Metrics: []*otlpmetrics.Metric{
 				{
@@ -90,16 +65,12 @@ func BuildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 					Data: &otlpmetrics.Metric_Histogram{
 						Histogram: &otlpmetrics.Histogram{
 							AggregationTemporality: otlpmetrics.AggregationTemporality_AGGREGATION_TEMPORALITY_DELTA,
-							DataPoints:             entry.points,
+							DataPoints:             allPoints,
 						},
 					},
 				},
 			},
-		})
-	}
-
-	if len(scopeMetrics) == 0 {
-		return nil
+		},
 	}
 
 	return &otlpcollectormetrics.ExportMetricsServiceRequest{
@@ -113,12 +84,20 @@ func BuildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 }
 
 // buildMetricsResource constructs the OTLP Resource for the metrics payload.
-// Includes SDK identification, optional host.name, and dd.* process-tag attributes (default mode only).
+// Includes SDK identification, service identity, optional host.name, and datadog.* process-tag
+// attributes (default mode only).
 func buildMetricsResource(cfg *internalconfig.Config, payload *pb.ClientStatsPayload, otelMode bool) *otlpresource.Resource {
 	attrs := []*otlpcommon.KeyValue{
 		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
 		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
 		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
+		otlpKeyValue("service.name", otlpStringValue(payload.Service)),
+	}
+	if payload.Version != "" {
+		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(payload.Version)))
+	}
+	if payload.Env != "" {
+		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(payload.Env)))
 	}
 	if cfg.ReportHostname() {
 		if h := cfg.Hostname(); h != "" {
@@ -129,50 +108,34 @@ func buildMetricsResource(cfg *internalconfig.Config, payload *pb.ClientStatsPay
 		for _, tag := range strings.Split(payload.ProcessTags, ",") {
 			parts := strings.SplitN(tag, ":", 2)
 			if len(parts) == 2 && parts[0] != "" {
-				attrs = append(attrs, otlpKeyValue("dd."+parts[0], otlpStringValue(parts[1])))
+				attrs = append(attrs, otlpKeyValue("datadog."+parts[0], otlpStringValue(parts[1])))
 			}
 		}
 	}
 	return &otlpresource.Resource{Attributes: attrs}
 }
 
-// buildScopeAttributes returns the InstrumentationScope attributes carrying service identity.
-// Service, version, and environment live on the scope (not the resource) so one payload can
-// carry multiple services.
-func buildScopeAttributes(service, env, ver string) []*otlpcommon.KeyValue {
-	attrs := []*otlpcommon.KeyValue{
-		otlpKeyValue("service.name", otlpStringValue(service)),
-	}
-	if ver != "" {
-		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(ver)))
-	}
-	if env != "" {
-		// Emit both legacy and new convention names for maximum compatibility.
-		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(env)))
-	}
-	return attrs
-}
-
 // buildGroupDataPoints builds histogram data points for a single ClientGroupedStats group.
 // It produces one data point for OK spans (OkSummary) and one for error spans (ErrorSummary)
-// when those summaries are non-empty.
-func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, otelMode bool) []*otlpmetrics.HistogramDataPoint {
+// when those summaries are non-empty. defaultService is the payload's configured service name;
+// when gs.Service differs from it, service.name is added as a data-point attribute.
+func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, defaultService string, otelMode bool) []*otlpmetrics.HistogramDataPoint {
 	var pts []*otlpmetrics.HistogramDataPoint
 
 	if len(gs.OkSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, defaultService, otelMode); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	if len(gs.ErrorSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, defaultService, otelMode); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	return pts
 }
 
-func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError, otelMode bool) *otlpmetrics.HistogramDataPoint {
+func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, defaultService string, otelMode bool) *otlpmetrics.HistogramDataPoint {
 	bucketCounts, sum, minSec, maxSec, count, err := sketchToHistogram(sketchBytes, spanMetricBounds)
 	if err != nil {
 		log.Error("stats_to_otlp_metrics: failed to decode sketch: %v", err)
@@ -191,13 +154,15 @@ func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, star
 		Max:               &maxSec,
 		ExplicitBounds:    spanMetricBounds,
 		BucketCounts:      bucketCounts,
-		Attributes:        buildDataPointAttributes(gs, isError, otelMode),
+		Attributes:        buildDataPointAttributes(gs, isError, defaultService, otelMode),
 	}
 	return dp
 }
 
 // buildDataPointAttributes returns the data-point attributes for a ClientGroupedStats group.
-func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError, otelMode bool) []*otlpcommon.KeyValue {
+// When gs.Service differs from defaultService, service.name is added so the backend can
+// distinguish spans from non-default services without a separate resource.
+func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultService string, otelMode bool) []*otlpcommon.KeyValue {
 	var attrs []*otlpcommon.KeyValue
 
 	// OTel semantic-convention attributes (both modes).
@@ -223,17 +188,22 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError, otelMode bool)
 		}
 	}
 
+	// When the span's service differs from the payload default, carry it on the data point.
+	if svc := gs.Service; svc != "" && svc != defaultService {
+		attrs = append(attrs, otlpKeyValue("service.name", otlpStringValue(svc)))
+	}
+
 	// Datadog-specific attributes (default mode only).
 	if !otelMode {
 		if gs.Name != "" {
-			attrs = append(attrs, otlpKeyValue("dd.operation.name", otlpStringValue(gs.Name)))
+			attrs = append(attrs, otlpKeyValue("datadog.operation.name", otlpStringValue(gs.Name)))
 		}
 		if gs.Type != "" {
-			attrs = append(attrs, otlpKeyValue("dd.span.type", otlpStringValue(gs.Type)))
+			attrs = append(attrs, otlpKeyValue("datadog.span.type", otlpStringValue(gs.Type)))
 		}
 		// A group is top-level only when every span in it was top-level (TopLevelHits == Hits).
 		// A mixed group (some top-level, some not) is conservatively reported as non-top-level.
-		attrs = append(attrs, otlpKeyValue("dd.span.top_level", otlpBoolValue(gs.Hits > 0 && gs.TopLevelHits == gs.Hits)))
+		attrs = append(attrs, otlpKeyValue("datadog.span.top_level", otlpBoolValue(gs.Hits > 0 && gs.TopLevelHits == gs.Hits)))
 	}
 
 	return attrs
