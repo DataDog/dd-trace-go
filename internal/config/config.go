@@ -128,9 +128,7 @@ type Config struct {
 	dynamicInstrumentationEnabled *DynamicConfig[bool]
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
-	// globalTags holds a set of tags applied to all spans. It is runtime-updatable
-	// via Remote Config (RC key tracing_tags) and resets to its startup baseline
-	// when an RC update is withdrawn.
+	// globalTags holds a set of tags applied to all spans.
 	globalTags *DynamicConfig[map[string]any]
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags *DynamicConfig[[]string]
