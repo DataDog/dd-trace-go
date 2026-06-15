@@ -364,7 +364,7 @@ func decodeCoveragePayload(reader io.Reader) ([]UploadedCoverageFile, error) {
 		return nil, err
 	}
 	var uploads []UploadedCoverageFile
-	for i := uint32(0); i < fields; i++ {
+	for range fields {
 		key, err := mr.ReadString()
 		if err != nil {
 			return nil, err
@@ -375,7 +375,7 @@ func decodeCoveragePayload(reader io.Reader) ([]UploadedCoverageFile, error) {
 			if err != nil {
 				return nil, err
 			}
-			for j := uint32(0); j < count; j++ {
+			for range count {
 				files, err := decodeCoverageEventFiles(mr)
 				if err != nil {
 					return nil, err
@@ -397,7 +397,7 @@ func decodeCoverageEventFiles(mr *msgp.Reader) ([]UploadedCoverageFile, error) {
 		return nil, err
 	}
 	var uploads []UploadedCoverageFile
-	for i := uint32(0); i < fields; i++ {
+	for range fields {
 		key, err := mr.ReadString()
 		if err != nil {
 			return nil, err
@@ -408,7 +408,7 @@ func decodeCoverageEventFiles(mr *msgp.Reader) ([]UploadedCoverageFile, error) {
 			if err != nil {
 				return nil, err
 			}
-			for j := uint32(0); j < count; j++ {
+			for range count {
 				file, err := decodeCoverageFile(mr)
 				if err != nil {
 					return nil, err
@@ -430,7 +430,7 @@ func decodeCoverageFile(mr *msgp.Reader) (UploadedCoverageFile, error) {
 		return UploadedCoverageFile{}, err
 	}
 	var file UploadedCoverageFile
-	for i := uint32(0); i < fields; i++ {
+	for range fields {
 		key, err := mr.ReadString()
 		if err != nil {
 			return UploadedCoverageFile{}, err
