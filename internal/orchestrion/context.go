@@ -7,6 +7,7 @@ package orchestrion
 
 import (
 	"context"
+	"sync/atomic"
 )
 
 // WrapContext returns the GLS-wrapped context if orchestrion is enabled, otherwise it returns the given parameter.
@@ -51,6 +52,51 @@ func GLSPopValue(key any) any {
 	}
 
 	return getDDContextStack().Pop(key)
+}
+
+// GLSPopper releases a span's GLS entry. It is the type of the popper field
+// orchestrion injects onto Span (via add-struct-field, which requires a named
+// type); naming it here lets that field and GLSDeactivate share one type
+// across the tracer/orchestrion boundary.
+type GLSPopper func()
+
+// GLSActivate pushes val onto the current goroutine's GLS stack under key and
+// returns a goroutine-scoped popper that releases it. The returned popper pops
+// the top of the pushing goroutine's stack and is a no-op when invoked on any
+// other goroutine, so a cross-goroutine finish can never corrupt an unrelated
+// goroutine's stack.
+//
+// It groups the push and the popper capture so orchestrion-injected span-start
+// advice (in ddtrace/tracer/orchestrion.yml) can activate a span on the GLS in
+// a single call, keeping the tracer source free of GLS code. The companion is
+// GLSDeactivate.
+func GLSActivate(key, val any) GLSPopper {
+	if !Enabled() {
+		return glsNoop
+	}
+	getDDContextStack().Push(key, val)
+	return GLSPopFunc(key)
+}
+
+// GLSDeactivate releases a span's GLS entry on finish. It marks the span
+// reclaimable (so a cross-goroutine finish, whose popper is a no-op here, is
+// still cleaned up by contextStack.Push on its next push) and invokes the
+// captured popper exactly once, clearing it so a repeated finish does not pop
+// again. reclaimable and pop are the fields orchestrion injects onto the span;
+// passing them by pointer lets injected span-finish advice deactivate in one
+// call.
+func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopper) {
+	if reclaimable != nil {
+		reclaimable.Store(true)
+	}
+	if pop == nil {
+		return
+	}
+	p := *pop
+	*pop = nil
+	if p != nil {
+		p()
+	}
 }
 
 // GLSPopFunc returns a function that pops key from the GLS context stack of the

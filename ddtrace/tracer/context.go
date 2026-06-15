@@ -12,7 +12,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 )
 
 // activeSpanContextKey is a context key for the snapshotted SpanContext.
@@ -31,7 +30,12 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
 		ctx = context.Background()
 	}
-	newCtx := orchestrion.CtxWithValue(ctx, internal.ActiveSpanKey, s)
+	// Plain context value. Orchestrion builds additionally weave a goroutine-
+	// local-storage (GLS) push here, and the matching pop into Span.Finish, so
+	// the active span is reachable across un-instrumented call sites (see
+	// ddtrace/tracer/orchestrion.yml). Without orchestrion there is no GLS and
+	// this is a bare context.WithValue — the tracer pays nothing for it.
+	newCtx := context.WithValue(ctx, internal.ActiveSpanKey, s)
 	if s != nil {
 		// Snapshot the SpanContext so it survives span pool recycling.
 		newCtx = context.WithValue(newCtx, activeSpanContextKey{}, s.Context())
@@ -80,7 +84,11 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	v := orchestrion.WrapContext(ctx).Value(internal.ActiveSpanKey)
+	// Plain context lookup. Orchestrion builds weave a GLS fallback here (it
+	// wraps ctx so this read also consults the goroutine-local active span when
+	// the explicit chain has none — see ddtrace/tracer/orchestrion.yml). Without
+	// orchestrion this is a bare ctx.Value.
+	v := ctx.Value(internal.ActiveSpanKey)
 	if s, ok := v.(*Span); ok {
 		// We may have a nil *Span wrapped in an interface in the GLS context stack,
 		// in which case we need to act as if there was nothing (otherwise we'll
