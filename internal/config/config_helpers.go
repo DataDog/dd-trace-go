@@ -10,7 +10,9 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
@@ -57,10 +59,14 @@ const (
 
 	// OTLP standard traces path and default collector port.
 	otlpTracesPath  = "/v1/traces"
+	otlpMetricsPath = "/v1/metrics"
 	otlpDefaultPort = "4318"
 
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
+
+	// OTLPMetricsFlushInterval is the default cadence for flushing and exporting span metrics.
+	OTLPMetricsFlushInterval = 10 * time.Second
 )
 
 func validateSampleRate(rate float64) bool {
@@ -311,4 +317,54 @@ func parseGlobalTags(v string) map[string]any {
 // reportGlobalTagTelemetry reports the per-key "global_tag_<key>" telemetry.
 func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 	configtelemetry.Report("global_tag_"+key, value, origin)
+}
+
+// resolveOTLPMetricsURL resolves the OTLP metrics endpoint. When the user-provided endpoint
+// is non-empty it is validated and used as-is, appending /v1/metrics only if the path is absent.
+// Otherwise the default http://<agent-host>:4318/v1/metrics is returned.
+func resolveOTLPMetricsURL(rawAgentURL *url.URL, endpoint string) string {
+	if endpoint != "" {
+		u, err := url.Parse(endpoint)
+		if err != nil {
+			log.Warn("Failed to parse OTLP metrics endpoint %q: %s. Falling back to default.", endpoint, err.Error())
+		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
+			log.Warn("Unsupported scheme %q in OTLP metrics endpoint %q. Must be %s or %s. Falling back to default.", u.Scheme, endpoint, URLSchemeHTTP, URLSchemeHTTPS)
+		} else {
+			if u.Path == "" || u.Path == "/" {
+				u.Path = otlpMetricsPath
+			}
+			return u.String()
+		}
+	}
+	host := internal.DefaultAgentHostname
+	if rawAgentURL != nil {
+		if h := rawAgentURL.Hostname(); h != "" {
+			host = h
+		}
+	}
+	return fmt.Sprintf("http://%s:%s%s", host, otlpDefaultPort, otlpMetricsPath)
+}
+
+// buildOTLPMetricsHeaders builds the headers map for OTLP metrics HTTP requests.
+// Unlike the traces headers, the Content-Type is not added here because it depends
+// on the chosen protocol (JSON vs protobuf) and is set by the exporter at send time.
+func buildOTLPMetricsHeaders(headers map[string]string) map[string]string {
+	if headers == nil {
+		return nil
+	}
+	return headers
+}
+
+// resolveOTLPMetricsFlushInterval parses _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (milliseconds).
+// The variable is internal and intended for tests only; in production it returns the default 10 s.
+func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
+	if raw == "" {
+		return OTLPMetricsFlushInterval
+	}
+	ms, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || ms <= 0 {
+		log.Warn("Invalid _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval)
+		return OTLPMetricsFlushInterval
+	}
+	return time.Duration(ms) * time.Millisecond
 }

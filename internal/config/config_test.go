@@ -665,6 +665,195 @@ func TestOTLPExportMode(t *testing.T) {
 	})
 }
 
+func TestOTLPSpanMetricsEnabled(t *testing.T) {
+	t.Run("disabled by default when OTLP trace export is off", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("auto-enabled when both OTLP trace and metrics export are on", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		// OTEL_METRICS_EXPORTER defaults to "otlp", so otlpExportMetricsMode is true by default.
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.True(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("auto-disabled when OTLP trace export is off even if metrics mode is on", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// No OTEL_TRACES_EXPORTER=otlp set.
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("explicit true overrides auto-detection", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_CLIENT_STATS_COMPUTATION_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.True(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("explicit false overrides auto-detection", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		t.Setenv("OTEL_CLIENT_STATS_COMPUTATION_ENABLED", "false")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+	})
+}
+
+func TestOTLPSemanticsMode(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.False(t, cfg.OTLPSemanticsMode())
+	})
+
+	t.Run("enabled via DD_TRACE_OTEL_SEMANTICS_ENABLED", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.True(t, cfg.OTLPSemanticsMode())
+	})
+}
+
+func TestOTLPMetricsURLResolution(t *testing.T) {
+	t.Run("defaults to localhost:4318/v1/metrics", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http://localhost:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT overrides", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://collector:4317")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http://collector:4317/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("endpoint with path is used as-is", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://collector:4318/v1/metrics")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http://collector:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT is fallback for metrics", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://shared-collector:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http://shared-collector:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT takes precedence over generic", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://generic:4318")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "http://metrics-specific:4318")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http://metrics-specific:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("uses agent host when no OTLP endpoint configured", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_AGENT_HOST", "custom-agent")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http://custom-agent:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
+	t.Run("invalid endpoint falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "not-a-url")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http://localhost:4318/v1/metrics", cfg.OTLPMetricsURL())
+	})
+}
+
+func TestOTLPMetricsFlushInterval(t *testing.T) {
+	t.Run("defaults to 10 seconds", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, OTLPMetricsFlushInterval, cfg.OTLPMetricsFlushInterval())
+	})
+
+	t.Run("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL overrides in milliseconds", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL", "1000")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, time.Second, cfg.OTLPMetricsFlushInterval())
+	})
+
+	t.Run("invalid value falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL", "not-a-number")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, OTLPMetricsFlushInterval, cfg.OTLPMetricsFlushInterval())
+	})
+}
+
 func TestHostnameConfiguration(t *testing.T) {
 	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
 		resetGlobalState()
