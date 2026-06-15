@@ -13,7 +13,9 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 // DefaultSocketDSDPath is the UDS socket path probed during DogStatsD
@@ -304,4 +306,9 @@ func parseGlobalTags(v string) map[string]any {
 		tags[k] = val
 	}
 	return tags
+}
+
+// reportGlobalTagTelemetry reports the per-key "global_tag_<key>" telemetry.
+func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
+	configtelemetry.Report("global_tag_"+key, value, origin)
 }

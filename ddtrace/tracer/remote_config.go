@@ -226,6 +226,25 @@ func (t *tags) toMap() *map[string]any {
 	return &m
 }
 
+// newRCTagsMap builds the tag map passed to GlobalTagsConfig().HandleRC,
+// always injecting the runtime ID so it ends up on every span. RC replaces the
+// whole tag map, so the runtime ID must be re-added on each update; this is
+// race-free because the map isn't shared with readers yet. Returns nil on reset
+// (t == nil), where HandleRC restores the startup baseline (which already
+// carries the runtime ID).
+func newRCTagsMap(t *tags) *map[string]any {
+	if t == nil {
+		return nil
+	}
+	m := t.toMap()
+	if m == nil {
+		nm := map[string]any{}
+		m = &nm
+	}
+	(*m)[ext.RuntimeID] = globalconfig.RuntimeID()
+	return m
+}
+
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
@@ -263,15 +282,7 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 		telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 	}
 	t.config.internalConfig.HeaderAsTagsConfig().HandleRC(merged.HeaderTags.toSlice())
-	// globalTags: the runtime ID must appear on every span. RC replaces the whole
-	// tag map, so re-add it to the incoming map before HandleRC publishes it — this
-	// is race-free because the map isn't shared with readers yet. On reset (nil),
-	// HandleRC restores the startup baseline, which already carries the runtime ID.
-	rcTags := merged.Tags.toMap()
-	if rcTags != nil {
-		(*rcTags)[ext.RuntimeID] = globalconfig.RuntimeID()
-	}
-	t.config.internalConfig.GlobalTagsConfig().HandleRC(rcTags)
+	t.config.internalConfig.GlobalTagsConfig().HandleRC(newRCTagsMap(merged.Tags))
 
 	t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled)
 

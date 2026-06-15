@@ -647,9 +647,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, globalconfig.RuntimeID(), runtimeID)
 		runtimeIDTag := ext.RuntimeID + ":" + globalconfig.RuntimeID()
 
-		// Telemetry. The runtime ID is injected into the RC tag set before HandleRC
-		// publishes it, so it is part of the reported value (and the span receives it
-		// — see the runtime-id assertion above).
+		// runtimeID is always injected into the RC tag set
 		assertCalled(t, telemetryClient, []telemetry.Configuration{
 			{Name: "trace_tags", Value: "key3:val3,key4:val4," + runtimeIDTag, Origin: telemetry.OriginRemoteConfig},
 		},
@@ -803,16 +801,11 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				if tt.expectedHeaderTag == rcHeaderTag {
 					headerTagOrigin = telemetry.OriginRemoteConfig
 				}
-				// DD_TAGS=ddtag:from-env is set, so trace_tags resets report OriginEnvVar (the
-				// startup baseline origin), matching the migrated dynamic-config behavior.
 				spanTagOrigin := telemetry.OriginEnvVar
 				if tt.expectedSpanTag == rcSpanTag {
 					spanTagOrigin = telemetry.OriginRemoteConfig
 				}
-				// The runtime ID is injected into the RC tag set before HandleRC, and a
-				// reset restores the startup baseline (which has it), so it is always part
-				// of the reported trace_tags value.
-				spanTagValue := "ddtag:" + tt.expectedSpanTag + "," + ext.RuntimeID + ":" + globalconfig.RuntimeID()
+				spanTagValue := "ddtag:" + tt.expectedSpanTag + "," + ext.RuntimeID + ":" + globalconfig.RuntimeID() // runtimeID is always injected into the RC tag set
 				assertCalled(t, telemetryClient, []telemetry.Configuration{
 					{Name: "trace_sample_rate", Value: tt.expectedSamplingRate, Origin: samplingRateOrigin},
 					{Name: "trace_header_tags", Value: "X-Test-Header:" + tt.expectedHeaderTag, Origin: headerTagOrigin},

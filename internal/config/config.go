@@ -283,7 +283,7 @@ func loadConfig() *Config {
 
 	rawTags, globalTagsOrigin := p.GetStringWithOrigin("DD_TAGS", "")
 	cfg.globalTags = newDynamicConfig("trace_tags", parseGlobalTags(rawTags), globalTagsOrigin, equalMap[string], nil)
-	for k, v := range globalTags {
+	for k, v := range cfg.globalTags.Get() {
 		reportGlobalTagTelemetry(k, v, globalTagsOrigin)
 	}
 
@@ -628,22 +628,22 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, prod
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 
-// GlobalTags returns the current set of global tags applied to all spans. The
-// returned map must not be mutated; it is shared with the tracer and replaced
-// wholesale (never mutated in place) on updates, so readers need no lock.
+// GlobalTags returns a copy of the global tags applied to all spans. If no
+// global tags are set, returns nil.
 func (c *Config) GlobalTags() map[string]any {
-	return c.globalTags.Get()
+	current := c.globalTags.Get()
+	if current == nil {
+		return nil
+	}
+	result := make(map[string]any, len(current))
+	maps.Copy(result, current)
+	return result
 }
 
 // GlobalTagsConfig returns the DynamicConfig for global tags, used by the
 // tracer's Remote Config handler to apply tracing_tags updates and resets.
 func (c *Config) GlobalTagsConfig() *DynamicConfig[map[string]any] {
 	return c.globalTags
-}
-
-// reportGlobalTagTelemetry reports the per-key "global_tag_<key>" telemetry.
-func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
-	configtelemetry.Report("global_tag_"+key, value, origin)
 }
 
 // SetGlobalTag adds or overwrites a single global tag. Like SetServiceMapping it

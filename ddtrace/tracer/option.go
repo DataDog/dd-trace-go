@@ -250,9 +250,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
-	// env/version/service fall back to global tags when unset. This must run after
-	// options so programmatic WithGlobalTag tags (which outrank DD_TAGS) are included;
-	// it can move into loadConfig once these fields carry origin information.
+	// TODO: env/version/service fall back to global tags when unset. This runs
+	// here (after options) rather than in loadConfig because programmatic
+	// WithGlobalTag tags — which outrank DD_TAGS — are only applied once the
+	// StartOptions have run. Once env/version/service carry origin information
+	// through internal/config, this fallback can move into loadConfig and resolve
+	// precedence without the tracer's involvement.
 	globalTags := c.internalConfig.GlobalTags()
 	_, globalTagsOrigin := c.internalConfig.GlobalTagsConfig().Baseline()
 	if c.internalConfig.Env() == "" {
