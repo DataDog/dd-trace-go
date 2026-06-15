@@ -142,6 +142,19 @@ jobs:
             scenario: APM_TRACING_EFFICIENT_PAYLOAD
           - weblog-variant: net-http
             scenario: FEATURE_FLAGGING_AND_EXPERIMENTATION
+          # Client-side stats — run across all weblogs, plus the client_drop_p0s variant on net-http
+          - weblog-variant: net-http
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: echo
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: chi
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: gin
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: uds-echo
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: net-http
+            scenario: TRACE_STATS_COMPUTATION_CLIENT_DROP_P0S_FALSE
       fail-fast: false
     env:
       TEST_LIBRARY: golang
