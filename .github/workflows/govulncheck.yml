@@ -47,6 +47,7 @@ jobs:
   # separately in govulncheck-contribs-analysis (SARIF, non-blocking,
   # sandboxed) and in govulncheck-tests (blocking, sandboxed).
   govulncheck-analysis:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -145,6 +146,7 @@ jobs:
   # Scans both core packages and all contrib modules (each with its own go.mod).
   # govulncheck execution is sandboxed via geomys/sandboxed-step (gVisor).
   govulncheck-tests:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

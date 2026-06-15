@@ -39,6 +39,7 @@ permissions:
 
 jobs:
   copyright:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -61,6 +62,7 @@ jobs:
           make lint/misc
 
   check-github-actions:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -80,6 +82,7 @@ jobs:
           make lint/action
 
   check-modules:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -101,6 +104,7 @@ jobs:
         run: git diff --exit-code
 
   check-docs:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -122,6 +126,7 @@ jobs:
         run: git diff --exit-code
 
   check-format:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -143,6 +148,7 @@ jobs:
         run: git diff --exit-code
 
   lint:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on:
       group: "APM Larger Runners"
     permissions:
@@ -211,6 +217,7 @@ jobs:
         run: go run ./scripts/configinverter/main.go check
 
   checklocks:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

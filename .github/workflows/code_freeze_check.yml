@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   code_freeze_check:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
 
     steps:
