@@ -178,7 +178,8 @@ type Config struct {
 	otlpHeaders map[string]string
 	// otlpSpanMetricsEnabled controls whether the SDK emits SDK-computed span metrics
 	// as an OTLP histogram (traces.span.sdk.metrics.duration) via the metrics endpoint.
-	// nil means "unset": auto-enabled when otlpExportMode && otlpExportMetricsMode.
+	// nil means "unset": auto-enabled when otlpExportMode && runtimeMetricsOtel
+	// (i.e. OTEL_TRACES_EXPORTER=otlp AND DD_METRICS_OTEL_ENABLED=true).
 	otlpSpanMetricsEnabled *bool
 	// otlpSemanticsMode controls whether only OTel semantic-convention attributes are
 	// emitted on span-metric data points (DD_TRACE_OTEL_SEMANTICS_ENABLED=true), or
@@ -1320,14 +1321,14 @@ func (c *Config) OTLPHeaders() map[string]string {
 
 // OTLPSpanMetricsEnabled reports whether SDK-computed OTLP span metrics export is active.
 // When OTEL_CLIENT_STATS_COMPUTATION_ENABLED is explicitly set, its value is returned directly.
-// When unset, it returns true iff both OTLP trace export and OTLP metrics export are enabled.
+// When unset, it auto-enables when both OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true.
 func (c *Config) OTLPSpanMetricsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.otlpSpanMetricsEnabled != nil {
 		return *c.otlpSpanMetricsEnabled
 	}
-	return c.otlpExportMode && c.otlpExportMetricsMode
+	return c.otlpExportMode && c.runtimeMetricsOtel
 }
 
 func (c *Config) OTLPSemanticsMode() bool {

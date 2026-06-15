@@ -675,23 +675,37 @@ func TestOTLPSpanMetricsEnabled(t *testing.T) {
 		assert.False(t, cfg.OTLPSpanMetricsEnabled())
 	})
 
-	t.Run("auto-enabled when both OTLP trace and metrics export are on", func(t *testing.T) {
+	t.Run("auto-enabled when OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
 		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
-		// OTEL_METRICS_EXPORTER defaults to "otlp", so otlpExportMetricsMode is true by default.
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 
 		cfg := Get()
 		require.NotNil(t, cfg)
 		assert.True(t, cfg.OTLPSpanMetricsEnabled())
 	})
 
-	t.Run("auto-disabled when OTLP trace export is off even if metrics mode is on", func(t *testing.T) {
+	t.Run("not auto-enabled when OTEL_TRACES_EXPORTER=otlp but DD_METRICS_OTEL_ENABLED unset", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
+		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+		// DD_METRICS_OTEL_ENABLED is not set → defaults to false.
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+	})
+
+	t.Run("auto-disabled when OTLP trace export is off even if DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
 		// No OTEL_TRACES_EXPORTER=otlp set.
+
 		cfg := Get()
 		require.NotNil(t, cfg)
 		assert.False(t, cfg.OTLPSpanMetricsEnabled())
