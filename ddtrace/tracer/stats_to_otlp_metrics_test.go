@@ -291,6 +291,7 @@ func TestDataPointAttributesDefaultMode(t *testing.T) {
 		Name:         "web.request",
 		Resource:     "/users",
 		Type:         "web",
+		Hits:         1,
 		TopLevelHits: 1,
 	}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false /* default mode */))
@@ -299,8 +300,16 @@ func TestDataPointAttributesDefaultMode(t *testing.T) {
 	assert.Equal(t, "true", m["dd.span.top_level"])
 }
 
-func TestDataPointAttributesTopLevelFalse(t *testing.T) {
-	gs := &pb.ClientGroupedStats{Resource: "child-resource", TopLevelHits: 0}
+func TestDataPointAttributesTopLevelFalseWhenNone(t *testing.T) {
+	// TopLevelHits == 0: no top-level spans in group.
+	gs := &pb.ClientGroupedStats{Resource: "child-resource", Hits: 1, TopLevelHits: 0}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
+	assert.Equal(t, "false", m["dd.span.top_level"])
+}
+
+func TestDataPointAttributesTopLevelFalseWhenMixed(t *testing.T) {
+	// TopLevelHits < Hits: mixed group → conservatively reported as non-top-level.
+	gs := &pb.ClientGroupedStats{Resource: "mixed", Hits: 10, TopLevelHits: 5}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false, false))
 	assert.Equal(t, "false", m["dd.span.top_level"])
 }

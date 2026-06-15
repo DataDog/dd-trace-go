@@ -231,7 +231,9 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError, otelMode bool)
 		if gs.Type != "" {
 			attrs = append(attrs, otlpKeyValue("dd.span.type", otlpStringValue(gs.Type)))
 		}
-		attrs = append(attrs, otlpKeyValue("dd.span.top_level", otlpBoolValue(gs.TopLevelHits > 0)))
+		// A group is top-level only when every span in it was top-level (TopLevelHits == Hits).
+		// A mixed group (some top-level, some not) is conservatively reported as non-top-level.
+		attrs = append(attrs, otlpKeyValue("dd.span.top_level", otlpBoolValue(gs.Hits > 0 && gs.TopLevelHits == gs.Hits)))
 	}
 
 	return attrs
