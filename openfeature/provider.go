@@ -45,6 +45,10 @@ type ProviderConfig struct {
 	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
 	// Default: 1 second
 	ExposureFlushInterval time.Duration
+
+	// EvaluationFlushInterval is the interval at which flag evaluation count events are flushed to the agent
+	// Default: 10 seconds
+	EvaluationFlushInterval time.Duration
 }
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
@@ -62,6 +66,10 @@ type DatadogProvider struct {
 
 	// Flag evaluation metrics hook (OTel counter via Finally hook)
 	flagEvalHook *flagEvalHook
+
+	// Server-side flag evaluation counts
+	evaluationWriter *evaluationWriter
+	evaluationHook   *evaluationHook
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -95,13 +103,22 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error())
 	}
 
+	// Create evaluation writer (nil if kill switch is off)
+	evalWriter := newEvaluationWriter(config)
+	var evalHook *evaluationHook
+	if evalWriter != nil {
+		evalHook = newEvaluationHook(evalWriter)
+	}
+
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
-		exposureWriter: writer,
-		exposureHook:   hook,
-		flagEvalHook:   newFlagEvalHook(metrics),
+		exposureWriter:   writer,
+		exposureHook:     hook,
+		flagEvalHook:     newFlagEvalHook(metrics),
+		evaluationWriter: evalWriter,
+		evaluationHook:   evalHook,
 	}
 	p.configChange.L = &p.mu
 	return p
@@ -185,6 +202,9 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 
 	// Start periodic flushing
 	p.exposureWriter.start()
+	if p.evaluationWriter != nil {
+		p.evaluationWriter.start()
+	}
 	return nil
 }
 
@@ -214,6 +234,11 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		if p.exposureWriter != nil {
 			p.exposureWriter.flush()
 			p.exposureWriter.stop()
+		}
+		// Stop the evaluation writer
+		if p.evaluationWriter != nil {
+			p.evaluationWriter.flush()
+			p.evaluationWriter.stop()
 		}
 		// Shut down flag evaluation metrics
 		if p.flagEvalHook != nil && p.flagEvalHook.metrics != nil {
@@ -409,11 +434,14 @@ func (p *DatadogProvider) ObjectEvaluation(
 }
 
 // Hooks returns the hooks for this provider.
-// This includes the exposure tracking hook and the flag evaluation metrics hook.
+// This includes the exposure tracking hook, the evaluation counting hook, and the flag evaluation metrics hook.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
 	var hooks []openfeature.Hook
 	if p.exposureHook != nil {
 		hooks = append(hooks, p.exposureHook)
+	}
+	if p.evaluationHook != nil {
+		hooks = append(hooks, p.evaluationHook)
 	}
 	if p.flagEvalHook != nil {
 		hooks = append(hooks, p.flagEvalHook)

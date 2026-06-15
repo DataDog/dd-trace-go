@@ -25,6 +25,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
@@ -319,6 +320,8 @@ func (w *exposureWriter) sendToAgent(payload exposurePayload) error {
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(evpSubdomainHeader, evpSubdomainValue)
+	req.Header.Set("DD-EVP-ORIGIN", "dd-trace-go")
+	req.Header.Set("DD-EVP-ORIGIN-VERSION", version.Tag)
 
 	log.Debug("openfeature: sending exposure events to %s", requestURL)
 

@@ -413,6 +413,27 @@
         "default": null
       }
     ],
+    "DD_FLAGGING_EVALUATION_COUNTS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "bool",
+        "default": "true"
+      }
+    ],
+    "DD_FLAGGING_EVALUATION_MAP_CAPACITY": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "65536"
+      }
+    ],
+    "DD_FLAGGING_EVALUATION_PER_FLAG_CAP": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "10000"
+      }
+    ],
     "DD_GIT_BRANCH": [
       {
         "implementation": "A",
