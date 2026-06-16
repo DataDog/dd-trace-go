@@ -328,7 +328,7 @@ func moduleRepositoryRelativePrefix(module string) string {
 	}
 	segments := strings.Split(module, "/")
 	for idx, segment := range segments {
-		if !isSemanticImportVersionSegment(segment) {
+		if !utils.IsSemanticImportVersionSegment(segment) {
 			continue
 		}
 		if idx+1 >= len(segments) {
@@ -337,26 +337,6 @@ func moduleRepositoryRelativePrefix(module string) string {
 		return strings.Join(segments[idx+1:], "/")
 	}
 	return ""
-}
-
-func isSemanticImportVersionSegment(segment string) bool {
-	if len(segment) < 2 || segment[0] != 'v' {
-		return false
-	}
-	digits := segment[1:]
-	if len(digits) > 1 && digits[0] == '0' {
-		return false
-	}
-	version, err := strconv.Atoi(digits)
-	if err != nil || version < 2 {
-		return false
-	}
-	for _, char := range segment[1:] {
-		if char < '0' || char > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func (p *orderedCoverProfile) writeAtomic(filename string) error {

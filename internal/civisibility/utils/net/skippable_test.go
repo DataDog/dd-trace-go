@@ -376,6 +376,37 @@ func TestSkippableApiRequestRejectsNonRepositoryRelativeCoveragePaths(t *testing
 	}
 }
 
+func TestNormalizeSkippableCoveragePath(t *testing.T) {
+	tests := []struct {
+		name      string
+		rawPath   string
+		expected  string
+		expectErr bool
+	}{
+		{name: "trims whitespace", rawPath: "  pkg/file.go  ", expected: "pkg/file.go"},
+		{name: "normalizes windows separators", rawPath: `pkg\file.go`, expected: "pkg/file.go"},
+		{name: "removes leading slash", rawPath: "/pkg/file.go", expected: "pkg/file.go"},
+		{name: "cleans dot segments", rawPath: "./pkg/../pkg/file.go", expected: "pkg/file.go"},
+		{name: "rejects empty path", rawPath: " ", expectErr: true},
+		{name: "rejects repository root", rawPath: ".", expectErr: true},
+		{name: "rejects parent traversal", rawPath: "../pkg/file.go", expectErr: true},
+		{name: "rejects cleaned parent traversal", rawPath: "pkg/../../file.go", expectErr: true},
+		{name: "rejects windows drive path", rawPath: `C:\repo\pkg\file.go`, expectErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeSkippableCoveragePath(tt.rawPath)
+			if tt.expectErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
 func TestSkippableApiRequestDoesNotFilterConfigurations(t *testing.T) {
 	coverage := base64.StdEncoding.EncodeToString([]byte{0b10000000})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

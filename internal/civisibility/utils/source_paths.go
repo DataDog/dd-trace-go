@@ -188,14 +188,14 @@ func semanticImportVersionSuffix(modulePath, repoPrefix string) (moduleDir strin
 		moduleDir = moduleRelativePath[:lastSlash]
 		version = moduleRelativePath[lastSlash+1:]
 	}
-	if !isSemanticImportVersion(version) {
+	if !IsSemanticImportVersionSegment(version) {
 		return "", "", false
 	}
 	return moduleDir, version, true
 }
 
-// isSemanticImportVersion reports whether segment is a Go semantic import version suffix.
-func isSemanticImportVersion(segment string) bool {
+// IsSemanticImportVersionSegment reports whether segment is a Go semantic import version suffix.
+func IsSemanticImportVersionSegment(segment string) bool {
 	if len(segment) < 2 || segment[0] != 'v' {
 		return false
 	}

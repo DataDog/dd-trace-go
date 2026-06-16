@@ -147,6 +147,63 @@ github.com/example/project/file2.go:20.5,22.10 1 0
 	}
 }
 
+func TestParseOrderedCoverProfile(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	content := `mode: count
+# preserved comment
+
+C:/workspace/project/file1.go:10.12,12.3 2 1
+github.com/example/project/file2.go:20.5,22.10 1 0
+`
+	if err := os.WriteFile(profilePath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	profile, err := parseOrderedCoverProfile(profilePath)
+	if err != nil {
+		t.Fatalf("parseOrderedCoverProfile returned error: %v", err)
+	}
+	if len(profile.lines) != 5 {
+		t.Fatalf("expected 5 ordered lines, got %d", len(profile.lines))
+	}
+	if profile.lines[0].raw != "mode: count" || profile.lines[1].raw != "# preserved comment" || profile.lines[2].raw != "" {
+		t.Fatalf("expected header, comment, and blank lines to be preserved, got %#v", profile.lines[:3])
+	}
+	if profile.lines[3].fileName != "C:/workspace/project/file1.go" || profile.lines[3].block == nil {
+		t.Fatalf("expected first coverage block to be parsed, got %#v", profile.lines[3])
+	}
+	if profile.lines[3].block.startLine != 10 || profile.lines[3].block.endLine != 12 || profile.lines[3].block.numStmt != 2 || profile.lines[3].block.count != 1 {
+		t.Fatalf("unexpected first coverage block: %#v", profile.lines[3].block)
+	}
+	if profile.lines[4].fileName != "github.com/example/project/file2.go" || profile.lines[4].block == nil {
+		t.Fatalf("expected second coverage block to be parsed, got %#v", profile.lines[4])
+	}
+}
+
+func TestParseOrderedCoverProfileRejectsInvalidProfiles(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "empty profile"},
+		{name: "invalid header", content: "mode: invalid\n"},
+		{name: "duplicate header", content: "mode: count\nmode: count\n"},
+		{name: "invalid coverage line", content: "mode: count\nnot-a-profile-line\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profilePath := filepath.Join(t.TempDir(), "coverage.out")
+			if err := os.WriteFile(profilePath, []byte(tt.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := parseOrderedCoverProfile(profilePath); err == nil {
+				t.Fatal("expected parseOrderedCoverProfile to reject invalid profile")
+			}
+		})
+	}
+}
+
 func TestGetCoverageStatementsInfo(t *testing.T) {
 	content := `mode: count
 github.com/example/project/file1.go:10.12,12.3 2 1
