@@ -78,10 +78,18 @@ microbenchmarks-1:
 microbenchmarks-2:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkFlagEvaluationNoop|BenchmarkFlagEvaluationOTelOnly|BenchmarkFlagEvaluationOTelPlusEVP|BenchmarkFlagEvaluationEVPRecord|BenchmarkFlagEvaluationOTelPlusEVPParallel"
+    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-2"
+
+microbenchmarks-flagevaluation:
+  extends: .microbenchmarks
+  variables:
+    BENCHMARKS: "BenchmarkFlagEvaluationNoop|BenchmarkFlagEvaluationOTelOnly|BenchmarkFlagEvaluationOTelPlusEVP|BenchmarkFlagEvaluationEVPRecord|BenchmarkFlagEvaluationOTelPlusEVPParallel"
+    CPUS_PER_BENCHMARK: 1
+    REPETITIONS: 10
+    GROUP_ID: "group-flagevaluation"
 
 pr-performance-gates:
   stage: microbenchmarks
