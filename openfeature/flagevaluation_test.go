@@ -8,16 +8,47 @@ package openfeature
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/santhosh-tekuri/jsonschema/v5"
+
 	of "github.com/open-feature/go-sdk/openfeature"
 )
 
-// TestFlattenAndPruneContextEquivalence guards oleksii #4: the merged single-pass
+func validateBatchedFlagEvaluationsSchema(t *testing.T, payload any) error {
+	t.Helper()
+
+	schemaBytes, err := os.ReadFile("testdata/flageval-worker/batchedflagevaluations.json")
+	if err != nil {
+		t.Fatalf("failed to read flageval-worker schema fixture: %v", err)
+	}
+
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("batchedflagevaluations.json", strings.NewReader(string(schemaBytes))); err != nil {
+		t.Fatalf("failed to add flageval-worker schema fixture: %v", err)
+	}
+	schema, err := compiler.Compile("batchedflagevaluations.json")
+	if err != nil {
+		t.Fatalf("failed to compile flageval-worker schema fixture: %v", err)
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal payload for schema validation: %v", err)
+	}
+	var doc any
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("failed to unmarshal payload for schema validation: %v", err)
+	}
+	return schema.Validate(doc)
+}
+
+// TestFlattenAndPruneContextEquivalence verifies the merged single-pass
 // flattenAndPruneContext must produce a pruned result byte-for-byte identical to the prior
 // two-step flattenContext + pruneContext pipeline across nested, oversized, and >256-field
 // inputs (and the determinism + 256/256 limits are preserved).
@@ -201,7 +232,7 @@ func TestPruneContext(t *testing.T) {
 	}
 }
 
-// TestFlagEvaluationPayloadSchema verifies that full, degraded, and ultra-degraded events
+// TestFlagEvaluationPayloadSchema verifies that full, degraded, and required-only events
 // marshal to JSON that omits the expected optional fields per tier while always including
 // the 5 required fields.
 //
@@ -251,7 +282,7 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 		{
 			name: "required-only event omits all optional fields",
 			// A bare event carrying only flag key + counts; no variant, allocation, targeting,
-			// context. (This shape is no longer emitted by an ultra-degraded tier, but the
+			// context. (This shape is not emitted by a dedicated tier, but the
 			// schema must still accept a required-fields-only event.)
 			event: flagEvaluationEvent{
 				Timestamp:       nowMs,
@@ -343,6 +374,72 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 			t.Errorf("batch payload: expected 1 flagEvaluations entry, got %v", m["flagEvaluations"])
 		}
 	})
+
+	t.Run("batch payload validates against real flageval-worker schema", func(t *testing.T) {
+		payload := flagEvaluationPayload{
+			Context: flagEvalDDContext{
+				Service: "test-service",
+				Env:     "test",
+				Version: "1.0.0",
+			},
+			FlagEvaluations: []flagEvaluationEvent{
+				{
+					Timestamp:       nowMs,
+					Flag:            flagEvalFlag{Key: "full-flag"},
+					FirstEvaluation: nowMs,
+					LastEvaluation:  nowMs,
+					EvaluationCount: 2,
+					RuntimeDefault:  true,
+					TargetingKey:    "user-123",
+					Variant:         &flagEvalVariant{Key: "on"},
+					Allocation:      &flagEvalAllocation{Key: "alloc-a"},
+					Error:           &flagEvalError{Message: string(of.TypeMismatchCode)},
+					Context: &flagEvalEventContext{
+						Evaluation: map[string]any{"country": "US", "plan": "pro"},
+					},
+				},
+				{
+					Timestamp:       nowMs,
+					Flag:            flagEvalFlag{Key: "degraded-flag"},
+					FirstEvaluation: nowMs,
+					LastEvaluation:  nowMs,
+					EvaluationCount: 5,
+					Variant:         &flagEvalVariant{Key: "off"},
+					Allocation:      &flagEvalAllocation{Key: "alloc-b"},
+					Error:           &flagEvalError{Message: string(of.FlagNotFoundCode)},
+				},
+				{
+					Timestamp:       nowMs,
+					Flag:            flagEvalFlag{Key: "required-only-flag"},
+					FirstEvaluation: nowMs,
+					LastEvaluation:  nowMs,
+					EvaluationCount: 1,
+				},
+			},
+		}
+
+		if err := validateBatchedFlagEvaluationsSchema(t, payload); err != nil {
+			t.Fatalf("payload should validate against flageval-worker schema: %v", err)
+		}
+	})
+
+	t.Run("worker schema rejects top-level reason", func(t *testing.T) {
+		payload := map[string]any{
+			"context": map[string]any{"service": "test-service"},
+			"flagEvaluations": []map[string]any{{
+				"timestamp":        nowMs,
+				"flag":             map[string]any{"key": "test-flag"},
+				"first_evaluation": nowMs,
+				"last_evaluation":  nowMs,
+				"evaluation_count": 1,
+				"reason":           "targeting_match",
+			}},
+		}
+
+		if err := validateBatchedFlagEvaluationsSchema(t, payload); err == nil {
+			t.Fatal("payload with top-level reason should be rejected by flageval-worker schema")
+		}
+	})
 }
 
 // TestAggregatorCollisionSafety verifies that two distinct inputs that would collide
@@ -360,13 +457,11 @@ func TestAggregatorCollisionSafety(t *testing.T) {
 		flagKey:       "my-flag",
 		variant:       "on",
 		allocationKey: "alloc-a",
-		reason:        "targeting_match",
 	}
 	d2 := evalDetails{
 		flagKey:       "my-flag",
 		variant:       "on",
 		allocationKey: "alloc-b",
-		reason:        "targeting_match",
 	}
 
 	agg.add(d1, nil, nowMs)
@@ -389,6 +484,38 @@ func TestAggregatorCollisionSafety(t *testing.T) {
 	}
 }
 
+func TestOpenFeatureReasonIsNotEVPCardinality(t *testing.T) {
+	w := newFlagEvaluationWriter(ProviderConfig{})
+	hookCtx := of.NewHookContext(
+		"reasonless-flag",
+		of.Boolean,
+		false,
+		of.NewClientMetadata(""),
+		of.Metadata{Name: "test-provider"},
+		of.NewEvaluationContext("user-1", map[string]any{"country": "US"}),
+	)
+	metadata := of.FlagMetadata{metadataAllocationKey: "alloc-a"}
+	detailsA := makeEvalDetails("on", of.TargetingMatchReason, "", metadata)
+	detailsB := makeEvalDetails("on", of.SplitReason, "", metadata)
+
+	w.record(hookCtx, detailsA)
+	w.record(hookCtx, detailsB)
+	for len(w.events) > 0 {
+		w.aggregate(<-w.events)
+	}
+
+	w.aggregator.mu.Lock()
+	defer w.aggregator.mu.Unlock()
+	if len(w.aggregator.full) != 1 {
+		t.Fatalf("reason-only differences must not split EVP buckets; got %d full buckets", len(w.aggregator.full))
+	}
+	for _, e := range w.aggregator.full {
+		if e.count != 2 {
+			t.Fatalf("reason-only differences should aggregate into count=2, got %d", e.count)
+		}
+	}
+}
+
 // TestAggregatorConcurrentMinMax verifies that 1000 goroutines recording the same key
 // produce count==1000 and firstEvaluation<=lastEvaluation.
 // Must be run with -race to satisfy the race-free requirement.
@@ -399,7 +526,6 @@ func TestAggregatorConcurrentMinMax(t *testing.T) {
 	d := evalDetails{
 		flagKey: "concurrent-flag",
 		variant: "on",
-		reason:  "targeting_match",
 	}
 
 	const goroutines = 1000
@@ -456,7 +582,6 @@ func TestSaturationCountPreservation(t *testing.T) {
 			flagKey:       fmt.Sprintf("sat-flag-%d", flagIdx),
 			variant:       "on",
 			allocationKey: fmt.Sprintf("alloc-%d", allocIdx),
-			reason:        "targeting_match",
 			targetingKey:  fmt.Sprintf("user-%d", i%10),
 		}
 		agg.add(d, nil, nowMs)
@@ -487,7 +612,7 @@ func TestSaturationCountPreservation(t *testing.T) {
 
 // TestAggregatorCapOverflow verifies that:
 //   - Exceeding perFlagCap routes new entries to the degraded map.
-//   - Exceeding degradedCap routes new entries to the ultra-degraded map.
+//   - Exceeding degradedCap drops new entries and counts the drop.
 //   - Global cap bounds total bucket growth.
 func TestAggregatorCapOverflow(t *testing.T) {
 	t.Run("perFlagCap overflow routes to degraded", func(t *testing.T) {
@@ -500,7 +625,6 @@ func TestAggregatorCapOverflow(t *testing.T) {
 				flagKey:       "flag-a",
 				variant:       "on",
 				allocationKey: fmt.Sprintf("alloc-%d", i),
-				reason:        "targeting_match",
 				targetingKey:  fmt.Sprintf("user-%d", i),
 			}
 			agg.add(d, map[string]any{"key": fmt.Sprintf("v%d", i)}, nowMs)
@@ -517,7 +641,6 @@ func TestAggregatorCapOverflow(t *testing.T) {
 			flagKey:       "flag-a",
 			variant:       "on",
 			allocationKey: "alloc-overflow",
-			reason:        "targeting_match",
 			targetingKey:  "user-overflow",
 		}
 		agg.add(d4, map[string]any{"extra": "data"}, nowMs)
@@ -542,7 +665,6 @@ func TestAggregatorCapOverflow(t *testing.T) {
 					flagKey:       fmt.Sprintf("flag-%d", i),
 					variant:       fmt.Sprintf("v%d", j),
 					allocationKey: fmt.Sprintf("alloc-%d", j),
-					reason:        "targeting_match",
 					targetingKey:  fmt.Sprintf("user-%d", j),
 				}
 				agg.add(d, nil, nowMs)
@@ -555,7 +677,6 @@ func TestAggregatorCapOverflow(t *testing.T) {
 			d := evalDetails{
 				flagKey: fmt.Sprintf("overflow-flag-%d", i),
 				variant: "on",
-				reason:  "targeting_match",
 			}
 			// Force each into degraded by also filling its full tier
 			for j := range 4 {
@@ -563,7 +684,6 @@ func TestAggregatorCapOverflow(t *testing.T) {
 					flagKey:       d.flagKey,
 					variant:       d.variant,
 					allocationKey: fmt.Sprintf("a%d", j),
-					reason:        d.reason,
 				}
 				agg.add(d2, nil, nowMs)
 			}
@@ -593,7 +713,6 @@ func TestAggregatorCapOverflow(t *testing.T) {
 			d := evalDetails{
 				flagKey: fmt.Sprintf("flag-%d", i),
 				variant: "on",
-				reason:  "targeting_match",
 			}
 			agg.add(d, nil, nowMs)
 		}
@@ -624,7 +743,7 @@ func TestAggregatorCapOverflow(t *testing.T) {
 	})
 }
 
-// TestPruneContextDeterministic guards Finding #1 (nondeterministic context pruning).
+// TestPruneContextDeterministic verifies deterministic context pruning.
 // A >256-field context must prune to an IDENTICAL kept subset (and therefore an identical
 // canonical key) on every call, and two independently-built maps with the same logical entries
 // must produce an equal key. On the pre-fix code (map-range cap BEFORE sort) the kept subset is
@@ -654,7 +773,7 @@ func TestPruneContextDeterministic(t *testing.T) {
 	}
 }
 
-// TestPruneContextOversizedStringDeterministic guards Finding #1 with an oversized-string
+// TestPruneContextOversizedStringDeterministic verifies an oversized-string
 // skip among >256 fields: the oversized-string skip must be applied against a deterministic
 // key ordering, so the kept subset (and hash) is stable across iterations.
 func TestPruneContextOversizedStringDeterministic(t *testing.T) {
@@ -684,7 +803,7 @@ func TestPruneContextOversizedStringDeterministic(t *testing.T) {
 	}
 }
 
-// TestCanonicalContextKeyEncoding guards oleksii #2 (comparable canonical-context key replaces
+// TestCanonicalContextKeyEncoding verifies that the comparable canonical-context key replaces
 // the lossy FNV-1a discriminator). Distinct contexts must produce DISTINCT keys — int 1 vs
 // string "1" must differ, and '='/'\n'-bearing values/keys must not fake a multi-field context.
 // Because the full canonical encoding IS the map key (no hash), distinct contexts ALWAYS land
@@ -739,7 +858,7 @@ func TestCanonicalContextKeyEncoding(t *testing.T) {
 		t.Run("distinct buckets via add(): "+tc.name, func(t *testing.T) {
 			agg := setupTestAggregator(t)
 			nowMs := time.Now().UnixMilli()
-			d := evalDetails{flagKey: "f", variant: "on", reason: "targeting_match"}
+			d := evalDetails{flagKey: "f", variant: "on"}
 			agg.add(d, tc.mapA, nowMs)
 			agg.add(d, tc.mapB, nowMs)
 
@@ -762,7 +881,7 @@ func TestCanonicalContextKeyEncoding(t *testing.T) {
 	t.Run("re-adding identical multi-field context increments same bucket", func(t *testing.T) {
 		agg := setupTestAggregator(t)
 		nowMs := time.Now().UnixMilli()
-		d := evalDetails{flagKey: "f", variant: "on", reason: "targeting_match"}
+		d := evalDetails{flagKey: "f", variant: "on"}
 		ctx := map[string]any{"a": "x\ny", "b": 7, "c=d": true}
 		agg.add(d, ctx, nowMs)
 		agg.add(d, map[string]any{"b": 7, "a": "x\ny", "c=d": true}, nowMs) // same logical context, different insertion order
@@ -780,7 +899,7 @@ func TestCanonicalContextKeyEncoding(t *testing.T) {
 	})
 }
 
-// TestDegradedCapBounded guards reviewer concern #8 (unbounded dynamic/abusive flag keys) under
+// TestDegradedCapBounded verifies that unbounded dynamic/abusive flag keys stay bounded under
 // the 2-tier design. With the degraded tier as the terminal tier, an unbounded number of distinct
 // flag keys must NOT grow the degraded map without bound: len(degraded) <= degradedCap, and the
 // over-cap counts must be DROPPED-AND-COUNTED (droppedDegradedOverflow), never silently lost.
@@ -796,7 +915,6 @@ func TestDegradedCapBounded(t *testing.T) {
 		d := evalDetails{
 			flagKey: fmt.Sprintf("dynamic-flag-%d", i), // every key distinct
 			variant: "on",
-			reason:  "targeting_match",
 		}
 		agg.add(d, nil, nowMs)
 	}
@@ -826,7 +944,7 @@ func TestDegradedCapBounded(t *testing.T) {
 	}
 }
 
-// TestRecordAfterStopIsNoop guards Finding #4 (record() can enqueue after shutdown). After
+// TestRecordAfterStopIsNoop verifies record() cannot enqueue after shutdown. After
 // stop(), record() must NOT enqueue into the never-drained events channel; the event must be
 // counted as dropped instead. On the pre-fix code (no stopped check in record()) the event is
 // enqueued and silently lost.
@@ -869,9 +987,49 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 	}
 }
 
-// TestExtractEvalDetailsPrefersErrorMessage guards Finding #5 (error payload uses ErrorCode
-// instead of OpenFeature's ErrorMessage). ErrorMessage is preferred when present; ErrorCode is
-// the fallback only when ErrorMessage is empty.
+func TestRecordQueuesPrunedContextSnapshot(t *testing.T) {
+	w := newFlagEvaluationWriter(ProviderConfig{})
+	attrs := make(map[string]any, maxContextFields+50)
+	for i := range maxContextFields + 50 {
+		attrs[fmt.Sprintf("field-%03d", i)] = fmt.Sprintf("value-%03d", i)
+	}
+	attrs["zzz-oversized"] = strings.Repeat("x", maxFieldLength+1)
+	hookCtx := of.NewHookContext(
+		"test-flag",
+		of.Boolean,
+		false,
+		of.NewClientMetadata(""),
+		of.Metadata{Name: "test-provider"},
+		of.NewEvaluationContext("user-1", attrs),
+	)
+	details := of.InterfaceEvaluationDetails{
+		Value: true,
+		EvaluationDetails: of.EvaluationDetails{
+			FlagKey:  "test-flag",
+			FlagType: of.Boolean,
+			ResolutionDetail: of.ResolutionDetail{
+				Variant: "on",
+				Reason:  of.TargetingMatchReason,
+			},
+		},
+	}
+
+	w.record(hookCtx, details)
+
+	if len(w.events) != 1 {
+		t.Fatalf("expected one queued event, got %d", len(w.events))
+	}
+	ev := <-w.events
+	if got := len(ev.contextAttrs); got != maxContextFields {
+		t.Fatalf("queued context should be pruned to %d fields, got %d", maxContextFields, got)
+	}
+	if _, ok := ev.contextAttrs["zzz-oversized"]; ok {
+		t.Fatal("queued context should not contain oversized string values")
+	}
+}
+
+// TestExtractEvalDetailsPrefersErrorMessage verifies ErrorMessage is preferred when present;
+// ErrorCode is the fallback only when ErrorMessage is empty.
 func TestExtractEvalDetailsPrefersErrorMessage(t *testing.T) {
 	mkHookCtx := func() of.HookContext {
 		return of.NewHookContext(

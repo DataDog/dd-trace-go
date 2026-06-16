@@ -413,10 +413,10 @@ func scaleBenchProfile() flagEvalBenchProfile {
 
 // BenchmarkFlagEvaluationOTelPlusEVPParallel measures concurrent server-side evaluation
 // through a real OpenFeature client with BOTH the OTel hook and the new EVP flagevaluation
-// hook enabled, at the >=2,500-flag scale profile (oleksii review #5). Because every
+// hook enabled, at the >=2,500-flag scale profile. Because every
 // concurrent evaluation funnels through the EVP writer's single aggregator mutex
 // (flagEvaluationAggregator.add), this is the bench that surfaces lock contention under
-// realistic multi-goroutine server load — exactly what the parallel reviewer concern asks for.
+// realistic multi-goroutine server load.
 //
 // Each goroutine rotates its own flag key and targeting key across the full cardinality so the
 // aggregator sees a realistic spread of buckets, not a single hot key. The 24h flush interval

@@ -124,6 +124,11 @@ func TestIsRuntimeDefault(t *testing.T) {
 			details: makeEvalDetails("on", of.DefaultReason, ""),
 			want:    false,
 		},
+		{
+			name:    "variant present with TYPE_MISMATCH is runtime default",
+			details: makeEvalDetails("on", of.ErrorReason, of.TypeMismatchCode),
+			want:    true,
+		},
 	}
 
 	for _, tc := range tests {

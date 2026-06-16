@@ -17,7 +17,6 @@ import (
 	"os"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -47,15 +46,13 @@ const (
 
 	// Aggregation caps.
 	//
-	// SPIKE cq7 (2-tier resize): the cascade is now full → degraded → drop(counted). With no
-	// ultra-degraded backstop, degradedCap must hold the FULL legitimate degraded cardinality at
-	// the team's >=2,500-flag scale target, or legitimate counts would be dropped. The measured
-	// legitimate degraded cardinality at 2,500 flags (Σ variants×allocations×reasons over a
-	// realistic flag mix) is 21,662 distinct buckets (see flagevaluation_scale_test.go); so
-	// degradedCap is raised to 32,768 (~1.5x headroom). globalCap (full-tier) is raised to
+	// The cascade is full → degraded → drop(counted). With no ultra-degraded backstop,
+	// degradedCap must hold the legitimate degraded cardinality at the team's >=2,500-flag
+	// scale target, or legitimate counts would be dropped. Degraded cardinality is based only
+	// on schema-visible dimensions retained by the degraded payload; OpenFeature reason is not
+	// an EVP field and is not part of bucket identity. globalCap (full-tier) is raised to
 	// 131,072 so a realistic 2,500-flag × multi-context workload keeps full-fidelity buckets
-	// before degrading rather than dropping them — overflow from full still cascades to degraded,
-	// which is now sized to hold it.
+	// before degrading rather than dropping them.
 	defaultEvalGlobalCap   = 131_072 // bounds full-tier buckets only; degraded is bounded separately
 	defaultEvalPerFlagCap  = 10_000  // bounds full-fidelity buckets per flag
 	defaultEvalDegradedCap = 32_768  // bounds degraded map; overflow is dropped(counted), no ultra tier
@@ -70,11 +67,11 @@ const (
 // EXACT, comparable string compared byte-for-byte by Go map equality, so distinct keys can
 // NEVER alias into the same bucket:
 //
-//   - The enumerable dimensions (flagKey, variant, allocationKey, reason, targetingKey) are
-//     the raw evaluation strings.
+//   - The enumerable dimensions are schema-visible fields only. OpenFeature reason is not
+//     accepted by the flageval-worker schema and must never be hidden cardinality.
 //   - contextKey is the EXACT canonical type-tagged, length-delimited encoding of the pruned
 //     context (see canonicalContextKey). Because it is the full encoding — not a lossy 64-bit
-//     digest — two distinct contexts ALWAYS produce distinct contextKey strings (oleksii #2):
+//     digest — two distinct contexts ALWAYS produce distinct contextKey strings:
 //     int 1 vs string "1" differ by type tag, and '='/'\n'-bearing values cannot fake a field
 //     boundary thanks to the length prefixes. There is no hash, so there is no hash collision,
 //     so a count can never be misattributed to the wrong context. Go's map hashes and compares
@@ -84,24 +81,26 @@ const (
 // bounded by the number of full-tier buckets (globalCap) and the pruned context size
 // (256 fields × 256 chars), and measured in BenchmarkFlagEvaluationOTelPlusEVPParallel.
 type evaluationAggregationKey struct {
-	flagKey       string
-	variant       string
-	allocationKey string
-	reason        string
-	targetingKey  string
-	contextKey    string // exact canonical encoding of the pruned context; comparable, not a digest
+	flagKey        string
+	variant        string
+	allocationKey  string
+	runtimeDefault bool
+	errorMessage   string
+	targetingKey   string
+	contextKey     string // exact canonical encoding of the pruned context; comparable, not a digest
 }
 
 // evaluationDegradedKey is the key for the degraded aggregation map — the terminal aggregation
 // tier in the 2-tier design (full → degraded → drop). Drops targeting key, context, and
-// targeting rule key relative to the full key. This is EXACTLY the OTel feature_flag.evaluations
-// cardinality. When a NEW degraded bucket would exceed degradedCap, the count is dropped and
-// counted (aggregator.dropped) rather than cascading to a further-degraded tier.
+// targeting rule key relative to the full key. It keeps only schema-visible fields emitted by
+// the degraded payload. When a NEW degraded bucket would exceed degradedCap, the count is
+// dropped and counted (aggregator.dropped) rather than cascading to a further-degraded tier.
 type evaluationDegradedKey struct {
-	flagKey       string
-	variant       string
-	allocationKey string
-	reason        string
+	flagKey        string
+	variant        string
+	allocationKey  string
+	runtimeDefault bool
+	errorMessage   string
 }
 
 // evaluationEntry holds per-window counts and time bounds for one aggregation bucket.
@@ -229,23 +228,22 @@ type flagEvaluationWriter struct {
 	stopped       atomic.Bool // single idempotency gate for stop(); also read lock-free by record()
 	jsonConfig    jsoniter.API
 
-	// Asynchronous hand-off: the Finally hook enqueues a cheap snapshot here; a single
-	// background worker (started in start()) drains it and performs flatten/prune/hash/
-	// aggregate off the evaluation hot path. events is bounded; on overflow the hook drops
+	// Asynchronous hand-off: the Finally hook enqueues a bounded snapshot here; a single
+	// background worker (started in start()) drains it and performs aggregate/flush off the
+	// evaluation hot path. events is bounded; on overflow the hook drops
 	// the event and bumps dropped — best-effort telemetry that never blocks the request.
 	events     chan evalEvent
 	dropped    atomic.Int64
 	workerDone chan struct{}
+	enqueueMu  sync.RWMutex
 }
 
-// evalEvent is the minimal snapshot the Finally hook hands to the worker. attrs is the
-// owned copy returned by EvaluationContext().Attributes(), so it is safe to read off the
-// hot path for scalar values (a nested mutable attribute the caller mutates after the call
-// returns is a documented best-effort edge).
+// evalEvent is the bounded snapshot the Finally hook hands to the worker. contextAttrs is already
+// flattened and pruned, so the async queue never buffers the caller's raw evaluation context.
 type evalEvent struct {
-	d     evalDetails
-	attrs map[string]any
-	nowMs int64
+	d            evalDetails
+	contextAttrs map[string]any
+	nowMs        int64
 }
 
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
@@ -253,7 +251,6 @@ type evalEvent struct {
 type evalDetails struct {
 	flagKey        string
 	variant        string
-	reason         string
 	allocationKey  string
 	targetingKey   string
 	errorMessage   string
@@ -324,8 +321,7 @@ func (w *flagEvaluationWriter) start() {
 			close(w.workerDone)
 		}()
 
-		// Single owner of flatten/prune/hash/aggregate/flush. The hot path only enqueues;
-		// all that cost lives here, off the evaluation path.
+		// Single owner of aggregate/flush. The hook enqueues only bounded snapshots.
 		for {
 			select {
 			case ev := <-w.events:
@@ -342,16 +338,18 @@ func (w *flagEvaluationWriter) start() {
 
 // stop stops the flush ticker and marks the writer as stopped.
 func (w *flagEvaluationWriter) stop() {
-	// Single idempotency gate: the atomic Swap is the ONLY guard for both "mark stopped" and
-	// the downstream close(stopChan). A second/concurrent stop() sees Swap return true and
-	// returns early, so stopChan is closed exactly once (no double-close panic). record() reads
-	// this flag lock-free to no-op post-stop enqueues.
+	w.enqueueMu.Lock()
+	// Single idempotency gate: the atomic Swap is the guard for both "mark stopped" and the
+	// downstream close(stopChan). enqueueMu prevents a record() call that observed stopped=false
+	// from sending into events after the worker has drained and exited.
 	if w.stopped.Swap(true) {
+		w.enqueueMu.Unlock()
 		return
 	}
 
 	// Signal the worker to drain the queue and do a final flush.
 	close(w.stopChan)
+	w.enqueueMu.Unlock()
 	if w.ticker != nil {
 		// Worker was started: wait for its final flush before returning, then stop the
 		// ticker. (ticker is set only in start(), so it gates "was the worker started".)
@@ -404,8 +402,8 @@ func (w *flagEvaluationWriter) flush() {
 	nowMs := time.Now().UnixMilli()
 	var events []flagEvaluationEvent
 
-	// Full tier: required fields + variant + allocation + targeting_key + context + error;
-	// runtime_default decorates this tier.
+	// Full tier: required fields + variant + allocation + targeting_key + context + error.
+	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range full {
 		ev := baseFlagEvaluationEvent(key.flagKey, e, nowMs)
 		ev.RuntimeDefault = e.runtimeDefault
@@ -425,8 +423,8 @@ func (w *flagEvaluationWriter) flush() {
 		events = append(events, ev)
 	}
 
-	// Degraded tier: required fields + variant + allocation; no targeting_key, no context.
-	// runtime_default decorates this tier.
+	// Degraded tier: required fields + variant + allocation + error; no targeting_key, no context.
+	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range degraded {
 		ev := baseFlagEvaluationEvent(key.flagKey, e, nowMs)
 		ev.RuntimeDefault = e.runtimeDefault
@@ -435,6 +433,9 @@ func (w *flagEvaluationWriter) flush() {
 		}
 		if key.allocationKey != "" {
 			ev.Allocation = &flagEvalAllocation{Key: key.allocationKey}
+		}
+		if e.errorMessage != "" {
+			ev.Error = &flagEvalError{Message: e.errorMessage}
 		}
 		events = append(events, ev)
 	}
@@ -470,11 +471,14 @@ func baseFlagEvaluationEvent(flagKey string, e *evaluationEntry, nowMs int64) fl
 }
 
 // record runs on the evaluation hot path (the Finally hook). It does only cheap scalar
-// extraction plus the SDK's shallow context copy, then a non-blocking enqueue — no
-// flatten/prune/hash/aggregation happens here; the background worker does that. If the
-// queue is full the event is dropped and counted (best-effort), never blocking the
-// evaluation. Called from the Finally hook after every evaluation.
+// extraction plus a bounded context snapshot, then a non-blocking enqueue — no aggregation
+// happens here; the background worker does that. If the queue is full the event is dropped
+// and counted (best-effort), never blocking the evaluation. Called from the Finally hook after
+// every evaluation.
 func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
+	w.enqueueMu.RLock()
+	defer w.enqueueMu.RUnlock()
+
 	// Post-stop no-op: after stop() the worker no longer drains w.events, so enqueuing would
 	// silently lose the event. Check the atomic gate lock-free (reading under the aggregator
 	// lock would add hot-path contention) and count the event as dropped so it stays observable.
@@ -491,9 +495,9 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 		nowMs = time.Now().UnixMilli()
 	}
 	ev := evalEvent{
-		d:     d,
-		attrs: hookContext.EvaluationContext().Attributes(), // SDK returns an owned copy
-		nowMs: nowMs,
+		d:            d,
+		contextAttrs: flattenAndPruneContext(hookContext.EvaluationContext().Attributes()),
+		nowMs:        nowMs,
 	}
 	select {
 	case w.events <- ev:
@@ -502,18 +506,13 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 	}
 }
 
-// aggregate performs the deferred flatten/prune/key and updates the aggregator. It runs
-// only on the writer's single worker goroutine.
+// aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
 func (w *flagEvaluationWriter) aggregate(ev evalEvent) {
-	var contextAttrs map[string]any
-	if len(ev.attrs) > 0 {
-		contextAttrs = flattenAndPruneContext(ev.attrs)
-	}
-	w.aggregator.add(ev.d, contextAttrs, ev.nowMs)
+	w.aggregator.add(ev.d, ev.contextAttrs, ev.nowMs)
 }
 
-// flattenAndPruneContext is the worker-path procedure that produces the pruned context map for
-// EVP aggregation in a SINGLE traversal of the flattened keyspace (oleksii #4). It merges the
+// flattenAndPruneContext produces the pruned context map for EVP aggregation in a single
+// traversal of the flattened keyspace. It merges the
 // two former steps — flattenContext (flatten.go) + pruneContext — into one pass with the SAME
 // pruned output:
 //
@@ -649,15 +648,16 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	// Build the full key: exact, comparable strings for every dimension including the canonical
-	// context encoding. No hash, so distinct contexts get distinct buckets (oleksii #2).
+	// Build the full key from schema-visible dimensions including the canonical context encoding.
+	// No hash, so distinct contexts get distinct buckets.
 	fullKey := evaluationAggregationKey{
-		flagKey:       d.flagKey,
-		variant:       d.variant,
-		allocationKey: d.allocationKey,
-		reason:        d.reason,
-		targetingKey:  d.targetingKey,
-		contextKey:    canonicalContextKey(contextAttrs),
+		flagKey:        d.flagKey,
+		variant:        d.variant,
+		allocationKey:  d.allocationKey,
+		runtimeDefault: d.runtimeDefault,
+		errorMessage:   d.errorMessage,
+		targetingKey:   d.targetingKey,
+		contextKey:     canonicalContextKey(contextAttrs),
 	}
 
 	// Fast path: this exact full-tier bucket already exists → increment its count. Because
@@ -710,14 +710,15 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 // DROPPED and counted (droppedDegradedOverflow) rather than cascading to a further-degraded
 // tier. degradedCap is sized (defaultEvalDegradedCap) to hold the legitimate degraded
 // cardinality at the >=2,500-flag scale target, so this drop only fires under cardinality far
-// beyond that target (e.g. an unbounded dynamic/abusive flag key — reviewer concern #8) and the
+// beyond that target (e.g. an unbounded dynamic/abusive flag key) and the
 // dropped counter makes such overflow observable.
 func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 	degKey := evaluationDegradedKey{
-		flagKey:       d.flagKey,
-		variant:       d.variant,
-		allocationKey: d.allocationKey,
-		reason:        d.reason,
+		flagKey:        d.flagKey,
+		variant:        d.variant,
+		allocationKey:  d.allocationKey,
+		runtimeDefault: d.runtimeDefault,
+		errorMessage:   d.errorMessage,
 	}
 
 	if e, ok := a.degraded[degKey]; ok {
@@ -735,6 +736,7 @@ func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 
 	e := newEvaluationEntry(nowMs)
 	e.runtimeDefault = d.runtimeDefault
+	e.errorMessage = d.errorMessage
 	a.degraded[degKey] = e
 }
 
@@ -759,7 +761,7 @@ const (
 // string "1" differ by tag; '=' / '\n' cannot fake a field boundary). Unlike the prior FNV-1a
 // digest, the full encoding is emitted AS THE KEY, so Go's map compares it byte-for-byte: there
 // is no hash and therefore no hash collision, so distinct contexts ALWAYS land in distinct
-// full-tier buckets (oleksii #2). The returned string is stored once per full-tier bucket.
+// full-tier buckets. The returned string is stored once per full-tier bucket.
 func canonicalContextKey(attrs map[string]any) string {
 	if len(attrs) == 0 {
 		return ""
@@ -878,10 +880,6 @@ func pruneContext(raw map[string]any) map[string]any {
 // flageval_metrics.go (that file is left untouched to preserve the OTel path).
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
-	reason := strings.ToLower(string(details.Reason))
-	if reason == "" {
-		reason = "unknown"
-	}
 	// Prefer OpenFeature's human-readable ErrorMessage; fall back to the ErrorCode string only
 	// when ErrorMessage is empty (some providers populate just the code).
 	errMsg := details.ErrorMessage
@@ -893,7 +891,6 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 	return evalDetails{
 		flagKey:        hookContext.FlagKey(),
 		variant:        details.Variant,
-		reason:         reason,
 		allocationKey:  allocationKey,
 		targetingKey:   hookContext.EvaluationContext().TargetingKey(),
 		errorMessage:   errMsg,

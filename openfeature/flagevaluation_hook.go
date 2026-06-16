@@ -45,9 +45,9 @@ func (h *flagEvaluationHook) Finally(
 }
 
 // isRuntimeDefault returns true when the caller's supplied default value was returned.
-// Signal: absent variant key. Our evaluator sets a variant ONLY on a matched allocation
-// (reason TARGETING_MATCH/SPLIT/STATIC); every DEFAULT/DISABLED/ERROR path leaves the variant
-// empty (see evaluator.go). A present variant therefore means a real assignment, not a default.
+// The primary signal is an absent variant key. Type mismatches are the exception: the provider
+// may have produced a real variant, but the OpenFeature SDK returns the caller default after
+// conversion fails.
 func isRuntimeDefault(details of.InterfaceEvaluationDetails) bool {
-	return details.Variant == ""
+	return details.Variant == "" || details.ErrorCode == of.TypeMismatchCode
 }

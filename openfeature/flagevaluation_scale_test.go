@@ -11,35 +11,25 @@ import (
 	"time"
 )
 
-// SPIKE (cq7): decisive measurement for the "remove the ultra-degraded tier" decision.
-//
 // These tests drive flagEvaluationAggregator.add directly (no client, no hooks, no async
 // worker) to deterministically simulate the team's >=2,500-flag scale target with realistic
-// flag structure, then INSPECT the three aggregation maps. The goal is to answer:
+// flag structure, then inspect the two aggregation maps. The goal is to answer:
 //
-//  1. At 2,500 flags, under what conditions (if any) does the ultra-degraded tier actually
-//     trigger? Does it require saturating BOTH full(65k) AND degraded(10k)?
-//  2. Does 2,500 flags' worth of LEGITIMATE degraded buckets fit under degradedCap=10,000, or
-//     does it overflow (cascading to ultra today, DROPPING under a 2-tier design)?
-//  3. What degradedCap/globalCap values make a 2-tier design never drop legitimate counts at
+//  1. Does 2,500 flags' worth of legitimate schema-visible degraded buckets fit under degradedCap,
+//     or does it overflow and drop under a 2-tier design?
+//  2. What degradedCap/globalCap values make a 2-tier design never drop legitimate counts at
 //     2,500 flags?
 //
 // They are not assertions about correct behavior so much as a measurement harness; each test
 // logs its numbers via t.Logf and is intended to be read with `go test -run TestScale -v`.
 
 // scaleFlagShape describes the realistic per-flag structure used to size the degraded tier.
-// Degraded key = (flagKey, variant, allocationKey, reason), so the LEGITIMATE degraded
-// cardinality of a flag is variants × allocations × reasons-actually-observed.
+// Degraded key includes schema-visible retained fields only. OpenFeature reason is not accepted
+// by the worker schema and is not part of degraded cardinality.
 type scaleFlagShape struct {
 	variants    int // distinct variant keys this flag can return
 	allocations int // distinct allocation keys this flag can return
-	reasons     []string
 }
-
-// realisticReasons is the natural reason set a healthy server-side flag emits. A flag that
-// matches targeting emits TARGETING_MATCH/SPLIT for assigned subjects and DEFAULT for the
-// rest, so 2 reasons/flag is the realistic steady state (not all 8 canonical reasons).
-var realisticReasons = []string{"targeting_match", "default"}
 
 // makeScaleFlags builds n flags with a realistic spread of variants/allocations. The spread is
 // deterministic (driven by index modulo) so the degraded cardinality is exactly reproducible:
@@ -51,29 +41,29 @@ func makeScaleFlags(n int) []scaleFlagShape {
 	for i := range n {
 		switch i % 3 {
 		case 0:
-			flags[i] = scaleFlagShape{variants: 2, allocations: 1, reasons: realisticReasons}
+			flags[i] = scaleFlagShape{variants: 2, allocations: 1}
 		case 1:
-			flags[i] = scaleFlagShape{variants: 3, allocations: 1, reasons: realisticReasons}
+			flags[i] = scaleFlagShape{variants: 3, allocations: 1}
 		default:
-			flags[i] = scaleFlagShape{variants: 4, allocations: 2, reasons: realisticReasons}
+			flags[i] = scaleFlagShape{variants: 4, allocations: 2}
 		}
 	}
 	return flags
 }
 
 // legitimateDegradedCardinality returns the number of DISTINCT degraded buckets the given flag
-// shapes would produce if every (variant × allocation × reason) combination were observed.
+// shapes would produce if every (variant × allocation) combination were observed.
 // This is the count a 2-tier design must be able to hold without dropping.
 func legitimateDegradedCardinality(flags []scaleFlagShape) int {
 	total := 0
 	for _, f := range flags {
-		total += f.variants * f.allocations * len(f.reasons)
+		total += f.variants * f.allocations
 	}
 	return total
 }
 
 // driveScale records evaluations into agg for the given flag shapes, distributing each flag's
-// evaluations across its variant/allocation/reason combinations and across numContexts distinct
+// evaluations across its variant/allocation combinations and across numContexts distinct
 // evaluation contexts (subjects). evalsPerCombo controls how many subjects hit each combination
 // (so counts accumulate). It returns the total number of add() calls made.
 //
@@ -90,25 +80,22 @@ func driveScale(agg *flagEvaluationAggregator, flags []scaleFlagShape, numContex
 			variant := fmt.Sprintf("v%d", v)
 			for a := range f.allocations {
 				alloc := fmt.Sprintf("alloc-%d", a)
-				for _, reason := range f.reasons {
-					for range evalsPerCombo {
-						// Spread subjects across numContexts distinct targeting keys + contexts.
-						subj := ctxCounter % numContexts
-						ctxCounter++
-						d := evalDetails{
-							flagKey:       flagKey,
-							variant:       variant,
-							allocationKey: alloc,
-							reason:        reason,
-							targetingKey:  fmt.Sprintf("user-%d", subj),
-						}
-						attrs := map[string]any{
-							"country": fmt.Sprintf("c%d", subj%50),
-							"plan":    fmt.Sprintf("p%d", subj%5),
-						}
-						agg.add(d, attrs, nowMs)
-						calls++
+				for range evalsPerCombo {
+					// Spread subjects across numContexts distinct targeting keys + contexts.
+					subj := ctxCounter % numContexts
+					ctxCounter++
+					d := evalDetails{
+						flagKey:       flagKey,
+						variant:       variant,
+						allocationKey: alloc,
+						targetingKey:  fmt.Sprintf("user-%d", subj),
 					}
+					attrs := map[string]any{
+						"country": fmt.Sprintf("c%d", subj%50),
+						"plan":    fmt.Sprintf("p%d", subj%5),
+					}
+					agg.add(d, attrs, nowMs)
+					calls++
 				}
 			}
 		}
@@ -166,10 +153,10 @@ func TestScaleDegradedCardinality2500Flags(t *testing.T) {
 		}
 	}
 	t.Logf("2,500-flag realistic shape:")
-	t.Logf("  %d flags @ 2v×1a×2r = %d degraded buckets", s0, s0*2*1*2)
-	t.Logf("  %d flags @ 3v×1a×2r = %d degraded buckets", s1, s1*3*1*2)
-	t.Logf("  %d flags @ 4v×2a×2r = %d degraded buckets", s2, s2*4*2*2)
-	t.Logf("LEGITIMATE degraded cardinality (Σ variants×allocations×reasons) = %d", deg)
+	t.Logf("  %d flags @ 2v×1a = %d degraded buckets", s0, s0*2*1)
+	t.Logf("  %d flags @ 3v×1a = %d degraded buckets", s1, s1*3*1)
+	t.Logf("  %d flags @ 4v×2a = %d degraded buckets", s2, s2*4*2)
+	t.Logf("LEGITIMATE degraded cardinality (Σ variants×allocations) = %d", deg)
 	t.Logf("production degradedCap = %d", defaultEvalDegradedCap)
 	t.Logf("production globalCap   = %d", defaultEvalGlobalCap)
 
@@ -304,7 +291,7 @@ func TestScaleFullSaturationCascade(t *testing.T) {
 		defaultEvalPerFlagCap,
 		defaultEvalDegradedCap,
 	)
-	// legitimate degraded cardinality is ~21,662 combos; with 8 distinct subjects per combo the
+	// legitimate degraded cardinality is the schema-visible combo count; with enough distinct subjects per combo the
 	// full tier sees ~173k distinct full keys, over globalCap, forcing overflow into degraded.
 	calls := driveScale(agg, flags, 1_000_000, 8)
 	tc := snapshot(agg)
@@ -339,8 +326,8 @@ func TestScaleHotFlagPerFlagCap(t *testing.T) {
 	nowMs := time.Now().UnixMilli()
 
 	// One hot flag, many distinct (variant, subject) combos so it blows past perFlagCap and then
-	// keeps generating distinct degraded keys. Degraded key = (flag,variant,alloc,reason); to fill
-	// the resized degradedCap we need that many distinct (variant,alloc,reason) for this one flag.
+	// keeps generating distinct degraded keys. To fill the resized degradedCap we need that many
+	// distinct schema-visible variant/allocation combinations for this one flag.
 	const distinctVariants = 50_000
 	var calls int64
 	for v := range distinctVariants {
@@ -348,7 +335,6 @@ func TestScaleHotFlagPerFlagCap(t *testing.T) {
 			flagKey:       "hot-flag",
 			variant:       fmt.Sprintf("v%d", v),
 			allocationKey: "alloc-0",
-			reason:        "targeting_match",
 			targetingKey:  fmt.Sprintf("user-%d", v),
 		}
 		agg.add(d, map[string]any{"k": v}, nowMs)

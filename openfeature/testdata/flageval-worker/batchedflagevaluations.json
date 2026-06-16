@@ -1,0 +1,184 @@
+{
+  "title": "BatchedFlagEvaluations",
+  "type": "object",
+  "properties": {
+    "context": {
+      "title": "InputContextDatadog",
+      "type": "object",
+      "properties": {
+        "geo": {
+          "type": "object",
+          "properties": {
+            "country_iso_code": { "type": "string" },
+            "country": { "type": "string" }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "rum": {
+          "type": "object",
+          "properties": {
+            "application": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" }
+              },
+              "required": [],
+              "additionalProperties": false
+            },
+            "view": {
+              "type": "object",
+              "properties": {
+                "url": { "type": "string" }
+              },
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "service": { "type": "string" },
+        "version": { "type": "string" },
+        "env": { "type": "string" },
+        "device": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "type": { "type": "string" },
+            "brand": { "type": "string" },
+            "model": { "type": "string" }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "os": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "flagEvaluations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "integer",
+            "description": "The timestamp (milliseconds since epoch) at which the evaluation occurred."
+          },
+          "flag": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" }
+            },
+            "required": ["key"],
+            "additionalProperties": false
+          },
+          "first_evaluation": {
+            "type": "integer",
+            "minimum": 1759276800000
+          },
+          "last_evaluation": {
+            "type": "integer",
+            "minimum": 1759276800000
+          },
+          "evaluation_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "runtime_default_used": { "type": "boolean" },
+          "targeting_key": { "type": "string" },
+          "context": {
+            "type": "object",
+            "properties": {
+              "evaluation": { "type": "object" },
+              "dd": {
+                "type": "object",
+                "properties": {
+                  "service": { "type": "string" },
+                  "rum": {
+                    "type": "object",
+                    "properties": {
+                      "application": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      },
+                      "view": {
+                        "type": "object",
+                        "properties": {
+                          "url": { "type": "string" }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "variant": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" }
+            },
+            "required": ["key"],
+            "additionalProperties": false
+          },
+          "allocation": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" }
+            },
+            "required": ["key"],
+            "additionalProperties": false
+          },
+          "targeting_rule": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" }
+            },
+            "required": ["key"],
+            "additionalProperties": false
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "message": { "type": "string" }
+            },
+            "required": ["message"],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "timestamp",
+          "flag",
+          "first_evaluation",
+          "last_evaluation",
+          "evaluation_count"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["flagEvaluations"],
+  "additionalProperties": false
+}
