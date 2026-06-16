@@ -943,6 +943,39 @@ func TestOTLPMetricsFlushInterval(t *testing.T) {
 	})
 }
 
+func TestOTLPMetricsProtocol(t *testing.T) {
+	t.Run("defaults to http/protobuf", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("http/json via OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/json")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/json", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("unknown value falls back to http/protobuf", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "grpc")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+}
+
 func TestHostnameConfiguration(t *testing.T) {
 	t.Run("default behavior - hostname empty when not configured", func(t *testing.T) {
 		resetGlobalState()

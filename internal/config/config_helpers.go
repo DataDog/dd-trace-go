@@ -408,6 +408,16 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 	return merged
 }
 
+// resolveOTLPMetricsProtocol normalises OTEL_EXPORTER_OTLP_METRICS_PROTOCOL to one of
+// "http/json" or "http/protobuf". Unknown values and the empty string default to "http/protobuf"
+// per the OTel specification.
+func resolveOTLPMetricsProtocol(v string) string {
+	if v == "http/json" {
+		return "http/json"
+	}
+	return "http/protobuf"
+}
+
 // resolveOTLPMetricsFlushInterval parses _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (milliseconds).
 // The variable is internal and intended for tests only; in production it returns the default 10 s.
 func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
