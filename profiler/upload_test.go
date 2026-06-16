@@ -19,6 +19,7 @@ import (
 	maininternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -142,6 +143,7 @@ func TestEntityContainerIDHeaders(t *testing.T) {
 func TestEVPOriginHeader(t *testing.T) {
 	profile := doOneShortProfileUpload(t)
 	assert.Equal(t, "dd-trace-go", profile.headers.Get("DD-EVP-Origin"))
+	assert.Equal(t, version.Tag, profile.headers.Get("DD-EVP-Origin-Version"))
 }
 
 func TestGitMetadata(t *testing.T) {
