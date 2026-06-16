@@ -98,8 +98,10 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 }
 
 func newDatadogProvider(config ProviderConfig) *DatadogProvider {
+	evp := newEVPClient()
+
 	// Create exposure writer
-	writer := newExposureWriter(config)
+	writer := newExposureWriterWithEVP(config, evp)
 
 	// Create exposure hook
 	hook := newExposureHook(writer)
@@ -124,7 +126,7 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// When false, both fields are left nil and the EVP path is disabled.
 	// The OTel hook (flagEvalHook above) is registered unconditionally.
 	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
-		evalWriter := newFlagEvaluationWriter(config)
+		evalWriter := newFlagEvaluationWriterWithEVP(config, evp)
 		p.flagEvalWriter = evalWriter
 		p.flagEvalEVPHook = newFlagEvaluationHook(evalWriter)
 	}

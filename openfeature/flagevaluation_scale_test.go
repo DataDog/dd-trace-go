@@ -11,17 +11,8 @@ import (
 	"time"
 )
 
-// These tests drive flagEvaluationAggregator.add directly (no client, no hooks, no async
-// worker) to deterministically simulate the team's >=2,500-flag scale target with realistic
-// flag structure, then inspect the two aggregation maps. The goal is to answer:
-//
-//  1. Does 2,500 flags' worth of legitimate schema-visible degraded buckets fit under degradedCap,
-//     or does it overflow and drop under a 2-tier design?
-//  2. What degradedCap/globalCap values make a 2-tier design never drop legitimate counts at
-//     2,500 flags?
-//
-// They are not assertions about correct behavior so much as a measurement harness; each test
-// logs its numbers via t.Logf and is intended to be read with `go test -run TestScale -v`.
+// These tests drive flagEvaluationAggregator.add directly (no client, no hooks, no async worker)
+// to assert the 2,500-flag scale target against production aggregation caps.
 
 // scaleFlagShape describes the realistic per-flag structure used to size the degraded tier.
 // Degraded key includes schema-visible retained fields only. OpenFeature reason is not accepted
@@ -132,9 +123,8 @@ func snapshot(agg *flagEvaluationAggregator) tierCounts {
 	return tc
 }
 
-// TestScaleDegradedCardinality2500Flags reports the LEGITIMATE degraded cardinality for the
-// realistic 2,500-flag shape and compares it to the production degradedCap (10,000). This is the
-// cap-sizing math that decides whether a 2-tier design drops legitimate counts.
+// TestScaleDegradedCardinality2500Flags verifies the production degradedCap has at least 2x
+// headroom over the legitimate degraded cardinality of the 2,500-flag target shape.
 func TestScaleDegradedCardinality2500Flags(t *testing.T) {
 	const n = 2500
 	flags := makeScaleFlags(n)
@@ -160,19 +150,13 @@ func TestScaleDegradedCardinality2500Flags(t *testing.T) {
 	t.Logf("production degradedCap = %d", defaultEvalDegradedCap)
 	t.Logf("production globalCap   = %d", defaultEvalGlobalCap)
 
-	if deg > defaultEvalDegradedCap {
-		t.Logf("RESULT: legitimate degraded cardinality %d EXCEEDS degradedCap %d by %d "+
-			"=> under a 2-tier design these would DROP. degradedCap must be raised.",
-			deg, defaultEvalDegradedCap, deg-defaultEvalDegradedCap)
-	} else {
-		t.Logf("RESULT: legitimate degraded cardinality %d FITS under degradedCap %d (headroom %d).",
-			deg, defaultEvalDegradedCap, defaultEvalDegradedCap-deg)
-	}
-
-	// Recommendation math: degraded must hold full legitimate cardinality; global (full tier)
-	// must hold flags × contexts up to a reasonable subject bound. Report a 2x-headroom rec.
 	recDegraded := roundUpTo(deg*2, 1000)
-	t.Logf("RECOMMENDATION: degradedCap >= %d (2x headroom over %d legitimate buckets).", recDegraded, deg)
+	if defaultEvalDegradedCap < recDegraded {
+		t.Fatalf("degradedCap=%d does not provide 2x headroom over legitimate cardinality=%d; want >= %d",
+			defaultEvalDegradedCap, deg, recDegraded)
+	}
+	t.Logf("degradedCap headroom OK: cap=%d legitimate=%d requiredWith2xHeadroom=%d",
+		defaultEvalDegradedCap, deg, recDegraded)
 }
 
 func roundUpTo(v, mult int) int {
@@ -182,10 +166,8 @@ func roundUpTo(v, mult int) int {
 	return ((v / mult) + 1) * mult
 }
 
-// TestScaleDropTriggerSweep is the decisive test for the 2-tier design: across a
-// context-cardinality sweep at 2,500 flags, it reports whether the terminal-tier DROP
-// (droppedDegradedOverflow) ever fires, and under what conditions. It runs each sweep point with
-// the (resized) production caps.
+// TestScaleDropTriggerSweep verifies that the 2,500-flag target shape does not drop legitimate
+// counts across representative context-cardinality points with production caps.
 func TestScaleDropTriggerSweep(t *testing.T) {
 	const n = 2500
 	flags := makeScaleFlags(n)
@@ -229,21 +211,16 @@ func TestScaleDropTriggerSweep(t *testing.T) {
 				t.Errorf("count preservation violated: Σ=%d != calls=%d", tc.sumCounts, calls)
 			}
 
-			if tc.dropped > 0 {
-				t.Logf("  DROP TRIGGERED: %d evaluation(s) dropped (degraded saturated at %d).",
-					tc.dropped, defaultEvalDegradedCap)
-			} else {
-				t.Logf("  DROP NOT TRIGGERED at this sweep point — no legitimate count lost.")
+			if tc.dropped != 0 {
+				t.Errorf("unexpected degraded overflow drops at %s: got %d", sp.name, tc.dropped)
 			}
 		})
 	}
 }
 
 // TestScaleDropRequiresDegradedSaturation isolates the precondition for a terminal-tier drop:
-// the degraded tier must be FULL. With the resized degradedCap and realistic 2,500-flag
-// structure, it forces the worst case (globalCap=0, everything cascades to degraded) and reports
-// whether legitimate degraded cardinality fits under degradedCap — i.e. whether a 2-tier design
-// drops any legitimate counts at the scale target.
+// the degraded tier must be full. With production degradedCap and realistic 2,500-flag structure,
+// it forces all buckets through the degraded tier and asserts that no legitimate counts drop.
 func TestScaleDropRequiresDegradedSaturation(t *testing.T) {
 	const n = 2500
 	flags := makeScaleFlags(n)
@@ -277,10 +254,8 @@ func TestScaleDropRequiresDegradedSaturation(t *testing.T) {
 	}
 }
 
-// TestScaleFullSaturationCascade saturates the FULL tier naturally (production caps) with
-// 2,500 flags × enough distinct subjects that globalCount exceeds globalCap, then reports which
-// tier absorbs the overflow. In the 2-tier design, global-cap overflow cascades to degraded
-// (which is sized to hold the legitimate degraded cardinality) before any drop.
+// TestScaleFullSaturationCascade saturates the full tier naturally with production caps and
+// verifies that overflow cascades to degraded without dropping legitimate counts.
 func TestScaleFullSaturationCascade(t *testing.T) {
 	const n = 2500
 	flags := makeScaleFlags(n)
@@ -291,12 +266,12 @@ func TestScaleFullSaturationCascade(t *testing.T) {
 		defaultEvalPerFlagCap,
 		defaultEvalDegradedCap,
 	)
-	// legitimate degraded cardinality is the schema-visible combo count; with enough distinct subjects per combo the
-	// full tier sees ~173k distinct full keys, over globalCap, forcing overflow into degraded.
-	calls := driveScale(agg, flags, 1_000_000, 8)
+	// With 16 distinct subjects per combo the full tier sees ~173k distinct full keys, over
+	// globalCap, forcing overflow into degraded.
+	calls := driveScale(agg, flags, 1_000_000, 16)
 	tc := snapshot(agg)
 
-	t.Logf("FULL-saturation cascade (production caps; 8 subjects/combo):")
+	t.Logf("FULL-saturation cascade (production caps; 16 subjects/combo):")
 	t.Logf("  legitimate degraded cardinality=%d  add() calls=%d", deg, calls)
 	t.Logf("  full=%d (globalCount=%d, cap=%d)  degraded=%d (cap=%d)  droppedDegradedOverflow=%d",
 		tc.full, tc.globalCount, defaultEvalGlobalCap,
@@ -306,17 +281,22 @@ func TestScaleFullSaturationCascade(t *testing.T) {
 	if tc.full > defaultEvalGlobalCap {
 		t.Errorf("full tier %d exceeded globalCap %d", tc.full, defaultEvalGlobalCap)
 	}
+	if tc.globalCount != defaultEvalGlobalCap {
+		t.Errorf("full tier did not saturate: globalCount=%d, want %d", tc.globalCount, defaultEvalGlobalCap)
+	}
+	if tc.degraded == 0 {
+		t.Error("expected degraded tier to absorb full-tier overflow")
+	}
+	if tc.dropped != 0 {
+		t.Errorf("unexpected degraded overflow drops: got %d", tc.dropped)
+	}
 	if tc.sumCounts != calls {
 		t.Errorf("count preservation violated: Σ=%d != calls=%d", tc.sumCounts, calls)
 	}
-	t.Logf("  STRUCTURAL NOTE: global-cap overflow cascades to degraded (degraded=%d). "+
-		"A drop only occurs once degraded itself reaches degradedCap=%d.",
-		tc.degraded, defaultEvalDegradedCap)
 }
 
-// TestScaleHotFlagPerFlagCap drives a SINGLE flag past perFlagCap (10,000 distinct full
-// buckets) to demonstrate the per-flag overflow path into the degraded tier, and reports whether
-// that fill can in turn saturate degradedCap and trigger a terminal-tier drop.
+// TestScaleHotFlagPerFlagCap drives a single flag past perFlagCap and asserts that overflow
+// reaches the degraded tier, then becomes counted drops once degradedCap is saturated.
 func TestScaleHotFlagPerFlagCap(t *testing.T) {
 	agg := newTestAggregator(
 		defaultEvalGlobalCap,
@@ -346,9 +326,14 @@ func TestScaleHotFlagPerFlagCap(t *testing.T) {
 	t.Logf("  full=%d (perFlagCap=%d)  degraded=%d (cap=%d)  droppedDegradedOverflow=%d",
 		tc.full, defaultEvalPerFlagCap, tc.degraded, defaultEvalDegradedCap, tc.dropped)
 	t.Logf("  Σ counts=%d / calls=%d (preserved=%v)", tc.sumCounts, calls, tc.sumCounts == calls)
-	if tc.dropped > 0 {
-		t.Logf("  DROP TRIGGERED via a single abusive/hot flag (degraded saturated at %d). "+
-			"This is exactly the abuse case the drop counter must make observable.", tc.degraded)
+	if tc.full != defaultEvalPerFlagCap {
+		t.Errorf("full tier did not stop at perFlagCap: full=%d, want %d", tc.full, defaultEvalPerFlagCap)
+	}
+	if tc.degraded != defaultEvalDegradedCap {
+		t.Errorf("degraded tier did not stop at degradedCap: degraded=%d, want %d", tc.degraded, defaultEvalDegradedCap)
+	}
+	if tc.dropped == 0 {
+		t.Error("expected counted drops after single hot flag saturates degradedCap")
 	}
 	if tc.sumCounts != calls {
 		t.Errorf("count preservation violated: Σ=%d != calls=%d", tc.sumCounts, calls)

@@ -89,6 +89,10 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 					t.Errorf("expected EVP flagEvaluationHook to be absent from Hooks() when killswitch is disabled, but found one")
 				}
 			}
+
+			if tc.wantEVPEnabled && p.exposureWriter.evp != p.flagEvalWriter.evp {
+				t.Error("expected exposures and flag evaluations to share one EVP client")
+			}
 		})
 	}
 }

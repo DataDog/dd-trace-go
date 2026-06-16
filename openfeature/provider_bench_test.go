@@ -139,7 +139,8 @@ func BenchmarkEvaluationWithVaryingFlagCounts(b *testing.B) {
 			provider := newDatadogProvider(ProviderConfig{})
 			config := createTestConfig()
 
-			// Add additional flags with unique monotonic keys so cardinality is exercised.
+			// Add flags that the benchmark below rotates through, so this case measures
+			// the configured flag count instead of repeatedly evaluating one key.
 			for i := len(config.Flags); i < count.numFlags; i++ {
 				flagKey := "flag-" + strconv.Itoa(i)
 				config.Flags[flagKey] = &flag{

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
 	of "github.com/open-feature/go-sdk/openfeature"
 )
 
@@ -20,7 +19,6 @@ func setupTestWriter(t *testing.T) *flagEvaluationWriter {
 	t.Helper()
 	return &flagEvaluationWriter{
 		flushInterval: 24 * time.Hour, // effectively disabled; tests control flush manually
-		jsonConfig:    jsoniter.Config{}.Froze(),
 		stopChan:      make(chan struct{}),
 		events:        make(chan evalEvent, defaultEvalEventBufferSize),
 		aggregator: flagEvaluationAggregator{
@@ -206,8 +204,6 @@ func TestRecordUsesEvalTimeFromMetadata(t *testing.T) {
 
 // TestFlagEvaluationHookFinally verifies that the Finally hook records an entry for
 // success, error-reason, and provider-not-ready paths.
-//
-// It must fail RED: the hook's Finally method panics with "not implemented".
 func TestFlagEvaluationHookFinally(t *testing.T) {
 	runtimeDefaultTrue := true
 

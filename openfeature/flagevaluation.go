@@ -6,14 +6,9 @@
 package openfeature
 
 import (
-	"bytes"
 	"cmp"
-	"context"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -21,9 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
-
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -222,13 +214,11 @@ type flagEvalDDContext struct {
 type flagEvaluationWriter struct {
 	aggregator    flagEvaluationAggregator
 	flushInterval time.Duration
-	httpClient    *http.Client
-	agentURL      *url.URL
+	evp           *evpClient
 	ddContext     flagEvalDDContext // service/env/version — same source as exposureContext
 	ticker        *time.Ticker
 	stopChan      chan struct{}
 	stopped       atomic.Bool // single idempotency gate for stop(); also read lock-free by record()
-	jsonConfig    jsoniter.API
 
 	// Asynchronous hand-off: the Finally hook enqueues a bounded snapshot here; a single
 	// background worker (started in start()) drains it and performs aggregate/flush off the
@@ -264,29 +254,21 @@ type evalDetails struct {
 }
 
 // newFlagEvaluationWriter creates a new flag evaluation writer.
-// The writer uses the same HTTP transport setup as exposure.go.
 func newFlagEvaluationWriter(config ProviderConfig) *flagEvaluationWriter {
-	agentURL := internal.AgentURLFromEnv()
-	var httpClient *http.Client
-	if agentURL.Scheme == "unix" {
-		httpClient = internal.UDSClient(agentURL.Path, defaultHTTPTimeout)
-		agentURL = internal.UnixDataSocketURL(agentURL.Path)
-	} else {
-		httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
-	}
+	return newFlagEvaluationWriterWithEVP(config, newEVPClient())
+}
 
+func newFlagEvaluationWriterWithEVP(config ProviderConfig, evp *evpClient) *flagEvaluationWriter {
 	executable, _ := os.Executable()
 
 	flushInterval := cmp.Or(config.FlagEvaluationFlushInterval, defaultFlagEvalFlushInterval)
 
 	return &flagEvaluationWriter{
 		flushInterval: flushInterval,
-		httpClient:    httpClient,
-		agentURL:      agentURL,
+		evp:           evp,
 		stopChan:      make(chan struct{}),
 		workerDone:    make(chan struct{}),
 		events:        make(chan evalEvent, defaultEvalEventBufferSize),
-		jsonConfig:    jsoniter.Config{}.Froze(),
 		ddContext: flagEvalDDContext{
 			Service: cmp.Or(env.Get("DD_SERVICE"), globalconfig.ServiceName(), executable),
 			Version: env.Get("DD_VERSION"),
@@ -604,37 +586,7 @@ func (w *flagEvaluationWriter) drainAndFlush() {
 // sendToAgent sends the flag evaluation payload to the Datadog Agent via EVP proxy.
 // Reuses evpSubdomainHeader / evpSubdomainValue constants from exposure.go.
 func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error {
-	var bytesBuffer bytes.Buffer
-	encoder := w.jsonConfig.NewEncoder(&bytesBuffer)
-	if err := encoder.Encode(payload); err != nil {
-		return fmt.Errorf("failed to encode flag evaluation payload: %w", err)
-	}
-
-	u := *w.agentURL
-	u.Path = flagEvaluationEndpoint
-	requestURL := u.String()
-
-	req, err := http.NewRequestWithContext(context.Background(), "POST", requestURL, &bytesBuffer)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(evpSubdomainHeader, evpSubdomainValue)
-
-	log.Debug("openfeature: sending flag evaluation events to %s", requestURL)
-
-	resp, err := w.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
-		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
-	}
-	return nil
+	return w.evp.post(flagEvaluationEndpoint, "flag evaluation", payload)
 }
 
 // add records one evaluation observation into the appropriate aggregation tier.

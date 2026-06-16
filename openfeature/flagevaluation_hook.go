@@ -44,7 +44,7 @@ func (h *flagEvaluationHook) Finally(
 	h.writer.record(hookContext, details)
 }
 
-// isRuntimeDefault returns true when the caller's supplied default value was returned.
+// isRuntimeDefault returns true when this provider path returns the caller's supplied default.
 // The primary signal is an absent variant key. Type mismatches are the exception: the provider
 // may have produced a real variant, but the OpenFeature SDK returns the caller default after
 // conversion fails.

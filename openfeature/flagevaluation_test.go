@@ -135,8 +135,6 @@ func newTestAggregator(globalCap, perFlagCap, degradedCap int) *flagEvaluationAg
 
 // TestPruneContext verifies that pruneContext applies the 256-field / 256-char limits
 // before evaluation context enters the aggregation buffer.
-//
-// It must fail RED: pruneContext panics with "not implemented".
 func TestPruneContext(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -218,8 +216,6 @@ func TestPruneContext(t *testing.T) {
 // TestFlagEvaluationPayloadSchema verifies that full, degraded, and required-only events
 // marshal to JSON that omits the expected optional fields per tier while always including
 // the 5 required fields.
-//
-// It must fail RED: the aggregator.add method panics with "not implemented".
 func TestFlagEvaluationPayloadSchema(t *testing.T) {
 	nowMs := time.Now().UnixMilli()
 
@@ -493,17 +489,12 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 	})
 }
 
-// TestAggregatorCollisionSafety verifies that two distinct inputs that would collide
-// under FNV-1a-only map keying land in SEPARATE buckets under the struct-keyed map.
-//
-// It must fail RED: aggregator.add panics with "not implemented".
-func TestAggregatorCollisionSafety(t *testing.T) {
+// TestAggregatorDistinctAllocationBuckets verifies that allocation is part of the aggregation key.
+func TestAggregatorDistinctAllocationBuckets(t *testing.T) {
 	agg := setupTestAggregator(t)
 	nowMs := time.Now().UnixMilli()
 
 	// Two evaluations that differ only in allocationKey — they must be in separate full buckets.
-	// Under FNV-1a alone (on a concatenated string), carefully crafted keys can collide;
-	// under a struct-keyed map, these are structurally distinct and cannot collide.
 	d1 := evalDetails{
 		flagKey:       "my-flag",
 		variant:       "on",
