@@ -6,8 +6,8 @@
 package moduleB
 
 import (
-	"example.com/root"
-	"example.com/root/moduleA"
+	"example.com/root/moduleA/v2"
+	"example.com/root/v2"
 )
 
 var version = root.Version

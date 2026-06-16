@@ -275,7 +275,7 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 			defer countingSrv.Close()
 
 			w := newTestOTLPWriter(t, srv, func(c *config) {
-				c.sendRetries = tc.configRetries
+				c.internalConfig.SetSendRetries(tc.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(time.Millisecond, internalconfig.OriginCode)
 			})
 			w.transport = newOTLPTransport(countingSrv.Client(), countingSrv.URL, nil)

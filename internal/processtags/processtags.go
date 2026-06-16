@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
 
@@ -35,8 +36,9 @@ const (
 )
 
 var (
-	enabled bool
-	pTags   *ProcessTags
+	enabled           bool
+	pTags             *ProcessTags
+	containerTagsHash atomic.Value
 )
 
 func init() {
@@ -168,6 +170,17 @@ func GlobalTags() *ProcessTags {
 		return nil
 	}
 	return pTags
+}
+
+// SetContainerTagsHash stores the container tags hash returned by the agent.
+func SetContainerTagsHash(hash string) {
+	containerTagsHash.Store(hash)
+}
+
+// ContainerTagsHash returns the latest container tags hash returned by the agent.
+func ContainerTagsHash() string {
+	hash, _ := containerTagsHash.Load().(string)
+	return hash
 }
 
 func add(tags map[string]string) {

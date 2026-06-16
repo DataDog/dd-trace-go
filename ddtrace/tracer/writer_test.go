@@ -14,6 +14,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -357,9 +358,10 @@ type failingTransport struct {
 }
 
 func (t *failingTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
 	t.sendAttempts++
 
-	traces, err := decode(p)
+	traces, _, err := decode(p)
 	if err != nil {
 		return nil, err
 	}
@@ -417,10 +419,12 @@ func TestTraceWriterFlushRetries(t *testing.T) {
 				failCount: test.failCount,
 				assert:    assert,
 			}
+			u := mockAgentEndpoint(t, "/v0.4/traces")
 			c, err := newTestConfig(func(c *config) {
 				c.ddTransport = p
-				c.sendRetries = test.configRetries
+				c.internalConfig.SetSendRetries(test.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(test.retryInterval, internalconfig.OriginCode)
+				c.internalConfig.SetAgentURL(u, internalconfig.OriginCode)
 			})
 			assert.Nil(err)
 			var statsd statsdtest.TestStatsdClient
@@ -460,22 +464,28 @@ func minInts(a, b int) int {
 	return b
 }
 
+func mockAgentEndpoint(t testing.TB, path string) *url.URL {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"endpoints": ["` + path + `"], "config": {"statsd_port": 8125}}`))
+	}))
+	t.Cleanup(srv.Close)
+	u, _ := url.Parse(srv.URL)
+	return u
+}
+
 func TestTraceProtocol(t *testing.T) {
 	assert := assert.New(t)
 
 	t.Run("v1.0, no endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 
-		// Create a mock agent endpoint to mimic having no v1 trace endpoint
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"config": {"statsd_port": 8125}}`))
-		}))
-		defer srv.Close()
+		url := mockAgentEndpoint(t, "/v0.4/traces")
 
 		cfg, err := newTestConfig(
-			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -485,16 +495,10 @@ func TestTraceProtocol(t *testing.T) {
 	t.Run("v1.0, with endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "1.0")
 
-		// Create a mock agent endpoint to mimic having a v1 trace endpoint
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
-		}))
-		defer srv.Close()
+		url := mockAgentEndpoint(t, "/v1.0/traces")
 
 		cfg, err := newTestConfig(
-			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
 		)
 		assert.NoError(err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -503,30 +507,32 @@ func TestTraceProtocol(t *testing.T) {
 
 	t.Run("v0.4", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "0.4")
-		cfg, err := newTestConfig()
+		url := mockAgentEndpoint(t, "/v0.4/traces")
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("default, no endpoint", func(t *testing.T) {
-		cfg, err := newTestConfig()
+		url := mockAgentEndpoint(t, "/v0.4/traces")
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("default, with endpoint", func(t *testing.T) {
-		// Create a mock agent endpoint to mimic having a v1 trace endpoint
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
-		}))
-		defer srv.Close()
+		url := mockAgentEndpoint(t, "/v1.0/traces")
 
 		cfg, err := newTestConfig(
-			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -535,23 +541,21 @@ func TestTraceProtocol(t *testing.T) {
 
 	t.Run("invalid, no endpoint", func(t *testing.T) {
 		t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "random")
-		cfg, err := newTestConfig()
+		url := mockAgentEndpoint(t, "/v0.4/traces")
+
+		cfg, err := newTestConfig(
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
+		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
 		assert.Equal(traceProtocolV04, h.payload.protocol())
 	})
 
 	t.Run("invalid, with endpoint", func(t *testing.T) {
-		// Create a mock agent endpoint to mimic having a v1 trace endpoint
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"endpoints": ["/v1.0/traces"], "config": {"statsd_port": 8125}}`))
-		}))
-		defer srv.Close()
+		url := mockAgentEndpoint(t, "/v1.0/traces")
 
 		cfg, err := newTestConfig(
-			WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+			WithAgentAddr(strings.TrimPrefix(url.Host, "http://")),
 		)
 		require.NoError(t, err)
 		h := newAgentTraceWriter(cfg, nil, nil)
@@ -772,6 +776,7 @@ func TestPayloadSizeReporting(t *testing.T) {
 type simpleTransport struct{}
 
 func (t *simpleTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
 	// Just read and discard the payload to simulate a successful send
 	_, _ = io.Copy(io.Discard, p)
 	return io.NopCloser(strings.NewReader("{}")), nil

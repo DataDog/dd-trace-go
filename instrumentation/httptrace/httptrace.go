@@ -19,7 +19,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
+	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
+	listenerhttpsec "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -55,7 +56,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 
 	var ipTags map[string]string
 	if cfg.traceClientIP {
-		ipTags, _ = httpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
+		ipTags, _ = listenerhttpsec.ClientIPTags(r.Header, true, r.RemoteAddr)
 	}
 
 	var inferredProxySpan *tracer.Span
@@ -110,6 +111,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			if r.Host != "" {
 				ssCfg.Tags["http.host"] = r.Host
 			}
+			appsechttpsec.SetSecurityTestingHeaderTags(ssCfg.Tags, r.Header)
 
 			if inferredProxySpan != nil {
 				tracer.ChildOf(inferredProxySpan.Context())(ssCfg)
@@ -235,6 +237,8 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 			// When an allowlist is configured, only keep the specified parameter keys.
 			// This avoids running the expensive obfuscation regex entirely.
 			query = filterQueryStringByAllowlist(query, allowlist)
+		} else if cfg.useDefaultObfuscator {
+			query = obfuscateQueryStringDefault(query)
 		} else if cfg.queryStringRegexp != nil {
 			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
 		}

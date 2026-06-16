@@ -37,8 +37,9 @@ const (
 	endpointEvalMetric = "/api/intake/llm-obs/v2/eval-metric"
 	endpointLLMSpan    = "/api/v2/llmobs"
 
-	endpointPrefixEVPProxy = "/evp_proxy/v2"
-	endpointPrefixDNE      = "/api/unstable/llm-obs/v1"
+	endpointPrefixEVPProxy  = "/evp_proxy/v2"
+	endpointPrefixDNE       = "/api/unstable/llm-obs/v1"
+	endpointPrefixDNEStable = "/api/v2/llm-obs/v1"
 
 	subdomainLLMSpan    = "llmobs-intake"
 	subdomainEvalMetric = "api"
@@ -213,8 +214,8 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 			req.Header.Set(headerEVPSubdomain, subdomain)
 		}
 
-		// Set headers for datasets and experiments endpoints
-		if strings.HasPrefix(path, endpointPrefixDNE) {
+		// Set headers for datasets and experiments endpoints (both unstable and stable v2 paths)
+		if strings.HasPrefix(path, endpointPrefixDNE) || strings.HasPrefix(path, endpointPrefixDNEStable) {
 			if c.agentless && c.appKey != "" {
 				// In agentless mode, set the app key header if available
 				req.Header.Set("DD-APPLICATION-KEY", c.appKey)
