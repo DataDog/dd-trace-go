@@ -727,6 +727,10 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "json_form", input: `"password":"value"`, want: `"<redacted>`},
 		// Same with %22/%3A URL-encoded delimiters.
 		{name: "json_form_pct", input: `%22password%22:%22value%22`, want: `%22<redacted>`},
+		// Value longer than the old 4096-byte truncation cap: the closing quote
+		// falls past the cutoff.  The full string must still be redacted (no
+		// partial secret exposed in http.url).
+		{name: "json_form_long_value", input: `"password":"` + strings.Repeat("x", 4100) + `"`, want: `"<redacted>`},
 
 		// Alt 2: bearer token.
 		// Quirk: only ONE char is consumed after the whitespace — the regex has
