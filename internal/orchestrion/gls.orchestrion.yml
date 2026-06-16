@@ -83,17 +83,11 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $op := .Function.Argument 1 -}}
             {
-              // Match in-source CtxWithValue (context.WithValue(WrapContext(parent),
-              // key, op)): push the op onto the GLS, wrap the parent so the
-              // returned context is also GLS-aware, and capture a goroutine-scoped
-              // popper (first registration wins). The source's trailing
-              // context.WithValue then wraps the already-wrapped ctx.
-              {{ $ctx }} = orchestrion.WrapContext({{ $ctx }})
+              // GLSActivate (ctxp non-nil) wraps the parent so the returned
+              // context is GLS-aware (matching in-source CtxWithValue), pushes
+              // the op, and captures the first-wins popper onto __dd_glsPop.
               __dd_o := {{ $op }}.unwrap()
-              __dd_pop := orchestrion.GLSActivate(contextKey{}, {{ $op }})
-              if __dd_o.__dd_glsPop == nil {
-                __dd_o.__dd_glsPop = __dd_pop
-              }
+              orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop)
             }
 
   # FromContext: wrap ctx so the read also consults the GLS.

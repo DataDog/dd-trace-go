@@ -174,7 +174,9 @@ aspects:
 
   # On ContextWithSpan: push the span onto this goroutine's GLS stack and capture
   # a goroutine-scoped popper (first push wins, matching the in-source design).
-  # GLSActivate groups the push + popper so this stays a one-liner.
+  # GLSActivate does the push + first-wins popper capture, so this stays a
+  # one-liner (ctxp is nil: ContextWithSpan's own context.WithValue handles the
+  # explicit chain, the GLS only needs the span pushed).
   - id: Span ContextWithSpan GLS push
     tracer-internal: true
     join-point:
@@ -191,10 +193,7 @@ aspects:
           template: |-
             {{- $s := .Function.Argument 1 -}}
             if {{ $s }} != nil {
-              __dd_glsPop := orchestrion.GLSActivate(internal.ActiveSpanKey, {{ $s }})
-              if {{ $s }}.__dd_glsPop == nil {
-                {{ $s }}.__dd_glsPop = __dd_glsPop
-              }
+              orchestrion.GLSActivate(nil, internal.ActiveSpanKey, {{ $s }}, &{{ $s }}.__dd_glsPop)
             }
 
   # On SpanFromContext: wrap ctx so the subsequent ctx.Value also consults the
@@ -248,7 +247,8 @@ aspects:
           - name: clear
     advice:
       - prepend-statements:
+          imports:
+            orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
           template: |-
             {{- $s := .Function.Receiver -}}
-            {{ $s }}.__dd_glsReclaimable.Store(false)
-            {{ $s }}.__dd_glsPop = nil
+            orchestrion.GLSReset(&{{ $s }}.__dd_glsReclaimable, &{{ $s }}.__dd_glsPop)

@@ -60,22 +60,33 @@ func GLSPopValue(key any) any {
 // across the tracer/orchestrion boundary.
 type GLSPopper func()
 
-// GLSActivate pushes val onto the current goroutine's GLS stack under key and
-// returns a goroutine-scoped popper that releases it. The returned popper pops
-// the top of the pushing goroutine's stack and is a no-op when invoked on any
-// other goroutine, so a cross-goroutine finish can never corrupt an unrelated
-// goroutine's stack.
+// GLSActivate is woven into span/operation activation (the tracer's
+// ContextWithSpan and dyngo's RegisterOperation). It pushes val onto the current
+// goroutine's GLS stack under key and records a goroutine-scoped popper into
+// *pop, capturing it only on the first activation so re-activating the same
+// span/operation does not overwrite the popper its matching GLSDeactivate will
+// run. The captured popper pops the top of the pushing goroutine's stack and is
+// a no-op on any other goroutine, so a cross-goroutine finish can never corrupt
+// an unrelated goroutine's stack.
 //
-// It groups the push and the popper capture so orchestrion-injected span-start
-// advice (in ddtrace/tracer/orchestrion.yml) can activate a span on the GLS in
-// a single call, keeping the tracer source free of GLS code. The companion is
-// GLSDeactivate.
-func GLSActivate(key, val any) GLSPopper {
+// When ctxp is non-nil the parent context is wrapped (via WrapContext) so the
+// returned context is also GLS-aware, matching the former in-source CtxWithValue.
+// Everything is a no-op when orchestrion is disabled.
+//
+// Grouping the wrap, push and popper-capture here keeps the injected templates a
+// single call and the logic unit-testable in plain go test. The companions are
+// GLSDeactivate (finish) and GLSReset (span-pool reuse).
+func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopper) {
 	if !Enabled() {
-		return glsNoop
+		return
+	}
+	if ctxp != nil {
+		*ctxp = WrapContext(*ctxp)
 	}
 	getDDContextStack().Push(key, val)
-	return GLSPopFunc(key)
+	if pop != nil && *pop == nil {
+		*pop = GLSPopFunc(key)
+	}
 }
 
 // GLSDeactivate releases a span's GLS entry on finish. It marks the span
@@ -96,6 +107,19 @@ func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopper) {
 	*pop = nil
 	if p != nil {
 		p()
+	}
+}
+
+// GLSReset clears the GLS bookkeeping fields orchestrion injects onto a span so
+// that a span returned to the tracer's pool and later reused is never treated as
+// reclaimable or left carrying a stale popper. It is woven into Span.clear. The
+// reclaimable argument may be nil (dyngo operations carry no reclaim flag).
+func GLSReset(reclaimable *atomic.Bool, pop *GLSPopper) {
+	if reclaimable != nil {
+		reclaimable.Store(false)
+	}
+	if pop != nil {
+		*pop = nil
 	}
 }
 

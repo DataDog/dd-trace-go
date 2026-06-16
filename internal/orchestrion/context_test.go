@@ -91,23 +91,69 @@ func TestGLSPopFunc(t *testing.T) {
 }
 
 func TestGLSActivate(t *testing.T) {
-	t.Run("pushes and returns a working popper", func(t *testing.T) {
+	t.Run("pushes and captures a working popper", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 
-		pop := GLSActivate(key("k"), "v")
+		var pop GLSPopper
+		GLSActivate(nil, key("k"), "v", &pop)
 		require.Equal(t, "v", getDDContextStack().Peek(key("k")), "value should be on the GLS stack")
+		require.NotNil(t, pop, "popper should be captured")
 
 		pop()
 		require.Nil(t, getDDContextStack().Peek(key("k")), "popper should remove the value")
 	})
 
-	t.Run("disabled orchestrion returns a no-op popper", func(t *testing.T) {
+	t.Run("first activation wins: popper is not overwritten", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		var pop GLSPopper
+		GLSActivate(nil, key("k"), "v1", &pop)
+		first := pop
+		GLSActivate(nil, key("k"), "v2", &pop) // re-activate same field
+		require.Equal(t, 2, getDDContextStack().Depth(), "every activation pushes")
+		require.Equal(t, fmt.Sprintf("%p", first), fmt.Sprintf("%p", pop),
+			"the first popper must be retained across re-activation")
+	})
+
+	t.Run("ctxp non-nil wraps the parent so the result is GLS-aware", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		ctx := context.Background()
+		var pop GLSPopper
+		GLSActivate(&ctx, key("k"), "v", &pop)
+		_, ok := ctx.(*glsContext)
+		require.True(t, ok, "ctxp should be wrapped in a glsContext")
+	})
+
+	t.Run("disabled orchestrion is a no-op", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 		enabled = false // exercise the !Enabled() early return
 
-		pop := GLSActivate(key("k"), "v")
-		require.NotNil(t, pop)
-		pop() // must not panic
+		ctx := context.Background()
+		var pop GLSPopper
+		GLSActivate(&ctx, key("k"), "v", &pop) // must not panic
+		require.Nil(t, pop, "no popper captured when disabled")
+		require.Equal(t, context.Background(), ctx, "ctx unchanged when disabled")
+	})
+}
+
+func TestGLSReset(t *testing.T) {
+	t.Run("clears reclaimable flag and popper", func(t *testing.T) {
+		var reclaimable atomic.Bool
+		reclaimable.Store(true)
+		ran := 0
+		var pop GLSPopper = func() { ran++ }
+
+		GLSReset(&reclaimable, &pop)
+		require.False(t, reclaimable.Load(), "reclaimable must be reset to false")
+		require.Nil(t, pop, "popper must be cleared without being run")
+		require.Equal(t, 0, ran, "GLSReset must not run the popper")
+	})
+
+	t.Run("tolerates nil reclaimable (dyngo operations)", func(t *testing.T) {
+		var pop GLSPopper = func() {}
+		GLSReset(nil, &pop) // must not panic
+		require.Nil(t, pop)
 	})
 }
 
