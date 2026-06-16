@@ -25,12 +25,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
-// urlMaxQueryLen is the maximum number of bytes of r.URL.RawQuery that the
-// obfuscation pipeline will process.  Go's net/http accepts up to MaxHeaderBytes
-// (default 1 MiB) in a request line; capping here bounds worst-case CPU use for
-// any obfuscation path, not just the patterns fixed in obfuscator.go.
-const urlMaxQueryLen = 4096
-
 var (
 	cfg = newConfig()
 )
@@ -238,9 +232,6 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 	// Collect the query string if we are allowed to report it and obfuscate it if possible/allowed
 	if queryString && r.URL.RawQuery != "" {
 		query := r.URL.RawQuery
-		if len(query) > urlMaxQueryLen {
-			query = query[:urlMaxQueryLen]
-		}
 		allowlist := cfg.getQueryStringAllowlist(isClient)
 		if allowlist != nil {
 			// When an allowlist is configured, only keep the specified parameter keys.
