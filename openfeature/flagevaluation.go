@@ -203,7 +203,9 @@ type flagEvalContextDD struct {
 	Service string `json:"service,omitempty"`
 }
 
-// flagEvaluationPayload matches batchedflagevaluations.json.
+// flagEvaluationPayload is the SDK's EVP flagevaluation batch envelope.
+// Keep JSON field names aligned with the worker contract; do not vendor the
+// worker schema here, because dd-source owns that contract.
 type flagEvaluationPayload struct {
 	Context         flagEvalDDContext     `json:"context"`
 	FlagEvaluations []flagEvaluationEvent `json:"flagEvaluations"`

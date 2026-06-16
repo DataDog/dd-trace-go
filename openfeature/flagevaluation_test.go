@@ -8,44 +8,27 @@ package openfeature
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/santhosh-tekuri/jsonschema/v5"
-
 	of "github.com/open-feature/go-sdk/openfeature"
 )
 
-func validateBatchedFlagEvaluationsSchema(t *testing.T, payload any) error {
+func mustMarshalJSONMap(t *testing.T, payload any) map[string]any {
 	t.Helper()
-
-	schemaBytes, err := os.ReadFile("testdata/flageval-worker/batchedflagevaluations.json")
-	if err != nil {
-		t.Fatalf("failed to read flageval-worker schema fixture: %v", err)
-	}
-
-	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource("batchedflagevaluations.json", strings.NewReader(string(schemaBytes))); err != nil {
-		t.Fatalf("failed to add flageval-worker schema fixture: %v", err)
-	}
-	schema, err := compiler.Compile("batchedflagevaluations.json")
-	if err != nil {
-		t.Fatalf("failed to compile flageval-worker schema fixture: %v", err)
-	}
 
 	b, err := json.Marshal(payload)
 	if err != nil {
-		t.Fatalf("failed to marshal payload for schema validation: %v", err)
+		t.Fatalf("failed to marshal payload: %v", err)
 	}
-	var doc any
-	if err := json.Unmarshal(b, &doc); err != nil {
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
 		t.Fatalf("failed to unmarshal payload for schema validation: %v", err)
 	}
-	return schema.Validate(doc)
+	return m
 }
 
 // TestFlattenAndPruneContextEquivalence verifies the merged single-pass
@@ -375,7 +358,7 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 		}
 	})
 
-	t.Run("batch payload validates against real flageval-worker schema", func(t *testing.T) {
+	t.Run("batch payload uses only stable EVP flagevaluation fields", func(t *testing.T) {
 		payload := flagEvaluationPayload{
 			Context: flagEvalDDContext{
 				Service: "test-service",
@@ -418,26 +401,94 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 			},
 		}
 
-		if err := validateBatchedFlagEvaluationsSchema(t, payload); err != nil {
-			t.Fatalf("payload should validate against flageval-worker schema: %v", err)
-		}
-	})
-
-	t.Run("worker schema rejects top-level reason", func(t *testing.T) {
-		payload := map[string]any{
-			"context": map[string]any{"service": "test-service"},
-			"flagEvaluations": []map[string]any{{
-				"timestamp":        nowMs,
-				"flag":             map[string]any{"key": "test-flag"},
-				"first_evaluation": nowMs,
-				"last_evaluation":  nowMs,
-				"evaluation_count": 1,
-				"reason":           "targeting_match",
-			}},
+		m := mustMarshalJSONMap(t, payload)
+		for k := range m {
+			switch k {
+			case "context", "flagEvaluations":
+			default:
+				t.Fatalf("unexpected batch payload field %q", k)
+			}
 		}
 
-		if err := validateBatchedFlagEvaluationsSchema(t, payload); err == nil {
-			t.Fatal("payload with top-level reason should be rejected by flageval-worker schema")
+		arr, ok := m["flagEvaluations"].([]any)
+		if !ok {
+			t.Fatalf("flagEvaluations is not an array: %T", m["flagEvaluations"])
+		}
+		if len(arr) != 3 {
+			t.Fatalf("expected 3 flagEvaluations entries, got %d", len(arr))
+		}
+
+		allowedEventFields := map[string]struct{}{
+			"timestamp":            {},
+			"flag":                 {},
+			"first_evaluation":     {},
+			"last_evaluation":      {},
+			"evaluation_count":     {},
+			"runtime_default_used": {},
+			"targeting_key":        {},
+			"variant":              {},
+			"allocation":           {},
+			"targeting_rule":       {},
+			"error":                {},
+			"context":              {},
+		}
+		for i, raw := range arr {
+			event, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("flagEvaluations[%d] is not an object: %T", i, raw)
+			}
+			for k := range event {
+				if _, ok := allowedEventFields[k]; !ok {
+					t.Fatalf("flagEvaluations[%d] emitted unexpected field %q", i, k)
+				}
+			}
+			for _, required := range requiredFields {
+				if _, ok := event[required]; !ok {
+					t.Fatalf("flagEvaluations[%d] missing required field %q", i, required)
+				}
+			}
+			flag, ok := event["flag"].(map[string]any)
+			if !ok {
+				t.Fatalf("flagEvaluations[%d].flag is not an object: %T", i, event["flag"])
+			}
+			if _, ok := flag["key"]; !ok {
+				t.Fatalf("flagEvaluations[%d].flag.key missing", i)
+			}
+		}
+
+		full := arr[0].(map[string]any)
+		if _, ok := full["reason"]; ok {
+			t.Fatal("full EVP event must not emit OpenFeature reason")
+		}
+		if _, ok := full["targeting_key"]; !ok {
+			t.Fatal("full EVP event should retain targeting_key")
+		}
+		if _, ok := full["context"]; !ok {
+			t.Fatal("full EVP event should retain context")
+		}
+
+		degraded := arr[1].(map[string]any)
+		if _, ok := degraded["reason"]; ok {
+			t.Fatal("degraded EVP event must not emit OpenFeature reason")
+		}
+		if _, ok := degraded["targeting_key"]; ok {
+			t.Fatal("degraded EVP event should omit targeting_key")
+		}
+		if _, ok := degraded["context"]; ok {
+			t.Fatal("degraded EVP event should omit context")
+		}
+		if _, ok := degraded["variant"]; !ok {
+			t.Fatal("degraded EVP event should retain schema-visible variant")
+		}
+		if _, ok := degraded["allocation"]; !ok {
+			t.Fatal("degraded EVP event should retain schema-visible allocation")
+		}
+
+		requiredOnly := arr[2].(map[string]any)
+		for _, optional := range []string{"reason", "targeting_key", "variant", "allocation", "targeting_rule", "error", "context", "runtime_default_used"} {
+			if _, ok := requiredOnly[optional]; ok {
+				t.Fatalf("required-only EVP event should omit %q", optional)
+			}
 		}
 	})
 }
