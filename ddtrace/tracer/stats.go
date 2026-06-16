@@ -256,6 +256,21 @@ const (
 // When an OTLP exporter is configured, stats are sent to the OTLP metrics endpoint; otherwise they are sent to the
 // agent's native /v0.6/stats path.
 func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
+	// When flushing the current bucket (e.g. tracer.Flush()), drain any spans
+	// that have been sent to c.In but not yet processed by runIngester so they
+	// are included in the flush rather than silently dropped.
+	if includeCurrent {
+	drain:
+		for {
+			select {
+			case s := <-c.In:
+				c.statsd().Incr("datadog.tracer.stats.spans_in", nil, 1)
+				c.add(s)
+			default:
+				break drain
+			}
+		}
+	}
 	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
 	if len(csps) == 0 {
 		// nothing to flush
