@@ -38,6 +38,13 @@ type otlpTraceWriter struct {
 
 func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 	resource := buildResource(c.internalConfig)
+	// FR15: signal to the backend that the SDK has computed stats so it does
+	// not recompute them from the trace spans.
+	if c.internalConfig.OTLPSpanMetricsEnabled() {
+		resource.Attributes = append(resource.Attributes,
+			otlpKeyValue("_dd.stats_computed", otlpBoolValue(true)),
+		)
+	}
 	scope := &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag}
 	baseSize := proto.Size(&otlptrace.TracesData{
 		ResourceSpans: []*otlptrace.ResourceSpans{{

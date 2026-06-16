@@ -784,7 +784,7 @@ func TestClientComputedStatsHeader(t *testing.T) {
 
 	t.Run("header-set-when-both-conditions-met", func(t *testing.T) {
 		// When both conditions are met (stats endpoint + client_drop_p0s),
-		// the Datadog-Client-Computed-Stats header should be set to "t"
+		// the Datadog-Client-Computed-Stats header should be set to "yes"
 		assert := assert.New(t)
 		var headerValue string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -807,7 +807,7 @@ func TestClientComputedStatsHeader(t *testing.T) {
 		assert.NoError(err)
 		_, err = trc.config.ddTransport.send(p)
 		assert.NoError(err)
-		assert.Equal("t", headerValue, "Datadog-Client-Computed-Stats header should be set to 't' when both conditions are met")
+		assert.Equal("yes", headerValue, "Datadog-Client-Computed-Stats header should be set to 'yes' when both conditions are met")
 	})
 }
 

@@ -208,10 +208,10 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	req.Header.Set(idempotencyKeyHeader, newIdempotencyKey())
 	if t := getGlobalTracer(); t != nil {
 		tc := t.TracerConf()
-		if tc.TracingAsTransport || tc.CanComputeStats {
-			// tracingAsTransport uses this header to disable the trace agent's stats computation
-			// while making canComputeStats() always false to also disable client stats computation.
-			req.Header.Set("Datadog-Client-Computed-Stats", "t")
+		if tc.TracingAsTransport || tc.CanComputeStats || tc.OTLPSpanMetricsEnabled {
+			// Signal to the agent that the SDK has computed stats, so it should not
+			// recompute them from the trace payload.
+			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
 		droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))
 		partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))

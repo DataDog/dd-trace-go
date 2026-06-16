@@ -63,6 +63,10 @@ type concentrator struct {
 	stop         chan struct{}         // closing this channel triggers shutdown
 	cfg          *config               // tracer startup configuration
 	statsdClient internal.StatsdClient // statsd client for sending metrics.
+
+	// otlpExporter, when non-nil, routes flushed stats to the OTLP metrics
+	// endpoint instead of the agent's native /v0.6/stats path.
+	otlpExporter *otlpMetricsExporter
 }
 
 type tracerStatSpan struct {
@@ -249,16 +253,10 @@ const (
 
 // flushAndSend flushes all the stats buckets with the given timestamp and sends them using the transport specified in
 // the concentrator config. The current bucket is only included if includeCurrent is true, such as during shutdown.
+// When an OTLP exporter is configured, stats are sent to the OTLP metrics endpoint; otherwise they are sent to the
+// agent's native /v0.6/stats path.
 func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
-
-	obfVersion := 0
-	if c.shouldObfuscate() {
-		obfVersion = tracerObfuscationVersion
-	} else {
-		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.load().obfuscationVersion)
-	}
-
 	if len(csps) == 0 {
 		// nothing to flush
 		return
@@ -275,13 +273,31 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
 		var err error
-		for attempt := 0; attempt <= sendRetries; attempt++ {
-			err = c.cfg.ddTransport.sendStats(csp, obfVersion)
-			if err == nil {
-				break
+		if c.otlpExporter != nil {
+			for attempt := 0; attempt <= sendRetries; attempt++ {
+				err = c.otlpExporter.export(csp)
+				if err == nil {
+					break
+				}
+				if attempt < sendRetries {
+					time.Sleep(retryInterval)
+				}
 			}
-			if attempt < sendRetries {
-				time.Sleep(retryInterval)
+		} else {
+			obfVersion := 0
+			if c.shouldObfuscate() {
+				obfVersion = tracerObfuscationVersion
+			} else {
+				log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.load().obfuscationVersion)
+			}
+			for attempt := 0; attempt <= sendRetries; attempt++ {
+				err = c.cfg.ddTransport.sendStats(csp, obfVersion)
+				if err == nil {
+					break
+				}
+				if attempt < sendRetries {
+					time.Sleep(retryInterval)
+				}
 			}
 		}
 		if err != nil {
@@ -290,6 +306,16 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		}
 	}
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(flushedBuckets))
+}
+
+// newOTLPMetricsConcentrator creates a concentrator that exports flushed stats to
+// the OTLP metrics endpoint instead of the agent's native /v0.6/stats path.
+// The flush interval is taken from OTLPMetricsFlushInterval in cfg.
+func newOTLPMetricsConcentrator(c *config, statsdClient internal.StatsdClient) *concentrator {
+	bucketSize := c.internalConfig.OTLPMetricsFlushInterval().Nanoseconds()
+	conc := newConcentrator(c, bucketSize, statsdClient)
+	conc.otlpExporter = newOTLPMetricsExporter(c.internalConfig)
+	return conc
 }
 
 // trySendSpan attempts a non-blocking send of the stat span to the
