@@ -139,6 +139,11 @@ func TestEntityContainerIDHeaders(t *testing.T) {
 	})
 }
 
+func TestEVPOriginHeader(t *testing.T) {
+	profile := doOneShortProfileUpload(t)
+	assert.Equal(t, "dd-trace-go", profile.headers.Get("DD-EVP-Origin"))
+}
+
 func TestGitMetadata(t *testing.T) {
 	t.Run("git-metadata-from-dd-tags", func(t *testing.T) {
 		t.Setenv(maininternal.EnvDDTags, "git.commit.sha:123456789ABCD git.repository_url:github.com/user/repo go_path:somepath")
