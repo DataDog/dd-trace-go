@@ -49,11 +49,15 @@ aspects:
 
   # --- appsec/dyngo GLS lifecycle (orchestrion-on-top) ---
   # dyngo's operation.go is GLS-agnostic in source (plain context.WithValue /
-  # ctx.Value). These tracer-internal aspects weave the GLS push, read fallback
-  # and pop for AppSec operations, mirroring the span lifecycle so the same GLS
-  # over-pop / cross-goroutine-finish bug (orchestrion#782) is fixed without GLS
-  # code in dyngo. The logic lives in internal/orchestrion (GLSActivate /
-  # GLSDeactivate / WrapContext); the injected templates stay thin.
+  # ctx.Value). These tracer-internal aspects weave the GLS push, read fallback,
+  # and pop for AppSec operations, fixing the GLS over-pop bug (orchestrion#782)
+  # without GLS code in dyngo. The logic lives in internal/orchestrion
+  # (GLSActivate / GLSDeactivate / WrapContext); the injected templates stay thin.
+  #
+  # Note: the cross-goroutine-finish half of orchestrion#782 is not applicable
+  # here — all AppSec dyngo operations are registered and finished on the same
+  # goroutine. Accordingly, `operation` carries no reclaimable flag and
+  # contextStack.Push never drains dyngo entries.
 
   # Give the operation a popper field (operation is unexported, like runtime.g).
   - id: dyngo operation GLS field

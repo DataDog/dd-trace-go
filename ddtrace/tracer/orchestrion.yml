@@ -217,8 +217,14 @@ aspects:
             }
 
   # On Finish: deactivate the span on the GLS (mark reclaimable + run the popper
-  # once). Deferred so it runs after the span is finished. GLSDeactivate groups
-  # the flag set and the once-only pop.
+  # once). Runs at the TOP of Finish (not deferred) so the pop happens before
+  # s.finish() submits the chunk: with span pooling enabled, the tracer worker
+  # can clear()/recycle the span as soon as it is submitted, and clear resets
+  # __dd_glsPop. Deactivating first orders the pop ahead of any clear (the
+  # channel send in finish establishes happens-before), so clear can never nil
+  # the popper out from under Finish and leave a stale active span on the GLS.
+  # GLSDeactivate groups the flag set and the once-only pop and is idempotent on
+  # a double finish. See orchestrion#782.
   - id: Span Finish GLS deactivate
     tracer-internal: true
     join-point:
@@ -233,7 +239,7 @@ aspects:
           template: |-
             {{- $s := .Function.Receiver -}}
             if {{ $s }} != nil {
-              defer orchestrion.GLSDeactivate(&{{ $s }}.__dd_glsReclaimable, &{{ $s }}.__dd_glsPop)
+              orchestrion.GLSDeactivate(&{{ $s }}.__dd_glsReclaimable, &{{ $s }}.__dd_glsPop)
             }
 
   # On clear (span pool recycle): reset the GLS bookkeeping so a reused, live

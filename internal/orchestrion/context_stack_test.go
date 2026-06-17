@@ -6,6 +6,7 @@
 package orchestrion
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -141,4 +142,42 @@ func TestPushDoesNotDrainNonReclaimableValues(t *testing.T) {
 	s.Push(stackTestKey{}, true)
 
 	assert.Equal(t, 3, s.Depth(), "non-reclaimable values are never dropped")
+}
+
+// BenchmarkPushDrainReclaimed measures the cost of Push's trailing-reclaim drain
+// under the cross-goroutine-finish pattern: a stack accumulates reclaimable
+// entries (finished spans whose pop never ran on this goroutine), then a single
+// Push drains them all before appending the new value.
+//
+// The 0_reclaimed sub-benchmark is the common case (nothing to drain) and
+// establishes the baseline cost of the drain loop. The N_reclaimed cases show
+// the amortised cost per entry: each entry is pushed once and drained once, so
+// total work is O(N) regardless of how many pushes trigger the drain.
+//
+// The entries are built LIVE and only then marked reclaimable: pushing them
+// reclaimable would let Push drain each one as the stack is built, so the stack
+// would never reach depth N (this mirrors TestPushDrainsMultipleReclaimableEntries).
+func BenchmarkPushDrainReclaimed(b *testing.B) {
+	for _, stale := range []int{0, 1, 10, 100} {
+		b.Run(fmt.Sprintf("%d_reclaimed", stale), func(b *testing.B) {
+			k := stackTestKey{}
+			b.ReportAllocs()
+			for b.Loop() {
+				b.StopTimer()
+				s := contextStack(make(map[any][]any))
+				entries := make([]*fakeReclaimable, stale)
+				for i := range entries {
+					entries[i] = &fakeReclaimable{id: i}
+					s.Push(k, entries[i]) // pushed live so the stack reaches depth N
+				}
+				for _, e := range entries {
+					e.reclaimed = true // now finished cross-goroutine (pop never ran here)
+				}
+				b.StartTimer()
+
+				// This single Push must drain all `stale` reclaimable entries.
+				s.Push(k, &fakeReclaimable{id: stale})
+			}
+		})
+	}
 }
