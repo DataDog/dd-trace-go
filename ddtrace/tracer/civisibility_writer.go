@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // Constants defining the payload size limits for agentless mode.
@@ -62,6 +63,14 @@ func newCiVisibilityTraceWriter(c *config) *ciVisibilityTraceWriter {
 //
 //	trace - A slice of spans representing the trace to be added.
 func (w *ciVisibilityTraceWriter) add(trace []*Span) {
+	// createTslvSpan reads span.meta directly (via span.meta.Map), so we must
+	// stamp process tags here before event creation, mirroring the pattern used
+	// by logTraceWriter and otlpTraceWriter.
+	if len(trace) > 0 {
+		if pTags := processtags.GlobalTags().String(); pTags != "" {
+			trace[0].setProcessTags(pTags)
+		}
+	}
 	telemetry.EventsEnqueueForSerialization()
 	for _, s := range trace {
 		cvEvent := getCiVisibilityEvent(s)

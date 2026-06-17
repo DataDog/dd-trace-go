@@ -17,9 +17,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 func TestCIVisibilityImplementsTraceWriter(t *testing.T) {
@@ -220,4 +222,73 @@ func waitForCIVisibilityHTTPConnectionState(t *testing.T, state <-chan struct{},
 	case <-time.After(2 * time.Second):
 		t.Fatalf("timed out waiting for connection to become %s", stateName)
 	}
+}
+
+func TestCiVisibilityTraceWriterProcessTags(t *testing.T) {
+	makeSpans := func(n int) []*Span {
+		spans := make([]*Span, n)
+		for i := range spans {
+			spans[i] = makeSpan(0)
+		}
+		return spans
+	}
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		processtags.Reload()
+		t.Cleanup(processtags.Reload)
+
+		captured := &capturingCiTransport{}
+		cfg, err := newTestConfig(func(c *config) { c.ddTransport = captured })
+		require.NoError(t, err)
+
+		w := newCiVisibilityTraceWriter(cfg)
+		w.add(makeSpans(3))
+		w.flush()
+		w.wg.Wait()
+
+		require.Len(t, captured.batches, 1)
+		require.Len(t, captured.batches[0], 3)
+		assert.Contains(t, captured.batches[0][0].Content.Meta, keyProcessTags, "first event must carry process tags")
+		assert.NotContains(t, captured.batches[0][1].Content.Meta, keyProcessTags, "second event must not carry process tags")
+		assert.NotContains(t, captured.batches[0][2].Content.Meta, keyProcessTags, "third event must not carry process tags")
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+		t.Cleanup(processtags.Reload)
+
+		captured := &capturingCiTransport{}
+		cfg, err := newTestConfig(func(c *config) { c.ddTransport = captured })
+		require.NoError(t, err)
+
+		w := newCiVisibilityTraceWriter(cfg)
+		w.add(makeSpans(2))
+		w.flush()
+		w.wg.Wait()
+
+		require.Len(t, captured.batches, 1)
+		require.Len(t, captured.batches[0], 2)
+		for i, e := range captured.batches[0] {
+			assert.NotContains(t, e.Content.Meta, keyProcessTags, "event %d must not carry process tags when disabled", i)
+		}
+	})
+}
+
+// capturingCiTransport decodes and captures CI visibility events during send.
+type capturingCiTransport struct {
+	dummyTransport
+	batches []ciVisibilityEvents
+}
+
+func (t *capturingCiTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
+	cp := &ciVisibilityPayload{payload: p}
+	var events ciVisibilityEvents
+	if err := msgp.Decode(cp, &events); err != nil {
+		return nil, err
+	}
+	t.batches = append(t.batches, events)
+	return io.NopCloser(strings.NewReader("")), nil
 }
