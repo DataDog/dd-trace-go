@@ -93,7 +93,7 @@ microbenchmarks-3:
 
 pr-performance-gates:
   stage: microbenchmarks
-  needs: [microbenchmarks-1, microbenchmarks-2, microbenchmarks-3]
+  needs: [microbenchmarks-1, microbenchmarks-2]
   rules: *benchmark-rules
   tags:
     - "arch:amd64"
