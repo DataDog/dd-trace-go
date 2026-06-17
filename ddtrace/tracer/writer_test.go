@@ -159,6 +159,10 @@ func TestLogWriter(t *testing.T) {
 	})
 
 	t.Run("fullspan", func(t *testing.T) {
+		// Disable process tags so the expected meta map stays deterministic.
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+		t.Cleanup(processtags.Reload)
 		assert := assert.New(t)
 		var buf bytes.Buffer
 		cfg, err := newTestConfig()
@@ -260,6 +264,66 @@ func TestLogWriter(t *testing.T) {
 		assert.Equal(`{"trace_id":"1","span_id":"2","parent_id":"3","name":"name\n","resource":"\"res\"","error":0,"meta":{"query\n":"Select * from \n Where\nvalue"},"metrics":{"version\n":3},"start":12,"duration":0,"service":"srv\t"}`, str)
 		assert.NotContains(str, "\n")
 		assert.Contains(str, "\\n")
+	})
+}
+
+func TestLogWriterProcessTags(t *testing.T) {
+	type jsonSpan struct {
+		Meta map[string]string `json:"meta"`
+	}
+	type jsonPayload struct {
+		Traces [][]jsonSpan `json:"traces"`
+	}
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		processtags.Reload()
+		t.Cleanup(processtags.Reload)
+
+		var buf bytes.Buffer
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
+		h.w = &buf
+
+		h.add([]*Span{makeSpan(0), makeSpan(0), makeSpan(0)})
+		h.flush()
+
+		var v jsonPayload
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &v))
+		require.Len(t, v.Traces, 1)
+		require.Len(t, v.Traces[0], 3)
+		assert.Contains(t, v.Traces[0][0].Meta, keyProcessTags, "first span must carry process tags")
+		assert.NotContains(t, v.Traces[0][1].Meta, keyProcessTags, "second span must not carry process tags")
+		assert.NotContains(t, v.Traces[0][2].Meta, keyProcessTags, "third span must not carry process tags")
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+		t.Cleanup(processtags.Reload)
+
+		var buf bytes.Buffer
+		cfg, err := newTestConfig()
+		require.NoError(t, err)
+		statsd, err := newStatsdClient(cfg)
+		require.NoError(t, err)
+		defer statsd.Close()
+		h := newLogTraceWriter(cfg, statsd)
+		h.w = &buf
+
+		h.add([]*Span{makeSpan(0), makeSpan(0)})
+		h.flush()
+
+		var v jsonPayload
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &v))
+		require.Len(t, v.Traces, 1)
+		for i, s := range v.Traces[0] {
+			assert.NotContains(t, s.Meta, keyProcessTags, "span %d must not carry process tags when disabled", i)
+		}
 	})
 }
 

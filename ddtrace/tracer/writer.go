@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -387,6 +388,13 @@ func (h *logTraceWriter) writeTrace(trace []*Span) (n int, err *encodingError) {
 
 // add adds a trace to the writer's buffer.
 func (h *logTraceWriter) add(trace []*Span) {
+	// The v0.4/v1 payload encoders set process tags during encoding, but the log
+	// writer serializes span meta directly, so we must stamp it here instead.
+	if len(trace) > 0 {
+		if pTags := processtags.GlobalTags().String(); pTags != "" {
+			trace[0].setProcessTags(pTags)
+		}
+	}
 	// Try adding traces to the buffer until we flush them all or encounter an error.
 	for len(trace) > 0 {
 		n, err := h.writeTrace(trace)
