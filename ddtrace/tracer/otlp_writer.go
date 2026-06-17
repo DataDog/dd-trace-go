@@ -18,7 +18,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -71,13 +70,7 @@ func (w *otlpTraceWriter) reset() []*otlptrace.Span {
 }
 
 func (w *otlpTraceWriter) add(spanList []*Span) {
-	// convertSpan reads span.meta directly, so we must stamp process tags here
-	// rather than relying on the payload encoder (which is not used for OTLP).
-	if len(spanList) > 0 {
-		if pTags := processtags.GlobalTags().String(); pTags != "" {
-			spanList[0].setProcessTags(pTags)
-		}
-	}
+	stampProcessTagsOnFirst(spanList)
 	defaultServiceName := w.config.internalConfig.ServiceName()
 	w.mu.Lock()
 	w.spans = slices.Grow(w.spans, len(spanList))
