@@ -73,8 +73,8 @@ func kvAttrsToMap(kvs []*otlpcommon.KeyValue) map[string]string {
 func TestSketchToHistogramEmpty(t *testing.T) {
 	sk, err := ddsketch.LogCollapsingLowestDenseDDSketch(0.01, 2048)
 	require.NoError(t, err)
-	var b []byte
-	sk.Encode(&b, false)
+	b, err := proto.Marshal(sk.ToProto())
+	require.NoError(t, err)
 	_, _, _, _, count, err := sketchToHistogram(b, spanMetricBounds)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(0), count)
