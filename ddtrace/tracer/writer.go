@@ -427,4 +427,3 @@ func (h *logTraceWriter) flush() {
 	h.w.Write(h.buf.Bytes())
 	h.resetBuffer()
 }
-
