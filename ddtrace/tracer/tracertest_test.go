@@ -218,6 +218,12 @@ func flushAgentTracerTest(tb testing.TB, tr *tracer, agent *testAgent, wantSpans
 	tb.Helper()
 	deadline := time.Now().Add(time.Second * timeMultiplicator)
 	for {
+		for len(tr.out) > 0 {
+			if time.Now().After(deadline) {
+				require.Zero(tb, len(tr.out), "timed out waiting for tracer worker to queue finished spans")
+			}
+			time.Sleep(time.Millisecond)
+		}
 		tr.Flush()
 		if w, ok := tr.traceWriter.(*agentTraceWriter); ok {
 			w.wg.Wait()

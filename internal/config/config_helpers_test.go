@@ -53,3 +53,20 @@ func TestResolveOTLPTraceURL(t *testing.T) {
 		assert.Equal(t, defaultLocalhost, got)
 	})
 }
+
+func TestValidateSendRetries(t *testing.T) {
+	tests := []struct {
+		name    string
+		retries int
+		want    bool
+	}{
+		{"negative rejected", -1, false},
+		{"zero accepted", 0, true},
+		{"positive accepted", 3, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, validateSendRetries(tt.retries))
+		})
+	}
+}

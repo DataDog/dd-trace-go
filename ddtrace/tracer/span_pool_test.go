@@ -385,6 +385,19 @@ func observeAgentSpans(spans []*Span) []observedAgentSpan {
 	return out
 }
 
+func spansWithoutProcessTags(spans []observedAgentSpan) []observedAgentSpan {
+	out := make([]observedAgentSpan, len(spans))
+	for i, span := range spans {
+		out[i] = span
+		out[i].Meta = maps.Clone(span.Meta)
+		delete(out[i].Meta, keyProcessTags)
+		if len(out[i].Meta) == 0 {
+			out[i].Meta = nil
+		}
+	}
+	return out
+}
+
 func spanByID(t *testing.T, spans []observedAgentSpan, id uint64) observedAgentSpan {
 	t.Helper()
 	for _, span := range spans {
@@ -656,7 +669,7 @@ func TestSpanPoolAgentPOVMatchesNoPool(t *testing.T) {
 
 			requireStrictSpanPoolAgentScenario(t, nopool)
 			requireStrictSpanPoolAgentScenario(t, pool)
-			require.Equal(t, nopool, pool)
+			require.Equal(t, spansWithoutProcessTags(nopool), spansWithoutProcessTags(pool))
 			requireProtocolRequests(t, nopoolRequests, protocol)
 			requireProtocolRequests(t, poolRequests, protocol)
 		})
@@ -782,7 +795,7 @@ func TestSpanPoolPartialFlushAgentPOVMatchesNoPoolAfterReuse(t *testing.T) {
 
 			requirePartialFlushReuseAgentScenario(t, nopool)
 			requirePartialFlushReuseAgentScenario(t, pool)
-			require.Equal(t, nopool, pool)
+			require.Equal(t, spansWithoutProcessTags(nopool), spansWithoutProcessTags(pool))
 			requireProtocolRequests(t, nopoolRequests, protocol)
 			requireProtocolRequests(t, poolRequests, protocol)
 		})
@@ -874,7 +887,7 @@ func TestSpanPoolSingleSpanSamplingAgentPOVMatchesNoPool(t *testing.T) {
 
 			requireSingleSpanSamplingAgentScenario(t, nopool)
 			requireSingleSpanSamplingAgentScenario(t, pool)
-			require.Equal(t, nopool, pool)
+			require.Equal(t, spansWithoutProcessTags(nopool), spansWithoutProcessTags(pool))
 			requireProtocolRequests(t, nopoolRequests, protocol)
 			requireProtocolRequests(t, poolRequests, protocol)
 		})

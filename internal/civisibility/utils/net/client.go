@@ -6,13 +6,10 @@
 package net
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"math"
 	"math/rand/v2"
-	"net"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -43,7 +40,7 @@ type (
 		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
 		SendCoveragePayload(ciTestCovPayload io.Reader) error
 		SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error
-		GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error)
+		GetSkippableTests() (*SkippableTestsResponse, error)
 		GetTestManagementTests() (*TestManagementTestsResponseDataModules, error)
 		SendLogs(logsPayload io.Reader) error
 	}
@@ -172,32 +169,8 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 		if agentURL.Scheme == "unix" {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
-			dialer := &net.Dialer{
-				Timeout:   30 * time.Second,
-				KeepAlive: 30 * time.Second,
-				DualStack: true,
-			}
-			requestHandler = NewRequestHandlerWithClient(&http.Client{
-				Transport: &http.Transport{
-					Proxy: http.ProxyFromEnvironment,
-					DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-						return dialer.DialContext(ctx, "unix", (&net.UnixAddr{
-							Name: agentURL.Path,
-							Net:  "unix",
-						}).String())
-					},
-					MaxIdleConns:          100,
-					IdleConnTimeout:       90 * time.Second,
-					TLSHandshakeTimeout:   10 * time.Second,
-					ExpectContinueTimeout: 1 * time.Second,
-				},
-				Timeout: 10 * time.Second,
-			})
-			// TODO(darccio): use internal.UnixDataSocketURL instead
-			agentURL = &url.URL{
-				Scheme: "http",
-				Host:   fmt.Sprintf("UDS_%s", strings.NewReplacer(":", "_", "/", "_", `\`, "_").Replace(agentURL.Path)),
-			}
+			requestHandler = NewRequestHandlerWithClient(internal.UDSClient(agentURL.Path, 10*time.Second))
+			agentURL = internal.UnixDataSocketURL(agentURL.Path)
 		} else {
 			requestHandler = NewRequestHandler()
 		}
