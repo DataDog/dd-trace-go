@@ -450,70 +450,33 @@ func TestOTLPWriterDoesNotReuseAgentHTTPClient(t *testing.T) {
 	assert.Equal(t, 1, srv.requestCount(), "OTLP writer should reach TCP server, not the UDS agent socket")
 }
 
-func TestOTLPWriterProcessTags(t *testing.T) {
-	findAttr := func(attrs []*otlpcommon.KeyValue, key string) (string, bool) {
-		for _, kv := range attrs {
-			if kv.Key == key {
-				return kv.Value.GetStringValue(), true
-			}
-		}
-		return "", false
-	}
+// TestOTLPWriterProcessTagsDisabled verifies that _dd.tags.process does not
+// appear in OTLP output when the feature is disabled. End-to-end coverage for
+// the enabled path (via setTraceTagsLocked → span.meta → convertSpanAttributes)
+// lives in TestOTLPExportModeProcessTags.
+func TestOTLPWriterProcessTagsDisabled(t *testing.T) {
+	t.Cleanup(processtags.Reload)
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
 
-	decodeSpans := func(t *testing.T, payloads [][]byte) []*otlptrace.Span {
-		t.Helper()
-		var spans []*otlptrace.Span
-		for _, data := range payloads {
-			var td otlptrace.TracesData
-			require.NoError(t, proto.Unmarshal(data, &td))
-			for _, rs := range td.ResourceSpans {
-				for _, ss := range rs.ScopeSpans {
-					spans = append(spans, ss.Spans...)
+	srv := newTestOTLPServer()
+	defer srv.Close()
+	w := newTestOTLPWriter(t, srv)
+
+	w.add([]*Span{newSpan("op1", "svc", "res", 1, 1, 0), newSpan("op2", "svc", "res", 2, 1, 1)})
+	w.stop()
+
+	for _, data := range srv.getPayloads() {
+		var td otlptrace.TracesData
+		require.NoError(t, proto.Unmarshal(data, &td))
+		for _, rs := range td.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				for i, s := range ss.Spans {
+					for _, attr := range s.Attributes {
+						assert.NotEqual(t, keyProcessTags, attr.Key, "span %d must not carry process tags when disabled", i)
+					}
 				}
 			}
 		}
-		return spans
 	}
-
-	t.Run("enabled", func(t *testing.T) {
-		t.Cleanup(processtags.Reload)
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
-		processtags.Reload()
-
-		srv := newTestOTLPServer()
-		defer srv.Close()
-		w := newTestOTLPWriter(t, srv)
-
-		w.add([]*Span{newSpan("op1", "svc", "res", 1, 1, 0), newSpan("op2", "svc", "res", 2, 1, 1), newSpan("op3", "svc", "res", 3, 1, 1)})
-		w.stop()
-
-		spans := decodeSpans(t, srv.getPayloads())
-		require.Len(t, spans, 3)
-		_, hasFirst := findAttr(spans[0].Attributes, keyProcessTags)
-		assert.True(t, hasFirst, "first span must carry process tags")
-		_, hasSecond := findAttr(spans[1].Attributes, keyProcessTags)
-		assert.False(t, hasSecond, "second span must not carry process tags")
-		_, hasThird := findAttr(spans[2].Attributes, keyProcessTags)
-		assert.False(t, hasThird, "third span must not carry process tags")
-	})
-
-	t.Run("disabled", func(t *testing.T) {
-		t.Cleanup(processtags.Reload)
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
-
-		srv := newTestOTLPServer()
-		defer srv.Close()
-		w := newTestOTLPWriter(t, srv)
-
-		w.add([]*Span{newSpan("op1", "svc", "res", 1, 1, 0), newSpan("op2", "svc", "res", 2, 1, 1)})
-		w.stop()
-
-		spans := decodeSpans(t, srv.getPayloads())
-		require.Len(t, spans, 2)
-		for i, s := range spans {
-			_, has := findAttr(s.Attributes, keyProcessTags)
-			assert.False(t, has, "span %d must not carry process tags when disabled", i)
-		}
-	})
 }

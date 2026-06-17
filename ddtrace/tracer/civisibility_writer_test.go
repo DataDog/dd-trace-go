@@ -224,56 +224,27 @@ func waitForCIVisibilityHTTPConnectionState(t *testing.T, state <-chan struct{},
 	}
 }
 
-func TestCiVisibilityTraceWriterProcessTags(t *testing.T) {
-	makeSpans := func(n int) []*Span {
-		spans := make([]*Span, n)
-		for i := range spans {
-			spans[i] = makeSpan(0)
-		}
-		return spans
+// TestCiVisibilityTraceWriterProcessTagsDisabled verifies that _dd.tags.process
+// does not appear in CI Visibility events when the feature is disabled. The
+// enabled path is covered by the full span lifecycle via setTraceTagsLocked.
+func TestCiVisibilityTraceWriterProcessTagsDisabled(t *testing.T) {
+	t.Cleanup(processtags.Reload)
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
+
+	captured := &capturingCiTransport{}
+	cfg, err := newTestConfig(func(c *config) { c.ddTransport = captured })
+	require.NoError(t, err)
+
+	w := newCiVisibilityTraceWriter(cfg)
+	w.add([]*Span{makeSpan(0), makeSpan(0)})
+	w.flush()
+	w.wg.Wait()
+
+	require.Len(t, captured.batches, 1)
+	for i, e := range captured.batches[0] {
+		assert.NotContains(t, e.Content.Meta, keyProcessTags, "event %d must not carry process tags when disabled", i)
 	}
-
-	t.Run("enabled", func(t *testing.T) {
-		t.Cleanup(processtags.Reload)
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
-		processtags.Reload()
-
-		captured := &capturingCiTransport{}
-		cfg, err := newTestConfig(func(c *config) { c.ddTransport = captured })
-		require.NoError(t, err)
-
-		w := newCiVisibilityTraceWriter(cfg)
-		w.add(makeSpans(3))
-		w.flush()
-		w.wg.Wait()
-
-		require.Len(t, captured.batches, 1)
-		require.Len(t, captured.batches[0], 3)
-		assert.Contains(t, captured.batches[0][0].Content.Meta, keyProcessTags, "first event must carry process tags")
-		assert.NotContains(t, captured.batches[0][1].Content.Meta, keyProcessTags, "second event must not carry process tags")
-		assert.NotContains(t, captured.batches[0][2].Content.Meta, keyProcessTags, "third event must not carry process tags")
-	})
-
-	t.Run("disabled", func(t *testing.T) {
-		t.Cleanup(processtags.Reload)
-		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
-		processtags.Reload()
-
-		captured := &capturingCiTransport{}
-		cfg, err := newTestConfig(func(c *config) { c.ddTransport = captured })
-		require.NoError(t, err)
-
-		w := newCiVisibilityTraceWriter(cfg)
-		w.add(makeSpans(2))
-		w.flush()
-		w.wg.Wait()
-
-		require.Len(t, captured.batches, 1)
-		require.Len(t, captured.batches[0], 2)
-		for i, e := range captured.batches[0] {
-			assert.NotContains(t, e.Content.Meta, keyProcessTags, "event %d must not carry process tags when disabled", i)
-		}
-	})
 }
 
 // capturingCiTransport decodes and captures CI visibility events during send.

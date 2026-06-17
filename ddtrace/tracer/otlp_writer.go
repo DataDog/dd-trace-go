@@ -8,7 +8,6 @@ package tracer
 import (
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
@@ -19,15 +18,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
-
-// processTagEntry holds a cached OTLP KeyValue for a given process-tags string.
-type processTagEntry struct {
-	str string
-	kv  *otlpcommon.KeyValue
-}
 
 var _ traceWriter = (*otlpTraceWriter)(nil)
 
@@ -42,9 +34,6 @@ type otlpTraceWriter struct {
 	baseSize  int
 	climit    chan struct{}
 	wg        sync.WaitGroup
-	// processTagCache caches the OTLP KeyValue for the current process-tags string,
-	// rebuilt only when the string changes. Avoids per-call protobuf allocations.
-	processTagCache atomic.Pointer[processTagEntry]
 }
 
 func newOTLPTraceWriter(c *config) *otlpTraceWriter {
@@ -80,33 +69,12 @@ func (w *otlpTraceWriter) reset() []*otlptrace.Span {
 	return old
 }
 
-// processTagAttr returns the cached OTLP KeyValue for the current process-tags
-// string, rebuilding it only when the string has changed. This avoids protobuf
-// struct allocations on every add() call in the steady state.
-func (w *otlpTraceWriter) processTagAttr() *otlpcommon.KeyValue {
-	pTags := processtags.GlobalTags().String()
-	if pTags == "" {
-		return nil
-	}
-	if e := w.processTagCache.Load(); e != nil && e.str == pTags {
-		return e.kv
-	}
-	kv := otlpKeyValue(keyProcessTags, otlpStringValue(pTags))
-	w.processTagCache.Store(&processTagEntry{str: pTags, kv: kv})
-	return kv
-}
-
 func (w *otlpTraceWriter) add(spanList []*Span) {
-	processTag := w.processTagAttr()
 	defaultServiceName := w.config.internalConfig.ServiceName()
 	w.mu.Lock()
 	w.spans = slices.Grow(w.spans, len(spanList))
-	for i, span := range spanList {
-		var attr *otlpcommon.KeyValue
-		if i == 0 {
-			attr = processTag
-		}
-		if otlpSpan := convertSpan(span, defaultServiceName, attr); otlpSpan != nil {
+	for _, span := range spanList {
+		if otlpSpan := convertSpan(span, defaultServiceName); otlpSpan != nil {
 			w.spans = append(w.spans, otlpSpan)
 			w.buffSize += proto.Size(otlpSpan)
 		}

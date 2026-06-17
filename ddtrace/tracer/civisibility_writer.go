@@ -12,7 +12,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // Constants defining the payload size limits for agentless mode.
@@ -63,16 +62,9 @@ func newCiVisibilityTraceWriter(c *config) *ciVisibilityTraceWriter {
 //
 //	trace - A slice of spans representing the trace to be added.
 func (w *ciVisibilityTraceWriter) add(trace []*Span) {
-	pTags := processtags.GlobalTags().String()
 	telemetry.EventsEnqueueForSerialization()
-	for i, s := range trace {
+	for _, s := range trace {
 		cvEvent := getCiVisibilityEvent(s)
-		if i == 0 && pTags != "" {
-			if cvEvent.Content.Meta == nil {
-				cvEvent.Content.Meta = make(map[string]string)
-			}
-			cvEvent.Content.Meta[keyProcessTags] = pTags
-		}
 		size, err := w.payload.push(cvEvent)
 		if err != nil {
 			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %s", err.Error())

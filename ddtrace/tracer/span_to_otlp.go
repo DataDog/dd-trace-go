@@ -53,7 +53,7 @@ func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 // -----------------------------------------------------------------------------
 
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
-func convertSpan(s *Span, defaultServiceName string, processTagAttr *otlpcommon.KeyValue) *otlptrace.Span {
+func convertSpan(s *Span, defaultServiceName string) *otlptrace.Span {
 	if p, ok := s.context.SamplingPriority(); ok && p < ext.PriorityAutoKeep {
 		return nil
 	}
@@ -65,7 +65,7 @@ func convertSpan(s *Span, defaultServiceName string, processTagAttr *otlpcommon.
 		Kind:              convertSpanKind(getSpanKind(s)),
 		StartTimeUnixNano: uint64(s.start),
 		EndTimeUnixNano:   uint64(s.start + s.duration),
-		Attributes:        convertSpanAttributes(s, defaultServiceName, processTagAttr),
+		Attributes:        convertSpanAttributes(s, defaultServiceName),
 		Events:            convertEvents(s),
 		Links:             convertSpanLinks(s.spanLinks),
 		Status:            convertSpanStatus(s),
@@ -173,12 +173,9 @@ func addAttribute(attrs *[]*otlpcommon.KeyValue, key string, val *otlpcommon.Any
 }
 
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
-func convertSpanAttributes(s *Span, defaultServiceName string, processTagAttr *otlpcommon.KeyValue) []*otlpcommon.KeyValue {
+func convertSpanAttributes(s *Span, defaultServiceName string) []*otlpcommon.KeyValue {
 	n := s.meta.Count() + len(s.metrics) + len(s.metaStruct) + 3
 	if s.service != defaultServiceName {
-		n++
-	}
-	if processTagAttr != nil {
 		n++
 	}
 	attrs := make([]*otlpcommon.KeyValue, 0, min(n, maxAttributesCount))
@@ -211,9 +208,6 @@ func convertSpanAttributes(s *Span, defaultServiceName string, processTagAttr *o
 		if !addAttribute(&attrs, key, anyToOTLPValue(value)) {
 			return attrs
 		}
-	}
-	if processTagAttr != nil && len(attrs) < maxAttributesCount {
-		attrs = append(attrs, processTagAttr)
 	}
 	return attrs
 }

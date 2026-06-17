@@ -133,7 +133,7 @@ func TestPayloadV04Decode(t *testing.T) {
 			var got spanLists
 			err := msgp.Decode(p, &got)
 			assert.NoError(err)
-			assertProcessTags(t, got)
+			assert.Len(got, n)
 		})
 	}
 }
@@ -575,20 +575,6 @@ func TestPayloadV1IncrementalChunkEncoding(t *testing.T) {
 	}
 }
 
-func assertProcessTags(t *testing.T, payload spanLists) {
-	assert := assert.New(t)
-	for i, spanList := range payload {
-		for j, span := range spanList {
-			processTags, ok := span.meta.Get(keyProcessTags)
-			if i+j == 0 {
-				assert.True(ok, "process tags should be present on the first span of each chunk only")
-				assert.Contains(processTags, "entrypoint.name", "process tags should have entrypoint.name")
-				break
-			}
-			require.False(t, ok, "process tags should be present on the first span of each chunk only (chunk: %d span: %d)", i, j)
-		}
-	}
-}
 
 func TestPayloadV1SerializationFailure(t *testing.T) {
 	t.Run("nil span", func(t *testing.T) {

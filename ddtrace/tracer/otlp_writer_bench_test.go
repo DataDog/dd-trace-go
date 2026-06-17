@@ -99,7 +99,7 @@ func BenchmarkOTLPProtoMarshal(b *testing.B) {
 			for i := range sc.n {
 				s := newBasicSpan("bench-span")
 				s.meta.Set("key", "value")
-				spans[i] = convertSpan(s, "bench-svc", nil)
+				spans[i] = convertSpan(s, "bench-svc")
 			}
 			tracesData := buildTracesData(spans)
 
@@ -128,7 +128,7 @@ func BenchmarkOTLPProtoMarshal(b *testing.B) {
 				SpanID:      uint64(i + 300),
 				Attributes:  map[string]string{"link-key": "link-val"},
 			})
-			spans[i] = convertSpan(s, "bench-svc", nil)
+			spans[i] = convertSpan(s, "bench-svc")
 		}
 		tracesData := buildTracesData(spans)
 
@@ -157,7 +157,7 @@ func BenchmarkOTLPProtoSize(b *testing.B) {
 			spans := make([]*otlptrace.Span, sc.n)
 			for i := range sc.n {
 				s := newBasicSpan("bench-span")
-				spans[i] = convertSpan(s, "bench-svc", nil)
+				spans[i] = convertSpan(s, "bench-svc")
 			}
 			tracesData := buildTracesData(spans)
 
