@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -70,12 +71,16 @@ func (w *otlpTraceWriter) reset() []*otlptrace.Span {
 }
 
 func (w *otlpTraceWriter) add(spanList []*Span) {
-	stampProcessTagsOnFirst(spanList)
+	pTags := processtags.GlobalTags().String()
 	defaultServiceName := w.config.internalConfig.ServiceName()
 	w.mu.Lock()
 	w.spans = slices.Grow(w.spans, len(spanList))
-	for _, span := range spanList {
+	for i, span := range spanList {
 		if otlpSpan := convertSpan(span, defaultServiceName); otlpSpan != nil {
+			if i == 0 && pTags != "" {
+				otlpSpan.Attributes = append(otlpSpan.Attributes,
+					otlpKeyValue(keyProcessTags, otlpStringValue(pTags)))
+			}
 			w.spans = append(w.spans, otlpSpan)
 			w.buffSize += proto.Size(otlpSpan)
 		}

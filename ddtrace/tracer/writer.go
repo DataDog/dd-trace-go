@@ -388,7 +388,14 @@ func (h *logTraceWriter) writeTrace(trace []*Span) (n int, err *encodingError) {
 
 // add adds a trace to the writer's buffer.
 func (h *logTraceWriter) add(trace []*Span) {
-	stampProcessTagsOnFirst(trace)
+	// The log writer serializes span.meta directly; stamp the process tag on
+	// the first span here because the v0.4/v1 payload encoder (which handles
+	// it at encoding time) is not used in this path.
+	if len(trace) > 0 {
+		if pTags := processtags.GlobalTags().String(); pTags != "" {
+			trace[0].setProcessTags(pTags)
+		}
+	}
 	// Try adding traces to the buffer until we flush them all or encounter an error.
 	for len(trace) > 0 {
 		n, err := h.writeTrace(trace)
@@ -421,16 +428,3 @@ func (h *logTraceWriter) flush() {
 	h.resetBuffer()
 }
 
-// stampProcessTagsOnFirst stamps _dd.tags.process on the first span of trace
-// when DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED is set. Writers that
-// read span.meta directly (log, OTLP, CI visibility) must call this before
-// serializing, because the v0.4/v1 payload encoders handle the stamp at
-// encoding time and those writers bypass that path entirely.
-func stampProcessTagsOnFirst(trace []*Span) {
-	if len(trace) == 0 {
-		return
-	}
-	if pTags := processtags.GlobalTags().String(); pTags != "" {
-		trace[0].setProcessTags(pTags)
-	}
-}
