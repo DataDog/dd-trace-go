@@ -180,7 +180,7 @@ func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
 	if err == nil {
 		return startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
 	} else {
-		log.Debug("%s\n", err.Error())
+		log.Debug("unable to start inferred proxy span: %s\n", err.Error())
 	}
 
 	pubsubCtx := extractInferredPubsubContext(headers)
@@ -230,7 +230,7 @@ func extractInferredPubsubContext(headers http.Header) *pubsubContext {
 }
 
 // startInferredPubsubPushSubscriptionSpan starts an inferred pubsub.receive consumer span
-// for HTTP handlers that process Google Cloud Pub/Sub push deliveries. The span is tagged like
+// for HTTP handlers that process gcp Pub/Sub push deliveries. The span is tagged like
 // library-instrumented subscribe/receive paths so push-based workloads show the same
 // messaging layer in the trace as pull/subscribe flows.
 //
