@@ -575,7 +575,6 @@ func TestPayloadV1IncrementalChunkEncoding(t *testing.T) {
 	}
 }
 
-
 func TestPayloadV1SerializationFailure(t *testing.T) {
 	t.Run("nil span", func(t *testing.T) {
 		assert := assert.New(t)
