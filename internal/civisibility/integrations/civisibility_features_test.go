@@ -308,8 +308,8 @@ func (m *mockCIVisibilityClient) SendCoveragePayloadWithFormat(_ io.Reader, _ st
 	return nil
 }
 
-func (m *mockCIVisibilityClient) GetSkippableTests() (string, map[string]map[string][]civisibilitynet.SkippableResponseDataAttributes, error) {
-	return "", nil, nil
+func (m *mockCIVisibilityClient) GetSkippableTests() (*civisibilitynet.SkippableTestsResponse, error) {
+	return nil, nil
 }
 
 func (m *mockCIVisibilityClient) GetTestManagementTests() (*civisibilitynet.TestManagementTestsResponseDataModules, error) {
