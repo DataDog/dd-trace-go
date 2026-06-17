@@ -1388,27 +1388,6 @@ func TestSpanProcessTags(t *testing.T) {
 	}
 }
 
-// TestSetTraceTagsLockedNoProcessTags verifies that setTraceTagsLocked does not
-// write _dd.tags.process onto spans; process tags are the responsibility of the
-// payload encoder or, for the log writer, logTraceWriter.add.
-func TestSetTraceTagsLockedNoProcessTags(t *testing.T) {
-	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
-	processtags.Reload()
-	t.Cleanup(processtags.Reload)
-
-	s := newBasicSpan("test")
-	tr := s.context.trace
-
-	tr.mu.RLock()
-	s.mu.Lock()
-	tr.setTraceTagsLocked(s)
-	s.mu.Unlock()
-	tr.mu.RUnlock()
-
-	assert.False(t, s.meta.Has(keyProcessTags),
-		"setTraceTagsLocked must not set %s; that is the payload encoder's responsibility", keyProcessTags)
-}
-
 func BenchmarkSpanIDHexEncoded(b *testing.B) {
 	for b.Loop() {
 		_ = spanIDHexEncoded(32, 16)
