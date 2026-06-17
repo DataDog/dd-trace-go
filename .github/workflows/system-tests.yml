@@ -54,6 +54,68 @@ jobs:
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
+  build-weblog-images:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    runs-on: ubuntu-latest
+    needs:
+      - warm-repo-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        weblog-variant:
+          - net-http
+          - echo
+          - chi
+          - gin
+          - uds-echo
+          - graph-gophers
+          - graphql-go
+          - gqlgen
+    name: Build weblog (${{ matrix.weblog-variant }})
+    env:
+      TEST_LIBRARY: golang
+      WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
+    steps:
+      - name: Restore repo cache
+        id: restore-repo-cache
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: .git
+          key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
+
+      - name: Checkout system tests (using cache)
+        if: steps.restore-repo-cache.outcome == 'success' && steps.restore-repo-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          git config safe.directory "$GITHUB_WORKSPACE"
+          git checkout -f ${{ needs.warm-repo-cache.outputs.sha }}
+
+      # Fall back in case of a cache miss, which can occur when retrying old runs.
+      - name: Checkout system tests (cache miss)
+        if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          repository: 'DataDog/system-tests'
+          ref: ${{ inputs.ref }}
+
+      - name: Checkout dd-trace-go
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.branch_ref || github.ref }}
+          path: 'binaries/dd-trace-go'
+
+      - name: Build and save weblog image
+        run: ./build.sh -i weblog --save-to-binaries
+
+      - name: Upload weblog image artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: weblog-image-${{ matrix.weblog-variant }}
+          path: binaries/golang-${{ matrix.weblog-variant }}-weblog.tar.zst
+          retention-days: 1
+
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     # Note: Not using large runners because the jobs spawned by this pipeline
@@ -61,6 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - warm-repo-cache
+      - build-weblog-images
     strategy:
       matrix:
         weblog-variant:
@@ -202,6 +265,12 @@ jobs:
         run: |
           echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
           echo "DD_APP_KEY=${{ steps.dd-sts.outputs.app_key }}" >> "$GITHUB_ENV"
+
+      - name: Download pre-built weblog image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: weblog-image-${{ matrix.weblog-variant }}
+          path: binaries/
 
       - name: Build weblog
         run: ./build.sh -i weblog
@@ -375,6 +444,7 @@ jobs:
   system-tests-done:
     name: System Tests
     needs:
+      - build-weblog-images
       - system-tests
       - system-tests-docker-images
       - tracer-release
@@ -383,13 +453,15 @@ jobs:
     steps:
       - name: Success
         if: |
-          needs.system-tests.result == 'success'
+          needs.build-weblog-images.result == 'success'
+          && needs.system-tests.result == 'success'
           && needs.system-tests-docker-images.result == 'success'
           && (needs.tracer-release.result == 'success' || needs.tracer-release.result == 'skipped')
         run: echo "Success!"
       - name: Failure
         if: |
-          needs.system-tests.result != 'success'
+          needs.build-weblog-images.result != 'success'
+          || needs.system-tests.result != 'success'
           || needs.system-tests-docker-images.result != 'success'
           || (needs.tracer-release.result != 'success' && needs.tracer-release.result != 'skipped')
         run: echo "Failure!" && exit 1
