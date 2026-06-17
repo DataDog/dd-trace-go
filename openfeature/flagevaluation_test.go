@@ -885,6 +885,35 @@ func TestCanonicalContextKeyEncoding(t *testing.T) {
 		})
 	}
 
+	t.Run("supported numeric scalar types produce distinct keys", func(t *testing.T) {
+		values := []struct {
+			name  string
+			value any
+		}{
+			{name: "int", value: int(1)},
+			{name: "int8", value: int8(1)},
+			{name: "int16", value: int16(1)},
+			{name: "int32", value: int32(1)},
+			{name: "int64", value: int64(1)},
+			{name: "uint", value: uint(1)},
+			{name: "uint8", value: uint8(1)},
+			{name: "uint16", value: uint16(1)},
+			{name: "uint32", value: uint32(1)},
+			{name: "uint64", value: uint64(1)},
+			{name: "float32", value: float32(1)},
+			{name: "float64", value: float64(1)},
+		}
+
+		keys := make(map[string]string, len(values))
+		for _, item := range values {
+			key := canonicalContextKey(map[string]any{"x": item.value})
+			if other, ok := keys[key]; ok {
+				t.Fatalf("%s and %s produced the same canonical context key", item.name, other)
+			}
+			keys[key] = item.name
+		}
+	})
+
 	// Logically-identical contexts must produce the SAME key (so they aggregate into one bucket).
 	t.Run("identical contexts produce identical keys", func(t *testing.T) {
 		a := canonicalContextKey(map[string]any{"x": 1, "y": "two"})

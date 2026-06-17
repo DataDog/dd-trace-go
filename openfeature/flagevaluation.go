@@ -753,8 +753,9 @@ func appendLengthDelimited(buf, b []byte) []byte {
 
 // appendContextValue appends a CANONICAL, length-delimited rendering of v to buf: a type-tag
 // byte (distinct per Go type) followed by a length-delimited rendered value. This avoids
-// allocation for the common scalar types; rare/complex types fall back to fmt. The encoding
-// only needs to be deterministic within a run and collision-free across distinct values.
+// allocation for the common scalar types; rare/complex types fall back to a type-qualified
+// fmt rendering. The encoding only needs to be deterministic within a run and collision-free
+// across distinct values.
 func appendContextValue(buf []byte, v any) []byte {
 	var scratch [32]byte
 	tmp := scratch[:0]
@@ -783,7 +784,7 @@ func appendContextValue(buf []byte, v any) []byte {
 		tmp = strconv.AppendFloat(tmp, float64(x), 'g', -1, 32)
 	default:
 		tag = ctxTagOther
-		tmp = append(tmp, fmt.Sprintf("%v", x)...)
+		tmp = fmt.Appendf(tmp, "%T:%v", x, x)
 	}
 	buf = append(buf, tag)
 	return appendLengthDelimited(buf, tmp)
