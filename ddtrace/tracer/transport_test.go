@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -479,6 +480,189 @@ func TestWithUDS(t *testing.T) {
 	// between a server and client over UDS. hits tells us that there were 2 requests received.
 	assert.Len(rt.reqs, 1)
 	assert.Equal(hits, 2)
+}
+
+// TestUDSTransportRecoversFromStaleIdleConn reproduces and verifies the fix for
+// the failure mode reported in APMS-19533: the trace-agent silently
+// drops idle keep-alive UDS connections under backpressure, so the next request
+// reusing such a connection from the client's idle pool fails with
+// `write: broken pipe` or `read: connection reset by peer`.
+//
+// The fix has two layers:
+//  1. req.GetBody + Idempotency-Key let net/http's stdlib request-replay path
+//     treat the POST as idempotent and silently retry on a fresh conn —
+//     covers most cases (notably read-after-write failures).
+//  2. doWithStaleConnRetry adds a small application-level retry for the
+//     residual EPIPE/ECONNRESET window where stdlib refuses to retry because
+//     some bytes were already written. See golang/go#19943,
+//     net/http.Request.isReplayable, and net/http.persistConn.shouldRetryRequest.
+//
+// On baseline this test reports ~30-45% failures in the concurrent burst.
+// With the fix every request succeeds because the stale-conn race is recovered
+// transparently.
+func TestUDSTransportRecoversFromStaleIdleConn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping UDS stale-idle recovery test in short mode")
+	}
+
+	dir, err := os.MkdirTemp("", "uds-stale-idle")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+	socketPath := filepath.Join(dir, "trace.sock")
+
+	ln, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	// Each accepted conn handles exactly one request and then closes the
+	// underlying conn abruptly — without a `Connection: close` header and
+	// without graceful shutdown — so the client still believes the conn is
+	// keep-alive and may pick it up again from its idle pool. This mirrors the
+	// trace-agent's behavior under load.
+	serveDone := make(chan struct{})
+	go func() {
+		defer close(serveDone)
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				serveOneRequestRawHTTP(c)
+				// Brief delay so the response reaches the client and the conn
+				// is returned to the idle pool, then this defer closes it
+				// abruptly underneath the pool.
+				time.Sleep(time.Millisecond)
+			}(c)
+		}
+	}()
+
+	transport := newHTTPTransport(
+		"http://localhost"+tracesAPIPath,
+		"http://localhost"+statsAPIPath,
+		internal.UDSClient(socketPath, 5*time.Second),
+		datadogHeaders(),
+	)
+	defer func() {
+		// Close the listener first — causes the accept goroutine to exit on
+		// the next Accept() call. Then drain serveDone so we know the goroutine
+		// has fully exited before we return. Finally, close any idle connections
+		// in the client transport so that the stdlib persistConn.readLoop
+		// goroutines are also released; without this step goleak (used by the
+		// multi-OS test matrix) reports leaked goroutines on Windows.
+		ln.Close()
+		<-serveDone
+		transport.client.CloseIdleConnections()
+	}()
+
+	const (
+		numGoroutines = 20
+		requestsEach  = 20
+	)
+
+	t.Run("send", func(t *testing.T) {
+		var (
+			wg       sync.WaitGroup
+			errs     atomic.Int64
+			firstErr atomic.Value // error
+		)
+		for range numGoroutines {
+			wg.Go(func() {
+				for range requestsEach {
+					p, err := encode(getTestTrace(1, 1))
+					if err != nil {
+						errs.Add(1)
+						firstErr.CompareAndSwap(nil, err)
+						continue
+					}
+					body, err := transport.send(p)
+					if err != nil {
+						errs.Add(1)
+						firstErr.CompareAndSwap(nil, err)
+						continue
+					}
+					io.Copy(io.Discard, body)
+					body.Close()
+				}
+			})
+		}
+		wg.Wait()
+		if n := errs.Load(); n > 0 {
+			t.Errorf("%d/%d send calls failed despite Idempotency-Key + GetBody; first error: %v",
+				n, numGoroutines*requestsEach, firstErr.Load())
+		}
+	})
+
+	t.Run("sendStats", func(t *testing.T) {
+		var (
+			wg       sync.WaitGroup
+			errs     atomic.Int64
+			firstErr atomic.Value // error
+		)
+		for range numGoroutines {
+			wg.Go(func() {
+				for range requestsEach {
+					if err := transport.sendStats(&pb.ClientStatsPayload{}, 1); err != nil {
+						errs.Add(1)
+						firstErr.CompareAndSwap(nil, err)
+					}
+				}
+			})
+		}
+		wg.Wait()
+		if n := errs.Load(); n > 0 {
+			t.Errorf("%d/%d sendStats calls failed despite Idempotency-Key; first error: %v",
+				n, numGoroutines*requestsEach, firstErr.Load())
+		}
+	})
+}
+
+// serveOneRequestRawHTTP reads a single HTTP/1.1 request from c (request line,
+// headers, body) and writes back a minimal keep-alive 200 response. It does NOT
+// close the conn — the caller is expected to do that after the response is
+// flushed, simulating an abrupt server-side close on a keep-alive connection.
+func serveOneRequestRawHTTP(c net.Conn) {
+	br := bufio.NewReader(c)
+	// Read request line.
+	if _, err := br.ReadString('\n'); err != nil {
+		return
+	}
+	// Read headers until the blank line, tracking Content-Length.
+	var contentLen int
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			return
+		}
+		if line == "\r\n" || line == "\n" {
+			break
+		}
+		if cl, ok := parseContentLengthHeader(line); ok {
+			contentLen = cl
+		}
+	}
+	// Drain the body so the response write doesn't race with an in-flight write
+	// on the client side. This assumes the request always carries a
+	// Content-Length, which is true today because send() sets
+	// req.ContentLength = int64(stats.size) explicitly. A future send method
+	// that uses chunked encoding (ContentLength = -1) would not be drained
+	// here and could cause spurious EPIPE failures in this test.
+	if contentLen > 0 {
+		if _, err := io.CopyN(io.Discard, br, int64(contentLen)); err != nil {
+			return
+		}
+	}
+	_, _ = c.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"))
+}
+
+func parseContentLengthHeader(line string) (int, bool) {
+	line = strings.TrimRight(line, "\r\n")
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 || !strings.EqualFold(strings.TrimSpace(parts[0]), "Content-Length") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	return n, err == nil
 }
 
 func TestExternalEnvironment(t *testing.T) {

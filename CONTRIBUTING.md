@@ -229,6 +229,10 @@ The script provides:
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
 It will help tremendously in avoiding comments and speeding up the PR process.
 
+### Comments
+
+Add comments only for non-obvious intent, trade-offs, or constraints the code can't carry. Don't narrate what the diff already shows.
+
 ### Local Development
 
 For local development, use make targets as the primary interface:
