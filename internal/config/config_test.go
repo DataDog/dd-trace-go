@@ -848,6 +848,42 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 	})
 }
 
+func TestOTLPMetricsHeaders(t *testing.T) {
+	t.Run("nil when no headers configured", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Nil(t, cfg.OTLPMetricsHeaders())
+	})
+
+	t.Run("generic OTEL_EXPORTER_OTLP_HEADERS used as fallback", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=secret123,x-tenant=acme")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, map[string]string{"api-key": "secret123", "x-tenant": "acme"}, cfg.OTLPMetricsHeaders())
+	})
+
+	t.Run("signal-specific headers take precedence over generic", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "api-key=generic-key,x-tenant=shared")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "api-key=metrics-key")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		h := cfg.OTLPMetricsHeaders()
+		assert.Equal(t, "metrics-key", h["api-key"])
+		assert.Equal(t, "shared", h["x-tenant"])
+	})
+}
+
 func TestOTLPMetricsFlushInterval(t *testing.T) {
 	t.Run("defaults to 10 seconds", func(t *testing.T) {
 		resetGlobalState()

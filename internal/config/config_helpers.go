@@ -352,13 +352,22 @@ func resolveOTLPMetricsURL(rawAgentURL *url.URL, endpoint string, genericEndpoin
 }
 
 // buildOTLPMetricsHeaders builds the headers map for OTLP metrics HTTP requests.
-// Unlike the traces headers, the Content-Type is not added here because it depends
-// on the chosen protocol (JSON vs protobuf) and is set by the exporter at send time.
-func buildOTLPMetricsHeaders(headers map[string]string) map[string]string {
-	if headers == nil {
+// Per the OTel spec, generic headers (OTEL_EXPORTER_OTLP_HEADERS) are the base;
+// signal-specific headers (OTEL_EXPORTER_OTLP_METRICS_HEADERS) are merged on top
+// and take precedence. Content-Type is not added here — it depends on the protocol
+// (JSON vs protobuf) and is set by the exporter at send time.
+func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
 		return nil
 	}
-	return headers
+	merged := make(map[string]string, len(genericHeaders)+len(signalHeaders))
+	for k, v := range genericHeaders {
+		merged[k] = v
+	}
+	for k, v := range signalHeaders {
+		merged[k] = v
+	}
+	return merged
 }
 
 // resolveOTLPMetricsFlushInterval parses _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (milliseconds).
