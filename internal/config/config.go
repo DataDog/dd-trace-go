@@ -1335,25 +1335,36 @@ func (c *Config) OTLPSpanMetricsEnabled() bool {
 	return c.otlpExportMode && c.runtimeMetricsOtel
 }
 
+// OTLPSemanticsMode reports whether DD_TRACE_OTEL_SEMANTICS_ENABLED is set.
+// When true, span-metric data points carry only OTel semantic-convention attributes;
+// Datadog-specific datadog.* attributes are omitted.
 func (c *Config) OTLPSemanticsMode() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpSemanticsMode
 }
 
+// OTLPMetricsURL returns the resolved OTLP metrics endpoint URL.
+// Derived from OTEL_EXPORTER_OTLP_METRICS_ENDPOINT, falling back to
+// OTEL_EXPORTER_OTLP_ENDPOINT (as a base URL), then defaulting to
+// http://<agent-host>:4318/v1/metrics.
 func (c *Config) OTLPMetricsURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpMetricsURL
 }
 
-// OTLPMetricsHeaders returns a copy of the OTLP metrics headers map.
+// OTLPMetricsHeaders returns a copy of the resolved OTLP metrics headers map.
+// Generic OTEL_EXPORTER_OTLP_HEADERS are used as the base; signal-specific
+// OTEL_EXPORTER_OTLP_METRICS_HEADERS are merged on top and take precedence.
 func (c *Config) OTLPMetricsHeaders() map[string]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return maps.Clone(c.otlpMetricsHeaders)
 }
 
+// OTLPMetricsFlushInterval returns the cadence at which span metrics are flushed.
+// Defaults to 10s; overridable in tests via _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (ms).
 func (c *Config) OTLPMetricsFlushInterval() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
