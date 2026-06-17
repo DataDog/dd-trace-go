@@ -10,7 +10,55 @@ import (
 	"testing"
 
 	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/stretchr/testify/require"
 )
+
+func newBenchmarkClient(b *testing.B) *openfeature.Client {
+	b.Helper()
+
+	provider := newDatadogProvider(ProviderConfig{})
+	config := createTestConfig()
+	provider.updateConfiguration(config)
+
+	require.NoError(b, openfeature.SetProviderAndWait(provider))
+	b.Cleanup(provider.Shutdown)
+
+	return openfeature.NewClient("flageval-bench")
+}
+
+// BenchmarkOpenFeatureClientEvaluation benchmarks boolean flag evaluation through the OpenFeature client.
+func BenchmarkOpenFeatureClientEvaluation(b *testing.B) {
+	client := newBenchmarkClient(b)
+	ctx := context.Background()
+	evalCtx := openfeature.NewEvaluationContext("user-123", map[string]any{
+		"country": "US",
+	})
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		_, _ = client.BooleanValue(ctx, "bool-flag", false, evalCtx)
+	}
+}
+
+// BenchmarkOpenFeatureClientConcurrentEvaluations benchmarks concurrent flag evaluations through the OpenFeature client.
+func BenchmarkOpenFeatureClientConcurrentEvaluations(b *testing.B) {
+	client := newBenchmarkClient(b)
+	ctx := context.Background()
+	evalCtx := openfeature.NewEvaluationContext("user-123", map[string]any{
+		"country": "US",
+	})
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, _ = client.BooleanValue(ctx, "bool-flag", false, evalCtx)
+		}
+	})
+}
 
 // BenchmarkBooleanEvaluation benchmarks boolean flag evaluation
 func BenchmarkBooleanEvaluation(b *testing.B) {
