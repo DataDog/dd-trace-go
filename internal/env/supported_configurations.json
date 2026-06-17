@@ -1459,8 +1459,8 @@
     "DD_TRACE_OTEL_SEMANTICS_ENABLED": [
       {
         "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_PARTIAL_FLUSH_ENABLED": [
@@ -1767,8 +1767,8 @@
     "OTEL_TRACES_SPAN_METRICS_ENABLED": [
       {
         "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
+        "type": "boolean",
+        "default": null
       }
     ],
     "OTEL_EXPORTER_OTLP_ENDPOINT": [
