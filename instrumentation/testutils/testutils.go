@@ -6,6 +6,7 @@
 package testutils
 
 import (
+	"strconv"
 	"sync"
 	"testing"
 	"unsafe" // also enables go:linkname directives below
@@ -17,8 +18,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -52,6 +55,24 @@ func SetGlobalDogstatsdAddr(t *testing.T, val string) {
 		globalconfig.SetDogstatsdAddr(prev)
 	})
 	globalconfig.SetDogstatsdAddr(val)
+}
+
+// SetContainerTagsHash sets the container tags hash for the duration of the test.
+func SetContainerTagsHash(t *testing.T, hash string) {
+	t.Helper()
+	processtags.SetContainerTagsHash(hash)
+	t.Cleanup(func() { processtags.SetContainerTagsHash("") })
+}
+
+// DBMBaseHash computes the expected DBM base hash decimal string for the given inputs,
+// matching the value injected as ddsh in SQL comments and as _dd.propagated_hash on spans.
+func DBMBaseHash(service, env, containerTagsHash string) string {
+	var processTags []string
+	if pTags := processtags.GlobalTags(); pTags != nil {
+		processTags = pTags.Slice()
+	}
+	hash := datastreams.BaseHash(service, env, processTags, containerTagsHash)
+	return strconv.FormatInt(int64(hash), 10)
 }
 
 func SetGlobalHeaderTags(t *testing.T, headers ...string) {

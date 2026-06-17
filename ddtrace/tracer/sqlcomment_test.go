@@ -13,6 +13,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 
 	"github.com/stretchr/testify/assert"
@@ -412,6 +413,62 @@ func TestSQLCommentUsesConvertedInheritedTags(t *testing.T) {
 	assert.Contains(t, carrier.Query, "dde='staging'")
 	assert.Contains(t, carrier.Query, "ddpv='2.0'")
 	assert.Contains(t, carrier.Query, "ddprs='true'")
+}
+
+func TestSQLCommentCarrierDynamicService(t *testing.T) {
+	globalconfig.SetServiceName("my-svc")
+	defer globalconfig.SetServiceName("")
+	processtags.SetContainerTagsHash("abc123")
+	defer processtags.SetContainerTagsHash("")
+
+	expectedHash := computeBaseHash()
+	require.NotEmpty(t, expectedHash, "expected hash must be non-empty with a service name set")
+
+	c := &SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeDynamicService,
+		DBServiceName: "mydb",
+	}
+	require.NoError(t, c.Inject(nil))
+	assert.Contains(t, c.Query, "ddsh='"+expectedHash+"'", "base hash must be injected")
+	assert.NotContains(t, c.Query, "traceparent", "traceparent must NOT be injected in dynamic_service mode")
+	assert.Contains(t, c.Query, "dddbs='mydb'", "service name must be injected")
+	assert.Equal(t, expectedHash, c.BaseHash, "BaseHash field must be populated")
+
+	// Without a service name, ddsh must not appear.
+	globalconfig.SetServiceName("")
+	processtags.SetContainerTagsHash("abc123")
+	c2 := &SQLCommentCarrier{Query: "SELECT 1", Mode: DBMPropagationModeDynamicService, DBServiceName: "mydb"}
+	require.NoError(t, c2.Inject(nil))
+	assert.NotContains(t, c2.Query, "ddsh", "ddsh must not be injected when service name is empty")
+	assert.Equal(t, "", c2.BaseHash)
+}
+
+// TestSQLCommentCarrierFullModeNoHash verifies that DBMPropagationModeFull injects
+// traceparent but does NOT inject the container tags hash (ddsh), even when the hash
+// is non-empty.
+func TestSQLCommentCarrierFullModeNoHash(t *testing.T) {
+	processtags.SetContainerTagsHash("testhash999")
+	defer processtags.SetContainerTagsHash("")
+
+	trc, err := newTracer(WithService("my-svc"), WithEnv("prod"), WithServiceVersion("3.0"))
+	require.NoError(t, err)
+	defer globalconfig.SetServiceName("")
+	defer trc.Stop()
+
+	span := trc.StartSpan("op")
+	defer span.Finish()
+
+	c := &SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeFull,
+		DBServiceName: "mydb",
+	}
+	require.NoError(t, c.Inject(span.Context()))
+
+	assert.Contains(t, c.Query, "traceparent=", "full mode must inject traceparent")
+	assert.NotContains(t, c.Query, "ddsh", "full mode must NOT inject ddsh even when hash is non-empty")
+	assert.Equal(t, "", c.BaseHash, "BaseHash must remain empty in full mode")
 }
 
 func BenchmarkSQLCommentInjection(b *testing.B) {
