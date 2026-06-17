@@ -100,16 +100,23 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 	return wrapped
 }
 
-func setConsumeCheckpoint(enabled bool, groupID string, clusterID string, msg *sarama.ConsumerMessage) {
-	if !enabled || msg == nil {
+func setConsumeCheckpoint(cfg *config, msg *sarama.ConsumerMessage) {
+	if !cfg.dataStreamsEnabled || msg == nil {
 		return
 	}
-	edges := []string{"direction:in", "topic:" + msg.Topic, "type:kafka"}
-	if groupID != "" {
-		edges = append(edges, "group:"+groupID)
-	}
-	if clusterID != "" {
-		edges = append(edges, "kafka_cluster_id:"+clusterID)
+	groupID := cfg.groupID
+	clusterID := cfg.ClusterID()
+	key := "in\x00" + msg.Topic + "\x00" + groupID + "\x00" + clusterID
+	edges := cfg.dsmTagCache.get(key)
+	if edges == nil {
+		edges = []string{"direction:in", "topic:" + msg.Topic, "type:kafka"}
+		if groupID != "" {
+			edges = append(edges, "group:"+groupID)
+		}
+		if clusterID != "" {
+			edges = append(edges, "kafka_cluster_id:"+clusterID)
+		}
+		edges = cfg.dsmTagCache.getOrStore(key, edges)
 	}
 	carrier := NewConsumerMessageCarrier(msg)
 

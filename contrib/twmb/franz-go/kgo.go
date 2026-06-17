@@ -8,6 +8,7 @@ package kgo
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	kgo "github.com/twmb/franz-go/pkg/kgo"
 
@@ -36,11 +37,43 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageTwmbFranzGo)
 }
 
+const dsmEdgeTagCacheMax = 1000
+
+// dsmEdgeTagCache caches edge-tag slices keyed by a composite string to avoid
+// per-message []string allocations. Entries are shared read-only after store;
+// callers must not mutate the returned slice.
+type dsmEdgeTagCache struct {
+	m    sync.Map
+	size atomic.Int32
+}
+
+func (c *dsmEdgeTagCache) get(key string) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	return nil
+}
+
+func (c *dsmEdgeTagCache) getOrStore(key string, tags []string) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	if c.size.Load() >= dsmEdgeTagCacheMax {
+		return tags
+	}
+	actual, loaded := c.m.LoadOrStore(key, tags)
+	if !loaded {
+		c.size.Add(1)
+	}
+	return actual.([]string)
+}
+
 type tracingHook struct {
 	cfg           config
 	client        *kgo.Client
 	activeSpans   []*tracer.Span
 	activeSpansMu sync.Mutex
+	dsmTagCache   dsmEdgeTagCache
 }
 
 func newTracingHook(opts ...Option) *tracingHook {
@@ -191,7 +224,6 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 	if !h.cfg.dataStreamsEnabled {
 		return
 	}
-	edges := []string{"direction:in", "topic:" + r.Topic, "type:kafka"}
 
 	// The client should never be nil when we reach that point
 	// but still checking to avoid a panic.
@@ -200,9 +232,16 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 		// GroupMetadata uses an atomic load internally, so it is safe to call
 		// concurrently without additional locking.
 		groupID, _ = h.client.GroupMetadata()
+	}
+
+	key := "in\x00" + r.Topic + "\x00" + groupID
+	edges := h.dsmTagCache.get(key)
+	if edges == nil {
+		edges = []string{"direction:in", "topic:" + r.Topic, "type:kafka"}
 		if groupID != "" {
 			edges = append(edges, "group:"+groupID)
 		}
+		edges = h.dsmTagCache.getOrStore(key, edges)
 	}
 
 	carrier := newKafkaHeadersCarrier(r)
@@ -224,11 +263,17 @@ func (h *tracingHook) setProduceDSMCheckpoint(r *kgo.Record) {
 	if !h.cfg.dataStreamsEnabled {
 		return
 	}
+	key := "out\x00" + r.Topic
+	edges := h.dsmTagCache.get(key)
+	if edges == nil {
+		edges = []string{"direction:out", "topic:" + r.Topic, "type:kafka"}
+		edges = h.dsmTagCache.getOrStore(key, edges)
+	}
 	carrier := newKafkaHeadersCarrier(r)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		datastreams.ExtractFromBase64Carrier(r.Context, carrier),
 		options.CheckpointParams{PayloadSize: msgSize(r)},
-		"direction:out", "topic:"+r.Topic, "type:kafka",
+		edges...,
 	)
 	if !ok {
 		return

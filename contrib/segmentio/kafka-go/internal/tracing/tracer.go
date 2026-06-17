@@ -7,6 +7,7 @@ package tracing
 
 import (
 	"math"
+	"sync"
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -16,6 +17,37 @@ var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageSegmentioKafkaGo)
+}
+
+const dsmEdgeTagCacheMax = 1000
+
+// dsmEdgeTagCache caches edge-tag slices keyed by a composite string to avoid
+// per-message []string allocations. Entries are shared read-only after store;
+// callers must not mutate the returned slice.
+type dsmEdgeTagCache struct {
+	m    sync.Map
+	size atomic.Int32
+}
+
+func (c *dsmEdgeTagCache) get(key string) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	return nil
+}
+
+func (c *dsmEdgeTagCache) getOrStore(key string, tags []string) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	if c.size.Load() >= dsmEdgeTagCacheMax {
+		return tags
+	}
+	actual, loaded := c.m.LoadOrStore(key, tags)
+	if !loaded {
+		c.size.Add(1)
+	}
+	return actual.([]string)
 }
 
 type Tracer struct {
@@ -28,6 +60,7 @@ type Tracer struct {
 	dataStreamsEnabled  bool
 	kafkaCfg            KafkaConfig
 	clusterID           atomic.Value // +checkatomic
+	dsmTagCache         dsmEdgeTagCache
 }
 
 // Option describes options for the Kafka integration.

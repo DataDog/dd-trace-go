@@ -29,7 +29,7 @@ type syncProducer struct {
 // SendMessage calls sarama.SyncProducer.SendMessage and traces the request.
 func (p *syncProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
 	span := startProducerSpan(p.cfg, p.version, msg)
-	setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.cfg.ClusterID(), msg, p.version)
+	setProduceCheckpoint(p.cfg, msg, p.version)
 	partition, offset, err = p.SyncProducer.SendMessage(msg)
 	finishProducerSpan(span, partition, offset, err)
 	if err == nil && p.cfg.dataStreamsEnabled {
@@ -44,7 +44,7 @@ func (p *syncProducer) SendMessages(msgs []*sarama.ProducerMessage) error {
 	// treated individually, so we create a span for each one
 	spans := make([]*tracer.Span, len(msgs))
 	for i, msg := range msgs {
-		setProduceCheckpoint(p.cfg.dataStreamsEnabled, p.cfg.ClusterID(), msg, p.version)
+		setProduceCheckpoint(p.cfg, msg, p.version)
 		spans[i] = startProducerSpan(p.cfg, p.version, msg)
 	}
 	err := p.SyncProducer.SendMessages(msgs)
@@ -165,7 +165,7 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 			select {
 			case msg := <-wrapped.input:
 				span := startProducerSpan(cfg, saramaConfig.Version, msg)
-				setProduceCheckpoint(cfg.dataStreamsEnabled, cfg.ClusterID(), msg, saramaConfig.Version)
+				setProduceCheckpoint(cfg, msg, saramaConfig.Version)
 				p.Input() <- msg
 				if saramaConfig.Producer.Return.Successes {
 					spanID := span.Context().SpanID()
@@ -269,13 +269,19 @@ func getProducerSpanContext(msg *sarama.ProducerMessage) (ddtrace.SpanContext, b
 	return spanctx, true
 }
 
-func setProduceCheckpoint(enabled bool, clusterID string, msg *sarama.ProducerMessage, version sarama.KafkaVersion) {
-	if !enabled || msg == nil {
+func setProduceCheckpoint(cfg *config, msg *sarama.ProducerMessage, version sarama.KafkaVersion) {
+	if !cfg.dataStreamsEnabled || msg == nil {
 		return
 	}
-	edges := []string{"direction:out", "topic:" + msg.Topic, "type:kafka"}
-	if clusterID != "" {
-		edges = append(edges, "kafka_cluster_id:"+clusterID)
+	clusterID := cfg.ClusterID()
+	key := "out\x00" + msg.Topic + "\x00" + clusterID
+	edges := cfg.dsmTagCache.get(key)
+	if edges == nil {
+		edges = []string{"direction:out", "topic:" + msg.Topic, "type:kafka"}
+		if clusterID != "" {
+			edges = append(edges, "kafka_cluster_id:"+clusterID)
+		}
+		edges = cfg.dsmTagCache.getOrStore(key, edges)
 	}
 	carrier := NewProducerMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(datastreams.ExtractFromBase64Carrier(context.Background(), carrier), options.CheckpointParams{PayloadSize: getProducerMsgSize(msg)}, edges...)

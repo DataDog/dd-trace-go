@@ -17,12 +17,19 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(msg Message) {
 	if !tr.dataStreamsEnabled || msg == nil {
 		return
 	}
-	edges := []string{"direction:in", "topic:" + msg.GetTopic(), "type:kafka"}
-	if tr.kafkaCfg.ConsumerGroupID != "" {
-		edges = append(edges, "group:"+tr.kafkaCfg.ConsumerGroupID)
-	}
-	if tr.ClusterID() != "" {
-		edges = append(edges, "kafka_cluster_id:"+tr.ClusterID())
+	groupID := tr.kafkaCfg.ConsumerGroupID
+	clusterID := tr.ClusterID()
+	key := "in\x00" + msg.GetTopic() + "\x00" + groupID + "\x00" + clusterID
+	edges := tr.dsmTagCache.get(key)
+	if edges == nil {
+		edges = []string{"direction:in", "topic:" + msg.GetTopic(), "type:kafka"}
+		if groupID != "" {
+			edges = append(edges, "group:"+groupID)
+		}
+		if clusterID != "" {
+			edges = append(edges, "kafka_cluster_id:"+clusterID)
+		}
+		edges = tr.dsmTagCache.getOrStore(key, edges)
 	}
 	carrier := NewMessageCarrier(msg)
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(
@@ -34,10 +41,10 @@ func (tr *Tracer) SetConsumeDSMCheckpoint(msg Message) {
 		return
 	}
 	datastreams.InjectToBase64Carrier(ctx, carrier)
-	if tr.kafkaCfg.ConsumerGroupID != "" {
+	if groupID != "" {
 		// only track Kafka lag if a consumer group is set.
 		// since there is no ack mechanism, we consider that messages read are committed right away.
-		tracer.TrackKafkaCommitOffsetWithCluster(tr.ClusterID(), tr.kafkaCfg.ConsumerGroupID, msg.GetTopic(), int32(msg.GetPartition()), msg.GetOffset())
+		tracer.TrackKafkaCommitOffsetWithCluster(clusterID, groupID, msg.GetTopic(), int32(msg.GetPartition()), msg.GetOffset())
 	}
 }
 
@@ -53,9 +60,15 @@ func (tr *Tracer) SetProduceDSMCheckpoint(msg Message, writer Writer) {
 		topic = msg.GetTopic()
 	}
 
-	edges := []string{"direction:out", "topic:" + topic, "type:kafka"}
-	if tr.ClusterID() != "" {
-		edges = append(edges, "kafka_cluster_id:"+tr.ClusterID())
+	clusterID := tr.ClusterID()
+	key := "out\x00" + topic + "\x00" + clusterID
+	edges := tr.dsmTagCache.get(key)
+	if edges == nil {
+		edges = []string{"direction:out", "topic:" + topic, "type:kafka"}
+		if clusterID != "" {
+			edges = append(edges, "kafka_cluster_id:"+clusterID)
+		}
+		edges = tr.dsmTagCache.getOrStore(key, edges)
 	}
 	carrier := MessageCarrier{msg}
 	ctx, ok := tracer.SetDataStreamsCheckpointWithParams(

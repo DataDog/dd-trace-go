@@ -8,12 +8,47 @@ package sarama
 import (
 	"context"
 	"math"
+	"sync"
 	"sync/atomic"
 
 	"github.com/IBM/sarama"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
+
+const dsmEdgeTagCacheMax = 1000
+
+// dsmEdgeTagCache caches edge-tag slices keyed by a composite string to avoid
+// per-message []string allocations. Entries are added on first use and shared
+// read-only afterwards; callers must not mutate the returned slice.
+type dsmEdgeTagCache struct {
+	m    sync.Map
+	size atomic.Int32
+}
+
+// get returns the cached edge tags for key, or nil if not present.
+func (c *dsmEdgeTagCache) get(key string) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	return nil
+}
+
+// getOrStore returns the cached tags for key, storing tags on first use.
+// tags must not be mutated by the caller after passing to getOrStore.
+func (c *dsmEdgeTagCache) getOrStore(key string, tags []string) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	if c.size.Load() >= dsmEdgeTagCacheMax {
+		return tags
+	}
+	actual, loaded := c.m.LoadOrStore(key, tags)
+	if !loaded {
+		c.size.Add(1)
+	}
+	return actual.([]string)
+}
 
 type config struct {
 	consumerServiceName string
@@ -29,6 +64,7 @@ type config struct {
 	saramaConfig        *sarama.Config
 	consumerCustomTags  map[string]func(msg *sarama.ConsumerMessage) any
 	producerCustomTags  map[string]func(msg *sarama.ProducerMessage) any
+	dsmTagCache         dsmEdgeTagCache
 }
 
 func (cfg *config) ClusterID() string {
