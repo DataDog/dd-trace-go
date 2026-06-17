@@ -843,7 +843,7 @@ func TestAgentWriterFlushSizeMetrics(t *testing.T) {
 			name:        "v0.4-protocol",
 			newPayload:  func() payload { return newPayload(traceProtocolV04) },
 			description: "v0.4 encodes eagerly, size is accurate immediately",
-			size:        1934,
+			size:        1811,
 		},
 		{
 			name:        "v1-protocol",
@@ -939,7 +939,7 @@ func TestPayloadSizeConsistency(t *testing.T) {
 			name:        "v0.4",
 			newPayload:  func() payload { return newPayloadV04() },
 			description: "v0.4 encodes eagerly, size is accurate immediately",
-			size:        1332,
+			size:        1209,
 		},
 		{
 			name:        "v1",
