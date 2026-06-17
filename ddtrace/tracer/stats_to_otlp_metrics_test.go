@@ -17,11 +17,13 @@ import (
 	ddsketch "github.com/DataDog/sketches-go/ddsketch"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpmetrics "go.opentelemetry.io/proto/otlp/metrics/v1"
+	"google.golang.org/protobuf/proto"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
-// encodeSketch serializes the given nanosecond values into a DDSketch byte slice.
+// encodeSketch serializes the given nanosecond values into proto-encoded DDSketch bytes,
+// matching the format produced by the stats concentrator (proto.Marshal(sketch.ToProto())).
 func encodeSketch(t *testing.T, valuesNs ...float64) []byte {
 	t.Helper()
 	sk, err := ddsketch.LogCollapsingLowestDenseDDSketch(0.01, 2048)
@@ -29,8 +31,8 @@ func encodeSketch(t *testing.T, valuesNs ...float64) []byte {
 	for _, v := range valuesNs {
 		require.NoError(t, sk.Add(v))
 	}
-	var b []byte
-	sk.Encode(&b, false)
+	b, err := proto.Marshal(sk.ToProto())
+	require.NoError(t, err)
 	return b
 }
 

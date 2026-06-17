@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	ddsketch "github.com/DataDog/sketches-go/ddsketch"
+	"github.com/DataDog/sketches-go/ddsketch/pb/sketchpb"
+	"google.golang.org/protobuf/proto"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
@@ -228,15 +230,17 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 	return attrs
 }
 
-// sketchToHistogram decodes a DDSketch from bytes and projects its values into fixed histogram buckets.
+// sketchToHistogram decodes a DDSketch from protobuf bytes (proto.Marshal of DDSketch.ToProto(),
+// as produced by the stats concentrator) and projects its values into fixed histogram buckets.
 // Sketch values are in nanoseconds; the function converts them to seconds.
 // Returns (bucketCounts, sumSec, minSec, maxSec, totalCount, error).
 func sketchToHistogram(sketchBytes []byte, bounds []float64) ([]uint64, float64, float64, float64, uint64, error) {
-	sketch, err := ddsketch.LogCollapsingLowestDenseDDSketch(0.01, 2048)
-	if err != nil {
+	var skPb sketchpb.DDSketch
+	if err := proto.Unmarshal(sketchBytes, &skPb); err != nil {
 		return nil, 0, 0, 0, 0, err
 	}
-	if err := sketch.DecodeAndMergeWith(sketchBytes); err != nil {
+	sketch, err := ddsketch.FromProto(&skPb)
+	if err != nil {
 		return nil, 0, 0, 0, 0, err
 	}
 	if sketch.GetCount() == 0 {
