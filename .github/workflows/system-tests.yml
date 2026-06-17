@@ -142,6 +142,19 @@ jobs:
             scenario: APM_TRACING_EFFICIENT_PAYLOAD
           - weblog-variant: net-http
             scenario: FEATURE_FLAGGING_AND_EXPERIMENTATION
+          # Client-side stats — run across all weblogs, plus the client_drop_p0s variant on net-http
+          - weblog-variant: net-http
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: echo
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: chi
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: gin
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: uds-echo
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: net-http
+            scenario: TRACE_STATS_COMPUTATION_CLIENT_DROP_P0S_FALSE
       fail-fast: false
     env:
       TEST_LIBRARY: golang
@@ -206,9 +219,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
-        with:
-          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@834c46e7077b7e3bad26f80b5748d7177ea40d9a
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -330,9 +341,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
-        with:
-          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@834c46e7077b7e3bad26f80b5748d7177ea40d9a
 
       - name: Compress artifact
         if: ${{ always() }}

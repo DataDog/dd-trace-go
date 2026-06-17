@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
@@ -407,6 +408,106 @@ func TestITRTestsSkippingEnabledPropagation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCIVisibilityMetaValueTruncation(t *testing.T) {
+	assert := assert.New(t)
+
+	exactASCII := strings.Repeat("a", ciVisibilityMetaValueMaxChars)
+	overASCII := exactASCII + "b"
+	exactUnicode := strings.Repeat("é", ciVisibilityMetaValueMaxChars)
+	underLimitUnicode := strings.Repeat("é", ciVisibilityMetaValueMaxChars-1)
+	overUnicode := exactUnicode + "é"
+	asciiThenUnicode := exactASCII + "é"
+	unicodeThenASCII := exactUnicode + "a"
+
+	assert.Equal(exactASCII, truncateCIVisibilityMetaValue(exactASCII))
+	assert.Equal(exactASCII, truncateCIVisibilityMetaValue(overASCII))
+
+	assert.Greater(len(underLimitUnicode), ciVisibilityMetaValueMaxChars)
+	assert.Equal(ciVisibilityMetaValueMaxChars-1, utf8.RuneCountInString(underLimitUnicode))
+	assert.Equal(underLimitUnicode, truncateCIVisibilityMetaValue(underLimitUnicode))
+
+	assert.Greater(len(exactUnicode), ciVisibilityMetaValueMaxChars)
+	assert.Equal(ciVisibilityMetaValueMaxChars, utf8.RuneCountInString(exactUnicode))
+	assert.Equal(exactUnicode, truncateCIVisibilityMetaValue(exactUnicode))
+
+	truncatedUnicode := truncateCIVisibilityMetaValue(overUnicode)
+	assert.True(utf8.ValidString(truncatedUnicode))
+	assert.Equal(ciVisibilityMetaValueMaxChars, utf8.RuneCountInString(truncatedUnicode))
+	assert.Equal(exactUnicode, truncatedUnicode)
+
+	assert.Equal(exactASCII, truncateCIVisibilityMetaValue(asciiThenUnicode))
+	assert.Equal(exactUnicode, truncateCIVisibilityMetaValue(unicodeThenASCII))
+	assert.Equal(42, truncateCIVisibilityTagValue(42))
+}
+
+func TestManualAPIMetaStringValuesAreTruncated(t *testing.T) {
+	mockTracer.Reset()
+	assert := assert.New(t)
+
+	longValue := strings.Repeat("a", ciVisibilityMetaValueMaxChars+1)
+	unicodeValue := strings.Repeat("é", ciVisibilityMetaValueMaxChars+1)
+	truncatedValue := strings.Repeat("a", ciVisibilityMetaValueMaxChars)
+	truncatedUnicodeValue := strings.Repeat("é", ciVisibilityMetaValueMaxChars)
+	now := time.Now()
+
+	session := CreateTestSession(
+		WithTestSessionCommand(longValue),
+		WithTestSessionWorkingDirectory(unicodeValue),
+		WithTestSessionFramework(longValue, unicodeValue),
+		WithTestSessionStartTime(now),
+	)
+	session.SetTag("session.custom", unicodeValue)
+	module := session.GetOrCreateModule(unicodeValue, WithTestModuleFramework(longValue, unicodeValue), WithTestModuleStartTime(now))
+	module.SetTag("module.custom", longValue)
+	suite := module.GetOrCreateSuite(unicodeValue, WithTestSuiteStartTime(now))
+	suite.SetTag("suite.custom", unicodeValue)
+	test := suite.CreateTest(unicodeValue, WithTestStartTime(now))
+	test.SetTag("test.custom", longValue)
+	test.SetError(WithErrorInfo(unicodeValue, longValue, unicodeValue))
+	test.Close(ResultStatusSkip, WithTestSkipReason(unicodeValue))
+	session.Close(0)
+
+	finishedSpans := mockTracer.FinishedSpans()
+	assert.Len(finishedSpans, 4)
+
+	sessionSpans := manualAPISpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	if assert.Len(sessionSpans, 1) {
+		assert.Equal(truncatedValue, sessionSpans[0].Tag(constants.TestCommand))
+		assert.Equal(truncatedUnicodeValue, sessionSpans[0].Tag(constants.TestCommandWorkingDirectory))
+		assert.Equal(truncatedValue, sessionSpans[0].Tag(constants.TestFramework))
+		assert.Equal(truncatedUnicodeValue, sessionSpans[0].Tag(constants.TestFrameworkVersion))
+		assert.Equal(truncatedUnicodeValue, sessionSpans[0].Tag("session.custom"))
+	}
+
+	moduleSpans := manualAPISpansWithType(finishedSpans, constants.SpanTypeTestModule)
+	if assert.Len(moduleSpans, 1) {
+		assert.Equal(truncatedUnicodeValue, moduleSpans[0].Tag(constants.TestModule))
+		assert.Equal(truncatedValue, moduleSpans[0].Tag(constants.TestFramework))
+		assert.Equal(truncatedUnicodeValue, moduleSpans[0].Tag(constants.TestFrameworkVersion))
+		assert.Equal(truncatedValue, moduleSpans[0].Tag("module.custom"))
+	}
+
+	suiteSpans := manualAPISpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	if assert.Len(suiteSpans, 1) {
+		assert.Equal(truncatedUnicodeValue, suiteSpans[0].Tag(constants.TestModule))
+		assert.Equal(truncatedUnicodeValue, suiteSpans[0].Tag(constants.TestSuite))
+		assert.Equal(truncatedUnicodeValue, suiteSpans[0].Tag("suite.custom"))
+	}
+
+	testSpans := manualAPISpansWithType(finishedSpans, constants.SpanTypeTest)
+	if assert.Len(testSpans, 1) {
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(constants.TestModule))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(constants.TestSuite))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(constants.TestName))
+		assert.Equal(truncatedValue, testSpans[0].Tag("test.custom"))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(ext.ErrorType))
+		assert.Equal(truncatedValue, testSpans[0].Tag(ext.ErrorMsg))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(ext.ErrorStack))
+		assert.Equal(truncatedUnicodeValue, testSpans[0].Tag(constants.TestSkipReason))
+		assert.Equal(constants.TestStatusSkip, testSpans[0].Tag(constants.TestStatus))
 	}
 }
 

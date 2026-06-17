@@ -18,6 +18,7 @@ type SpanStartSnapshot struct {
 	ServiceName             string
 	Env                     string
 	Version                 string
+	UniversalVersion        bool
 	Hostname                string
 	ReportHostname          bool
 	DebugStack              bool
@@ -36,6 +37,7 @@ func (c *Config) SpanStartSnapshot() SpanStartSnapshot {
 		ServiceName:             c.serviceName,
 		Env:                     c.env,
 		Version:                 c.version,
+		UniversalVersion:        c.universalVersion,
 		Hostname:                c.hostname,
 		ReportHostname:          c.reportHostname,
 		DebugStack:              c.debugStack,

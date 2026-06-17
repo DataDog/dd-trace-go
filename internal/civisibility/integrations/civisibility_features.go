@@ -83,6 +83,8 @@ var (
 
 	// ciVisibilitySkippables contains the CI Visibility skippable tests for this session
 	ciVisibilitySkippables map[string]map[string][]net.SkippableResponseDataAttributes
+	// ciVisibilitySkippablesResponse contains the full skippable-tests response for this session.
+	ciVisibilitySkippablesResponse *net.SkippableTestsResponse
 
 	// ciVisibilityTestManagementTests contains the CI Visibility test management tests for this session
 	ciVisibilityTestManagementTests net.TestManagementTestsResponseDataModules
@@ -118,9 +120,10 @@ func ensureSettingsInitialization(serviceName string) {
 
 		testOptimizationMode := bazel.CurrentMode()
 		var uploadChannel = make(chan struct{})
-		uploadEnabled := !testOptimizationMode.ManifestEnabled && !testOptimizationMode.PayloadFilesEnabled
-		log.Debug("civisibility: settings initialization mode [manifest:%t payload_files:%t manifest_file:%s payload_root:%s repository_upload_enabled:%t]",
-			testOptimizationMode.ManifestEnabled, testOptimizationMode.PayloadFilesEnabled, bazel.TestOptimizationPathForLog(testOptimizationMode.ManifestPath), testOptimizationMode.PayloadsRoot, uploadEnabled)
+		gitUploadEnabled := internal.BoolEnv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, true)
+		uploadEnabled := gitUploadEnabled && !testOptimizationMode.ManifestEnabled && !testOptimizationMode.PayloadFilesEnabled
+		log.Debug("civisibility: settings initialization mode [manifest:%t payload_files:%t manifest_file:%s payload_root:%s git_upload_enabled:%t repository_upload_enabled:%t]",
+			testOptimizationMode.ManifestEnabled, testOptimizationMode.PayloadFilesEnabled, bazel.TestOptimizationPathForLog(testOptimizationMode.ManifestPath), testOptimizationMode.PayloadsRoot, gitUploadEnabled, uploadEnabled)
 		if uploadEnabled {
 			repositoryUpload := snapshotRepositoryUploadHooks()
 
@@ -138,7 +141,11 @@ func ensureSettingsInitialization(serviceName string) {
 			}()
 		} else {
 			close(uploadChannel)
-			log.Debug("civisibility: repository upload disabled for current test optimization mode")
+			if gitUploadEnabled {
+				log.Debug("civisibility: repository upload disabled for current test optimization mode")
+			} else {
+				log.Debug("civisibility: repository upload disabled by environment variable")
+			}
 		}
 
 		//Wait for the upload with timeout func
@@ -162,9 +169,13 @@ func ensureSettingsInitialization(serviceName string) {
 		ciSettings, err := ciVisibilityClient.GetSettings()
 		if err != nil || ciSettings == nil {
 			logSettingsFetchError(err)
-			log.Debug("civisibility: no need to wait for the git upload to finish")
-			// Enqueue a close action to wait for the upload to finish before finishing the process
-			PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
+			if uploadEnabled {
+				log.Debug("civisibility: no need to wait for the git upload to finish")
+				// Enqueue a close action to wait for the upload to finish before finishing the process
+				PushCiVisibilityCloseAction(waitUploadFactory(time.Minute))
+			} else {
+				log.Debug("civisibility: no upload wait required")
+			}
 			return
 		}
 
@@ -337,13 +348,14 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 		if currentSettings.TestsSkipping {
 			wg.Go(func() {
 				// get the skippable tests
-				correlationID, skippableTests, err := ciVisibilityClient.GetSkippableTests()
+				response, err := ciVisibilityClient.GetSkippableTests()
 				if err != nil {
 					log.Error("civisibility: error getting CI visibility skippable tests: %s", err.Error())
-				} else if skippableTests != nil {
-					log.Debug("civisibility: skippable tests loaded: %d suites", len(skippableTests))
-					setAdditionalTags(constants.ItrCorrelationIDTag, correlationID)
-					ciVisibilitySkippables = skippableTests
+				} else if response != nil {
+					log.Debug("civisibility: skippable tests loaded: %d suites", len(response.Skippables))
+					setAdditionalTags(constants.ItrCorrelationIDTag, response.CorrelationID)
+					ciVisibilitySkippables = response.Skippables
+					ciVisibilitySkippablesResponse = response
 				}
 			})
 		}
@@ -412,6 +424,13 @@ func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttrib
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return ciVisibilitySkippables
+}
+
+// GetSkippableTestsResponse gets the full skippable-tests response from the backend.
+func GetSkippableTestsResponse() *net.SkippableTestsResponse {
+	// call to ensure the additional features initialization is completed (service name can be null here)
+	ensureAdditionalFeaturesInitialization("")
+	return ciVisibilitySkippablesResponse
 }
 
 // GetImpactedTestsAnalyzer gets the impacted tests analyzer

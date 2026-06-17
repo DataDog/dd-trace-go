@@ -56,7 +56,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	if settings != nil {
 		if settings.CodeCoverage {
 			// Initialize the runtime coverage if enabled.
-			coverage.InitializeCoverage(m)
+			coverage.InitializeCoverage(m, true)
 			coverageInitialized = true
 		}
 		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
@@ -67,7 +67,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 	// Check if the coverage was enabled by not initialized
 	if !coverageInitialized && testing.CoverMode() != "" {
-		coverage.InitializeCoverage(m)
+		coverage.InitializeCoverage(m, false)
 	}
 
 	ddm := (*M)(m)
@@ -89,8 +89,17 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-			// let's try first with our coverage package
-			cov := coverage.GetCoverage()
+			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
+			if !publishCoverage {
+				session.Close(exitCode)
+				coverage.CleanupRuntimeCoverageSnapshot()
+				integrations.ExitCiVisibility()
+				return
+			}
+			if !corrected {
+				// let's try first with our coverage package
+				cov = coverage.GetCoverage()
+			}
 			if cov == 0 {
 				// if not we try we the default testing package
 				cov = testing.Coverage()
@@ -102,6 +111,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 		// Close the session and return the exit code.
 		session.Close(exitCode)
+		coverage.CleanupRuntimeCoverageSnapshot()
 
 		// Finalize CI Visibility
 		integrations.ExitCiVisibility()

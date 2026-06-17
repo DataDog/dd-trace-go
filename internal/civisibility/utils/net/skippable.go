@@ -6,10 +6,15 @@
 package net
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 )
 
@@ -43,7 +48,8 @@ type (
 	}
 
 	skippableResponseMeta struct {
-		CorrelationID string `json:"correlation_id"`
+		CorrelationID string          `json:"correlation_id"`
+		Coverage      json.RawMessage `json:"coverage"`
 	}
 
 	skippableResponseData struct {
@@ -53,21 +59,54 @@ type (
 	}
 
 	SkippableResponseDataAttributes struct {
-		Suite          string             `json:"suite"`
-		Name           string             `json:"name"`
-		Parameters     string             `json:"parameters"`
-		Configurations testConfigurations `json:"configurations"`
+		Suite                   string             `json:"suite"`
+		Name                    string             `json:"name"`
+		Parameters              string             `json:"parameters"`
+		Configurations          testConfigurations `json:"configurations"`
+		MissingLineCodeCoverage bool               `json:"_missing_line_code_coverage"`
+	}
+
+	// SkippableTestsResponse stores the skippable-tests response plus backend
+	// line coverage metadata used to decide whether coverage-active ITR skips
+	// can be applied safely.
+	SkippableTestsResponse struct {
+		CorrelationID          string
+		Skippables             map[string]map[string][]SkippableResponseDataAttributes
+		Coverage               map[string]*filebitmap.FileBitmap
+		CoveragePresent        bool
+		CoverageBackfillSafe   bool
+		CoverageBackfillReason string
+		ResponseTestsCount     int
+	}
+
+	// cachedSkippableTests stores the skippable payload plus original response count.
+	cachedSkippableTests struct {
+		CorrelationID      string                                                  `json:"correlation_id"`
+		Skippables         map[string]map[string][]SkippableResponseDataAttributes `json:"skippables"`
+		Coverage           map[string]string                                       `json:"coverage,omitempty"`
+		CoveragePresent    bool                                                    `json:"coverage_present"`
+		CoverageSafe       bool                                                    `json:"coverage_backfill_safe"`
+		CoverageReason     string                                                  `json:"coverage_backfill_reason"`
+		ResponseTestsCount int                                                     `json:"response_tests_count"`
 	}
 )
 
-func (c *client) GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error) {
+const (
+	coverageBackfillReasonMissing = "backend coverage metadata missing"
+	coverageBackfillReasonInvalid = "backend coverage metadata invalid"
+	coverageBackfillReasonEmpty   = "backend coverage metadata empty"
+)
+
+func (c *client) GetSkippableTests() (*SkippableTestsResponse, error) {
 	if bazel.IsManifestModeEnabled() {
-		return "", map[string]map[string][]SkippableResponseDataAttributes{}, nil
+		return &SkippableTestsResponse{
+			Skippables:             map[string]map[string][]SkippableResponseDataAttributes{},
+			CoverageBackfillReason: "bazel coverage mode unsupported",
+		}, nil
 	}
 
 	if c.repositoryURL == "" || c.commitSha == "" {
-		err = fmt.Errorf("civisibility.GetSkippableTests: repository URL and commit SHA are required")
-		return
+		return nil, fmt.Errorf("civisibility.GetSkippableTests: repository URL and commit SHA are required")
 	}
 
 	body := skippableRequest{
@@ -84,81 +123,186 @@ func (c *client) GetSkippableTests() (correlationID string, skippables map[strin
 		},
 	}
 
-	request := c.getPostRequestConfig(skippableURLPath, body)
-	if request.Compressed {
-		telemetry.ITRSkippableTestsRequest(telemetry.CompressedRequestCompressedType)
-	} else {
-		telemetry.ITRSkippableTestsRequest(telemetry.UncompressedRequestCompressedType)
-	}
+	result, err := readThroughShortLivedCache(
+		c,
+		readCacheEndpointSkippableTests,
+		body,
+		func() (readCacheLiveResult[cachedSkippableTests], error) {
+			request := c.getPostRequestConfig(skippableURLPath, body)
+			if request.Compressed {
+				telemetry.ITRSkippableTestsRequest(telemetry.CompressedRequestCompressedType)
+			} else {
+				telemetry.ITRSkippableTestsRequest(telemetry.UncompressedRequestCompressedType)
+			}
 
-	startTime := time.Now()
-	response, err := c.handler.SendRequest(*request)
-	telemetry.ITRSkippableTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
+			startTime := time.Now()
+			response, err := c.handler.SendRequest(*request)
+			telemetry.ITRSkippableTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
 
+			if err != nil {
+				telemetry.ITRSkippableTestsRequestErrors(telemetry.NetworkErrorType)
+				return readCacheLiveResult[cachedSkippableTests]{}, fmt.Errorf("sending skippable tests request: %s", err)
+			}
+
+			if response.StatusCode < 200 || response.StatusCode >= 300 {
+				telemetry.ITRSkippableTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
+			}
+
+			if response.Compressed {
+				telemetry.ITRSkippableTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
+			} else {
+				telemetry.ITRSkippableTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
+			}
+
+			var responseObject skippableResponse
+			err = response.Unmarshal(&responseObject)
+			if err != nil {
+				return readCacheLiveResult[cachedSkippableTests]{}, fmt.Errorf("unmarshalling skippable tests response: %s", err)
+			}
+
+			coverage, coveragePresent, coverageSafe, coverageReason, coverageParseError := parseSkippableCoverage(responseObject.Meta.Coverage)
+			if coverageParseError {
+				telemetry.CodeCoverageErrors()
+			}
+
+			responseTestsCount := len(responseObject.Data)
+			telemetry.ITRSkippableTestsResponseTests(float64(responseTestsCount))
+			skippableTestsMap := map[string]map[string][]SkippableResponseDataAttributes{}
+			for _, data := range responseObject.Data {
+				var ok bool
+				var testsMap map[string][]SkippableResponseDataAttributes
+				if testsMap, ok = skippableTestsMap[data.Attributes.Suite]; !ok {
+					testsMap = map[string][]SkippableResponseDataAttributes{}
+					skippableTestsMap[data.Attributes.Suite] = testsMap
+				}
+
+				if test, ok := testsMap[data.Attributes.Name]; ok {
+					testsMap[data.Attributes.Name] = append(test, data.Attributes)
+				} else {
+					testsMap[data.Attributes.Name] = []SkippableResponseDataAttributes{data.Attributes}
+				}
+			}
+
+			value := cachedSkippableTests{
+				CorrelationID:      responseObject.Meta.CorrelationID,
+				Skippables:         skippableTestsMap,
+				Coverage:           encodeSkippableCoverage(coverage),
+				CoveragePresent:    coveragePresent,
+				CoverageSafe:       coverageSafe,
+				CoverageReason:     coverageReason,
+				ResponseTestsCount: responseTestsCount,
+			}
+			return readCacheLiveResult[cachedSkippableTests]{
+				Value:     value,
+				Cacheable: response.StatusCode >= 200 && response.StatusCode < 300,
+			}, nil
+		},
+		func(cached cachedSkippableTests) {
+			telemetry.ITRSkippableTestsResponseTests(float64(cached.ResponseTestsCount))
+		},
+	)
 	if err != nil {
-		telemetry.ITRSkippableTestsRequestErrors(telemetry.NetworkErrorType)
-		return "", nil, fmt.Errorf("sending skippable tests request: %s", err)
+		return nil, err
+	}
+	return result.toResponse(), nil
+}
+
+func parseSkippableCoverage(raw json.RawMessage) (map[string]*filebitmap.FileBitmap, bool, bool, string, bool) {
+	if len(raw) == 0 || strings.EqualFold(strings.TrimSpace(string(raw)), "null") {
+		return nil, false, false, coverageBackfillReasonMissing, false
 	}
 
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		telemetry.ITRSkippableTestsRequestErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
+	var encoded map[string]string
+	if err := json.Unmarshal(raw, &encoded); err != nil {
+		return nil, true, false, coverageBackfillReasonInvalid, true
+	}
+	if len(encoded) == 0 {
+		return nil, true, false, coverageBackfillReasonEmpty, false
 	}
 
-	if response.Compressed {
-		telemetry.ITRSkippableTestsResponseBytes(telemetry.CompressedResponseCompressedType, float64(len(response.Body)))
-	} else {
-		telemetry.ITRSkippableTestsResponseBytes(telemetry.UncompressedResponseCompressedType, float64(len(response.Body)))
-	}
-
-	var responseObject skippableResponse
-	err = response.Unmarshal(&responseObject)
-	if err != nil {
-		return "", nil, fmt.Errorf("unmarshalling skippable tests response: %s", err)
-	}
-
-	telemetry.ITRSkippableTestsResponseTests(float64(len(responseObject.Data)))
-	skippableTestsMap := map[string]map[string][]SkippableResponseDataAttributes{}
-	for _, data := range responseObject.Data {
-
-		// Filter out the tests that do not match the test configurations
-		if data.Attributes.Configurations.OsPlatform != "" && c.testConfigurations.OsPlatform != "" &&
-			data.Attributes.Configurations.OsPlatform != c.testConfigurations.OsPlatform {
-			continue
+	coverage := make(map[string]*filebitmap.FileBitmap, len(encoded))
+	for rawPath, rawBitmap := range encoded {
+		normalized, err := normalizeSkippableCoveragePath(rawPath)
+		if err != nil {
+			return nil, true, false, coverageBackfillReasonInvalid, true
 		}
-		if data.Attributes.Configurations.OsArchitecture != "" && c.testConfigurations.OsArchitecture != "" &&
-			data.Attributes.Configurations.OsArchitecture != c.testConfigurations.OsArchitecture {
-			continue
+		decoded, err := base64.StdEncoding.DecodeString(rawBitmap)
+		if err != nil {
+			return nil, true, false, coverageBackfillReasonInvalid, true
 		}
-		if data.Attributes.Configurations.OsVersion != "" && c.testConfigurations.OsVersion != "" &&
-			data.Attributes.Configurations.OsVersion != c.testConfigurations.OsVersion {
-			continue
-		}
-		if data.Attributes.Configurations.RuntimeName != "" && c.testConfigurations.RuntimeName != "" &&
-			data.Attributes.Configurations.RuntimeName != c.testConfigurations.RuntimeName {
-			continue
-		}
-		if data.Attributes.Configurations.RuntimeArchitecture != "" && c.testConfigurations.RuntimeArchitecture != "" &&
-			data.Attributes.Configurations.RuntimeArchitecture != c.testConfigurations.RuntimeArchitecture {
-			continue
-		}
-		if data.Attributes.Configurations.RuntimeVersion != "" && c.testConfigurations.RuntimeVersion != "" &&
-			data.Attributes.Configurations.RuntimeVersion != c.testConfigurations.RuntimeVersion {
-			continue
-		}
-
-		var ok bool
-		var testsMap map[string][]SkippableResponseDataAttributes
-		if testsMap, ok = skippableTestsMap[data.Attributes.Suite]; !ok {
-			testsMap = map[string][]SkippableResponseDataAttributes{}
-			skippableTestsMap[data.Attributes.Suite] = testsMap
-		}
-
-		if test, ok := testsMap[data.Attributes.Name]; ok {
-			testsMap[data.Attributes.Name] = append(test, data.Attributes)
+		// Go coverage metadata is stored and returned by the backend as
+		// FileBitmap bytes; the backend does not translate bitmap encodings.
+		bitmap := filebitmap.NewFileBitmapFromBytes(decoded)
+		if existing, ok := coverage[normalized]; ok {
+			coverage[normalized] = filebitmap.Or(existing, bitmap, false)
 		} else {
-			testsMap[data.Attributes.Name] = []SkippableResponseDataAttributes{data.Attributes}
+			coverage[normalized] = bitmap
 		}
 	}
 
-	return responseObject.Meta.CorrelationID, skippableTestsMap, nil
+	return coverage, true, true, "", false
+}
+
+func normalizeSkippableCoveragePath(rawPath string) (string, error) {
+	normalized := strings.TrimSpace(strings.ReplaceAll(rawPath, "\\", "/"))
+	if trimmed, ok := strings.CutPrefix(normalized, "/"); ok {
+		normalized = trimmed
+	}
+	if normalized == "" {
+		return "", fmt.Errorf("coverage path cannot be empty")
+	}
+	if path.IsAbs(normalized) || isWindowsDrivePath(normalized) {
+		return "", fmt.Errorf("coverage path must be repository relative")
+	}
+	normalized = path.Clean(normalized)
+	if normalized == "." || normalized == "/" || normalized == ".." || strings.HasPrefix(normalized, "../") || isWindowsDrivePath(normalized) {
+		return "", fmt.Errorf("coverage path cannot point outside the repository")
+	}
+	return normalized, nil
+}
+
+func isWindowsDrivePath(value string) bool {
+	if len(value) < 2 || value[1] != ':' {
+		return false
+	}
+	drive := value[0]
+	return (drive >= 'a' && drive <= 'z') || (drive >= 'A' && drive <= 'Z')
+}
+
+func encodeSkippableCoverage(coverage map[string]*filebitmap.FileBitmap) map[string]string {
+	if len(coverage) == 0 {
+		return nil
+	}
+	encoded := make(map[string]string, len(coverage))
+	for file, bitmap := range coverage {
+		encoded[file] = base64.StdEncoding.EncodeToString(bitmap.ToArray())
+	}
+	return encoded
+}
+
+func decodeCachedSkippableCoverage(encoded map[string]string) map[string]*filebitmap.FileBitmap {
+	if len(encoded) == 0 {
+		return nil
+	}
+	coverage := make(map[string]*filebitmap.FileBitmap, len(encoded))
+	for file, bitmap := range encoded {
+		decoded, err := base64.StdEncoding.DecodeString(bitmap)
+		if err != nil {
+			return nil
+		}
+		coverage[file] = filebitmap.NewFileBitmapFromBytes(decoded)
+	}
+	return coverage
+}
+
+func (c cachedSkippableTests) toResponse() *SkippableTestsResponse {
+	return &SkippableTestsResponse{
+		CorrelationID:          c.CorrelationID,
+		Skippables:             c.Skippables,
+		Coverage:               decodeCachedSkippableCoverage(c.Coverage),
+		CoveragePresent:        c.CoveragePresent,
+		CoverageBackfillSafe:   c.CoverageSafe,
+		CoverageBackfillReason: c.CoverageReason,
+		ResponseTestsCount:     c.ResponseTestsCount,
+	}
 }
