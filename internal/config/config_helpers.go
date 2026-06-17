@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"os"
@@ -361,12 +362,8 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 		return nil
 	}
 	merged := make(map[string]string, len(genericHeaders)+len(signalHeaders))
-	for k, v := range genericHeaders {
-		merged[k] = v
-	}
-	for k, v := range signalHeaders {
-		merged[k] = v
-	}
+	maps.Copy(merged, genericHeaders)
+	maps.Copy(merged, signalHeaders)
 	return merged
 }
 
