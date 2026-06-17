@@ -800,6 +800,19 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 		assert.Equal(t, "http://shared-collector:4318/v1/metrics", cfg.OTLPMetricsURL())
 	})
 
+	t.Run("OTEL_EXPORTER_OTLP_ENDPOINT with path prefix always appends /v1/metrics", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		// Generic endpoint is a base URL per OTel spec; /v1/metrics must be appended
+		// even when the base URL already has a path prefix (e.g. a reverse proxy).
+		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318/prefix")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http://collector:4318/prefix/v1/metrics", cfg.OTLPMetricsURL())
+	})
+
 	t.Run("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT takes precedence over generic", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()

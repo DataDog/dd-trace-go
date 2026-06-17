@@ -319,10 +319,13 @@ func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 	configtelemetry.Report("global_tag_"+key, value, origin)
 }
 
-// resolveOTLPMetricsURL resolves the OTLP metrics endpoint. When the user-provided endpoint
-// is non-empty it is validated and used as-is, appending /v1/metrics only if the path is absent.
-// Otherwise the default http://<agent-host>:4318/v1/metrics is returned.
-func resolveOTLPMetricsURL(rawAgentURL *url.URL, endpoint string) string {
+// resolveOTLPMetricsURL resolves the OTLP metrics endpoint.
+//
+// Per the OTel spec, OTEL_EXPORTER_OTLP_ENDPOINT is a base URL: /v1/metrics is
+// always appended (genericEndpoint=true). OTEL_EXPORTER_OTLP_METRICS_ENDPOINT is a
+// full URL: /v1/metrics is only appended when the path is absent (genericEndpoint=false).
+// If no endpoint is provided, the default http://<agent-host>:4318/v1/metrics is returned.
+func resolveOTLPMetricsURL(rawAgentURL *url.URL, endpoint string, genericEndpoint bool) string {
 	if endpoint != "" {
 		u, err := url.Parse(endpoint)
 		if err != nil {
@@ -330,7 +333,10 @@ func resolveOTLPMetricsURL(rawAgentURL *url.URL, endpoint string) string {
 		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
 			log.Warn("Unsupported scheme %q in OTLP metrics endpoint %q. Must be %s or %s. Falling back to default.", u.Scheme, endpoint, URLSchemeHTTP, URLSchemeHTTPS)
 		} else {
-			if u.Path == "" || u.Path == "/" {
+			if genericEndpoint {
+				// Base URL: always append /v1/metrics per OTel spec.
+				u.Path = strings.TrimRight(u.Path, "/") + otlpMetricsPath
+			} else if u.Path == "" || u.Path == "/" {
 				u.Path = otlpMetricsPath
 			}
 			return u.String()

@@ -303,10 +303,11 @@ func loadConfig() *Config {
 	}
 	cfg.otlpSemanticsMode = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	metricsEndpoint := p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
-	if metricsEndpoint == "" {
+	genericEndpoint := metricsEndpoint == ""
+	if genericEndpoint {
 		metricsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	}
-	cfg.otlpMetricsURL = resolveOTLPMetricsURL(cfg.agentURL, metricsEndpoint)
+	cfg.otlpMetricsURL = resolveOTLPMetricsURL(cfg.agentURL, metricsEndpoint, genericEndpoint)
 	cfg.otlpMetricsHeaders = buildOTLPMetricsHeaders(p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL"))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
