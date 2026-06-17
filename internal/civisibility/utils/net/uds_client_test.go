@@ -136,10 +136,10 @@ func TestClientAgentModeUDSSkippableEndpoint(t *testing.T) {
 		w.Header().Set(HeaderContentType, ContentTypeJSON)
 		require.NoError(t, json.NewEncoder(w).Encode(response))
 	}, func(t *testing.T, cInterface Client, _ *client) {
-		correlationID, skippables, err := cInterface.GetSkippableTests()
+		response, err := cInterface.GetSkippableTests()
 		require.NoError(t, err)
-		require.Equal(t, "uds-correlation-id", correlationID)
-		require.Len(t, skippables["suite"]["TestUDS"], 1)
+		require.Equal(t, "uds-correlation-id", response.CorrelationID)
+		require.Len(t, response.Skippables["suite"]["TestUDS"], 1)
 	})
 }
 

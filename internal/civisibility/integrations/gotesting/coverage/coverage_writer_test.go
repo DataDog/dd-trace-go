@@ -97,7 +97,7 @@ type MockClient struct {
 	GetKnownTestsFunc                 func() (*net.KnownTestsResponseData, error)
 	GetCommitsFunc                    func(localCommits []string) ([]string, error)
 	SendPackFilesFunc                 func(commitSha string, packFiles []string) (bytes int64, err error)
-	GetSkippableTestsFunc             func() (correlationId string, skippables map[string]map[string][]net.SkippableResponseDataAttributes, err error)
+	GetSkippableTestsFunc             func() (*net.SkippableTestsResponse, error)
 	GetTestManagementTestsFunc        func() (*net.TestManagementTestsResponseDataModules, error)
 	SendLogsFunc                      func(logsPayload io.Reader) error
 }
@@ -126,7 +126,7 @@ func (m *MockClient) SendPackFiles(commitSha string, packFiles []string) (bytes 
 	return m.SendPackFilesFunc(commitSha, packFiles)
 }
 
-func (m *MockClient) GetSkippableTests() (_ string, _ map[string]map[string][]net.SkippableResponseDataAttributes, err error) {
+func (m *MockClient) GetSkippableTests() (*net.SkippableTestsResponse, error) {
 	return m.GetSkippableTestsFunc()
 }
 

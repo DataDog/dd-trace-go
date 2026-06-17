@@ -282,3 +282,31 @@ func TestGivenTwoRangesWhenIntersectingFileBitmapsResultIsExpected(t *testing.T)
 		}
 	}
 }
+
+func TestIntersectsLineRange(t *testing.T) {
+	active := FromActiveRange(3, 10)
+	tests := []struct {
+		name     string
+		bitmap   *FileBitmap
+		fromLine int
+		toLine   int
+		expected bool
+	}{
+		{name: "nil bitmap", fromLine: 1, toLine: 1, expected: false},
+		{name: "zero start line", bitmap: active, fromLine: 0, toLine: 3, expected: false},
+		{name: "end before start", bitmap: active, fromLine: 4, toLine: 3, expected: false},
+		{name: "before active range", bitmap: active, fromLine: 1, toLine: 2, expected: false},
+		{name: "overlaps first active line", bitmap: active, fromLine: 1, toLine: 3, expected: true},
+		{name: "inside active range", bitmap: active, fromLine: 4, toLine: 7, expected: true},
+		{name: "overlaps last active line", bitmap: active, fromLine: 10, toLine: 20, expected: true},
+		{name: "line beyond bitmap size", bitmap: active, fromLine: 20, toLine: 25, expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.bitmap.IntersectsLineRange(tt.fromLine, tt.toLine); got != tt.expected {
+				t.Fatalf("IntersectsLineRange(%d, %d) = %v, expected %v", tt.fromLine, tt.toLine, got, tt.expected)
+			}
+		})
+	}
+}
