@@ -665,13 +665,14 @@ func TestOTLPExportMode(t *testing.T) {
 	})
 }
 
-func TestOTLPSpanMetricsEnabled(t *testing.T) {
+func TestOTLPSpanMetricsConfig(t *testing.T) {
 	t.Run("disabled by default when OTLP trace export is off", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.False(t, cfg.OTLPSpanMetricsEnabled())
 	})
 
@@ -684,6 +685,7 @@ func TestOTLPSpanMetricsEnabled(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.True(t, cfg.OTLPSpanMetricsEnabled())
 	})
 
@@ -692,10 +694,10 @@ func TestOTLPSpanMetricsEnabled(t *testing.T) {
 		defer resetGlobalState()
 
 		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
-		// DD_METRICS_OTEL_ENABLED is not set → defaults to false.
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.False(t, cfg.OTLPSpanMetricsEnabled())
 	})
 
@@ -704,10 +706,10 @@ func TestOTLPSpanMetricsEnabled(t *testing.T) {
 		defer resetGlobalState()
 
 		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-		// No OTEL_TRACES_EXPORTER=otlp set.
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.False(t, cfg.OTLPSpanMetricsEnabled())
 	})
 
@@ -719,6 +721,7 @@ func TestOTLPSpanMetricsEnabled(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.True(t, cfg.OTLPSpanMetricsEnabled())
 	})
 
@@ -731,21 +734,21 @@ func TestOTLPSpanMetricsEnabled(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.False(t, cfg.OTLPSpanMetricsEnabled())
 	})
-}
 
-func TestOTLPSemanticsMode(t *testing.T) {
-	t.Run("disabled by default", func(t *testing.T) {
+	t.Run("OTLPSemanticsMode disabled by default", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.False(t, cfg.OTLPSemanticsMode())
 	})
 
-	t.Run("enabled via DD_TRACE_OTEL_SEMANTICS_ENABLED", func(t *testing.T) {
+	t.Run("OTLPSemanticsMode enabled via DD_TRACE_OTEL_SEMANTICS_ENABLED", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
@@ -753,6 +756,7 @@ func TestOTLPSemanticsMode(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.True(t, cfg.OTLPSemanticsMode())
 	})
 }
@@ -764,6 +768,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, "http://localhost:4318/v1/metrics", cfg.OTLPMetricsURL())
 	})
 
@@ -775,6 +780,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, "http://collector:4317/v1/metrics", cfg.OTLPMetricsURL())
 	})
 
@@ -786,6 +792,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, "http://collector:4318/v1/metrics", cfg.OTLPMetricsURL())
 	})
 
@@ -797,6 +804,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, "http://shared-collector:4318/v1/metrics", cfg.OTLPMetricsURL())
 	})
 
@@ -804,12 +812,13 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		// Generic endpoint is a base URL per OTel spec; /v1/metrics must be appended
-		// even when the base URL already has a path prefix (e.g. a reverse proxy).
 		t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318/prefix")
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
+		// Generic endpoint is a base URL per OTel spec; /v1/metrics must be appended
+		// even when the base URL already has a path prefix (e.g. a reverse proxy).
 		assert.Equal(t, "http://collector:4318/prefix/v1/metrics", cfg.OTLPMetricsURL())
 	})
 
@@ -822,6 +831,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, "http://metrics-specific:4318/v1/metrics", cfg.OTLPMetricsURL())
 	})
 
@@ -833,6 +843,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, "http://custom-agent:4318/v1/metrics", cfg.OTLPMetricsURL())
 	})
 
@@ -844,6 +855,7 @@ func TestOTLPMetricsURLResolution(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, "http://localhost:4318/v1/metrics", cfg.OTLPMetricsURL())
 	})
 }
@@ -855,6 +867,7 @@ func TestOTLPMetricsHeaders(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Nil(t, cfg.OTLPMetricsHeaders())
 	})
 
@@ -866,6 +879,7 @@ func TestOTLPMetricsHeaders(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, map[string]string{"api-key": "secret123", "x-tenant": "acme"}, cfg.OTLPMetricsHeaders())
 	})
 
@@ -878,6 +892,7 @@ func TestOTLPMetricsHeaders(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		h := cfg.OTLPMetricsHeaders()
 		assert.Equal(t, "metrics-key", h["api-key"])
 		assert.Equal(t, "shared", h["x-tenant"])
@@ -891,6 +906,7 @@ func TestOTLPMetricsFlushInterval(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, OTLPMetricsFlushInterval, cfg.OTLPMetricsFlushInterval())
 	})
 
@@ -902,6 +918,7 @@ func TestOTLPMetricsFlushInterval(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, time.Second, cfg.OTLPMetricsFlushInterval())
 	})
 
@@ -913,6 +930,7 @@ func TestOTLPMetricsFlushInterval(t *testing.T) {
 
 		cfg := Get()
 		require.NotNil(t, cfg)
+
 		assert.Equal(t, OTLPMetricsFlushInterval, cfg.OTLPMetricsFlushInterval())
 	})
 }
