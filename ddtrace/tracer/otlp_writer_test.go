@@ -476,9 +476,9 @@ func TestOTLPWriterProcessTags(t *testing.T) {
 	}
 
 	t.Run("enabled", func(t *testing.T) {
+		t.Cleanup(processtags.Reload)
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
 		processtags.Reload()
-		t.Cleanup(processtags.Reload)
 
 		srv := newTestOTLPServer()
 		defer srv.Close()
@@ -498,9 +498,9 @@ func TestOTLPWriterProcessTags(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
+		t.Cleanup(processtags.Reload)
 		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
 		processtags.Reload()
-		t.Cleanup(processtags.Reload)
 
 		srv := newTestOTLPServer()
 		defer srv.Close()
