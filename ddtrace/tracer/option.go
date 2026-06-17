@@ -442,7 +442,13 @@ func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers
 	if cfg.TraceProtocol() == traceProtocolV1 {
 		traceURL = agentURL + tracesAPIPathV1
 	}
-	return traceURL, datadogHeaders()
+	headers = datadogHeaders()
+	if cfg.OTLPSpanMetricsEnabled() {
+		// Set statically so the header is present on every trace request from startup,
+		// before agent /info polling has completed and CanComputeStats becomes true.
+		headers["Datadog-Client-Computed-Stats"] = "yes"
+	}
+	return traceURL, headers
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {

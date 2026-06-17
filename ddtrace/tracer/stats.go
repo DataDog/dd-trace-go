@@ -67,6 +67,10 @@ type concentrator struct {
 	// otlpExporter, when non-nil, routes flushed stats to the OTLP metrics
 	// endpoint instead of the agent's native /v0.6/stats path.
 	otlpExporter *otlpMetricsExporter
+
+	// otlpPeerTags, when non-nil, replaces agent-advertised peer tags with a
+	// fixed set of OTel semantic-convention dimensions for OTLP span metrics.
+	otlpPeerTags []string
 }
 
 type tracerStatSpan struct {
@@ -184,6 +188,33 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
 
+	peerTags := c.cfg.agent.load().peerTags
+	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
+	if c.otlpPeerTags != nil {
+		peerTags = c.otlpPeerTags
+		// The stats library's matchingPeerTags only extracts peer tags for spans with
+		// span.kind "client", "producer", or "consumer". DD spans (e.g. typestr="web") do
+		// not carry an OTel span kind, so the library returns nil and peer tags are lost.
+		// We inject span.kind="client" only when the span actually carries a peer-tag
+		// value, so non-top-level unmeasured spans without peer tags are not made
+		// eligible for stats via eligibleSpanKind.
+		if _, hasKind := spanMeta[ext.SpanKind]; !hasKind {
+			hasPeerTag := false
+			for _, k := range c.otlpPeerTags {
+				if _, ok := spanMeta[k]; ok {
+					hasPeerTag = true
+					break
+				}
+			}
+			if hasPeerTag {
+				spanMeta = make(map[string]string, len(spanMeta)+1)
+				for k, v := range s.meta.Map(false) {
+					spanMeta[k] = v
+				}
+				spanMeta[ext.SpanKind] = ext.SpanKindClient
+			}
+		}
+	}
 	statSpan, ok := c.spanConcentrator.NewStatSpanWithConfig(stats.StatSpanConfig{
 		Service:      s.service,
 		Resource:     resource,
@@ -193,9 +224,9 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		Start:        s.start,
 		Duration:     s.duration,
 		Error:        s.error,
-		Meta:         s.meta.Map(false), // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
+		Meta:         spanMeta,
 		Metrics:      s.metrics,
-		PeerTags:     c.cfg.agent.load().peerTags,
+		PeerTags:     peerTags,
 		HTTPMethod:   httpMethod,
 		HTTPEndpoint: httpEndpoint,
 	})
@@ -323,6 +354,15 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(flushedBuckets))
 }
 
+// otlpDefaultPeerTags are span meta keys always collected as peer dimensions for
+// OTLP span metrics regardless of what the Datadog agent advertises. These cover
+// OTel semantic-convention attributes that have no dedicated field in
+// ClientGroupedStats (unlike HTTPMethod/HTTPStatusCode which are first-class fields).
+var otlpDefaultPeerTags = []string{
+	"http.route",
+	"grpc.method.name",
+}
+
 // newOTLPMetricsConcentrator creates a concentrator that exports flushed stats to
 // the OTLP metrics endpoint instead of the agent's native /v0.6/stats path.
 // The flush interval is taken from OTLPMetricsFlushInterval in cfg.
@@ -330,6 +370,7 @@ func newOTLPMetricsConcentrator(c *config, statsdClient internal.StatsdClient) *
 	bucketSize := c.internalConfig.OTLPMetricsFlushInterval().Nanoseconds()
 	conc := newConcentrator(c, bucketSize, statsdClient)
 	conc.otlpExporter = newOTLPMetricsExporter(c.internalConfig)
+	conc.otlpPeerTags = otlpDefaultPeerTags
 	return conc
 }
 
