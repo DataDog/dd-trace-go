@@ -71,7 +71,7 @@ func TestConvertSpan(t *testing.T) {
 	s.error = 1
 	s.meta.Set(ext.ErrorMsg, "something failed")
 
-	otlp := convertSpan(s, "svc")
+	otlp := convertSpan(s, "svc", nil)
 	require.NotNil(t, otlp)
 
 	// DD resource → OTLP name (spec: "resource field must be encoded as the OTLP span's name field")
@@ -103,14 +103,14 @@ func TestConvertSpan(t *testing.T) {
 func TestConvertSpanParentSpanId(t *testing.T) {
 	t.Run("set when parent_id is non-zero", func(t *testing.T) {
 		s := newSpan("op", "svc", "res", 100, 200, 50)
-		otlp := convertSpan(s, "svc")
+		otlp := convertSpan(s, "svc", nil)
 		require.NotNil(t, otlp.ParentSpanId)
 		assert.Equal(t, uint64(50), binary.BigEndian.Uint64(otlp.ParentSpanId))
 	})
 
 	t.Run("omitted when parent_id is zero", func(t *testing.T) {
 		s := newSpan("op", "svc", "res", 100, 200, 0)
-		otlp := convertSpan(s, "svc")
+		otlp := convertSpan(s, "svc", nil)
 		assert.Nil(t, otlp.ParentSpanId, "ParentSpanId must be omitted for root spans")
 	})
 }
@@ -129,7 +129,7 @@ func TestConvertSpanFiltersUnsampled(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := newSpan("op", "svc", "res", 1, 1, 0)
 			s.context.setSamplingPriority(tt.priority, samplernames.Unknown)
-			result := convertSpan(s, "svc")
+			result := convertSpan(s, "svc", nil)
 			if tt.wantNil {
 				assert.Nil(t, result)
 			} else {
@@ -142,14 +142,14 @@ func TestConvertSpanFiltersUnsampled(t *testing.T) {
 func TestConvertSpanPriorityUnset(t *testing.T) {
 	s := newSpan("op", "svc", "res", 1, 1, 0)
 	// priority is not set — span should be included (not dropped)
-	result := convertSpan(s, "")
+	result := convertSpan(s, "", nil)
 	assert.NotNil(t, result)
 }
 
 func TestConvertSpanServiceNameOverride(t *testing.T) {
 	t.Run("same as default - no service.name attribute", func(t *testing.T) {
 		s := newSpan("op", "my-service", "res", 1, 1, 0)
-		otlp := convertSpan(s, "my-service")
+		otlp := convertSpan(s, "my-service", nil)
 		require.NotNil(t, otlp)
 		attrs := keyValuesToMap(otlp.Attributes)
 		_, hasServiceName := attrs["service.name"]
@@ -158,7 +158,7 @@ func TestConvertSpanServiceNameOverride(t *testing.T) {
 
 	t.Run("different from default - service.name attribute added", func(t *testing.T) {
 		s := newSpan("op", "other-service", "res", 1, 1, 0)
-		otlp := convertSpan(s, "my-service")
+		otlp := convertSpan(s, "my-service", nil)
 		require.NotNil(t, otlp)
 		attrs := keyValuesToMap(otlp.Attributes)
 		assert.Equal(t, "other-service", attrs["service.name"])
@@ -211,7 +211,7 @@ func TestConvertSpanAttributes(t *testing.T) {
 	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{"tag": "val", "env": "test"})
 	s.metrics = map[string]float64{"count": 10, "rate": 0.5}
 
-	attrs := convertSpanAttributes(s, "")
+	attrs := convertSpanAttributes(s, "", nil)
 	m := keyValuesToMap(attrs)
 	assert.Equal(t, "val", m["tag"])
 	assert.Equal(t, "test", m["env"])
@@ -230,7 +230,7 @@ func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 		"simple": map[string]string{"x": "y"},
 	}
 
-	attrs := convertSpanAttributes(s, "")
+	attrs := convertSpanAttributes(s, "", nil)
 
 	var nestedKV, simpleKV *otlpcommon.KeyValue
 	for _, kv := range attrs {
@@ -261,7 +261,7 @@ func TestConvertSpanAttributesMaxLimit(t *testing.T) {
 		s.meta.Set(fmt.Sprintf("key-%d", i), "val")
 	}
 
-	attrs := convertSpanAttributes(s, "other-service")
+	attrs := convertSpanAttributes(s, "other-service", nil)
 	assert.LessOrEqual(t, len(attrs), maxAttributesCount)
 }
 
@@ -272,7 +272,7 @@ func TestConvertSpanAttributesPriorityOrder(t *testing.T) {
 	}
 	s.metrics = map[string]float64{"should-be-dropped": 1.0}
 
-	attrs := convertSpanAttributes(s, "")
+	attrs := convertSpanAttributes(s, "", nil)
 	m := keyValuesToMap(attrs)
 
 	assert.Equal(t, "op", m["operation.name"], "operation.name should always be present")
@@ -285,7 +285,7 @@ func TestConvertSpanAttributesPriorityOrder(t *testing.T) {
 func TestConvertSpanAttributesServiceNameOverride(t *testing.T) {
 	t.Run("same as default - no attribute", func(t *testing.T) {
 		s := newSpan("op", "my-service", "res", 1, 1, 0)
-		attrs := convertSpanAttributes(s, "my-service")
+		attrs := convertSpanAttributes(s, "my-service", nil)
 		m := keyValuesToMap(attrs)
 		_, hasServiceName := m["service.name"]
 		assert.False(t, hasServiceName, "service.name attribute should be absent when it matches the default")
@@ -293,7 +293,7 @@ func TestConvertSpanAttributesServiceNameOverride(t *testing.T) {
 
 	t.Run("different from default - attribute added", func(t *testing.T) {
 		s := newSpan("op", "other-service", "res", 1, 1, 0)
-		attrs := convertSpanAttributes(s, "my-service")
+		attrs := convertSpanAttributes(s, "my-service", nil)
 		m := keyValuesToMap(attrs)
 		assert.Equal(t, "other-service", m["service.name"])
 	})
@@ -413,7 +413,7 @@ func TestConvertSpanTraceState(t *testing.T) {
 		s := newSpan("op", "svc", "res", 1, 1, 0)
 		setPropagatingTag(s.context, tracestateHeader, "dd=s:2;o:rum,othervendor=abc")
 
-		otlpSpan := convertSpan(s, "svc")
+		otlpSpan := convertSpan(s, "svc", nil)
 		require.NotNil(t, otlpSpan)
 		assert.Equal(t, "dd=s:2;o:rum,othervendor=abc", otlpSpan.TraceState)
 	})
@@ -421,7 +421,7 @@ func TestConvertSpanTraceState(t *testing.T) {
 	t.Run("empty when no tracestate", func(t *testing.T) {
 		s := newSpan("op", "svc", "res", 1, 1, 0)
 
-		otlpSpan := convertSpan(s, "svc")
+		otlpSpan := convertSpan(s, "svc", nil)
 		require.NotNil(t, otlpSpan)
 		assert.Empty(t, otlpSpan.TraceState)
 	})
@@ -430,7 +430,7 @@ func TestConvertSpanTraceState(t *testing.T) {
 		s := newSpan("op", "svc", "res", 1, 1, 0)
 		s.context.trace = nil
 
-		otlpSpan := convertSpan(s, "svc")
+		otlpSpan := convertSpan(s, "svc", nil)
 		require.NotNil(t, otlpSpan)
 		assert.Empty(t, otlpSpan.TraceState)
 	})
