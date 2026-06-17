@@ -195,12 +195,6 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
-      - name: Upload Coverage
-        if: always() && steps.restore.outcome == 'success'
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
 
   smoke-test-tracer:
     name: Test dd-trace-go
@@ -243,12 +237,6 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:1.25,arch:${{ runner.arch }},os:${{ runner.os }}
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
 
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.

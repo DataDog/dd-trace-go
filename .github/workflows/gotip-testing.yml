@@ -132,9 +132,3 @@ jobs:
           path: ${{ env.TEST_RESULTS }}
           tags: go:gotip,arch:${{ runner.arch }},os:${{ runner.os }}
 
-      - name: Upload Coverage
-        if: always() && steps.restore.outcome == 'success'
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
