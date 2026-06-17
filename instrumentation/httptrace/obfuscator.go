@@ -201,6 +201,12 @@ func emitObfuscated(b *strings.Builder, s string, last, pos, n int) int {
 func obfuscateQueryStringDefault(s string) string {
 	var b strings.Builder
 	last := 0
+	// jwtSkipEnd is a watermark: matcherJWT is suppressed for positions in
+	// [jwtSkipEnd_prev, jwtSkipEnd).  When matchJWT consumes a header+segment
+	// but finds no '.' separator, it returns the end of that segment as segEnd.
+	// Any 'e' within the consumed range will fail identically (same segment
+	// chars, same absent '.'), so re-trying is pure quadratic waste.
+	jwtSkipEnd := 0
 	for pos := 0; pos < len(s); {
 		c := s[pos]
 		var mask uint8
@@ -242,11 +248,14 @@ func obfuscateQueryStringDefault(s string) string {
 				continue
 			}
 		}
-		if mask&matcherJWT != 0 {
-			if n, ok := matchJWT(s, pos); ok {
+		if mask&matcherJWT != 0 && pos >= jwtSkipEnd {
+			if n, ok, segEnd := matchJWT(s, pos); ok {
 				last = emitObfuscated(&b, s, last, pos, n)
 				pos = last
+				jwtSkipEnd = 0
 				continue
+			} else if segEnd > jwtSkipEnd {
+				jwtSkipEnd = segEnd
 			}
 		}
 		if mask&matcherPEM != 0 {
@@ -406,31 +415,44 @@ func matchGitHubToken(s string, pos int) (int, bool) {
 // Header and payload segments each begin with "ey" followed by one of [I-L]
 // (the base64 encoding of the JSON byte '{'); the optional third segment is the
 // signature.
-func matchJWT(s string, pos int) (int, bool) {
+//
+// matchJWT returns (matchedLen, ok, segEnd).
+// segEnd is non-zero only on failure: it reports the end of the first
+// header+segment scan whenever that segment was fully consumed, regardless of
+// whether the failure occurred before or after the first dot.  The outer loop
+// uses segEnd to suppress redundant JWT re-anchors — any 'e' inside
+// [pos, segEnd) would produce the same failing scan (same segment chars, same
+// missing or broken second header).
+func matchJWT(s string, pos int) (n int, ok bool, segEnd int) {
 	start := pos
-	var ok bool
-	if pos, ok = consumeJWTHeader(s, pos); !ok {
-		return 0, false
+	var matched bool
+	if pos, matched = consumeJWTHeader(s, pos); !matched {
+		return 0, false, 0
 	}
-	if pos, ok = consumeJWTSegment(s, pos); !ok {
-		return 0, false
+	afterSeg, matched := consumeJWTSegment(s, pos)
+	if !matched {
+		return 0, false, 0
 	}
-	if pos >= len(s) || s[pos] != '.' {
-		return 0, false
+	if afterSeg >= len(s) || s[afterSeg] != '.' {
+		// Consumed header+segment but no dot: report segment end so the caller
+		// can skip re-anchoring within this already-scanned range.
+		return 0, false, afterSeg
 	}
-	pos++
-	if pos, ok = consumeJWTHeader(s, pos); !ok {
-		return 0, false
+	pos = afterSeg + 1 // skip '.'
+	if pos, matched = consumeJWTHeader(s, pos); !matched {
+		// First segment was fully scanned; suppress re-anchors within it.
+		return 0, false, afterSeg
 	}
-	if pos, ok = consumeJWTSegment(s, pos); !ok {
-		return 0, false
+	if pos, matched = consumeJWTSegment(s, pos); !matched {
+		// First segment was fully scanned; suppress re-anchors within it.
+		return 0, false, afterSeg
 	}
 	if pos < len(s) && s[pos] == '.' {
-		if end, ok := consumeJWTSignature(s, pos+1); ok {
+		if end, matched := consumeJWTSignature(s, pos+1); matched {
 			pos = end
 		}
 	}
-	return pos - start, true
+	return pos - start, true, 0
 }
 
 // matchPEMPrivateKey implements alt 6:
@@ -449,18 +471,21 @@ func matchPEMPrivateKey(s string, pos int) (int, bool) {
 	if pos, ok = matchFoldLiteral(s, pos, "BEGIN"); !ok {
 		return 0, false
 	}
-	// Greedy regex: try longest label first. Forward-scan and keep the LAST
-	// (longest) successful match instead of allocating a positions slice.
+	// Scan label chars for "PRIVATE KEY", attempt body+end from each hit.
+	// Because the label charset excludes '-', only the occurrence directly
+	// before the fence "-----" can produce a successful body+end match; all
+	// earlier hits fail matchHyphens in O(1).  We must continue (not break)
+	// after a failed hit to reach that final occurrence.
 	labelPos, ok := consumePEMLabelChar(s, pos)
 	if !ok {
 		return 0, false
 	}
-	bestEnd := -1
 	for {
 		if afterKey, ok := matchPEMPrivateKeyLiteral(s, labelPos); ok {
-			if end, ok := matchPEMBodyAndEnd(s, afterKey); ok && end > bestEnd {
-				bestEnd = end
+			if end, ok := matchPEMBodyAndEnd(s, afterKey); ok {
+				return end - start, true
 			}
+			// afterKey was not at the fence; keep scanning for a later hit.
 		}
 		next, ok := consumePEMLabelChar(s, labelPos)
 		if !ok {
@@ -468,10 +493,7 @@ func matchPEMPrivateKey(s string, pos int) (int, bool) {
 		}
 		labelPos = next
 	}
-	if bestEnd < 0 {
-		return 0, false
-	}
-	return bestEnd - start, true
+	return 0, false
 }
 
 // matchPEMBodyAndEnd implements [\-]{5}[^\-]+[\-]{5}END — PEM body and footer opener (alt 6).
