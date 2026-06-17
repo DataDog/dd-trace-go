@@ -14,6 +14,7 @@ package pubsubtrace
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -141,4 +142,57 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 		}
 		return ctx, func() { span.Finish() }
 	}
+}
+
+// TraceAdmin starts a span for a Pub/Sub admin/management operation (e.g. createTopic,
+// listSubscriptions, deleteSchema). method is the camelCase operation name used for the
+// span resource and the pubsub.method tag, and resourcePath is the fully-qualified GCP
+// resource path the operation targets (e.g. "projects/p/topics/t"), which may be empty for
+// operations that don't reference a specific resource. The returned function finishes the
+// span and must be called once the operation completes, passing along any error.
+func (tr *Tracer) TraceAdmin(ctx context.Context, method string, resourcePath string, opts ...Option) (context.Context, func(err error)) {
+	cfg := tr.defaultConfig()
+	for _, opt := range opts {
+		opt.apply(cfg)
+	}
+	resource := method
+	if resourcePath != "" {
+		resource = method + " " + resourcePath
+	}
+	spanOpts := []tracer.StartSpanOption{
+		tracer.ResourceName(resource),
+		tracer.SpanType(ext.SpanTypeWorker),
+		tracer.Tag(ext.Component, tr.component),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
+		tracer.Tag("pubsub.method", method),
+		tracer.Measured(),
+	}
+	if projectID := projectIDFromResourceName(resourcePath); projectID != "" {
+		spanOpts = append(spanOpts, tracer.Tag("gcloud.project_id", projectID))
+	}
+	if cfg.serviceName != "" {
+		spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
+	}
+	span, ctx := tracer.StartSpanFromContext(ctx, cfg.requestSpanName, spanOpts...)
+
+	var once sync.Once
+	finish := func(err error) {
+		once.Do(func() {
+			span.Finish(tracer.WithError(err))
+		})
+	}
+	return ctx, finish
+}
+
+// extracts the GCP project ID from a Pubsub resource name of the form
+// "projects/{project}/topics/{topic}" or "projects/{project}/subscriptions/{subscription}"
+func projectIDFromResourceName(name string) string {
+	const prefix = "projects/"
+	if !strings.HasPrefix(name, prefix) {
+		return ""
+	}
+	rest := name[len(prefix):]
+	project, _, _ := strings.Cut(rest, "/")
+	return project
 }

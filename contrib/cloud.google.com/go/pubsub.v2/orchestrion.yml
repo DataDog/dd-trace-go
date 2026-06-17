@@ -96,6 +96,625 @@ aspects:
             }()
   
 
+  ## Admin / management operations ##
+  # Pub/Sub admin (topic, subscription, snapshot and schema management) RPCs are
+  # implemented on the GAPIC clients in cloud.google.com/go/pubsub/v2/apiv1. A package-level
+  # tracer is injected into that package and each management method is wrapped to emit a
+  # gcp.pubsub.request span.
+  - id: Initialize pubsubtrace (admin)
+    join-point:
+      struct-definition: cloud.google.com/go/pubsub/v2/apiv1.TopicAdminClient
+    advice:
+      - inject-declarations:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+            instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+          lang: go1.18
+          template: |-
+            var (
+              __dd_instr_admin *instrumentation.Instrumentation
+              __dd_pstrace_admin *pubsubtrace.Tracer
+            )
+
+            func init() {
+              component := instrumentation.PackageGCPPubsubV2
+              __dd_instr_admin = instrumentation.Load(component)
+              __dd_pstrace_admin = pubsubtrace.NewTracer(__dd_instr_admin, component)
+            }
+
+  - id: TopicAdminClient.CreateTopic
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.TopicAdminClient'
+          - name: CreateTopic
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "createTopic", {{ $req }}.GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: TopicAdminClient.UpdateTopic
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.TopicAdminClient'
+          - name: UpdateTopic
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "updateTopic", {{ $req }}.GetTopic().GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: TopicAdminClient.GetTopic
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.TopicAdminClient'
+          - name: GetTopic
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "getTopic", {{ $req }}.GetTopic())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: TopicAdminClient.ListTopics
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.TopicAdminClient'
+          - name: ListTopics
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listTopics", {{ $req }}.GetProject())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan(nil)
+            }()
+
+  - id: TopicAdminClient.ListTopicSubscriptions
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.TopicAdminClient'
+          - name: ListTopicSubscriptions
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listTopicSubscriptions", {{ $req }}.GetTopic())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan(nil)
+            }()
+
+  - id: TopicAdminClient.ListTopicSnapshots
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.TopicAdminClient'
+          - name: ListTopicSnapshots
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listTopicSnapshots", {{ $req }}.GetTopic())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan(nil)
+            }()
+
+  - id: TopicAdminClient.DeleteTopic
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.TopicAdminClient'
+          - name: DeleteTopic
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 0 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteTopic", {{ $req }}.GetTopic())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: TopicAdminClient.DetachSubscription
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.TopicAdminClient'
+          - name: DetachSubscription
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "detachSubscription", {{ $req }}.GetSubscription())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.CreateSubscription
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: CreateSubscription
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "createSubscription", {{ $req }}.GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.GetSubscription
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: GetSubscription
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "getSubscription", {{ $req }}.GetSubscription())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.UpdateSubscription
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: UpdateSubscription
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "updateSubscription", {{ $req }}.GetSubscription().GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.ListSubscriptions
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: ListSubscriptions
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listSubscriptions", {{ $req }}.GetProject())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan(nil)
+            }()
+
+  - id: SubscriptionAdminClient.DeleteSubscription
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: DeleteSubscription
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 0 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteSubscription", {{ $req }}.GetSubscription())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.ModifyPushConfig
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: ModifyPushConfig
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 0 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "modifyPushConfig", {{ $req }}.GetSubscription())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.GetSnapshot
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: GetSnapshot
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "getSnapshot", {{ $req }}.GetSnapshot())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.ListSnapshots
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: ListSnapshots
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listSnapshots", {{ $req }}.GetProject())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan(nil)
+            }()
+
+  - id: SubscriptionAdminClient.CreateSnapshot
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: CreateSnapshot
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "createSnapshot", {{ $req }}.GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.UpdateSnapshot
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: UpdateSnapshot
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "updateSnapshot", {{ $req }}.GetSnapshot().GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.DeleteSnapshot
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: DeleteSnapshot
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 0 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteSnapshot", {{ $req }}.GetSnapshot())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SubscriptionAdminClient.Seek
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SubscriptionAdminClient'
+          - name: Seek
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "seek", {{ $req }}.GetSubscription())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SchemaClient.CreateSchema
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: CreateSchema
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "createSchema", {{ $req }}.GetParent())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SchemaClient.GetSchema
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: GetSchema
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "getSchema", {{ $req }}.GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SchemaClient.ListSchemas
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: ListSchemas
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listSchemas", {{ $req }}.GetParent())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan(nil)
+            }()
+
+  - id: SchemaClient.ListSchemaRevisions
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: ListSchemaRevisions
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listSchemaRevisions", {{ $req }}.GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan(nil)
+            }()
+
+  - id: SchemaClient.CommitSchema
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: CommitSchema
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "commitSchema", {{ $req }}.GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SchemaClient.RollbackSchema
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: RollbackSchema
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "rollbackSchema", {{ $req }}.GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SchemaClient.DeleteSchemaRevision
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: DeleteSchemaRevision
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteSchemaRevision", {{ $req }}.GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SchemaClient.DeleteSchema
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: DeleteSchema
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 0 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteSchema", {{ $req }}.GetName())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SchemaClient.ValidateSchema
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: ValidateSchema
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "validateSchema", {{ $req }}.GetParent())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
+  - id: SchemaClient.ValidateMessage
+    join-point:
+      function-body:
+        function:
+          - receiver: '*cloud.google.com/go/pubsub/v2/apiv1.SchemaClient'
+          - name: ValidateMessage
+    advice:
+      - prepend-statements:
+          imports:
+            pubsubtrace: github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $req := .Function.Argument 1 -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "validateMessage", {{ $req }}.GetParent())
+            {{ $ctx }} = __dd_ctx
+            defer func() {
+              __dd_closeSpan({{ $err }})
+            }()
+
   # Note: These aspects are also necessary for v1, they should be present in only one of the orchestrion.yml files,
   # otherwise they will be applied twice and will cause the build to fail.
   - id: Add fields to PublishResult
