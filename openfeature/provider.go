@@ -249,7 +249,6 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		}
 		// Stop the EVP flag evaluation writer (nil when killswitch disabled).
 		if p.flagEvalWriter != nil {
-			p.flagEvalWriter.flush()
 			p.flagEvalWriter.stop()
 		}
 		// Shut down flag evaluation metrics

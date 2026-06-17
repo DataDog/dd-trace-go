@@ -8,6 +8,9 @@ package openfeature
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync"
@@ -1055,6 +1058,78 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 	}
 	if got := w.dropped.Load(); got != before+1 {
 		t.Errorf("record() after stop() must count the event as dropped: dropped=%d, expected=%d", got, before+1)
+	}
+}
+
+func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
+	payloads := make(chan flagEvaluationPayload, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+
+		if r.URL.Path != flagEvaluationEndpoint {
+			t.Errorf("unexpected EVP path: got %q, want %q", r.URL.Path, flagEvaluationEndpoint)
+		}
+
+		var payload flagEvaluationPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("failed to decode flagevaluation payload: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		payloads <- payload
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	agentURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse test server URL: %v", err)
+	}
+
+	evp := newEVPClient()
+	evp.agentURL = agentURL
+	evp.httpClient = server.Client()
+
+	w := newFlagEvaluationWriterWithEVP(ProviderConfig{FlagEvaluationFlushInterval: time.Hour}, evp)
+	w.start()
+
+	hookCtx := of.NewHookContext(
+		"test-flag",
+		of.Boolean,
+		false,
+		of.NewClientMetadata(""),
+		of.Metadata{Name: "test-provider"},
+		of.NewEvaluationContext("user-1", map[string]any{"country": "US"}),
+	)
+	details := of.InterfaceEvaluationDetails{
+		Value: true,
+		EvaluationDetails: of.EvaluationDetails{
+			FlagKey:  "test-flag",
+			FlagType: of.Boolean,
+			ResolutionDetail: of.ResolutionDetail{
+				Variant: "on",
+				Reason:  of.TargetingMatchReason,
+			},
+		},
+	}
+	w.record(hookCtx, details)
+
+	w.stop()
+
+	select {
+	case payload := <-payloads:
+		if len(payload.FlagEvaluations) != 1 {
+			t.Fatalf("expected 1 flushed flagevaluation event, got %d", len(payload.FlagEvaluations))
+		}
+		event := payload.FlagEvaluations[0]
+		if event.Flag.Key != "test-flag" {
+			t.Errorf("unexpected flag key: got %q, want test-flag", event.Flag.Key)
+		}
+		if event.EvaluationCount != 1 {
+			t.Errorf("unexpected evaluation count: got %d, want 1", event.EvaluationCount)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stop() returned without flushing queued flagevaluation event")
 	}
 }
 
