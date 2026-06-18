@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/glsleak"
 
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
@@ -26,10 +27,11 @@ func TestBuiltWithOrchestrion(t *testing.T) {
 }
 
 // TestGLSNoHeapLeak is the comprehensive, end-to-end regression gate for
-// orchestrion#782: it runs the same owner/worker cross-goroutine workload as the
-// runnable command (measureLeak) at a soak-sized record count and fails if the
-// retained heap objects per record regress. Before the reclaim fix this leaked
-// ~15 objects/record (millions retained over the run); the fix keeps it at ~0.
+// orchestrion#782: it runs the shared owner/worker cross-goroutine workload
+// (glsleak.MeasureLeak) at a soak-sized record count and fails if the retained
+// heap objects per record regress. Without the reclaim fix the worker's GLS stack
+// grows by one span per record (retention proportional to the record count); the
+// fix keeps it flat.
 //
 // This is the orchestrion-native home for the korECM repro: internal/apps is
 // built without orchestrion, so the leak (which only exists under orchestrion)
@@ -43,11 +45,9 @@ func TestGLSNoHeapLeak(t *testing.T) {
 	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
 	defer tracer.Stop()
 
-	r := measureLeak(200_000)
-	// Generous bound: ~0/record with the fix, ~15/record without it. Well above
-	// the GC/alloc noise floor and far below a regression.
-	require.Lessf(t, r.perRecord, 1.0,
-		"GLS span leak: %.3f retained heap objects/record (was ~15 before the reclaim "+
-			"fix); the contextStack.Push reclaim in ddtrace/tracer/orchestrion.yml regressed",
-		r.perRecord)
+	r := glsleak.MeasureLeak(200_000)
+	require.Lessf(t, r.PerRecord, glsleak.MaxRetainedObjectsPerRecord,
+		"GLS span leak: %.3f retained heap objects/record (want flat ~0; the leak grows "+
+			"one span per record) — the contextStack.Push reclaim in ddtrace/tracer/orchestrion.yml regressed",
+		r.PerRecord)
 }

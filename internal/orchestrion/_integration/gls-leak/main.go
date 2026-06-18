@@ -10,7 +10,9 @@
 // ContextWithSpan pushes the active span onto the calling goroutine's GLS stack,
 // and Span.Finish pops the stack of whichever goroutine runs it. Push on one
 // goroutine and finish on another and the push is never popped — one span leaks
-// per call — unless the reclaim fix drops finished entries on the next push.
+// per call — unless the reclaim fix drops finished entries on the next push. The
+// measurement itself lives in the shared glsleak package so the runnable command
+// and the _integration/gls regression test stay in lockstep.
 //
 //	# baseline: GLS off, nothing leaks
 //	go run ./gls-leak -n 200000
@@ -18,97 +20,42 @@
 //	# leak path: orchestrion turns the GLS on (fixed build stays flat)
 //	orchestrion go run ./gls-leak -n 200000
 //
-// The companion TestGLSNoHeapLeak in this package runs the same workload under
-// the orchestrion CI lane and fails if the per-record retention regresses.
+// Expected retained heap per record:
+//
+//	plain go run .          ~0          GLS disabled, nothing leaks
+//	orchestrion + reclaim   ~0          finished entries reclaimed on the next push
+//	orchestrion, no reclaim one span    GLS push never popped — grows with N (orchestrion#782)
+//
+// The command only reports the measurement; the regression gate is the companion
+// TestGLSNoHeapLeak, which runs the same workload under the orchestrion CI lane
+// and fails if the per-record retention regresses.
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
-	"runtime"
-	"sync"
+	"os"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/glsleak"
 )
 
-// leakResult is the retained-heap measurement of a workload run.
-type leakResult struct {
-	records   int
-	objects   int64
-	bytes     int64
-	perRecord float64
-}
-
-// measureLeak runs the cross-goroutine push/finish workload n times (twice: once
-// to warm up, once measured) and returns the heap objects retained across the
-// measured run — the GLS-leak signal. The owner goroutine creates and finishes
-// each span (the pop runs there); the worker (caller goroutine) re-injects the
-// span via ContextWithSpan, pushing onto the worker's GLS stack — a push whose
-// matching pop ran elsewhere. With the reclaim fix the worker's stack (and the
-// live heap) stays bounded; without it, one span leaks per record.
-//
-// The tracer must already be started by the caller.
-func measureLeak(n int) leakResult {
-	base := context.Background()
-
-	run := func() {
-		spanCh := make(chan *tracer.Span, 1024)
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			defer close(spanCh)
-			for range n {
-				s := tracer.StartSpan("kafka.consume")
-				spanCh <- s
-				s.Finish() // pop runs here, on the owner goroutine
-			}
-		})
-		for s := range spanCh {
-			_ = tracer.ContextWithSpan(base, s) // push runs here, on the worker
-		}
-		wg.Wait()
-	}
-
-	run() // warm up so first-run/lazy allocations don't count toward the delta
-
-	runtime.GC()
-	var before runtime.MemStats
-	runtime.ReadMemStats(&before)
-
-	run()
-
-	tracer.Flush() // drop buffered spans so only a GLS leak can retain them
-	runtime.GC()
-	runtime.GC()
-	var after runtime.MemStats
-	runtime.ReadMemStats(&after)
-
-	objects := int64(after.HeapObjects) - int64(before.HeapObjects)
-	bytes := int64(after.HeapInuse) - int64(before.HeapInuse)
-	return leakResult{
-		records:   n,
-		objects:   objects,
-		bytes:     bytes,
-		perRecord: float64(objects) / float64(n),
-	}
-}
-
 func main() {
-	n := flag.Int("n", 200_000, "number of records to simulate")
+	n := flag.Int("n", 200_000, "number of records to simulate (must be > 0)")
 	flag.Parse()
+	if *n <= 0 {
+		fmt.Fprintln(os.Stderr, "gls-leak: -n must be > 0")
+		os.Exit(2)
+	}
 
 	if err := tracer.Start(tracer.WithLogStartup(false)); err != nil {
 		panic(err)
 	}
 	defer tracer.Stop()
 
-	r := measureLeak(*n)
-	fmt.Printf("records simulated     : %d\n", r.records)
-	fmt.Printf("retained heap objects : %+d  (%.3f per record)\n", r.objects, r.perRecord)
-	fmt.Printf("retained heap bytes   : %+d  (%.1f KiB)\n", r.bytes, float64(r.bytes)/1024)
-	fmt.Println()
-	fmt.Println("Interpretation:")
-	fmt.Println("  plain `go run .`        -> ~0 per record (GLS disabled, nothing leaks)")
-	fmt.Println("  orchestrion + fix       -> ~0 per record (finished entries reclaimed on push)")
-	fmt.Println("  orchestrion, no reclaim -> ~15 per record (GLS push never popped)")
+	r := glsleak.MeasureLeak(*n)
+	fmt.Printf(`records simulated     : %d
+retained heap objects : %+d  (%.3f per record)
+retained heap bytes   : %+d  (%.1f KiB)
+`, r.Records, r.Objects, r.PerRecord, r.Bytes, float64(r.Bytes)/1024)
 }

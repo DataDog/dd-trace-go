@@ -7,12 +7,12 @@ package gls
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/glsleak"
 
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
@@ -41,7 +41,7 @@ import (
 // reclaimable and contextStack.Push drops finished entries on the next push.
 //
 // Without the injected fix this goroutine's GLS grows by one entry per record
-// (~15 retained objects each in the original report); with it, depth stays ~1.
+// (an unbounded leak proportional to the record count); with it, depth stays ~1.
 func TestSpanGLSNoLeakCrossGoroutine(t *testing.T) {
 	if !orchestrionEnabled {
 		t.Skip("GLS only exists in orchestrion builds")
@@ -79,7 +79,7 @@ func TestSpanGLSNoLeakCrossGoroutine(t *testing.T) {
 		"GLS push never happened (depth=0): the ContextWithSpan injection in "+
 			"ddtrace/tracer/orchestrion.yml is not applied")
 	// Upper bound: it must not grow with the number of records. Without the
-	// reclaim, this goroutine's stack would be ~%d.
+	// reclaim, this goroutine's stack would grow to one entry per record.
 	require.LessOrEqualf(t, depth, 2,
 		"GLS leaked: depth=%d after %d cross-goroutine push/finish cycles; "+
 			"the reclaim injection in ddtrace/tracer/orchestrion.yml is not applied",
@@ -87,14 +87,15 @@ func TestSpanGLSNoLeakCrossGoroutine(t *testing.T) {
 }
 
 // TestSpanGLSNoHeapLeakCrossGoroutine is the end-to-end, heap-level counterpart
-// to the GLS-depth assertion above: it reproduces the korECM repro
-// (github.com/korECM/dd-trace-go-leak) in-process — an owner goroutine creates
-// and finishes each span while a worker goroutine re-injects it via
-// ContextWithSpan — and asserts the retained heap objects per record stay flat.
-// Before the reclaim fix this leaked ~15 objects/record (millions retained over a
-// run); the fix keeps it at ~0. Asserting on retained heap objects, not just GLS
-// depth, additionally catches a regression that still pushes but stops reclaiming
-// in a way the bounded-depth check might not.
+// to the GLS-depth assertion above: it runs the shared korECM repro
+// (glsleak.MeasureLeak — an owner goroutine creates and finishes each span while
+// a worker goroutine re-injects it via ContextWithSpan) and asserts the retained
+// heap objects per record stay flat. Without the reclaim fix the worker's GLS
+// stack grows by one span per record (retention rising with the record count);
+// the fix keeps it flat. Asserting on retained heap objects, not just GLS depth,
+// additionally catches a regression that still pushes but stops reclaiming in a
+// way the bounded-depth check might not. The runnable gls-leak command exercises
+// the same helper.
 func TestSpanGLSNoHeapLeakCrossGoroutine(t *testing.T) {
 	if !orchestrionEnabled {
 		t.Skip("GLS only exists in orchestrion builds")
@@ -104,58 +105,20 @@ func TestSpanGLSNoHeapLeakCrossGoroutine(t *testing.T) {
 	require.NoError(t, tracer.Start(tracer.WithLogStartup(false)))
 	defer tracer.Stop()
 
-	const records = 100_000
-	base := context.Background()
-
-	// Owner goroutine creates + finishes each span (pop runs there); the worker
-	// (this goroutine) re-injects it via ContextWithSpan, pushing onto this
-	// goroutine's GLS stack — a push whose matching pop ran elsewhere, i.e. the
-	// orchestrion#782 leak shape. With the reclaim fix the worker's stack (and so
-	// the live heap) stays bounded instead of growing one span per record.
-	run := func() {
-		spanCh := make(chan *tracer.Span, 1024)
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			defer close(spanCh)
-			for range records {
-				s := tracer.StartSpan("kafka.consume")
-				spanCh <- s
-				s.Finish()
-			}
-		})
-		for s := range spanCh {
-			_ = tracer.ContextWithSpan(base, s)
-		}
-		wg.Wait()
-	}
-
-	run() // warm up so first-run/lazy allocations don't count toward the delta
-
-	runtime.GC()
-	var before runtime.MemStats
-	runtime.ReadMemStats(&before)
-
-	run()
-
-	tracer.Flush() // drop buffered spans so only a GLS leak can retain them
-	runtime.GC()
-	runtime.GC()
-	var after runtime.MemStats
-	runtime.ReadMemStats(&after)
-
-	perRecord := float64(int64(after.HeapObjects)-int64(before.HeapObjects)) / records
-	// Generous bound well above the GC/alloc noise floor (~0/record with the fix)
-	// and far below a regression (~15/record without it).
-	require.Lessf(t, perRecord, 1.0,
-		"GLS span leak: %.3f retained heap objects/record (was ~15 before the "+
-			"reclaim fix); the contextStack.Push reclaim in ddtrace/tracer/orchestrion.yml regressed",
-		perRecord)
+	r := glsleak.MeasureLeak(100_000)
+	require.Lessf(t, r.PerRecord, glsleak.MaxRetainedObjectsPerRecord,
+		"GLS span leak: %.3f retained heap objects/record (want flat ~0; the leak grows "+
+			"one span per record) — the contextStack.Push reclaim in ddtrace/tracer/orchestrion.yml regressed",
+		r.PerRecord)
 }
 
 // TestSpanGLSDoubleFinishSameGoroutine verifies the injected pop both restores
 // the parent as the active span when a child finishes, and is idempotent: a
 // second Finish on the same span must not pop the unrelated parent (the
-// over-pop bug). It exercises the Span.Finish identity-match pop injection.
+// over-pop bug). The pop is goroutine-scoped and once-only (GLSDeactivate clears
+// the captured popper after running it), not an identity match against a
+// specific span — so this guards the LIFO-finish + double-finish cases, not
+// arbitrary out-of-order finishes.
 func TestSpanGLSDoubleFinishSameGoroutine(t *testing.T) {
 	if !orchestrionEnabled {
 		t.Skip("GLS only exists in orchestrion builds")
