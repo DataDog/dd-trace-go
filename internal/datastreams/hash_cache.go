@@ -6,7 +6,8 @@
 package datastreams
 
 import (
-	"strings"
+	"encoding/binary"
+	"hash/maphash"
 	"sync"
 )
 
@@ -16,63 +17,53 @@ const (
 
 type hashCache struct {
 	mu sync.RWMutex
-	m  map[string]uint64
+	m  map[uint64]uint64
 }
 
-func getHashKey(edgeTags, processTags []string, containerTagsHash string, parentHash uint64) string {
-	var s strings.Builder
-	l := 0
+var maphashSeed = maphash.MakeSeed()
+
+// computeFingerprint returns a fast, allocation-free fingerprint for a cache lookup key.
+// Collision probability is ~2^-64 per distinct input pair — negligible for a telemetry cache.
+func computeFingerprint(edgeTags, processTags []string, containerTagsHash string, parentHash uint64) uint64 {
+	var h maphash.Hash
+	h.SetSeed(maphashSeed)
 	for _, t := range edgeTags {
-		l += len(t)
+		_, _ = h.WriteString(t)
 	}
 	for _, t := range processTags {
-		l += len(t)
+		_, _ = h.WriteString(t)
 	}
-	l += len(containerTagsHash)
-	l += 8
-	s.Grow(l)
-	for _, t := range edgeTags {
-		s.WriteString(t)
-	}
-	for _, t := range processTags {
-		s.WriteString(t)
-	}
-	s.WriteString(containerTagsHash)
-	s.WriteByte(byte(parentHash))
-	s.WriteByte(byte(parentHash >> 8))
-	s.WriteByte(byte(parentHash >> 16))
-	s.WriteByte(byte(parentHash >> 24))
-	s.WriteByte(byte(parentHash >> 32))
-	s.WriteByte(byte(parentHash >> 40))
-	s.WriteByte(byte(parentHash >> 48))
-	s.WriteByte(byte(parentHash >> 56))
-	return s.String()
+	_, _ = h.WriteString(containerTagsHash)
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], parentHash)
+	_, _ = h.Write(b[:])
+	return h.Sum64()
 }
 
-func (c *hashCache) computeAndGet(key string, parentHash uint64, service, env string, edgeTags, processTags []string, containerTagsHash string) uint64 {
+func (c *hashCache) computeAndGet(fp uint64, parentHash uint64, service, env string, edgeTags, processTags []string, containerTagsHash string) uint64 {
 	hash := pathwayHash(nodeHash(service, env, edgeTags, processTags, containerTagsHash), parentHash)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.m) >= maxHashCacheSize {
 		// high cardinality of hashes shouldn't happen in practice, due to a limited amount of topics consumed
 		// by each service.
-		c.m = make(map[string]uint64)
+		c.m = make(map[uint64]uint64)
 	}
-	c.m[key] = hash
+	c.m[fp] = hash
 	return hash
 }
 
 func (c *hashCache) get(service, env string, edgeTags, processTags []string, containerTagsHash string, parentHash uint64) uint64 {
-	key := getHashKey(edgeTags, processTags, containerTagsHash, parentHash)
+	fp := computeFingerprint(edgeTags, processTags, containerTagsHash, parentHash)
 	c.mu.RLock()
-	if hash, ok := c.m[key]; ok {
+	if hash, ok := c.m[fp]; ok {
 		c.mu.RUnlock()
 		return hash
 	}
 	c.mu.RUnlock()
-	return c.computeAndGet(key, parentHash, service, env, edgeTags, processTags, containerTagsHash)
+	return c.computeAndGet(fp, parentHash, service, env, edgeTags, processTags, containerTagsHash)
 }
 
 func newHashCache() *hashCache {
-	return &hashCache{m: make(map[string]uint64)}
+	return &hashCache{m: make(map[uint64]uint64)}
 }
