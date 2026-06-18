@@ -200,6 +200,14 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 	if isError {
 		attrs = append(attrs, otlpKeyValue("status.code", otlpIntValue(2)))
 	}
+	// grpc.method.name is a first-class RFC dimension emitted as rpc.method. It arrives via
+	// PeerTags because ClientGroupedStats has no dedicated grpc_method field (unlike libdatadog).
+	for _, tag := range gs.PeerTags {
+		if k, v, ok := strings.Cut(tag, ":"); ok && k == "grpc.method.name" && v != "" {
+			attrs = append(attrs, otlpKeyValue("rpc.method", otlpStringValue(v)))
+			break
+		}
+	}
 
 	// When the span's service differs from the payload default, carry it on the data point.
 	if svc := gs.Service; svc != "" && svc != defaultService {

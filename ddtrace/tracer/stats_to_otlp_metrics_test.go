@@ -372,6 +372,48 @@ func TestDataPointAttributesHTTPRouteOmittedWhenEmpty(t *testing.T) {
 	assert.NotContains(t, m, "http.route")
 }
 
+func TestDataPointAttributesGRPCMethodName(t *testing.T) {
+	// grpc.method.name in PeerTags is translated to the RFC-required rpc.method attribute.
+	gs := &pb.ClientGroupedStats{
+		Resource: "grpc.request",
+		PeerTags: []string{"grpc.method.name:GetUser"},
+	}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
+	assert.Equal(t, "GetUser", m["rpc.method"])
+	assert.NotContains(t, m, "grpc.method.name")
+}
+
+func TestDataPointAttributesGRPCMethodNameFirstOnly(t *testing.T) {
+	// Only the first grpc.method.name value is used; no duplicates emitted.
+	gs := &pb.ClientGroupedStats{
+		Resource: "grpc.request",
+		PeerTags: []string{"grpc.method.name:GetUser", "grpc.method.name:ListUsers"},
+	}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
+	assert.Equal(t, "GetUser", m["rpc.method"])
+}
+
+func TestDataPointAttributesGRPCMethodNameEmptySkipped(t *testing.T) {
+	// A grpc.method.name tag with an empty value must not emit rpc.method.
+	gs := &pb.ClientGroupedStats{
+		Resource: "grpc.request",
+		PeerTags: []string{"grpc.method.name:"},
+	}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
+	assert.NotContains(t, m, "rpc.method")
+}
+
+func TestDataPointAttributesPeerTagsNotEmitted(t *testing.T) {
+	// peer.* tags and other non-grpc.method.name peer tags are not forwarded (out of scope per RFC).
+	gs := &pb.ClientGroupedStats{
+		Resource: "web.request",
+		PeerTags: []string{"peer.service:db", "db.system:postgresql"},
+	}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
+	assert.NotContains(t, m, "peer.service")
+	assert.NotContains(t, m, "db.system")
+}
+
 func TestDataPointAttributesGRPCStatusCode(t *testing.T) {
 	// GRPCStatusCode is emitted as rpc.response.status_code (integer when parseable).
 	gs := &pb.ClientGroupedStats{Resource: "grpc.request", GRPCStatusCode: "0"}
