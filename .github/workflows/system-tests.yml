@@ -266,6 +266,20 @@ jobs:
           echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
           echo "DD_APP_KEY=${{ steps.dd-sts.outputs.app_key }}" >> "$GITHUB_ENV"
 
+      - name: Cache npm packages for datadog-ci
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.npm
+          key: npm-datadog-ci-${{ runner.os }}-v1
+          restore-keys: |
+            npm-datadog-ci-${{ runner.os }}-
+
+      # Pre-install datadog-ci early so the action's npm install is instant.
+      # continue-on-error: the action has its own retry; this is best-effort.
+      - name: Pre-install datadog-ci
+        continue-on-error: true
+        run: npm install -g @datadog/datadog-ci
+
       - name: Download pre-built weblog image
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -395,6 +409,18 @@ jobs:
         uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
         with:
           policy: dd-trace-go-app-key
+
+      - name: Cache npm packages for datadog-ci
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ~/.npm
+          key: npm-datadog-ci-${{ runner.os }}-v1
+          restore-keys: |
+            npm-datadog-ci-${{ runner.os }}-
+
+      - name: Pre-install datadog-ci
+        continue-on-error: true
+        run: npm install -g @datadog/datadog-ci
 
       - name: Build runner
         uses: ./.github/actions/install_runner
