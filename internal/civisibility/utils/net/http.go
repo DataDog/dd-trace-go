@@ -319,7 +319,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return true, nil, err
+		log.Debug("ciVisibilityHttpClient: error reading response body = %s", err.Error())
+		exponentialBackoff(attempt, config.Backoff)
+		return false, nil, nil
 	}
 
 	// Decompress response if it is gzip compressed
@@ -328,7 +330,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		compressedResponse = true
 		responseBody, err = decompressData(responseBody)
 		if err != nil {
-			return true, nil, err
+			log.Debug("ciVisibilityHttpClient: error decompressing response body = %s", err.Error())
+			exponentialBackoff(attempt, config.Backoff)
+			return false, nil, nil
 		}
 	}
 

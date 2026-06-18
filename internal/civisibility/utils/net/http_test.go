@@ -1024,3 +1024,41 @@ func TestSerializeDataWithInvalidDataType(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported type: chan int")
 }
+
+func TestSendRequestWithBodyDecompressErrorRetries(t *testing.T) {
+	t.Parallel()
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts == 0 {
+			// First attempt: claim gzip but send garbage → decompress error → must retry
+			w.Header().Set(HeaderContentEncoding, ContentEncodingGzip)
+			w.Header().Set(HeaderContentType, ContentTypeJSON)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("not valid gzip data"))
+			attempts++
+			return
+		}
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"success": true}`))
+	}))
+	defer ts.Close()
+
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
+	config := RequestConfig{
+		Method:     "GET",
+		URL:        ts.URL,
+		MaxRetries: 2,
+		Backoff:    10 * time.Millisecond,
+	}
+
+	resp, err := handler.SendRequest(config)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.True(t, resp.CanUnmarshal)
+
+	var data map[string]bool
+	err = resp.Unmarshal(&data)
+	assert.NoError(t, err)
+	assert.True(t, data["success"])
+}
