@@ -140,8 +140,7 @@ type baseHashEntry struct {
 
 var cachedBaseHash atomic.Pointer[baseHashEntry]
 
-// computeBaseHash returns the DBM base hash as a signed decimal string, or "" if process tags
-// or container tags hash are not yet available.
+// computeBaseHash returns the DBM base hash as a signed decimal string.
 func computeBaseHash() string {
 	svc := globalconfig.ServiceName()
 	if svc == "" {

@@ -61,8 +61,7 @@ func SetGlobalDogstatsdAddr(t *testing.T, val string) {
 	globalconfig.SetDogstatsdAddr(val)
 }
 
-// SetContainerTagsHash sets the container tags hash for the duration of the test
-// and resets the base hash cache so computeBaseHash re-derives the value.
+// SetContainerTagsHash sets the container tags hash for the duration of the test.
 func SetContainerTagsHash(t *testing.T, hash string) {
 	t.Helper()
 	resetBaseHashCache()
@@ -73,10 +72,8 @@ func SetContainerTagsHash(t *testing.T, hash string) {
 	})
 }
 
-// DBMBaseHash computes the expected DBM base hash decimal string for the given inputs,
+// DBMBaseHash computes the expected DBM base hash for the given inputs,
 // matching the value injected as ddsh in SQL comments and as _dd.propagated_hash on spans.
-// The env is read from the active tracer config (same source as computeBaseHash) to avoid
-// mismatches when tracer.Start has been called with WithEnv.
 func DBMBaseHash(service, containerTagsHash string) string {
 	var processTags []string
 	if pTags := processtags.GlobalTags(); pTags != nil {
