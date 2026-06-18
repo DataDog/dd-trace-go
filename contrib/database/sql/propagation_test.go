@@ -685,9 +685,9 @@ func TestDBMNoPropagatedHashTagInOtherModes(t *testing.T) {
 			_, err = db.ExecContext(context.Background(), "SELECT 1")
 			require.NoError(t, err)
 
-			spans := mt.FinishedSpans()
-			require.Len(t, spans, 1)
-			assert.Nil(t, spans[0].Tag("_dd.propagated_hash"),
+			execSpans := spansOfType(mt.FinishedSpans(), QueryTypeExec)
+			require.Len(t, execSpans, 1)
+			assert.Nil(t, execSpans[0].Tag("_dd.propagated_hash"),
 				"_dd.propagated_hash must not be set in %s mode", mode)
 		})
 	}
