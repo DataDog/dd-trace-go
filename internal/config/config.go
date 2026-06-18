@@ -179,6 +179,14 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
+	// llmObsEnabled controls if LLM Observability is enabled
+	llmObsEnabled bool
+	// llmObsMLApp is the ML App for LLM Observability
+	llmObsMLApp string
+	// llmObsProjectName is the project name for LLM Observability
+	llmObsProjectName string
+	// llmObsAgentlessEnabled controls if LLM Observability is enabled in agentless mode
+	llmObsAgentlessEnabled *bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -344,6 +352,16 @@ func loadConfig() *Config {
 	}
 
 	cfg.apiKey = env.Get("DD_API_KEY")
+
+	cfg.llmObsEnabled = p.GetBool("DD_LLMOBS_ENABLED", false)
+	cfg.llmObsMLApp = p.GetString("DD_LLMOBS_ML_APP", "")
+	cfg.llmObsProjectName = p.GetString("DD_LLMOBS_PROJECT_NAME", "")
+	if p.IsSet("DD_LLMOBS_AGENTLESS_ENABLED") {
+		v := p.GetBool("DD_LLMOBS_AGENTLESS_ENABLED", false)
+		cfg.llmObsAgentlessEnabled = &v
+	} else {
+		cfg.llmObsAgentlessEnabled = nil
+	}
 
 	return cfg
 }
@@ -1269,4 +1287,70 @@ func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ..
 	}
 	c.sendRetries = retries
 	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
+// LLMObsEnabled returns DD_LLMOBS_ENABLED.
+func (c *Config) LLMObsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsEnabled
+}
+
+// SetLLMObsEnabled sets DD_LLMOBS_ENABLED.
+func (c *Config) SetLLMObsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_LLMOBS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.llmObsEnabled = enabled
+	configtelemetry.Report("DD_LLMOBS_ENABLED", enabled, origin)
+}
+
+func (c *Config) LLMObsMLApp() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsMLApp
+}
+
+func (c *Config) SetLLMObsMLApp(mlApp string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_LLMOBS_ML_APP", origin, mlApp, product...) {
+		return
+	}
+	c.llmObsMLApp = mlApp
+	configtelemetry.Report("DD_LLMOBS_ML_APP", mlApp, origin)
+}
+
+func (c *Config) LLMObsProjectName() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsProjectName
+}
+
+func (c *Config) SetLLMObsProjectName(name string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_LLMOBS_PROJECT_NAME", origin, name, product...) {
+		return
+	}
+	c.llmObsProjectName = name
+	configtelemetry.Report("DD_LLMOBS_PROJECT_NAME", name, origin)
+}
+
+func (c *Config) LLMObsAgentlessEnabled() *bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsAgentlessEnabled
+}
+
+func (c *Config) SetLLMObsAgentlessEnabled(v *bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_LLMOBS_AGENTLESS_ENABLED", origin, v, product...) {
+		return
+	}
+	c.llmObsAgentlessEnabled = v
+	configtelemetry.Report("DD_LLMOBS_AGENTLESS_ENABLED", v, origin)
 }
