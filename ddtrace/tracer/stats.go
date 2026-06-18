@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -208,9 +209,7 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 			}
 			if hasPeerTag {
 				spanMeta = make(map[string]string, len(spanMeta)+1)
-				for k, v := range s.meta.Map(false) {
-					spanMeta[k] = v
-				}
+				maps.Copy(spanMeta, s.meta.Map(false))
 				spanMeta[ext.SpanKind] = ext.SpanKindClient
 			}
 		}
