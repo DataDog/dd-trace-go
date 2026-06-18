@@ -84,7 +84,7 @@ jobs:
           - 8125:8125/udp
           - 8126:8126
       testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.59.1@sha256:8ee26d6cd0aa876de8a7a514d6a1b9cfbcc85ebb366c8ee4ee1a83429ebaf526
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.61.1@sha256:0b428281c1ba33f4af9f81efe79330a7577c8810609a7bcd1cecf8c7de82abec
         options: >-
           --health-cmd "bash -c '</dev/tcp/127.0.0.1/9126'"
         ports:
