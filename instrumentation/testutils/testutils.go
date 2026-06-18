@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
@@ -29,6 +30,9 @@ import (
 
 //go:linkname decodeTestingPayload github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.decodeTestingPayload
 func decodeTestingPayload(buf []byte) (map[string]any, error)
+
+//go:linkname resetBaseHashCache github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.resetBaseHashCache
+func resetBaseHashCache()
 
 func SetGlobalServiceName(t *testing.T, val string) {
 	t.Helper()
@@ -57,20 +61,28 @@ func SetGlobalDogstatsdAddr(t *testing.T, val string) {
 	globalconfig.SetDogstatsdAddr(val)
 }
 
-// SetContainerTagsHash sets the container tags hash for the duration of the test.
+// SetContainerTagsHash sets the container tags hash for the duration of the test
+// and resets the base hash cache so computeBaseHash re-derives the value.
 func SetContainerTagsHash(t *testing.T, hash string) {
 	t.Helper()
+	resetBaseHashCache()
 	processtags.SetContainerTagsHash(hash)
-	t.Cleanup(func() { processtags.SetContainerTagsHash("") })
+	t.Cleanup(func() {
+		processtags.SetContainerTagsHash("")
+		resetBaseHashCache()
+	})
 }
 
 // DBMBaseHash computes the expected DBM base hash decimal string for the given inputs,
 // matching the value injected as ddsh in SQL comments and as _dd.propagated_hash on spans.
-func DBMBaseHash(service, env, containerTagsHash string) string {
+// The env is read from the active tracer config (same source as computeBaseHash) to avoid
+// mismatches when tracer.Start has been called with WithEnv.
+func DBMBaseHash(service, containerTagsHash string) string {
 	var processTags []string
 	if pTags := processtags.GlobalTags(); pTags != nil {
 		processTags = pTags.Slice()
 	}
+	env := internalconfig.Get().Env()
 	hash := datastreams.BaseHash(service, env, processTags, containerTagsHash)
 	return strconv.FormatInt(int64(hash), 10)
 }

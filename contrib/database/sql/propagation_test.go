@@ -295,7 +295,7 @@ func TestDBMPropagation(t *testing.T) {
 			if tc.containerTagsHash != "" && tc.name == "dynamic_service-exec-with-hash" {
 				require.Len(t, d.Executed, 1)
 				assert.NotContains(t, d.Executed[0], "traceparent=", "dynamic_service must not inject traceparent")
-				expectedHash := testutils.DBMBaseHash("test-service", "test-env", tc.containerTagsHash)
+				expectedHash := testutils.DBMBaseHash("test-service", tc.containerTagsHash)
 				assert.Contains(t, d.Executed[0], "ddsh='"+expectedHash+"'", "ddsh must equal computed base hash")
 			}
 		})
@@ -606,7 +606,7 @@ func TestDBMDynamicServicePropagatedHashTag(t *testing.T) {
 	t.Cleanup(tracer.Stop)
 
 	testutils.SetContainerTagsHash(t, "testhash42")
-	expectedHash := testutils.DBMBaseHash("test-svc", "test-env", "testhash42")
+	expectedHash := testutils.DBMBaseHash("test-svc", "testhash42")
 
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
@@ -620,11 +620,11 @@ func TestDBMDynamicServicePropagatedHashTag(t *testing.T) {
 	_, err = db.ExecContext(context.Background(), "SELECT 1")
 	require.NoError(t, err)
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	assert.Equal(t, expectedHash, spans[0].Tag("_dd.propagated_hash"),
+	execSpans := spansOfType(mt.FinishedSpans(), QueryTypeExec)
+	require.Len(t, execSpans, 1)
+	assert.Equal(t, expectedHash, execSpans[0].Tag("_dd.propagated_hash"),
 		"_dd.propagated_hash must equal the computed base hash")
-	assert.Nil(t, spans[0].Tag("_dd.dbm_trace_injected"),
+	assert.Nil(t, execSpans[0].Tag("_dd.dbm_trace_injected"),
 		"dynamic_service must not set _dd.dbm_trace_injected (that is full mode only)")
 }
 
@@ -634,7 +634,7 @@ func TestDBMDynamicServicePrepareContextWithHash(t *testing.T) {
 	t.Cleanup(tracer.Stop)
 
 	testutils.SetContainerTagsHash(t, "testhash42")
-	expectedHash := testutils.DBMBaseHash("test-svc", "test-env", "testhash42")
+	expectedHash := testutils.DBMBaseHash("test-svc", "testhash42")
 
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
@@ -655,9 +655,9 @@ func TestDBMDynamicServicePrepareContextWithHash(t *testing.T) {
 	assert.NotContains(t, d.Prepared[0], "traceparent=",
 		"dynamic_service PrepareContext must not inject traceparent")
 
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	assert.Equal(t, expectedHash, spans[0].Tag("_dd.propagated_hash"),
+	prepareSpans := spansOfType(mt.FinishedSpans(), QueryTypePrepare)
+	require.Len(t, prepareSpans, 1)
+	assert.Equal(t, expectedHash, prepareSpans[0].Tag("_dd.propagated_hash"),
 		"_dd.propagated_hash must be set on the prepare span")
 }
 

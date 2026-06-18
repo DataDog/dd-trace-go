@@ -164,6 +164,10 @@ func computeBaseHash() string {
 	return result
 }
 
+func resetBaseHashCache() {
+	cachedBaseHash.Store(nil)
+}
+
 // encodeTraceParent encodes trace parent as per the w3c trace context spec (https://www.w3.org/TR/trace-context/#version).
 func encodeTraceParent(traceID uint64, spanID uint64, sampled int64) string {
 	var b strings.Builder
