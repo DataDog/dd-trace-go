@@ -401,6 +401,9 @@ func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
+	if !c.internalConfig.InternalMetricsEnabled() {
+		return &statsd.NoOpClientDirect{}, nil
+	}
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}

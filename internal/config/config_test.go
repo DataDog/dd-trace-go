@@ -547,6 +547,34 @@ func TestOTLPHeaders(t *testing.T) {
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
 	})
 
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS not reported in configuration telemetry", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=SENTINEL_OTLP_TRACES,x-custom=value")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		// The value is still resolved and parsed for export use.
+		headers := cfg.OTLPHeaders()
+		assert.Equal(t, "SENTINEL_OTLP_TRACES", headers["api-key"])
+
+		// But it must not be reported in configuration telemetry, and no reported
+		// configuration value may contain the sentinel.
+		for _, c := range rec.Configuration {
+			assert.NotEqual(t, "OTEL_EXPORTER_OTLP_TRACES_HEADERS", c.Name,
+				"OTEL_EXPORTER_OTLP_TRACES_HEADERS should not be reported in configuration telemetry")
+			if s, ok := c.Value.(string); ok {
+				assert.NotContains(t, s, "SENTINEL_OTLP_TRACES",
+					"configuration value for %s must not contain the OTLP traces headers sentinel", c.Name)
+			}
+		}
+	})
+
 }
 
 func TestOTLPExportMode(t *testing.T) {

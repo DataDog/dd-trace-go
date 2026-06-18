@@ -102,6 +102,7 @@ type Config struct {
 	hostnameLookupError        error
 	runtimeMetrics             bool
 	runtimeMetricsV2           bool
+	runtimeMetricsOtel         bool
 	profilerHotspots           bool
 	profilerEndpoints          bool
 	spanAttributeSchemaVersion int
@@ -118,6 +119,9 @@ type Config struct {
 	// partialFlushEnabled specifices whether the tracer should enable partial flushing. Value
 	// from DD_TRACE_PARTIAL_FLUSH_ENABLED, default false.
 	partialFlushEnabled bool
+	// internalMetricsEnabled enables the tracer's internal metrics (statsd) client.
+	// Value from DD_TRACE_INTERNAL_METRICS_ENABLED, default true.
+	internalMetricsEnabled bool
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled      bool
 	traceAnalyticsEnabled        bool
@@ -160,6 +164,9 @@ type Config struct {
 	// otlpExportMode indicates traces should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMode bool
+	// otlpExportMetricsMode indicates metrics should be exported via OTLP rather than
+	// a Datadog protocol.
+	otlpExportMetricsMode bool
 	// otlpTraceURL is the OTLP collector endpoint for traces
 	otlpTraceURL string
 	// otlpHeaders holds the resolved OTLP trace headers from
@@ -241,6 +248,7 @@ func loadConfig() *Config {
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
+	cfg.runtimeMetricsOtel = p.GetBool("DD_METRICS_OTEL_ENABLED", false)
 	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
 	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
 	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
@@ -264,6 +272,7 @@ func loadConfig() *Config {
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
+	cfg.otlpExportMetricsMode = p.GetString("OTEL_METRICS_EXPORTER", "otlp") == "otlp"
 	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV04, validateTraceProtocolVersion))
 	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
@@ -314,6 +323,10 @@ func loadConfig() *Config {
 			cfg.isLambdaFunction = true
 		}
 	}
+
+	// Internal metrics default to off in Lambda: they add per-invocation statsd
+	// overhead for little value and are not usable as distributions there.
+	cfg.internalMetricsEnabled = p.GetBool("DD_TRACE_INTERNAL_METRICS_ENABLED", !cfg.isLambdaFunction)
 
 	// Hostname lookup, if DD_TRACE_REPORT_HOSTNAME is true
 	// If the hostname lookup fails, an error is set and the hostname is not reported
@@ -559,6 +572,22 @@ func (c *Config) SetRuntimeMetricsV2Enabled(enabled bool, origin telemetry.Origi
 	configtelemetry.Report("DD_RUNTIME_METRICS_V2_ENABLED", enabled, origin)
 }
 
+func (c *Config) RuntimeMetricsOtelEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsOtel
+}
+
+func (c *Config) SetRuntimeMetricsOtelEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_METRICS_OTEL_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.runtimeMetricsOtel = enabled
+	configtelemetry.Report("DD_METRICS_OTEL_ENABLED", enabled, origin)
+}
+
 func (c *Config) DataStreamsMonitoringEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -773,6 +802,12 @@ func (c *Config) SetDebugStack(enabled bool, origin telemetry.Origin, product ..
 	}
 	c.debugStack = enabled
 	configtelemetry.Report("DD_TRACE_DEBUG_STACK", enabled, origin)
+}
+
+func (c *Config) InternalMetricsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.internalMetricsEnabled
 }
 
 func (c *Config) StatsComputationEnabled() bool {
@@ -1182,6 +1217,22 @@ func (c *Config) SetOTLPExportMode(v bool, origin telemetry.Origin, product ...P
 	}
 	c.otlpExportMode = v
 	configtelemetry.Report("OTEL_TRACES_EXPORTER", v, origin)
+}
+
+func (c *Config) OTLPExportMetricsMode() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpExportMetricsMode
+}
+
+func (c *Config) SetOTLPExportMetricsMode(v bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("OTEL_METRICS_EXPORTER", origin, v, product...) {
+		return
+	}
+	c.otlpExportMetricsMode = v
+	configtelemetry.Report("OTEL_METRICS_EXPORTER", v, origin)
 }
 
 // OTLPHeaders returns a copy of the OTLP headers map. If no headers are set, returns nil.

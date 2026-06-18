@@ -101,7 +101,7 @@ func MakeListener(config Config, extensionManager *extension.ExtensionManager) L
 	// Agent instead of using this "discovery" implementation.
 	if extensionManager.IsExtensionRunning() {
 		var err error
-		if statsdClient, err = statsd.New("127.0.0.1:8125"); err != nil {
+		if statsdClient, err = statsd.New("127.0.0.1:8125", statsd.WithoutTelemetry()); err != nil {
 			statsdClient = nil // force nil if an error occurred during statsd client init
 		}
 	}
