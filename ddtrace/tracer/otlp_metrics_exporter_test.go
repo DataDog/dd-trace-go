@@ -16,7 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
-	otlpcollectormetrics "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	otlpmetrics "go.opentelemetry.io/proto/otlp/metrics/v1"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -120,11 +121,27 @@ func TestOTLPMetricsExporterExportProtobufIsDecodable(t *testing.T) {
 	}
 	require.NoError(t, exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})))
 
-	var decoded otlpcollectormetrics.ExportMetricsServiceRequest
-	require.NoError(t, proto.Unmarshal(srv.lastBody, &decoded))
-	require.Len(t, decoded.ResourceMetrics, 1)
-	require.Len(t, decoded.ResourceMetrics[0].ScopeMetrics, 1)
-	assert.Equal(t, spanDurationMetricName, decoded.ResourceMetrics[0].ScopeMetrics[0].Metrics[0].Name)
+	// Decode without importing collector/metrics/v1 to avoid the genproto split
+	// ambiguity with confluent-kafka-go. ExportMetricsServiceRequest wire format:
+	// field 1 (bytes) = repeated ResourceMetrics.
+	var resourceMetrics []*otlpmetrics.ResourceMetrics
+	b := srv.lastBody
+	for len(b) > 0 {
+		num, typ, n := protowire.ConsumeTag(b)
+		require.Positive(t, n)
+		b = b[n:]
+		val, n := protowire.ConsumeBytes(b)
+		require.Positive(t, n)
+		b = b[n:]
+		if num == 1 && typ == protowire.BytesType {
+			var rm otlpmetrics.ResourceMetrics
+			require.NoError(t, proto.Unmarshal(val, &rm))
+			resourceMetrics = append(resourceMetrics, &rm)
+		}
+	}
+	require.Len(t, resourceMetrics, 1)
+	require.Len(t, resourceMetrics[0].ScopeMetrics, 1)
+	assert.Equal(t, spanDurationMetricName, resourceMetrics[0].ScopeMetrics[0].Metrics[0].Name)
 }
 
 func TestOTLPMetricsExporterExportHTTPError(t *testing.T) {
