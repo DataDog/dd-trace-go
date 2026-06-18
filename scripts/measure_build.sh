@@ -13,8 +13,11 @@ set -euo pipefail
 #   --sample NAME         Sample to build (default: net_http)
 #   --mode MODE           Build mode: standard or orchestrion (required)
 #   --output PATH         Output JSON file path (default: stdout)
-#   --repeats N           Number of build repeats for median (default: 3)
+#   --repeats N           Number of build repeats (default: 3)
 #   -h, --help            Show this help message
+#
+# Output JSON includes all build_duration_samples (one per repeat) and a single
+# binary_size_bytes taken from the last build.
 #
 # Examples:
 #   scripts/measure_build.sh --sample net_http --mode standard
@@ -31,7 +34,7 @@ Options:
   --sample NAME         Sample to build (default: net_http)
   --mode MODE           Build mode: standard or orchestrion (required)
   --output PATH         Output JSON file path (default: stdout)
-  --repeats N           Number of build repeats for median (default: 3)
+  --repeats N           Number of build repeats (default: 3)
   -h, --help            Show this help message
 
 Examples:
@@ -165,35 +168,28 @@ do_build() {
   echo "$duration $size"
 }
 
-# Perform builds (median if repeats > 1)
-if [[ "$REPEATS" -eq 1 ]]; then
-  read -r duration size <<< "$(do_build)"
-else
-  message "Performing $REPEATS builds..."
-  durations=()
-  sizes=()
-  for i in $(seq 1 "$REPEATS"); do
-    message "Build $i/$REPEATS:"
-    read -r d s <<< "$(do_build)"
-    durations+=("$d")
-    sizes+=("$s")
-  done
+# Perform builds — collect all duration samples; use last build's binary size
+message "Performing $REPEATS builds..."
+durations=()
+size=""
+for i in $(seq 1 "$REPEATS"); do
+  message "Build $i/$REPEATS:"
+  read -r d s <<< "$(do_build)"
+  durations+=("$d")
+  size="$s"
+done
+message "Durations: ${durations[*]}, size: $size bytes"
 
-  # Compute median (simple: sort and take middle)
-  duration=$(printf '%s\n' "${durations[@]}" | sort -n | awk '{a[NR]=$1} END {print (NR%2==1)?a[(NR+1)/2]:(a[NR/2]+a[NR/2+1])/2}')
-  size=$(printf '%s\n' "${sizes[@]}" | sort -n | awk '{a[NR]=$1} END {print (NR%2==1)?a[(NR+1)/2]:(a[NR/2]+a[NR/2+1])/2}')
-  message "Median duration: ${duration}s, median size: $size bytes"
-fi
-
-# Build JSON output
+# Build JSON output — durations as array, size as single value
 message "Generating JSON output..."
+DURATION_ARRAY=$(printf '%s\n' "${durations[@]}" | jq -R 'tonumber' | jq -s '.')
 JSON=$(jq -n \
   --arg sample "$SAMPLE" \
   --arg mode "$MODE" \
-  --argjson duration "$duration" \
+  --argjson durations "$DURATION_ARRAY" \
   --argjson size "$size" \
   --arg go_version "$GO_VERSION" \
-  '{ sample: $sample, mode: $mode, metrics: { build_duration_seconds: $duration, binary_size_bytes: $size }, go_version: $go_version }')
+  '{ sample: $sample, mode: $mode, metrics: { build_duration_samples: $durations, binary_size_bytes: $size }, go_version: $go_version }')
 
 # Add orchestrion version if in orchestrion mode
 if [[ "$MODE" == "orchestrion" ]]; then
