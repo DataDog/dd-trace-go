@@ -126,6 +126,64 @@ go run ./scripts/program-name.go
 3. If it needs dependencies, create a separate `go.mod` file
 4. Don't add the module to `go.work`
 
+## Build Metrics Scripts
+
+Scripts for measuring build cost and publishing to Datadog CI Visibility:
+
+### measure_build.sh
+
+Measures build time and binary size for Orchestrion integration samples. Builds are performed with a cold build cache to measure full compilation cost, after warming the module download cache (untimed) so the measurement reflects compilation rather than network downloads.
+
+```bash
+# Build with standard Go toolchain
+./scripts/measure_build.sh --sample net_http --mode standard --output /tmp/metrics.json
+
+# Build with Orchestrion
+./scripts/measure_build.sh --sample net_http --mode orchestrion --output /tmp/metrics.json
+
+# Multiple repeats for median (reduces noise)
+./scripts/measure_build.sh --sample net_http --mode standard --repeats 3
+```
+
+**Options:**
+- `--sample NAME` - Sample to build (default: net_http)
+- `--mode MODE` - Build mode: `standard` or `orchestrion` (required)
+- `--output PATH` - Output JSON file path (default: stdout)
+- `--repeats N` - Number of build repeats (default: 3)
+
+**Output format:**
+```json
+{
+  "sample": "net_http",
+  "mode": "orchestrion",
+  "metrics": {
+    "build_duration_samples": [312.4, 308.1, 315.7],
+    "binary_size_bytes": 48217344
+  },
+  "go_version": "1.25.0",
+  "orchestrion_version": "v1.9.0"
+}
+```
+
+`build_duration_samples` contains one entry per `--repeats` run. `binary_size_bytes` is taken from the last build.
+
+### publish_build_metrics.sh
+
+Publishes build metrics to Datadog CI Visibility using `datadog-ci`. Attaches measures (`go.build.duration_seconds.0`, `go.build.duration_seconds.1`, ..., `go.build.binary_size_bytes`) and tags (`build.toolchain`, `build.sample`, `build.cache`, `go.version`, `orchestrion.version`) to the current CI job span. Each element of `build_duration_samples` is published as an individually-indexed measure.
+
+```bash
+# Set environment and publish
+export METRICS_FILE=/tmp/metrics.json
+export DATADOG_API_KEY=<key>
+export DATADOG_SITE=datadoghq.com
+./scripts/publish_build_metrics.sh
+```
+
+**Required environment variables:**
+- `METRICS_FILE` - Path to metrics JSON from `measure_build.sh`
+- `DATADOG_API_KEY` - Datadog API key
+- `DATADOG_SITE` - Datadog site (default: datadoghq.com)
+
 ## Guidelines
 
 - Scripts should be idempotent when possible

@@ -148,6 +148,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TEST_OPTIMIZATION_MANIFEST_FILE":                              {},
 	"DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES":                          {},
 	"DD_TEST_SESSION_NAME":                                            {},
+	"DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED":                        {},
 	"DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED":                     {},
 	"DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED":                        {},
 	"DD_TRACE_ABANDONED_SPAN_TIMEOUT":                                 {},
@@ -199,6 +200,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER":                 {},
 	"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED":                         {},
 	"DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED":                        {},
+	"DD_TRACE_INTERNAL_METRICS_ENABLED":                               {},
 	"DD_TRACE_KAFKA_ANALYTICS_ENABLED":                                {},
 	"DD_TRACE_LEVELDB_ANALYTICS_ENABLED":                              {},
 	"DD_TRACE_LOGRUS_ANALYTICS_ENABLED":                               {},
@@ -236,7 +238,6 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_SEND_RETRIES":                                           {},
 	"DD_TRACE_SOURCE_HOSTNAME":                                        {},
 	"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":                                  {},
-	"DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED":                        {},
 	"DD_TRACE_SQL_ANALYTICS_ENABLED":                                  {},
 	"DD_TRACE_SQL_COMMENT_INJECTION_MODE":                             {},
 	"DD_TRACE_STARTUP_LOGS":                                           {},
@@ -282,8 +283,18 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_TRACES_SAMPLER_ARG":                                         {},
 }
 
-// keyAliases maps aliases to supported configuration keys.
-var keyAliases = map[string][]string{
+// SensitiveConfigurations is the set of configuration keys whose value must not be
+// reported in configuration telemetry. It is seeded from entries marked "sensitive": true
+// in supported_configurations.json.
+var SensitiveConfigurations = map[string]struct{}{
+	"OTEL_EXPORTER_OTLP_HEADERS":         {},
+	"OTEL_EXPORTER_OTLP_LOGS_HEADERS":    {},
+	"OTEL_EXPORTER_OTLP_METRICS_HEADERS": {},
+	"OTEL_EXPORTER_OTLP_TRACES_HEADERS":  {},
+}
+
+// KeyAliases maps canonical configuration keys to their known aliases.
+var KeyAliases = map[string][]string{
 	"DD_API_KEY":                    {"DD-API-KEY"},
 	"DD_APPSEC_STACK_TRACE_ENABLED": {"DD_APPSEC_STACK_TRACE_ENABLE"},
 }
