@@ -259,9 +259,9 @@ func sketchToHistogram(sketchBytes []byte, bounds []float64) ([]uint64, float64,
 		c := uint64(math.Round(count))
 		totalCount += c
 		sumSec += valueSec * count
-		// Find the bucket: first index i where bounds[i] > valueSec.
-		// OTLP convention: BucketCounts[i] accumulates values in [bounds[i-1], bounds[i]).
-		idx := sort.Search(len(bounds), func(i int) bool { return bounds[i] > valueSec })
+		// Find the bucket: first index i where bounds[i] >= valueSec.
+		// OTLP convention: bucket i covers (bounds[i-1], bounds[i]] — upper-bound inclusive.
+		idx := sort.Search(len(bounds), func(i int) bool { return bounds[i] >= valueSec })
 		buckets[idx] += c
 		return false
 	})

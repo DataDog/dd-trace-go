@@ -108,9 +108,8 @@ func TestSketchToHistogramOverflowBucket(t *testing.T) {
 }
 
 func TestSketchToHistogramSortSearchSemantics(t *testing.T) {
-	// Verify that sort.Search(bounds, func(i) bounds[i] > v) puts a value clearly inside
-	// a bucket into the correct index. 50ms = 0.05 s is bounds[5]; values slightly above
-	// it should land in bucket 6. Use 60ms (0.06 s) which is unambiguously in [0.05, 0.1).
+	// Verify placement of a value clearly inside a bucket (not on a boundary).
+	// 60ms (0.06 s) is in (bounds[5]=0.05, bounds[6]=0.1] → bucket 6.
 	b := encodeSketch(t, 60e6) // 60ms in ns
 	buckets, _, _, _, count, err := sketchToHistogram(b, spanMetricBounds)
 	require.NoError(t, err)
@@ -118,6 +117,7 @@ func TestSketchToHistogramSortSearchSemantics(t *testing.T) {
 	// bounds[5]=0.05, bounds[6]=0.1 → 0.06 s belongs in bucket 6
 	assert.Equal(t, uint64(1), buckets[6], "60ms should land in bucket 6")
 }
+
 
 func TestSketchToHistogramMultipleValues(t *testing.T) {
 	// 1ms + 500ms + 3s → three separate buckets, sum ≈ 3.501 s
