@@ -1375,14 +1375,11 @@ func TestSpanProcessTags(t *testing.T) {
 			root := traces[0][0]
 			assert.Equal(t, "p", root.name)
 			if tc.enabled {
-				v, _ := root.meta.Get("_dd.tags.process")
-				assert.NotEmpty(t, v)
+				assertProcessTags(t, traces)
 			} else {
-				assert.False(t, root.meta.Has("_dd.tags.process"))
-			}
-
-			for _, s := range traces[0][1:] {
-				assert.False(t, s.meta.Has("_dd.tags.process"))
+				for _, s := range traces[0] {
+					assert.False(t, s.meta.Has("_dd.tags.process"))
+				}
 			}
 		})
 	}

@@ -575,6 +575,25 @@ func TestPayloadV1IncrementalChunkEncoding(t *testing.T) {
 	}
 }
 
+// assertProcessTags verifies that the first span of every decoded chunk carries
+// _dd.tags.process (including the entrypoint.name tag), and that no other span
+// within any chunk does.
+func assertProcessTags(t *testing.T, payload spanLists) {
+	t.Helper()
+	for i, spanList := range payload {
+		for j, span := range spanList {
+			processTags, ok := span.meta.Get(keyProcessTags)
+			if j == 0 {
+				assert.True(t, ok, "chunk %d: first span must carry _dd.tags.process", i)
+				assert.Contains(t, processTags, "entrypoint.name",
+					"chunk %d: process tags must include entrypoint.name", i)
+			} else {
+				require.False(t, ok, "chunk %d span %d must not carry _dd.tags.process", i, j)
+			}
+		}
+	}
+}
+
 func TestPayloadV1SerializationFailure(t *testing.T) {
 	t.Run("nil span", func(t *testing.T) {
 		assert := assert.New(t)
