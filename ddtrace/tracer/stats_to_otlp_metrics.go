@@ -31,18 +31,11 @@ const spanDurationMetricName = "traces.span.sdk.metrics.duration"
 // These match the OTel Span Metrics Connector defaults, scaled from milliseconds to seconds.
 var spanMetricBounds = []float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1, 1.4, 2, 5, 10, 15}
 
-// peerTagKeyToOTel maps Datadog peer-tag keys to their OTel semantic-convention equivalents.
-// Keys absent from this map are passed through unchanged.
-var peerTagKeyToOTel = map[string]string{
-	"grpc.method.name": "rpc.method",
-}
-
 // BuildOTLPMetricsRequest converts a ClientStatsPayload into a slice of OTLP ResourceMetrics.
 // Service identity (service.name, service.version, deployment.environment.name) is placed on the
-// Resource. A single InstrumentationScope is used for all data points. When a grouped-stats entry
-// carries a different service than the payload's configured default, service.name is additionally
-// emitted as a data-point attribute. The resulting histogram uses DELTA temporality.
-// Returns nil when the payload produces no data points.
+// Resource. When a grouped-stats entry carries a different service than the payload's configured
+// default, service.name is additionally emitted as a data-point attribute. The resulting histogram
+// uses DELTA temporality. Returns nil when the payload produces no data points.
 func BuildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) []*otlpmetrics.ResourceMetrics {
 	otelMode := cfg.OTLPSemanticsMode()
 
@@ -63,10 +56,6 @@ func BuildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 
 	scopeMetrics := []*otlpmetrics.ScopeMetrics{
 		{
-			Scope: &otlpcommon.InstrumentationScope{
-				Name:    "dd-trace-go",
-				Version: version.Tag,
-			},
 			Metrics: []*otlpmetrics.Metric{
 				{
 					Name: spanDurationMetricName,
@@ -111,11 +100,16 @@ func buildMetricsResource(cfg *internalconfig.Config, payload *pb.ClientStatsPay
 			attrs = append(attrs, otlpKeyValue("host.name", otlpStringValue(h)))
 		}
 	}
-	if !otelMode && payload.ProcessTags != "" {
-		for tag := range strings.SplitSeq(payload.ProcessTags, ",") {
-			parts := strings.SplitN(tag, ":", 2)
-			if len(parts) == 2 && parts[0] != "" {
-				attrs = append(attrs, otlpKeyValue("datadog."+parts[0], otlpStringValue(parts[1])))
+	if !otelMode {
+		if payload.RuntimeID != "" {
+			attrs = append(attrs, otlpKeyValue("datadog.runtime_id", otlpStringValue(payload.RuntimeID)))
+		}
+		if payload.ProcessTags != "" {
+			for tag := range strings.SplitSeq(payload.ProcessTags, ",") {
+				parts := strings.SplitN(tag, ":", 2)
+				if len(parts) == 2 && parts[0] != "" {
+					attrs = append(attrs, otlpKeyValue("datadog."+parts[0], otlpStringValue(parts[1])))
+				}
 			}
 		}
 	}
@@ -129,27 +123,35 @@ func buildMetricsResource(cfg *internalconfig.Config, payload *pb.ClientStatsPay
 func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, defaultService string, otelMode bool) []*otlpmetrics.HistogramDataPoint {
 	var pts []*otlpmetrics.HistogramDataPoint
 
+	okCount := uint64(0)
+	if gs.Hits >= gs.Errors {
+		okCount = gs.Hits - gs.Errors
+	}
 	if len(gs.OkSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, defaultService, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, okCount, defaultService, otelMode); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	if len(gs.ErrorSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, defaultService, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, gs.Errors, defaultService, otelMode); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	return pts
 }
 
-func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, defaultService string, otelMode bool) *otlpmetrics.HistogramDataPoint {
-	bucketCounts, sum, minSec, maxSec, count, err := sketchToHistogram(sketchBytes, spanMetricBounds)
+func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, exactCount uint64, defaultService string, otelMode bool) *otlpmetrics.HistogramDataPoint {
+	bucketCounts, sum, minSec, maxSec, sketchCount, err := sketchToHistogram(sketchBytes, spanMetricBounds)
 	if err != nil {
 		log.Error("stats_to_otlp_metrics: failed to decode sketch: %v", err.Error())
 		return nil
 	}
-	if count == 0 {
+	if sketchCount == 0 {
 		return nil
+	}
+	count := exactCount
+	if count == 0 {
+		count = sketchCount
 	}
 
 	dp := &otlpmetrics.HistogramDataPoint{
@@ -185,6 +187,9 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 	if gs.HTTPStatusCode != 0 {
 		attrs = append(attrs, otlpKeyValue("http.response.status_code", otlpIntValue(int64(gs.HTTPStatusCode))))
 	}
+	if gs.HTTPEndpoint != "" {
+		attrs = append(attrs, otlpKeyValue("http.route", otlpStringValue(gs.HTTPEndpoint)))
+	}
 	if gs.GRPCStatusCode != "" {
 		if code, err := strconv.ParseInt(gs.GRPCStatusCode, 10, 64); err == nil {
 			attrs = append(attrs, otlpKeyValue("rpc.response.status_code", otlpIntValue(code)))
@@ -193,17 +198,7 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 		}
 	}
 	if isError {
-		attrs = append(attrs, otlpKeyValue("status.code", otlpStringValue("ERROR")))
-	}
-	// PeerTags carry additional OTel dimensions as "key:value" pairs. Datadog tag names that differ
-	// from OTel names are remapped (e.g. grpc.method.name -> rpc.method).
-	for _, tag := range gs.PeerTags {
-		if k, v, ok := strings.Cut(tag, ":"); ok && k != "" {
-			if otlpKey, mapped := peerTagKeyToOTel[k]; mapped {
-				k = otlpKey
-			}
-			attrs = append(attrs, otlpKeyValue(k, otlpStringValue(v)))
-		}
+		attrs = append(attrs, otlpKeyValue("status.code", otlpIntValue(2)))
 	}
 
 	// When the span's service differs from the payload default, carry it on the data point.

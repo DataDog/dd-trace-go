@@ -160,8 +160,7 @@ func TestBuildOTLPMetricsRequestStructure(t *testing.T) {
 
 	sm := rm[0].ScopeMetrics
 	require.Len(t, sm, 1)
-	assert.Equal(t, "dd-trace-go", sm[0].Scope.Name)
-	assert.Empty(t, sm[0].Scope.Attributes, "no service identity on scope; it belongs on the resource")
+	assert.Nil(t, sm[0].Scope, "no InstrumentationScope; it would be redundant with telemetry.sdk.* resource attributes")
 
 	m := sm[0].Metrics
 	require.Len(t, m, 1)
@@ -280,6 +279,28 @@ func TestBuildMetricsResourceNoProcessTagsInOtelMode(t *testing.T) {
 	assert.NotContains(t, kvAttrsToMap(res.Attributes), "datadog.entrypoint.name")
 }
 
+func TestBuildMetricsResourceRuntimeIDDefaultMode(t *testing.T) {
+	cfg := internalconfig.CreateNew()
+	payload := makePayload("svc", "", "", nil)
+	payload.RuntimeID = "abc-123"
+	res := buildMetricsResource(cfg, payload, false /* default mode */)
+	assert.Equal(t, "abc-123", kvAttrsToMap(res.Attributes)["datadog.runtime_id"])
+}
+
+func TestBuildMetricsResourceNoRuntimeIDInOtelMode(t *testing.T) {
+	cfg := internalconfig.CreateNew()
+	payload := makePayload("svc", "", "", nil)
+	payload.RuntimeID = "abc-123"
+	res := buildMetricsResource(cfg, payload, true /* otelMode */)
+	assert.NotContains(t, kvAttrsToMap(res.Attributes), "datadog.runtime_id")
+}
+
+func TestBuildMetricsResourceNoRuntimeIDWhenEmpty(t *testing.T) {
+	cfg := internalconfig.CreateNew()
+	res := buildMetricsResource(cfg, makePayload("svc", "", "", nil), false)
+	assert.NotContains(t, kvAttrsToMap(res.Attributes), "datadog.runtime_id")
+}
+
 // ---- Data-point attributes ----
 
 func TestDataPointAttributesOTelMode(t *testing.T) {
@@ -333,28 +354,22 @@ func TestDataPointAttributesTopLevelFalseWhenMixed(t *testing.T) {
 func TestDataPointAttributesErrorStatusCode(t *testing.T) {
 	gs := &pb.ClientGroupedStats{Resource: "/err"}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */, "", true))
-	assert.Equal(t, "ERROR", m["status.code"])
+	assert.Equal(t, "2", m["status.code"])
 }
 
-func TestDataPointAttributesPeerTags(t *testing.T) {
+func TestDataPointAttributesHTTPRoute(t *testing.T) {
 	gs := &pb.ClientGroupedStats{
-		Resource: "/users/{id}",
-		PeerTags: []string{"http.route:/users/{id}", "peer.service:db"},
+		Resource:     "web.request",
+		HTTPEndpoint: "/users/{id}",
 	}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
 	assert.Equal(t, "/users/{id}", m["http.route"])
-	assert.Equal(t, "db", m["peer.service"])
 }
 
-func TestDataPointAttributesPeerTagGRPCMethodRemapped(t *testing.T) {
-	// grpc.method.name in PeerTags is remapped to the OTel key rpc.method.
-	gs := &pb.ClientGroupedStats{
-		Resource: "grpc.request",
-		PeerTags: []string{"grpc.method.name:GetUser"},
-	}
+func TestDataPointAttributesHTTPRouteOmittedWhenEmpty(t *testing.T) {
+	gs := &pb.ClientGroupedStats{Resource: "web.request"}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
-	assert.Equal(t, "GetUser", m["rpc.method"], "grpc.method.name peer tag must be remapped to rpc.method")
-	assert.NotContains(t, m, "grpc.method.name", "original key must not be emitted after remapping")
+	assert.NotContains(t, m, "http.route")
 }
 
 func TestDataPointAttributesGRPCStatusCode(t *testing.T) {
