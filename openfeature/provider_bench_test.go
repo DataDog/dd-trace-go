@@ -140,7 +140,7 @@ func BenchmarkFloatEvaluation(b *testing.B) {
 	}
 }
 
-// BenchmarkObjectEvaluation benchmarks object flag evaluation
+// BenchmarkEvaluation benchmarks object flag evaluation
 func BenchmarkEvaluation(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})
 	config := createTestConfig()
