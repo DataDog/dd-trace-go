@@ -53,6 +53,10 @@ type ProcessTags struct {
 	str string
 	// +checklocks:mu
 	slice []string
+
+	// lock-free read cache; updated after every write while mu is held
+	sliceAtomic atomic.Pointer[[]string]
+	strAtomic   atomic.Pointer[string]
 }
 
 // String returns the string representation of the process tags.
@@ -60,9 +64,10 @@ func (p *ProcessTags) String() string {
 	if p == nil {
 		return ""
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.str
+	if s := p.strAtomic.Load(); s != nil {
+		return *s
+	}
+	return ""
 }
 
 // Slice returns the string slice representation of the process tags.
@@ -70,9 +75,10 @@ func (p *ProcessTags) Slice() []string {
 	if p == nil {
 		return nil
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.slice
+	if s := p.sliceAtomic.Load(); s != nil {
+		return *s
+	}
+	return nil
 }
 
 func (p *ProcessTags) merge(newTags map[string]string) {
@@ -115,6 +121,8 @@ func (p *ProcessTags) rebuild() {
 	}
 	p.slice = tagsSlice
 	p.str = b.String()
+	p.sliceAtomic.Store(&p.slice)
+	p.strAtomic.Store(&p.str)
 }
 
 // Reload initializes the configuration and process tags collection. This is useful for tests.
