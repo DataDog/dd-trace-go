@@ -96,11 +96,14 @@ func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell) {
 		*ctxp = WrapContext(*ctxp)
 	}
 	getDDContextStack().Push(key, val)
-	if pop != nil {
+	if pop != nil && pop.ptr.Load() == nil {
 		// Capture the popper only on the first activation (first-wins) so
 		// re-activating the same span/operation does not overwrite the popper
-		// its matching GLSDeactivate will run. CompareAndSwap keeps this
-		// race-free if two activations ever overlap.
+		// its matching GLSDeactivate will run. The pre-check skips the
+		// GLSPopFunc closure allocation when the field is already set (common
+		// on re-activation). CompareAndSwap keeps this race-free when two
+		// goroutines activate concurrently: only one CAS wins; the other's
+		// closure is discarded, preserving first-wins semantics.
 		fn := GLSPopper(GLSPopFunc(key))
 		pop.ptr.CompareAndSwap(nil, &fn)
 	}
