@@ -41,6 +41,20 @@ func TestFlagEvaluationEndpointUsesTrackName(t *testing.T) {
 	}
 }
 
+func TestDefaultEvalCapSizing(t *testing.T) {
+	if defaultEvalGlobalCap <= evalScaleFullBucketTarget {
+		t.Fatalf("defaultEvalGlobalCap = %d, want > %d", defaultEvalGlobalCap, evalScaleFullBucketTarget)
+	}
+
+	if defaultEvalPerFlagCap != evalScalePerFlagBucketTarget {
+		t.Fatalf("defaultEvalPerFlagCap = %d, want %d", defaultEvalPerFlagCap, evalScalePerFlagBucketTarget)
+	}
+
+	if defaultEvalDegradedCap <= evalScaleDegradedBucketTarget {
+		t.Fatalf("defaultEvalDegradedCap = %d, want > %d", defaultEvalDegradedCap, evalScaleDegradedBucketTarget)
+	}
+}
+
 // TestFlattenAndPruneContextEquivalence verifies the merged single-pass
 // flattenAndPruneContext must produce a pruned result byte-for-byte identical to the prior
 // two-step flattenContext + pruneContext pipeline across nested, oversized, and >256-field
@@ -611,9 +625,8 @@ func TestAggregatorConcurrentMinMax(t *testing.T) {
 	}
 }
 
-// TestSaturationCountPreservation is the regression guard against a SILENT drop at saturation
-// in the 2-tier design. Because the degraded tier is now terminal (overflow is dropped, not
-// cascaded), the invariant is: Σ(full+degraded counts) + droppedDegradedOverflow == add() calls.
+// TestSaturationCountPreservation is the regression guard against a SILENT drop at saturation.
+// The invariant is: Σ(full+degraded counts) + droppedDegradedOverflow == add() calls.
 // No evaluation may vanish without being COUNTED — silent loss is the defect this guards against.
 func TestSaturationCountPreservation(t *testing.T) {
 	// Use small caps so we can saturate them quickly.
@@ -723,8 +736,8 @@ func TestAggregatorCapOverflow(t *testing.T) {
 			}
 		}
 
-		// Continue adding until degradedCap is also exhausted. At that point — with no ultra
-		// tier — new degraded buckets must be dropped and COUNTED (droppedDegradedOverflow).
+		// Continue adding until degradedCap is also exhausted. At that point, new degraded
+		// buckets must be dropped and COUNTED (droppedDegradedOverflow).
 		for i := range 10 {
 			d := evalDetails{
 				flagKey: fmt.Sprintf("overflow-flag-%d", i),
@@ -980,10 +993,10 @@ func TestCanonicalContextKeyEncoding(t *testing.T) {
 	})
 }
 
-// TestDegradedCapBounded verifies that unbounded dynamic/abusive flag keys stay bounded under
-// the 2-tier design. With the degraded tier as the terminal tier, an unbounded number of distinct
-// flag keys must NOT grow the degraded map without bound: len(degraded) <= degradedCap, and the
-// over-cap counts must be DROPPED-AND-COUNTED (droppedDegradedOverflow), never silently lost.
+// TestDegradedCapBounded verifies that unbounded dynamic/abusive flag keys stay bounded.
+// An unbounded number of distinct flag keys must NOT grow the degraded map without bound:
+// len(degraded) <= degradedCap, and the over-cap counts must be DROPPED-AND-COUNTED
+// (droppedDegradedOverflow), never silently lost.
 // Σ(full+degraded counts) + droppedDegradedOverflow must equal the add() call count.
 func TestDegradedCapBounded(t *testing.T) {
 	const cap = 3

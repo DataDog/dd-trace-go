@@ -44,7 +44,7 @@ func makeScaleFlags(n int) []scaleFlagShape {
 
 // legitimateDegradedCardinality returns the number of DISTINCT degraded buckets the given flag
 // shapes would produce if every (variant × allocation) combination were observed.
-// This is the count a 2-tier design must be able to hold without dropping.
+// This is the count degradedCap must hold without dropping legitimate buckets.
 func legitimateDegradedCardinality(flags []scaleFlagShape) int {
 	total := 0
 	for _, f := range flags {
@@ -60,7 +60,7 @@ func legitimateDegradedCardinality(flags []scaleFlagShape) int {
 //
 // The context cardinality knob (numContexts) is what splits the FULL tier: the full key includes
 // targetingKey + contextKey, so more distinct subjects => more full buckets => earlier full-tier
-// saturation => earlier cascade into degraded (and potentially ultra).
+// saturation => earlier cascade into degraded.
 func driveScale(agg *flagEvaluationAggregator, flags []scaleFlagShape, numContexts, evalsPerCombo int) int64 {
 	nowMs := time.Now().UnixMilli()
 	var calls int64
@@ -94,8 +94,8 @@ func driveScale(agg *flagEvaluationAggregator, flags []scaleFlagShape, numContex
 	return calls
 }
 
-// tierCounts returns observable aggregator state after a run. In the 2-tier design the terminal
-// tier is degraded; over-cap counts land in droppedDegradedOverflow (observable, not silent).
+// tierCounts returns observable aggregator state after a run. Over-cap degraded counts land in
+// droppedDegradedOverflow (observable, not silent).
 // sumCounts includes the drop counter so the count-preservation invariant is Σ == add() calls.
 type tierCounts struct {
 	full, degraded int
@@ -173,7 +173,7 @@ func TestScaleDropTriggerSweep(t *testing.T) {
 	flags := makeScaleFlags(n)
 	deg := legitimateDegradedCardinality(flags)
 	t.Logf("2,500 flags; legitimate degraded cardinality = %d; production caps "+
-		"full=%d perFlag=%d degraded=%d (2-tier: full -> degraded -> drop)",
+		"full=%d perFlag=%d degraded=%d (full -> degraded -> drop)",
 		deg, defaultEvalGlobalCap, defaultEvalPerFlagCap, defaultEvalDegradedCap)
 
 	// Sweep distinct-context cardinality. Low = few subjects (full tier stays small);
@@ -238,7 +238,7 @@ func TestScaleDropRequiresDegradedSaturation(t *testing.T) {
 		tc.full, tc.degraded, tc.dropped, tc.sumCounts, calls)
 
 	if deg > defaultEvalDegradedCap {
-		t.Errorf("legitimate degraded cardinality %d EXCEEDS degradedCap %d — 2-tier design would DROP "+
+		t.Errorf("legitimate degraded cardinality %d EXCEEDS degradedCap %d — aggregation would DROP "+
 			"legitimate counts at 2,500 flags; raise degradedCap", deg, defaultEvalDegradedCap)
 	} else {
 		t.Logf("  => all %d legitimate degraded buckets FIT under degradedCap %d (headroom %d); "+

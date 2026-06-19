@@ -36,18 +36,32 @@ const (
 	maxContextFields = 256
 	maxFieldLength   = 256
 
+	// Aggregation cap sizing inputs.
+	evalScaleTargetFlags               = 2_500
+	evalScaleFullBucketsPerFlag        = 50
+	evalScaleUsersPerFlag              = 1_000
+	evalScalePerFlagHeadroomMultiplier = 10
+	evalScaleDegradedBucketsPerFlag    = 10
+	evalScaleFullBucketTarget          = evalScaleTargetFlags * evalScaleFullBucketsPerFlag
+	evalScalePerFlagBucketTarget       = evalScalePerFlagHeadroomMultiplier * evalScaleUsersPerFlag
+	evalScaleDegradedBucketTarget      = evalScaleTargetFlags * evalScaleDegradedBucketsPerFlag
+
 	// Aggregation caps.
 	//
-	// The cascade is full → degraded → drop(counted). With no ultra-degraded backstop,
-	// degradedCap must hold the legitimate degraded cardinality at the team's >=2,500-flag
-	// scale target, or legitimate counts would be dropped. Degraded cardinality is based only
-	// on schema-visible dimensions retained by the degraded payload; OpenFeature reason is not
-	// an EVP field and is not part of bucket identity. globalCap (full-tier) is raised to
-	// 131,072 so a realistic 2,500-flag × multi-context workload keeps full-fidelity buckets
-	// before degrading rather than dropping them.
+	// The aggregation path is full → degraded → drop(counted). degradedCap must hold the
+	// legitimate degraded cardinality at the target scale, or legitimate counts would be
+	// dropped. Degraded cardinality is based only on schema-visible dimensions retained by
+	// the degraded payload; OpenFeature reason is not an EVP field and is not part of bucket
+	// identity.
+	//
+	// Sizing arithmetic:
+	//   - globalCap 131,072 (2^17) > evalScaleFullBucketTarget = 125,000
+	//   - perFlagCap 10,000 = evalScalePerFlagBucketTarget
+	//   - degradedCap 32,768 (2^15) > evalScaleDegradedBucketTarget = 25,000
+	// These are starting caps, not schema limits; overflow is counted and dropped.
 	defaultEvalGlobalCap   = 131_072 // bounds full-tier buckets only; degraded is bounded separately
-	defaultEvalPerFlagCap  = 10_000  // bounds full-fidelity buckets per flag
-	defaultEvalDegradedCap = 32_768  // bounds degraded map; overflow is dropped(counted), no ultra tier
+	defaultEvalPerFlagCap  = evalScalePerFlagBucketTarget
+	defaultEvalDegradedCap = 32_768 // bounds degraded buckets; overflow is counted and dropped
 
 	// defaultEvalEventBufferSize bounds the async hand-off queue between the (hot-path)
 	// Finally hook and the background aggregation worker. On overflow the hook drops the
@@ -82,11 +96,10 @@ type evaluationAggregationKey struct {
 	contextKey     string // exact canonical encoding of the pruned context; comparable, not a digest
 }
 
-// evaluationDegradedKey is the key for the degraded aggregation map — the terminal aggregation
-// tier in the 2-tier design (full → degraded → drop). Drops targeting key, context, and
-// targeting rule key relative to the full key. It keeps only schema-visible fields emitted by
-// the degraded payload. When a NEW degraded bucket would exceed degradedCap, the count is
-// dropped and counted (aggregator.dropped) rather than cascading to a further-degraded tier.
+// evaluationDegradedKey is the key for the degraded aggregation map in the
+// full → degraded → drop path. It drops targeting key, context, and other full-only fields,
+// keeping only schema-visible fields emitted by the degraded payload. When a NEW degraded
+// bucket would exceed degradedCap, the count is dropped and counted.
 type evaluationDegradedKey struct {
 	flagKey        string
 	variant        string
@@ -142,9 +155,9 @@ type flagEvaluationAggregator struct {
 	perFlagCap  int
 	degradedCap int
 	// dropped counts evaluations whose count was lost because a NEW degraded bucket would have
-	// exceeded degradedCap (the terminal tier in the 2-tier design). It is the observable signal
-	// that legitimate counts are being dropped and that degradedCap should be raised. It is
-	// distinct from flagEvaluationWriter.dropped (which counts async-queue backpressure drops).
+	// exceeded degradedCap. It is the observable signal that legitimate counts are being
+	// dropped and that degradedCap should be raised. It is distinct from flagEvaluationWriter.dropped
+	// (which counts async-queue backpressure drops).
 	droppedDegradedOverflow int64
 }
 
@@ -357,8 +370,8 @@ func (w *flagEvaluationWriter) flush() {
 	full := w.aggregator.full
 	degraded := w.aggregator.degraded
 
-	// Surface degraded-overflow drops (the terminal-tier backstop in the 2-tier design) so an
-	// undersized degradedCap is observable rather than a silent loss of legitimate counts.
+	// Surface degraded-overflow drops so an undersized degradedCap is observable rather than
+	// a silent loss of legitimate counts.
 	degradedOverflow := w.aggregator.droppedDegradedOverflow
 
 	if (len(full) + len(degraded)) == 0 {
@@ -591,12 +604,12 @@ func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error 
 
 // add records one evaluation observation into the appropriate aggregation tier.
 // Must be called WITHOUT the aggregator lock held (it acquires the lock internally).
-// Implements the two-tier cascade: full → degraded → drop(counted).
+// Routes observations through full → degraded → drop(counted).
 //
 // Per-flag attempt counting: perFlagFull[flag] is incremented on every call for a flag
 // (whether or not a full-tier bucket is actually created). This ensures that once
 // globalCap is full, a flag that accumulates enough attempts (>= perFlagCap) still
-// overflows to degraded — keeping the per-flag overflow path alive even after the
+// follows the degraded path — keeping the per-flag overflow path alive even after the
 // global full-tier cap is exhausted.
 func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]any, nowMs int64) {
 	a.mu.Lock()
@@ -638,7 +651,7 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 	if a.globalCount >= a.globalCap {
 		// Global full-tier cap full — count must not be lost. Route into the degraded tier
 		// (which drops targeting_key + context), sized to hold the legitimate degraded
-		// cardinality at the >=2,500-flag scale target. The per-flag attempt counter was
+		// cardinality at the target scale. The per-flag attempt counter was
 		// already incremented above; once it reaches perFlagCap this flag routes through
 		// addToDegraded directly as well.
 		a.addToDegraded(d, nowMs)
@@ -659,13 +672,11 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 }
 
 // addToDegraded adds an entry to the degraded map (drops targeting_key + context).
-// Called with the aggregator lock held. Degraded is the TERMINAL aggregation tier in the
-// 2-tier design: when a NEW degraded bucket would exceed degradedCap, the evaluation's count is
-// DROPPED and counted (droppedDegradedOverflow) rather than cascading to a further-degraded
-// tier. degradedCap is sized (defaultEvalDegradedCap) to hold the legitimate degraded
-// cardinality at the >=2,500-flag scale target, so this drop only fires under cardinality far
-// beyond that target (e.g. an unbounded dynamic/abusive flag key) and the
-// dropped counter makes such overflow observable.
+// Called with the aggregator lock held. When a NEW degraded bucket would exceed degradedCap,
+// the evaluation's count is DROPPED and counted (droppedDegradedOverflow). degradedCap is
+// sized (defaultEvalDegradedCap) to hold the legitimate degraded cardinality at the target
+// scale, so this drop only fires under cardinality far beyond that target (e.g. an unbounded
+// dynamic/abusive flag key) and the dropped counter makes such overflow observable.
 func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 	degKey := evaluationDegradedKey{
 		flagKey:        d.flagKey,
