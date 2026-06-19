@@ -1,0 +1,498 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
+package mockci
+
+import (
+	"bytes"
+	"compress/gzip"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync"
+
+	"github.com/tinylib/msgp/msgp"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/filebitmap"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+)
+
+// SkippableTest describes one backend ITR candidate returned by the mock.
+type SkippableTest struct {
+	Suite                   string
+	Name                    string
+	Parameters              string
+	MissingLineCodeCoverage bool
+}
+
+// Server is a CI Visibility mock intake used by ITR backfill fixtures.
+type Server struct {
+	server *httptest.Server
+	mu     sync.Mutex
+
+	payloads         []Payload
+	coverageUploads  []UploadedCoverageFile
+	coverageByFile   map[string][]byte
+	skippableRequest int
+	coverageRequest  int
+	restore          func()
+}
+
+// UploadedCoverageFile is one file entry captured from a code coverage upload.
+type UploadedCoverageFile struct {
+	Filename string
+	Bitmap   []byte
+}
+
+// Payload is the decoded CI Visibility test-cycle payload shape used by fixtures.
+type Payload struct {
+	Events []Event `json:"events"`
+}
+
+// Event is one decoded CI Visibility event.
+type Event struct {
+	Type    string  `json:"type"`
+	Content Content `json:"content"`
+}
+
+// Content is the span content used by fixture assertions.
+type Content struct {
+	Resource string             `json:"resource"`
+	Meta     map[string]string  `json:"meta"`
+	Metrics  map[string]float64 `json:"metrics"`
+}
+
+// Start starts the mock and configures process environment for agentless CI Visibility.
+func Start(settings net.SettingsResponseData, tests []SkippableTest, coverage map[string][]byte) *Server {
+	mock := &Server{coverageByFile: make(map[string][]byte)}
+	mock.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		switch r.URL.Path {
+		case "/api/v2/citestcycle":
+			mock.handleTestCycle(w, r)
+		case "/api/v2/libraries/tests/services/setting":
+			_ = drain(r.Body)
+			writeSettings(w, settings)
+		case "/api/v2/ci/tests/skippable":
+			_ = drain(r.Body)
+			mock.handleSkippable(w, tests, coverage)
+		case "/api/v2/citestcov":
+			mock.handleCoverageUpload(w, r)
+		case "/api/v2/git/repository/search_commits":
+			_ = drain(r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{}"))
+		case "/api/v2/git/repository/packfile", "/api/v2/logs":
+			_ = drain(r.Body)
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	mock.restore = applyEnv(map[string]string{
+		"DD_CIVISIBILITY_ENABLED":           "true",
+		"DD_CIVISIBILITY_AGENTLESS_ENABLED": "true",
+		"DD_CIVISIBILITY_AGENTLESS_URL":     mock.server.URL,
+		"DD_API_KEY":                        "***",
+		"DD_GIT_REPOSITORY_URL":             "https://github.com/DataDog/dd-trace-go.git",
+		"DD_GIT_COMMIT_SHA":                 "1234567890abcdef1234567890abcdef12345678",
+		"DD_GIT_BRANCH":                     "main",
+	})
+	return mock
+}
+
+// Close restores environment variables and closes the mock server.
+func (s *Server) Close() {
+	if s.restore != nil {
+		s.restore()
+	}
+	if s.server != nil {
+		s.server.Close()
+	}
+}
+
+// Events returns all decoded test-cycle events captured by the mock.
+func (s *Server) Events() []Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var events []Event
+	for _, payload := range s.payloads {
+		events = append(events, payload.Events...)
+	}
+	return events
+}
+
+// SkippableRequests returns how many live skippable endpoint requests were received.
+func (s *Server) SkippableRequests() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.skippableRequest
+}
+
+// CoverageRequests returns how many coverage intake requests were received.
+func (s *Server) CoverageRequests() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.coverageRequest
+}
+
+// UploadedCoverage returns uploaded source-file bitmaps keyed by filename.
+func (s *Server) UploadedCoverage() map[string][]byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	copied := make(map[string][]byte, len(s.coverageByFile))
+	for file, bitmap := range s.coverageByFile {
+		copied[file] = append([]byte(nil), bitmap...)
+	}
+	return copied
+}
+
+// HasEventMeta returns true when an event resource containing resourceContains
+// has the requested meta tag value.
+func (s *Server) HasEventMeta(resourceContains, key, value string) bool {
+	for _, event := range s.Events() {
+		if strings.Contains(event.Content.Resource, resourceContains) && event.Content.Meta[key] == value {
+			return true
+		}
+	}
+	return false
+}
+
+// HasEventResourceMeta returns true when a test-cycle event resource contains
+// resourceContains and, when key is not empty, has the requested meta tag value.
+func (s *Server) HasEventResourceMeta(resourceContains, key, value string) bool {
+	for _, event := range s.Events() {
+		if !strings.Contains(event.Content.Resource, resourceContains) {
+			continue
+		}
+		if key == "" || event.Content.Meta[key] == value {
+			return true
+		}
+	}
+	return false
+}
+
+// EventTypeCount returns the number of captured test-cycle events with the requested type.
+func (s *Server) EventTypeCount(eventType string) int {
+	count := 0
+	for _, event := range s.Events() {
+		if event.Type == eventType {
+			count++
+		}
+	}
+	return count
+}
+
+// SessionCoverage returns the session coverage metric when it was reported.
+func (s *Server) SessionCoverage(metricName string) (float64, bool) {
+	for _, event := range s.Events() {
+		if event.Type != "test_session_end" {
+			continue
+		}
+		if value, ok := event.Content.Metrics[metricName]; ok {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+// SessionMeta returns a test session meta tag when it was reported.
+func (s *Server) SessionMeta(key string) (string, bool) {
+	for _, event := range s.Events() {
+		if event.Type != "test_session_end" {
+			continue
+		}
+		if value, ok := event.Content.Meta[key]; ok {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func (s *Server) handleTestCycle(w http.ResponseWriter, r *http.Request) {
+	gzipReader, err := gzip.NewReader(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer gzipReader.Close()
+
+	var jsonBuf bytes.Buffer
+	if _, err := msgp.CopyToJSON(&jsonBuf, gzipReader); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var payload Payload
+	if err := json.Unmarshal(jsonBuf.Bytes(), &payload); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.mu.Lock()
+	s.payloads = append(s.payloads, payload)
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) handleSkippable(w http.ResponseWriter, tests []SkippableTest, coverage map[string][]byte) {
+	s.mu.Lock()
+	s.skippableRequest++
+	s.mu.Unlock()
+
+	response := struct {
+		Meta struct {
+			CorrelationID string            `json:"correlation_id"`
+			Coverage      map[string]string `json:"coverage,omitempty"`
+		} `json:"meta"`
+		Data []struct {
+			ID         string `json:"id"`
+			Type       string `json:"type"`
+			Attributes struct {
+				Suite                   string `json:"suite"`
+				Name                    string `json:"name"`
+				Parameters              string `json:"parameters,omitempty"`
+				MissingLineCodeCoverage bool   `json:"_missing_line_code_coverage,omitempty"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}{}
+	response.Meta.CorrelationID = "itr-backfill-correlation"
+	if coverage != nil {
+		response.Meta.Coverage = make(map[string]string, len(coverage))
+		for file, bitmap := range coverage {
+			response.Meta.Coverage[file] = base64.StdEncoding.EncodeToString(bitmap)
+		}
+	}
+	for _, test := range tests {
+		item := struct {
+			ID         string `json:"id"`
+			Type       string `json:"type"`
+			Attributes struct {
+				Suite                   string `json:"suite"`
+				Name                    string `json:"name"`
+				Parameters              string `json:"parameters,omitempty"`
+				MissingLineCodeCoverage bool   `json:"_missing_line_code_coverage,omitempty"`
+			} `json:"attributes"`
+		}{ID: test.Name, Type: "test"}
+		item.Attributes.Suite = test.Suite
+		item.Attributes.Name = test.Name
+		item.Attributes.Parameters = test.Parameters
+		item.Attributes.MissingLineCodeCoverage = test.MissingLineCodeCoverage
+		response.Data = append(response.Data, item)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) handleCoverageUpload(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	s.coverageRequest++
+	s.mu.Unlock()
+
+	reader, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var uploads []UploadedCoverageFile
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if part.FormName() != "coveragex" {
+			_ = drain(part)
+			continue
+		}
+		if part.Header.Get(net.HeaderContentType) != net.ContentTypeMessagePack {
+			_ = drain(part)
+			continue
+		}
+		files, err := decodeCoveragePayload(part)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		uploads = append(uploads, files...)
+	}
+
+	s.storeUploadedCoverage(uploads)
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) storeUploadedCoverage(files []UploadedCoverageFile) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, file := range files {
+		file.Bitmap = append([]byte(nil), file.Bitmap...)
+		s.coverageUploads = append(s.coverageUploads, file)
+		if len(file.Bitmap) == 0 {
+			continue
+		}
+		bitmap := append([]byte(nil), file.Bitmap...)
+		if existing := s.coverageByFile[file.Filename]; len(existing) > 0 {
+			bitmap = filebitmap.Or(
+				filebitmap.NewFileBitmapFromBytes(existing),
+				filebitmap.NewFileBitmapFromBytes(bitmap),
+				false,
+			).ToArray()
+		}
+		s.coverageByFile[file.Filename] = bitmap
+	}
+}
+
+func decodeCoveragePayload(reader io.Reader) ([]UploadedCoverageFile, error) {
+	mr := msgp.NewReader(reader)
+	fields, err := mr.ReadMapHeader()
+	if err != nil {
+		return nil, err
+	}
+	var uploads []UploadedCoverageFile
+	for range fields {
+		key, err := mr.ReadString()
+		if err != nil {
+			return nil, err
+		}
+		switch key {
+		case "coverages":
+			count, err := mr.ReadArrayHeader()
+			if err != nil {
+				return nil, err
+			}
+			for range count {
+				files, err := decodeCoverageEventFiles(mr)
+				if err != nil {
+					return nil, err
+				}
+				uploads = append(uploads, files...)
+			}
+		default:
+			if err := mr.Skip(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return uploads, nil
+}
+
+func decodeCoverageEventFiles(mr *msgp.Reader) ([]UploadedCoverageFile, error) {
+	fields, err := mr.ReadMapHeader()
+	if err != nil {
+		return nil, err
+	}
+	var uploads []UploadedCoverageFile
+	for range fields {
+		key, err := mr.ReadString()
+		if err != nil {
+			return nil, err
+		}
+		switch key {
+		case "files":
+			count, err := mr.ReadArrayHeader()
+			if err != nil {
+				return nil, err
+			}
+			for range count {
+				file, err := decodeCoverageFile(mr)
+				if err != nil {
+					return nil, err
+				}
+				uploads = append(uploads, file)
+			}
+		default:
+			if err := mr.Skip(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return uploads, nil
+}
+
+func decodeCoverageFile(mr *msgp.Reader) (UploadedCoverageFile, error) {
+	fields, err := mr.ReadMapHeader()
+	if err != nil {
+		return UploadedCoverageFile{}, err
+	}
+	var file UploadedCoverageFile
+	for range fields {
+		key, err := mr.ReadString()
+		if err != nil {
+			return UploadedCoverageFile{}, err
+		}
+		switch key {
+		case "filename":
+			file.Filename, err = mr.ReadString()
+			if err != nil {
+				return UploadedCoverageFile{}, err
+			}
+		case "bitmap":
+			file.Bitmap, err = mr.ReadBytes(nil)
+			if err != nil {
+				return UploadedCoverageFile{}, err
+			}
+		default:
+			if err := mr.Skip(); err != nil {
+				return UploadedCoverageFile{}, err
+			}
+		}
+	}
+	return file, nil
+}
+
+func writeSettings(w http.ResponseWriter, settings net.SettingsResponseData) {
+	response := struct {
+		Data struct {
+			ID         string                   `json:"id"`
+			Type       string                   `json:"type"`
+			Attributes net.SettingsResponseData `json:"attributes"`
+		} `json:"data"`
+	}{}
+	response.Data.ID = "settings"
+	response.Data.Type = "ci_app_libraries_tests_settings"
+	response.Data.Attributes = settings
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func applyEnv(updates map[string]string) func() {
+	previous := map[string]*string{}
+	for key, value := range updates {
+		if current, ok := env.Lookup(key); ok {
+			copy := current
+			previous[key] = &copy
+		} else {
+			previous[key] = nil
+		}
+		_ = os.Setenv(key, value)
+	}
+	return func() {
+		for key, value := range previous {
+			if value == nil {
+				_ = os.Unsetenv(key)
+			} else {
+				_ = os.Setenv(key, *value)
+			}
+		}
+	}
+}
+
+func drain(r io.Reader) error {
+	_, err := io.Copy(io.Discard, r)
+	return err
+}

@@ -149,10 +149,6 @@ type config struct {
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler RateSampler
 
-	// globalTags holds a set of tags that will be automatically applied to
-	// all spans.
-	globalTags dynamicConfig[map[string]any]
-
 	// ddTransport specifies the Datadog transport used to send msgpack traces and stats to the agent.
 	ddTransport ddTransport
 
@@ -217,15 +213,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
 	}
-	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
-		tags := internal.ParseTagString(v)
-		internal.CleanGitMetadataTags(tags)
-		for key, val := range tags {
-			WithGlobalTag(key, val)(c)
-		}
-		// TODO: should we track the origin of these tags individually?
-		c.globalTags.setOrigin(telemetry.OriginEnvVar)
-	}
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
 		c.enabled.setOrigin(telemetry.OriginEnvVar)
@@ -247,6 +234,18 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
+	// The experimental span pool and Orchestrion's GLS weave are mutually
+	// exclusive. Span pooling recycles a finished span via sync.Pool; under
+	// Orchestrion that span may still be referenced from a goroutine-local
+	// storage (GLS) stack whose stale entry has not been drained, so reusing it
+	// can resurface a recycled span or leak the entry (see orchestrion#782).
+	// Until the reclaim signal is decoupled from the pooled span, disable
+	// pooling when Orchestrion is active and warn once. Checked after the option
+	// loop so an explicit WithSpanPool(true) is gated too.
+	if shouldDisableSpanPool(c.spanPoolEnabled, orchestrion.Enabled()) {
+		c.spanPoolEnabled = false
+		log.Warn("the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED / WithSpanPool) is incompatible with Orchestrion and has been disabled")
+	}
 	rawAgentURL := c.internalConfig.RawAgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
@@ -263,18 +262,25 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
-	globalTags := c.globalTags.get()
+	// TODO: env/version/service fall back to global tags when unset. This runs
+	// here (after options) rather than in loadConfig because programmatic
+	// WithGlobalTag tags — which outrank DD_TAGS — are only applied once the
+	// StartOptions have run. Once env/version/service carry origin information
+	// through internal/config, this fallback can move into loadConfig and resolve
+	// precedence without the tracer's involvement.
+	globalTags := c.internalConfig.GlobalTags()
+	_, globalTagsOrigin := c.internalConfig.GlobalTagsConfig().Baseline()
 	if c.internalConfig.Env() == "" {
 		if v, ok := globalTags["env"]; ok {
 			if e, ok := v.(string); ok {
-				c.internalConfig.SetEnv(e, c.globalTags.Origin(), internalconfig.ProductTracer)
+				c.internalConfig.SetEnv(e, globalTagsOrigin, internalconfig.ProductTracer)
 			}
 		}
 	}
 	if c.internalConfig.Version() == "" {
 		if v, ok := globalTags["version"]; ok {
 			if ver, ok := v.(string); ok {
-				c.internalConfig.SetVersion(ver, c.globalTags.Origin(), internalconfig.ProductTracer)
+				c.internalConfig.SetVersion(ver, globalTagsOrigin, internalconfig.ProductTracer)
 			}
 		}
 	}
@@ -282,7 +288,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.internalConfig.ServiceName() == "" {
 		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
-				c.internalConfig.SetServiceName(s, c.globalTags.Origin(), internalconfig.ProductTracer)
+				c.internalConfig.SetServiceName(s, globalTagsOrigin, internalconfig.ProductTracer)
 				globalconfig.SetServiceName(s)
 			}
 		} else {
@@ -347,16 +353,12 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.internalConfig.ApplyAgentReportedStatsdPort(af.StatsdPort)
 		globalconfig.SetDogstatsdAddr(c.internalConfig.DogstatsdAddr())
 	}
-	// Re-initialize the globalTags config with the value constructed from the environment and start options
-	// This allows persisting the initial value of globalTags for future resets and updates.
-	globalTagsOrigin := c.globalTags.Origin()
-	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
 	// Update the llmobs config with stuff needed from the tracer.
 	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
-		DDTags:     c.globalTags.get(),
+		DDTags:     c.internalConfig.GlobalTags(),
 		Env:        c.internalConfig.Env(),
 		Service:    c.internalConfig.ServiceName(),
 		Version:    c.internalConfig.Version(),
@@ -373,6 +375,16 @@ func newConfig(opts ...StartOption) (*config, error) {
 	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
 
 	return c, nil
+}
+
+// shouldDisableSpanPool reports whether the experimental span pool must be
+// turned off because Orchestrion's GLS weave is active. The two are mutually
+// exclusive: pooling can recycle a finished span whose stale GLS entry has not
+// yet been drained, which the GLS reclaim path does not yet tolerate
+// (orchestrion#782). It is a pure helper so the gate is unit-testable without an
+// Orchestrion build (orchestrion.Enabled() is a build-time constant).
+func shouldDisableSpanPool(spanPoolEnabled, orchestrionEnabled bool) bool {
+	return spanPoolEnabled && orchestrionEnabled
 }
 
 func llmobsAgentlessEnabledFromEnv() *bool {
@@ -412,6 +424,9 @@ func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers
 }
 
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
+	if !c.internalConfig.InternalMetricsEnabled() {
+		return &statsd.NoOpClientDirect{}, nil
+	}
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
@@ -681,7 +696,8 @@ func statsTags(c *config) []string {
 	if v := c.internalConfig.Hostname(); v != "" {
 		tags = append(tags, "host:"+v)
 	}
-	for k, v := range c.globalTags.get() {
+	globalTags := c.internalConfig.GlobalTags()
+	for k, v := range globalTags {
 		if vstr, ok := v.(string); ok {
 			tags = append(tags, k+":"+vstr)
 		}
@@ -896,25 +912,8 @@ func WithPeerServiceMapping(from, to string) StartOption {
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v any) StartOption {
 	return func(c *config) {
-		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]any{}, telemetry.OriginDefault)
-		}
-		c.globalTags.set(func(current map[string]any) map[string]any {
-			current[k] = v
-			return current
-		})
+		c.internalConfig.SetGlobalTag(k, v, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
-}
-
-// initGlobalTags initializes the globalTags config with the provided init value
-func (c *config) initGlobalTags(init map[string]any, origin telemetry.Origin) {
-	apply := func(tags map[string]any) bool {
-		// always set the runtime ID on updates
-		tags[ext.RuntimeID] = globalconfig.RuntimeID()
-		return true
-	}
-	c.globalTags = newDynamicConfig("trace_tags", init, apply, equalMap[string])
-	c.globalTags.setOrigin(origin)
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default

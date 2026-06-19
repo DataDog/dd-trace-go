@@ -620,7 +620,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Nil(t, err)
 		defer stop()
 
-		require.Equal(t, telemetry.OriginEnvVar, tracer.config.globalTags.cfgOrigin)
+		_, gtOrigin := tracer.config.internalConfig.GlobalTagsConfig().Baseline()
+		require.Equal(t, telemetry.OriginEnvVar, gtOrigin)
 
 		// Apply RC. Assert global tags have the RC tags key3:val3,key4:val4 applied + runtime ID
 		input := remoteconfig.ProductUpdate{
@@ -646,7 +647,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, globalconfig.RuntimeID(), runtimeID)
 		runtimeIDTag := ext.RuntimeID + ":" + globalconfig.RuntimeID()
 
-		// Telemetry
+		// runtimeID is always injected into the RC tag set
 		assertCalled(t, telemetryClient, []telemetry.Configuration{
 			{Name: "trace_tags", Value: "key3:val3,key4:val4," + runtimeIDTag, Origin: telemetry.OriginRemoteConfig},
 		},
@@ -675,7 +676,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		// Telemetry
 		assertCalled(t, telemetryClient, []telemetry.Configuration{
-			{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: telemetry.OriginDefault},
+			{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: telemetry.OriginEnvVar},
 		},
 		)
 	})
@@ -800,14 +801,15 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				if tt.expectedHeaderTag == rcHeaderTag {
 					headerTagOrigin = telemetry.OriginRemoteConfig
 				}
-				spanTagOrigin := telemetry.OriginDefault
+				spanTagOrigin := telemetry.OriginEnvVar
 				if tt.expectedSpanTag == rcSpanTag {
 					spanTagOrigin = telemetry.OriginRemoteConfig
 				}
+				spanTagValue := "ddtag:" + tt.expectedSpanTag + "," + ext.RuntimeID + ":" + globalconfig.RuntimeID() // runtimeID is always injected into the RC tag set
 				assertCalled(t, telemetryClient, []telemetry.Configuration{
 					{Name: "trace_sample_rate", Value: tt.expectedSamplingRate, Origin: samplingRateOrigin},
 					{Name: "trace_header_tags", Value: "X-Test-Header:" + tt.expectedHeaderTag, Origin: headerTagOrigin},
-					{Name: "trace_tags", Value: "ddtag:" + tt.expectedSpanTag + "," + ext.RuntimeID + ":" + globalconfig.RuntimeID(), Origin: spanTagOrigin},
+					{Name: "trace_tags", Value: spanTagValue, Origin: spanTagOrigin},
 				})
 			})
 		}
