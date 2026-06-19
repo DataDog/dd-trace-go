@@ -170,6 +170,32 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 		return nil, errors.New("URL is required")
 	}
 
+	// Buffer one-shot io.Reader payloads so every retry attempt re-sends the
+	// full body rather than a drained reader. config is a local copy (value
+	// receiver), so we can safely overwrite its fields here.
+	if r, ok := config.Body.(io.Reader); ok {
+		buf, err := io.ReadAll(r)
+		if err != nil {
+			return nil, err
+		}
+		config.Body = buf
+	}
+	if len(config.Files) > 0 {
+		// Copy the slice to avoid mutating the caller's FormFile backing array.
+		files := make([]FormFile, len(config.Files))
+		copy(files, config.Files)
+		for i := range files {
+			if r, ok := files[i].Content.(io.Reader); ok {
+				buf, err := io.ReadAll(r)
+				if err != nil {
+					return nil, err
+				}
+				files[i].Content = buf
+			}
+		}
+		config.Files = files
+	}
+
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
 		stopRetries, rs, err := rh.internalSendRequest(&config, attempt)
 		if stopRetries {
@@ -319,7 +345,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return true, nil, err
+		log.Debug("ciVisibilityHttpClient: error reading response body = %s", err.Error())
+		exponentialBackoff(attempt, config.Backoff)
+		return false, nil, nil
 	}
 
 	// Decompress response if it is gzip compressed
@@ -328,7 +356,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		compressedResponse = true
 		responseBody, err = decompressData(responseBody)
 		if err != nil {
-			return true, nil, err
+			log.Debug("ciVisibilityHttpClient: error decompressing response body = %s", err.Error())
+			exponentialBackoff(attempt, config.Backoff)
+			return false, nil, nil
 		}
 	}
 
