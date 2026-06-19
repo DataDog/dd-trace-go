@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -1368,24 +1369,23 @@ func TestSpanIDHexEncoded(t *testing.T) {
 
 func TestSpanProcessTags(t *testing.T) {
 	testCases := []struct {
-		name    string
-		enabled bool
+		name     string
+		enabled  bool
+		protocol float64
 	}{
-		{
-			name:    "disabled",
-			enabled: false,
-		},
-		{
-			name:    "enabled",
-			enabled: true,
-		},
+		{name: "v0.4/disabled", enabled: false, protocol: traceProtocolV04},
+		{name: "v0.4/enabled", enabled: true, protocol: traceProtocolV04},
+		{name: "v1/disabled", enabled: false, protocol: traceProtocolV1},
+		{name: "v1/enabled", enabled: true, protocol: traceProtocolV1},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", strconv.FormatBool(tc.enabled))
 			processtags.Reload()
-			tracer, transport, flush, stop, err := startTestTracer(t)
+			tracer, transport, flush, stop, err := startTestTracer(t, func(c *config) {
+				c.internalConfig.SetTraceProtocol(tc.protocol, internalconfig.OriginCode)
+			})
 			assert.NoError(t, err)
 			t.Cleanup(stop)
 
@@ -1407,14 +1407,11 @@ func TestSpanProcessTags(t *testing.T) {
 			root := traces[0][0]
 			assert.Equal(t, "p", root.name)
 			if tc.enabled {
-				v, _ := root.meta.Get("_dd.tags.process")
-				assert.NotEmpty(t, v)
+				assertProcessTags(t, traces)
 			} else {
-				assert.False(t, root.meta.Has("_dd.tags.process"))
-			}
-
-			for _, s := range traces[0][1:] {
-				assert.False(t, s.meta.Has("_dd.tags.process"))
+				for _, s := range traces[0] {
+					assert.False(t, s.meta.Has("_dd.tags.process"))
+				}
 			}
 		})
 	}
