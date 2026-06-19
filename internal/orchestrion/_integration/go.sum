@@ -57,8 +57,8 @@ github.com/DataDog/go-sqllexer v0.2.1 h1:al1RMRTxPoAa1P/RTu7D5yVXC6wCLwTRYLVAVH5
 github.com/DataDog/go-sqllexer v0.2.1/go.mod h1:3xTFXBU69vUikYpESggScvC0RKYA7ZIdVrIkLwUOWdE=
 github.com/DataDog/go-tuf v1.1.1-0.5.2 h1:YWvghV4ZvrQsPcUw8IOUMSDpqc3W5ruOIC+KJxPknv0=
 github.com/DataDog/go-tuf v1.1.1-0.5.2/go.mod h1:zBcq6f654iVqmkk8n2Cx81E1JnNTMOAx1UEO/wZR+P0=
-github.com/DataDog/orchestrion v1.9.0 h1:TmjQfgaIMZDnGAmNXHIw5P7R+q4hOEJN5B/S24IqbKA=
-github.com/DataDog/orchestrion v1.9.0/go.mod h1:FvbdNvK2PY3YnEIw0MHqdBELhZ0P7nUpWaJB3TgUtNE=
+github.com/DataDog/orchestrion v1.10.0 h1:BIdnXuu652cL6KmZvN3kTnEuATOnJU6I7hSxprLEE/M=
+github.com/DataDog/orchestrion v1.10.0/go.mod h1:nOMG/SAcsXeyUDwlIpNl3iSnDVO9rz6zv0Ed87D+UFQ=
 github.com/DataDog/sketches-go v1.4.8 h1:pFk9BNn+Rzv8IMIoPUttoOpOr3bJOqU3P6EP5wK+Lv8=
 github.com/DataDog/sketches-go v1.4.8/go.mod h1:a/wjRUqzqtGS8qRHRPDCs4EAQfmvPDZGDlMIF5mxXOE=
 github.com/IBM/sarama v1.44.0 h1:puNKqcScjSAgVLramjsuovZrS0nJZFVsrvuUymkWqhE=
