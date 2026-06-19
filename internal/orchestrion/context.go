@@ -7,6 +7,7 @@ package orchestrion
 
 import (
 	"context"
+	"sync/atomic"
 )
 
 // WrapContext returns the GLS-wrapped context if orchestrion is enabled, otherwise it returns the given parameter.
@@ -51,6 +52,95 @@ func GLSPopValue(key any) any {
 	}
 
 	return getDDContextStack().Pop(key)
+}
+
+// GLSPopper releases a span's GLS entry. It is the goroutine-scoped popper
+// captured at activation (via GLSPopFunc) and stored, atomically, in a
+// [GLSPopperCell].
+type GLSPopper func()
+
+// GLSPopperCell holds a [GLSPopper] atomically. It is the type orchestrion
+// injects as the popper field on Span and dyngo's operation (via
+// add-struct-field, which requires a named type). Storing the popper in an
+// atomic pointer makes the woven paths race-free: GLSDeactivate (woven into
+// Span.Finish) and GLSReset (woven into Span.clear) can run concurrently on the
+// same field when a span is finished on one goroutine while the tracer's span
+// pool recycles it on another, and a repeated finish must run the popper at
+// most once. The zero value is ready to use; a nil inner pointer means no
+// popper is currently captured.
+type GLSPopperCell struct {
+	ptr atomic.Pointer[GLSPopper]
+}
+
+// GLSActivate is woven into span/operation activation (the tracer's
+// ContextWithSpan and dyngo's RegisterOperation). It pushes val onto the current
+// goroutine's GLS stack under key and records a goroutine-scoped popper into
+// pop, capturing it only on the first activation so re-activating the same
+// span/operation does not overwrite the popper its matching GLSDeactivate will
+// run. The captured popper pops the top of the pushing goroutine's stack and is
+// a no-op on any other goroutine, so a cross-goroutine finish can never corrupt
+// an unrelated goroutine's stack.
+//
+// When ctxp is non-nil the parent context is wrapped (via WrapContext) so the
+// returned context is also GLS-aware, matching the former in-source CtxWithValue.
+// Everything is a no-op when orchestrion is disabled.
+//
+// Grouping the wrap, push and popper-capture here keeps the injected templates a
+// single call and the logic unit-testable in plain go test. The companions are
+// GLSDeactivate (finish) and GLSReset (span-pool reuse).
+func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell) {
+	if !Enabled() {
+		return
+	}
+	if ctxp != nil {
+		*ctxp = WrapContext(*ctxp)
+	}
+	getDDContextStack().Push(key, val)
+	if pop != nil && pop.ptr.Load() == nil {
+		// Capture the popper only on the first activation (first-wins) so
+		// re-activating the same span/operation does not overwrite the popper
+		// its matching GLSDeactivate will run. The pre-check skips the
+		// GLSPopFunc closure allocation when the field is already set (common
+		// on re-activation). CompareAndSwap keeps this race-free when two
+		// goroutines activate concurrently: only one CAS wins; the other's
+		// closure is discarded, preserving first-wins semantics.
+		fn := GLSPopper(GLSPopFunc(key))
+		pop.ptr.CompareAndSwap(nil, &fn)
+	}
+}
+
+// GLSDeactivate releases a span's GLS entry on finish. It marks the span
+// reclaimable (so a cross-goroutine finish, whose popper is a no-op here, is
+// still cleaned up by contextStack.Push on its next push) and invokes the
+// captured popper exactly once, clearing it so a repeated finish does not pop
+// again. reclaimable and pop are the fields orchestrion injects onto the span;
+// passing them by pointer lets injected span-finish advice deactivate in one
+// call.
+func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopperCell) {
+	if reclaimable != nil {
+		reclaimable.Store(true)
+	}
+	if pop == nil {
+		return
+	}
+	// Atomically read and clear the popper so a repeated or concurrent finish
+	// invokes it at most once.
+	if fn := pop.ptr.Swap(nil); fn != nil {
+		(*fn)()
+	}
+}
+
+// GLSReset clears the GLS bookkeeping fields orchestrion injects onto a span so
+// that a span returned to the tracer's pool and later reused is never treated as
+// reclaimable or left carrying a stale popper. It is woven into Span.clear. The
+// reclaimable argument may be nil (dyngo operations carry no reclaim flag).
+func GLSReset(reclaimable *atomic.Bool, pop *GLSPopperCell) {
+	if reclaimable != nil {
+		reclaimable.Store(false)
+	}
+	if pop != nil {
+		pop.ptr.Store(nil)
+	}
 }
 
 // GLSPopFunc returns a function that pops key from the GLS context stack of the
