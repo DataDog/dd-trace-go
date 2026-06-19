@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/scripts/configinverter
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.9.0-rc.4
+	github.com/DataDog/dd-trace-go/v2 v2.9.0
 	github.com/dave/jennifer v1.7.1
 )
 
