@@ -237,10 +237,6 @@ func newRCTagsMap(t *tags) *map[string]any {
 		return nil
 	}
 	m := t.toMap()
-	if m == nil {
-		nm := map[string]any{}
-		m = &nm
-	}
 	(*m)[ext.RuntimeID] = globalconfig.RuntimeID()
 	return m
 }

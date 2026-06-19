@@ -25,7 +25,8 @@ type SpanStartSnapshot struct {
 	DebugAbandonedSpans     bool
 	ProfilerHotspotsEnabled bool
 	ProfilerEndpoints       bool
-	// The map is shared and must not be mutated; see Config.GlobalTags.
+	// The map is the live internal map, shared with the config, not a copy.
+	// Callers must not mutate it; use Config.GlobalTags() to get a safe copy.
 	GlobalTags map[string]any
 }
 
