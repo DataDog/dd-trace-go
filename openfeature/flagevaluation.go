@@ -121,28 +121,29 @@ type evaluationEntry struct {
 }
 
 // observe records one more evaluation against an existing bucket: it bumps the count and
-// widens the [firstEvaluation, lastEvaluation] window to include nowMs. Every existing-bucket
+// widens the [firstEvaluation, lastEvaluation] window to include evaluationTimeMs. Every existing-bucket
 // path across the aggregation tiers funnels through here so the count++/min/max logic lives once.
-// nowMs is captured before enqueue; concurrent evaluations can reach the worker out of timestamp
-// order, so an existing bucket can legitimately observe an older timestamp.
-func (e *evaluationEntry) observe(nowMs int64) {
+// evaluationTimeMs is captured before enqueue; concurrent evaluations can reach the worker out
+// of timestamp order, so an existing bucket can legitimately observe an older timestamp.
+func (e *evaluationEntry) observe(evaluationTimeMs int64) {
 	e.count++
-	if nowMs < e.firstEvaluation {
-		e.firstEvaluation = nowMs
+	if evaluationTimeMs < e.firstEvaluation {
+		e.firstEvaluation = evaluationTimeMs
 	}
-	if nowMs > e.lastEvaluation {
-		e.lastEvaluation = nowMs
+	if evaluationTimeMs > e.lastEvaluation {
+		e.lastEvaluation = evaluationTimeMs
 	}
 }
 
-// newEvaluationEntry returns a fresh bucket for nowMs with count 1 and first==last==nowMs.
+// newEvaluationEntry returns a fresh bucket for evaluationTimeMs with count 1 and
+// first==last==evaluationTimeMs.
 // Callers set any tier-specific fields (runtimeDefault, targetingKey, contextAttrs,
 // errorMessage) on the returned entry.
-func newEvaluationEntry(nowMs int64) *evaluationEntry {
+func newEvaluationEntry(evaluationTimeMs int64) *evaluationEntry {
 	return &evaluationEntry{
 		count:           1,
-		firstEvaluation: nowMs,
-		lastEvaluation:  nowMs,
+		firstEvaluation: evaluationTimeMs,
+		lastEvaluation:  evaluationTimeMs,
 	}
 }
 
@@ -248,9 +249,9 @@ type flagEvaluationWriter struct {
 // evalEvent is the bounded snapshot the Finally hook hands to the worker. contextAttrs is already
 // flattened and pruned, so the async queue never buffers the caller's raw evaluation context.
 type evalEvent struct {
-	d            evalDetails
-	contextAttrs map[string]any
-	nowMs        int64
+	d                evalDetails
+	contextAttrs     map[string]any
+	evaluationTimeMs int64
 }
 
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
@@ -398,13 +399,13 @@ func (w *flagEvaluationWriter) flush() {
 		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
 	}
 
-	nowMs := time.Now().UnixMilli()
+	flushTimeMs := time.Now().UnixMilli()
 	var events []flagEvaluationEvent
 
 	// Full tier: required fields + variant + allocation + targeting_key + context + error.
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range full {
-		ev := baseFlagEvaluationEvent(key.flagKey, e, nowMs)
+		ev := baseFlagEvaluationEvent(key.flagKey, e, flushTimeMs)
 		ev.RuntimeDefault = e.runtimeDefault
 		ev.TargetingKey = e.targetingKey
 		if key.variant != "" {
@@ -425,7 +426,7 @@ func (w *flagEvaluationWriter) flush() {
 	// Degraded tier: required fields + variant + allocation + error; no targeting_key, no context.
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range degraded {
-		ev := baseFlagEvaluationEvent(key.flagKey, e, nowMs)
+		ev := baseFlagEvaluationEvent(key.flagKey, e, flushTimeMs)
 		ev.RuntimeDefault = e.runtimeDefault
 		if key.variant != "" {
 			ev.Variant = &flagEvalVariant{Key: key.variant}
@@ -459,9 +460,9 @@ func (w *flagEvaluationWriter) flush() {
 // fields (timestamp, flag.key, first/last evaluation, evaluation_count). It is tier-agnostic
 // and sets no optional field — RuntimeDefault and the rest are decoration applied by each tier
 // loop in flush() after the call.
-func baseFlagEvaluationEvent(flagKey string, e *evaluationEntry, nowMs int64) flagEvaluationEvent {
+func baseFlagEvaluationEvent(flagKey string, e *evaluationEntry, flushTimeMs int64) flagEvaluationEvent {
 	return flagEvaluationEvent{
-		Timestamp:       nowMs,
+		Timestamp:       flushTimeMs,
 		Flag:            flagEvalFlag{Key: flagKey},
 		FirstEvaluation: e.firstEvaluation,
 		LastEvaluation:  e.lastEvaluation,
@@ -489,14 +490,14 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 	// Use the evaluation time captured by the provider (most-correct; see metadataEvalTimeKey).
 	// Fall back to the hook-fire time only when absent (e.g. a non-Datadog provider that did not
 	// stamp it), so the first/last_evaluation bounds are always populated.
-	nowMs := d.evalTimeMs
-	if nowMs == 0 {
-		nowMs = time.Now().UnixMilli()
+	evaluationTimeMs := d.evalTimeMs
+	if evaluationTimeMs == 0 {
+		evaluationTimeMs = time.Now().UnixMilli()
 	}
 	ev := evalEvent{
-		d:            d,
-		contextAttrs: flattenAndPruneContext(hookContext.EvaluationContext().Attributes()),
-		nowMs:        nowMs,
+		d:                d,
+		contextAttrs:     flattenAndPruneContext(hookContext.EvaluationContext().Attributes()),
+		evaluationTimeMs: evaluationTimeMs,
 	}
 	select {
 	case w.events <- ev:
@@ -507,7 +508,7 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
 func (w *flagEvaluationWriter) aggregate(ev evalEvent) {
-	w.aggregator.add(ev.d, ev.contextAttrs, ev.nowMs)
+	w.aggregator.add(ev.d, ev.contextAttrs, ev.evaluationTimeMs)
 }
 
 // flattenAndPruneContext produces the pruned context map for EVP aggregation in a single
@@ -613,7 +614,7 @@ func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error 
 // globalCap is full, a flag that accumulates enough attempts (>= perFlagCap) still
 // follows the degraded path — keeping the per-flag overflow path alive even after the
 // global full-tier cap is exhausted.
-func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]any, nowMs int64) {
+func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]any, evaluationTimeMs int64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -633,14 +634,14 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 	// contextKey is the full canonical encoding (not a digest), this fast path is hit only by a
 	// genuinely identical pruned context — never by an aliasing collision.
 	if e, ok := a.full[fullKey]; ok {
-		e.observe(nowMs)
+		e.observe(evaluationTimeMs)
 		return
 	}
 
 	// Check per-flag cap.
 	if a.perFlagFull[d.flagKey] >= a.perFlagCap {
 		// perFlagCap exceeded — route to degraded tier.
-		a.addToDegraded(d, nowMs)
+		a.addToDegraded(d, evaluationTimeMs)
 		return
 	}
 
@@ -656,15 +657,15 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 		// cardinality at the target scale. The per-flag attempt counter was
 		// already incremented above; once it reaches perFlagCap this flag routes through
 		// addToDegraded directly as well.
-		a.addToDegraded(d, nowMs)
+		a.addToDegraded(d, evaluationTimeMs)
 		return
 	}
 
 	// New full-tier entry.
 	a.full[fullKey] = &evaluationEntry{
 		count:           1,
-		firstEvaluation: nowMs,
-		lastEvaluation:  nowMs,
+		firstEvaluation: evaluationTimeMs,
+		lastEvaluation:  evaluationTimeMs,
 		runtimeDefault:  d.runtimeDefault,
 		targetingKey:    d.targetingKey,
 		contextAttrs:    contextAttrs,
@@ -679,7 +680,7 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 // sized (defaultEvalDegradedCap) to hold the legitimate degraded cardinality at the target
 // scale, so this drop only fires under cardinality far beyond that target (e.g. an unbounded
 // dynamic/abusive flag key) and the dropped counter makes such overflow observable.
-func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
+func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, evaluationTimeMs int64) {
 	degKey := evaluationDegradedKey{
 		flagKey:        d.flagKey,
 		variant:        d.variant,
@@ -689,7 +690,7 @@ func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 	}
 
 	if e, ok := a.degraded[degKey]; ok {
-		e.observe(nowMs)
+		e.observe(evaluationTimeMs)
 		return
 	}
 
@@ -701,7 +702,7 @@ func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, nowMs int64) {
 		return
 	}
 
-	e := newEvaluationEntry(nowMs)
+	e := newEvaluationEntry(evaluationTimeMs)
 	e.runtimeDefault = d.runtimeDefault
 	e.errorMessage = d.errorMessage
 	a.degraded[degKey] = e
