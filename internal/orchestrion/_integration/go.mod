@@ -10,8 +10,8 @@ require (
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.10.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
-	github.com/DataDog/go-libddwaf/v4 v4.9.0
-	github.com/DataDog/orchestrion v1.9.0
+	github.com/DataDog/go-libddwaf/v4 v4.10.0
+	github.com/DataDog/orchestrion v1.10.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go v1.55.5
