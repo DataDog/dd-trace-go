@@ -46,3 +46,96 @@ aspects:
     advice:
       - prepend-statements:
           template: getg().__dd_gls_v2 = nil
+
+  # --- appsec/dyngo GLS lifecycle (orchestrion-on-top) ---
+  # dyngo's operation.go is GLS-agnostic in source (plain context.WithValue /
+  # ctx.Value). These tracer-internal aspects weave the GLS push, read fallback,
+  # and pop for AppSec operations, fixing the GLS over-pop bug (orchestrion#782)
+  # without GLS code in dyngo. The logic lives in internal/orchestrion
+  # (GLSActivate / GLSDeactivate / WrapContext); the injected templates stay thin.
+  #
+  # Note: the cross-goroutine-finish half of orchestrion#782 is not applicable
+  # here — all AppSec dyngo operations are registered and finished on the same
+  # goroutine. Accordingly, `operation` carries no reclaimable flag and
+  # contextStack.Push never drains dyngo entries.
+
+  # Give the operation a popper field (operation is unexported, like runtime.g).
+  - id: dyngo operation GLS field
+    tracer-internal: true
+    join-point:
+      struct-definition: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo.operation
+    advice:
+      - add-struct-field:
+          name: __dd_glsPop
+          type: github.com/DataDog/dd-trace-go/v2/internal/orchestrion.GLSPopperCell
+
+  # RegisterOperation: push the operation onto the GLS and capture a
+  # goroutine-scoped popper (first registration wins).
+  - id: dyngo RegisterOperation GLS push
+    tracer-internal: true
+    join-point:
+      all-of:
+        - import-path: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
+        - function-body:
+            function:
+              - name: RegisterOperation
+    advice:
+      - prepend-statements:
+          imports:
+            orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            {{- $op := .Function.Argument 1 -}}
+            {
+              // GLSActivate (ctxp non-nil) wraps the parent so the returned
+              // context is GLS-aware (matching in-source CtxWithValue), pushes
+              // the op, and captures the first-wins popper onto __dd_glsPop.
+              __dd_o := {{ $op }}.unwrap()
+              orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop)
+            }
+
+  # FromContext: wrap ctx so the read also consults the GLS.
+  - id: dyngo FromContext GLS read
+    tracer-internal: true
+    join-point:
+      all-of:
+        - import-path: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
+        - function-body:
+            function:
+              - name: FromContext
+    advice:
+      - prepend-statements:
+          imports:
+            orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+          template: |-
+            {{- $ctx := .Function.Argument 0 -}}
+            // Wrap unconditionally: AppSec calls FromContext(nil) from
+            // un-instrumented sites (e.g. contrib/os: dyngo.FromContext(nil)),
+            // relying solely on the GLS fallback. WrapContext(nil) returns a
+            // glsContext over context.Background when orchestrion is enabled, so
+            // the read below still consults the GLS. A nil-guard here would let
+            // the source's `if ctx == nil { return }` short-circuit before the
+            // GLS is ever read. Matches in-source FromContext (orchestrion#782).
+            {{ $ctx }} = orchestrion.WrapContext({{ $ctx }})
+
+  # FinishOperation: run the popper once on finish (deferred). dyngo has no
+  # reclaim flag (it relies on the goroutine-scoped popper only), so the
+  # reclaimable argument is nil.
+  - id: dyngo FinishOperation GLS deactivate
+    tracer-internal: true
+    join-point:
+      all-of:
+        - import-path: github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo
+        - function-body:
+            function:
+              - name: FinishOperation
+    advice:
+      - prepend-statements:
+          imports:
+            orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+          template: |-
+            {{- $op := .Function.Argument 0 -}}
+            defer func() {
+              __dd_o := {{ $op }}.unwrap()
+              orchestrion.GLSDeactivate(nil, &__dd_o.__dd_glsPop)
+            }()

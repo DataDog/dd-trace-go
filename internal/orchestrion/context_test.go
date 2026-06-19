@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -86,6 +87,106 @@ func TestGLSPopFunc(t *testing.T) {
 
 		popFn := GLSPopFunc(key("k"))
 		popFn() // must not panic
+	})
+}
+
+func TestGLSActivate(t *testing.T) {
+	t.Run("pushes and captures a working popper", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		var pop GLSPopperCell
+		GLSActivate(nil, key("k"), "v", &pop)
+		require.Equal(t, "v", getDDContextStack().Peek(key("k")), "value should be on the GLS stack")
+		fn := pop.ptr.Load()
+		require.NotNil(t, fn, "popper should be captured")
+
+		(*fn)()
+		require.Nil(t, getDDContextStack().Peek(key("k")), "popper should remove the value")
+	})
+
+	t.Run("first activation wins: popper is not overwritten", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		var pop GLSPopperCell
+		GLSActivate(nil, key("k"), "v1", &pop)
+		first := pop.ptr.Load()
+		GLSActivate(nil, key("k"), "v2", &pop) // re-activate same field
+		require.Equal(t, 2, getDDContextStack().Depth(), "every activation pushes")
+		require.Same(t, first, pop.ptr.Load(),
+			"the first popper must be retained across re-activation")
+	})
+
+	t.Run("ctxp non-nil wraps the parent so the result is GLS-aware", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		ctx := context.Background()
+		var pop GLSPopperCell
+		GLSActivate(&ctx, key("k"), "v", &pop)
+		_, ok := ctx.(*glsContext)
+		require.True(t, ok, "ctxp should be wrapped in a glsContext")
+	})
+
+	t.Run("disabled orchestrion is a no-op", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+		enabled = false // exercise the !Enabled() early return
+
+		ctx := context.Background()
+		var pop GLSPopperCell
+		GLSActivate(&ctx, key("k"), "v", &pop) // must not panic
+		require.Nil(t, pop.ptr.Load(), "no popper captured when disabled")
+		require.Equal(t, context.Background(), ctx, "ctx unchanged when disabled")
+	})
+}
+
+func TestGLSReset(t *testing.T) {
+	t.Run("clears reclaimable flag and popper", func(t *testing.T) {
+		var reclaimable atomic.Bool
+		reclaimable.Store(true)
+		ran := 0
+		var pop GLSPopperCell
+		fn := GLSPopper(func() { ran++ })
+		pop.ptr.Store(&fn)
+
+		GLSReset(&reclaimable, &pop)
+		require.False(t, reclaimable.Load(), "reclaimable must be reset to false")
+		require.Nil(t, pop.ptr.Load(), "popper must be cleared without being run")
+		require.Equal(t, 0, ran, "GLSReset must not run the popper")
+	})
+
+	t.Run("tolerates nil reclaimable (dyngo operations)", func(t *testing.T) {
+		var pop GLSPopperCell
+		fn := GLSPopper(func() {})
+		pop.ptr.Store(&fn)
+		GLSReset(nil, &pop) // must not panic
+		require.Nil(t, pop.ptr.Load())
+	})
+}
+
+func TestGLSDeactivate(t *testing.T) {
+	t.Run("sets reclaimable and runs the popper once", func(t *testing.T) {
+		var reclaimable atomic.Bool
+		popped := 0
+		var pop GLSPopperCell
+		fn := GLSPopper(func() { popped++ })
+		pop.ptr.Store(&fn)
+
+		GLSDeactivate(&reclaimable, &pop)
+		require.True(t, reclaimable.Load(), "span should be marked reclaimable")
+		require.Equal(t, 1, popped, "popper should run once")
+		require.Nil(t, pop.ptr.Load(), "popper should be cleared after running")
+
+		GLSDeactivate(&reclaimable, &pop) // second finish: popper already nil
+		require.Equal(t, 1, popped, "popper must not run again on a repeated finish")
+	})
+
+	t.Run("tolerates nil popper and nil pointers", func(t *testing.T) {
+		var reclaimable atomic.Bool
+		var pop GLSPopperCell // empty: nil inner pointer
+
+		GLSDeactivate(&reclaimable, &pop) // no popper -> no invoke, no panic
+		require.True(t, reclaimable.Load())
+
+		GLSDeactivate(nil, nil) // must not panic
 	})
 }
 
