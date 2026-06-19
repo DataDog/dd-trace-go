@@ -625,6 +625,23 @@ func TestAggregatorConcurrentMinMax(t *testing.T) {
 	}
 }
 
+func TestEvaluationEntryObserveOutOfOrderTimestamps(t *testing.T) {
+	entry := newEvaluationEntry(200)
+
+	entry.observe(150)
+	entry.observe(250)
+
+	if entry.count != 3 {
+		t.Fatalf("count = %d, want 3", entry.count)
+	}
+	if entry.firstEvaluation != 150 {
+		t.Fatalf("firstEvaluation = %d, want 150", entry.firstEvaluation)
+	}
+	if entry.lastEvaluation != 250 {
+		t.Fatalf("lastEvaluation = %d, want 250", entry.lastEvaluation)
+	}
+}
+
 // TestSaturationCountPreservation is the regression guard against a SILENT drop at saturation.
 // The invariant is: Σ(full+degraded counts) + droppedDegradedOverflow == add() calls.
 // No evaluation may vanish without being COUNTED — silent loss is the defect this guards against.

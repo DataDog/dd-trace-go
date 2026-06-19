@@ -122,7 +122,9 @@ type evaluationEntry struct {
 
 // observe records one more evaluation against an existing bucket: it bumps the count and
 // widens the [firstEvaluation, lastEvaluation] window to include nowMs. Every existing-bucket
-// path across the three tiers funnels through here so the count++/min/max logic lives once.
+// path across the aggregation tiers funnels through here so the count++/min/max logic lives once.
+// nowMs is captured before enqueue; concurrent evaluations can reach the worker out of timestamp
+// order, so an existing bucket can legitimately observe an older timestamp.
 func (e *evaluationEntry) observe(nowMs int64) {
 	e.count++
 	if nowMs < e.firstEvaluation {
