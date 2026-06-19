@@ -34,8 +34,11 @@ const (
 	DBMPropagationModeService DBMPropagationMode = "service"
 	// DBMPropagationModeFull represents the dbm propagation mode where both service tags and tracing tags are propagated. Tracing tags include span id, trace id and the sampled flag.
 	DBMPropagationModeFull DBMPropagationMode = "full"
-	// DBMPropagationModeDynamicService is like DBMPropagationModeService but also injects
-	// the container tags hash (ddsh) when available. It does not inject traceparent.
+	// DBMPropagationModeDynamicService is like DBMPropagationModeService but also injects a
+	// base service hash (ddsh) and tags the span with _dd.propagated_hash. It does not inject
+	// traceparent. The hash is only injected once process tags are enabled
+	// (DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED) and the Agent has returned a container
+	// tags hash; until then this mode behaves like DBMPropagationModeService.
 	DBMPropagationModeDynamicService DBMPropagationMode = "dynamic_service"
 )
 

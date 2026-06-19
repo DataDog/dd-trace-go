@@ -646,7 +646,7 @@ func TestDBMDynamicServicePrepareContextWithHash(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	_, err = db.PrepareContext(context.Background(), "SELECT 1")
+	stmt, err := db.PrepareContext(context.Background(), "SELECT 1")
 	require.NoError(t, err)
 
 	require.Len(t, d.Prepared, 1)
@@ -659,6 +659,14 @@ func TestDBMDynamicServicePrepareContextWithHash(t *testing.T) {
 	require.Len(t, prepareSpans, 1)
 	assert.Equal(t, expectedHash, prepareSpans[0].Tag("_dd.propagated_hash"),
 		"_dd.propagated_hash must be set on the prepare span")
+
+	_, err = stmt.ExecContext(context.Background())
+	require.NoError(t, err)
+
+	execSpans := spansOfType(mt.FinishedSpans(), QueryTypeExec)
+	require.Len(t, execSpans, 1)
+	assert.Equal(t, expectedHash, execSpans[0].Tag("_dd.propagated_hash"),
+		"_dd.propagated_hash must be set on prepared-statement exec spans")
 }
 
 func TestDBMNoPropagatedHashTagInOtherModes(t *testing.T) {

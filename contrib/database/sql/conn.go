@@ -125,7 +125,7 @@ func (tc *TracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 		if err != nil {
 			return nil, err
 		}
-		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
+		return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query, baseHash: baseHash}, nil
 	}
 	ctx, end := startTraceTask(ctx, QueryTypePrepare)
 	defer end()
@@ -134,7 +134,7 @@ func (tc *TracedConn) PrepareContext(ctx context.Context, query string) (stmt dr
 	if err != nil {
 		return nil, err
 	}
-	return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query}, nil
+	return &tracedStmt{Stmt: stmt, traceParams: tc.traceParams, ctx: ctx, query: query, baseHash: baseHash}, nil
 }
 
 // ExecContext executes a query without returning any rows.
@@ -308,10 +308,14 @@ func withDBMTraceInjectedTag(mode tracer.DBMPropagationMode, baseHash string) []
 	if mode == tracer.DBMPropagationModeFull {
 		opts = append(opts, tracer.Tag(keyDBMTraceInjected, true))
 	}
-	if baseHash != "" {
-		opts = append(opts, tracer.Tag(keyDBMPropagatedHash, baseHash))
+	return append(opts, withDBMPropagatedHashTag(baseHash)...)
+}
+
+func withDBMPropagatedHashTag(baseHash string) []tracer.StartSpanOption {
+	if baseHash == "" {
+		return nil
 	}
-	return opts
+	return []tracer.StartSpanOption{tracer.Tag(keyDBMPropagatedHash, baseHash)}
 }
 
 // tryTrace will create a span using the given arguments, but will act as a no-op when err is driver.ErrSkip.

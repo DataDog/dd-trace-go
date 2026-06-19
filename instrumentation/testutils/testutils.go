@@ -31,9 +31,6 @@ import (
 //go:linkname decodeTestingPayload github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.decodeTestingPayload
 func decodeTestingPayload(buf []byte) (map[string]any, error)
 
-//go:linkname resetBaseHashCache github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.resetBaseHashCache
-func resetBaseHashCache()
-
 func SetGlobalServiceName(t *testing.T, val string) {
 	t.Helper()
 	prev := globalconfig.ServiceName()
@@ -64,12 +61,8 @@ func SetGlobalDogstatsdAddr(t *testing.T, val string) {
 // SetContainerTagsHash sets the container tags hash for the duration of the test.
 func SetContainerTagsHash(t *testing.T, hash string) {
 	t.Helper()
-	resetBaseHashCache()
 	processtags.SetContainerTagsHash(hash)
-	t.Cleanup(func() {
-		processtags.SetContainerTagsHash("")
-		resetBaseHashCache()
-	})
+	t.Cleanup(func() { processtags.SetContainerTagsHash("") })
 }
 
 // DBMBaseHash computes the expected DBM base hash for the given inputs,
