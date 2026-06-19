@@ -160,7 +160,7 @@ aspects:
     advice:
       - add-struct-field:
           name: __dd_glsPop
-          type: github.com/DataDog/dd-trace-go/v2/internal/orchestrion.GLSPopper
+          type: github.com/DataDog/dd-trace-go/v2/internal/orchestrion.GLSPopperCell
       - add-struct-field:
           name: __dd_glsReclaimable
           type: sync/atomic.Bool

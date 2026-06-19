@@ -54,16 +54,28 @@ func GLSPopValue(key any) any {
 	return getDDContextStack().Pop(key)
 }
 
-// GLSPopper releases a span's GLS entry. It is the type of the popper field
-// orchestrion injects onto Span (via add-struct-field, which requires a named
-// type); naming it here lets that field and GLSDeactivate share one type
-// across the tracer/orchestrion boundary.
+// GLSPopper releases a span's GLS entry. It is the goroutine-scoped popper
+// captured at activation (via GLSPopFunc) and stored, atomically, in a
+// [GLSPopperCell].
 type GLSPopper func()
+
+// GLSPopperCell holds a [GLSPopper] atomically. It is the type orchestrion
+// injects as the popper field on Span and dyngo's operation (via
+// add-struct-field, which requires a named type). Storing the popper in an
+// atomic pointer makes the woven paths race-free: GLSDeactivate (woven into
+// Span.Finish) and GLSReset (woven into Span.clear) can run concurrently on the
+// same field when a span is finished on one goroutine while the tracer's span
+// pool recycles it on another, and a repeated finish must run the popper at
+// most once. The zero value is ready to use; a nil inner pointer means no
+// popper is currently captured.
+type GLSPopperCell struct {
+	ptr atomic.Pointer[GLSPopper]
+}
 
 // GLSActivate is woven into span/operation activation (the tracer's
 // ContextWithSpan and dyngo's RegisterOperation). It pushes val onto the current
 // goroutine's GLS stack under key and records a goroutine-scoped popper into
-// *pop, capturing it only on the first activation so re-activating the same
+// pop, capturing it only on the first activation so re-activating the same
 // span/operation does not overwrite the popper its matching GLSDeactivate will
 // run. The captured popper pops the top of the pushing goroutine's stack and is
 // a no-op on any other goroutine, so a cross-goroutine finish can never corrupt
@@ -76,7 +88,7 @@ type GLSPopper func()
 // Grouping the wrap, push and popper-capture here keeps the injected templates a
 // single call and the logic unit-testable in plain go test. The companions are
 // GLSDeactivate (finish) and GLSReset (span-pool reuse).
-func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopper) {
+func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell) {
 	if !Enabled() {
 		return
 	}
@@ -84,8 +96,13 @@ func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopper) {
 		*ctxp = WrapContext(*ctxp)
 	}
 	getDDContextStack().Push(key, val)
-	if pop != nil && *pop == nil {
-		*pop = GLSPopFunc(key)
+	if pop != nil {
+		// Capture the popper only on the first activation (first-wins) so
+		// re-activating the same span/operation does not overwrite the popper
+		// its matching GLSDeactivate will run. CompareAndSwap keeps this
+		// race-free if two activations ever overlap.
+		fn := GLSPopper(GLSPopFunc(key))
+		pop.ptr.CompareAndSwap(nil, &fn)
 	}
 }
 
@@ -96,17 +113,17 @@ func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopper) {
 // again. reclaimable and pop are the fields orchestrion injects onto the span;
 // passing them by pointer lets injected span-finish advice deactivate in one
 // call.
-func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopper) {
+func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopperCell) {
 	if reclaimable != nil {
 		reclaimable.Store(true)
 	}
 	if pop == nil {
 		return
 	}
-	p := *pop
-	*pop = nil
-	if p != nil {
-		p()
+	// Atomically read and clear the popper so a repeated or concurrent finish
+	// invokes it at most once.
+	if fn := pop.ptr.Swap(nil); fn != nil {
+		(*fn)()
 	}
 }
 
@@ -114,12 +131,12 @@ func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopper) {
 // that a span returned to the tracer's pool and later reused is never treated as
 // reclaimable or left carrying a stale popper. It is woven into Span.clear. The
 // reclaimable argument may be nil (dyngo operations carry no reclaim flag).
-func GLSReset(reclaimable *atomic.Bool, pop *GLSPopper) {
+func GLSReset(reclaimable *atomic.Bool, pop *GLSPopperCell) {
 	if reclaimable != nil {
 		reclaimable.Store(false)
 	}
 	if pop != nil {
-		*pop = nil
+		pop.ptr.Store(nil)
 	}
 }
 
