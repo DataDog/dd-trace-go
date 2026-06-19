@@ -1747,7 +1747,8 @@
       {
         "implementation": "A",
         "type": "map",
-        "default": ""
+        "default": "",
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
@@ -1761,7 +1762,8 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
@@ -1789,7 +1791,8 @@
       {
         "implementation": "B",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [
@@ -1838,7 +1841,8 @@
       {
         "implementation": "B",
         "type": "map",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_LOGS_EXPORTER": [

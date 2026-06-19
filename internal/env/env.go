@@ -34,7 +34,7 @@ func Get(name string) string {
 		return v
 	}
 
-	for _, alias := range keyAliases[name] {
+	for _, alias := range KeyAliases[name] {
 		if v := os.Getenv(alias); v != "" {
 			return v
 		}
@@ -64,7 +64,7 @@ func Lookup(name string) (string, bool) {
 		return v, true
 	}
 
-	for _, alias := range keyAliases[name] {
+	for _, alias := range KeyAliases[name] {
 		if v, ok := os.LookupEnv(alias); ok {
 			return v, true
 		}

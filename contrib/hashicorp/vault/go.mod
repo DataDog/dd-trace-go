@@ -21,7 +21,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.79.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.8.3 // indirect
-	github.com/DataDog/go-libddwaf/v4 v4.9.0 // indirect
+	github.com/DataDog/go-libddwaf/v4 v4.10.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.1 // indirect
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
@@ -35,7 +35,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
