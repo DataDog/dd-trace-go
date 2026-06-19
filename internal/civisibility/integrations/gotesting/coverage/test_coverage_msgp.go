@@ -159,6 +159,12 @@ func (z *ciTestCoverageData) DecodeMsg(dc *msgp.Reader) (err error) {
 								err = msgp.WrapError(err, "Files", za0001, "FileName")
 								return
 							}
+						case "bitmap":
+							z.Files[za0001].Bitmap, err = dc.ReadBytes(z.Files[za0001].Bitmap)
+							if err != nil {
+								err = msgp.WrapError(err, "Files", za0001, "Bitmap")
+								return
+							}
 						default:
 							err = dc.Skip()
 							if err != nil {
@@ -230,16 +236,44 @@ func (z *ciTestCoverageData) EncodeMsg(en *msgp.Writer) (err error) {
 				return
 			}
 		} else {
-			// map header, size 1
-			// write "filename"
-			err = en.Append(0x81, 0xa8, 0x66, 0x69, 0x6c, 0x65, 0x6e, 0x61, 0x6d, 0x65)
+			// check for omitted fields
+			zb0002Len := uint32(2)
+			var zb0002Mask uint8 /* 2 bits */
+			_ = zb0002Mask
+			if z.Files[za0001].Bitmap == nil {
+				zb0002Len--
+				zb0002Mask |= 0x2
+			}
+			// variable map header, size zb0002Len
+			err = en.Append(0x80 | uint8(zb0002Len))
 			if err != nil {
 				return
 			}
-			err = en.WriteString(z.Files[za0001].FileName)
-			if err != nil {
-				err = msgp.WrapError(err, "Files", za0001, "FileName")
-				return
+
+			// skip if no fields are to be emitted
+			if zb0002Len != 0 {
+				// write "filename"
+				err = en.Append(0xa8, 0x66, 0x69, 0x6c, 0x65, 0x6e, 0x61, 0x6d, 0x65)
+				if err != nil {
+					return
+				}
+				err = en.WriteString(z.Files[za0001].FileName)
+				if err != nil {
+					err = msgp.WrapError(err, "Files", za0001, "FileName")
+					return
+				}
+				if (zb0002Mask & 0x2) == 0 { // if not omitted
+					// write "bitmap"
+					err = en.Append(0xa6, 0x62, 0x69, 0x74, 0x6d, 0x61, 0x70)
+					if err != nil {
+						return
+					}
+					err = en.WriteBytes(z.Files[za0001].Bitmap)
+					if err != nil {
+						err = msgp.WrapError(err, "Files", za0001, "Bitmap")
+						return
+					}
+				}
 			}
 		}
 	}
@@ -253,7 +287,7 @@ func (z *ciTestCoverageData) Msgsize() (s int) {
 		if z.Files[za0001] == nil {
 			s += msgp.NilSize
 		} else {
-			s += 1 + 9 + msgp.StringPrefixSize + len(z.Files[za0001].FileName)
+			s += 1 + 9 + msgp.StringPrefixSize + len(z.Files[za0001].FileName) + 7 + msgp.BytesPrefixSize + len(z.Files[za0001].Bitmap)
 		}
 	}
 	return
@@ -283,6 +317,12 @@ func (z *ciTestCoverageFile) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "FileName")
 				return
 			}
+		case "bitmap":
+			z.Bitmap, err = dc.ReadBytes(z.Bitmap)
+			if err != nil {
+				err = msgp.WrapError(err, "Bitmap")
+				return
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -295,24 +335,52 @@ func (z *ciTestCoverageFile) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z ciTestCoverageFile) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 1
-	// write "filename"
-	err = en.Append(0x81, 0xa8, 0x66, 0x69, 0x6c, 0x65, 0x6e, 0x61, 0x6d, 0x65)
+func (z *ciTestCoverageFile) EncodeMsg(en *msgp.Writer) (err error) {
+	// check for omitted fields
+	zb0001Len := uint32(2)
+	var zb0001Mask uint8 /* 2 bits */
+	_ = zb0001Mask
+	if z.Bitmap == nil {
+		zb0001Len--
+		zb0001Mask |= 0x2
+	}
+	// variable map header, size zb0001Len
+	err = en.Append(0x80 | uint8(zb0001Len))
 	if err != nil {
 		return
 	}
-	err = en.WriteString(z.FileName)
-	if err != nil {
-		err = msgp.WrapError(err, "FileName")
-		return
+
+	// skip if no fields are to be emitted
+	if zb0001Len != 0 {
+		// write "filename"
+		err = en.Append(0xa8, 0x66, 0x69, 0x6c, 0x65, 0x6e, 0x61, 0x6d, 0x65)
+		if err != nil {
+			return
+		}
+		err = en.WriteString(z.FileName)
+		if err != nil {
+			err = msgp.WrapError(err, "FileName")
+			return
+		}
+		if (zb0001Mask & 0x2) == 0 { // if not omitted
+			// write "bitmap"
+			err = en.Append(0xa6, 0x62, 0x69, 0x74, 0x6d, 0x61, 0x70)
+			if err != nil {
+				return
+			}
+			err = en.WriteBytes(z.Bitmap)
+			if err != nil {
+				err = msgp.WrapError(err, "Bitmap")
+				return
+			}
+		}
 	}
 	return
 }
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
-func (z ciTestCoverageFile) Msgsize() (s int) {
-	s = 1 + 9 + msgp.StringPrefixSize + len(z.FileName)
+func (z *ciTestCoverageFile) Msgsize() (s int) {
+	s = 1 + 9 + msgp.StringPrefixSize + len(z.FileName) + 7 + msgp.BytesPrefixSize + len(z.Bitmap)
 	return
 }
 
