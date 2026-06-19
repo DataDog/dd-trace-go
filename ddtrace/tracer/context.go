@@ -30,11 +30,21 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
 		ctx = context.Background()
 	}
-	// Plain context value. Orchestrion builds additionally weave a goroutine-
-	// local-storage (GLS) push here, and the matching pop into Span.Finish, so
-	// the active span is reachable across un-instrumented call sites (see
-	// ddtrace/tracer/orchestrion.yml). Without orchestrion there is no GLS and
-	// this is a bare context.WithValue — the tracer pays nothing for it.
+	// Plain context.WithValue. When built with orchestrion, three aspects in
+	// ddtrace/tracer/orchestrion.yml extend the span's GLS lifecycle:
+	//   - "Span GLS fields": adds two woven fields to Span — __dd_glsPop
+	//     (GLSPopperCell, an atomic pointer to the goroutine-scoped popper) and
+	//     __dd_glsReclaimable (atomic.Bool, set on finish so cross-goroutine GLS
+	//     entries can be lazily reclaimed on the next push).
+	//   - "Span ContextWithSpan GLS push": prepends before this line:
+	//       orchestrion.GLSActivate(nil, ActiveSpanKey, s, &s.__dd_glsPop)
+	//     which pushes s onto the goroutine-local stack and records a goroutine-
+	//     scoped popper in __dd_glsPop (first push wins; no-op when disabled).
+	//   - "Span Finish GLS deactivate": prepends at the top of Span.Finish:
+	//       orchestrion.GLSDeactivate(&s.__dd_glsReclaimable, &s.__dd_glsPop)
+	//     which pops the GLS entry exactly once, only on the goroutine that pushed.
+	// SpanFromContext is extended analogously ("Span SpanFromContext GLS read").
+	// Without orchestrion there is no GLS; this is a plain context.WithValue.
 	newCtx := context.WithValue(ctx, internal.ActiveSpanKey, s)
 	if s != nil {
 		// Snapshot the SpanContext so it survives span pool recycling.
@@ -84,10 +94,12 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	// Plain context lookup. Orchestrion builds weave a GLS fallback here (it
-	// wraps ctx so this read also consults the goroutine-local active span when
-	// the explicit chain has none — see ddtrace/tracer/orchestrion.yml). Without
-	// orchestrion this is a bare ctx.Value.
+	// Plain context lookup. Under orchestrion, "Span SpanFromContext GLS read"
+	// (ddtrace/tracer/orchestrion.yml) prepends:
+	//   ctx = orchestrion.WrapContext(ctx)
+	// so ctx.Value also consults the goroutine-local stack as a fallback when the
+	// explicit context chain carries no active span (e.g. un-instrumented callers).
+	// Without orchestrion this is a bare ctx.Value.
 	v := ctx.Value(internal.ActiveSpanKey)
 	if s, ok := v.(*Span); ok {
 		// We may have a nil *Span wrapped in an interface in the GLS context stack,
