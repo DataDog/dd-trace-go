@@ -444,6 +444,25 @@ func TestSQLCommentCarrierDynamicService(t *testing.T) {
 	assert.Equal(t, "", c2.BaseHash)
 }
 
+// TestSQLCommentCarrierDynamicServiceNoContainerHash verifies that until the Agent has
+// reported a container tags hash, dynamic_service falls back to service-mode behavior:
+// service tags are injected but ddsh is not.
+func TestSQLCommentCarrierDynamicServiceNoContainerHash(t *testing.T) {
+	globalconfig.SetServiceName("my-svc")
+	defer globalconfig.SetServiceName("")
+	processtags.SetContainerTagsHash("")
+
+	c := &SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeDynamicService,
+		DBServiceName: "mydb",
+	}
+	require.NoError(t, c.Inject(nil))
+	assert.NotContains(t, c.Query, "ddsh", "ddsh must not be injected without a container hash")
+	assert.Empty(t, c.BaseHash)
+	assert.Contains(t, c.Query, "dddbs='mydb'", "service tags must still be injected (fallback to service mode)")
+}
+
 // TestSQLCommentCarrierFullModeNoHash verifies that DBMPropagationModeFull injects
 // traceparent but does NOT inject the container tags hash (ddsh), even when the hash
 // is non-empty.
