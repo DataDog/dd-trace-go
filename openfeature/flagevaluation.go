@@ -30,7 +30,7 @@ const (
 	defaultFlagEvalFlushInterval = 10 * time.Second
 
 	// flagEvaluationEndpoint is the EVP proxy endpoint for flag evaluation events.
-	flagEvaluationEndpoint = "/evp_proxy/v2/api/v2/flagevaluations"
+	flagEvaluationEndpoint = "/evp_proxy/v2/api/v2/flagevaluation"
 
 	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH.
 	maxContextFields = 256

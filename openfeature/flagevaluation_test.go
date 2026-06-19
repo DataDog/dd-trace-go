@@ -34,6 +34,13 @@ func mustMarshalJSONMap(t *testing.T, payload any) map[string]any {
 	return m
 }
 
+func TestFlagEvaluationEndpointUsesTrackName(t *testing.T) {
+	const want = "/evp_proxy/v2/api/v2/flagevaluation"
+	if flagEvaluationEndpoint != want {
+		t.Fatalf("flagEvaluationEndpoint = %q, want %q", flagEvaluationEndpoint, want)
+	}
+}
+
 // TestFlattenAndPruneContextEquivalence verifies the merged single-pass
 // flattenAndPruneContext must produce a pruned result byte-for-byte identical to the prior
 // two-step flattenContext + pruneContext pipeline across nested, oversized, and >256-field
