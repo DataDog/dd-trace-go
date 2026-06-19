@@ -73,7 +73,7 @@ func TestSampler(t *testing.T) {
 		"large": {
 			KeySpace:         testVector[:config.MaxItemCount],
 			SimulatedTPS:     1000,
-			SamplesPerWorker: config.MaxItemCount << 6, // load≈0.5, moderate per Hit; 2× cut
+			SamplesPerWorker: config.MaxItemCount << 7, // load≈0.5, moderate per Hit
 			ExpectedKeepRate: .0145,
 			AllowedDelta:     .001, // Small chance of collision here... so a bit more wiggle room...
 		},
