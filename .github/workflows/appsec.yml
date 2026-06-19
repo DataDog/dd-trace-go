@@ -306,7 +306,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: tmp_appsec
-          tags: go:,arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
 
   # Same tests but on the official golang container for linux
   golang-linux-container:

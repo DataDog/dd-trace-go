@@ -31,7 +31,8 @@ jobs:
   test-multi-os:
     runs-on: "${{ inputs.runs-on }}"
     env:
-      REPORT: gotestsum-report.xml # path to where test results will be saved
+      TEST_RESULT_PATH: /tmp/test-results
+      REPORT: /tmp/test-results/gotestsum-report.xml # path to where test results will be saved
       DD_APPSEC_WAF_TIMEOUT: 1h
     steps:
       - name: Normalize github.workspace for Windows
@@ -70,6 +71,7 @@ jobs:
         shell: bash
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
+          mkdir -p "${TEST_RESULT_PATH}"
           go list ./... | grep -v -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt
           # shellcheck disable=SC2046
           gotestsum --junitfile "${REPORT}" -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
@@ -87,7 +89,7 @@ jobs:
         uses: ./.github/actions/dd-ci-upload
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
-          path: ./
+          path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
       - name: Upload Coverage
