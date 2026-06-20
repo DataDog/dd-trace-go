@@ -145,20 +145,65 @@ func TestIsRuntimeDefault(t *testing.T) {
 	}
 }
 
-// TestRecordUsesAggregationTime verifies aggregated entries receive a worker-side timestamp.
-func TestRecordUsesAggregationTime(t *testing.T) {
-	before := time.Now().UnixMilli()
-	w := setupTestWriter(t)
-	w.record(makeHookContext("flag-z", "user-3", nil),
-		makeEvalDetails("on", of.TargetingMatchReason, ""))
-	w.aggregate(<-w.events)
-	after := time.Now().UnixMilli()
-
-	for _, e := range w.aggregator.full {
-		if e.firstEvaluation < before || e.firstEvaluation > after {
-			t.Errorf("first=%d not within aggregation window [%d,%d]", e.firstEvaluation, before, after)
-		}
+// TestExtractEvalDetailsReadsEvalTime verifies provider-stamped evaluation time
+// is read into evalDetails.evalTimeMs, and is 0 when absent.
+func TestExtractEvalDetailsReadsEvalTime(t *testing.T) {
+	const evalTime int64 = 1_717_171_717_123
+	tests := []struct {
+		name string
+		md   of.FlagMetadata
+		want int64
+	}{
+		{"eval-time present", of.FlagMetadata{metadataEvalTimeKey: evalTime}, evalTime},
+		{"eval-time present alongside allocation key", of.FlagMetadata{metadataAllocationKey: "alloc-1", metadataEvalTimeKey: evalTime}, evalTime},
+		{"eval-time absent", of.FlagMetadata{metadataAllocationKey: "alloc-1"}, 0},
+		{"nil metadata", nil, 0},
 	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hookCtx := makeHookContext("flag-x", "user-1", nil)
+			details := makeEvalDetails("on", of.TargetingMatchReason, "", tc.md)
+			if got := extractEvalDetails(hookCtx, details).evalTimeMs; got != tc.want {
+				t.Errorf("evalTimeMs = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRecordUsesEvalTimeFromMetadata verifies record() stamps the aggregated entry's
+// first/last evaluation from provider-supplied eval-time, and falls back to hook time when absent.
+func TestRecordUsesEvalTimeFromMetadata(t *testing.T) {
+	t.Run("uses provider eval-time", func(t *testing.T) {
+		const evalTime int64 = 1_700_000_000_000
+		w := setupTestWriter(t)
+		w.record(makeHookContext("flag-y", "user-2", nil),
+			makeEvalDetails("on", of.TargetingMatchReason, "", of.FlagMetadata{metadataEvalTimeKey: evalTime}))
+		w.aggregate(<-w.events)
+
+		if len(w.aggregator.full) != 1 {
+			t.Fatalf("expected 1 full-tier entry, got %d", len(w.aggregator.full))
+		}
+		for _, e := range w.aggregator.full {
+			if e.firstEvaluation != evalTime || e.lastEvaluation != evalTime {
+				t.Errorf("entry first/last = %d/%d, want %d", e.firstEvaluation, e.lastEvaluation, evalTime)
+			}
+		}
+	})
+
+	t.Run("falls back to hook time when absent", func(t *testing.T) {
+		before := time.Now().UnixMilli()
+		w := setupTestWriter(t)
+		w.record(makeHookContext("flag-z", "user-3", nil),
+			makeEvalDetails("on", of.TargetingMatchReason, ""))
+		w.aggregate(<-w.events)
+		after := time.Now().UnixMilli()
+
+		for _, e := range w.aggregator.full {
+			if e.firstEvaluation < before || e.firstEvaluation > after {
+				t.Errorf("fallback first=%d not within hook window [%d,%d]", e.firstEvaluation, before, after)
+			}
+		}
+	})
 }
 
 // TestFlagEvaluationHookFinally verifies that the Finally hook records an entry for

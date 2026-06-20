@@ -82,7 +82,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 			}
 
 			// Build metadata for exposure tracking
-			metadata := make(map[string]any, 2)
+			metadata := make(map[string]any, 3)
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)

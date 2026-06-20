@@ -250,6 +250,7 @@ type flagEvaluationWriter struct {
 type evalEvent struct {
 	d                 evalDetails
 	evaluationContext of.EvaluationContext
+	evaluationTimeMs  int64
 }
 
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
@@ -261,6 +262,7 @@ type evalDetails struct {
 	targetingKey   string
 	errorMessage   string
 	runtimeDefault bool
+	evalTimeMs     int64
 }
 
 // newFlagEvaluationWriter creates a new flag evaluation writer.
@@ -485,9 +487,14 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 		return
 	}
 	d := extractEvalDetails(hookContext, details)
+	evaluationTimeMs := d.evalTimeMs
+	if evaluationTimeMs == 0 {
+		evaluationTimeMs = time.Now().UnixMilli()
+	}
 	ev := evalEvent{
 		d:                 d,
 		evaluationContext: hookContext.EvaluationContext(),
+		evaluationTimeMs:  evaluationTimeMs,
 	}
 	select {
 	case w.events <- ev:
@@ -499,7 +506,7 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
 func (w *flagEvaluationWriter) aggregate(ev evalEvent) {
 	contextAttrs := flattenAndPruneContext(ev.evaluationContext.Attributes())
-	w.aggregator.add(ev.d, contextAttrs, time.Now().UnixMilli())
+	w.aggregator.add(ev.d, contextAttrs, ev.evaluationTimeMs)
 }
 
 // flattenAndPruneContext produces the pruned context map for EVP aggregation in a single
@@ -869,6 +876,7 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 	if errMsg == "" && details.ErrorCode != "" {
 		errMsg = string(details.ErrorCode)
 	}
+	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
 	return evalDetails{
 		flagKey:        hookContext.FlagKey(),
 		variant:        details.Variant,
@@ -876,5 +884,6 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		targetingKey:   hookContext.EvaluationContext().TargetingKey(),
 		errorMessage:   errMsg,
 		runtimeDefault: isRuntimeDefault(details),
+		evalTimeMs:     evalTimeMs,
 	}
 }
