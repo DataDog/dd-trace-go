@@ -19,11 +19,6 @@ const (
 	// Metadata keys for exposure tracking
 	metadataAllocationKey = "dd.allocation.key"
 	metadataDoLogKey      = "dd.doLog"
-	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
-	// DatadogProvider.evaluate at evaluation entry — the most-correct evaluation time — so the EVP
-	// flagevaluation hook records eval-time rather than the later, slightly-incorrect hook-fire
-	// time. Read back in extractEvalDetails (flagevaluation.go).
-	metadataEvalTimeKey = "dd.eval.timestamp_ms"
 )
 
 // exposureHook implements the OpenFeature Hook interface to track feature flag exposures.

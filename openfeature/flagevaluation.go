@@ -246,12 +246,10 @@ type flagEvaluationWriter struct {
 	enqueueMu  sync.RWMutex
 }
 
-// evalEvent is the bounded snapshot the Finally hook hands to the worker. contextAttrs is already
-// flattened and pruned, so the async queue never buffers the caller's raw evaluation context.
+// evalEvent is the bounded snapshot the Finally hook hands to the worker.
 type evalEvent struct {
-	d                evalDetails
-	contextAttrs     map[string]any
-	evaluationTimeMs int64
+	d                 evalDetails
+	evaluationContext of.EvaluationContext
 }
 
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
@@ -263,10 +261,6 @@ type evalDetails struct {
 	targetingKey   string
 	errorMessage   string
 	runtimeDefault bool
-	// evalTimeMs is the evaluation timestamp (UnixMilli) captured by the provider at eval entry
-	// and passed through flag metadata. 0 when absent (e.g. a non-Datadog provider), in which case
-	// record() falls back to the hook-fire time.
-	evalTimeMs int64
 }
 
 // newFlagEvaluationWriter creates a new flag evaluation writer.
@@ -471,10 +465,10 @@ func baseFlagEvaluationEvent(flagKey string, e *evaluationEntry, flushTimeMs int
 }
 
 // record runs on the evaluation hot path (the Finally hook). It does only cheap scalar
-// extraction plus a bounded context snapshot, then a non-blocking enqueue — no aggregation
-// happens here; the background worker does that. If the queue is full the event is dropped
-// and counted (best-effort), never blocking the evaluation. Called from the Finally hook after
-// every evaluation.
+// extraction plus an immutable context handoff, then a non-blocking enqueue — no aggregation
+// or context flattening happens here; the background worker does that. If the queue is full
+// the event is dropped and counted (best-effort), never blocking the evaluation. Called from
+// the Finally hook after every evaluation.
 func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
 	w.enqueueMu.RLock()
 	defer w.enqueueMu.RUnlock()
@@ -491,17 +485,9 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 		return
 	}
 	d := extractEvalDetails(hookContext, details)
-	// Use the evaluation time captured by the provider (most-correct; see metadataEvalTimeKey).
-	// Fall back to the hook-fire time only when absent (e.g. a non-Datadog provider that did not
-	// stamp it), so the first/last_evaluation bounds are always populated.
-	evaluationTimeMs := d.evalTimeMs
-	if evaluationTimeMs == 0 {
-		evaluationTimeMs = time.Now().UnixMilli()
-	}
 	ev := evalEvent{
-		d:                d,
-		contextAttrs:     flattenAndPruneContext(hookContext.EvaluationContext().Attributes()),
-		evaluationTimeMs: evaluationTimeMs,
+		d:                 d,
+		evaluationContext: hookContext.EvaluationContext(),
 	}
 	select {
 	case w.events <- ev:
@@ -512,7 +498,8 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
 func (w *flagEvaluationWriter) aggregate(ev evalEvent) {
-	w.aggregator.add(ev.d, ev.contextAttrs, ev.evaluationTimeMs)
+	contextAttrs := flattenAndPruneContext(ev.evaluationContext.Attributes())
+	w.aggregator.add(ev.d, contextAttrs, time.Now().UnixMilli())
 }
 
 // flattenAndPruneContext produces the pruned context map for EVP aggregation in a single
@@ -536,25 +523,8 @@ func flattenAndPruneContext(attrs map[string]any) map[string]any {
 	if len(attrs) == 0 {
 		return nil
 	}
-	if len(attrs) <= maxContextFields {
-		needsFlattenOrPrune := false
-		for _, v := range attrs {
-			switch x := v.(type) {
-			case string:
-				if len(x) > maxFieldLength {
-					needsFlattenOrPrune = true
-				}
-			case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
-			default:
-				needsFlattenOrPrune = true
-			}
-			if needsFlattenOrPrune {
-				break
-			}
-		}
-		if !needsFlattenOrPrune {
-			return attrs
-		}
+	if contextFitsWithoutFlattening(attrs) {
+		return attrs
 	}
 
 	flat := make(map[string]any, len(attrs))
@@ -607,6 +577,26 @@ func flattenAndPruneContext(attrs map[string]any) map[string]any {
 		return nil
 	}
 	return out
+}
+
+func contextFitsWithoutFlattening(attrs map[string]any) bool {
+	if len(attrs) > maxContextFields {
+		return false
+	}
+	for _, v := range attrs {
+		switch x := v.(type) {
+		case string:
+			if len(x) > maxFieldLength {
+				return false
+			}
+		case int, int8, int16, int32, int64,
+			uint, uint8, uint16, uint32, uint64,
+			float32, float64, bool:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // drainAndFlush processes any buffered events and performs a final flush. Called by the
@@ -879,8 +869,6 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 	if errMsg == "" && details.ErrorCode != "" {
 		errMsg = string(details.ErrorCode)
 	}
-	// Evaluation time, stamped by DatadogProvider.evaluate at eval entry. 0 when absent.
-	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
 	return evalDetails{
 		flagKey:        hookContext.FlagKey(),
 		variant:        details.Variant,
@@ -888,6 +876,5 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		targetingKey:   hookContext.EvaluationContext().TargetingKey(),
 		errorMessage:   errMsg,
 		runtimeDefault: isRuntimeDefault(details),
-		evalTimeMs:     evalTimeMs,
 	}
 }

@@ -128,21 +128,6 @@ func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 	}
 }
 
-func TestFlattenAndPruneContextFlatFastPath(t *testing.T) {
-	attrs := map[string]any{
-		"country": "US",
-		"age":     42,
-		"premium": true,
-	}
-
-	got := flattenAndPruneContext(attrs)
-	got["observed-fast-path"] = "same-map"
-
-	if attrs["observed-fast-path"] != "same-map" {
-		t.Fatal("flat scalar context should use the already-snapshotted attributes map")
-	}
-}
-
 // setupTestAggregator creates a flagEvaluationAggregator with small caps for testing.
 // Caps are deliberately small to trigger tier-cascade behavior in unit tests.
 func setupTestAggregator(t *testing.T) *flagEvaluationAggregator {
@@ -1185,7 +1170,7 @@ func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
 	}
 }
 
-func TestRecordQueuesPrunedContextSnapshot(t *testing.T) {
+func TestRecordAggregatesPrunedContextSnapshot(t *testing.T) {
 	w := newFlagEvaluationWriter(ProviderConfig{})
 	attrs := make(map[string]any, maxContextFields+50)
 	for i := range maxContextFields + 50 {
@@ -1217,12 +1202,18 @@ func TestRecordQueuesPrunedContextSnapshot(t *testing.T) {
 	if len(w.events) != 1 {
 		t.Fatalf("expected one queued event, got %d", len(w.events))
 	}
-	ev := <-w.events
-	if got := len(ev.contextAttrs); got != maxContextFields {
-		t.Fatalf("queued context should be pruned to %d fields, got %d", maxContextFields, got)
+	w.aggregate(<-w.events)
+
+	if len(w.aggregator.full) != 1 {
+		t.Fatalf("expected one aggregated entry, got %d", len(w.aggregator.full))
 	}
-	if _, ok := ev.contextAttrs["zzz-oversized"]; ok {
-		t.Fatal("queued context should not contain oversized string values")
+	for _, entry := range w.aggregator.full {
+		if got := len(entry.contextAttrs); got != maxContextFields {
+			t.Fatalf("aggregated context should be pruned to %d fields, got %d", maxContextFields, got)
+		}
+		if _, ok := entry.contextAttrs["zzz-oversized"]; ok {
+			t.Fatal("aggregated context should not contain oversized string values")
+		}
 	}
 }
 

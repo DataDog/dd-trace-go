@@ -262,9 +262,10 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 }
 
-// TestEvaluateStampsEvalTimeMetadata verifies the provider stamps the evaluation time into
-// FlagMetadata on every path so EVP first/last bounds use eval-time.
-func TestEvaluateStampsEvalTimeMetadata(t *testing.T) {
+// TestEvaluateDoesNotStampEvalTimeMetadata verifies the provider does not add EVP-only
+// timestamp metadata to normal evaluation results.
+func TestEvaluateDoesNotStampEvalTimeMetadata(t *testing.T) {
+	const metadataEvalTimeKey = "dd.eval.timestamp_ms"
 	provider := newDatadogProvider(ProviderConfig{})
 	provider.updateConfiguration(createTestConfig())
 	ctx := context.Background()
@@ -282,17 +283,10 @@ func TestEvaluateStampsEvalTimeMetadata(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			before := time.Now().UnixMilli()
 			result := provider.BooleanEvaluation(ctx, tc.flagKey, false, tc.flatCtx)
-			after := time.Now().UnixMilli()
-
-			ts, ok := result.FlagMetadata[metadataEvalTimeKey].(int64)
-			if !ok {
-				t.Fatalf("FlagMetadata[%q] missing or not int64 on %q path; metadata=%v",
+			if _, ok := result.FlagMetadata[metadataEvalTimeKey]; ok {
+				t.Fatalf("FlagMetadata[%q] should not be stamped on %q path; metadata=%v",
 					metadataEvalTimeKey, tc.name, result.FlagMetadata)
-			}
-			if ts < before || ts > after {
-				t.Errorf("eval-time %d not within evaluation window [%d,%d]", ts, before, after)
 			}
 		})
 	}

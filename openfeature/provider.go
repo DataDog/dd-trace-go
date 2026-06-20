@@ -469,18 +469,11 @@ func (p *DatadogProvider) evaluate(
 	flagKey string,
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
-) (res evaluationResult) {
-	// Capture the evaluation time once, at evaluation entry. It is reused for allocation
-	// time-window checks and stamped into result metadata so EVP first/last bounds use eval-time.
+) evaluationResult {
+	// Capture the evaluation time once, at evaluation entry. It is used for allocation
+	// time-window checks.
 	evalNow := time.Now()
 	log.Debug("openfeature: evaluating flag %q", flagKey)
-	defer func() {
-		if res.Metadata == nil {
-			res.Metadata = make(map[string]any, 1)
-		}
-		res.Metadata[metadataEvalTimeKey] = evalNow.UnixMilli()
-		log.Debug("openfeature: evaluated flag %q: value=%v, reason=%s, error=%v", flagKey, res.Value, res.Reason, res.Error)
-	}()
 
 	// Check if context was cancelled before starting evaluation
 	select {
