@@ -62,6 +62,12 @@ func makeEvalDetails(variant string, reason of.Reason, errorCode of.ErrorCode, m
 	return d
 }
 
+type panicStringer struct{}
+
+func (panicStringer) String() string {
+	panic("String must not be called when the queue is already full")
+}
+
 // TestIsRuntimeDefault verifies the runtime-default detection rule.
 // Signal: absent variant key. Our evaluator sets a variant ONLY on a matched
 // allocation (TARGETING_MATCH/SPLIT/STATIC); every DEFAULT/DISABLED/ERROR path
@@ -325,5 +331,24 @@ func TestFlagEvaluationBackpressureDrops(t *testing.T) {
 
 	if got := w.dropped.Load(); got != overflow {
 		t.Errorf("expected exactly %d dropped evaluations once the queue filled, got %d", overflow, got)
+	}
+}
+
+func TestFlagEvaluationBackpressureDropsBeforeContextSnapshot(t *testing.T) {
+	w := setupTestWriter(t)
+	for range cap(w.events) {
+		w.events <- evalEvent{}
+	}
+
+	hookCtx := makeHookContext("bp-flag", "user-1", map[string]any{"expensive": panicStringer{}})
+	details := makeEvalDetails("on", of.TargetingMatchReason, "")
+
+	w.record(hookCtx, details)
+
+	if got := w.dropped.Load(); got != 1 {
+		t.Fatalf("expected one dropped evaluation when queue is already full, got %d", got)
+	}
+	if got := len(w.events); got != cap(w.events) {
+		t.Fatalf("full queue length changed: got %d, want %d", got, cap(w.events))
 	}
 }

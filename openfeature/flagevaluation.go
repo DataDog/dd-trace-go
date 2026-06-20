@@ -364,7 +364,7 @@ func (w *flagEvaluationWriter) stop() {
 func (w *flagEvaluationWriter) flush() {
 	// Surface best-effort backpressure drops (queue full) as an observable signal.
 	if d := w.dropped.Swap(0); d > 0 {
-		log.Warn("openfeature: flag evaluation queue full — dropped %d evaluation(s) under backpressure (best-effort telemetry)", d)
+		log.Debug("openfeature: flag evaluation queue full — dropped %d evaluation(s) under backpressure (best-effort telemetry)", d)
 	}
 
 	w.aggregator.mu.Lock()
@@ -486,6 +486,10 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 		w.dropped.Add(1)
 		return
 	}
+	if len(w.events) == cap(w.events) {
+		w.dropped.Add(1)
+		return
+	}
 	d := extractEvalDetails(hookContext, details)
 	// Use the evaluation time captured by the provider (most-correct; see metadataEvalTimeKey).
 	// Fall back to the hook-fire time only when absent (e.g. a non-Datadog provider that did not
@@ -531,6 +535,26 @@ func (w *flagEvaluationWriter) aggregate(ev evalEvent) {
 func flattenAndPruneContext(attrs map[string]any) map[string]any {
 	if len(attrs) == 0 {
 		return nil
+	}
+	if len(attrs) <= maxContextFields {
+		needsFlattenOrPrune := false
+		for _, v := range attrs {
+			switch x := v.(type) {
+			case string:
+				if len(x) > maxFieldLength {
+					needsFlattenOrPrune = true
+				}
+			case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
+			default:
+				needsFlattenOrPrune = true
+			}
+			if needsFlattenOrPrune {
+				break
+			}
+		}
+		if !needsFlattenOrPrune {
+			return attrs
+		}
 	}
 
 	flat := make(map[string]any, len(attrs))

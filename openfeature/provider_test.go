@@ -263,8 +263,7 @@ func TestNewDatadogProvider(t *testing.T) {
 }
 
 // TestEvaluateStampsEvalTimeMetadata verifies the provider stamps the evaluation time into
-// FlagMetadata (metadataEvalTimeKey) on EVERY path — matched, default, disabled, not-found — so
-// the EVP flagevaluation hook records eval-time rather than the later hook-fire time.
+// FlagMetadata on every path so EVP first/last bounds use eval-time.
 func TestEvaluateStampsEvalTimeMetadata(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
 	provider.updateConfiguration(createTestConfig())

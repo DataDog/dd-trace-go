@@ -128,6 +128,21 @@ func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 	}
 }
 
+func TestFlattenAndPruneContextFlatFastPath(t *testing.T) {
+	attrs := map[string]any{
+		"country": "US",
+		"age":     42,
+		"premium": true,
+	}
+
+	got := flattenAndPruneContext(attrs)
+	got["observed-fast-path"] = "same-map"
+
+	if attrs["observed-fast-path"] != "same-map" {
+		t.Fatal("flat scalar context should use the already-snapshotted attributes map")
+	}
+}
+
 // setupTestAggregator creates a flagEvaluationAggregator with small caps for testing.
 // Caps are deliberately small to trigger tier-cascade behavior in unit tests.
 func setupTestAggregator(t *testing.T) *flagEvaluationAggregator {

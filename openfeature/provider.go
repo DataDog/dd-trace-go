@@ -470,17 +470,11 @@ func (p *DatadogProvider) evaluate(
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
 ) (res evaluationResult) {
-	// Capture the evaluation time once, at evaluation entry — the most-correct "eval time". It is
-	// reused for the allocation time-window checks (passed into evaluateFlag) and stamped into the
-	// result metadata below, so the EVP flagevaluation hook records eval-time instead of the later
-	// hook-fire time, with no extra time.Now() on the eval path.
+	// Capture the evaluation time once, at evaluation entry. It is reused for allocation
+	// time-window checks and stamped into result metadata so EVP first/last bounds use eval-time.
 	evalNow := time.Now()
 	log.Debug("openfeature: evaluating flag %q", flagKey)
 	defer func() {
-		// Stamp eval-time into metadata on EVERY return path (matched, default, disabled, error,
-		// ctx-cancelled, no-config, not-found). On the matched path the metadata map already exists
-		// (allocation key + doLog), so this only adds a key; on other paths it allocates a 1-entry
-		// map. Read back by extractEvalDetails for the EVP first/last_evaluation bounds.
 		if res.Metadata == nil {
 			res.Metadata = make(map[string]any, 1)
 		}
