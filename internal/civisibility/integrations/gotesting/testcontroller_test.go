@@ -14,9 +14,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -41,7 +44,7 @@ func TestMain(m *testing.M) {
 
 	const scenarioStarted = "**** [Scenario %s started] ****\n\n"
 	// We need to spawn separated test process for each scenario
-	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection"}
+	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection", "TestFlakyTestRetriesWithTransientSettingsFailure"}
 	if coverageModeSupportsITRBackfill() {
 		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
 	}
@@ -67,8 +70,11 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[6], false) {
 		fmt.Printf(scenarioStarted, scenarios[6])
 		runParallelEarlyFlakyTestDetectionTests(m)
-	} else if len(scenarios) > 7 && internal.BoolEnv(scenarios[7], false) {
+	} else if internal.BoolEnv(scenarios[7], false) {
 		fmt.Printf(scenarioStarted, scenarios[7])
+		runFlakyTestRetriesWithTransientSettingsFailureTests(m)
+	} else if len(scenarios) > 8 && internal.BoolEnv(scenarios[8], false) {
+		fmt.Printf(scenarioStarted, scenarios[8])
 		runIntelligentTestRunnerWithCoverageBackfillTests(m)
 	} else if internal.BoolEnv("Bypass", false) {
 		os.Exit(m.Run())
@@ -270,6 +276,97 @@ func runFlakyTestRetriesTests(m *testing.M) {
 
 	// check logs
 	checkLogs()
+
+	os.Exit(0)
+}
+
+// runFlakyTestRetriesWithTransientSettingsFailureTests reproduces the root cause of the flaky
+// TestRetryWithPanic crash: a transient failure on the settings fetch.
+//
+// It stands up the same backend as the flaky-test-retries scenario but routes the tracer through
+// a fault-injecting proxy that, on the first settings request, returns a 200 OK response claiming
+// gzip encoding while carrying a body that cannot be decompressed. This is exactly the transient
+// body/decompress failure that the fetch hardening now retries.
+//
+// With the hardening in place the client retries the settings call, the flaky-retry wrapper is
+// reliably installed, and the synthetic panic/fail tests run wrapped (4 executions each) so the
+// process exits cleanly. Without it the first failure permanently disables every feature, the
+// synthetic tests run unwrapped, and TestRetryWithPanic crashes this subprocess — which the parent
+// TestMain observes as a non-zero exit code.
+func runFlakyTestRetriesWithTransientSettingsFailureTests(m *testing.M) {
+	// Backend mock identical to the standard flaky-test-retries scenario.
+	backend := setUpHTTPServer(true, true, false, &net.KnownTestsResponseData{
+		Tests: net.KnownTestsResponseDataModules{
+			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
+				"reflections_test.go": []string{
+					"TestGetFieldPointerFrom",
+					"TestGetInternalTestArray",
+					"TestGetInternalBenchmarkArray",
+					"TestCommonPrivateFields_AddLevel",
+					"TestGetBenchmarkPrivateFields",
+				},
+			},
+		},
+	},
+		false, nil,
+		false, nil,
+		false,
+		nil)
+	defer backend.Close()
+
+	backendURL, err := url.Parse(backend.URL)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse backend url: %s", err))
+	}
+	proxy := httputil.NewSingleHostReverseProxy(backendURL)
+
+	// Fail the first settings request with an undecodable gzip body, then proxy everything
+	// (including the retry) to the real backend.
+	var settingsFailed atomic.Bool
+	faulty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/libraries/tests/services/setting" && settingsFailed.CompareAndSwap(false, true) {
+			log.Debug("MockApi injecting transient settings failure (undecodable gzip body)")
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set(net.HeaderContentEncoding, net.ContentEncodingGzip)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("this is not valid gzip data"))
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	defer faulty.Close()
+
+	// Point the tracer at the fault-injecting proxy instead of the backend.
+	os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, faulty.URL)
+
+	// set a custom retry count
+	os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "10")
+
+	// initialize the mock tracer for doing assertions on the finished spans
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+
+	// execute the tests; the suite must not crash even though the settings fetch failed once
+	exitCode := RunM(m)
+	if exitCode != 0 {
+		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+	}
+
+	// the transient failure must actually have been exercised
+	if !settingsFailed.Load() {
+		panic("expected the settings endpoint to have been called at least once")
+	}
+
+	// get all finished spans
+	finishedSpans := mTracer.FinishedSpans()
+	showResourcesNameFromSpans(finishedSpans)
+
+	// The settings fetch was retried, so the flaky-retry wrapper owns the synthetic tests: they
+	// panic/fail on the first executions and pass after the auto retries, producing 4 executions
+	// each. This proves the wrapper was reliably installed despite the transient failure.
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 6)
 
 	os.Exit(0)
 }
