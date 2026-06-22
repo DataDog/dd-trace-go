@@ -552,6 +552,7 @@ func TestTraceProtocol(t *testing.T) {
 	})
 
 	t.Run("invalid, with endpoint", func(t *testing.T) {
+        t.Setenv("DD_TRACE_AGENT_PROTOCOL_VERSION", "random")
 		url := mockAgentEndpoint(t, "/v1.0/traces")
 
 		cfg, err := newTestConfig(

@@ -548,6 +548,8 @@ func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyVa
 // It is called from push() to perform incremental encoding while the spans
 // are still valid (before any span-pool release).
 func (p *payloadV1) encodeTraceChunk(chunk traceChunk, st *stringTable) {
+	// droppedTrace (field 5) is intentionally omitted: it is set by the agent,
+	// not by tracers. Emitting it causes the agent to reject the payload.
 	p.buf = msgp.AppendMapHeader(p.buf, 6) // 6 fields per chunk
 
 	// priority
