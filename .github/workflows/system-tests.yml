@@ -23,7 +23,7 @@ on:
         ref:
             description: 'System Tests ref/tag/branch'
             required: true
-            default: main
+            default: hannahkm/fix-span-component
             type: string
   schedule:
     - cron:  '00 04 * * *'
