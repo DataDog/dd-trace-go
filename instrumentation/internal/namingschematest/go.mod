@@ -366,6 +366,11 @@ require (
 // caused by the IBM/sarama fork.
 replace github.com/Shopify/sarama => github.com/Shopify/sarama v1.38.1
 
+// Pin github.com/armon/go-metrics to the last version available to avoid breaking changes
+// due to the migration to github.com/hashicorp/go-metrics.
+// This will be a no-op once hashicorp/consul/api is updated to use the new go-metrics package.
+replace github.com/armon/go-metrics => github.com/armon/go-metrics v0.4.1
+
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../../contrib/99designs/gqlgen
 
 replace github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 => ../../../contrib/IBM/sarama
