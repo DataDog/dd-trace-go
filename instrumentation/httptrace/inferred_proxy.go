@@ -238,7 +238,7 @@ func extractInferredPubsubContext(headers http.Header) *pubsubContext {
 func startInferredPubsubPushSubscriptionSpan(pubsubContex *pubsubContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
 	configService := globalconfig.ServiceName()
 	spanName := "pubsub.receive"
-	component := "cloud.google.com/go/pubsub"
+	component := "net/http"
 	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+1)
 	copy(optsLocal, opts)
 
