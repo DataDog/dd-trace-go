@@ -928,11 +928,11 @@ func (t *trace) finishedOneLocked(s *Span) {
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(leftIdx))
 
-	// #incident-46344 -- if we set metrics and tags on a different span than what was passed into this function,
-	// we need to lock this new span. However, to preserve lock ordering (span.mu -> trace.mu), we must
-	// release trace.mu before acquiring fSpan.mu.
+	// #incident-46344 -- the first span in the chunk (fSpan) may differ from the
+	// span being finished; the chunk-level metrics and tags are set on it below.
+	// See the locking note before that update for the span.mu/fSpan.mu ordering.
 	fSpan := finishedSpans[0]
-	currentSpanIsFirstInChunk := s == fSpan
+	finishingSpanIsFirstInChunk := s == fSpan
 	needsFirstSpanTags := s != originalFirst
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 	spansToRelease := finishedSpans
@@ -954,11 +954,22 @@ func (t *trace) finishedOneLocked(s *Span) {
 	t.finished = 0 // important, because a buffer can be used for several flushes
 	t.mu.Unlock()
 
-	// Set sampling priority and trace-level tags on first span in chunk
-	// If fSpan == s, lock is already held by caller; otherwise acquire it
-	if !currentSpanIsFirstInChunk {
+	// Set sampling priority and trace-level tags on the first span in the chunk.
+	//
+	// When fSpan != s, fSpan is a different span of the same lock class as s.
+	// We must not hold s.mu while locking fSpan.mu: nesting two Span.mu in
+	// inconsistent order across goroutines is a deadlock cycle (and fSpan may
+	// still be inside its own finish() -> tracer.submit, reading its meta/metrics
+	// under fSpan.mu, so the lock is load-bearing, not vestigial). Release s.mu
+	// around the fSpan update, then re-lock it before submitChunkWithTracer: the
+	// re-lock is required because Span.clear() acquires s.mu to serialize after
+	// finish()'s deferred unlock, and the channel send inside the submit must
+	// happen while s.mu is still held.
+	//
+	// When fSpan == s, the caller's s.mu is already held and is the right lock.
+	if !finishingSpanIsFirstInChunk {
+		s.mu.Unlock()
 		fSpan.mu.Lock()
-		defer fSpan.mu.Unlock()
 	}
 	if priority != nil {
 		fSpan.setMetricLocked(keySamplingPriority, *priority)
@@ -967,6 +978,10 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RLock()
 		t.setTraceTagsLocked(fSpan)
 		t.mu.RUnlock()
+	}
+	if !finishingSpanIsFirstInChunk {
+		fSpan.mu.Unlock()
+		s.mu.Lock()
 	}
 
 	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease})
