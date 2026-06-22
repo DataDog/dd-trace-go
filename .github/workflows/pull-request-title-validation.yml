@@ -13,6 +13,7 @@ permissions: {}
 
 jobs:
   check-title:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     steps:
       - name: Fail if PR title is not a Conventional Commit

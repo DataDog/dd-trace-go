@@ -67,6 +67,7 @@ jobs:
   # validated again in case of changes. To do so, you can click on the @actions/cache
   # actions logs and look for the "Cache hit" or "Cache miss" messages.
   go-mod-caching:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     name: Prepare Go modules cache
     runs-on: ubuntu-latest-16-cores
     outputs:
@@ -477,7 +478,7 @@ jobs:
 
   test-app-smoke-tests:
     name: Smoke Tests
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.owner == 'DataDog'
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}

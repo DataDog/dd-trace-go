@@ -35,6 +35,7 @@ permissions:
 
 jobs:
   warm-repo-cache:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.pin.outputs.sha }}
@@ -475,7 +476,10 @@ jobs:
       - system-tests-docker-images
       - tracer-release
     runs-on: ubuntu-latest
-    if: '!cancelled()'
+    if: |                                                                                                                                          
+      needs.system-tests.result != 'cancelled' && needs.system-tests.result != 'skipped'                                                           
+      && needs.system-tests-docker-images.result != 'cancelled' && needs.system-tests-docker-images.result != 'skipped'                            
+      && needs.tracer-release.result != 'cancelled' && needs.tracer-release.result != 'skipped'    
     steps:
       - name: Success
         if: |

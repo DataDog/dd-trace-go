@@ -14,6 +14,7 @@ on:
   pull_request:
 jobs:
   analyze:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     name: Analyze
     runs-on: ubuntu-latest
     permissions:
