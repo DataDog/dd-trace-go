@@ -16,80 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDynamicConfigSet(t *testing.T) {
-	t.Run("receives current value and replaces it with returned value", func(t *testing.T) {
-		dc := newDynamicConfig("test", 10, func(T int) bool { return true }, equal[int])
-
-		dc.set(func(current int) int {
-			assert.Equal(t, 10, current)
-			return current + 5
-		})
-
-		assert.Equal(t, 15, dc.get())
-	})
-
-	t.Run("value type update is not lost", func(t *testing.T) {
-		// This is the key behavioral difference from the old func(T) signature:
-		// with value types, in-place mutation has no effect — only the return
-		// value persists.
-		dc := newDynamicConfig("test", 0, func(T int) bool { return true }, equal[int])
-
-		dc.set(func(current int) int {
-			return 42
-		})
-
-		assert.Equal(t, 42, dc.get())
-	})
-
-	t.Run("map reference type update", func(t *testing.T) {
-		init := map[string]any{"a": 1}
-		dc := newDynamicConfig("test", init, func(T map[string]any) bool { return true }, equalMap[string])
-
-		dc.set(func(current map[string]any) map[string]any {
-			current["b"] = 2
-			return current
-		})
-
-		got := dc.get()
-		assert.Equal(t, 1, got["a"])
-		assert.Equal(t, 2, got["b"])
-	})
-
-	t.Run("multiple set calls accumulate", func(t *testing.T) {
-		dc := newDynamicConfig("test", 0, func(T int) bool { return true }, equal[int])
-
-		dc.set(func(current int) int { return current + 1 })
-		dc.set(func(current int) int { return current + 10 })
-		dc.set(func(current int) int { return current + 100 })
-
-		assert.Equal(t, 111, dc.get())
-	})
-
-	t.Run("concurrent access is synchronized", func(t *testing.T) {
-		dc := newDynamicConfig("test", 0, func(T int) bool { return true }, equal[int])
-
-		var wg sync.WaitGroup
-		const n = 100
-		wg.Add(n)
-		for range n {
-			go func() {
-				defer wg.Done()
-				dc.set(func(current int) int {
-					return current + 1
-				})
-			}()
-		}
-		wg.Wait()
-
-		assert.Equal(t, n, dc.get())
-	})
-}
-
-// TestDynamicConfigSetCallerContract exercises the calling pattern used by
-// WithGlobalTag: mutate-and-return on a map reference type. This verifies
-// that the contract where callers must return the (possibly mutated) value
-// works correctly for real callers.
-func TestDynamicConfigSetCallerContract(t *testing.T) {
+// TestWithGlobalTagOption exercises the WithGlobalTag StartOption, which writes
+// through to internal/config via SetGlobalTag. It verifies that tags accumulate,
+// overwrite by key, and are safe under concurrent application.
+func TestWithGlobalTagOption(t *testing.T) {
 	t.Run("WithGlobalTag pattern accumulates tags", func(t *testing.T) {
 		c, err := newTestConfig()
 		require.NoError(t, err)
@@ -99,7 +29,7 @@ func TestDynamicConfigSetCallerContract(t *testing.T) {
 		WithGlobalTag("key2", "val2")(c)
 		WithGlobalTag("key3", "val3")(c)
 
-		tags := c.globalTags.get()
+		tags := c.internalConfig.GlobalTags()
 		assert.Equal(t, "val1", tags["key1"])
 		assert.Equal(t, "val2", tags["key2"])
 		assert.Equal(t, "val3", tags["key3"])
@@ -112,7 +42,7 @@ func TestDynamicConfigSetCallerContract(t *testing.T) {
 		WithGlobalTag("key", "original")(c)
 		WithGlobalTag("key", "updated")(c)
 
-		tags := c.globalTags.get()
+		tags := c.internalConfig.GlobalTags()
 		assert.Equal(t, "updated", tags["key"])
 	})
 
@@ -120,7 +50,7 @@ func TestDynamicConfigSetCallerContract(t *testing.T) {
 		c, err := newTestConfig()
 		require.NoError(t, err)
 
-		// Seed the globalTags so all goroutines use set(), not initGlobalTags.
+		// Seed a tag so all goroutines exercise the concurrent read-modify-write path.
 		WithGlobalTag("seed", true)(c)
 
 		const n = 50
@@ -134,7 +64,7 @@ func TestDynamicConfigSetCallerContract(t *testing.T) {
 		}
 		wg.Wait()
 
-		tags := c.globalTags.get()
+		tags := c.internalConfig.GlobalTags()
 		for i := range n {
 			assert.Equal(t, i, tags[fmt.Sprintf("k%d", i)])
 		}

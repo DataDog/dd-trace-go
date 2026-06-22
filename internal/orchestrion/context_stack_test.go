@@ -6,6 +6,7 @@
 package orchestrion
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -42,4 +43,141 @@ func TestPopCleansUpEmptyMapEntry(t *testing.T) {
 
 	_, exists := s[stackTestKey{}]
 	assert.False(t, exists, "empty stack entry should be removed from the map")
+}
+
+// fakeReclaimable is a test value that implements the reclaimable interface so
+// we can drive contextStack.Push's drain logic without depending on the tracer.
+type fakeReclaimable struct {
+	id        int
+	reclaimed bool
+}
+
+func (f *fakeReclaimable) GLSReclaimable() bool { return f.reclaimed }
+
+func TestPushReclaimsFinishedTopEntry(t *testing.T) {
+	s := contextStack(make(map[any][]any))
+
+	first := &fakeReclaimable{id: 1}
+	s.Push(stackTestKey{}, first)
+	require.Equal(t, 1, s.Depth(), "first push lands")
+
+	// Mark the top entry reclaimable, as a finished span would be. The next
+	// push must drop it instead of stacking on top, keeping depth at 1.
+	first.reclaimed = true
+	second := &fakeReclaimable{id: 2}
+	s.Push(stackTestKey{}, second)
+
+	assert.Equal(t, 1, s.Depth(), "reclaimable top entry should be dropped on push")
+	assert.Equal(t, second, s.Peek(stackTestKey{}), "new value should be on top")
+}
+
+func TestPushDrainsMultipleReclaimableEntries(t *testing.T) {
+	s := contextStack(make(map[any][]any))
+
+	// Several entries pile up while live (pushed on this goroutine, e.g. via
+	// ContextWithSpan), building real depth.
+	entries := make([]*fakeReclaimable, 5)
+	for i := range entries {
+		entries[i] = &fakeReclaimable{id: i}
+		s.Push(stackTestKey{}, entries[i])
+	}
+	require.Equal(t, 5, s.Depth(), "five live entries pushed")
+
+	// They all get finished elsewhere (no matching pop ran on this goroutine).
+	for _, e := range entries {
+		e.reclaimed = true
+	}
+
+	// The next push must drain ALL trailing reclaimable entries, not just the top.
+	live := &fakeReclaimable{id: 99}
+	s.Push(stackTestKey{}, live)
+
+	assert.Equal(t, 1, s.Depth(), "all trailing reclaimable entries should be drained")
+	assert.Equal(t, live, s.Peek(stackTestKey{}))
+}
+
+func TestPushKeepsLiveEntries(t *testing.T) {
+	s := contextStack(make(map[any][]any))
+
+	// A live (non-reclaimable) entry on top must never be dropped — this is
+	// the legitimate same-goroutine nesting case (parent still active).
+	parent := &fakeReclaimable{id: 1, reclaimed: false}
+	s.Push(stackTestKey{}, parent)
+	child := &fakeReclaimable{id: 2, reclaimed: false}
+	s.Push(stackTestKey{}, child)
+
+	assert.Equal(t, 2, s.Depth(), "live entries must be preserved (nesting)")
+	assert.Equal(t, child, s.Peek(stackTestKey{}))
+}
+
+func TestPushDoesNotReclaimBuriedEntryUnderLiveTop(t *testing.T) {
+	s := contextStack(make(map[any][]any))
+
+	// Build [buried, liveTop] with both live, so neither is dropped at push.
+	buried := &fakeReclaimable{id: 1, reclaimed: false}
+	s.Push(stackTestKey{}, buried)
+	liveTop := &fakeReclaimable{id: 2, reclaimed: false}
+	s.Push(stackTestKey{}, liveTop)
+	require.Equal(t, 2, s.Depth())
+
+	// buried becomes reclaimable, but liveTop (still live) sits above it.
+	buried.reclaimed = true
+
+	next := &fakeReclaimable{id: 3, reclaimed: false}
+	s.Push(stackTestKey{}, next)
+
+	// The drain stops at liveTop (not reclaimable), so buried is preserved.
+	// This is the invariant that protects legitimate nesting: a reclaimable
+	// entry beneath a live scope is never dropped.
+	assert.Equal(t, 3, s.Depth(), "drain stops at the first live entry from the top; buried stays")
+}
+
+func TestPushDoesNotDrainNonReclaimableValues(t *testing.T) {
+	s := contextStack(make(map[any][]any))
+
+	// Values that don't implement reclaimable (e.g. the bool stored under
+	// executionTracedKey) must never be drained, even if they pile up.
+	s.Push(stackTestKey{}, true)
+	s.Push(stackTestKey{}, false)
+	s.Push(stackTestKey{}, true)
+
+	assert.Equal(t, 3, s.Depth(), "non-reclaimable values are never dropped")
+}
+
+// BenchmarkPushDrainReclaimed measures the cost of Push's trailing-reclaim drain
+// under the cross-goroutine-finish pattern: a stack accumulates reclaimable
+// entries (finished spans whose pop never ran on this goroutine), then a single
+// Push drains them all before appending the new value.
+//
+// The 0_reclaimed sub-benchmark is the common case (nothing to drain) and
+// establishes the baseline cost of the drain loop. The N_reclaimed cases show
+// the amortised cost per entry: each entry is pushed once and drained once, so
+// total work is O(N) regardless of how many pushes trigger the drain.
+//
+// The entries are built LIVE and only then marked reclaimable: pushing them
+// reclaimable would let Push drain each one as the stack is built, so the stack
+// would never reach depth N (this mirrors TestPushDrainsMultipleReclaimableEntries).
+func BenchmarkPushDrainReclaimed(b *testing.B) {
+	for _, stale := range []int{0, 1, 10, 100} {
+		b.Run(fmt.Sprintf("%d_reclaimed", stale), func(b *testing.B) {
+			k := stackTestKey{}
+			b.ReportAllocs()
+			for b.Loop() {
+				b.StopTimer()
+				s := contextStack(make(map[any][]any))
+				entries := make([]*fakeReclaimable, stale)
+				for i := range entries {
+					entries[i] = &fakeReclaimable{id: i}
+					s.Push(k, entries[i]) // pushed live so the stack reaches depth N
+				}
+				for _, e := range entries {
+					e.reclaimed = true // now finished cross-goroutine (pop never ran here)
+				}
+				b.StartTimer()
+
+				// This single Push must drain all `stale` reclaimable entries.
+				s.Push(k, &fakeReclaimable{id: stale})
+			}
+		})
+	}
 }

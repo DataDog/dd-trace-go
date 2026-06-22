@@ -68,6 +68,7 @@ jobs:
           - gcp_pubsub.v2
           - gin
           - gls
+          - gls-leak
           - go-elasticsearch
           - go-redis.v0
           - go-redis.v7

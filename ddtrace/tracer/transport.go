@@ -258,11 +258,11 @@ func newIdempotencyKey() string {
 }
 
 // staleConnRetryAttempts is the number of times doWithStaleConnRetry will
-// re-issue a request after a transient connection error. Three retries are
-// enough to absorb burst stale-conn scenarios (e.g. the agent killing several
-// idle conns at once, or a series of stale conns queued in the idle pool under
-// heavy concurrent load). The total request budget is therefore 4 attempts.
-const staleConnRetryAttempts = 3
+// re-issue a request after a transient connection error. Six retries absorb
+// burst stale-conn scenarios where the idle pool keeps handing out closed
+// conns under heavy concurrent load (e.g. the agent killing several idle conns
+// at once). The total request budget is therefore 7 attempts.
+const staleConnRetryAttempts = 6
 
 // doWithStaleConnRetry executes req and, on a transient connection error,
 // rewinds the body via req.GetBody and retries on a fresh connection.
@@ -309,6 +309,8 @@ func (t *httpTransport) doWithStaleConnRetry(req *http.Request) (*http.Response,
 // is also included: stdlib calls Close() on a broken persistConn before the
 // error reaches the caller, so a concurrent writer racing against that close
 // may see "use of closed network connection" instead of the underlying EPIPE.
+// ENOTCONN is included because on Darwin the same stale-idle UDS write race
+// surfaces as "socket is not connected" rather than EPIPE.
 //
 // We do both syscall.Errno identity matching (the canonical path) and a
 // cross-platform string fallback because Windows wraps WSA errors in a
@@ -322,6 +324,7 @@ func isTransientConnError(err error) bool {
 	if errors.Is(err, syscall.EPIPE) ||
 		errors.Is(err, syscall.ECONNRESET) ||
 		errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, syscall.ENOTCONN) ||
 		errors.Is(err, net.ErrClosed) {
 		return true
 	}
@@ -330,6 +333,7 @@ func isTransientConnError(err error) bool {
 		strings.Contains(msg, "connection reset") ||
 		strings.Contains(msg, "forcibly closed") || // WSAECONNRESET on Windows
 		strings.Contains(msg, "aborted by the software") || // WSAECONNABORTED on Windows
+		strings.Contains(msg, "socket is not connected") || // ENOTCONN on Windows (WSAENOTCONN)
 		strings.Contains(msg, "use of closed network connection")
 }
 
