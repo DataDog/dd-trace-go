@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -661,6 +662,98 @@ func TestPayloadV1SerializationFailure(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, []byte(serializationFailed), v)
 	})
+}
+
+func TestPayloadV1PromotedFields(t *testing.T) {
+	t.Run("missing span_kind and component", func(t *testing.T) {
+		p := newPayloadV1()
+		s := newBasicSpan("test-span")
+
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(p)
+		require.NoError(t, err)
+
+		got := newPayloadV1()
+		_, err = bytes.NewBuffer(encoded).WriteTo(got)
+		require.NoError(t, err)
+
+		_, err = got.decodeBuffer()
+		require.NoError(t, err)
+		require.Len(t, got.chunks, 1)
+		require.Len(t, got.chunks[0].spans, 1)
+		sp := got.chunks[0].spans[0]
+
+		assert.False(t, sp.meta.Has(ext.Component))
+		assert.False(t, sp.meta.Has(ext.SpanKind))
+	})
+
+	t.Run("with span_kind", func(t *testing.T) {
+		p := newPayloadV1()
+		s := newBasicSpan("test-span")
+		s.meta.Set(ext.SpanKind, ext.SpanKindInternal)
+
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(p)
+		require.NoError(t, err)
+
+		got := newPayloadV1()
+		_, err = bytes.NewBuffer(encoded).WriteTo(got)
+		require.NoError(t, err)
+
+		_, err = got.decodeBuffer()
+		require.NoError(t, err)
+		require.Len(t, got.chunks, 1)
+		require.Len(t, got.chunks[0].spans, 1)
+		sp := got.chunks[0].spans[0]
+
+		v, ok := sp.meta.Get(ext.SpanKind)
+		assert.True(t, ok)
+		assert.Equal(t, ext.SpanKindInternal, v)
+		// Verify it is not double-encoded: the flat map must contain it exactly once.
+		count := 0
+		for k := range sp.meta.Map(false) {
+			if k == ext.SpanKind {
+				count++
+			}
+		}
+		assert.Equal(t, 1, count)
+	})
+
+	t.Run("with component", func(t *testing.T) {
+		p := newPayloadV1()
+		s := newBasicSpan("test-span")
+		s.meta.Set(ext.Component, "test-component")
+
+		_, err := p.push(spanList{s})
+		require.NoError(t, err)
+		encoded, err := io.ReadAll(p)
+		require.NoError(t, err)
+
+		got := newPayloadV1()
+		_, err = bytes.NewBuffer(encoded).WriteTo(got)
+		require.NoError(t, err)
+
+		_, err = got.decodeBuffer()
+		require.NoError(t, err)
+		require.Len(t, got.chunks, 1)
+		require.Len(t, got.chunks[0].spans, 1)
+		sp := got.chunks[0].spans[0]
+
+		v, ok := sp.meta.Get(ext.Component)
+		assert.True(t, ok)
+		assert.Equal(t, "test-component", v)
+		// Verify it is not double-encoded: the flat map must contain it exactly once.
+		count := 0
+		for k := range sp.meta.Map(false) {
+			if k == ext.Component {
+				count++
+			}
+		}
+		assert.Equal(t, 1, count)
+	})
+
 }
 
 func BenchmarkPayloadThroughput(b *testing.B) {
