@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/baggage"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -726,6 +727,10 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "json_form", input: `"password":"value"`, want: `"<redacted>`},
 		// Same with %22/%3A URL-encoded delimiters.
 		{name: "json_form_pct", input: `%22password%22:%22value%22`, want: `%22<redacted>`},
+		// Value longer than the old 4096-byte truncation cap: the closing quote
+		// falls past the cutoff.  The full string must still be redacted (no
+		// partial secret exposed in http.url).
+		{name: "json_form_long_value", input: `"password":"` + strings.Repeat("x", 4100) + `"`, want: `"<redacted>`},
 
 		// Alt 2: bearer token.
 		// Quirk: only ONE char is consumed after the whitespace — the regex has
@@ -822,6 +827,12 @@ func TestObfuscateQueryStringDefault(t *testing.T) {
 		{name: "pem_no_end", input: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF", want: "-----BEGIN RSA PRIVATE KEY-----MIIEABCDEF"},
 		// Embedded in params: trailing "-----" before "&safe=1" is preserved.
 		{name: "pem_embedded", input: "key=x&-----BEGIN RSA PRIVATE KEY-----BODY-----END RSA PRIVATE KEY-----&safe=1", want: "key=x&<redacted>-----&safe=1"},
+		// Label with two "PRIVATE KEY" occurrences: the first is followed by a
+		// space (not the fence), so matchPEMBodyAndEnd fails there in O(1).
+		// The scanner must continue to the second occurrence which IS directly
+		// followed by "-----BODY-----END PRIVATE KEY".  A break-on-first-failure
+		// would leave this block unredacted.
+		{name: "pem_double_label", input: "-----BEGIN PRIVATE KEY PRIVATE KEY-----BODY-----END PRIVATE KEY-----", want: "<redacted>-----"},
 
 		// SSH RSA key: ssh-rsa + optional spaces + ≥100 repetitions of [a-z0-9/\.+] or %2F/%5C/%2B.
 		// Quirk: bare '\' is absent from [a-z0-9\/\.+]; only %5C (URL-encoded '\') is accepted.
@@ -1004,6 +1015,74 @@ func BenchmarkObfuscateQueryStringDefault(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
+			for b.Loop() {
+				obfuscateQueryStringDefault(tc.input)
+			}
+		})
+	}
+}
+
+// TestObfuscateAdversarialCompletes is a timing regression guard that covers two
+// O(N²) failure paths in matchJWT:
+//
+//  1. No dot: "eyJ"×N — consumeJWTSegment scans the full string, then the outer
+//     loop re-anchors at every 'e'.  Fixed by returning segEnd on the no-dot path.
+//
+//  2. Dot present, second header absent: "eyJ"×N + "." — the first segment scan
+//     stops at the dot, the second header check fails.  Without the fix segEnd=0
+//     so every 'e' before the dot triggers a full re-scan.  Fixed by returning
+//     segEnd on the post-dot header failure paths too.
+//
+// Pre-fix both inputs took several seconds for 300 KB.  Post-fix both run in
+// < 1 ms, so 1 s is a ~1000× safety margin.
+func TestObfuscateAdversarialCompletes(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"no_dot", strings.Repeat("eyJ", 100000)},           // 300 KB
+		{"dot_suffix", strings.Repeat("eyJ", 100000) + "."}, // 300 KB + dot
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start := time.Now()
+			obfuscateQueryStringDefault(tc.input)
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Errorf("obfuscateQueryStringDefault took %v for %s adversarial input (limit 1s) — possible O(N²) regression", elapsed, tc.name)
+			}
+		})
+	}
+}
+
+// BenchmarkObfuscateAdversarial demonstrates an O(N²) scaling previously
+// present.
+//
+// Pre-fix: 4× input length ≈ 16× time.  Post-fix: 4× input ≈ 4× time.
+func BenchmarkObfuscateAdversarial(b *testing.B) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		// JWT no-dot: "eyJ" repeated — consumeJWTSegment scans the full string on
+		// each 'e' anchor (e, y, J are all in classJWTSeg = [\w=-]).
+		{"jwt_adversarial/9k", strings.Repeat("eyJ", 3000)},
+		{"jwt_adversarial/30k", strings.Repeat("eyJ", 10000)},
+		{"jwt_adversarial/100k", strings.Repeat("eyJ", 33333)},
+		// JWT dot-suffix: dot present but no second header — before the post-dot
+		// fix segEnd=0 left every 'e' before the dot triggering a full re-scan.
+		{"jwt_adversarial/dot_suffix/9k", strings.Repeat("eyJ", 3000) + "."},
+		{"jwt_adversarial/dot_suffix/30k", strings.Repeat("eyJ", 10000) + "."},
+		{"jwt_adversarial/dot_suffix/100k", strings.Repeat("eyJ", 33333) + "."},
+		// PEM: repeated "PRIVATE KEY" in the label — matchPEMPrivateKeyLiteral
+		// succeeds at every 12-byte boundary and matchPEMBodyAndEnd scans the
+		// rest of the string for each hit.
+		{"pem_adversarial/4k", "-----BEGIN " + strings.Repeat("PRIVATE KEY ", 170)},
+		{"pem_adversarial/12k", "-----BEGIN " + strings.Repeat("PRIVATE KEY ", 500)},
+		{"pem_adversarial/40k", "-----BEGIN " + strings.Repeat("PRIVATE KEY ", 1666)},
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.SetBytes(int64(len(tc.input)))
 			for b.Loop() {
 				obfuscateQueryStringDefault(tc.input)
 			}

@@ -18,6 +18,10 @@ Each configuration value comes with a `ConfigName()` and a sometimes a `SetConfi
 
 The config package also supports reporting telemetry. This functionality is built upon the internal telemetry package. For more information about the telemetry package, see [Telemetry](#telemetry).
 
+### CI Visibility
+
+Contains Test Optimization internals, including Go `testing` instrumentation, CI metadata collection, backend feature negotiation, ITR skippable-test handling, code coverage payloads, and subprocess fixtures. The [overview](./civisibility/CIVISIBILITY_OVERVIEW.md) documents the ITR coverage backfill safety model and its manual and Orchestrion validation fixtures.
+
 ### Env
 
 Contains important functions for getting and looking up environment variables. Whenever needed, use `env.Lookup` or `env.Get` instead of built in `os.Getenv` functions. This is also available at [instrumentation/env](../instrumentation/env/) for those packages that cannot import internal modules.

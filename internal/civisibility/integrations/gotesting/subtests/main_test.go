@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -31,7 +32,7 @@ func TestMain(m *testing.M) {
 	}
 
 	for _, scenario := range matrixScenarioNames() {
-		cmd := exec.Command(os.Args[0], os.Args[1:]...)
+		cmd := exec.Command(os.Args[0], scenarioArgs(os.Args[1:])...)
 		var buffer bytes.Buffer
 		cmd.Stdout = &buffer
 		cmd.Stderr = &buffer
@@ -61,6 +62,22 @@ func TestMain(m *testing.M) {
 	restoreEnv(constants.CIVisibilitySubtestFeaturesEnabled, prevDD, hadDD)
 
 	os.Exit(code)
+}
+
+func scenarioArgs(args []string) []string {
+	out := make([]string, 0, len(args)+1)
+	for idx := 0; idx < len(args); idx++ {
+		arg := args[idx]
+		if arg == "-count" || arg == "-test.count" {
+			idx++
+			continue
+		}
+		if strings.HasPrefix(arg, "-count=") || strings.HasPrefix(arg, "-test.count=") {
+			continue
+		}
+		out = append(out, arg)
+	}
+	return append(out, "-test.count=1")
 }
 
 func restoreEnv(key, value string, had bool) {

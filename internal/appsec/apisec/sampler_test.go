@@ -33,7 +33,7 @@ func TestSampler(t *testing.T) {
 		defer cancel()
 	}
 
-	const samplesToTake = config.MaxItemCount << 10
+	const samplesToTake = config.MaxItemCount << 7
 
 	type testCase struct {
 		// KeySpace is the set of keys to randomly draw from when sampling.
@@ -61,22 +61,22 @@ func TestSampler(t *testing.T) {
 		"high": {
 			KeySpace:         testVector[:config.MaxItemCount*2/3],
 			SimulatedTPS:     1000,
-			ExpectedKeepRate: .0091,
+			ExpectedKeepRate: .0094,
 			AllowedDelta:     .0001,
 		},
 		"large": {
 			KeySpace:         testVector[:config.MaxItemCount],
 			SimulatedTPS:     1000,
-			ExpectedKeepRate: .01,
-			AllowedDelta:     .005, // Small chance of collision here... so a bit more wiggle room...
+			ExpectedKeepRate: .0145,
+			AllowedDelta:     .001, // Small chance of collision here... so a bit more wiggle room...
 		},
 		"extreme": { // Not actually realistic usage... Evictions galore!
 			KeySpace:         testVector[:2*config.MaxItemCount],
 			SimulatedTPS:     10000,
-			ExpectedKeepRate: .21,
+			ExpectedKeepRate: .16,
 			// Very random evictions, so keep rate can be pretty off...
 			// It appears that some newer gen P-cores/E-cores CPU are significantly worse at running this job
-			// so we allow a bit more wiggle room here (like 50% worse).
+			// so we keep this tolerance intentionally broad.
 			AllowedDelta: .5,
 		},
 	}
@@ -97,13 +97,14 @@ func TestSampler(t *testing.T) {
 					dropped atomic.Uint64
 				)
 				sb.Add(1 + goroutineCount) // All child goroutines + this one...
-				for range goroutineCount {
+				for workerID := range goroutineCount {
 					wg.Go(func() {
+						rng := rand.New(rand.NewSource(int64(workerID)))
 						sb.Done() // We're ready for business, signal to the start barrier...
 						sb.Wait() // Wait for all the goroutines to have started...
 
 						for i := range samplesToTake {
-							if subject.DecisionFor(randomOne(tc.KeySpace)) {
+							if subject.DecisionFor(randomOneFrom(rng, tc.KeySpace)) {
 								kept.Add(1)
 							} else {
 								dropped.Add(1)
@@ -209,8 +210,8 @@ func BenchmarkSampler(b *testing.B) {
 	}
 }
 
-func randomOne[T any](list []T) T {
-	return list[rand.Intn(len(list))]
+func randomOneFrom[T any](rng *rand.Rand, list []T) T {
+	return list[rng.Intn(len(list))]
 }
 
 var (

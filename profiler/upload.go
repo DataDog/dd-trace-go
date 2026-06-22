@@ -23,10 +23,20 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 // maxRetries specifies the maximum number of retries to have when an error occurs.
 const maxRetries = 2
+
+// headerEVPOrigin and evpOrigin identify the dd-trace-go profiler as the origin
+// of profile uploads in the shared profiling ingestion pipeline.
+// headerEVPOriginVersion carries the dd-trace-go release version.
+const (
+	headerEVPOrigin        = "DD-EVP-ORIGIN"
+	evpOrigin              = "dd-trace-go"
+	headerEVPOriginVersion = "DD-EVP-ORIGIN-VERSION"
+)
 
 var errOldAgent = errors.New("Datadog Agent is not accepting profiles. Agent-based profiling deployments " +
 	"require Datadog Agent >= 7.20")
@@ -107,6 +117,8 @@ func (p *profiler) doRequest(bat batch) error {
 	if eid := entityID.Load(); eid != nil && *eid != "" {
 		req.Header.Set("Datadog-Entity-ID", *eid)
 	}
+	req.Header.Set(headerEVPOrigin, evpOrigin)
+	req.Header.Set(headerEVPOriginVersion, version.Tag)
 	req.Header.Set("Content-Type", contentType)
 
 	resp, err := p.cfg.httpClient.Do(req)

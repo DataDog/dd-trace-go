@@ -8,6 +8,7 @@ package subtests
 import (
 	"compress/gzip"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -807,23 +808,77 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 	// When the run fails, dump span resources for easier diagnosis.
 	if exitCode != 0 {
 		finished := tracer.FinishedSpans()
-		debugMatrixf("scenario %s exit code %d with %d spans", scenario, exitCode, len(finished))
-		for i, span := range finished {
-			// Skip nil entries yet keep the loop for consistent indices.
-			if span == nil {
-				continue
-			}
-			// Provide per-span resource names to speed up debugging.
-			if resource, ok := span.Tag(ext.ResourceName).(string); ok {
-				debugMatrixf("  span[%d] resource=%s status=%v", i, resource, span.Tag(constants.TestStatus))
-			}
-		}
+		dumpScenarioSpans(scenario, fmt.Sprintf("exit code %d", exitCode), finished)
 		return exitCode
 	}
 
-	sc.validate(tracer.FinishedSpans())
+	if validateErr := validateScenarioSpans(sc, tracer.FinishedSpans()); validateErr != nil {
+		fmt.Printf("subtest matrix: scenario %s validation panic: %v\n", scenario, validateErr)
+		dumpScenarioSpans(scenario, "validation panic", tracer.FinishedSpans())
+		return 2
+	}
 
 	return 0
+}
+
+func validateScenarioSpans(sc *matrixScenario, spans []*mocktracer.Span) (panicValue any) {
+	defer func() {
+		panicValue = recover()
+	}()
+	sc.validate(spans)
+	return nil
+}
+
+func dumpScenarioSpans(scenario, reason string, spans []*mocktracer.Span) {
+	fmt.Printf("subtest matrix: scenario %s %s with %d finished spans\n", scenario, reason, len(spans))
+	fmt.Printf("subtest matrix: covermode=%q test.count=%q env.%s=%q\n",
+		testing.CoverMode(),
+		testCountFlagValue(),
+		constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable,
+		os.Getenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable),
+	)
+	counts := make(map[string]int)
+	for _, span := range spans {
+		if span == nil {
+			continue
+		}
+		resource, _ := span.Tag(ext.ResourceName).(string)
+		counts[resource]++
+	}
+	resources := make([]string, 0, len(counts))
+	for resource := range counts {
+		resources = append(resources, resource)
+	}
+	sort.Strings(resources)
+	for _, resource := range resources {
+		fmt.Printf("subtest matrix: resource-count resource=%q count=%d\n", resource, counts[resource])
+	}
+	for idx, span := range spans {
+		if span == nil {
+			fmt.Printf("subtest matrix: span[%d] nil\n", idx)
+			continue
+		}
+		fmt.Printf("subtest matrix: span[%d] resource=%q status=%v final_status=%v attempt_to_fix=%v retry=%v retry_reason=%v attempt_to_fix_passed=%v disabled=%v quarantined=%v skip_reason=%v\n",
+			idx,
+			span.Tag(ext.ResourceName),
+			span.Tag(constants.TestStatus),
+			span.Tag(constants.TestFinalStatus),
+			span.Tag(constants.TestIsAttempToFix),
+			span.Tag(constants.TestIsRetry),
+			span.Tag(constants.TestRetryReason),
+			span.Tag(constants.TestAttemptToFixPassed),
+			span.Tag(constants.TestIsDisabled),
+			span.Tag(constants.TestIsQuarantined),
+			span.Tag(constants.TestSkipReason),
+		)
+	}
+}
+
+func testCountFlagValue() string {
+	if count := flag.Lookup("test.count"); count != nil {
+		return count.Value.String()
+	}
+	return ""
 }
 
 // debugMatrixf emits scenario-scoped diagnostics using the package logger.
