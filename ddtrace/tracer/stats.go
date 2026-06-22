@@ -188,6 +188,12 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	}
 	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
+	if httpEndpoint == "" {
+		// OTel-instrumented spans set http.route directly; DD spans use http.endpoint.
+		// ClientGroupedStats.HTTPEndpoint is "Http route or quantized/simplified URL path"
+		// per the proto, so both map to the same first-class field.
+		httpEndpoint, _ = s.meta.Get(ext.HTTPRoute)
+	}
 
 	peerTags := c.cfg.agent.load().peerTags
 	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
@@ -356,9 +362,11 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 // otlpDefaultPeerTags are span meta keys always collected as peer dimensions for
 // OTLP span metrics regardless of what the Datadog agent advertises. These cover
 // OTel semantic-convention attributes that have no dedicated field in
-// ClientGroupedStats (unlike HTTPMethod/HTTPStatusCode which are first-class fields).
+// ClientGroupedStats (unlike HTTPMethod/HTTPEndpoint/HTTPStatusCode which are
+// first-class fields). http.route is intentionally absent: it is captured via
+// the HTTPEndpoint first-class field (with fallback from ext.HTTPRoute) and
+// emitted as the http.route data-point attribute by buildDataPointAttributes.
 var otlpDefaultPeerTags = []string{
-	"http.route",
 	"grpc.method.name",
 }
 

@@ -42,7 +42,7 @@ func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 	// not recompute them from the trace spans.
 	if c.internalConfig.OTLPSpanMetricsEnabled() {
 		resource.Attributes = append(resource.Attributes,
-			otlpKeyValue("_dd.stats_computed", otlpBoolValue(true)),
+			otlpKeyValue("_dd.stats_computed", otlpStringValue("true")),
 		)
 	}
 	scope := &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag}

@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
@@ -137,6 +138,49 @@ func TestOTLPSpanMetricsHeaderOnNativeTraces(t *testing.T) {
 	assert.Equal(t, "yes", headerValue, "Datadog-Client-Computed-Stats must be 'yes' when OTLPSpanMetricsEnabled")
 }
 
+// TestOTLPConcentratorHTTPRouteAttribute verifies that a span carrying the OTel
+// http.route tag (ext.HTTPRoute) produces a data-point with http.route as a
+// first-class attribute (FR06). This exercises the ext.HTTPRoute fallback path
+// in newTracerStatSpan, which populates ClientGroupedStats.HTTPEndpoint so that
+// buildDataPointAttributes emits it — without relying on the peer-tags path.
+func TestOTLPConcentratorHTTPRouteAttribute(t *testing.T) {
+	otlpSrv := newCaptureMetricsServer(t)
+
+	cfg, err := newTestConfig(withNoopInfoHTTPClient())
+	require.NoError(t, err)
+
+	bucketSize := int64(500_000)
+	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
+	c.otlpExporter = &otlpMetricsExporter{
+		client:   otlpSrv.Server.Client(),
+		url:      otlpSrv.URL + "/v1/metrics",
+		protocol: "http/json",
+		cfg:      cfg.internalConfig,
+	}
+	c.otlpPeerTags = otlpDefaultPeerTags
+
+	s := &Span{
+		name:     "web.request",
+		service:  "svc",
+		resource: "web.request",
+		start:    time.Now().UnixNano() - int64(30*time.Second),
+		duration: int64(50 * time.Millisecond),
+		metrics:  map[string]float64{keyMeasured: 1},
+		meta:     tinternal.NewSpanMetaFromMap(map[string]string{"http.route": "/users/{id}"}),
+	}
+	ss, ok := c.newTracerStatSpan(s, nil)
+	require.True(t, ok)
+	c.add(ss)
+	c.flushAndSend(time.Now(), withCurrentBucket)
+
+	bodies := otlpSrv.receivedBodies()
+	require.NotEmpty(t, bodies, "OTLP endpoint must receive a payload")
+
+	body := string(bodies[0])
+	assert.Contains(t, body, `"http.route"`, "http.route key must appear as a data-point attribute")
+	assert.Contains(t, body, `/users/{id}`, "http.route value must appear in the payload")
+}
+
 // TestOTLPTraceWriterStatsComputedResourceAttr verifies that _dd.stats_computed=true
 // is added to the OTLP trace resource when OTLP span metrics are enabled (FR15).
 func TestOTLPTraceWriterStatsComputedResourceAttr(t *testing.T) {
@@ -151,7 +195,7 @@ func TestOTLPTraceWriterStatsComputedResourceAttr(t *testing.T) {
 		for _, kv := range w.resource.Attributes {
 			if kv.Key == "_dd.stats_computed" {
 				found = true
-				assert.True(t, kv.Value.GetBoolValue(), "_dd.stats_computed must be true")
+				assert.Equal(t, "true", kv.Value.GetStringValue(), "_dd.stats_computed must be string \"true\"")
 			}
 		}
 		assert.True(t, found, "_dd.stats_computed attribute must be present when OTLPSpanMetricsEnabled")
