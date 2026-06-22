@@ -433,6 +433,38 @@ func TestPartialFlush(t *testing.T) {
 		assert.True(t, remainingNames["child3"])
 	})
 
+	// Regression test for the partial-flush path where the span that triggers the
+	// flush is NOT the first span in the chunk. In finishedOneLocked this is the
+	// !finishingSpanIsFirstInChunk branch: the trace-level tags and sampling
+	// priority must still be written onto the first span (root here), even though
+	// it finished earlier and s.mu is released around the fSpan update.
+	t.Run("FirstSpanInChunkUpdatedWhenNotFinishingSpan", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "3")
+		tracer, transport, flush, stop, err := startTestTracer(t)
+		require.NoError(t, err)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		root.context.trace.setTag("someTraceTag", "someValue")
+		child0 := tracer.StartSpan("child0", ChildOf(root.Context()))
+		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+
+		// root finishes first (so it is finishedSpans[0]), but child1 is the span
+		// that crosses the partial-flush threshold and drives finishedOneLocked.
+		root.Finish()
+		child0.Finish()
+		child1.SetTag(ext.ManualKeep, true)
+		child1.Finish()
+		flush(1)
+
+		ts := transport.Traces()
+		require.Len(t, ts, 1)
+		require.Len(t, ts[0], 3)
+		require.Equal(t, "root", ts[0][0].name)
+		require.Contains(t, ts[0][0].metrics, keySamplingPriority)
+		require.Equal(t, "someValue", ts[0][0].meta.Map(true)["someTraceTag"])
+	})
+
 	// Verify that the backing array tail is cleared after in-place compaction so that
 	// flushed spans are not kept alive through stale pointers past len(t.spans).
 	t.Run("TailClearedAfterFlush", func(t *testing.T) {
