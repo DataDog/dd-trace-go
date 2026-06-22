@@ -51,15 +51,17 @@ type FormFile struct {
 
 // RequestConfig holds configuration for a request.
 type RequestConfig struct {
-	Method     string            // HTTP method: GET or POST
-	URL        string            // Request URL
-	Headers    map[string]string // Additional HTTP headers
-	Body       any               // Request body for JSON, MessagePack, or raw bytes
-	Format     string            // Format: "json" or "msgpack"
-	Compressed bool              // Whether to use gzip compression
-	Files      []FormFile        // Files to be uploaded in a multipart form data request
-	MaxRetries int               // Maximum number of retries
-	Backoff    time.Duration     // Initial backoff duration for retries
+	Method         string            // HTTP method: GET or POST
+	URL            string            // Request URL
+	Headers        map[string]string // Additional HTTP headers
+	RawBody        []byte            // Pre-serialized request body
+	RawContentType string            // Content-Type for RawBody
+	Body           any               // Request body for JSON, MessagePack, or raw bytes
+	Format         string            // Format: "json" or "msgpack"
+	Compressed     bool              // Whether to use gzip compression
+	Files          []FormFile        // Files to be uploaded in a multipart form data request
+	MaxRetries     int               // Maximum number of retries
+	Backoff        time.Duration     // Initial backoff duration for retries
 }
 
 // Response represents the HTTP response with deserialization capabilities and status code.
@@ -209,8 +211,22 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int) (stopRetries bool, response *Response, requestError error) {
 	var req *http.Request
 
-	// Check if it's a multipart form data request
-	if len(config.Files) > 0 {
+	if config.RawBody != nil {
+		log.Debug("ciVisibilityHttpClient: new request with raw body [method: %s, url: %s, attempt: %d, maxRetries: %d, compressed: %t] %d bytes",
+			config.Method, config.URL, attempt, config.MaxRetries, config.Compressed, len(config.RawBody))
+		var err error
+		req, err = http.NewRequest(config.Method, config.URL, bytes.NewBuffer(config.RawBody))
+		if err != nil {
+			return true, nil, err
+		}
+		if config.RawContentType != "" {
+			req.Header.Set(HeaderContentType, config.RawContentType)
+		}
+		if config.Compressed {
+			req.Header.Set(HeaderContentEncoding, ContentEncodingGzip)
+		}
+	} else if len(config.Files) > 0 {
+		// Check if it's a multipart form data request
 		// Create multipart form data body
 		body, contentType, err := createMultipartFormData(config.Files, config.Compressed)
 		if err != nil {

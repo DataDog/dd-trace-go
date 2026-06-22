@@ -28,6 +28,7 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 		{name: "manual-count"},
 		{name: "manual-codecoverage-disabled", extraEnv: []string{"DD_ITR_BACKFILL_CODE_COVERAGE=false"}},
 		{name: "manual-flaky-retry", extraEnv: []string{"DD_ITR_BACKFILL_FLAKY_RETRY=true"}},
+		{name: "manual-coverage-report-disabled", extraEnv: []string{"DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED=false"}},
 		{name: "manual-partial-coverage", extraEnv: []string{"DD_ITR_BACKFILL_PARTIAL_COVERAGE=true"}, skipProfileAssert: true},
 		{name: "manual-producer-bitmap-upload", skipProfileAssert: true},
 	} {

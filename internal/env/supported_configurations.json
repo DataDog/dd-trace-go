@@ -259,6 +259,13 @@
         "default": null
       }
     ],
+    "DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CIVISIBILITY_ENABLED": [
       {
         "implementation": "A",
