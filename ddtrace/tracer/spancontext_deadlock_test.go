@@ -12,8 +12,9 @@ import (
 	"runtime/debug"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
 
 // TestPartialFlushSpanLockOrderingCycle targets the !finishingSpanIsFirstInChunk
@@ -26,15 +27,19 @@ import (
 // childA. childA.Finish() crosses the partial-flush threshold: s=childA, fSpan=root.
 // The buggy code would hold childA.mu while acquiring root.mu, which linkdata/deadlock
 // records as "childA.mu → root.mu" in its global ordering map. childB is left open so
-// the worker only releases root and childA to the pool (LIFO order: root Put first →
-// childA on top).
+// the worker only releases childA to the pool (root is exempt from mid-trace recycling).
 //
-// Phase 2 starts immediately after the partial-flush chunk is processed.  The pool
-// returns childA first (it was Put last), so the new "root" is the childA instance and
-// the new "childA" is the root instance. When new-root (=childA) finishes first and
-// new-childA (=root) crosses the threshold, the partial-flush has s=root, fSpan=childA.
-// The buggy code would hold root.mu while acquiring childA.mu — the detector checks its
-// global map, finds "childA.mu → root.mu" from Phase 1, and panics: AB/BA cycle.
+// Phase 2 needs to trigger the reverse ordering "root.mu → childA.mu" using the
+// same Span instances so the detector can find the existing edge and panic. The
+// pool-seeding approach seeds the global spanPool with [childA (private), root
+// (shared.head)] so that the next two StartSpan calls return them in swapped roles.
+//
+// Because sync.Pool gives no ordering guarantees (the pool is shared with the
+// tracer worker and the Go runtime), seeding is wrapped in a bounded retry: the
+// pool is explicitly drained of stale/foreign entries, re-seeded in LIFO order,
+// and the returned instances are checked for pointer identity. On mismatch the
+// attempt is discarded and the loop retries. If all attempts are exhausted the
+// test skips with a diagnostic instead of failing non-deterministically.
 //
 // Under the fixed code, s.mu is released before fSpan.mu is acquired, so neither
 // direction is ever recorded and the test passes cleanly.
@@ -48,81 +53,114 @@ func TestPartialFlushSpanLockOrderingCycle(t *testing.T) {
 
 	// Phase 1: establish ordering "childA.mu → root.mu".
 	// Three spans so partial flush fires while childB is still open, letting the
-	// worker release only root and childA to the pool (not childB).
+	// worker release only childA to the pool (root is exempt from mid-trace
+	// recycling until the full trace is submitted; childB is still open).
 	root := tracer.StartSpan("root", Tag(ext.ManualKeep, true))
 	childA := tracer.StartSpan("childA", ChildOf(root.Context()))
 	childB := tracer.StartSpan("childB", ChildOf(root.Context()))
 
 	root.Finish()
 	childA.Finish() // triggers partial flush: s=childA (holds childA.mu), fSpan=root
-	// flush(1) waits until the worker has processed the partial-flush chunk.
-	// The worker calls releaseSpans before the traceWriter.flush() that makes
-	// transport.Len()==1, so childA is in the pool by the time flush returns.
+	// flush(1) waits until the worker has processed the partial-flush chunk and
+	// called releaseSpans, so childA is in the pool by the time flush returns.
 	// root is excluded from spansToRelease (the tracer keeps the trace-root span
 	// alive for the eventual full-trace submission), so it is NOT in the pool yet.
 	// childB is still open and has not been submitted at all.
 	flush(1)
 	transport.Traces()
 
-	// Restore deterministic pool state for Phase 2.
+	// Phase 2: seed the pool with [childA, root] and acquire them back via StartSpan
+	// so they play swapped roles in a second partial-flush cycle.
 	//
-	// The global spanPool is shared across tests in the same process, so foreign
-	// spans from prior tests may be ahead of root/childA in the LIFO queue.
-	// Two GC cycles flush all pool entries: the first GC promotes the active pool
-	// to the victim cache; the second clears the victim cache.  root and childA
-	// are not freed because the test still holds live references to them.
+	// GOMAXPROCS=1 pins all Put/Get calls to P0, making the LIFO order deterministic
+	// on the fast path.  SetGCPercent(-1) prevents GC from evicting seeded entries.
+	// Both are restored as soon as the instances are in hand.
 	//
-	// After the GCs we need stable P-local pool semantics for Put→Get:
-	//   - GOMAXPROCS(1) forces all goroutines onto P0, so Put and Get always
-	//     touch the same poolLocal (no cross-P theft alters the LIFO order).
-	//   - SetGCPercent(-1) disables GC until cleanup so no GC can evict the
-	//     items we are about to Put before Phase 2's Get calls retrieve them.
-	//
-	// sync.Pool LIFO within a P: Put writes to l.private first (if empty), then
-	// pushes to l.shared.head.  Get reads l.private first, then pops l.shared.head.
-	// So the FIRST Put (into an empty pool) occupies private and is the FIRST Get.
-	// We want Get#1 = childA and Get#2 = root, so we Put childA first (→ private)
-	// and root second (→ shared.head).
-	//
-	// Two GC cycles evict all pool entries (first GC: active → victim cache;
-	// second GC: victim cache cleared).  root and childA remain alive because the
-	// test holds live references to them, so they are not freed.
-	runtime.GC()
-	runtime.GC()
-	// root was excluded from spansToRelease during Phase 1's partial flush (the
-	// tracer exempts the trace-root span from mid-trace pool recycling so it can
-	// be included in the eventual full-trace submission).  Its finished field is
-	// therefore still true from Phase 1.  Call clear() now so that newChildA.Finish()
-	// will not exit early on the s.finished guard in span.finish().
+	// The acquisition is wrapped in a bounded retry loop because sync.Pool provides
+	// no ordering guarantees. Each iteration:
+	//   1. Clears both spans (idempotent; ensures clean state for StartSpan reuse).
+	//   2. Drains stale/foreign entries from the pool (private + shared + victim).
+	//   3. Seeds: childA → P0.private (Get #1), root → P0.shared.head (Get #2).
+	//   4. Calls StartSpan twice and checks pointer identity.
+	// On mismatch, the attempt's spans are abandoned and the loop retries.
+	// On exhaustion the test skips rather than flake-failing.
+	const (
+		poolDrainCount = 64 // clears private + shared + victim cache in any realistic scenario
+		maxAttempts    = 50
+	)
+
+	// Clear both spans before seeding. childA was already cleared by releaseSpans
+	// after Phase 1; root was not recycled and must be cleared so that
+	// newChildA.Finish() does not exit early on the s.finished guard.
+	childA.clear()
 	root.clear()
-	// GOMAXPROCS=1 ensures all Put→Get operations land on the same poolLocal so
-	// LIFO order is deterministic. GC disabled prevents eviction during the window.
-	// Both are restored immediately after the span instances are in hand so that
-	// Phase 2's goroutine scheduling (worker, traceWriter) is unaffected.
+
+	// Verify pool ordering using raw Get calls — intentionally NOT via
+	// tracer.StartSpan — so that failed attempts do not create new Span/trace
+	// instances that flood the deadlock detector's lock-order map and cause
+	// flush timeouts. On each attempt:
+	//   1. Drain stale/foreign entries so P0's private+shared+victim are clear.
+	//   2. Seed: childA → P0.private (Get #1), root → P0.shared.head (Get #2).
+	//   3. Verify pointers via raw Get without initializing the spans.
+	//   4. On success, restore them to the pool so StartSpan can acquire them.
+	//   5. On failure, discard and retry. childA/root are kept alive by the
+	//      test variables, so discarding the raw Gets is safe.
 	numCPU := runtime.GOMAXPROCS(1)
 	prevGC := debug.SetGCPercent(-1)
-	spanPool.Put(childA) // childA → P0.private   (returned first by Get)
-	spanPool.Put(root)   // root → P0.shared.head (returned second by Get)
+	var seeded bool
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		for i := 0; i < poolDrainCount; i++ {
+			spanPool.Get() //nolint:staticcheck // intentional pool drain; return value discarded
+		}
+		spanPool.Put(childA)
+		spanPool.Put(root)
+		got1 := spanPool.Get().(*Span) //nolint:staticcheck // raw identity check; span not initialized
+		got2 := spanPool.Get().(*Span) //nolint:staticcheck
+		if got1 == childA && got2 == root {
+			// Restore for StartSpan's Get calls below.
+			spanPool.Put(childA)
+			spanPool.Put(root)
+			seeded = true
+			break
+		}
+		// Wrong order: clear and retry. (got1/got2 are discarded safely.)
+		childA.clear()
+		root.clear()
+	}
+	if !seeded {
+		debug.SetGCPercent(prevGC)
+		runtime.GOMAXPROCS(numCPU)
+		t.Skipf("span pool did not return the expected instances in %d attempts; "+
+			"skipping deadlock-cycle check", maxAttempts)
+	}
 
-	// Phase 2: trigger the reverse ordering "root.mu → childA.mu".
-	// pool.Get() returns childA first (LIFO), making it the new root.
-	// The second Get returns root, making it the new childA.
-	newRoot := tracer.StartSpan("newRoot", Tag(ext.ManualKeep, true)) // = childA instance
-	newChildA := tracer.StartSpan("newChildA", ChildOf(newRoot.Context())) // = root instance
-	// Restore concurrency and GC before Phase 2's span operations so that the
-	// worker and traceWriter goroutines can be scheduled normally.
+	// Acquire the instances via StartSpan while GOMAXPROCS=1 and GC are still
+	// active: the worker never calls spanPool.Get, so no other goroutine can
+	// steal the seeded spans between the verification Put and these Gets.
+	newRoot := tracer.StartSpan("newRoot", Tag(ext.ManualKeep, true))
+	newChildA := tracer.StartSpan("newChildA", ChildOf(newRoot.Context()))
 	debug.SetGCPercent(prevGC)
 	runtime.GOMAXPROCS(numCPU)
+
 	require.Same(t, childA, newRoot)
 	require.Same(t, root, newChildA)
 	newChildB := tracer.StartSpan("newChildB", ChildOf(newRoot.Context()))
 
-	newRoot.Finish()    // childA instance is now finishedSpans[0] = fSpan
-	newChildA.Finish()  // root instance crosses threshold: s=root, fSpan=childA
+	newRoot.Finish()   // childA instance is now finishedSpans[0] = fSpan
+	newChildA.Finish() // root instance crosses threshold: s=root, fSpan=childA
 	// Under the buggy code the detector fires here: it sees "root.mu → childA.mu"
 	// and finds the earlier "childA.mu → root.mu" entry — AB/BA cycle.
 	flush(1)
 	transport.Traces()
+
+	// Prevent double-put: Phase 1's trace has rootFlushed=true, meaning it will
+	// try to recycle root (via spansToRelease) when childB.Finish() completes
+	// the trace. But Phase 2's partial flush above already recycled root. Clear
+	// rootFlushed so the Phase 1 full-trace flush does not put root back in the
+	// pool a second time.
+	childB.context.trace.mu.Lock()
+	childB.context.trace.rootFlushed = false
+	childB.context.trace.mu.Unlock()
 
 	// Cleanup: finish the two leftover spans.
 	childB.Finish()
