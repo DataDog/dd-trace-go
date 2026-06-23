@@ -195,8 +195,10 @@ func logStartup(t *tracer) {
 		if ft, ok := t.config.ddTransport.(*fallbackTransport); ok {
 			primaryErr := checkEndpoint(t.config.httpClient, ft.primary.endpoint(), protocol)
 			if primaryErr != nil && isAgentUnavailableError(primaryErr) {
+				// UDS unavailable — try TCP fallback. Only report an error when
+				// the fallback is also unreachable; if TCP succeeds, traces flow
+				// transparently and agentURL stays as the configured unix path.
 				fallbackErr := checkEndpoint(ft.fallbackClient, ft.fallback.endpoint(), protocol)
-				agentURL = ft.fallback.endpoint()
 				if fallbackErr != nil {
 					info.AgentError = fallbackErr.Error()
 					log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", fallbackErr)

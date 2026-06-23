@@ -404,7 +404,8 @@ func TestStartupLogFallbackTransport(t *testing.T) {
 		logStartup(tracer)
 
 		require.Len(t, tp.Logs(), 1)
-		assert.Contains(t, tp.Logs()[0], `"agent_url":"`+fallbackTraceURL+`"`)
+		// agent_url stays as configured (unix path or primary endpoint), NOT the TCP fallback URL.
+		assert.NotRegexp(t, `"agent_url":"`+regexp.QuoteMeta(fallbackTraceURL), tp.Logs()[0])
 		assert.Contains(t, tp.Logs()[0], `"agent_error":""`)
 	})
 
@@ -429,7 +430,8 @@ func TestStartupLogFallbackTransport(t *testing.T) {
 		logStartup(tracer)
 
 		require.Len(t, tp.Logs(), 2)
-		assert.Contains(t, tp.Logs()[1], `"agent_url":"`+fallbackTraceURL+`"`)
+		// agent_url stays as configured (unix path or primary endpoint), NOT the TCP fallback URL.
+		assert.NotRegexp(t, `"agent_url":"`+regexp.QuoteMeta(fallbackTraceURL), tp.Logs()[1])
 		assert.Regexp(t, `"agent_error":"Post .*"`, tp.Logs()[1])
 	})
 }
