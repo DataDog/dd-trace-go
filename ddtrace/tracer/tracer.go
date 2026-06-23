@@ -1128,6 +1128,9 @@ func (t *tracer) Stop() {
 		t.telemetry.Close()
 	}
 	t.config.httpClient.CloseIdleConnections()
+	if ft, ok := t.config.ddTransport.(*fallbackTransport); ok && ft.fallbackClient != nil {
+		ft.fallbackClient.CloseIdleConnections()
+	}
 }
 
 // Inject uses the configured or default TextMap Propagator.

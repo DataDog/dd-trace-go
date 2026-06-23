@@ -309,7 +309,11 @@ func newConfig(opts ...StartOption) (*config, error) {
 				tcpClient,
 				headers,
 			)
-			c.ddTransport = &fallbackTransport{primary: primary, fallback: tcpFallback, fallbackClient: tcpClient}
+			// fallbackClient is used only for the startup probe in logStartup.
+			// Disable keep-alives so the probe connection closes immediately
+			// and does not leak goroutines when the tracer stops.
+			fallbackProbeClient := internal.DefaultHTTPClient(timeout, true)
+			c.ddTransport = &fallbackTransport{primary: primary, fallback: tcpFallback, fallbackClient: fallbackProbeClient}
 		} else {
 			c.ddTransport = primary
 		}
