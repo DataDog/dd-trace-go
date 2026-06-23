@@ -67,13 +67,14 @@ func SetContainerTagsHash(t *testing.T, hash string) {
 
 // DBMBaseHash computes the expected DBM base hash for the given inputs,
 // matching the value injected as ddsh in SQL comments and as _dd.propagated_hash on spans.
+// It mirrors computeBaseHash by returning "" when process tags are unavailable.
 func DBMBaseHash(service, containerTagsHash string) string {
-	var processTags []string
-	if pTags := processtags.GlobalTags(); pTags != nil {
-		processTags = pTags.Slice()
+	pTags := processtags.GlobalTags()
+	if pTags == nil {
+		return ""
 	}
 	env := internalconfig.Get().Env()
-	hash := datastreams.BaseHash(service, env, processTags, containerTagsHash)
+	hash := datastreams.BaseHash(service, env, pTags.Slice(), containerTagsHash)
 	return strconv.FormatInt(int64(hash), 10)
 }
 

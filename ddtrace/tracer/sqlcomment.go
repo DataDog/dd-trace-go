@@ -157,6 +157,10 @@ func computeBaseHash() string {
 	if containerTagsHash == "" {
 		return ""
 	}
+	// The cache is keyed only on containerTagsHash, yet the result also depends on svc, env
+	// and process tags. This is safe because those are assumed immutable for the cache's
+	// lifetime: svc/env are installed during newTracer and process tags are stable, while
+	// resetBaseHashCache() runs on every Start to drop stale values across tracer restarts.
 	if entry := cachedBaseHash.Load(); entry != nil && entry.containerHash == containerTagsHash {
 		return entry.result
 	}

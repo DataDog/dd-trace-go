@@ -500,6 +500,33 @@ func BenchmarkSQLCommentInjection(b *testing.B) {
 	}
 }
 
+func BenchmarkSQLCommentInjectionService(b *testing.B) {
+	tracer, spanCtx, carrier := setupBenchmark()
+	defer tracer.Stop()
+	carrier.Mode = DBMPropagationModeService
+
+	b.ReportAllocs()
+	for b.Loop() {
+		carrier.Inject(spanCtx)
+	}
+}
+
+func BenchmarkSQLCommentInjectionDynamicService(b *testing.B) {
+	tracer, spanCtx, carrier := setupBenchmark()
+	defer tracer.Stop()
+	carrier.Mode = DBMPropagationModeDynamicService
+
+	// dynamic_service derives ddsh from the container tags hash; populate it so the
+	// hot path computes once and then hits the cache on every subsequent Inject.
+	processtags.SetContainerTagsHash("benchmark-container-hash")
+	defer processtags.SetContainerTagsHash("")
+
+	b.ReportAllocs()
+	for b.Loop() {
+		carrier.Inject(spanCtx)
+	}
+}
+
 func BenchmarkSQLCommentExtraction(b *testing.B) {
 	tracer, spanCtx, carrier := setupBenchmark()
 	defer tracer.Stop()

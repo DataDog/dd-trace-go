@@ -43,6 +43,7 @@ func TestDBMPropagation(t *testing.T) {
 		peerServiceCtx           string
 		peerServiceCustomOpenTag string
 		containerTagsHash        string
+		assertExecuted           func(t *testing.T, d *internal.MockDriver)
 	}{
 		{
 			name: "prepare",
@@ -235,6 +236,12 @@ func TestDBMPropagation(t *testing.T) {
 			executed: []*regexp.Regexp{
 				regexp.MustCompile(`/\*.*ddsh='[^']+'.*\*/`),
 			},
+			assertExecuted: func(t *testing.T, d *internal.MockDriver) {
+				require.Len(t, d.Executed, 1)
+				assert.NotContains(t, d.Executed[0], "traceparent=", "dynamic_service must not inject traceparent")
+				expectedHash := testutils.DBMBaseHash("test-service", "testhash42")
+				assert.Contains(t, d.Executed[0], "ddsh='"+expectedHash+"'", "ddsh must equal computed base hash")
+			},
 		},
 	}
 
@@ -292,11 +299,8 @@ func TestDBMPropagation(t *testing.T) {
 				// the injected span ID should not be the parent's span ID
 				assert.NotContains(t, d.Executed[i], "traceparent='00-00000000000000000000000000000001-0000000000000001")
 			}
-			if tc.containerTagsHash != "" && tc.name == "dynamic_service-exec-with-hash" {
-				require.Len(t, d.Executed, 1)
-				assert.NotContains(t, d.Executed[0], "traceparent=", "dynamic_service must not inject traceparent")
-				expectedHash := testutils.DBMBaseHash("test-service", tc.containerTagsHash)
-				assert.Contains(t, d.Executed[0], "ddsh='"+expectedHash+"'", "ddsh must equal computed base hash")
+			if tc.assertExecuted != nil {
+				tc.assertExecuted(t, d)
 			}
 		})
 	}
