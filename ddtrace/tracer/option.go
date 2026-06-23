@@ -997,6 +997,15 @@ func WithDogstatsdAddr(addr string) StartOption {
 	}
 }
 
+// WithStatsdClient sets a custom statsd client to be used by the tracer for
+// internal metrics. When set, the tracer will not create its own statsd client,
+// allowing callers to share a single client across the tracer and application code.
+func WithStatsdClient(client internal.StatsdClient) StartOption {
+	return func(cfg *config) {
+		cfg.statsdClient = client
+	}
+}
+
 // WithSamplingRules specifies the sampling rates to apply to spans based on the
 // provided rules.
 func WithSamplingRules(rules []SamplingRule) StartOption {
