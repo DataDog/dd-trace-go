@@ -111,7 +111,7 @@ func TestResolveAgentAddr(t *testing.T) {
 		envHost, envPort string
 		out              *url.URL
 	}{
-		{nil, "", "", &url.URL{Scheme: "http", Host: defaultAddress}},
+		{nil, "", "", &url.URL{Scheme: "unix", Path: internal.DefaultTraceAgentUDSPath}},
 		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: fmt.Sprintf("ip.local:%s", defaultPort)}},
 		{nil, "", "1234", &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:1234", defaultHostname)}},
 		{nil, "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.local:1234"}},

@@ -444,7 +444,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(float64(1), c.sampler.Rate())
 		assert.Regexp(`tracer\.test(\.exe)?`, c.internalConfig.ServiceName())
-		assert.Equal(&url.URL{Scheme: "http", Host: "localhost:8126"}, c.internalConfig.RawAgentURL())
+		assert.Equal(&url.URL{Scheme: "unix", Path: "/var/run/datadog/apm.socket"}, c.internalConfig.RawAgentURL())
 		assert.Equal("localhost:8125", c.internalConfig.DogstatsdAddr())
 		assert.Nil(nil, c.httpClient)
 		x := *c.httpClient
