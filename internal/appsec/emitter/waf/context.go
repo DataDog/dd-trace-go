@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/limiter"
@@ -57,7 +58,7 @@ type (
 
 	// RunEvent is the type of event that should be emitted to child operations to run the WAF
 	RunEvent struct {
-		libddwaf.RunAddressData
+		addresses.RunAddressData
 		dyngo.Operation
 	}
 
