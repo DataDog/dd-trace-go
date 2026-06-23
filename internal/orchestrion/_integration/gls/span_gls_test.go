@@ -42,6 +42,11 @@ import (
 //
 // Without the injected fix this goroutine's GLS grows by one entry per record
 // (an unbounded leak proportional to the record count); with it, depth stays ~1.
+//
+// This test deliberately finishes the span BEFORE re-injecting it, so it is not
+// run with the experimental span pool, which legitimately recycles a finished
+// span (touching it afterward is out of the pool's contract). The span-pool +
+// GLS coexistence is covered by the live-inject TestGLSNoHeapLeakWithSpanPool.
 func TestSpanGLSNoLeakCrossGoroutine(t *testing.T) {
 	if !orchestrionEnabled {
 		t.Skip("GLS only exists in orchestrion builds")
@@ -96,6 +101,10 @@ func TestSpanGLSNoLeakCrossGoroutine(t *testing.T) {
 // additionally catches a regression that still pushes but stops reclaiming in a
 // way the bounded-depth check might not. The runnable gls-leak command exercises
 // the same helper.
+//
+// Like TestSpanGLSNoLeakCrossGoroutine, this uses the finish-then-inject order
+// and is therefore not run under the experimental span pool (which recycles the
+// finished span); TestGLSNoHeapLeakWithSpanPool covers the pooled, live-inject path.
 func TestSpanGLSNoHeapLeakCrossGoroutine(t *testing.T) {
 	if !orchestrionEnabled {
 		t.Skip("GLS only exists in orchestrion builds")
