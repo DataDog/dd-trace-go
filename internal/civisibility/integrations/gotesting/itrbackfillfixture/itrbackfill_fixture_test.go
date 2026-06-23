@@ -74,7 +74,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 		}},
 		{name: "producer-bitmap-upload", coverMode: "count", withProfile: true, skipProfileAssert: true},
 		{name: "repo-wide-backend-coverage", coverMode: "count", withProfile: true},
-		{name: "backfill-disabled-when-response-includes-out-of-process-test", coverMode: "count", withProfile: true, skipProfileAssert: true},
+		{name: "backfill-ignores-out-of-process-test", coverMode: "count", withProfile: true},
 		{name: "backfill-disabled-when-response-has-parameters", coverMode: "count", withProfile: true},
 		{name: "backfill-disabled-without-backend-coverage", coverMode: "count", withProfile: true, skipProfileAssert: true},
 		{name: "backfill-disabled-when-backend-coverage-does-not-match-profile", coverMode: "count", withProfile: true, skipProfileAssert: true},
