@@ -208,8 +208,10 @@ func addObfuscatorConfig(builder *libddwaf.Builder, obfuscator ObfuscatorConfig)
 	}
 
 	_, err := builder.AddOrUpdateConfig(obfuscatorConfigPath, map[string]any{
-		"key_regex":   obfuscator.KeyRegex,
-		"value_regex": obfuscator.ValueRegex,
+		"obfuscator": map[string]any{
+			"key_regex":   obfuscator.KeyRegex,
+			"value_regex": obfuscator.ValueRegex,
+		},
 	})
 	return err
 }
