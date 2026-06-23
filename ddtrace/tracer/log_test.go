@@ -349,17 +349,19 @@ func TestAgentURLConflict(t *testing.T) {
 	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
 }
 
-// refusedTransport is a stub whose endpoint returns a TCP address that always refuses connections.
-type refusedTransport struct {
+// udsEndpointTransport is a stub whose endpoint returns a URL, but whose sends
+// use the caller-supplied UDS httpClient (set on tracer.config.httpClient).
+type udsEndpointTransport struct {
 	stubTransport
 	url string
 }
 
-func (r *refusedTransport) endpoint() string { return r.url }
+func (u *udsEndpointTransport) endpoint() string { return u.url }
 
 func TestStartupLogFallbackTransport(t *testing.T) {
-	// primaryURL uses port 1 which reliably returns ECONNREFUSED.
-	primaryURL := "http://127.0.0.1:1" + tracesAPIPath
+	// Point the primary's httpClient at a nonexistent unix socket — produces ENOENT
+	// on all platforms (Linux, macOS, Windows) without relying on TCP port availability.
+	noSuchSocket := "/nonexistent/dd-trace-go-test.sock"
 
 	t.Run("uds_down_tcp_up", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -372,9 +374,11 @@ func TestStartupLogFallbackTransport(t *testing.T) {
 		require.NoError(t, err)
 		defer stop()
 
-		tcpClient := internal.DefaultHTTPClient(defaultHTTPTimeout, false)
+		// UDS client dials noSuchSocket regardless of target URL → ENOENT.
+		tracer.config.httpClient = internal.UDSClient(noSuchSocket, defaultHTTPTimeout)
+		tcpClient := internal.DefaultHTTPClient(defaultHTTPTimeout, true)
 		tracer.config.ddTransport = &fallbackTransport{
-			primary:        &refusedTransport{url: primaryURL},
+			primary:        &udsEndpointTransport{url: "http://ignored-host/v0.4/traces"},
 			fallback:       newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, tcpClient, nil),
 			fallbackClient: tcpClient,
 		}
@@ -394,10 +398,12 @@ func TestStartupLogFallbackTransport(t *testing.T) {
 		require.NoError(t, err)
 		defer stop()
 
-		tcpClient := internal.DefaultHTTPClient(defaultHTTPTimeout, false)
+		tracer.config.httpClient = internal.UDSClient(noSuchSocket, defaultHTTPTimeout)
+		tcpClient := internal.DefaultHTTPClient(defaultHTTPTimeout, true)
+		const deadTCPURL = "http://127.0.0.1:1"
 		tracer.config.ddTransport = &fallbackTransport{
-			primary:        &refusedTransport{url: primaryURL},
-			fallback:       newHTTPTransport("http://127.0.0.1:1"+tracesAPIPath, "http://127.0.0.1:1"+statsAPIPath, tcpClient, nil),
+			primary:        &udsEndpointTransport{url: "http://ignored-host/v0.4/traces"},
+			fallback:       newHTTPTransport(deadTCPURL+tracesAPIPath, deadTCPURL+statsAPIPath, tcpClient, nil),
 			fallbackClient: tcpClient,
 		}
 
