@@ -144,12 +144,7 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 	}
 }
 
-// TraceAdmin starts a span for a Pub/Sub admin/management operation (e.g. createTopic,
-// listSubscriptions, deleteSchema). method is the camelCase operation name used for the
-// span resource and the pubsub.method tag, and resourcePath is the fully-qualified GCP
-// resource path the operation targets (e.g. "projects/p/topics/t"), which may be empty for
-// operations that don't reference a specific resource. The returned function finishes the
-// span and must be called once the operation completes, passing along any error.
+// TraceAdmin starts a span for a Pub/Sub admin operation (e.g. createTopic, listSubscriptions, deleteSchema)
 func (tr *Tracer) TraceAdmin(ctx context.Context, method string, resourcePath string, opts ...Option) (context.Context, func(err error)) {
 	cfg := tr.defaultConfig()
 	for _, opt := range opts {
