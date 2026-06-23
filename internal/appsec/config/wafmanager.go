@@ -16,7 +16,7 @@ import (
 	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	telemetryLog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 )
 
 type (
@@ -65,7 +65,7 @@ func NewWAFManagerWithStaticRules(obfuscator ObfuscatorConfig, staticRules []byt
 	// garbage collected, in case [WAFManager.Close] was not called explicitly by
 	// the user.
 	mgr.cleanup = runtime.AddCleanup(mgr, func(b *libddwaf.Builder) {
-		telemetryLog.Warn("WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!")
+		telemetrylog.Warn("WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!")
 		b.Close()
 	}, builder)
 
@@ -110,7 +110,7 @@ func (m *WAFManager) NewHandle() (*libddwaf.Handle, string) {
 	hdl, err := m.builder.Build()
 	m.mu.RUnlock()
 	if err != nil {
-		telemetryLog.Error("failed to build WAF handle", slog.String("error", err.Error()))
+		telemetrylog.Error("failed to build WAF handle", slog.Any("error", telemetrylog.NewSafeError(err)))
 	}
 	return hdl, rulesVersion
 }
@@ -217,7 +217,7 @@ func addObfuscatorConfig(builder *libddwaf.Builder, obfuscator ObfuscatorConfig)
 }
 
 func logLocalDiagnosticMessages(name string, feature *libddwaf.Feature) {
-	logger := telemetryLog.With(telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:appsec::waf::ruleset::diagnostic"}))
+	logger := telemetrylog.With(telemetry.WithTags([]string{"appsec_config_key:" + name, "log_type:appsec::waf::ruleset::diagnostic"}))
 
 	if feature.Error != "" {
 		logger.Error("feature error", slog.String("message", feature.Error))

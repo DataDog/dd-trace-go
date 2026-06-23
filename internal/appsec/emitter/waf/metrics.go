@@ -173,8 +173,8 @@ func (m *HandleMetrics) NewContextMetrics() *ContextMetrics {
 			},
 		},
 		subcontextExternalDurations: map[addresses.Scope]*atomic.Int64{
-			addresses.WAFScope:  &atomic.Int64{},
-			addresses.RASPScope: &atomic.Int64{},
+			addresses.WAFScope:  {},
+			addresses.RASPScope: {},
 		},
 		logger: telemetrylog.With(telemetry.WithTags([]string{"product:appsec"})),
 	}

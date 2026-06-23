@@ -55,7 +55,7 @@ func TestProtectRoundTrip_closes_shared_subcontext_when_ssrf_request_blocks(t *t
 
 	req, err := http.NewRequestWithContext(handlerCtx, http.MethodGet, "http://169.254.169.254", nil)
 	require.NoError(t, err)
-	finish, err := ProtectRoundTrip(handlerCtx, req)
+	finish, err := ProtectRoundTrip(handlerCtx, req) //nolint:bodyclose // ProtectRoundTrip returns a finish callback, not an *http.Response; the block path returns a nil finish and there is no body to close.
 
 	require.Nil(t, finish)
 	require.Error(t, err)
