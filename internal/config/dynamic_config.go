@@ -7,6 +7,7 @@ package config
 
 import (
 	"math"
+	"reflect"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
@@ -34,6 +35,23 @@ func equalSlice[T comparable](a, b []T) bool {
 	}
 	for i, v := range a {
 		if v != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// equalMap compares two maps of comparable keys and any values. It is the change
+// detector for map-valued dynamic configs (e.g. global tags). Values are compared
+// with reflect.DeepEqual rather than ==, because the public WithGlobalTag(k, v any)
+// API lets callers store non-comparable values (e.g. a slice), on which == would
+// panic.
+func equalMap[K comparable](x, y map[K]any) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	for k, v := range x {
+		if yv, ok := y[k]; !ok || !reflect.DeepEqual(v, yv) {
 			return false
 		}
 	}
