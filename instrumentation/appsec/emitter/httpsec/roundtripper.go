@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -23,6 +24,7 @@ var badInputContextOnce sync.Once
 type (
 	RoundTripOperation struct {
 		dyngo.Operation
+		*waf.SubcontextOperation
 		HandlerOp *HandlerOperation
 
 		url         string
@@ -89,10 +91,12 @@ func ProtectRoundTrip(ctx context.Context, req *http.Request) (func(*http.Respon
 		return nil, nil
 	}
 
+	subOp := handlerOp.NewSubcontextOp()
 	op := &RoundTripOperation{
-		Operation: dyngo.NewOperation(handlerOp),
-		HandlerOp: handlerOp,
-		url:       req.URL.String(),
+		Operation:           dyngo.NewOperation(handlerOp),
+		SubcontextOperation: subOp,
+		HandlerOp:           handlerOp,
+		url:                 req.URL.String(),
 	}
 
 	var err *events.BlockingSecurityEvent
@@ -105,6 +109,7 @@ func ProtectRoundTrip(ctx context.Context, req *http.Request) (func(*http.Respon
 
 	if err != nil {
 		log.Debug("appsec: outgoing http request blocked by the WAF on URL: %s", req.URL.String())
+		op.Finish(RoundTripOperationRes{})
 		return nil, err
 	}
 
@@ -117,8 +122,13 @@ func ProtectRoundTrip(ctx context.Context, req *http.Request) (func(*http.Respon
 				Body:       &response.Body,
 			}
 		}
-		dyngo.FinishOperation(op, resArgs)
+		op.Finish(resArgs)
 	}, nil
+}
+
+func (op *RoundTripOperation) Finish(res RoundTripOperationRes) {
+	dyngo.FinishOperation(op, res)
+	op.SubcontextOperation.Close()
 }
 
 func (r *RoundTripOperation) URL() string {
