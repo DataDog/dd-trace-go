@@ -54,8 +54,8 @@ type RequestConfig struct {
 	Method         string            // HTTP method: GET or POST
 	URL            string            // Request URL
 	Headers        map[string]string // Additional HTTP headers
-	RawBody        []byte            // Pre-serialized request body
-	RawContentType string            // Content-Type for RawBody
+	RawBody        []byte            // Pre-serialized request body for callers that must control the exact bytes sent.
+	RawContentType string            // Content-Type for RawBody.
 	Body           any               // Request body for JSON, MessagePack, or raw bytes
 	Format         string            // Format: "json" or "msgpack"
 	Compressed     bool              // Whether to use gzip compression

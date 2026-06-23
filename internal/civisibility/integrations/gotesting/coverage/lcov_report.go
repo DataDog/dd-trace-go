@@ -113,6 +113,8 @@ func WriteLCOVReportFromProfile(profilePath string, w io.Writer) error {
 	return nil
 }
 
+// lcovEffectiveEndLine adjusts Go coverprofile ranges that end at column 1 so
+// the LCOV line range does not include the next executable line.
 func lcovEffectiveEndLine(block *coverageBlock) int {
 	if block.endLine > block.startLine && block.endCol == 1 {
 		return block.endLine - 1
@@ -120,6 +122,8 @@ func lcovEffectiveEndLine(block *coverageBlock) int {
 	return block.endLine
 }
 
+// lcovSourceFilePath returns the repository-relative source path to emit in the
+// LCOV report, falling back through CI tags and the original profile path.
 func lcovSourceFilePath(profileFile string) string {
 	if fileName := lcovModuleSourceFilePath(profileFile); isLCOVRepositoryRelativePath(fileName) {
 		return fileName
@@ -133,6 +137,8 @@ func lcovSourceFilePath(profileFile string) string {
 	return ""
 }
 
+// lcovModuleSourceFilePath converts module-relative or absolute profile paths
+// into repository-relative source paths when they belong to the current module.
 func lcovModuleSourceFilePath(profileFile string) string {
 	moduleRepoPrefix := moduleRepositoryRelativePrefix(modulePath)
 	normalizedProfileFile := cleanLCOVSourcePath(profileFile)
@@ -153,6 +159,8 @@ func lcovModuleSourceFilePath(profileFile string) string {
 	return cleanLCOVSourcePath(path.Join(moduleRepoPrefix, filepath.ToSlash(relPath)))
 }
 
+// cleanLCOVSourcePath normalizes path separators and removes empty or current
+// directory path values before they are written to the LCOV report.
 func cleanLCOVSourcePath(fileName string) string {
 	fileName = strings.TrimSpace(strings.ReplaceAll(fileName, "\\", "/"))
 	if fileName == "" {
@@ -165,6 +173,8 @@ func cleanLCOVSourcePath(fileName string) string {
 	return strings.TrimPrefix(fileName, "./")
 }
 
+// isLCOVRepositoryRelativePath rejects absolute, parent-directory, and likely
+// module-cache paths so uploaded reports only reference repository files.
 func isLCOVRepositoryRelativePath(fileName string) bool {
 	if fileName == "" || path.IsAbs(fileName) || strings.Contains(fileName, ":") {
 		return false

@@ -30,6 +30,7 @@ func TestCoverageReportApiRequest(t *testing.T) {
 	var requestContentLength int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/"+coverageReportURLPath, r.URL.Path)
+		require.Contains(t, r.Header.Get(HeaderContentType), "multipart/form-data; boundary=")
 		require.Empty(t, r.Header.Get(HeaderContentEncoding))
 		requestContentLength = r.ContentLength
 

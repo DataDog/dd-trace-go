@@ -84,6 +84,8 @@ func (c *client) SendCoverageReport(report io.Reader, format string) error {
 		return fmt.Errorf("failed to create coverage report request body: %w", err)
 	}
 
+	// Prebuild the multipart body instead of using RequestConfig.Files so
+	// coverage_upload.request_bytes reports the exact bytes sent on the wire.
 	request := RequestConfig{
 		Method:         "POST",
 		URL:            c.getURLPath(coverageReportURLPath),
