@@ -25,7 +25,6 @@ type hashCache struct {
 var maphashSeed = maphash.MakeSeed()
 
 // computeFingerprint returns a fast, allocation-free fingerprint for a cache lookup key.
-// Collision probability is ~2^-64 per distinct input pair — negligible for a telemetry cache.
 func computeFingerprint(edgeTags, processTags []string, containerTagsHash string, parentHash uint64) uint64 {
 	var h maphash.Hash
 	h.SetSeed(maphashSeed)
@@ -48,7 +47,6 @@ func (c *hashCache) get(service, env string, edgeTags, processTags []string, con
 		return v.(uint64)
 	}
 	hash := pathwayHash(nodeHash(service, env, edgeTags, processTags, containerTagsHash), parentHash)
-	// Bounded: high topic cardinality per service is not expected.
 	if c.size.Load() >= maxHashCacheSize {
 		return hash
 	}

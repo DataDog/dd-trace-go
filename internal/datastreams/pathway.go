@@ -26,7 +26,6 @@ func isWellFormedEdgeTag(t string) bool {
 	return false
 }
 
-// nodeHash sorts edgeTags in place; callers sharing a slice across goroutines must pre-sort it.
 func nodeHash(service, env string, edgeTags, processTags []string, containerTagsHash string) uint64 {
 	h := fnv.New64()
 	sort.Strings(edgeTags)

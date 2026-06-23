@@ -54,7 +54,6 @@ type ProcessTags struct {
 	// +checklocks:mu
 	slice []string
 
-	// lock-free read cache; updated after every write while mu is held
 	sliceAtomic atomic.Pointer[[]string]
 	strAtomic   atomic.Pointer[string]
 }
@@ -122,7 +121,6 @@ func (p *ProcessTags) rebuild() {
 	str := b.String()
 	p.slice = tagsSlice
 	p.str = str
-	// Publish fresh snapshots, not &p.slice/&p.str: the next rebuild overwrites those fields and would race lock-free readers.
 	p.sliceAtomic.Store(&tagsSlice)
 	p.strAtomic.Store(&str)
 }

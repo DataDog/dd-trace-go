@@ -21,9 +21,6 @@ import (
 
 const dsmEdgeTagCacheMax = 1000
 
-// dsmEdgeTagCache caches edge-tag slices keyed by a composite string to avoid
-// per-message []string allocations. Entries are shared read-only after store;
-// callers must not mutate the returned slice.
 type dsmEdgeTagCache struct {
 	m    sync.Map
 	size atomic.Int32
@@ -40,7 +37,6 @@ func (c *dsmEdgeTagCache) getOrStore(key string, tags []string) []string {
 	if v, ok := c.m.Load(key); ok {
 		return v.([]string)
 	}
-	// Pre-sort: nodeHash sorts in place, so a shared cached slice must already be sorted to keep that a no-op.
 	sort.Strings(tags)
 	if c.size.Load() >= dsmEdgeTagCacheMax {
 		return tags
