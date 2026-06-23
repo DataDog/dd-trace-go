@@ -753,6 +753,55 @@ func TestSendRequestWithUnsupportedResponseFormat(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported format 'unknown'")
 }
 
+// TestSendRequestExpectJSONResponseRetriesOnUnknownFormat verifies that when
+// ExpectJSONResponse is true a 2xx response with a non-JSON Content-Type is
+// retried up to MaxRetries times and then surfaces an error.  When
+// ExpectJSONResponse is false the existing behaviour (return as success) is
+// preserved so upload endpoints are unaffected.
+func TestSendRequestExpectJSONResponseRetriesOnUnknownFormat(t *testing.T) {
+	t.Parallel()
+
+	// Count how many times the server is called.
+	calls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set(HeaderContentType, "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("not json"))
+	}))
+	defer ts.Close()
+
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
+
+	// With ExpectJSONResponse: true — should exhaust retries and return an error.
+	// The loop runs attempt 0..MaxRetries inclusive, so MaxRetries=2 → 3 total calls.
+	config := RequestConfig{
+		Method:             "GET",
+		URL:                ts.URL,
+		MaxRetries:         2,
+		Backoff:            1, // minimal backoff for tests
+		ExpectJSONResponse: true,
+	}
+	resp, err := handler.SendRequest(config)
+	assert.Nil(t, resp)
+	assert.Error(t, err)
+	assert.Equal(t, "max retries exceeded", err.Error())
+	assert.Equal(t, 3, calls, "expected MaxRetries+1 total calls")
+
+	// With ExpectJSONResponse: false (default) — should return the response as-is, no retry.
+	calls = 0
+	config2 := RequestConfig{
+		Method:             "GET",
+		URL:                ts.URL,
+		ExpectJSONResponse: false,
+	}
+	resp2, err2 := handler.SendRequest(config2)
+	assert.NoError(t, err2)
+	assert.NotNil(t, resp2)
+	assert.Equal(t, "unknown", resp2.Format)
+	assert.Equal(t, 1, calls, "expected exactly 1 call without retry")
+}
+
 func TestPrepareContentWithNonByteContentForOctetStream(t *testing.T) {
 	t.Parallel()
 	_, err := prepareContent(12345, ContentTypeOctetStream)

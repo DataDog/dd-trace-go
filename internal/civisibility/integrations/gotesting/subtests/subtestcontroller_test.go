@@ -34,6 +34,11 @@ const (
 	suiteUnderTest    = "fixtures_test.go"
 	parentTestName    = "TestSubtestManagement"
 	parallelToggleEnv = "SUBTEST_MATRIX_PARALLEL"
+
+	// scenarioInitFailureExitCode is returned by runMatrixScenario when CI Visibility features
+	// were not initialised (e.g. a transient settings fetch failure).  main_test.go uses this
+	// sentinel to retry the subprocess rather than failing the whole suite immediately.
+	scenarioInitFailureExitCode = 3
 )
 
 var (
@@ -805,12 +810,12 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 	tracer := integrations.InitializeCIVisibilityMock()
 
 	// Verify that CI Visibility initialised correctly and the management directives for
-	// this scenario were fetched before tests run.  If either check fails the run is
-	// aborted early with a clear message so the failure cannot be mistaken for a tag
-	// assertion error produced by a degraded-init run.
+	// this scenario were fetched before tests run.  Returning scenarioInitFailureExitCode
+	// lets the parent process retry the subprocess on transient network failures; returning
+	// a distinct non-zero code for genuine mismatches prevents masking real bugs as retries.
 	if initErr := verifyScenarioInit(scenario, ctx); initErr != nil {
 		fmt.Printf("subtest matrix: scenario %s init check failed: %v\n", scenario, initErr)
-		return 2
+		return scenarioInitFailureExitCode
 	}
 
 	exitCode := gotesting.RunM(m)
@@ -1073,6 +1078,7 @@ func startSubtestServer(cfg subtestServerConfig) (*httptest.Server, func()) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"data":[]}`))
+
 		case "/api/v2/git/repository/packfile":
 			// Accept packfile uploads even though the sandbox blocks writes.
 			debugMatrixf("subtest server: packfile request")
