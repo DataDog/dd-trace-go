@@ -8,7 +8,7 @@ package addresses
 import (
 	"math"
 
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 )
 
 type RASPRuleType uint8

@@ -6,7 +6,7 @@
 package addresses
 
 import (
-	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 )
 
 // Scope is used to divide the time spend in go-libddwaf between multiple parts. These scopes are then fed into
