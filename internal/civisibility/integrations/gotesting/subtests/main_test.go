@@ -10,12 +10,18 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
+
+// subtestMatrixStressEnv enables a repeated-run stress mode that invokes every scenario
+// N times under the race detector to surface scheduling-sensitive bugs.  Set to a
+// positive integer to activate; leave unset or 0 for normal operation.
+const subtestMatrixStressEnv = "SUBTEST_MATRIX_STRESS"
 
 const (
 	subtestScenarioEnv = "SUBTEST_MATRIX_SCENARIO"
@@ -31,46 +37,74 @@ func TestMain(m *testing.M) {
 		os.Exit(code)
 	}
 
+	stressN := 0
+	if v := os.Getenv(subtestMatrixStressEnv); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil && n > 0 {
+			stressN = n
+		}
+	}
+
 	for _, scenario := range matrixScenarioNames() {
-		const maxInitRetries = 2
-		for attempt := 0; ; attempt++ {
-			cmd := exec.Command(os.Args[0], scenarioArgs(os.Args[1:])...)
-			var buffer bytes.Buffer
-			cmd.Stdout = &buffer
-			cmd.Stderr = &buffer
-			if log.DebugEnabled() {
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-			}
-			cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%s", subtestScenarioEnv, scenario))
+		runCount := 1
+		if stressN > 0 {
+			runCount = stressN
+			fmt.Printf("\n**** [STRESS MODE: scenario %s will run %d times]\n", scenario, stressN)
+		}
 
-			fmt.Printf("\n**** [RUNNING SUBTEST SCENARIO: %s]\n", scenario)
-			err := cmd.Run()
-			if err == nil {
-				fmt.Printf("**** [SCENARIO %s COMPLETED]\n", scenario)
-				break
-			}
+		for run := 1; run <= runCount; run++ {
+			const maxInitRetries = 2
+			for attempt := 0; ; attempt++ {
+				cmd := exec.Command(os.Args[0], scenarioArgs(os.Args[1:])...)
+				var buffer bytes.Buffer
+				cmd.Stdout = &buffer
+				cmd.Stderr = &buffer
+				if log.DebugEnabled() {
+					cmd.Stdout = os.Stdout
+					cmd.Stderr = os.Stderr
+				}
+				cmd.Env = append(os.Environ(), fmt.Sprintf("%s=%s", subtestScenarioEnv, scenario))
 
-			exitErr, ok := err.(*exec.ExitError)
-			if !ok {
-				fmt.Printf("failed to run scenario %s: %v\n", scenario, err)
-				restoreEnv(constants.CIVisibilitySubtestFeaturesEnabled, prevDD, hadDD)
-				os.Exit(1)
-			}
+				if stressN > 0 {
+					fmt.Printf("\n**** [RUNNING SUBTEST SCENARIO: %s (run %d/%d)]\n", scenario, run, stressN)
+				} else {
+					fmt.Printf("\n**** [RUNNING SUBTEST SCENARIO: %s]\n", scenario)
+				}
+				err := cmd.Run()
+				if err == nil {
+					if stressN > 0 {
+						fmt.Printf("**** [SCENARIO %s RUN %d/%d COMPLETED]\n", scenario, run, stressN)
+					} else {
+						fmt.Printf("**** [SCENARIO %s COMPLETED]\n", scenario)
+					}
+					break
+				}
 
-			// scenarioInitFailureExitCode means CI Visibility features were not initialised
-			// (transient settings/management fetch failure).  Retry up to maxInitRetries times
-			// so a genuine one-shot network hiccup doesn't fail the whole test suite.
-			if exitErr.ExitCode() == scenarioInitFailureExitCode && attempt < maxInitRetries {
-				fmt.Printf("**** [SCENARIO %s INIT FAILURE (attempt %d/%d), retrying]\n", scenario, attempt+1, maxInitRetries)
+				exitErr, ok := err.(*exec.ExitError)
+				if !ok {
+					fmt.Printf("failed to run scenario %s: %v\n", scenario, err)
+					restoreEnv(constants.CIVisibilitySubtestFeaturesEnabled, prevDD, hadDD)
+					os.Exit(1)
+				}
+
+				// scenarioInitFailureExitCode means CI Visibility features were not initialised
+				// (transient settings/management fetch failure).  Retry up to maxInitRetries times
+				// so a genuine one-shot network hiccup doesn't fail the whole test suite.
+				if exitErr.ExitCode() == scenarioInitFailureExitCode && attempt < maxInitRetries {
+					fmt.Printf("**** [SCENARIO %s INIT FAILURE (attempt %d/%d), retrying]\n", scenario, attempt+1, maxInitRetries)
+					fmt.Printf("**** [SCENARIO %s OUTPUT]\n%s\n", scenario, buffer.String())
+					continue
+				}
+
+				if stressN > 0 {
+					fmt.Printf("\n**** [SCENARIO %s FAILED ON RUN %d/%d WITH EXIT CODE: %d]\n", scenario, run, stressN, exitErr.ExitCode())
+				} else {
+					fmt.Printf("\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", scenario, exitErr.ExitCode())
+				}
 				fmt.Printf("**** [SCENARIO %s OUTPUT]\n%s\n", scenario, buffer.String())
-				continue
+				restoreEnv(constants.CIVisibilitySubtestFeaturesEnabled, prevDD, hadDD)
+				os.Exit(exitErr.ExitCode())
 			}
-
-			fmt.Printf("\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", scenario, exitErr.ExitCode())
-			fmt.Printf("**** [SCENARIO %s OUTPUT]\n%s\n", scenario, buffer.String())
-			restoreEnv(constants.CIVisibilitySubtestFeaturesEnabled, prevDD, hadDD)
-			os.Exit(exitErr.ExitCode())
 		}
 	}
 
