@@ -313,7 +313,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			// Disable keep-alives so the probe connection closes immediately
 			// and does not leak goroutines when the tracer stops.
 			fallbackProbeClient := internal.DefaultHTTPClient(timeout, true)
-			c.ddTransport = &fallbackTransport{primary: primary, fallback: tcpFallback, fallbackClient: fallbackProbeClient}
+			c.ddTransport = &fallbackTransport{primary: primary, fallback: tcpFallback, fallbackClient: fallbackProbeClient, tcpClient: tcpClient}
 		} else {
 			c.ddTransport = primary
 		}

@@ -1128,8 +1128,13 @@ func (t *tracer) Stop() {
 		t.telemetry.Close()
 	}
 	t.config.httpClient.CloseIdleConnections()
-	if ft, ok := t.config.ddTransport.(*fallbackTransport); ok && ft.fallbackClient != nil {
-		ft.fallbackClient.CloseIdleConnections()
+	if ft, ok := t.config.ddTransport.(*fallbackTransport); ok {
+		if ft.fallbackClient != nil {
+			ft.fallbackClient.CloseIdleConnections()
+		}
+		if ft.tcpClient != nil {
+			ft.tcpClient.CloseIdleConnections()
+		}
 	}
 }
 

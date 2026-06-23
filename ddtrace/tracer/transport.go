@@ -340,7 +340,8 @@ func isAgentUnavailableError(err error) bool {
 type fallbackTransport struct {
 	primary        ddTransport
 	fallback       ddTransport
-	fallbackClient *http.Client
+	fallbackClient *http.Client // probe-only, DisableKeepAlives=true
+	tcpClient      *http.Client // backs fallback sends; must be closed on Stop
 }
 
 func (t *fallbackTransport) send(p payload) (io.ReadCloser, error) {
