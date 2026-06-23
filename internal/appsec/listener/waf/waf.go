@@ -6,6 +6,7 @@
 package waf
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -100,9 +101,15 @@ func (waf *Feature) onStart(op *waf.ContextOperation, _ waf.ContextArgs) {
 		AddRulesMonitoringTags(op, remoteconfig.ClientID())
 	})
 
-	ctx, err := waf.handle.NewContext(timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))
+	if waf.handle == nil {
+		log.Debug("appsec: no WAF handle available, skipping WAF context creation")
+		return
+	}
+
+	ctx, err := waf.handle.NewContext(context.Background(), timer.WithBudget(waf.timeout), timer.WithComponents(addresses.Scopes[:]...))
 	if err != nil {
 		log.Debug("appsec: failed to create WAF context: %s", err.Error())
+		return
 	}
 
 	op.SwapContext(ctx)
@@ -141,10 +148,10 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 		return
 	}
 
-	ctx.Close()
-
 	truncations := ctx.Truncations()
 	timerStats := ctx.Timer.Stats()
+	ctx.Close()
+
 	metrics := op.GetMetricsInstance()
 	AddWAFMonitoringTags(op, metrics, waf.rulesVersion, truncations, timerStats)
 	addDownwardRequestTag(op, int(metrics.SumDownstreamRequestsCalls.Load()))
