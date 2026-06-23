@@ -8,6 +8,7 @@ package openfeature
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -511,6 +512,197 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestFlagEvaluationPayloadsSplitByEncodedSize(t *testing.T) {
+	w := newFlagEvaluationWriterWithEVP(ProviderConfig{}, newEVPClient())
+	events := []flagEvaluationEvent{
+		newTestFlagEvaluationPayloadEvent("flag-a", "user-a", map[string]any{"blob": strings.Repeat("a", 100)}),
+		newTestFlagEvaluationPayloadEvent("flag-b", "user-b", map[string]any{"blob": strings.Repeat("b", 100)}),
+		newTestFlagEvaluationPayloadEvent("flag-c", "user-c", map[string]any{"blob": strings.Repeat("c", 100)}),
+	}
+	singlePayloads, dropped, err := w.buildFlagEvaluationPayloads(events[:1], 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(single) returned error: %v", err)
+	}
+	if dropped != 0 {
+		t.Fatalf("single event unexpectedly dropped %d event(s)", dropped)
+	}
+	sizeLimit := len(singlePayloads[0].body)
+
+	payloads, dropped, err := w.buildFlagEvaluationPayloads(events, sizeLimit)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads returned error: %v", err)
+	}
+	if dropped != 0 {
+		t.Fatalf("unexpected dropped count: got %d, want 0", dropped)
+	}
+	if got, want := len(payloads), len(events); got != want {
+		t.Fatalf("payload count = %d, want %d", got, want)
+	}
+	for i, payload := range payloads {
+		if len(payload.body) > sizeLimit {
+			t.Fatalf("payload %d size = %d, limit = %d", i, len(payload.body), sizeLimit)
+		}
+		var decoded flagEvaluationPayload
+		if err := json.Unmarshal(payload.body, &decoded); err != nil {
+			t.Fatalf("payload %d is invalid JSON: %v", i, err)
+		}
+		if got := len(decoded.FlagEvaluations); got != 1 {
+			t.Fatalf("payload %d event count = %d, want 1", i, got)
+		}
+	}
+}
+
+func TestFlagEvaluationPayloadDegradesOversizedFullEventBeforeDrop(t *testing.T) {
+	w := newFlagEvaluationWriterWithEVP(ProviderConfig{}, newEVPClient())
+	fullEvent := newTestFlagEvaluationPayloadEvent("large", "customer-1", map[string]any{"blob": strings.Repeat("x", 1024)})
+	degradedEvent, ok := degradeFlagEvaluationEventForPayloadLimit(fullEvent)
+	if !ok {
+		t.Fatal("expected full event to be degradable")
+	}
+
+	fullPayloads, _, err := w.buildFlagEvaluationPayloads([]flagEvaluationEvent{fullEvent}, 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(full) returned error: %v", err)
+	}
+	degradedPayloads, _, err := w.buildFlagEvaluationPayloads([]flagEvaluationEvent{degradedEvent}, 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(degraded) returned error: %v", err)
+	}
+	sizeLimit := len(degradedPayloads[0].body)
+	if len(fullPayloads[0].body) <= sizeLimit {
+		t.Fatalf("full payload size = %d, want > degraded limit %d", len(fullPayloads[0].body), sizeLimit)
+	}
+
+	payloads, dropped, err := w.buildFlagEvaluationPayloads([]flagEvaluationEvent{fullEvent}, sizeLimit)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads returned error: %v", err)
+	}
+	if dropped != 0 {
+		t.Fatalf("unexpected dropped count: got %d, want 0", dropped)
+	}
+	if got := len(payloads); got != 1 {
+		t.Fatalf("payload count = %d, want 1", got)
+	}
+	if len(payloads[0].body) > sizeLimit {
+		t.Fatalf("payload size = %d, limit = %d", len(payloads[0].body), sizeLimit)
+	}
+
+	var decoded flagEvaluationPayload
+	if err := json.Unmarshal(payloads[0].body, &decoded); err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+	event := decoded.FlagEvaluations[0]
+	if event.TargetingKey != "" {
+		t.Fatalf("degraded event retained targeting_key %q", event.TargetingKey)
+	}
+	if event.Context != nil {
+		t.Fatalf("degraded event retained context: %#v", event.Context)
+	}
+	if got := event.Flag.Key; got != "large" {
+		t.Fatalf("flag key = %q, want large", got)
+	}
+}
+
+func TestFlagEvaluationPayloadDropsOversizedDegradedEvent(t *testing.T) {
+	w := newFlagEvaluationWriterWithEVP(ProviderConfig{}, newEVPClient())
+	event := newTestFlagEvaluationPayloadEvent(strings.Repeat("f", 256), "", nil)
+
+	fullPayloads, _, err := w.buildFlagEvaluationPayloads([]flagEvaluationEvent{event}, 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(full) returned error: %v", err)
+	}
+	sizeLimit := len(fullPayloads[0].body) - 1
+
+	payloads, dropped, err := w.buildFlagEvaluationPayloads([]flagEvaluationEvent{event}, sizeLimit)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads returned error: %v", err)
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("payload count = %d, want 0", len(payloads))
+	}
+	if dropped != 1 {
+		t.Fatalf("dropped count = %d, want 1", dropped)
+	}
+}
+
+func TestFlagEvaluationSendEventsSplitsRequestsByEncodedSize(t *testing.T) {
+	requestBodies := make(chan []byte, 3)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed to read request body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		requestBodies <- body
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	agentURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse test server URL: %v", err)
+	}
+
+	evp := newEVPClient()
+	evp.agentURL = agentURL
+	evp.httpClient = server.Client()
+	w := newFlagEvaluationWriterWithEVP(ProviderConfig{}, evp)
+	events := []flagEvaluationEvent{
+		newTestFlagEvaluationPayloadEvent("flag-a", "user-a", map[string]any{"blob": strings.Repeat("a", 100)}),
+		newTestFlagEvaluationPayloadEvent("flag-b", "user-b", map[string]any{"blob": strings.Repeat("b", 100)}),
+	}
+	singlePayloads, _, err := w.buildFlagEvaluationPayloads(events[:1], 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(single) returned error: %v", err)
+	}
+	sizeLimit := len(singlePayloads[0].body)
+
+	sent, err := w.sendEventsToAgent(events, sizeLimit)
+	if err != nil {
+		t.Fatalf("sendEventsToAgent returned error: %v", err)
+	}
+	if sent != len(events) {
+		t.Fatalf("sent count = %d, want %d", sent, len(events))
+	}
+	for i := range events {
+		select {
+		case body := <-requestBodies:
+			if len(body) > sizeLimit {
+				t.Fatalf("request %d size = %d, limit = %d", i, len(body), sizeLimit)
+			}
+			var decoded flagEvaluationPayload
+			if err := json.Unmarshal(body, &decoded); err != nil {
+				t.Fatalf("request %d body is invalid JSON: %v", i, err)
+			}
+			if got := len(decoded.FlagEvaluations); got != 1 {
+				t.Fatalf("request %d event count = %d, want 1", i, got)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for request %d", i)
+		}
+	}
+}
+
+func newTestFlagEvaluationPayloadEvent(flagKey, targetingKey string, attrs map[string]any) flagEvaluationEvent {
+	nowMs := time.Now().UnixMilli()
+	event := flagEvaluationEvent{
+		Timestamp:       nowMs,
+		Flag:            flagEvalFlag{Key: flagKey},
+		FirstEvaluation: nowMs,
+		LastEvaluation:  nowMs,
+		EvaluationCount: 1,
+		TargetingKey:    targetingKey,
+		Variant:         &flagEvalVariant{Key: "on"},
+		Allocation:      &flagEvalAllocation{Key: "alloc-a"},
+	}
+	if len(attrs) > 0 {
+		event.Context = &flagEvalEventContext{Evaluation: attrs}
+	}
+	return event
 }
 
 // TestAggregatorDistinctAllocationBuckets verifies that allocation is part of the aggregation key.

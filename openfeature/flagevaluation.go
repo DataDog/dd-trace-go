@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"bytes"
 	"cmp"
 	"fmt"
 	"log/slog"
@@ -67,6 +68,10 @@ const (
 	// Finally hook and the background aggregation worker. On overflow the hook drops the
 	// event and increments a counter rather than blocking the evaluation.
 	defaultEvalEventBufferSize = 4096
+
+	// flagEvaluationPayloadSizeLimit is the EVP uncompressed JSON request-body limit.
+	// Splitting happens before transport compression concerns and includes the batch wrapper.
+	flagEvaluationPayloadSizeLimit = 5 * 1024 * 1024
 )
 
 // evaluationAggregationKey identifies one full-tier aggregation bucket. Every field is an
@@ -217,6 +222,11 @@ type flagEvalContextDD struct {
 type flagEvaluationPayload struct {
 	Context         flagEvalDDContext     `json:"context"`
 	FlagEvaluations []flagEvaluationEvent `json:"flagEvaluations"`
+}
+
+type encodedFlagEvaluationPayload struct {
+	body       []byte
+	eventCount int
 }
 
 // flagEvalDDContext carries service/env/version for the batch-level context.
@@ -440,15 +450,11 @@ func (w *flagEvaluationWriter) flush() {
 		return
 	}
 
-	payload := flagEvaluationPayload{
-		Context:         w.ddContext,
-		FlagEvaluations: events,
-	}
-
-	if err := w.sendToAgent(payload); err != nil {
+	sent, err := w.sendEventsToAgent(events, flagEvaluationPayloadSizeLimit)
+	if err != nil {
 		log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
 	} else {
-		log.Debug("openfeature: successfully sent %d flag evaluation events", len(events))
+		log.Debug("openfeature: successfully sent %d flag evaluation events", sent)
 	}
 }
 
@@ -624,6 +630,133 @@ func (w *flagEvaluationWriter) drainAndFlush() {
 // Reuses evpSubdomainHeader / evpSubdomainValue constants from exposure.go.
 func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error {
 	return w.evp.post(flagEvaluationEndpoint, "flag evaluation", payload)
+}
+
+func (w *flagEvaluationWriter) sendEventsToAgent(events []flagEvaluationEvent, sizeLimit int) (int, error) {
+	payloads, droppedOversized, err := w.buildFlagEvaluationPayloads(events, sizeLimit)
+	if err != nil {
+		return 0, err
+	}
+	if droppedOversized > 0 {
+		log.Warn("openfeature: flag evaluation payload limit dropped %d oversized degraded event(s) (best-effort telemetry)", droppedOversized)
+	}
+
+	sent := 0
+	for _, payload := range payloads {
+		if err := w.evp.postBytes(flagEvaluationEndpoint, "flag evaluation", payload.body); err != nil {
+			return sent, err
+		}
+		sent += payload.eventCount
+	}
+	return sent, nil
+}
+
+func (w *flagEvaluationWriter) buildFlagEvaluationPayloads(events []flagEvaluationEvent, sizeLimit int) ([]encodedFlagEvaluationPayload, int, error) {
+	contextBytes, err := w.evp.marshalPayload("flag evaluation context", w.ddContext)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	payloadPrefix := []byte(`{"context":`)
+	payloadPrefix = append(payloadPrefix, contextBytes...)
+	payloadPrefix = append(payloadPrefix, []byte(`,"flagEvaluations":[`)...)
+	payloadSuffix := []byte(`]}`)
+	basePayloadSize := len(payloadPrefix) + len(payloadSuffix)
+	if basePayloadSize > sizeLimit {
+		return nil, 0, fmt.Errorf("flag evaluation payload wrapper size %d exceeds limit %d", basePayloadSize, sizeLimit)
+	}
+
+	payloads := make([]encodedFlagEvaluationPayload, 0, 1)
+	batch := make([][]byte, 0, len(events))
+	batchSize := basePayloadSize
+	droppedOversized := 0
+
+	for _, event := range events {
+		encodedEvent, ok, err := w.encodeEventForPayload(event, basePayloadSize, sizeLimit)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !ok {
+			droppedOversized++
+			continue
+		}
+
+		separatorSize := 0
+		if len(batch) > 0 {
+			separatorSize = 1
+		}
+		if len(batch) > 0 && batchSize+separatorSize+len(encodedEvent) > sizeLimit {
+			payloads = append(payloads, buildEncodedFlagEvaluationPayload(payloadPrefix, payloadSuffix, batch, batchSize))
+			batch = batch[:0]
+			batchSize = basePayloadSize
+			separatorSize = 0
+		}
+
+		batch = append(batch, encodedEvent)
+		batchSize += separatorSize + len(encodedEvent)
+	}
+
+	if len(batch) > 0 {
+		payloads = append(payloads, buildEncodedFlagEvaluationPayload(payloadPrefix, payloadSuffix, batch, batchSize))
+	}
+
+	return payloads, droppedOversized, nil
+}
+
+func (w *flagEvaluationWriter) encodeEventForPayload(event flagEvaluationEvent, basePayloadSize, sizeLimit int) ([]byte, bool, error) {
+	encodedEvent, err := w.evp.marshalPayload("flag evaluation event", event)
+	if err != nil {
+		return nil, false, err
+	}
+	if flagEvaluationEventFitsPayload(len(encodedEvent), basePayloadSize, sizeLimit) {
+		return encodedEvent, true, nil
+	}
+
+	degraded, ok := degradeFlagEvaluationEventForPayloadLimit(event)
+	if !ok {
+		return nil, false, nil
+	}
+
+	encodedDegraded, err := w.evp.marshalPayload("flag evaluation event", degraded)
+	if err != nil {
+		return nil, false, err
+	}
+	if flagEvaluationEventFitsPayload(len(encodedDegraded), basePayloadSize, sizeLimit) {
+		return encodedDegraded, true, nil
+	}
+	return nil, false, nil
+}
+
+func flagEvaluationEventFitsPayload(eventSize, basePayloadSize, sizeLimit int) bool {
+	return basePayloadSize+eventSize <= sizeLimit
+}
+
+func degradeFlagEvaluationEventForPayloadLimit(event flagEvaluationEvent) (flagEvaluationEvent, bool) {
+	if event.TargetingKey == "" && event.Context == nil {
+		return flagEvaluationEvent{}, false
+	}
+
+	event.TargetingKey = ""
+	event.Context = nil
+	return event, true
+}
+
+func buildEncodedFlagEvaluationPayload(prefix, suffix []byte, batch [][]byte, size int) encodedFlagEvaluationPayload {
+	var buf bytes.Buffer
+	buf.Grow(size)
+	buf.Write(prefix)
+	for i, encodedEvent := range batch {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.Write(encodedEvent)
+	}
+	buf.Write(suffix)
+
+	return encodedFlagEvaluationPayload{
+		body:       buf.Bytes(),
+		eventCount: len(batch),
+	}
 }
 
 // add records one evaluation observation into the appropriate aggregation tier.
