@@ -9,32 +9,66 @@ import (
 	"net/netip"
 	"strconv"
 
-	"github.com/DataDog/go-libddwaf/v5"
+	libddwaf "github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 )
 
 const contextProcessKey = "waf.context.processor"
 
+type RunAddressData struct {
+	Data      map[string]any
+	Scope     timer.Key
+	Ephemeral bool
+}
+
+func (d RunAddressData) ToLibddwaf() libddwaf.RunAddressData {
+	var runData libddwaf.RunAddressData
+	runData.Data = d.Data
+	runData.TimerKey = d.Scope
+	return runData
+}
+
 type RunAddressDataBuilder struct {
-	libddwaf.RunAddressData
+	data RunAddressData
+
+	// These booleans preserve the old v4 Persistent/Ephemeral split while all addresses are stored in data.Data.
+	// Build asserts that callers did not add both lifetimes to the same WAF run.
+	hasPersistent bool
+	hasEphemeral  bool
 }
 
 func NewAddressesBuilder() *RunAddressDataBuilder {
 	return &RunAddressDataBuilder{
-		RunAddressData: libddwaf.RunAddressData{
-			Persistent: make(map[string]any, 1),
-			Ephemeral:  make(map[string]any, 1),
-			TimerKey:   WAFScope, // Default value for TimerKey
+		data: RunAddressData{
+			Data:  make(map[string]any, 1),
+			Scope: WAFScope,
 		},
 	}
 }
 
+func (b *RunAddressDataBuilder) setPersistent(address string, value any) {
+	b.data.Data[address] = value
+	b.hasPersistent = true
+}
+
+func (b *RunAddressDataBuilder) setEphemeral(address string, value any) {
+	b.data.Data[address] = value
+	b.data.Ephemeral = true
+	b.hasEphemeral = true
+}
+
+func (b *RunAddressDataBuilder) setRASPEphemeral(address string, value any) {
+	b.setEphemeral(address, value)
+	b.data.Scope = RASPScope
+}
+
 func (b *RunAddressDataBuilder) WithMethod(method string) *RunAddressDataBuilder {
-	b.Persistent[ServerRequestMethodAddr] = method
+	b.setPersistent(ServerRequestMethodAddr, method)
 	return b
 }
 
 func (b *RunAddressDataBuilder) WithRawURI(uri string) *RunAddressDataBuilder {
-	b.Persistent[ServerRequestRawURIAddr] = uri
+	b.setPersistent(ServerRequestRawURIAddr, uri)
 	return b
 }
 
@@ -42,7 +76,7 @@ func (b *RunAddressDataBuilder) WithHeadersNoCookies(headers map[string][]string
 	if len(headers) == 0 {
 		headers = nil
 	}
-	b.Persistent[ServerRequestHeadersNoCookiesAddr] = headers
+	b.setPersistent(ServerRequestHeadersNoCookiesAddr, headers)
 	return b
 }
 
@@ -50,7 +84,7 @@ func (b *RunAddressDataBuilder) WithCookies(cookies map[string][]string) *RunAdd
 	if len(cookies) == 0 {
 		return b
 	}
-	b.Persistent[ServerRequestCookiesAddr] = cookies
+	b.setPersistent(ServerRequestCookiesAddr, cookies)
 	return b
 }
 
@@ -58,7 +92,7 @@ func (b *RunAddressDataBuilder) WithQuery(query map[string][]string) *RunAddress
 	if len(query) == 0 {
 		query = nil
 	}
-	b.Persistent[ServerRequestQueryAddr] = query
+	b.setPersistent(ServerRequestQueryAddr, query)
 	return b
 }
 
@@ -66,7 +100,7 @@ func (b *RunAddressDataBuilder) WithPathParams(params map[string]string) *RunAdd
 	if len(params) == 0 {
 		return b
 	}
-	b.Persistent[ServerRequestPathParamsAddr] = params
+	b.setPersistent(ServerRequestPathParamsAddr, params)
 	return b
 }
 
@@ -74,7 +108,7 @@ func (b *RunAddressDataBuilder) WithRequestBody(body any) *RunAddressDataBuilder
 	if body == nil {
 		return b
 	}
-	b.Persistent[ServerRequestBodyAddr] = body
+	b.setPersistent(ServerRequestBodyAddr, body)
 	return b
 }
 
@@ -82,7 +116,7 @@ func (b *RunAddressDataBuilder) WithResponseBody(body any) *RunAddressDataBuilde
 	if body == nil {
 		return b
 	}
-	b.Persistent[ServerResponseBodyAddr] = body
+	b.setPersistent(ServerResponseBodyAddr, body)
 	return b
 }
 
@@ -90,7 +124,7 @@ func (b *RunAddressDataBuilder) WithResponseStatus(status int) *RunAddressDataBu
 	if status == 0 {
 		return b
 	}
-	b.Persistent[ServerResponseStatusAddr] = strconv.Itoa(status)
+	b.setPersistent(ServerResponseStatusAddr, strconv.Itoa(status))
 	return b
 }
 
@@ -98,7 +132,7 @@ func (b *RunAddressDataBuilder) WithResponseHeadersNoCookies(headers map[string]
 	if len(headers) == 0 {
 		return b
 	}
-	b.Persistent[ServerResponseHeadersNoCookiesAddr] = headers
+	b.setPersistent(ServerResponseHeadersNoCookiesAddr, headers)
 	return b
 }
 
@@ -106,7 +140,7 @@ func (b *RunAddressDataBuilder) WithClientIP(ip netip.Addr) *RunAddressDataBuild
 	if !ip.IsValid() {
 		return b
 	}
-	b.Persistent[ClientIPAddr] = ip.String()
+	b.setPersistent(ClientIPAddr, ip.String())
 	return b
 }
 
@@ -114,7 +148,7 @@ func (b *RunAddressDataBuilder) WithUserID(id string) *RunAddressDataBuilder {
 	if id == "" {
 		return b
 	}
-	b.Persistent[UserIDAddr] = id
+	b.setPersistent(UserIDAddr, id)
 	return b
 }
 
@@ -122,7 +156,7 @@ func (b *RunAddressDataBuilder) WithUserLogin(login string) *RunAddressDataBuild
 	if login == "" {
 		return b
 	}
-	b.Persistent[UserLoginAddr] = login
+	b.setPersistent(UserLoginAddr, login)
 	return b
 }
 
@@ -130,7 +164,7 @@ func (b *RunAddressDataBuilder) WithUserOrg(org string) *RunAddressDataBuilder {
 	if org == "" {
 		return b
 	}
-	b.Persistent[UserOrgAddr] = org
+	b.setPersistent(UserOrgAddr, org)
 	return b
 }
 
@@ -138,18 +172,18 @@ func (b *RunAddressDataBuilder) WithUserSessionID(id string) *RunAddressDataBuil
 	if id == "" {
 		return b
 	}
-	b.Persistent[UserSessionIDAddr] = id
+	b.setPersistent(UserSessionIDAddr, id)
 	return b
 
 }
 
 func (b *RunAddressDataBuilder) WithUserLoginSuccess() *RunAddressDataBuilder {
-	b.Persistent[UserLoginSuccessAddr] = nil
+	b.setPersistent(UserLoginSuccessAddr, nil)
 	return b
 }
 
 func (b *RunAddressDataBuilder) WithUserLoginFailure() *RunAddressDataBuilder {
-	b.Persistent[UserLoginFailureAddr] = nil
+	b.setPersistent(UserLoginFailureAddr, nil)
 	return b
 }
 
@@ -157,8 +191,7 @@ func (b *RunAddressDataBuilder) WithFilePath(file string) *RunAddressDataBuilder
 	if file == "" {
 		return b
 	}
-	b.Ephemeral[ServerIOFSFileAddr] = file
-	b.TimerKey = RASPScope
+	b.setRASPEphemeral(ServerIOFSFileAddr, file)
 	return b
 }
 
@@ -166,7 +199,7 @@ func (b *RunAddressDataBuilder) WithDownwardMethod(method string) *RunAddressDat
 	if method == "" {
 		return b
 	}
-	b.Ephemeral[ServerIONetRequestMethodAddr] = method
+	b.setEphemeral(ServerIONetRequestMethodAddr, method)
 	return b
 }
 
@@ -174,7 +207,7 @@ func (b *RunAddressDataBuilder) WithDownwardRequestHeaders(headers map[string][]
 	if len(headers) == 0 {
 		return b
 	}
-	b.Ephemeral[ServerIONetRequestHeadersAddr] = headers
+	b.setEphemeral(ServerIONetRequestHeadersAddr, headers)
 	return b
 }
 
@@ -182,8 +215,7 @@ func (b *RunAddressDataBuilder) WithDownwardURL(url string) *RunAddressDataBuild
 	if url == "" {
 		return b
 	}
-	b.Ephemeral[ServerIONetURLAddr] = url
-	b.TimerKey = RASPScope
+	b.setRASPEphemeral(ServerIONetURLAddr, url)
 	return b
 }
 
@@ -191,7 +223,7 @@ func (b *RunAddressDataBuilder) WithDownwardRequestBody(body any) *RunAddressDat
 	if body == nil {
 		return b
 	}
-	b.Ephemeral[ServerIONetRequestBodyAddr] = body
+	b.setEphemeral(ServerIONetRequestBodyAddr, body)
 	return b
 }
 
@@ -199,8 +231,7 @@ func (b *RunAddressDataBuilder) WithDownwardResponseStatus(status int) *RunAddre
 	if status == 0 {
 		return b
 	}
-	b.Ephemeral[ServerIONetResponseStatusAddr] = strconv.Itoa(status)
-	b.TimerKey = RASPScope
+	b.setRASPEphemeral(ServerIONetResponseStatusAddr, strconv.Itoa(status))
 	return b
 }
 
@@ -208,7 +239,7 @@ func (b *RunAddressDataBuilder) WithDownwardResponseHeaders(headers map[string][
 	if len(headers) == 0 {
 		return b
 	}
-	b.Ephemeral[ServerIONetResponseHeadersAddr] = headers
+	b.setEphemeral(ServerIONetResponseHeadersAddr, headers)
 	return b
 }
 
@@ -216,7 +247,7 @@ func (b *RunAddressDataBuilder) WithDownwardResponseBody(body any) *RunAddressDa
 	if body == nil {
 		return b
 	}
-	b.Ephemeral[ServerIONetResponseBodyAddr] = body
+	b.setEphemeral(ServerIONetResponseBodyAddr, body)
 	return b
 }
 
@@ -224,8 +255,7 @@ func (b *RunAddressDataBuilder) WithDBStatement(statement string) *RunAddressDat
 	if statement == "" {
 		return b
 	}
-	b.Ephemeral[ServerDBStatementAddr] = statement
-	b.TimerKey = RASPScope
+	b.setRASPEphemeral(ServerDBStatementAddr, statement)
 	return b
 }
 
@@ -233,8 +263,7 @@ func (b *RunAddressDataBuilder) WithDBType(driver string) *RunAddressDataBuilder
 	if driver == "" {
 		return b
 	}
-	b.Ephemeral[ServerDBTypeAddr] = driver
-	b.TimerKey = RASPScope
+	b.setRASPEphemeral(ServerDBTypeAddr, driver)
 	return b
 }
 
@@ -242,8 +271,7 @@ func (b *RunAddressDataBuilder) WithSysExecCmd(cmd []string) *RunAddressDataBuil
 	if len(cmd) == 0 {
 		return b
 	}
-	b.Ephemeral[ServerSysExecCmd] = cmd
-	b.TimerKey = RASPScope
+	b.setRASPEphemeral(ServerSysExecCmd, cmd)
 	return b
 }
 
@@ -251,7 +279,7 @@ func (b *RunAddressDataBuilder) WithGRPCMethod(method string) *RunAddressDataBui
 	if method == "" {
 		return b
 	}
-	b.Persistent[GRPCServerMethodAddr] = method
+	b.setPersistent(GRPCServerMethodAddr, method)
 	return b
 }
 
@@ -259,7 +287,7 @@ func (b *RunAddressDataBuilder) WithGRPCRequestMessage(message any) *RunAddressD
 	if message == nil {
 		return b
 	}
-	b.Ephemeral[GRPCServerRequestMessageAddr] = message
+	b.setEphemeral(GRPCServerRequestMessageAddr, message)
 	return b
 }
 
@@ -267,7 +295,7 @@ func (b *RunAddressDataBuilder) WithGRPCRequestMetadata(metadata map[string][]st
 	if len(metadata) == 0 {
 		return b
 	}
-	b.Persistent[GRPCServerRequestMetadataAddr] = metadata
+	b.setPersistent(GRPCServerRequestMetadataAddr, metadata)
 	return b
 }
 
@@ -275,7 +303,7 @@ func (b *RunAddressDataBuilder) WithGRPCResponseMessage(message any) *RunAddress
 	if message == nil {
 		return b
 	}
-	b.Ephemeral[GRPCServerResponseMessageAddr] = message
+	b.setEphemeral(GRPCServerResponseMessageAddr, message)
 	return b
 }
 
@@ -283,7 +311,7 @@ func (b *RunAddressDataBuilder) WithGRPCResponseMetadataHeaders(headers map[stri
 	if len(headers) == 0 {
 		return b
 	}
-	b.Persistent[GRPCServerResponseMetadataHeadersAddr] = headers
+	b.setPersistent(GRPCServerResponseMetadataHeadersAddr, headers)
 	return b
 }
 
@@ -291,7 +319,7 @@ func (b *RunAddressDataBuilder) WithGRPCResponseMetadataTrailers(trailers map[st
 	if len(trailers) == 0 {
 		return b
 	}
-	b.Persistent[GRPCServerResponseMetadataTrailersAddr] = trailers
+	b.setPersistent(GRPCServerResponseMetadataTrailersAddr, trailers)
 	return b
 }
 
@@ -299,37 +327,40 @@ func (b *RunAddressDataBuilder) WithGRPCResponseStatusCode(status int) *RunAddre
 	if status == 0 {
 		return b
 	}
-	b.Persistent[GRPCServerResponseStatusCodeAddr] = strconv.Itoa(status)
+	b.setPersistent(GRPCServerResponseStatusCodeAddr, strconv.Itoa(status))
 	return b
 }
 
 func (b *RunAddressDataBuilder) WithGraphQLResolver(fieldName string, args map[string]any) *RunAddressDataBuilder {
-	if _, ok := b.Ephemeral[GraphQLServerResolverAddr]; !ok {
-		b.Ephemeral[GraphQLServerResolverAddr] = make(map[string]any, 1)
+	if _, ok := b.data.Data[GraphQLServerResolverAddr]; !ok {
+		b.setEphemeral(GraphQLServerResolverAddr, make(map[string]any, 1))
 	}
 
-	b.Ephemeral[GraphQLServerResolverAddr].(map[string]any)[fieldName] = args
+	b.data.Data[GraphQLServerResolverAddr].(map[string]any)[fieldName] = args
 	return b
 }
 
 func (b *RunAddressDataBuilder) ExtractSchema() *RunAddressDataBuilder {
-	if _, ok := b.Persistent[contextProcessKey]; !ok {
-		b.Persistent[contextProcessKey] = make(map[string]bool, 1)
+	if _, ok := b.data.Data[contextProcessKey]; !ok {
+		b.setPersistent(contextProcessKey, make(map[string]bool, 1))
 	}
 
-	b.Persistent[contextProcessKey].(map[string]bool)["extract-schema"] = true
+	b.data.Data[contextProcessKey].(map[string]bool)["extract-schema"] = true
 	return b
 }
 
 func (b *RunAddressDataBuilder) NoExtractSchema() *RunAddressDataBuilder {
-	if _, ok := b.Persistent[contextProcessKey]; !ok {
-		b.Persistent[contextProcessKey] = make(map[string]bool, 1)
+	if _, ok := b.data.Data[contextProcessKey]; !ok {
+		b.setPersistent(contextProcessKey, make(map[string]bool, 1))
 	}
 
-	b.Persistent[contextProcessKey].(map[string]bool)["extract-schema"] = false
+	b.data.Data[contextProcessKey].(map[string]bool)["extract-schema"] = false
 	return b
 }
 
-func (b *RunAddressDataBuilder) Build() libddwaf.RunAddressData {
-	return b.RunAddressData
+func (b *RunAddressDataBuilder) Build() RunAddressData {
+	if b.hasPersistent && b.hasEphemeral {
+		panic("addresses: persistent and ephemeral addresses cannot be mixed in a single run")
+	}
+	return b.data
 }

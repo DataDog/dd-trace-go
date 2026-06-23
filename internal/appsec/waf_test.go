@@ -955,26 +955,27 @@ func TestWafEventsInMetaStruct(t *testing.T) {
 // BenchmarkSampleWAFContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
 // This is a basic sample of what could happen in a real-world scenario.
 func BenchmarkSampleWAFContext(b *testing.B) {
-	builder, err := libddwaf.NewBuilder(config.DefaultObfuscatorKeyRegex, config.DefaultObfuscatorValueRegex)
+	builder, err := libddwaf.NewBuilder()
 	require.NoError(b, err)
 	defer builder.Close()
 
 	_, err = builder.AddDefaultRecommendedRuleset()
 	require.NoError(b, err)
 
-	handle := builder.Build()
+	handle, err := builder.Build()
+	require.NoError(b, err)
 	require.NotNil(b, handle)
 
 	for b.Loop() {
-		ctx, err := handle.NewContext(timer.WithBudget(time.Second))
+		ctx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second))
 		if err != nil || ctx == nil {
 			b.Fatal("nil context")
 		}
 
 		// Request WAF Run
-		_, err = ctx.Run(
-			libddwaf.RunAddressData{
-				Persistent: map[string]any{
+		_, err = ctx.Run(context.Background(),
+			addresses.RunAddressData{
+				Data: map[string]any{
 					addresses.ClientIPAddr:            "1.1.1.1",
 					addresses.ServerRequestMethodAddr: "GET",
 					addresses.ServerRequestRawURIAddr: "/",
@@ -996,16 +997,17 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 						"param": "value",
 					},
 				},
-			})
+				Scope: addresses.WAFScope,
+			}.ToLibddwaf())
 
 		if err != nil {
 			b.Fatalf("error running waf: %v", err)
 		}
 
 		// Response WAF Run
-		_, err = ctx.Run(
-			libddwaf.RunAddressData{
-				Persistent: map[string]any{
+		_, err = ctx.Run(context.Background(),
+			addresses.RunAddressData{
+				Data: map[string]any{
 					addresses.ServerResponseHeadersNoCookiesAddr: map[string][]string{
 						"content-type":   {"application/json"},
 						"content-length": {"0"},
@@ -1013,7 +1015,8 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 					},
 					addresses.ServerResponseStatusAddr: 200,
 				},
-			})
+				Scope: addresses.WAFScope,
+			}.ToLibddwaf())
 
 		if err != nil {
 			b.Fatalf("error running waf: %v", err)
@@ -1100,7 +1103,7 @@ func TestAPI10ResponseBody(t *testing.T) {
 		t.Skipf("WAF must be usable for this test to run correctly: %v", err)
 	}
 
-	builder, err := libddwaf.NewBuilder("", "")
+	builder, err := libddwaf.NewBuilder()
 	require.NoError(t, err)
 
 	var ruleset any
@@ -1116,12 +1119,13 @@ func TestAPI10ResponseBody(t *testing.T) {
 	builder.AddOrUpdateConfig("/custom", ruleset)
 	defer builder.Close()
 
-	handle := builder.Build()
+	handle, err := builder.Build()
+	require.NoError(t, err)
 	require.NotNil(t, handle)
 
 	defer handle.Close()
 
-	ctx, err := handle.NewContext(timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
+	ctx, err := handle.NewContext(context.Background(), timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
 	require.NoError(t, err)
 
 	defer ctx.Close()
@@ -1131,11 +1135,12 @@ func TestAPI10ResponseBody(t *testing.T) {
 	encodable, err := body.NewEncodable("application/json", &reader, 999999)
 	require.NoError(t, err)
 
-	result, err := ctx.Run(libddwaf.RunAddressData{
-		Ephemeral: map[string]any{
+	result, err := ctx.Run(context.Background(), addresses.RunAddressData{
+		Data: map[string]any{
 			addresses.ServerIONetResponseBodyAddr: encodable,
 		},
-	})
+		Ephemeral: true,
+	}.ToLibddwaf())
 
 	require.NoError(t, err)
 

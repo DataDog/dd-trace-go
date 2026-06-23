@@ -6,6 +6,7 @@
 package appsec
 
 import (
+	"context"
 	"embed"
 	"strings"
 
@@ -577,18 +578,19 @@ func TestOnRCUpdate(t *testing.T) {
 		require.NotNil(t, handle)
 		defer handle.Close()
 
-		ctx, err := handle.NewContext(timer.WithUnlimitedBudget())
+		ctx, err := handle.NewContext(context.Background(), timer.WithUnlimitedBudget())
 		require.NoError(t, err)
 		defer ctx.Close()
 
-		res, err := ctx.Run(libddwaf.RunAddressData{
-			Persistent: map[string]any{
+		res, err := ctx.Run(context.Background(), addresses.RunAddressData{
+			Data: map[string]any{
 				"waf.context.processor": map[string]bool{"extract-schema": true},
 				addresses.ServerRequestBodyAddr: map[string]any{
 					"testcard": "1234567890",
 				},
 			},
-		})
+			Scope: addresses.WAFScope,
+		}.ToLibddwaf())
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{
 			"_dd.appsec.s.req.bodytest": []any{map[string]any{
@@ -742,7 +744,7 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, _ := appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		wafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
+		wafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour))
 		require.NoError(t, err)
 		defer wafCtx.Close()
 		values := map[string]any{
@@ -750,7 +752,7 @@ func TestWafRCUpdate(t *testing.T) {
 		}
 
 		// Make sure the rule matches as expected
-		result, err := wafCtx.Run(libddwaf.RunAddressData{Persistent: values})
+		result, err := wafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, Scope: addresses.WAFScope}.ToLibddwaf())
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
@@ -761,11 +763,11 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, _ = appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		newWafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
+		newWafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour))
 		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result, err = newWafCtx.Run(libddwaf.RunAddressData{Persistent: values})
+		result, err = newWafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, Scope: addresses.WAFScope}.ToLibddwaf())
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block_request")
