@@ -78,6 +78,16 @@ func StartContextOperation(ctx context.Context, span trace.TagSetter) (*ContextO
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ContextArgs{})
 }
 
+// ContextOperationFromParents walks upward from op to find the request-scoped WAF context operation.
+func ContextOperationFromParents(op dyngo.Operation) (*ContextOperation, bool) {
+	for current := op.Parent(); current != nil; current = current.Parent() {
+		if ctxOp, ok := current.(*ContextOperation); ok {
+			return ctxOp, true
+		}
+	}
+	return nil, false
+}
+
 func (op *ContextOperation) Finish() {
 	dyngo.FinishOperation(op, ContextRes{})
 	op.ServiceEntrySpanOperation.Finish()
