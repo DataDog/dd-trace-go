@@ -202,6 +202,25 @@ jobs:
         with:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
 
+      - name: Merge contrib coverage files
+        if: always() && steps.restore.outcome == 'success'
+        run: |
+          echo "mode: atomic" > coverage-contrib-merged.txt
+          find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
+            -name "coverage-*.txt" \
+            | xargs grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
+
+      - name: Upload Coverage to Datadog
+        if: always() && steps.restore.outcome == 'success'
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage-contrib-merged.txt
+          format: go-coverprofile
+          flags: contrib
+          extra-args: --carryforward-flags core,contrib
+
   smoke-test-tracer:
     name: Test dd-trace-go
     runs-on: ubuntu-latest

@@ -267,15 +267,24 @@ jobs:
         with:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
 
+      - name: Merge contrib coverage files
+        if: always()
+        run: |
+          echo "mode: atomic" > coverage-contrib-merged.txt
+          find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
+            -name "coverage-*.txt" \
+            | xargs grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
+
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage-contrib-merged.txt
           format: go-coverprofile
           flags: contrib
+          extra-args: --carryforward-flags core,contrib
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
@@ -455,9 +464,10 @@ jobs:
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage.txt coverage-noshuffle.txt
           format: go-coverprofile
           flags: core
+          extra-args: --carryforward-flags core,contrib
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
