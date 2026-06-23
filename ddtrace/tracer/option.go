@@ -1000,9 +1000,13 @@ func WithDogstatsdAddr(addr string) StartOption {
 // WithStatsdClient sets a custom statsd client to be used by the tracer for
 // internal metrics. When set, the tracer will not create its own statsd client,
 // allowing callers to share a single client across the tracer and application code.
-func WithStatsdClient(client internal.StatsdClient) StartOption {
+// The client must satisfy internal.StatsdClient; *statsd.ClientDirect from
+// github.com/DataDog/datadog-go/v5 satisfies this requirement.
+func WithStatsdClient(client statsd.ClientInterface) StartOption {
 	return func(cfg *config) {
-		cfg.statsdClient = client
+		if c, ok := client.(internal.StatsdClient); ok {
+			cfg.statsdClient = c
+		}
 	}
 }
 
