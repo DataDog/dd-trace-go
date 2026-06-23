@@ -8,7 +8,6 @@ package openfeature
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -514,8 +513,42 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 	})
 }
 
-func TestFlagEvaluationPayloadDegradesOversizedFullEventBeforeDrop(t *testing.T) {
+func TestFlagEvaluationPayloadsRespectEncodedSizeLimit(t *testing.T) {
 	w := newFlagEvalLoggingWriterWithEVP(ProviderConfig{}, newEVPClient())
+
+	events := []flagEvalLoggingEvent{
+		newTestFlagEvaluationPayloadEvent("flag-a", "user-a", map[string]any{"blob": strings.Repeat("a", 100)}),
+		newTestFlagEvaluationPayloadEvent("flag-b", "user-b", map[string]any{"blob": strings.Repeat("b", 100)}),
+	}
+	singleResult, err := w.buildFlagEvaluationPayloads(events[:1], 1<<30)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(single) returned error: %v", err)
+	}
+	sizeLimit := len(singleResult.payloads[0].body)
+
+	result, err := w.buildFlagEvaluationPayloads(events, sizeLimit)
+	if err != nil {
+		t.Fatalf("buildFlagEvaluationPayloads(split) returned error: %v", err)
+	}
+	if got := len(result.payloads); got != len(events) {
+		t.Fatalf("payload count = %d, want %d", got, len(events))
+	}
+	if result.droppedPayloadLimit != 0 || result.degradedPayloadLimit != 0 {
+		t.Fatalf("unexpected limit counters: dropped=%d degraded=%d", result.droppedPayloadLimit, result.degradedPayloadLimit)
+	}
+	for i, payload := range result.payloads {
+		if len(payload.body) > sizeLimit {
+			t.Fatalf("payload %d size = %d, limit = %d", i, len(payload.body), sizeLimit)
+		}
+		var decoded flagEvalLoggingPayload
+		if err := json.Unmarshal(payload.body, &decoded); err != nil {
+			t.Fatalf("payload %d body is invalid JSON: %v", i, err)
+		}
+		if got := len(decoded.FlagEvaluations); got != 1 {
+			t.Fatalf("payload %d event count = %d, want 1", i, got)
+		}
+	}
+
 	fullEvent := newTestFlagEvaluationPayloadEvent("large", "customer-1", map[string]any{"blob": strings.Repeat("x", 1024)})
 	degradedEvent, ok := degradeFlagEvaluationEventForPayloadLimit(fullEvent)
 	if !ok {
@@ -530,12 +563,12 @@ func TestFlagEvaluationPayloadDegradesOversizedFullEventBeforeDrop(t *testing.T)
 	if err != nil {
 		t.Fatalf("buildFlagEvaluationPayloads(degraded) returned error: %v", err)
 	}
-	sizeLimit := len(degradedResult.payloads[0].body)
-	if len(fullResult.payloads[0].body) <= sizeLimit {
-		t.Fatalf("full payload size = %d, want > degraded limit %d", len(fullResult.payloads[0].body), sizeLimit)
+	degradedLimit := len(degradedResult.payloads[0].body)
+	if len(fullResult.payloads[0].body) <= degradedLimit {
+		t.Fatalf("full payload size = %d, want > degraded limit %d", len(fullResult.payloads[0].body), degradedLimit)
 	}
 
-	result, err := w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{fullEvent}, sizeLimit)
+	result, err = w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{fullEvent}, degradedLimit)
 	if err != nil {
 		t.Fatalf("buildFlagEvaluationPayloads returned error: %v", err)
 	}
@@ -549,8 +582,8 @@ func TestFlagEvaluationPayloadDegradesOversizedFullEventBeforeDrop(t *testing.T)
 	if got := len(payloads); got != 1 {
 		t.Fatalf("payload count = %d, want 1", got)
 	}
-	if len(payloads[0].body) > sizeLimit {
-		t.Fatalf("payload size = %d, limit = %d", len(payloads[0].body), sizeLimit)
+	if len(payloads[0].body) > degradedLimit {
+		t.Fatalf("payload size = %d, limit = %d", len(payloads[0].body), degradedLimit)
 	}
 
 	var decoded flagEvalLoggingPayload
@@ -582,66 +615,6 @@ func TestFlagEvaluationPayloadDegradesOversizedFullEventBeforeDrop(t *testing.T)
 	}
 	if result.droppedPayloadLimit != droppedEvent.EvaluationCount {
 		t.Fatalf("dropped count = %d, want %d", result.droppedPayloadLimit, droppedEvent.EvaluationCount)
-	}
-}
-
-func TestFlagEvaluationSendEventsSplitsRequestsByEncodedSize(t *testing.T) {
-	requestBodies := make(chan []byte, 3)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("failed to read request body: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		requestBodies <- body
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer server.Close()
-
-	agentURL, err := url.Parse(server.URL)
-	if err != nil {
-		t.Fatalf("failed to parse test server URL: %v", err)
-	}
-
-	evp := newEVPClient()
-	evp.agentURL = agentURL
-	evp.httpClient = server.Client()
-	w := newFlagEvalLoggingWriterWithEVP(ProviderConfig{}, evp)
-	events := []flagEvalLoggingEvent{
-		newTestFlagEvaluationPayloadEvent("flag-a", "user-a", map[string]any{"blob": strings.Repeat("a", 100)}),
-		newTestFlagEvaluationPayloadEvent("flag-b", "user-b", map[string]any{"blob": strings.Repeat("b", 100)}),
-	}
-	singleResult, err := w.buildFlagEvaluationPayloads(events[:1], 1<<30)
-	if err != nil {
-		t.Fatalf("buildFlagEvaluationPayloads(single) returned error: %v", err)
-	}
-	sizeLimit := len(singleResult.payloads[0].body)
-
-	sent, err := w.sendEventsToAgent(events, sizeLimit)
-	if err != nil {
-		t.Fatalf("sendEventsToAgent returned error: %v", err)
-	}
-	if sent != len(events) {
-		t.Fatalf("sent count = %d, want %d", sent, len(events))
-	}
-	for i := range events {
-		select {
-		case body := <-requestBodies:
-			if len(body) > sizeLimit {
-				t.Fatalf("request %d size = %d, limit = %d", i, len(body), sizeLimit)
-			}
-			var decoded flagEvalLoggingPayload
-			if err := json.Unmarshal(body, &decoded); err != nil {
-				t.Fatalf("request %d body is invalid JSON: %v", i, err)
-			}
-			if got := len(decoded.FlagEvaluations); got != 1 {
-				t.Fatalf("request %d event count = %d, want 1", i, got)
-			}
-		case <-time.After(2 * time.Second):
-			t.Fatalf("timed out waiting for request %d", i)
-		}
 	}
 }
 
