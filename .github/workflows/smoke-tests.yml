@@ -218,8 +218,6 @@ jobs:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
           files: coverage-contrib-merged.txt
           format: go-coverprofile
-          flags: contrib
-          extra-args: --carryforward-flags core,contrib
 
   smoke-test-tracer:
     name: Test dd-trace-go
