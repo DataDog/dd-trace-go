@@ -56,6 +56,7 @@ func (c *client) GetCommits(localCommits []string) ([]string, error) {
 	}
 
 	request := c.getPostRequestConfig(searchCommitsURLPath, body)
+	request.ExpectJSONResponse = true
 	if request.Compressed {
 		telemetry.GitRequestsSearchCommits(telemetry.CompressedRequestCompressedType)
 	} else {
