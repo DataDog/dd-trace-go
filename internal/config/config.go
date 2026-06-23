@@ -132,6 +132,8 @@ type Config struct {
 	dynamicInstrumentationEnabled *DynamicConfig[bool]
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
+	// globalTags holds a set of tags applied to all spans.
+	globalTags *DynamicConfig[map[string]any]
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags *DynamicConfig[[]string]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
@@ -287,6 +289,12 @@ func loadConfig() *Config {
 
 	headerTags, headerTagsOrigin := parseHeaderAsTagsFromEnv(p)
 	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], propagateHeaderAsTagsToGlobalConfig)
+
+	rawTags, globalTagsOrigin := p.GetStringWithOrigin("DD_TAGS", "")
+	cfg.globalTags = newDynamicConfig("trace_tags", parseGlobalTags(rawTags), globalTagsOrigin, equalMap[string], nil)
+	for k, v := range cfg.globalTags.Get() {
+		reportGlobalTagTelemetry(k, v, globalTagsOrigin)
+	}
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -647,6 +655,38 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, prod
 	}
 	c.globalSampleRate.setBaseline(rate, origin)
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
+}
+
+// GlobalTags returns a copy of the global tags applied to all spans. If no
+// global tags are set, returns nil.
+func (c *Config) GlobalTags() map[string]any {
+	current := c.globalTags.Get()
+	if current == nil {
+		return nil
+	}
+	result := make(map[string]any, len(current))
+	maps.Copy(result, current)
+	return result
+}
+
+// GlobalTagsConfig returns the DynamicConfig for global tags, used by the
+// tracer's Remote Config handler to apply tracing_tags updates and resets.
+func (c *Config) GlobalTagsConfig() *DynamicConfig[map[string]any] {
+	return c.globalTags
+}
+
+// SetGlobalTag adds or overwrites a single global tag. Like SetServiceMapping it
+// is additive, so it carries no cross-product gate. The read-modify-write of the
+// startup baseline is guarded by c.mu.
+func (c *Config) SetGlobalTag(key string, value any, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	cur, curOrigin := c.globalTags.Baseline()
+	nm := make(map[string]any, len(cur)+1)
+	maps.Copy(nm, cur)
+	nm[key] = value
+	c.globalTags.setBaseline(nm, curOrigin)
+	c.mu.Unlock()
+	reportGlobalTagTelemetry(key, value, origin)
 }
 
 func (c *Config) DynamicInstrumentationEnabled() bool {
