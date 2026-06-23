@@ -72,19 +72,19 @@ type GLSPopperCell struct {
 	ptr atomic.Pointer[GLSPopper]
 }
 
-// GLSDoneCell holds the heap-allocated liveness cell for a GLS activation.
-// It is the type orchestrion injects as the __dd_glsDone field on Span (via
-// add-struct-field, which requires a named type).
+// GLSDoneCell holds the heap-allocated liveness cell for a span's current GLS
+// lifecycle. It is the type orchestrion injects as the __dd_glsDone field on
+// Span (via add-struct-field, which requires a named type).
 //
-// Each activation (each ContextWithSpan call) allocates a fresh *atomic.Bool
-// cell, stores it here (atomically), and also passes it to contextStack.Push
-// as the done pointer for that stack entry. When the span finishes, the cell
-// is set to true via GLSDeactivate. When the span is recycled by the pool,
-// GLSReset clears the ptr — but the contextStack entry retains its own
-// reference to the same cell, so the cell's true value outlives the span's
-// current lifecycle. The next Push on that goroutine drains the stale entry
-// by reading the still-true cell. A reused span starts with ptr == nil and
-// gets a fresh cell on its next activation: no ABA.
+// One *atomic.Bool cell is allocated on a span's first activation and shared by
+// every subsequent activation of that span (GLSActivate reuses it), so all of
+// the span's contextStack entries observe a single liveness signal. Each entry
+// keeps its own pointer to the cell. When the span finishes, GLSDeactivate sets
+// the cell to true, marking every entry drain-eligible. When the span is
+// recycled by the pool, GLSReset clears this ptr — but the contextStack entries
+// retain their own references to the now-true cell, so it outlives the span's
+// current lifecycle and the next Push drains them. The reused span starts with
+// ptr == nil and allocates a fresh cell on its next activation: no ABA.
 //
 // The zero value is ready to use.
 type GLSDoneCell struct {
@@ -100,12 +100,14 @@ type GLSDoneCell struct {
 // a no-op on any other goroutine, so a cross-goroutine finish can never corrupt
 // an unrelated goroutine's stack.
 //
-// done, when non-nil, receives a freshly allocated liveness cell (a
-// *atomic.Bool) for this specific activation. The same pointer is passed to
-// contextStack.Push, so the stack entry is tied to this cell — not to the span
-// itself. If done already holds a cell from a previous activation (same span
-// pushed again without an intervening Finish), that old cell is atomically
-// swapped out and marked done, superseding the previous stack entry.
+// done, when non-nil, holds the span's liveness cell (a *atomic.Bool). The
+// first activation allocates it; later activations of the same span reuse it,
+// so every stack entry for the span shares one liveness signal and they are all
+// marked done together at Finish. The cell pointer is passed to
+// contextStack.Push, tying the entry to the cell — not to the span itself —
+// which is what makes reclaim safe across span-pool reuse. A live span
+// re-activated on another goroutine is never marked done here (that would drain
+// a still-live entry); see the reuse comment in the body.
 //
 // When done is nil (e.g. dyngo operations that never cross goroutine boundaries)
 // the stack entry carries no done cell and is never drained by Push. When
@@ -125,23 +127,35 @@ func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell, done *
 	}
 	var cell *atomic.Bool
 	if done != nil {
-		existing := done.ptr.Load()
-		if existing != nil && existing.Load() {
-			// The span was already finished (done cell is true) before this push.
-			// This happens in the cross-goroutine pattern where the owner finishes
-			// a span on G1 and then the worker on G2 calls ContextWithSpan with
-			// the same (already-finished) span. Reuse the existing cell so the
-			// stack entry is immediately drain-eligible on the next Push — without
-			// this, a fresh false cell would be allocated and never set to true,
-			// leaking one entry per record.
+		if existing := done.ptr.Load(); existing != nil {
+			// Reuse this span's existing liveness cell — one cell per span
+			// lifecycle, shared by every activation. All of the span's stack
+			// entries therefore observe a single liveness signal and become
+			// drain-eligible together when Finish marks the cell.
+			//
+			// We must NOT allocate a fresh cell and mark the old one done here:
+			// when a still-live span is propagated to another goroutine (the
+			// owner ran ContextWithSpan, then a worker re-activates it before
+			// Finish), marking the previous cell done would make a STILL-LIVE
+			// entry drain-eligible. The owner's next Push would drop it, so after
+			// a child span pops, the GLS fallback would no longer restore the
+			// (unfinished) parent — corrupting cross-goroutine live propagation.
+			// See orchestrion#782 review.
+			//
+			// A finished span recycled by the span pool has its cell cleared by
+			// GLSReset (ptr == nil), so it allocates a fresh cell below on its
+			// next activation: no ABA. A cell that is already true here (Finish
+			// ran before this activation, the cross-goroutine korECM pattern) is
+			// likewise reused, making the entry immediately drain-eligible.
 			cell = existing
 		} else {
-			// Fresh activation or span not yet finished: allocate a new cell.
-			// If the span was previously activated (same done field, non-nil),
-			// mark the old cell done to drain the superseded stack entry.
+			// First activation of this lifecycle: allocate the cell. CompareAndSwap
+			// so concurrent first-activations of the same span converge on one
+			// cell rather than each pushing an entry with its own (one of which
+			// Finish would then never mark, leaking it).
 			cell = new(atomic.Bool)
-			if old := done.ptr.Swap(cell); old != nil {
-				old.Store(true)
+			if !done.ptr.CompareAndSwap(nil, cell) {
+				cell = done.ptr.Load()
 			}
 		}
 	}

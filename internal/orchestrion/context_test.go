@@ -106,7 +106,7 @@ func TestGLSActivate(t *testing.T) {
 		require.Nil(t, getDDContextStack().Peek(key("k")), "popper should remove the value")
 	})
 
-	t.Run("re-activation of live span supersedes previous entry", func(t *testing.T) {
+	t.Run("re-activation of live span shares the same cell (no supersede)", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 
 		var pop GLSPopperCell
@@ -114,16 +114,18 @@ func TestGLSActivate(t *testing.T) {
 		GLSActivate(nil, key("k"), "v1", &pop, &done)
 		first := pop.ptr.Load()
 		cell1 := done.ptr.Load()
-		// Second activation of the same span (same done field, cell not yet true):
-		// the old cell is marked done immediately so the drain removes the first
-		// entry and depth stays at 1.
+		// Second activation of the same still-live span (e.g. propagated to
+		// another goroutine before Finish). The cell must be REUSED, not replaced,
+		// and the previous entry must NOT be marked done — marking a live entry
+		// would let the next Push drop it, breaking cross-goroutine live
+		// propagation (orchestrion#782 review). So both entries stay live and the
+		// stack grows to 2.
 		GLSActivate(nil, key("k"), "v2", &pop, &done)
-		require.Equal(t, 1, getDDContextStack().Depth(), "re-activation drains the superseded entry")
-		require.Equal(t, "v2", getDDContextStack().Peek(key("k")), "v2 is the live entry")
+		require.Equal(t, 2, getDDContextStack().Depth(), "re-activation keeps both live entries")
+		require.Same(t, cell1, done.ptr.Load(), "the cell is reused, not replaced")
+		require.False(t, cell1.Load(), "the live cell must not be marked done on re-activation")
 		require.Same(t, first, pop.ptr.Load(),
 			"the first popper must be retained across re-activation")
-		require.True(t, cell1.Load(), "old cell must be marked done on re-activation")
-		require.NotSame(t, cell1, done.ptr.Load(), "re-activation must allocate a new cell")
 	})
 
 	t.Run("re-activation of already-finished span reuses existing cell", func(t *testing.T) {
