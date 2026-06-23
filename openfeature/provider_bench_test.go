@@ -409,10 +409,10 @@ func runFlagEvalBenchmark(b *testing.B, configureHooks func(p *DatadogProvider))
 //	  -benchmem -count=3 -cpu=8
 func BenchmarkFlagEvaluationNoop(b *testing.B) {
 	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
+		p.exposureHook = nil
 		p.flagEvalMetricsHook = nil
 		p.flagEvalLoggingHook = nil
 		p.flagEvalLoggingWriter = nil
-		p.exposureHook = nil
 	})
 }
 
@@ -421,9 +421,9 @@ func BenchmarkFlagEvaluationNoop(b *testing.B) {
 // are disabled so this column isolates the OTel hook's cost.
 func BenchmarkFlagEvaluationOTelOnly(b *testing.B) {
 	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
+		p.exposureHook = nil
 		p.flagEvalLoggingHook = nil
 		p.flagEvalLoggingWriter = nil
-		p.exposureHook = nil
 	})
 }
 

@@ -104,33 +104,36 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	writer := newExposureWriterWithEVP(config, evp)
 
 	// Create exposure hook
-	hook := newExposureHook(writer)
+	exposureLoggingHook := newExposureHook(writer)
 
 	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
 	metrics, err := newFlagEvalMetrics()
 	if err != nil {
 		log.Error("openfeature: failed to create flag evaluation metrics: %v", err.Error())
 	}
-
-	p := &DatadogProvider{
-		metadata: openfeature.Metadata{
-			Name: "Datadog Remote Config Provider",
-		},
-		exposureWriter:      writer,
-		exposureHook:        hook,
-		flagEvalMetricsHook: newFlagEvalMetricsHook(metrics),
-	}
+	evalMetricsHook := newFlagEvalMetricsHook(metrics)
 
 	// Conditionally construct the EVP flagevaluation writer + hook.
 	// Gated by DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true).
 	// When false, both fields are left nil and the EVP path is disabled.
 	// The OTel hook (flagEvalMetricsHook above) is registered unconditionally.
+	var evalWriter *flagEvalLoggingWriter
+	var evalLoggingHook *flagEvalLoggingHook
 	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
-		evalWriter := newFlagEvalLoggingWriterWithEVP(config, evp)
-		p.flagEvalLoggingWriter = evalWriter
-		p.flagEvalLoggingHook = newFlagEvalLoggingHook(evalWriter)
+		evalWriter = newFlagEvalLoggingWriterWithEVP(config, evp)
+		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	}
 
+	p := &DatadogProvider{
+		metadata: openfeature.Metadata{
+			Name: "Datadog Remote Config Provider",
+		},
+		exposureWriter:        writer,
+		exposureHook:          exposureLoggingHook,
+		flagEvalMetricsHook:   evalMetricsHook,
+		flagEvalLoggingWriter: evalWriter,
+		flagEvalLoggingHook:   evalLoggingHook,
+	}
 	p.configChange.L = &p.mu
 	return p
 }
