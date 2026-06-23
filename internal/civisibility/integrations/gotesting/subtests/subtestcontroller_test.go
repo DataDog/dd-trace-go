@@ -34,6 +34,11 @@ const (
 	suiteUnderTest    = "fixtures_test.go"
 	parentTestName    = "TestSubtestManagement"
 	parallelToggleEnv = "SUBTEST_MATRIX_PARALLEL"
+
+	// scenarioInitFailureExitCode is returned by runMatrixScenario when CI Visibility features
+	// were not initialised (e.g. a transient settings fetch failure).  main_test.go uses this
+	// sentinel to retry the subprocess rather than failing the whole suite immediately.
+	scenarioInitFailureExitCode = 3
 )
 
 var (
@@ -804,6 +809,19 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 
 	tracer := integrations.InitializeCIVisibilityMock()
 
+	// Guard against the scenario running with Test Management silently disabled due to a
+	// transient settings or test-management fetch failure.  Returning scenarioInitFailureExitCode
+	// lets the parent process retry the subprocess rather than producing a confusing span-count
+	// validation panic.
+	if s := integrations.GetSettings(); s == nil || !s.TestManagement.Enabled {
+		fmt.Printf("subtest matrix: scenario %s init failure: Test Management not enabled (transient settings fetch failure?)\n", scenario)
+		return scenarioInitFailureExitCode
+	}
+	if d := integrations.GetTestManagementTestsData(); d == nil || len(d.Modules) == 0 {
+		fmt.Printf("subtest matrix: scenario %s init failure: test-management data empty (transient fetch failure?)\n", scenario)
+		return scenarioInitFailureExitCode
+	}
+
 	exitCode := gotesting.RunM(m)
 	// When the run fails, dump span resources for easier diagnosis.
 	if exitCode != 0 {
@@ -990,7 +1008,7 @@ func startSubtestServer(cfg subtestServerConfig) (*httptest.Server, func()) {
 			debugMatrixf("subtest server: search-commits request")
 			defer r.Body.Close()
 			_, _ = io.Copy(io.Discard, r.Body)
-			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{}`))
 		case "/api/v2/git/repository/packfile":
 			// Accept packfile uploads even though the sandbox blocks writes.
