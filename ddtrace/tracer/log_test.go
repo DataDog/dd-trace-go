@@ -9,11 +9,10 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"net/http/httptest"
 	"regexp"
+	"syscall"
 	"testing"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
@@ -349,8 +348,7 @@ func TestAgentURLConflict(t *testing.T) {
 	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
 }
 
-// udsEndpointTransport is a stub whose endpoint returns a URL, but whose sends
-// use the caller-supplied UDS httpClient (set on tracer.config.httpClient).
+// udsEndpointTransport is a stub whose endpoint returns a configurable URL.
 type udsEndpointTransport struct {
 	stubTransport
 	url string
@@ -358,28 +356,46 @@ type udsEndpointTransport struct {
 
 func (u *udsEndpointTransport) endpoint() string { return u.url }
 
+// enoentTransport simulates a UDS dial to a nonexistent socket (ENOENT) without
+// making any real network connection, avoiding goroutine leaks in tests.
+type enoentTransport struct{}
+
+func (e *enoentTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("dial unix /no/such.sock: %w", syscall.ENOENT)
+}
+
+// successTransport always returns HTTP 200 without making a real connection.
+type successTransport struct{}
+
+func (s *successTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+}
+
+// failTransport always returns the given error without making a real connection.
+type failTransport struct{ err error }
+
+func (f *failTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, f.err
+}
+
 func TestStartupLogFallbackTransport(t *testing.T) {
-	// Point the primary's httpClient at a nonexistent unix socket — produces ENOENT
-	// on all platforms (Linux, macOS, Windows) without relying on TCP port availability.
-	noSuchSocket := "/nonexistent/dd-trace-go-test.sock"
+	const primaryURL = "http://ignored-host" + tracesAPIPath
+	const fallbackTraceURL = "http://test-tcp-fallback" + tracesAPIPath
+	const fallbackStatsURL = "http://test-tcp-fallback" + statsAPIPath
 
 	t.Run("uds_down_tcp_up", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer srv.Close()
-
 		tp := new(log.RecordLogger)
 		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
 		require.NoError(t, err)
 		defer stop()
 
-		// UDS client dials noSuchSocket regardless of target URL → ENOENT.
-		tracer.config.httpClient = internal.UDSClient(noSuchSocket, defaultHTTPTimeout)
-		tcpClient := internal.DefaultHTTPClient(defaultHTTPTimeout, true)
+		// Mock primary: ENOENT (UDS socket not present). Mock fallback: 200 OK.
+		// No real TCP connections → no goroutine leak.
+		tcpClient := &http.Client{Transport: new(successTransport)}
+		tracer.config.httpClient = &http.Client{Transport: new(enoentTransport)}
 		tracer.config.ddTransport = &fallbackTransport{
-			primary:        &udsEndpointTransport{url: "http://ignored-host/v0.4/traces"},
-			fallback:       newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, tcpClient, nil),
+			primary:        &udsEndpointTransport{url: primaryURL},
+			fallback:       newHTTPTransport(fallbackTraceURL, fallbackStatsURL, tcpClient, nil),
 			fallbackClient: tcpClient,
 		}
 
@@ -388,7 +404,7 @@ func TestStartupLogFallbackTransport(t *testing.T) {
 		logStartup(tracer)
 
 		require.Len(t, tp.Logs(), 1)
-		assert.Contains(t, tp.Logs()[0], `"agent_url":"`+srv.URL+tracesAPIPath+`"`)
+		assert.Contains(t, tp.Logs()[0], `"agent_url":"`+fallbackTraceURL+`"`)
 		assert.Contains(t, tp.Logs()[0], `"agent_error":""`)
 	})
 
@@ -398,12 +414,13 @@ func TestStartupLogFallbackTransport(t *testing.T) {
 		require.NoError(t, err)
 		defer stop()
 
-		tracer.config.httpClient = internal.UDSClient(noSuchSocket, defaultHTTPTimeout)
-		tcpClient := internal.DefaultHTTPClient(defaultHTTPTimeout, true)
-		const deadTCPURL = "http://127.0.0.1:1"
+		// Mock primary: ENOENT. Mock fallback: connection error.
+		// No real TCP connections → no goroutine leak.
+		tcpClient := &http.Client{Transport: &failTransport{err: fmt.Errorf("mock tcp failure")}}
+		tracer.config.httpClient = &http.Client{Transport: new(enoentTransport)}
 		tracer.config.ddTransport = &fallbackTransport{
-			primary:        &udsEndpointTransport{url: "http://ignored-host/v0.4/traces"},
-			fallback:       newHTTPTransport(deadTCPURL+tracesAPIPath, deadTCPURL+statsAPIPath, tcpClient, nil),
+			primary:        &udsEndpointTransport{url: primaryURL},
+			fallback:       newHTTPTransport(fallbackTraceURL, fallbackStatsURL, tcpClient, nil),
 			fallbackClient: tcpClient,
 		}
 
@@ -412,7 +429,7 @@ func TestStartupLogFallbackTransport(t *testing.T) {
 		logStartup(tracer)
 
 		require.Len(t, tp.Logs(), 2)
-		assert.Contains(t, tp.Logs()[1], `"agent_url":"http://127.0.0.1:1`+tracesAPIPath+`"`)
+		assert.Contains(t, tp.Logs()[1], `"agent_url":"`+fallbackTraceURL+`"`)
 		assert.Regexp(t, `"agent_error":"Post .*"`, tp.Logs()[1])
 	})
 }
