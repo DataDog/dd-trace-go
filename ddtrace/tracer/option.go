@@ -254,7 +254,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			// TODO(eliott.bouhana): remove once dd:no-span is implemented
 			log.Debug("Orchestrion is enabled, but a custom HTTP client was provided to tracer.Start. This is not supported and will be ignored.")
 		}
-		if rawAgentURL != nil && rawAgentURL.Scheme == "unix" {
+		if rawAgentURL != nil && rawAgentURL.Scheme == "unix" && !c.internalConfig.CIVisibilityAgentless() {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
 			c.httpClient = internal.UDSClient(rawAgentURL.Path, cmp.Or(c.internalConfig.AgentTimeout(), defaultHTTPTimeout))
