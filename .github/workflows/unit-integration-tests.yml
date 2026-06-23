@@ -272,8 +272,8 @@ jobs:
         run: |
           echo "mode: atomic" > coverage-contrib-merged.txt
           find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
-            -name "coverage-*.txt" \
-            | xargs grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
+            -name "coverage-*.txt" -print0 \
+            | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
 
       - name: Upload Coverage to Datadog
         if: always()
