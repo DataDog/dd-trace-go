@@ -46,6 +46,41 @@ func TestPopCleansUpEmptyMapEntry(t *testing.T) {
 	assert.False(t, exists, "empty stack entry should be removed from the map")
 }
 
+func TestPeekSkipsDoneEntries(t *testing.T) {
+	s := contextStack(make(map[any][]stackEntry))
+	k := stackTestKey{}
+
+	// Live parent, then a child pushed on top, both live.
+	parentCell := new(atomic.Bool)
+	s.Push(k, "parent", parentCell)
+	childCell := new(atomic.Bool)
+	s.Push(k, "child", childCell)
+	require.Equal(t, "child", s.Peek(k), "live top entry is the active value")
+
+	// The child finishes (e.g. cross-goroutine, so it was not popped here). Its
+	// done cell is true. Peek must skip it and surface the live parent — not the
+	// finished child, which under pooling may already be a recycled, unrelated span.
+	childCell.Store(true)
+	assert.Equal(t, "parent", s.Peek(k), "finished top entry must be skipped; live parent surfaces")
+
+	// Parent finishes too: no live scope remains, Peek reports none.
+	parentCell.Store(true)
+	assert.Nil(t, s.Peek(k), "all entries done: no active value")
+
+	// Depth is unchanged by Peek (it is read-only; Push does the draining).
+	assert.Equal(t, 2, s.Depth(), "Peek must not mutate the stack")
+}
+
+func TestPeekReturnsNilDoneEntries(t *testing.T) {
+	s := contextStack(make(map[any][]stackEntry))
+	k := stackTestKey{}
+
+	// Values with a nil done cell (e.g. the bool under executionTracedKey) are
+	// never skipped, regardless of how many pile up.
+	s.Push(k, true, nil)
+	assert.Equal(t, true, s.Peek(k), "nil-done entries are always live for Peek")
+}
+
 // newCell allocates a fresh liveness cell (not yet done). Convenience for tests.
 func newCell() *atomic.Bool { return new(atomic.Bool) }
 

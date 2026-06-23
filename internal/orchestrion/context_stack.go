@@ -36,18 +36,30 @@ func getDDContextStack() *contextStack {
 	return newStack
 }
 
-// Peek returns the top context from the stack without removing it.
+// Peek returns the topmost live context from the stack without removing it.
+//
+// Entries whose done cell reads true are skipped: a finished value is no longer
+// a live scope, and under the experimental span pool the recyclable object it
+// points at may already have been reset and reused for an unrelated span.
+// Returning it would surface a stale (or recycled, hence wrong) span as the
+// active one from SpanFromContext's GLS fallback. Skipping such entries here
+// closes that read window; contextStack.Push drains them on the next push so
+// the skip stays bounded. A nil done cell (e.g. the bool under
+// executionTracedKey) is never skipped.
 func (s *contextStack) Peek(key any) any {
 	if s == nil || *s == nil {
 		return nil
 	}
 
-	stack, ok := (*s)[key]
-	if !ok || len(stack) == 0 {
-		return nil
+	stack := (*s)[key]
+	for i := len(stack) - 1; i >= 0; i-- {
+		e := stack[i]
+		if e.done != nil && e.done.Load() {
+			continue // finished/recycled: never surface as the active value
+		}
+		return e.value
 	}
-
-	return stack[len(stack)-1].value
+	return nil
 }
 
 // Push appends val to the stack under key and records done as the liveness
