@@ -91,7 +91,7 @@ aspects:
               // context is GLS-aware (matching in-source CtxWithValue), pushes
               // the op, and captures the first-wins popper onto __dd_glsPop.
               __dd_o := {{ $op }}.unwrap()
-              orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop)
+              orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop, nil)
             }
 
   # FromContext: wrap ctx so the read also consults the GLS.

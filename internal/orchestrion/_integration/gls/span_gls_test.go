@@ -21,9 +21,9 @@ import (
 // These tests are the regression facility for orchestrion#782. The GLS
 // over-pop and cross-goroutine reclaim fix is woven into ddtrace/tracer at
 // build time by orchestrion (see ddtrace/tracer/orchestrion.yml: the
-// `tracer-internal: true` aspects that add a finished flag, a GLSReclaimable
-// method, and an identity-match pop into Span.Finish). The tracer SOURCE has
-// no GLS pop/reclaim code, so a plain `go build`/`go test` cannot exercise it
+// `tracer-internal: true` aspects that add a per-activation liveness cell
+// (__dd_glsDone) and an identity-match pop into Span.Finish). The tracer SOURCE
+// has no GLS pop/reclaim code, so a plain `go build`/`go test` cannot exercise it
 // — and, crucially, if the injection ever silently stops applying (a renamed
 // Span.Finish, a changed join-point selector, a dropped `tracer-internal`
 // flag, an orchestrion schema change), the build still succeeds while the fix

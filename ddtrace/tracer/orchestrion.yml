@@ -150,9 +150,11 @@ aspects:
   # The actual logic lives in internal/orchestrion (GLSActivate / GLSDeactivate /
   # WrapContext) so the injected templates stay thin and unit-testable.
 
-  # Add the GLS bookkeeping fields to Span, and expose GLSReclaimable so
-  # internal/orchestrion.contextStack.Push can drop finished entries that a
-  # cross-goroutine finish left behind (its popper is a no-op off-goroutine).
+  # Add the GLS bookkeeping fields to Span. __dd_glsPop (GLSPopperCell) holds
+  # the goroutine-scoped popper captured at push time; __dd_glsDone (GLSDoneCell)
+  # holds a heap-allocated liveness cell that outlives span pool recycling: the
+  # stack entry captures its own reference to this cell so GLSReset (on pool
+  # reuse) can nil out the span's pointer without affecting the cell's value.
   - id: Span GLS fields
     tracer-internal: true
     join-point:
@@ -162,15 +164,8 @@ aspects:
           name: __dd_glsPop
           type: github.com/DataDog/dd-trace-go/v2/internal/orchestrion.GLSPopperCell
       - add-struct-field:
-          name: __dd_glsReclaimable
-          type: sync/atomic.Bool
-      - inject-declarations:
-          template: |-
-            // GLSReclaimable reports whether this span is finished and may be
-            // dropped from an orchestrion GLS stack. Injected by orchestrion.
-            func (s *Span) GLSReclaimable() bool {
-              return s != nil && s.__dd_glsReclaimable.Load()
-            }
+          name: __dd_glsDone
+          type: github.com/DataDog/dd-trace-go/v2/internal/orchestrion.GLSDoneCell
 
   # On ContextWithSpan: push the span onto this goroutine's GLS stack and capture
   # a goroutine-scoped popper (first push wins, matching the in-source design).
@@ -193,7 +188,7 @@ aspects:
           template: |-
             {{- $s := .Function.Argument 1 -}}
             if {{ $s }} != nil {
-              orchestrion.GLSActivate(nil, internal.ActiveSpanKey, {{ $s }}, &{{ $s }}.__dd_glsPop)
+              orchestrion.GLSActivate(nil, internal.ActiveSpanKey, {{ $s }}, &{{ $s }}.__dd_glsPop, &{{ $s }}.__dd_glsDone)
             }
 
   # On SpanFromContext: wrap ctx so the subsequent ctx.Value also consults the
@@ -216,15 +211,15 @@ aspects:
               {{ $ctx }} = orchestrion.WrapContext({{ $ctx }})
             }
 
-  # On Finish: deactivate the span on the GLS (mark reclaimable + run the popper
-  # once). Runs at the TOP of Finish (not deferred) so the pop happens before
-  # s.finish() submits the chunk: with span pooling enabled, the tracer worker
-  # can clear()/recycle the span as soon as it is submitted, and clear resets
+  # On Finish: set the done cell (so cross-goroutine finishes are still cleaned
+  # up by contextStack.Push on the next push) and run the goroutine-scoped
+  # popper exactly once. Runs at the TOP of Finish (not deferred) so the pop
+  # happens before s.finish() submits the chunk: the tracer worker can
+  # clear()/recycle the span as soon as it is submitted, and clear resets
   # __dd_glsPop. Deactivating first orders the pop ahead of any clear (the
   # channel send in finish establishes happens-before), so clear can never nil
   # the popper out from under Finish and leave a stale active span on the GLS.
-  # GLSDeactivate groups the flag set and the once-only pop and is idempotent on
-  # a double finish. See orchestrion#782.
+  # GLSDeactivate is idempotent on a double finish. See orchestrion#782.
   - id: Span Finish GLS deactivate
     tracer-internal: true
     join-point:
@@ -239,11 +234,13 @@ aspects:
           template: |-
             {{- $s := .Function.Receiver -}}
             if {{ $s }} != nil {
-              orchestrion.GLSDeactivate(&{{ $s }}.__dd_glsReclaimable, &{{ $s }}.__dd_glsPop)
+              orchestrion.GLSDeactivate(&{{ $s }}.__dd_glsDone, &{{ $s }}.__dd_glsPop)
             }
 
-  # On clear (span pool recycle): reset the GLS bookkeeping so a reused, live
-  # span is never wrongly treated as reclaimable or carrying a stale popper.
+  # On clear (span pool recycle): clear the done cell so a reused span starts
+  # with a nil cell pointer (its next GLSActivate allocates a fresh one).
+  # The contextStack entry still holds its own copy of the original cell pointer
+  # and can read done.Load() == true; this is what prevents the ABA hazard.
   - id: Span clear GLS reset
     tracer-internal: true
     join-point:
@@ -257,4 +254,4 @@ aspects:
             orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
           template: |-
             {{- $s := .Function.Receiver -}}
-            orchestrion.GLSReset(&{{ $s }}.__dd_glsReclaimable, &{{ $s }}.__dd_glsPop)
+            orchestrion.GLSReset(&{{ $s }}.__dd_glsDone, &{{ $s }}.__dd_glsPop)

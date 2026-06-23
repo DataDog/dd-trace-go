@@ -38,7 +38,7 @@ func CtxWithValue(parent context.Context, key, val any) context.Context {
 		return context.WithValue(parent, key, val)
 	}
 
-	getDDContextStack().Push(key, val)
+	getDDContextStack().Push(key, val, nil) // nil = non-reclaimable (no lifecycle cell)
 	return context.WithValue(WrapContext(parent), key, val)
 }
 
@@ -72,6 +72,25 @@ type GLSPopperCell struct {
 	ptr atomic.Pointer[GLSPopper]
 }
 
+// GLSDoneCell holds the heap-allocated liveness cell for a GLS activation.
+// It is the type orchestrion injects as the __dd_glsDone field on Span (via
+// add-struct-field, which requires a named type).
+//
+// Each activation (each ContextWithSpan call) allocates a fresh *atomic.Bool
+// cell, stores it here (atomically), and also passes it to contextStack.Push
+// as the done pointer for that stack entry. When the span finishes, the cell
+// is set to true via GLSDeactivate. When the span is recycled by the pool,
+// GLSReset clears the ptr — but the contextStack entry retains its own
+// reference to the same cell, so the cell's true value outlives the span's
+// current lifecycle. The next Push on that goroutine drains the stale entry
+// by reading the still-true cell. A reused span starts with ptr == nil and
+// gets a fresh cell on its next activation: no ABA.
+//
+// The zero value is ready to use.
+type GLSDoneCell struct {
+	ptr atomic.Pointer[atomic.Bool]
+}
+
 // GLSActivate is woven into span/operation activation (the tracer's
 // ContextWithSpan and dyngo's RegisterOperation). It pushes val onto the current
 // goroutine's GLS stack under key and records a goroutine-scoped popper into
@@ -81,21 +100,52 @@ type GLSPopperCell struct {
 // a no-op on any other goroutine, so a cross-goroutine finish can never corrupt
 // an unrelated goroutine's stack.
 //
-// When ctxp is non-nil the parent context is wrapped (via WrapContext) so the
-// returned context is also GLS-aware, matching the former in-source CtxWithValue.
-// Everything is a no-op when orchestrion is disabled.
+// done, when non-nil, receives a freshly allocated liveness cell (a
+// *atomic.Bool) for this specific activation. The same pointer is passed to
+// contextStack.Push, so the stack entry is tied to this cell — not to the span
+// itself. If done already holds a cell from a previous activation (same span
+// pushed again without an intervening Finish), that old cell is atomically
+// swapped out and marked done, superseding the previous stack entry.
 //
-// Grouping the wrap, push and popper-capture here keeps the injected templates a
-// single call and the logic unit-testable in plain go test. The companions are
-// GLSDeactivate (finish) and GLSReset (span-pool reuse).
-func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell) {
+// When done is nil (e.g. dyngo operations that never cross goroutine boundaries)
+// the stack entry carries no done cell and is never drained by Push. When
+// ctxp is non-nil the parent context is wrapped (via WrapContext) so the
+// returned context is also GLS-aware. Everything is a no-op when orchestrion
+// is disabled.
+//
+// Grouping the wrap, push, popper-capture, and cell allocation here keeps the
+// injected templates a single call and the logic unit-testable in plain go test.
+// The companions are GLSDeactivate (finish) and GLSReset (span-pool reuse).
+func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell, done *GLSDoneCell) {
 	if !Enabled() {
 		return
 	}
 	if ctxp != nil {
 		*ctxp = WrapContext(*ctxp)
 	}
-	getDDContextStack().Push(key, val)
+	var cell *atomic.Bool
+	if done != nil {
+		existing := done.ptr.Load()
+		if existing != nil && existing.Load() {
+			// The span was already finished (done cell is true) before this push.
+			// This happens in the cross-goroutine pattern where the owner finishes
+			// a span on G1 and then the worker on G2 calls ContextWithSpan with
+			// the same (already-finished) span. Reuse the existing cell so the
+			// stack entry is immediately drain-eligible on the next Push — without
+			// this, a fresh false cell would be allocated and never set to true,
+			// leaking one entry per record.
+			cell = existing
+		} else {
+			// Fresh activation or span not yet finished: allocate a new cell.
+			// If the span was previously activated (same done field, non-nil),
+			// mark the old cell done to drain the superseded stack entry.
+			cell = new(atomic.Bool)
+			if old := done.ptr.Swap(cell); old != nil {
+				old.Store(true)
+			}
+		}
+	}
+	getDDContextStack().Push(key, val, cell)
 	if pop != nil && pop.ptr.Load() == nil {
 		// Capture the popper only on the first activation (first-wins) so
 		// re-activating the same span/operation does not overwrite the popper
@@ -109,16 +159,38 @@ func GLSActivate(ctxp *context.Context, key, val any, pop *GLSPopperCell) {
 	}
 }
 
-// GLSDeactivate releases a span's GLS entry on finish. It marks the span
-// reclaimable (so a cross-goroutine finish, whose popper is a no-op here, is
-// still cleaned up by contextStack.Push on its next push) and invokes the
-// captured popper exactly once, clearing it so a repeated finish does not pop
-// again. reclaimable and pop are the fields orchestrion injects onto the span;
-// passing them by pointer lets injected span-finish advice deactivate in one
-// call.
-func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopperCell) {
-	if reclaimable != nil {
-		reclaimable.Store(true)
+// GLSDeactivate releases a span's GLS entry on finish. It ensures the liveness
+// cell exists and is marked done, then invokes the captured popper exactly once.
+//
+// Two patterns are supported:
+//   - Normal path (ContextWithSpan before Finish): GLSActivate already set the
+//     done cell via GLSActivate → GLSDeactivate simply loads and marks it true.
+//   - Cross-goroutine path (Finish before ContextWithSpan): the done cell does not
+//     exist yet. GLSDeactivate creates it pre-marked true via CAS so that when
+//     GLSActivate runs later it finds a true cell, reuses it, and the resulting
+//     stack entry is immediately drain-eligible — preventing the GLS stack from
+//     growing unbounded (orchestrion#782 / korECM pattern).
+//
+// done and pop are the fields orchestrion injects onto the span; passing them by
+// pointer lets injected span-finish advice deactivate in one call. done is nil
+// for dyngo operations (they rely solely on the goroutine-scoped popper and
+// never cross goroutine boundaries).
+func GLSDeactivate(done *GLSDoneCell, pop *GLSPopperCell) {
+	if done != nil {
+		if cell := done.ptr.Load(); cell != nil {
+			// Normal path: cell already exists (GLSActivate ran first).
+			cell.Store(true)
+		} else {
+			// Cross-goroutine path: Finish called before ContextWithSpan. Create
+			// a pre-marked cell so GLSActivate can reuse it later, making the
+			// resulting stack entry immediately drain-eligible.
+			preMarked := new(atomic.Bool)
+			preMarked.Store(true)
+			if !done.ptr.CompareAndSwap(nil, preMarked) {
+				// A concurrent GLSActivate set the cell first; mark it.
+				done.ptr.Load().Store(true)
+			}
+		}
 	}
 	if pop == nil {
 		return
@@ -131,12 +203,16 @@ func GLSDeactivate(reclaimable *atomic.Bool, pop *GLSPopperCell) {
 }
 
 // GLSReset clears the GLS bookkeeping fields orchestrion injects onto a span so
-// that a span returned to the tracer's pool and later reused is never treated as
-// reclaimable or left carrying a stale popper. It is woven into Span.clear. The
-// reclaimable argument may be nil (dyngo operations carry no reclaim flag).
-func GLSReset(reclaimable *atomic.Bool, pop *GLSPopperCell) {
-	if reclaimable != nil {
-		reclaimable.Store(false)
+// that a span returned to the tracer's pool and later reused starts with a clean
+// slate: no stale popper and no stale done cell. It is woven into Span.clear.
+// Clearing the done cell drops the span's reference to it — the contextStack
+// entry retains its own copy of the pointer and can still observe the cell's
+// true value (set by the preceding GLSDeactivate). A reused span receives a
+// fresh cell on its next GLSActivate call, preventing the ABA hazard.
+// done is nil for dyngo operations (they carry no liveness cell).
+func GLSReset(done *GLSDoneCell, pop *GLSPopperCell) {
+	if done != nil {
+		done.ptr.Store(nil)
 	}
 	if pop != nil {
 		pop.ptr.Store(nil)

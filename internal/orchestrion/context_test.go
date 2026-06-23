@@ -69,7 +69,7 @@ func TestGLSPopFunc(t *testing.T) {
 		// In production, each goroutine has its own contextStack pointer in
 		// runtime.g, so getDDContextStack() returns different pointers.
 		originalStack := getDDGLS()
-		differentStack := contextStack(make(map[any][]any))
+		differentStack := contextStack(make(map[any][]stackEntry))
 		setDDGLS(&differentStack)
 		t.Cleanup(func() { setDDGLS(originalStack) })
 
@@ -95,25 +95,58 @@ func TestGLSActivate(t *testing.T) {
 		t.Cleanup(MockGLS())
 
 		var pop GLSPopperCell
-		GLSActivate(nil, key("k"), "v", &pop)
+		var done GLSDoneCell
+		GLSActivate(nil, key("k"), "v", &pop, &done)
 		require.Equal(t, "v", getDDContextStack().Peek(key("k")), "value should be on the GLS stack")
 		fn := pop.ptr.Load()
 		require.NotNil(t, fn, "popper should be captured")
+		require.NotNil(t, done.ptr.Load(), "done cell should be allocated")
 
 		(*fn)()
 		require.Nil(t, getDDContextStack().Peek(key("k")), "popper should remove the value")
 	})
 
-	t.Run("first activation wins: popper is not overwritten", func(t *testing.T) {
+	t.Run("re-activation of live span supersedes previous entry", func(t *testing.T) {
 		t.Cleanup(MockGLS())
 
 		var pop GLSPopperCell
-		GLSActivate(nil, key("k"), "v1", &pop)
+		var done GLSDoneCell
+		GLSActivate(nil, key("k"), "v1", &pop, &done)
 		first := pop.ptr.Load()
-		GLSActivate(nil, key("k"), "v2", &pop) // re-activate same field
-		require.Equal(t, 2, getDDContextStack().Depth(), "every activation pushes")
+		cell1 := done.ptr.Load()
+		// Second activation of the same span (same done field, cell not yet true):
+		// the old cell is marked done immediately so the drain removes the first
+		// entry and depth stays at 1.
+		GLSActivate(nil, key("k"), "v2", &pop, &done)
+		require.Equal(t, 1, getDDContextStack().Depth(), "re-activation drains the superseded entry")
+		require.Equal(t, "v2", getDDContextStack().Peek(key("k")), "v2 is the live entry")
 		require.Same(t, first, pop.ptr.Load(),
 			"the first popper must be retained across re-activation")
+		require.True(t, cell1.Load(), "old cell must be marked done on re-activation")
+		require.NotSame(t, cell1, done.ptr.Load(), "re-activation must allocate a new cell")
+	})
+
+	t.Run("re-activation of already-finished span reuses existing cell", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		var pop GLSPopperCell
+		var done GLSDoneCell
+		// Simulate: span was pushed and finished by a different goroutine
+		// (GLSActivate + GLSDeactivate). The cell is already true.
+		cell := new(atomic.Bool)
+		cell.Store(true)
+		done.ptr.Store(cell)
+
+		GLSActivate(nil, key("k"), "v1", &pop, &done)
+		// The existing true cell must be reused so the stack entry is immediately
+		// drain-eligible on the next Push for the same key.
+		require.Same(t, cell, done.ptr.Load(), "existing true cell must be reused")
+		require.Equal(t, 1, getDDContextStack().Depth(), "entry pushed")
+
+		// Second activation on the same key: drain removes the just-pushed entry.
+		GLSActivate(nil, key("k"), "v2", &pop, nil)
+		require.Equal(t, 1, getDDContextStack().Depth(), "drain must remove the immediately-eligible entry")
+		require.Equal(t, "v2", getDDContextStack().Peek(key("k")), "v2 is the live entry")
 	})
 
 	t.Run("ctxp non-nil wraps the parent so the result is GLS-aware", func(t *testing.T) {
@@ -121,9 +154,19 @@ func TestGLSActivate(t *testing.T) {
 
 		ctx := context.Background()
 		var pop GLSPopperCell
-		GLSActivate(&ctx, key("k"), "v", &pop)
+		var done GLSDoneCell
+		GLSActivate(&ctx, key("k"), "v", &pop, &done)
 		_, ok := ctx.(*glsContext)
 		require.True(t, ok, "ctxp should be wrapped in a glsContext")
+	})
+
+	t.Run("done=nil is a no-op for the cell (dyngo path)", func(t *testing.T) {
+		t.Cleanup(MockGLS())
+
+		var pop GLSPopperCell
+		GLSActivate(nil, key("k"), "v", &pop, nil) // must not panic, no cell needed
+		require.Equal(t, "v", getDDContextStack().Peek(key("k")), "value pushed")
+		require.NotNil(t, pop.ptr.Load(), "popper still captured")
 	})
 
 	t.Run("disabled orchestrion is a no-op", func(t *testing.T) {
@@ -132,28 +175,34 @@ func TestGLSActivate(t *testing.T) {
 
 		ctx := context.Background()
 		var pop GLSPopperCell
-		GLSActivate(&ctx, key("k"), "v", &pop) // must not panic
+		var done GLSDoneCell
+		GLSActivate(&ctx, key("k"), "v", &pop, &done) // must not panic
 		require.Nil(t, pop.ptr.Load(), "no popper captured when disabled")
+		require.Nil(t, done.ptr.Load(), "no cell allocated when disabled")
 		require.Equal(t, context.Background(), ctx, "ctx unchanged when disabled")
 	})
 }
 
 func TestGLSReset(t *testing.T) {
-	t.Run("clears reclaimable flag and popper", func(t *testing.T) {
-		var reclaimable atomic.Bool
-		reclaimable.Store(true)
+	t.Run("clears done cell and popper without running the popper", func(t *testing.T) {
+		var done GLSDoneCell
+		cell := new(atomic.Bool)
+		cell.Store(true)
+		done.ptr.Store(cell)
 		ran := 0
 		var pop GLSPopperCell
 		fn := GLSPopper(func() { ran++ })
 		pop.ptr.Store(&fn)
 
-		GLSReset(&reclaimable, &pop)
-		require.False(t, reclaimable.Load(), "reclaimable must be reset to false")
+		GLSReset(&done, &pop)
+		require.Nil(t, done.ptr.Load(), "done cell pointer must be cleared (span's reference dropped)")
+		// The underlying cell is unchanged — stack entries holding it still see true.
+		require.True(t, cell.Load(), "original cell must still be true (stack entry keeps its ref)")
 		require.Nil(t, pop.ptr.Load(), "popper must be cleared without being run")
 		require.Equal(t, 0, ran, "GLSReset must not run the popper")
 	})
 
-	t.Run("tolerates nil reclaimable (dyngo operations)", func(t *testing.T) {
+	t.Run("tolerates nil done (dyngo operations)", func(t *testing.T) {
 		var pop GLSPopperCell
 		fn := GLSPopper(func() {})
 		pop.ptr.Store(&fn)
@@ -163,28 +212,42 @@ func TestGLSReset(t *testing.T) {
 }
 
 func TestGLSDeactivate(t *testing.T) {
-	t.Run("sets reclaimable and runs the popper once", func(t *testing.T) {
-		var reclaimable atomic.Bool
+	t.Run("marks done cell true and runs the popper once", func(t *testing.T) {
+		var done GLSDoneCell
+		cell := new(atomic.Bool)
+		done.ptr.Store(cell)
 		popped := 0
 		var pop GLSPopperCell
 		fn := GLSPopper(func() { popped++ })
 		pop.ptr.Store(&fn)
 
-		GLSDeactivate(&reclaimable, &pop)
-		require.True(t, reclaimable.Load(), "span should be marked reclaimable")
+		GLSDeactivate(&done, &pop)
+		require.True(t, cell.Load(), "done cell should be set to true on finish")
 		require.Equal(t, 1, popped, "popper should run once")
 		require.Nil(t, pop.ptr.Load(), "popper should be cleared after running")
 
-		GLSDeactivate(&reclaimable, &pop) // second finish: popper already nil
+		GLSDeactivate(&done, &pop) // second finish: popper already nil
 		require.Equal(t, 1, popped, "popper must not run again on a repeated finish")
 	})
 
-	t.Run("tolerates nil popper and nil pointers", func(t *testing.T) {
-		var reclaimable atomic.Bool
+	t.Run("creates and pre-marks a cell when Finish runs before ContextWithSpan", func(t *testing.T) {
+		// In the korECM cross-goroutine pattern (orchestrion#782), Finish is called
+		// on the span BEFORE ContextWithSpan. done.ptr is nil at the time of Finish.
+		// GLSDeactivate must create a pre-marked cell so GLSActivate can find and
+		// reuse it, making the resulting stack entry immediately drain-eligible.
+		var done GLSDoneCell // ptr is nil: no prior GLSActivate
+		var pop GLSPopperCell
+
+		GLSDeactivate(&done, &pop)
+		cell := done.ptr.Load()
+		require.NotNil(t, cell, "GLSDeactivate must create a cell when none exists")
+		require.True(t, cell.Load(), "pre-created cell must already be true")
+	})
+
+	t.Run("tolerates nil done and nil pointers", func(t *testing.T) {
 		var pop GLSPopperCell // empty: nil inner pointer
 
-		GLSDeactivate(&reclaimable, &pop) // no popper -> no invoke, no panic
-		require.True(t, reclaimable.Load())
+		GLSDeactivate(nil, &pop) // no done, no popper -> no invoke, no panic
 
 		GLSDeactivate(nil, nil) // must not panic
 	})
@@ -284,7 +347,7 @@ func BenchmarkContextStackPushPop(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		getDDContextStack().Push(k, true)
+		getDDContextStack().Push(k, true, nil)
 		getDDContextStack().Pop(k)
 	}
 	if depth := GLSStackDepth(); depth != 0 {
@@ -300,7 +363,7 @@ func BenchmarkContextStackPushOnly(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		getDDContextStack().Push(k, true)
+		getDDContextStack().Push(k, true, nil)
 	}
 	b.StopTimer()
 	depth := GLSStackDepth()
@@ -359,7 +422,7 @@ func BenchmarkContextStackDepthScaling(b *testing.B) {
 			k := key("bench")
 			// Pre-fill the stack to simulate leaked entries.
 			for range depth {
-				getDDContextStack().Push(k, true)
+				getDDContextStack().Push(k, true, nil)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -367,5 +430,29 @@ func BenchmarkContextStackDepthScaling(b *testing.B) {
 				getDDContextStack().Peek(k)
 			}
 		})
+	}
+}
+
+// BenchmarkGLSActivate measures the per-span GLS lifecycle cost as woven into
+// the tracer: GLSActivate (ContextWithSpan) + GLSDeactivate (Finish) + GLSReset
+// (clear). Running reset every iteration mirrors how the span pool reuses a span,
+// which is the scenario this decouple design unlocks. The reported allocs/op are
+// the GLS-helper overhead per pooled-span reuse: one closure for the popper
+// (re-captured because reset cleared it) and one *atomic.Bool liveness cell.
+// The cell is the cost the cell-based reclaim adds over reading a mutable flag
+// off the span; it is paid only under orchestrion.
+func BenchmarkGLSActivate(b *testing.B) {
+	b.Cleanup(MockGLS())
+	k := key("bench")
+	var pop GLSPopperCell
+	var done GLSDoneCell
+	b.ReportAllocs()
+	for b.Loop() {
+		GLSActivate(nil, k, "v", &pop, &done)
+		GLSDeactivate(&done, &pop)
+		GLSReset(&done, &pop)
+	}
+	if d := GLSStackDepth(); d != 0 {
+		b.Fatalf("GLS depth = %d after balanced activate/deactivate, want 0", d)
 	}
 }

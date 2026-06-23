@@ -14,15 +14,15 @@ import (
 // TestGLSDeactivateConcurrentFinishRaces is a regression guard for the
 // span-pool × GLS concurrency review (orchestrion#782). Two dyngo
 // FinishOperation calls run under the shared RLock and can therefore call
-// GLSDeactivate on the same popper field at the same time. The popper now lives
-// in an atomic [GLSPopperCell], so this must stay clean under `go test -race`;
-// before that, GLSDeactivate's read-then-nil of a bare func field was a data
-// race.
+// GLSDeactivate on the same popper field at the same time. The popper lives
+// in an atomic [GLSPopperCell], so this must stay clean under `go test -race`.
 func TestGLSDeactivateConcurrentFinishRaces(t *testing.T) {
 	const iterations = 1000
 
 	for range iterations {
-		var reclaimable atomic.Bool
+		var done GLSDoneCell
+		cell := new(atomic.Bool)
+		done.ptr.Store(cell)
 		var pop GLSPopperCell
 		fn := GLSPopper(func() {})
 		pop.ptr.Store(&fn)
@@ -35,7 +35,7 @@ func TestGLSDeactivateConcurrentFinishRaces(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				GLSDeactivate(&reclaimable, &pop)
+				GLSDeactivate(&done, &pop)
 			}()
 		}
 
@@ -44,18 +44,16 @@ func TestGLSDeactivateConcurrentFinishRaces(t *testing.T) {
 	}
 }
 
-// TestGLSDeactivateConcurrentDoubleRunsPopper asserts the observable
-// consequence of making the popper swap atomic: across two concurrent
-// deactivations of the same cell, the popper runs exactly once, because the
-// atomic Swap hands the single non-nil popper to exactly one caller. Before the
-// fix, the non-atomic load-then-nil could let both deactivations observe and run
-// the same popper.
+// TestGLSDeactivateConcurrentDoubleRunsPopper asserts that across two concurrent
+// deactivations of the same cell, the popper runs exactly once.
 func TestGLSDeactivateConcurrentDoubleRunsPopper(t *testing.T) {
 	const iterations = 1000
 
 	var total atomic.Int64
 	for range iterations {
-		var reclaimable atomic.Bool
+		var done GLSDoneCell
+		cell := new(atomic.Bool)
+		done.ptr.Store(cell)
 		var pop GLSPopperCell
 		fn := GLSPopper(func() { total.Add(1) })
 		pop.ptr.Store(&fn)
@@ -68,7 +66,7 @@ func TestGLSDeactivateConcurrentDoubleRunsPopper(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				GLSDeactivate(&reclaimable, &pop)
+				GLSDeactivate(&done, &pop)
 			}()
 		}
 
