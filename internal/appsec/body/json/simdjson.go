@@ -43,35 +43,30 @@ func NewEncodableFromData(data []byte, truncated bool) libddwaf.Encodable {
 	}
 }
 
-func (e *Encodable) ToEncoder(config libddwaf.EncoderConfig) *encoder {
-	return &encoder{
+func (e *Encodable) Encode(enc *libddwaf.Encoder, obj *libddwaf.WAFObject, remainingDepth int) error {
+	encoder := &encoder{
 		Encodable: e,
-		config:    config,
+		enc:       enc,
 	}
-}
-
-func (e *Encodable) Encode(config libddwaf.EncoderConfig, obj *libddwaf.WAFObject, remainingDepth int) (map[libddwaf.TruncationReason][]int, error) {
-	encoder := e.ToEncoder(config)
 	defer parsedJSONPool.Put(encoder.parsedJSON)
 
 	iter := encoder.parsedJSON.Iter()
 	if err := encoder.Encode(obj, iter.Advance(), &iter, remainingDepth); err != nil && (errors.Is(err, waferrors.ErrTimeout) || !e.truncated) {
 		// Return an error if a waf timeout error occurred, or we are in normal parsing mode
-		return nil, err
+		return err
 	}
 
 	if obj.IsUnusable() {
 		// Do not return an invalid root object
-		return nil, fmt.Errorf("invalid json at root")
+		return fmt.Errorf("invalid json at root")
 	}
 
-	return encoder.truncations, nil
+	return nil
 }
 
 type encoder struct {
 	*Encodable
-	truncations map[libddwaf.TruncationReason][]int
-	config      libddwaf.EncoderConfig
+	enc *libddwaf.Encoder
 }
 
 type skipError struct{}
@@ -82,16 +77,8 @@ func (skipError) Error() string {
 
 var skipErr error = skipError{}
 
-// addTruncation records a truncation event.
-func (e *encoder) addTruncation(reason libddwaf.TruncationReason, size int) {
-	if e.truncations == nil {
-		e.truncations = make(map[libddwaf.TruncationReason][]int, 3)
-	}
-	e.truncations[reason] = append(e.truncations[reason], size)
-}
-
 func (e *encoder) Encode(obj *libddwaf.WAFObject, typ json.Type, iter *json.Iter, remainingDepth int) (err error) {
-	if e.config.Timer.Exhausted() {
+	if e.enc.Timeout() {
 		return waferrors.ErrTimeout
 	}
 
@@ -150,44 +137,24 @@ func (e *encoder) Encode(obj *libddwaf.WAFObject, typ json.Type, iter *json.Iter
 }
 
 func (e *encoder) encodeString(str []byte, obj *libddwaf.WAFObject) {
-	strLen := len(str)
-	if strLen > e.config.MaxStringSize {
-		str = str[:e.config.MaxStringSize]
-		e.addTruncation(libddwaf.StringTooLong, strLen)
-		strLen = e.config.MaxStringSize
-	}
-
-	obj.SetString(e.config.Pinner, unsafe.String(unsafe.SliceData(str), strLen))
-}
-
-// encodeMapKeyFromString takes a string and a wafObject and sets the map key attribute on the wafObject to the supplied
-// string. The key may be truncated if it exceeds the maximum string size allowed by the jsonEncoder.
-func (e *encoder) encodeMapKeyFromString(keyStr []byte, obj *libddwaf.WAFObject) {
-	size := len(keyStr)
-	if size > e.config.MaxStringSize {
-		keyStr = keyStr[:e.config.MaxStringSize]
-		e.addTruncation(libddwaf.StringTooLong, size)
-		size = e.config.MaxStringSize
-	}
-
-	obj.SetMapKey(e.config.Pinner, unsafe.String(unsafe.SliceData(keyStr), size))
+	e.enc.WriteString(obj, unsafe.String(unsafe.SliceData(str), len(str)))
 }
 
 func (e *encoder) encodeObject(parentObj *libddwaf.WAFObject, iter *json.Iter, depth int) error {
-	if e.config.Timer.Exhausted() {
+	if e.enc.Timeout() {
 		return waferrors.ErrTimeout
 	}
 
 	if depth < 0 {
-		e.addTruncation(libddwaf.ObjectTooDeep, e.config.MaxObjectDepth-depth)
+		e.enc.Truncations.Record(libddwaf.ObjectTooDeep, int(e.enc.Config.MaxObjectDepth)-depth)
 		return skipErr
 	}
 
 	var (
-		errs    []error
-		length  int
-		wafObjs []libddwaf.WAFObject
+		errs []error
+		mb   = e.enc.Map(parentObj, 0)
 	)
+	defer mb.Close()
 
 	var jsonObj json.Object
 	_, err := iter.Object(&jsonObj)
@@ -197,8 +164,7 @@ func (e *encoder) encodeObject(parentObj *libddwaf.WAFObject, iter *json.Iter, d
 
 	var innerIter json.Iter
 	for key, typ, err := jsonObj.NextElementBytes(&innerIter); typ != json.TypeNone; key, typ, err = jsonObj.NextElementBytes(&innerIter) {
-		length++
-		if e.config.Timer.Exhausted() {
+		if e.enc.Timeout() {
 			errs = append(errs, waferrors.ErrTimeout)
 			break
 		}
@@ -208,17 +174,15 @@ func (e *encoder) encodeObject(parentObj *libddwaf.WAFObject, iter *json.Iter, d
 			continue
 		}
 
-		if len(wafObjs) >= e.config.MaxContainerSize {
+		slot := mb.NextValue(unsafe.String(unsafe.SliceData(key), len(key)))
+		if slot == nil {
+			mb.Skip()
 			innerIter.Advance()
 			continue
 		}
 
-		wafObjs = append(wafObjs, libddwaf.WAFObject{})
-		entryObj := &wafObjs[len(wafObjs)-1]
-		e.encodeMapKeyFromString(key, entryObj)
-
-		if err := e.Encode(entryObj, typ, &innerIter, depth); err != nil {
-			entryObj.SetInvalid()
+		if err := e.Encode(slot, typ, &innerIter, depth); err != nil {
+			slot.SetInvalid()
 			if err == skipErr || errors.Is(err, io.EOF) && e.truncated {
 				continue
 			}
@@ -228,29 +192,24 @@ func (e *encoder) encodeObject(parentObj *libddwaf.WAFObject, iter *json.Iter, d
 		}
 	}
 
-	if len(wafObjs) >= e.config.MaxContainerSize {
-		e.addTruncation(libddwaf.ContainerTooLarge, length)
-	}
-
-	parentObj.SetMapData(e.config.Pinner, wafObjs)
 	return errors.Join(errs...)
 }
 
 func (e *encoder) encodeArray(parentObj *libddwaf.WAFObject, iter *json.Iter, depth int) error {
-	if e.config.Timer.Exhausted() {
+	if e.enc.Timeout() {
 		return waferrors.ErrTimeout
 	}
 
 	if depth < 0 {
-		e.addTruncation(libddwaf.ObjectTooDeep, e.config.MaxObjectDepth-depth)
+		e.enc.Truncations.Record(libddwaf.ObjectTooDeep, int(e.enc.Config.MaxObjectDepth)-depth)
 		return skipErr
 	}
 
 	var (
-		errs    []error
-		length  int
-		wafObjs []libddwaf.WAFObject
+		errs []error
+		ab   = e.enc.Array(parentObj, 0)
 	)
+	defer ab.Close()
 
 	var jsonArray json.Array
 	_, err := iter.Array(&jsonArray)
@@ -260,20 +219,19 @@ func (e *encoder) encodeArray(parentObj *libddwaf.WAFObject, iter *json.Iter, de
 
 	innerIter := jsonArray.Iter()
 	for typ := innerIter.Advance(); typ != json.TypeNone; typ = innerIter.Advance() {
-		length++
-		if e.config.Timer.Exhausted() {
+		if e.enc.Timeout() {
 			errs = append(errs, waferrors.ErrTimeout)
 			break
 		}
 
-		if len(wafObjs) >= e.config.MaxContainerSize {
+		slot := ab.NextValue()
+		if slot == nil {
+			ab.Skip()
 			continue
 		}
 
-		wafObjs = append(wafObjs, libddwaf.WAFObject{})
-		entryObj := &wafObjs[len(wafObjs)-1]
-		if err := e.Encode(entryObj, typ, &innerIter, depth); err != nil {
-			wafObjs = wafObjs[:len(wafObjs)-1]
+		if err := e.Encode(slot, typ, &innerIter, depth); err != nil {
+			ab.DropLast()
 			if err == skipErr {
 				continue
 			}
@@ -281,16 +239,11 @@ func (e *encoder) encodeArray(parentObj *libddwaf.WAFObject, iter *json.Iter, de
 			break
 		}
 
-		if entryObj.IsUnusable() {
+		if slot.IsUnusable() {
 			// If the entry object is unusable, we skip it and continue with the next element.
-			wafObjs = wafObjs[:len(wafObjs)-1] // Remove the last element if nothing is worth encoding
+			ab.DropLast()
 		}
 	}
 
-	if len(wafObjs) >= e.config.MaxContainerSize {
-		e.addTruncation(libddwaf.ContainerTooLarge, length)
-	}
-
-	parentObj.SetArrayData(e.config.Pinner, wafObjs)
 	return errors.Join(errs...)
 }
