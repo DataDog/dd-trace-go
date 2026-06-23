@@ -34,6 +34,11 @@ const (
 	suiteUnderTest    = "fixtures_test.go"
 	parentTestName    = "TestSubtestManagement"
 	parallelToggleEnv = "SUBTEST_MATRIX_PARALLEL"
+
+	// scenarioInitFailureExitCode is returned by runMatrixScenario when CI Visibility features
+	// were not initialised (e.g. a transient settings fetch failure).  main_test.go uses this
+	// sentinel to retry the subprocess rather than failing the whole suite immediately.
+	scenarioInitFailureExitCode = 3
 )
 
 var (
@@ -804,6 +809,15 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 
 	tracer := integrations.InitializeCIVisibilityMock()
 
+	// Verify that CI Visibility initialised correctly and the management directives for
+	// this scenario were fetched before tests run.  Returning scenarioInitFailureExitCode
+	// lets the parent process retry the subprocess on transient network failures; returning
+	// a distinct non-zero code for genuine mismatches prevents masking real bugs as retries.
+	if initErr := verifyScenarioInit(scenario, ctx); initErr != nil {
+		fmt.Printf("subtest matrix: scenario %s init check failed: %v\n", scenario, initErr)
+		return scenarioInitFailureExitCode
+	}
+
 	exitCode := gotesting.RunM(m)
 	// When the run fails, dump span resources for easier diagnosis.
 	if exitCode != 0 {
@@ -815,10 +829,78 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 	if validateErr := validateScenarioSpans(sc, tracer.FinishedSpans()); validateErr != nil {
 		fmt.Printf("subtest matrix: scenario %s validation panic: %v\n", scenario, validateErr)
 		dumpScenarioSpans(scenario, "validation panic", tracer.FinishedSpans())
+		dumpScenarioMgmtState(scenario)
 		return 2
 	}
 
 	return 0
+}
+
+// verifyScenarioInit checks that the CI Visibility settings were loaded and that the test
+// management data returned by the backend matches what the scenario configured.  Any
+// discrepancy is reported so the caller can abort before running fixtures.
+func verifyScenarioInit(scenario string, ctx *scenarioContext) error {
+	settings := integrations.GetSettings()
+	if settings == nil {
+		return fmt.Errorf("GetSettings returned nil")
+	}
+	if !settings.TestManagement.Enabled {
+		return fmt.Errorf("TestManagement.Enabled=false after init (settings fetch may have failed)")
+	}
+
+	// Only validate management data when the scenario actually configures directives.
+	if ctx.data == nil || len(ctx.data.Modules) == 0 {
+		return nil
+	}
+
+	loaded := integrations.GetTestManagementTestsData()
+	if loaded == nil || len(loaded.Modules) == 0 {
+		return fmt.Errorf("test management data is empty after init; scenario %q directives were not loaded", scenario)
+	}
+
+	// Walk the expected directives and confirm each one is present in the loaded data.
+	for modName, expMod := range ctx.data.Modules {
+		gotMod, ok := loaded.Modules[modName]
+		if !ok {
+			return fmt.Errorf("module %q missing from loaded test management data", modName)
+		}
+		for suiteName, expSuite := range expMod.Suites {
+			gotSuite, ok := gotMod.Suites[suiteName]
+			if !ok {
+				return fmt.Errorf("suite %q missing from loaded test management data", suiteName)
+			}
+			for testName := range expSuite.Tests {
+				if _, ok := gotSuite.Tests[testName]; !ok {
+					return fmt.Errorf("test %q missing from loaded test management data for suite %q", testName, suiteName)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// dumpScenarioMgmtState prints the current test-management data visible to the process so
+// validation failures can be distinguished from init failures in CI logs.
+func dumpScenarioMgmtState(scenario string) {
+	settings := integrations.GetSettings()
+	if settings != nil {
+		fmt.Printf("subtest matrix: scenario %s management.enabled=%v retries=%d\n",
+			scenario, settings.TestManagement.Enabled, settings.TestManagement.AttemptToFixRetries)
+	}
+	loaded := integrations.GetTestManagementTestsData()
+	if loaded == nil || len(loaded.Modules) == 0 {
+		fmt.Printf("subtest matrix: scenario %s management data: <empty>\n", scenario)
+		return
+	}
+	for modName, mod := range loaded.Modules {
+		for suiteName, suite := range mod.Suites {
+			for testName, props := range suite.Tests {
+				fmt.Printf("subtest matrix: scenario %s mgmt module=%q suite=%q test=%q disabled=%v quarantined=%v attempt_to_fix=%v\n",
+					scenario, modName, suiteName, testName,
+					props.Properties.Disabled, props.Properties.Quarantined, props.Properties.AttemptToFix)
+			}
+		}
+	}
 }
 
 func validateScenarioSpans(sc *matrixScenario, spans []*mocktracer.Span) (panicValue any) {
@@ -987,11 +1069,16 @@ func startSubtestServer(cfg subtestServerConfig) (*httptest.Server, func()) {
 			w.Write([]byte(`{"data":{"attributes":{"tests":{}}}}`))
 		case "/api/v2/git/repository/search_commits":
 			// Stub git search commits used during CI Visibility bootstrap.
+			// Content-Type must be set so the client can unmarshal the response;
+			// omitting it causes an "unsupported format 'unknown'" error in the background
+			// git-metadata upload goroutine that pollutes logs and can delay init.
 			debugMatrixf("subtest server: search-commits request")
 			defer r.Body.Close()
 			_, _ = io.Copy(io.Discard, r.Body)
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{}`))
+			w.Write([]byte(`{"data":[]}`))
+
 		case "/api/v2/git/repository/packfile":
 			// Accept packfile uploads even though the sandbox blocks writes.
 			debugMatrixf("subtest server: packfile request")
