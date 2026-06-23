@@ -338,8 +338,9 @@ func isAgentUnavailableError(err error) bool {
 }
 
 type fallbackTransport struct {
-	primary  ddTransport
-	fallback ddTransport
+	primary        ddTransport
+	fallback       ddTransport
+	fallbackClient *http.Client
 }
 
 func (t *fallbackTransport) send(p payload) (io.ReadCloser, error) {

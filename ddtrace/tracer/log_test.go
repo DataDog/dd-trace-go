@@ -8,9 +8,12 @@ package tracer
 import (
 	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
@@ -344,4 +347,66 @@ func TestAgentURLConflict(t *testing.T) {
 		t.Fatal("Expected to find log entry")
 	}
 	assert.Regexp(`"agent_url":"http://localhost:8126/v0.4/traces"`, logEntry)
+}
+
+// refusedTransport is a stub whose endpoint returns a TCP address that always refuses connections.
+type refusedTransport struct {
+	stubTransport
+	url string
+}
+
+func (r *refusedTransport) endpoint() string { return r.url }
+
+func TestStartupLogFallbackTransport(t *testing.T) {
+	// primaryURL uses port 1 which reliably returns ECONNREFUSED.
+	primaryURL := "http://127.0.0.1:1" + tracesAPIPath
+
+	t.Run("uds_down_tcp_up", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		tp := new(log.RecordLogger)
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+		require.NoError(t, err)
+		defer stop()
+
+		tcpClient := internal.DefaultHTTPClient(defaultHTTPTimeout, false)
+		tracer.config.ddTransport = &fallbackTransport{
+			primary:        &refusedTransport{url: primaryURL},
+			fallback:       newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, tcpClient, nil),
+			fallbackClient: tcpClient,
+		}
+
+		tp.Reset()
+		tp.Ignore(commonLogIgnore...)
+		logStartup(tracer)
+
+		require.Len(t, tp.Logs(), 1)
+		assert.Contains(t, tp.Logs()[0], `"agent_url":"`+srv.URL+tracesAPIPath+`"`)
+		assert.Contains(t, tp.Logs()[0], `"agent_error":""`)
+	})
+
+	t.Run("uds_down_tcp_down", func(t *testing.T) {
+		tp := new(log.RecordLogger)
+		tracer, _, _, stop, err := startTestTracer(t, WithLogger(tp))
+		require.NoError(t, err)
+		defer stop()
+
+		tcpClient := internal.DefaultHTTPClient(defaultHTTPTimeout, false)
+		tracer.config.ddTransport = &fallbackTransport{
+			primary:        &refusedTransport{url: primaryURL},
+			fallback:       newHTTPTransport("http://127.0.0.1:1"+tracesAPIPath, "http://127.0.0.1:1"+statsAPIPath, tcpClient, nil),
+			fallbackClient: tcpClient,
+		}
+
+		tp.Reset()
+		tp.Ignore(commonLogIgnore...)
+		logStartup(tracer)
+
+		require.Len(t, tp.Logs(), 2)
+		assert.Contains(t, tp.Logs()[1], `"agent_url":"http://127.0.0.1:1`+tracesAPIPath+`"`)
+		assert.Regexp(t, `"agent_error":"Post .*"`, tp.Logs()[1])
+	})
 }

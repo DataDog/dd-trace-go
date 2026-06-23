@@ -302,13 +302,14 @@ func newConfig(opts ...StartOption) (*config, error) {
 		if rawAgentURL != nil && rawAgentURL.Scheme == "unix" &&
 			rawAgentURL.Path == internal.DefaultTraceAgentUDSPath {
 			timeout := cmp.Or(c.internalConfig.AgentTimeout(), defaultHTTPTimeout)
+			tcpClient := internal.DefaultHTTPClient(timeout, false)
 			tcpFallback := newHTTPTransport(
 				defaultURL+tracesAPIPath,
 				defaultURL+statsAPIPath,
-				internal.DefaultHTTPClient(timeout, false),
+				tcpClient,
 				headers,
 			)
-			c.ddTransport = &fallbackTransport{primary: primary, fallback: tcpFallback}
+			c.ddTransport = &fallbackTransport{primary: primary, fallback: tcpFallback, fallbackClient: tcpClient}
 		} else {
 			c.ddTransport = primary
 		}

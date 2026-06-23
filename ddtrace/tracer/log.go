@@ -139,8 +139,7 @@ func logStartup(t *tracer) {
 		injectorNames = "custom"
 		extractorNames = "custom"
 	}
-	// Determine the agent URL to use in the logs.
-	// Use the source URL from internalConfig for unix sockets (before UDS rewriting).
+	// Determine the initial agent URL. May be updated after connectivity probing below.
 	var agentURL string
 	if srcURL := t.config.internalConfig.RawAgentURL(); srcURL != nil && srcURL.Scheme == "unix" {
 		agentURL = srcURL.String()
@@ -156,7 +155,6 @@ func logStartup(t *tracer) {
 		LangVersion:                 runtime.Version(),
 		Env:                         t.config.internalConfig.Env(),
 		Service:                     t.config.internalConfig.ServiceName(),
-		AgentURL:                    agentURL,
 		Debug:                       t.config.internalConfig.Debug(),
 		AnalyticsEnabled:            !math.IsNaN(globalconfig.AnalyticsRate()),
 		SampleRate:                  fmt.Sprintf("%f", t.rulesSampling.traces.globalRate),
@@ -193,11 +191,28 @@ func logStartup(t *tracer) {
 		info.SampleRateLimit = fmt.Sprintf("%v", limit)
 	}
 	if !t.config.internalConfig.LogToStdout() {
-		if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), t.config.internalConfig.TraceProtocol()); err != nil {
-			info.AgentError = err.Error()
-			log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
+		protocol := t.config.internalConfig.TraceProtocol()
+		if ft, ok := t.config.ddTransport.(*fallbackTransport); ok {
+			primaryErr := checkEndpoint(t.config.httpClient, ft.primary.endpoint(), protocol)
+			if primaryErr != nil && isAgentUnavailableError(primaryErr) {
+				fallbackErr := checkEndpoint(ft.fallbackClient, ft.fallback.endpoint(), protocol)
+				agentURL = ft.fallback.endpoint()
+				if fallbackErr != nil {
+					info.AgentError = fallbackErr.Error()
+					log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", fallbackErr)
+				}
+			} else if primaryErr != nil {
+				info.AgentError = primaryErr.Error()
+				log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", primaryErr)
+			}
+		} else {
+			if err := checkEndpoint(t.config.httpClient, t.config.ddTransport.endpoint(), protocol); err != nil {
+				info.AgentError = err.Error()
+				log.Warn("DIAGNOSTICS Unable to reach agent intake: %s", err.Error())
+			}
 		}
 	}
+	info.AgentURL = agentURL
 	bs, err := json.Marshal(info)
 	if err != nil {
 		//nolint:gocritic // Diagnostic logging needs full struct representation
