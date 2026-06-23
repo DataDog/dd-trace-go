@@ -45,8 +45,8 @@ func TestTagsTypes(t *testing.T) {
 	metrics.SumWAFTimeouts.Store(1)
 	metrics.SumRASPTimeouts[addresses.RASPRuleTypeLFI].Store(2)
 
-	AddWAFMonitoringTags(&th, metrics, "1.2.3", map[libddwaf.TruncationReason][]int{
-		libddwaf.ObjectTooDeep: {1, 2, 3},
+	AddWAFMonitoringTags(&th, metrics, "1.2.3", libddwaf.Truncations{
+		ObjectTooDeep: []int{1, 2, 3},
 	}, map[timer.Key]time.Duration{
 		addresses.WAFScope:  10 * time.Millisecond,
 		addresses.RASPScope: 10 * time.Millisecond,
@@ -86,6 +86,26 @@ func TestAddRulesMonitoringTagsRCClientID(t *testing.T) {
 	})
 }
 
+func TestAddWAFMonitoringTags_includes_subcontext_stats(t *testing.T) {
+	th := make(trace.TestTagSetter)
+	handleMetrics := emitter.NewMetricsInstance(nil, "1.2.3")
+	metrics := handleMetrics.NewContextMetrics()
+	metrics.AddSubcontextStats(addresses.RASPScope, libddwaf.Truncations{
+		StringTooLong: []int{42},
+	}, map[timer.Key]time.Duration{
+		addresses.RASPScope: 2 * time.Millisecond,
+	})
+
+	AddWAFMonitoringTags(&th, metrics, "1.2.3", libddwaf.Truncations{}, map[timer.Key]time.Duration{
+		addresses.WAFScope:  0,
+		addresses.RASPScope: 0,
+	})
+
+	tags := th.Tags()
+	require.Equal(t, float64(2000), tags[raspDurationExtTag])
+	require.Equal(t, 42, tags[truncationTagPrefix+libddwaf.StringTooLong.String()])
+}
+
 func TestWAFErrorCodeSpanTag(t *testing.T) {
 	t.Run("waf_error_emits_code_not_count", func(t *testing.T) {
 		th := make(trace.TestTagSetter)
@@ -96,7 +116,7 @@ func TestWAFErrorCodeSpanTag(t *testing.T) {
 			},
 		}
 		metrics.WAFErrorCode.Store(-2)
-		AddWAFMonitoringTags(&th, metrics, "1.0.0", nil, map[timer.Key]time.Duration{
+		AddWAFMonitoringTags(&th, metrics, "1.0.0", libddwaf.Truncations{}, map[timer.Key]time.Duration{
 			addresses.WAFScope:  time.Millisecond,
 			addresses.RASPScope: time.Millisecond,
 		})
@@ -111,7 +131,7 @@ func TestWAFErrorCodeSpanTag(t *testing.T) {
 				addresses.RASPScope: {libddwaf.DurationTimeKey: &atomic.Int64{}},
 			},
 		}
-		AddWAFMonitoringTags(&th, metrics, "1.0.0", nil, map[timer.Key]time.Duration{
+		AddWAFMonitoringTags(&th, metrics, "1.0.0", libddwaf.Truncations{}, map[timer.Key]time.Duration{
 			addresses.WAFScope:  time.Millisecond,
 			addresses.RASPScope: time.Millisecond,
 		})
@@ -130,7 +150,7 @@ func TestWAFErrorCodeSpanTag(t *testing.T) {
 		metrics.RASPErrorCodes[addresses.RASPRuleTypeLFI].Store(-127)
 		metrics.RASPErrorCodes[addresses.RASPRuleTypeSQLI].Store(-2)
 		metrics.RASPErrorCodes[addresses.RASPRuleTypeCMDI].Store(-1)
-		AddWAFMonitoringTags(&th, metrics, "1.0.0", nil, map[timer.Key]time.Duration{
+		AddWAFMonitoringTags(&th, metrics, "1.0.0", libddwaf.Truncations{}, map[timer.Key]time.Duration{
 			addresses.WAFScope:  time.Millisecond,
 			addresses.RASPScope: time.Millisecond,
 		})

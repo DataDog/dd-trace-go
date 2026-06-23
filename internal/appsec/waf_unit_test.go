@@ -117,7 +117,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second))
+			wafCtx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second), timer.WithComponents(addresses.Scopes[:]...))
 			require.NoError(t, err)
 			defer wafCtx.Close()
 			runData := addresses.RunAddressData{
@@ -195,7 +195,7 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 		},
 	} {
 		t.Run("tags/"+tc.name, func(t *testing.T) {
-			wafCtx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second))
+			wafCtx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second), timer.WithComponents(addresses.Scopes[:]...))
 			require.NoError(t, err)
 			defer wafCtx.Close()
 

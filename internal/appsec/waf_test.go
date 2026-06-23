@@ -967,7 +967,7 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 	require.NotNil(b, handle)
 
 	for b.Loop() {
-		ctx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second))
+		ctx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second), timer.WithComponents(addresses.Scopes[:]...))
 		if err != nil || ctx == nil {
 			b.Fatal("nil context")
 		}

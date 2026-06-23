@@ -438,7 +438,7 @@ func TestOnRCUpdate(t *testing.T) {
 				require.Equal(t, tc.statuses, statuses)
 
 				// Make sure edits are added to the active ruleset
-				expected := []string{"::/go-libddwaf/default/recommended.json"}
+				expected := []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}
 				for path := range tc.statuses {
 					expected = append(expected, path)
 				}
@@ -514,7 +514,7 @@ func TestOnRCUpdate(t *testing.T) {
 				t.Skip()
 			}
 
-			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
+			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
 
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.edits)
@@ -525,9 +525,14 @@ func TestOnRCUpdate(t *testing.T) {
 			// Compare rulesets base paths to make sure the updates were processed correctly
 			expected := tc.expectedConfigPaths
 			if expected == nil {
-				expected = []string{"::/go-libddwaf/default/recommended.json"}
+				expected = []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}
+			} else {
+				expected = append([]string{"obfuscator/config"}, expected...)
 			}
-			require.Equal(t, expected, activeAppSec.cfg.WAFManager.ConfigPaths(""))
+			actual := activeAppSec.cfg.WAFManager.ConfigPaths("")
+			slices.Sort(expected)
+			slices.Sort(actual)
+			require.Equal(t, expected, actual)
 		})
 	}
 
@@ -578,7 +583,7 @@ func TestOnRCUpdate(t *testing.T) {
 		require.NotNil(t, handle)
 		defer handle.Close()
 
-		ctx, err := handle.NewContext(context.Background(), timer.WithUnlimitedBudget())
+		ctx, err := handle.NewContext(context.Background(), timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer ctx.Close()
 
@@ -681,7 +686,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]*RulesFragment{"invalid": &invalidOverrides}),
-			expected: map[string]state.ApplyStatus{"invalid": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`}},
+			expected: map[string]state.ApplyStatus{"invalid": {State: state.ApplyStateError, Error: `{"rules_override":{"error":"bad cast, expected 'map', obtained 'float'"}}`}},
 		},
 		{
 			name:     "multiple/ack",
@@ -693,14 +698,14 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &overrides, "invalid": &invalidOverrides}),
 			expected: map[string]state.ApplyStatus{
 				"overrides": ackStatus,
-				"invalid":   {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
+				"invalid":   {State: state.ApplyStateError, Error: `{"rules_override":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
 			},
 		},
 		{
 			name:    "multiple/all-errors",
 			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &invalidOverrides, "invalid": &invalidRules}),
 			expected: map[string]state.ApplyStatus{
-				"overrides": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
+				"overrides": {State: state.ApplyStateError, Error: `{"rules_override":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
 				"invalid":   {State: state.ApplyStateError, Error: `{"rules":{"errors":{"rule has no valid conditions":["id"]}}}`},
 			},
 		},
@@ -744,7 +749,7 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, _ := appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		wafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour))
+		wafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer wafCtx.Close()
 		values := map[string]any{
@@ -763,7 +768,7 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, _ = appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		newWafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour))
+		newWafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
