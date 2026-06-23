@@ -7,9 +7,12 @@ package config
 
 import (
 	"net/url"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal"
 )
 
 func TestResolveOTLPTraceURL(t *testing.T) {
@@ -51,6 +54,37 @@ func TestResolveOTLPTraceURL(t *testing.T) {
 		unixAgent := &url.URL{Scheme: "unix", Path: "/var/run/datadog/apm.socket"}
 		got := resolveOTLPTraceURL(unixAgent, "")
 		assert.Equal(t, defaultLocalhost, got)
+	})
+}
+
+func TestDetectUDSURL(t *testing.T) {
+	old := internal.DefaultTraceAgentUDSPath
+	t.Cleanup(func() { internal.DefaultTraceAgentUDSPath = old })
+
+	t.Run("empty path returns nil", func(t *testing.T) {
+		internal.DefaultTraceAgentUDSPath = ""
+		assert.Nil(t, detectUDSURL())
+	})
+
+	t.Run("nonexistent path still returns URL", func(t *testing.T) {
+		internal.DefaultTraceAgentUDSPath = "/nonexistent/path/apm.socket"
+		u := detectUDSURL()
+		assert.NotNil(t, u)
+		assert.Equal(t, URLSchemeUnix, u.Scheme)
+		assert.Equal(t, "/nonexistent/path/apm.socket", u.Path)
+	})
+
+	t.Run("existing path returns URL with correct scheme and path", func(t *testing.T) {
+		f, err := os.CreateTemp("", "apm.socket.*")
+		assert.NoError(t, err)
+		f.Close()
+		t.Cleanup(func() { os.Remove(f.Name()) })
+
+		internal.DefaultTraceAgentUDSPath = f.Name()
+		u := detectUDSURL()
+		assert.NotNil(t, u)
+		assert.Equal(t, URLSchemeUnix, u.Scheme)
+		assert.Equal(t, f.Name(), u.Path)
 	})
 }
 

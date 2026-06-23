@@ -192,7 +192,7 @@ func buildHTTPURL(host, port string) *url.URL {
 }
 
 func detectUDSURL() *url.URL {
-	if _, err := os.Stat(internal.DefaultTraceAgentUDSPath); err != nil {
+	if internal.DefaultTraceAgentUDSPath == "" {
 		return nil
 	}
 	return &url.URL{

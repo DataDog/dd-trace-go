@@ -333,6 +333,33 @@ func isTransientConnError(err error) bool {
 		strings.Contains(msg, "use of closed network connection")
 }
 
+func isAgentUnavailableError(err error) bool {
+	return errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED)
+}
+
+type fallbackTransport struct {
+	primary  ddTransport
+	fallback ddTransport
+}
+
+func (t *fallbackTransport) send(p payload) (io.ReadCloser, error) {
+	body, err := t.primary.send(p)
+	if err != nil && isAgentUnavailableError(err) {
+		return t.fallback.send(p)
+	}
+	return body, err
+}
+
+func (t *fallbackTransport) sendStats(s *pb.ClientStatsPayload, v int) error {
+	err := t.primary.sendStats(s, v)
+	if err != nil && isAgentUnavailableError(err) {
+		return t.fallback.sendStats(s, v)
+	}
+	return err
+}
+
+func (t *fallbackTransport) endpoint() string { return t.primary.endpoint() }
+
 func reportAPIErrorsMetric(response *http.Response, err error, endpoint string) {
 	if t, ok := getGlobalTracer().(*tracer); ok {
 		var reason string

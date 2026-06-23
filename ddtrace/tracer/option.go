@@ -298,7 +298,20 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.ddTransport == nil {
 		agentURL := c.internalConfig.AgentURL().String()
 		traceURL, headers := resolveTraceTransport(c.internalConfig)
-		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
+		primary := newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
+		if rawAgentURL != nil && rawAgentURL.Scheme == "unix" &&
+			rawAgentURL.Path == internal.DefaultTraceAgentUDSPath {
+			timeout := cmp.Or(c.internalConfig.AgentTimeout(), defaultHTTPTimeout)
+			tcpFallback := newHTTPTransport(
+				defaultURL+tracesAPIPath,
+				defaultURL+statsAPIPath,
+				internal.DefaultHTTPClient(timeout, false),
+				headers,
+			)
+			c.ddTransport = &fallbackTransport{primary: primary, fallback: tcpFallback}
+		} else {
+			c.ddTransport = primary
+		}
 	}
 	if c.propagator == nil {
 		c.propagator = NewPropagator(&PropagatorConfig{

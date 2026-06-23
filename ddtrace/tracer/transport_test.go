@@ -8,6 +8,7 @@ package tracer
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -874,4 +876,100 @@ func TestConcurrentTraceFlushOverUDS(t *testing.T) {
 	}
 	assert.Equal(t, int64(numGoroutines), received.Load(),
 		"server should have received all %d trace payloads", numGoroutines)
+}
+
+type stubTransport struct {
+	err   error
+	calls int
+}
+
+func (s *stubTransport) send(payload) (io.ReadCloser, error) {
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	return io.NopCloser(strings.NewReader("OK")), nil
+}
+
+func (s *stubTransport) sendStats(*pb.ClientStatsPayload, int) error {
+	s.calls++
+	return s.err
+}
+
+func (s *stubTransport) endpoint() string { return "stub://" }
+
+func TestFallbackTransport(t *testing.T) {
+	t.Run("send: primary succeeds", func(t *testing.T) {
+		primary := &stubTransport{}
+		fallback := &stubTransport{}
+		ft := &fallbackTransport{primary: primary, fallback: fallback}
+		_, err := ft.send(nil)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, primary.calls)
+		assert.Equal(t, 0, fallback.calls)
+	})
+
+	t.Run("send: ENOENT falls back", func(t *testing.T) {
+		primary := &stubTransport{err: fmt.Errorf("dial: %w", syscall.ENOENT)}
+		fallback := &stubTransport{}
+		ft := &fallbackTransport{primary: primary, fallback: fallback}
+		_, err := ft.send(nil)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, fallback.calls)
+	})
+
+	t.Run("send: ECONNREFUSED falls back", func(t *testing.T) {
+		primary := &stubTransport{err: fmt.Errorf("dial: %w", syscall.ECONNREFUSED)}
+		fallback := &stubTransport{}
+		ft := &fallbackTransport{primary: primary, fallback: fallback}
+		_, err := ft.send(nil)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, fallback.calls)
+	})
+
+	t.Run("send: HTTP error does not fall back", func(t *testing.T) {
+		primary := &stubTransport{err: errors.New("400 Bad Request")}
+		fallback := &stubTransport{}
+		ft := &fallbackTransport{primary: primary, fallback: fallback}
+		_, err := ft.send(nil)
+		assert.Error(t, err)
+		assert.Equal(t, 0, fallback.calls)
+	})
+
+	t.Run("sendStats: primary succeeds", func(t *testing.T) {
+		primary := &stubTransport{}
+		fallback := &stubTransport{}
+		ft := &fallbackTransport{primary: primary, fallback: fallback}
+		err := ft.sendStats(nil, 0)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, primary.calls)
+		assert.Equal(t, 0, fallback.calls)
+	})
+
+	t.Run("sendStats: ENOENT falls back", func(t *testing.T) {
+		primary := &stubTransport{err: fmt.Errorf("dial: %w", syscall.ENOENT)}
+		fallback := &stubTransport{}
+		ft := &fallbackTransport{primary: primary, fallback: fallback}
+		err := ft.sendStats(nil, 0)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, fallback.calls)
+	})
+
+	t.Run("sendStats: ECONNREFUSED falls back", func(t *testing.T) {
+		primary := &stubTransport{err: fmt.Errorf("dial: %w", syscall.ECONNREFUSED)}
+		fallback := &stubTransport{}
+		ft := &fallbackTransport{primary: primary, fallback: fallback}
+		err := ft.sendStats(nil, 0)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, fallback.calls)
+	})
+
+	t.Run("sendStats: HTTP error does not fall back", func(t *testing.T) {
+		primary := &stubTransport{err: errors.New("400 Bad Request")}
+		fallback := &stubTransport{}
+		ft := &fallbackTransport{primary: primary, fallback: fallback}
+		err := ft.sendStats(nil, 0)
+		assert.Error(t, err)
+		assert.Equal(t, 0, fallback.calls)
+	})
 }
