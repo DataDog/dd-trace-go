@@ -51,3 +51,28 @@ func TestGLSNoHeapLeak(t *testing.T) {
 			"one span per record) — the contextStack.Push reclaim in ddtrace/tracer/orchestrion.yml regressed",
 		r.PerRecord)
 }
+
+// TestGLSNoHeapLeakWithSpanPool is the regression gate for running the
+// experimental span pool together with orchestrion GLS (the combination #4891
+// gated off and this stack re-enables). It uses the live-inject workload, which
+// respects the span pool's "do not use a span after Finish" contract, and
+// enables pooling via WithSpanPool(true). With the decoupled, cell-based reclaim
+// the worker's GLS stack stays flat even though every finished span is recycled
+// by the pool; without it, recycled spans would either leak (stale entries never
+// drained) or resurface as the wrong active span. Run under -race in CI, it also
+// guards against the span-pool-vs-GLS data races from the review.
+func TestGLSNoHeapLeakWithSpanPool(t *testing.T) {
+	if !orchestrionEnabled {
+		t.Skip("GLS only exists in orchestrion builds")
+	}
+	require.True(t, built.WithOrchestrion)
+
+	require.NoError(t, tracer.Start(tracer.WithLogStartup(false), tracer.WithSpanPool(true)))
+	defer tracer.Stop()
+
+	r := glsleak.MeasureLeakLiveInject(200_000)
+	require.Lessf(t, r.PerRecord, glsleak.MaxRetainedObjectsPerRecord,
+		"GLS span leak with span pool: %.3f retained heap objects/record (want flat ~0) — "+
+			"the decoupled reclaim regressed, or span pool + orchestrion GLS no longer coexist safely",
+		r.PerRecord)
+}

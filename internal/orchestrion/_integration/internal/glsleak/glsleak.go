@@ -93,3 +93,70 @@ func MeasureLeak(n int) Result {
 		PerRecord: float64(objects) / float64(n),
 	}
 }
+
+// MeasureLeakLiveInject runs the same cross-goroutine GLS-leak measurement as
+// MeasureLeak, but injects each span while it is still LIVE and finishes it only
+// after the worker has pushed it. This matches the real franz-go/Kafka shape
+// (a span is put into the context while in flight, then finished) and, unlike
+// MeasureLeak's finish-then-inject order, respects the span pool's "do not touch
+// a span after Finish" contract. It is therefore the workload used to assert
+// that the experimental span pool and orchestrion GLS coexist without leaking
+// (orchestrion#782): the reclaim cell is captured at push time while the span is
+// live, finish marks it, and the worker's next push drains the stale entry even
+// after the span object has been recycled by the pool.
+//
+// A per-item handshake orders the worker's push ahead of the owner's Finish, so
+// the worker never reads a span's fields while the owner finishes (or the pool
+// recycles) it: the workload stays data-race-free under -race while still
+// exercising pool reuse and cross-goroutine reclaim.
+//
+// The tracer must already be started by the caller (with the span pool enabled,
+// e.g. tracer.WithSpanPool(true)). n <= 0 returns a zero Result.
+func MeasureLeakLiveInject(n int) Result {
+	if n <= 0 {
+		return Result{Records: n}
+	}
+	base := context.Background()
+
+	run := func() {
+		spanCh := make(chan *tracer.Span)
+		pushedCh := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Go(func() { // worker: pushes the live span onto its own GLS stack
+			for s := range spanCh {
+				_ = tracer.ContextWithSpan(base, s)
+				pushedCh <- struct{}{} // signal: done reading s, owner may finish it
+			}
+		})
+		for range n { // owner: creates and (after the worker pushed) finishes the span
+			s := tracer.StartSpan("kafka.consume")
+			spanCh <- s // hand the LIVE span to the worker
+			<-pushedCh  // wait until the worker pushed it (orders push before finish)
+			s.Finish()  // finish on the owner; the worker's popper is a no-op here
+		}
+		close(spanCh)
+		wg.Wait()
+	}
+
+	run() // warm up so first-run/lazy allocations don't count toward the delta
+
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+
+	run()
+
+	tracer.Flush() // drop buffered spans so only a GLS leak can retain them
+	runtime.GC()
+	runtime.GC()
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+
+	objects := int64(after.HeapObjects) - int64(before.HeapObjects)
+	return Result{
+		Records:   n,
+		Objects:   objects,
+		Bytes:     int64(after.HeapInuse) - int64(before.HeapInuse),
+		PerRecord: float64(objects) / float64(n),
+	}
+}
