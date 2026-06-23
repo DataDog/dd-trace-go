@@ -36,8 +36,8 @@ func mustMarshalJSONMap(t *testing.T, payload any) map[string]any {
 
 func TestFlagEvaluationEndpointUsesTrackName(t *testing.T) {
 	const want = "/evp_proxy/v2/api/v2/flagevaluation"
-	if flagEvaluationEndpoint != want {
-		t.Fatalf("flagEvaluationEndpoint = %q, want %q", flagEvaluationEndpoint, want)
+	if flagEvalLoggingEndpoint != want {
+		t.Fatalf("flagEvalLoggingEndpoint = %q, want %q", flagEvalLoggingEndpoint, want)
 	}
 }
 
@@ -128,11 +128,11 @@ func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 	}
 }
 
-// setupTestAggregator creates a flagEvaluationAggregator with small caps for testing.
+// setupTestAggregator creates a flagEvalLoggingAggregator with small caps for testing.
 // Caps are deliberately small to trigger tier-cascade behavior in unit tests.
-func setupTestAggregator(t *testing.T) *flagEvaluationAggregator {
+func setupTestAggregator(t *testing.T) *flagEvalLoggingAggregator {
 	t.Helper()
-	return &flagEvaluationAggregator{
+	return &flagEvalLoggingAggregator{
 		full:        make(map[evaluationAggregationKey]*evaluationEntry),
 		degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
 		perFlagFull: make(map[string]int),
@@ -142,12 +142,12 @@ func setupTestAggregator(t *testing.T) *flagEvaluationAggregator {
 	}
 }
 
-// newTestAggregator builds a flagEvaluationAggregator with explicit, caller-supplied caps.
+// newTestAggregator builds a flagEvalLoggingAggregator with explicit, caller-supplied caps.
 // Unlike setupTestAggregator (which fixes small caps), each cap is a parameter so a test can
 // drive a specific tier-overflow scenario. The cap NUMBERS are load-bearing — callers pass
 // the exact values their scenario requires.
-func newTestAggregator(globalCap, perFlagCap, degradedCap int) *flagEvaluationAggregator {
-	return &flagEvaluationAggregator{
+func newTestAggregator(globalCap, perFlagCap, degradedCap int) *flagEvalLoggingAggregator {
+	return &flagEvalLoggingAggregator{
 		full:        make(map[evaluationAggregationKey]*evaluationEntry),
 		degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
 		perFlagFull: make(map[string]int),
@@ -247,13 +247,13 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 
 	tierTests := []struct {
 		name           string
-		event          flagEvaluationEvent
+		event          flagEvalLoggingEvent
 		requiredFlgKey bool     // full tier additionally asserts flag.key is present
 		optionalAbsent []string // optional fields that must NOT appear for this tier
 	}{
 		{
 			name: "full tier has all required fields",
-			event: flagEvaluationEvent{
+			event: flagEvalLoggingEvent{
 				Timestamp:       nowMs,
 				Flag:            flagEvalFlag{Key: "test-flag"},
 				FirstEvaluation: nowMs,
@@ -270,7 +270,7 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 		{
 			name: "degraded tier omits targeting_key and context.evaluation",
 			// Degraded tier: no targeting_key, no context.evaluation; variant + allocation present.
-			event: flagEvaluationEvent{
+			event: flagEvalLoggingEvent{
 				Timestamp:       nowMs,
 				Flag:            flagEvalFlag{Key: "test-flag"},
 				FirstEvaluation: nowMs,
@@ -287,7 +287,7 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 			// A bare event carrying only flag key + counts; no variant, allocation, targeting,
 			// context. (This shape is not emitted by a dedicated tier, but the
 			// schema must still accept a required-fields-only event.)
-			event: flagEvaluationEvent{
+			event: flagEvalLoggingEvent{
 				Timestamp:       nowMs,
 				Flag:            flagEvalFlag{Key: "test-flag"},
 				FirstEvaluation: nowMs,
@@ -340,13 +340,13 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 	})
 
 	t.Run("batch payload wraps events in flagEvaluations array", func(t *testing.T) {
-		payload := flagEvaluationPayload{
+		payload := flagEvalLoggingPayload{
 			Context: flagEvalDDContext{
 				Service: "test-service",
 				Env:     "test",
 				Version: "1.0.0",
 			},
-			FlagEvaluations: []flagEvaluationEvent{
+			FlagEvaluations: []flagEvalLoggingEvent{
 				{
 					Timestamp:       nowMs,
 					Flag:            flagEvalFlag{Key: "test-flag"},
@@ -379,13 +379,13 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 	})
 
 	t.Run("batch payload uses only stable EVP flagevaluation fields", func(t *testing.T) {
-		payload := flagEvaluationPayload{
+		payload := flagEvalLoggingPayload{
 			Context: flagEvalDDContext{
 				Service: "test-service",
 				Env:     "test",
 				Version: "1.0.0",
 			},
-			FlagEvaluations: []flagEvaluationEvent{
+			FlagEvaluations: []flagEvalLoggingEvent{
 				{
 					Timestamp:       nowMs,
 					Flag:            flagEvalFlag{Key: "full-flag"},
@@ -551,7 +551,7 @@ func TestAggregatorDistinctAllocationBuckets(t *testing.T) {
 }
 
 func TestOpenFeatureReasonIsNotEVPCardinality(t *testing.T) {
-	w := newFlagEvaluationWriter(ProviderConfig{})
+	w := newFlagEvalLoggingWriter(ProviderConfig{})
 	hookCtx := of.NewHookContext(
 		"reasonless-flag",
 		of.Boolean,
@@ -1060,7 +1060,7 @@ func TestDegradedCapBounded(t *testing.T) {
 // counted as dropped instead. On the pre-fix code (no stopped check in record()) the event is
 // enqueued and silently lost.
 func TestRecordAfterStopIsNoop(t *testing.T) {
-	w := newFlagEvaluationWriter(ProviderConfig{})
+	w := newFlagEvalLoggingWriter(ProviderConfig{})
 
 	// Do NOT start the worker. stop() must still be safe (ticker==nil path) and mark stopped.
 	w.stop()
@@ -1099,15 +1099,15 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 }
 
 func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
-	payloads := make(chan flagEvaluationPayload, 1)
+	payloads := make(chan flagEvalLoggingPayload, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
-		if r.URL.Path != flagEvaluationEndpoint {
-			t.Errorf("unexpected EVP path: got %q, want %q", r.URL.Path, flagEvaluationEndpoint)
+		if r.URL.Path != flagEvalLoggingEndpoint {
+			t.Errorf("unexpected EVP path: got %q, want %q", r.URL.Path, flagEvalLoggingEndpoint)
 		}
 
-		var payload flagEvaluationPayload
+		var payload flagEvalLoggingPayload
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Errorf("failed to decode flagevaluation payload: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -1127,7 +1127,7 @@ func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
 	evp.agentURL = agentURL
 	evp.httpClient = server.Client()
 
-	w := newFlagEvaluationWriterWithEVP(ProviderConfig{FlagEvaluationFlushInterval: time.Hour}, evp)
+	w := newFlagEvalLoggingWriterWithEVP(ProviderConfig{FlagEvaluationFlushInterval: time.Hour}, evp)
 	w.start()
 
 	hookCtx := of.NewHookContext(
@@ -1171,7 +1171,7 @@ func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
 }
 
 func TestRecordAggregatesPrunedContextSnapshot(t *testing.T) {
-	w := newFlagEvaluationWriter(ProviderConfig{})
+	w := newFlagEvalLoggingWriter(ProviderConfig{})
 	attrs := make(map[string]any, maxContextFields+50)
 	for i := range maxContextFields + 50 {
 		attrs[fmt.Sprintf("field-%03d", i)] = fmt.Sprintf("value-%03d", i)

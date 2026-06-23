@@ -34,22 +34,22 @@ var (
 	attrAllocationKey = attribute.Key("feature_flag.result.allocation_key")
 )
 
-// flagEvalHook implements the OpenFeature Hook interface to track flag evaluation metrics.
+// flagEvalMetricsHook implements the OpenFeature Hook interface to track flag evaluation metrics.
 // It uses the Finally hook stage so that metrics are recorded after all evaluation logic
 // completes, including type conversion errors and "not ready" state evaluations.
-type flagEvalHook struct {
+type flagEvalMetricsHook struct {
 	of.UnimplementedHook
 	metrics *flagEvalMetrics
 }
 
-// newFlagEvalHook creates a new flag evaluation metrics hook.
-func newFlagEvalHook(m *flagEvalMetrics) *flagEvalHook {
-	return &flagEvalHook{metrics: m}
+// newFlagEvalMetricsHook creates a new flag evaluation metrics hook.
+func newFlagEvalMetricsHook(m *flagEvalMetrics) *flagEvalMetricsHook {
+	return &flagEvalMetricsHook{metrics: m}
 }
 
 // Finally is called after every flag evaluation (success or error).
 // It records a metric for the evaluation result.
-func (h *flagEvalHook) Finally(
+func (h *flagEvalMetricsHook) Finally(
 	ctx context.Context,
 	hookContext of.HookContext,
 	details of.InterfaceEvaluationDetails,
