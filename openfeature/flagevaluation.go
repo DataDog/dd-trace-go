@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	of "github.com/open-feature/go-sdk/openfeature"
@@ -72,6 +73,15 @@ const (
 	// flagEvaluationPayloadSizeLimit is the EVP uncompressed JSON request-body limit.
 	// Splitting happens before transport compression concerns and includes the batch wrapper.
 	flagEvaluationPayloadSizeLimit = 5 * 1024 * 1024
+
+	flagEvaluationDroppedMetric  = "flagevaluation.rows.dropped"
+	flagEvaluationDegradedMetric = "flagevaluation.rows.degraded"
+	flagEvaluationSplitsMetric   = "flagevaluation.payload.splits"
+
+	flagEvaluationReasonQueueOverflow  = "queue_overflow"
+	flagEvaluationReasonDegradedCap    = "degraded_cap"
+	flagEvaluationReasonPayloadLimit   = "payload_limit"
+	flagEvaluationReasonCardinalityCap = "cardinality_cap"
 )
 
 // evaluationAggregationKey identifies one full-tier aggregation bucket. Every field is an
@@ -371,6 +381,7 @@ func (w *flagEvaluationWriter) flush() {
 	// Surface best-effort backpressure drops (queue full) as an observable signal.
 	if d := w.dropped.Swap(0); d > 0 {
 		log.Debug("openfeature: flag evaluation queue full — dropped %d evaluation(s) under backpressure (best-effort telemetry)", d)
+		submitFlagEvaluationDropped(flagEvaluationReasonQueueOverflow, d)
 	}
 
 	w.aggregator.mu.Lock()
@@ -388,6 +399,7 @@ func (w *flagEvaluationWriter) flush() {
 		w.aggregator.mu.Unlock()
 		if degradedOverflow > 0 {
 			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
+			submitFlagEvaluationDropped(flagEvaluationReasonDegradedCap, degradedOverflow)
 		}
 		return
 	}
@@ -403,6 +415,7 @@ func (w *flagEvaluationWriter) flush() {
 
 	if degradedOverflow > 0 {
 		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
+		submitFlagEvaluationDropped(flagEvaluationReasonDegradedCap, degradedOverflow)
 	}
 
 	flushTimeMs := time.Now().UnixMilli()
@@ -432,6 +445,7 @@ func (w *flagEvaluationWriter) flush() {
 	// Degraded tier: required fields + variant + allocation + error; no targeting_key, no context.
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range degraded {
+		submitFlagEvaluationDegraded(flagEvaluationReasonCardinalityCap, e.count)
 		ev := baseFlagEvaluationEvent(key.flagKey, e, flushTimeMs)
 		ev.RuntimeDefault = e.runtimeDefault
 		if key.variant != "" {
@@ -633,16 +647,23 @@ func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error 
 }
 
 func (w *flagEvaluationWriter) sendEventsToAgent(events []flagEvaluationEvent, sizeLimit int) (int, error) {
-	payloads, droppedOversized, err := w.buildFlagEvaluationPayloads(events, sizeLimit)
+	result, err := w.buildFlagEvaluationPayloads(events, sizeLimit)
 	if err != nil {
 		return 0, err
 	}
-	if droppedOversized > 0 {
-		log.Warn("openfeature: flag evaluation payload limit dropped %d oversized degraded event(s) (best-effort telemetry)", droppedOversized)
+	if result.degradedPayloadLimit > 0 {
+		submitFlagEvaluationDegraded(flagEvaluationReasonPayloadLimit, result.degradedPayloadLimit)
+	}
+	if result.droppedPayloadLimit > 0 {
+		log.Warn("openfeature: flag evaluation payload limit dropped %d oversized degraded event(s) (best-effort telemetry)", result.droppedPayloadLimit)
+		submitFlagEvaluationDropped(flagEvaluationReasonPayloadLimit, result.droppedPayloadLimit)
+	}
+	if splits := len(result.payloads) - 1; splits > 0 {
+		telemetry.Count(telemetry.NamespaceTracers, flagEvaluationSplitsMetric, nil).Submit(float64(splits))
 	}
 
 	sent := 0
-	for _, payload := range payloads {
+	for _, payload := range result.payloads {
 		if err := w.evp.postBytes(flagEvaluationEndpoint, "flag evaluation", payload.body); err != nil {
 			return sent, err
 		}
@@ -651,10 +672,24 @@ func (w *flagEvaluationWriter) sendEventsToAgent(events []flagEvaluationEvent, s
 	return sent, nil
 }
 
-func (w *flagEvaluationWriter) buildFlagEvaluationPayloads(events []flagEvaluationEvent, sizeLimit int) ([]encodedFlagEvaluationPayload, int, error) {
+type flagEvaluationPayloadBuildResult struct {
+	payloads             []encodedFlagEvaluationPayload
+	droppedPayloadLimit  int64
+	degradedPayloadLimit int64
+}
+
+type flagEvaluationPayloadEncodeStatus int
+
+const (
+	flagEvaluationPayloadEncoded flagEvaluationPayloadEncodeStatus = iota
+	flagEvaluationPayloadDegraded
+	flagEvaluationPayloadDropped
+)
+
+func (w *flagEvaluationWriter) buildFlagEvaluationPayloads(events []flagEvaluationEvent, sizeLimit int) (flagEvaluationPayloadBuildResult, error) {
 	contextBytes, err := w.evp.marshalPayload("flag evaluation context", w.ddContext)
 	if err != nil {
-		return nil, 0, err
+		return flagEvaluationPayloadBuildResult{}, err
 	}
 
 	payloadPrefix := []byte(`{"context":`)
@@ -663,22 +698,26 @@ func (w *flagEvaluationWriter) buildFlagEvaluationPayloads(events []flagEvaluati
 	payloadSuffix := []byte(`]}`)
 	basePayloadSize := len(payloadPrefix) + len(payloadSuffix)
 	if basePayloadSize > sizeLimit {
-		return nil, 0, fmt.Errorf("flag evaluation payload wrapper size %d exceeds limit %d", basePayloadSize, sizeLimit)
+		return flagEvaluationPayloadBuildResult{}, fmt.Errorf("flag evaluation payload wrapper size %d exceeds limit %d", basePayloadSize, sizeLimit)
 	}
 
-	payloads := make([]encodedFlagEvaluationPayload, 0, 1)
+	result := flagEvaluationPayloadBuildResult{
+		payloads: make([]encodedFlagEvaluationPayload, 0, 1),
+	}
 	batch := make([][]byte, 0, len(events))
 	batchSize := basePayloadSize
-	droppedOversized := 0
 
 	for _, event := range events {
-		encodedEvent, ok, err := w.encodeEventForPayload(event, basePayloadSize, sizeLimit)
+		encodedEvent, status, err := w.encodeEventForPayload(event, basePayloadSize, sizeLimit)
 		if err != nil {
-			return nil, 0, err
+			return flagEvaluationPayloadBuildResult{}, err
 		}
-		if !ok {
-			droppedOversized++
+		switch status {
+		case flagEvaluationPayloadDropped:
+			result.droppedPayloadLimit += event.EvaluationCount
 			continue
+		case flagEvaluationPayloadDegraded:
+			result.degradedPayloadLimit += event.EvaluationCount
 		}
 
 		separatorSize := 0
@@ -686,7 +725,7 @@ func (w *flagEvaluationWriter) buildFlagEvaluationPayloads(events []flagEvaluati
 			separatorSize = 1
 		}
 		if len(batch) > 0 && batchSize+separatorSize+len(encodedEvent) > sizeLimit {
-			payloads = append(payloads, buildEncodedFlagEvaluationPayload(payloadPrefix, payloadSuffix, batch, batchSize))
+			result.payloads = append(result.payloads, buildEncodedFlagEvaluationPayload(payloadPrefix, payloadSuffix, batch, batchSize))
 			batch = batch[:0]
 			batchSize = basePayloadSize
 			separatorSize = 0
@@ -697,34 +736,48 @@ func (w *flagEvaluationWriter) buildFlagEvaluationPayloads(events []flagEvaluati
 	}
 
 	if len(batch) > 0 {
-		payloads = append(payloads, buildEncodedFlagEvaluationPayload(payloadPrefix, payloadSuffix, batch, batchSize))
+		result.payloads = append(result.payloads, buildEncodedFlagEvaluationPayload(payloadPrefix, payloadSuffix, batch, batchSize))
 	}
 
-	return payloads, droppedOversized, nil
+	return result, nil
 }
 
-func (w *flagEvaluationWriter) encodeEventForPayload(event flagEvaluationEvent, basePayloadSize, sizeLimit int) ([]byte, bool, error) {
+func (w *flagEvaluationWriter) encodeEventForPayload(event flagEvaluationEvent, basePayloadSize, sizeLimit int) ([]byte, flagEvaluationPayloadEncodeStatus, error) {
 	encodedEvent, err := w.evp.marshalPayload("flag evaluation event", event)
 	if err != nil {
-		return nil, false, err
+		return nil, flagEvaluationPayloadDropped, err
 	}
 	if flagEvaluationEventFitsPayload(len(encodedEvent), basePayloadSize, sizeLimit) {
-		return encodedEvent, true, nil
+		return encodedEvent, flagEvaluationPayloadEncoded, nil
 	}
 
 	degraded, ok := degradeFlagEvaluationEventForPayloadLimit(event)
 	if !ok {
-		return nil, false, nil
+		return nil, flagEvaluationPayloadDropped, nil
 	}
 
 	encodedDegraded, err := w.evp.marshalPayload("flag evaluation event", degraded)
 	if err != nil {
-		return nil, false, err
+		return nil, flagEvaluationPayloadDropped, err
 	}
 	if flagEvaluationEventFitsPayload(len(encodedDegraded), basePayloadSize, sizeLimit) {
-		return encodedDegraded, true, nil
+		return encodedDegraded, flagEvaluationPayloadDegraded, nil
 	}
-	return nil, false, nil
+	return nil, flagEvaluationPayloadDropped, nil
+}
+
+func submitFlagEvaluationDropped(reason string, count int64) {
+	if count <= 0 {
+		return
+	}
+	telemetry.Count(telemetry.NamespaceTracers, flagEvaluationDroppedMetric, []string{"reason:" + reason}).Submit(float64(count))
+}
+
+func submitFlagEvaluationDegraded(reason string, count int64) {
+	if count <= 0 {
+		return
+	}
+	telemetry.Count(telemetry.NamespaceTracers, flagEvaluationDegradedMetric, []string{"reason:" + reason}).Submit(float64(count))
 }
 
 func flagEvaluationEventFitsPayload(eventSize, basePayloadSize, sizeLimit int) bool {
