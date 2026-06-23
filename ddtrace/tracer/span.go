@@ -34,7 +34,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -1008,7 +1007,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	s.finish(t)
-	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
 }
 
 // SetOperationName sets or changes the operation name.

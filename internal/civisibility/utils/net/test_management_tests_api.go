@@ -121,6 +121,7 @@ func (c *client) GetTestManagementTests() (*TestManagementTestsResponseDataModul
 		cacheRequest,
 		func() (readCacheLiveResult[*TestManagementTestsResponseDataModules], error) {
 			request := c.getPostRequestConfig(testManagementTestsURLPath, body)
+			request.ExpectJSONResponse = true
 			if request.Compressed {
 				telemetry.TestManagementTestsRequest(telemetry.CompressedRequestCompressedType)
 			} else {

@@ -255,8 +255,47 @@ func TestNewDatadogProvider(t *testing.T) {
 	}
 
 	hooks := provider.Hooks()
-	if len(hooks) != 2 {
-		t.Errorf("expected 2 hooks (exposure + flag eval metrics), got %d", len(hooks))
+	// 3 hooks: exposure hook + OTel flag eval metrics hook + EVP flagevaluation hook.
+	// The EVP hook is enabled by default (DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true).
+	if len(hooks) != 3 {
+		t.Errorf("expected 3 hooks (exposure + flag eval metrics + EVP flagevaluation), got %d", len(hooks))
+	}
+}
+
+// TestEvaluateStampsEvalTimeMetadata verifies the provider stamps evaluation-entry
+// time into FlagMetadata on every path so EVP first/last bounds use eval-time.
+func TestEvaluateStampsEvalTimeMetadata(t *testing.T) {
+	provider := newDatadogProvider(ProviderConfig{})
+	provider.updateConfiguration(createTestConfig())
+	ctx := context.Background()
+
+	cases := []struct {
+		name    string
+		flagKey string
+		flatCtx openfeature.FlattenedContext
+	}{
+		{"matched allocation", "bool-flag", openfeature.FlattenedContext{"targetingKey": "user-123", "country": "US"}},
+		{"default (no match)", "bool-flag", openfeature.FlattenedContext{"targetingKey": "user-123", "country": "CA"}},
+		{"disabled flag", "disabled-flag", openfeature.FlattenedContext{"targetingKey": "user-123"}},
+		{"flag not found", "nonexistent-flag", openfeature.FlattenedContext{"targetingKey": "user-123"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := time.Now().UnixMilli()
+			result := provider.BooleanEvaluation(ctx, tc.flagKey, false, tc.flatCtx)
+			after := time.Now().UnixMilli()
+
+			got, ok := result.FlagMetadata[metadataEvalTimeKey].(int64)
+			if !ok {
+				t.Fatalf("FlagMetadata[%q] missing or wrong type on %q path; metadata=%v",
+					metadataEvalTimeKey, tc.name, result.FlagMetadata)
+			}
+			if got < before || got > after {
+				t.Fatalf("FlagMetadata[%q] = %d, want within [%d,%d] on %q path",
+					metadataEvalTimeKey, got, before, after, tc.name)
+			}
+		})
 	}
 }
 
