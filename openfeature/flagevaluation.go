@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	evpproxy "github.com/DataDog/dd-trace-go/v2/internal/evp"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -69,10 +70,6 @@ const (
 	// Finally hook and the background aggregation worker. On overflow the hook drops the
 	// event and increments a counter rather than blocking the evaluation.
 	defaultEvalEventBufferSize = 4096
-
-	// flagEvaluationPayloadSizeLimit is the EVP uncompressed JSON request-body limit.
-	// Splitting happens before transport compression concerns and includes the batch wrapper.
-	flagEvaluationPayloadSizeLimit = 5 * 1024 * 1024
 
 	flagEvaluationDroppedMetric  = "flagevaluation.rows.dropped"
 	flagEvaluationDegradedMetric = "flagevaluation.rows.degraded"
@@ -274,7 +271,7 @@ type evalEvent struct {
 }
 
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
-// Used only by flagEvaluationHook; does NOT replace extraction in flageval_metrics.go.
+// Used only by flagEvalEVPHook; does NOT replace extraction in flageval_metrics.go.
 type evalDetails struct {
 	flagKey        string
 	variant        string
@@ -464,7 +461,7 @@ func (w *flagEvaluationWriter) flush() {
 		return
 	}
 
-	sent, err := w.sendEventsToAgent(events, flagEvaluationPayloadSizeLimit)
+	sent, err := w.sendEventsToAgent(events, evpproxy.PayloadSizeLimit)
 	if err != nil {
 		log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
 	} else {
@@ -1052,7 +1049,7 @@ func pruneContext(raw map[string]any) map[string]any {
 }
 
 // extractEvalDetails extracts EVP-relevant fields from hook context and evaluation details.
-// This helper is used only by flagEvaluationHook — it does NOT replace the extraction in
+// This helper is used only by flagEvalEVPHook — it does NOT replace the extraction in
 // flageval_metrics.go (that file is left untouched to preserve the OTel path).
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)

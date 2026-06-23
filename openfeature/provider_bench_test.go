@@ -409,9 +409,9 @@ func runFlagEvalBenchmark(b *testing.B, configureHooks func(p *DatadogProvider))
 //	  -benchmem -count=3 -cpu=8
 func BenchmarkFlagEvaluationNoop(b *testing.B) {
 	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
-		p.flagEvalHook = nil
+		p.flagEvalMetricsHook = nil
 		p.flagEvalEVPHook = nil
-		p.flagEvalWriter = nil
+		p.flagEvalEVPWriter = nil
 		p.exposureHook = nil
 	})
 }
@@ -422,7 +422,7 @@ func BenchmarkFlagEvaluationNoop(b *testing.B) {
 func BenchmarkFlagEvaluationOTelOnly(b *testing.B) {
 	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
 		p.flagEvalEVPHook = nil
-		p.flagEvalWriter = nil
+		p.flagEvalEVPWriter = nil
 		p.exposureHook = nil
 	})
 }

@@ -11,23 +11,23 @@ import (
 	of "github.com/open-feature/go-sdk/openfeature"
 )
 
-// flagEvaluationHook implements the OpenFeature Hook interface to record EVP flagevaluation events.
-// It uses the Finally hook stage (same as flagEvalHook) to cover success, error, and default paths.
+// flagEvalEVPHook implements the OpenFeature Hook interface to record EVP flagevaluation events.
+// It uses the Finally hook stage (same as flagEvalMetricsHook) to cover success, error, and default paths.
 // Finally fires on error/default paths, unlike After.
-type flagEvaluationHook struct {
+type flagEvalEVPHook struct {
 	of.UnimplementedHook
 	writer *flagEvaluationWriter
 }
 
-// newFlagEvaluationHook creates a new EVP flag evaluation hook.
-func newFlagEvaluationHook(w *flagEvaluationWriter) *flagEvaluationHook {
-	return &flagEvaluationHook{writer: w}
+// newFlagEvalEVPHook creates a new EVP flag evaluation hook.
+func newFlagEvalEVPHook(w *flagEvaluationWriter) *flagEvalEVPHook {
+	return &flagEvalEVPHook{writer: w}
 }
 
 // Finally is called after every flag evaluation (success or error).
 // Using Finally (not After) ensures error-path and provider-not-ready evaluations are counted.
 // Mirrors flageval_metrics.go's Finally stage; the EVP hook is a separate registered hook.
-func (h *flagEvaluationHook) Finally(
+func (h *flagEvalEVPHook) Finally(
 	_ context.Context,
 	hookContext of.HookContext,
 	details of.InterfaceEvaluationDetails,

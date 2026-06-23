@@ -30,6 +30,10 @@ It also holds `supported_configurations*`, which maintains which environment var
 
 `go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY`
 
+### EVP
+
+Contains shared Event Platform Proxy constants used by internal writers that post through EVP.
+
 ### Locking
 
 Locking functionality that serves as a replacement for `sync.mutex` and similar locking mechanisms. It enables checking for deadlocks and should be used instead of `sync`. For more information, read the [README](./locking/README.md).
