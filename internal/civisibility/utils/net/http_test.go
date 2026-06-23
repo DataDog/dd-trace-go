@@ -10,9 +10,13 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"io"
+	"mime"
+	"mime/multipart"
 	stdnet "net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -228,6 +232,225 @@ func TestSendMultipartFormDataRequest(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, `{"key":"value"}`, result["file1"])
 	assert.Equal(t, "\x01\x02\x03", result["file2"])
+}
+
+func TestRequestConfigDoesNotExposeRawBodyFields(t *testing.T) {
+	t.Parallel()
+
+	requestConfigType := reflect.TypeOf(RequestConfig{})
+
+	_, hasRawBody := requestConfigType.FieldByName("RawBody")
+	assert.False(t, hasRawBody)
+
+	_, hasRawContentType := requestConfigType.FieldByName("RawContentType")
+	assert.False(t, hasRawContentType)
+}
+
+func TestSendRequestPrebuiltMultipartBodyUsesCallerContentTypeAndExactBytes(t *testing.T) {
+	t.Parallel()
+
+	files := []FormFile{
+		{
+			FieldName:   "event",
+			FileName:    "event.json",
+			Content:     map[string]string{"type": "coverage_report", "format": FormatLCOV},
+			ContentType: ContentTypeJSON,
+		},
+		{
+			FieldName:   "coverage",
+			FileName:    "coverage.gz",
+			Content:     []byte("compressed-coverage"),
+			ContentType: ContentTypeOctetStream,
+		},
+	}
+	body, contentType, err := createMultipartFormData(files, false)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, contentType, r.Header.Get(HeaderContentType))
+		require.Empty(t, r.Header.Get(HeaderContentEncoding))
+		require.Equal(t, int64(len(body)), r.ContentLength)
+
+		receivedBody, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.Equal(t, body, receivedBody)
+
+		parts := readMultipartBodyParts(t, contentType, receivedBody)
+		require.JSONEq(t, `{"format":"lcov","type":"coverage_report"}`, string(parts["event"]))
+		require.Equal(t, []byte("compressed-coverage"), parts["coverage"])
+
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success": true}`))
+	}))
+	defer server.Close()
+
+	response, err := NewRequestHandlerWithClient(createNewHTTPClient()).SendRequest(RequestConfig{
+		Method: "POST",
+		URL:    server.URL,
+		Headers: map[string]string{
+			HeaderContentType: contentType,
+		},
+		Body: body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+}
+
+func TestSendRequestPrebuiltByteBodyHeadersOverrideFormatContentType(t *testing.T) {
+	t.Parallel()
+
+	files := []FormFile{
+		{
+			FieldName:   "payload",
+			FileName:    "payload.bin",
+			Content:     []byte("multipart-payload"),
+			ContentType: ContentTypeOctetStream,
+		},
+	}
+	body, contentType, err := createMultipartFormData(files, false)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, contentType, r.Header.Get(HeaderContentType))
+		receivedBody, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.Equal(t, body, receivedBody)
+
+		parts := readMultipartBodyParts(t, contentType, receivedBody)
+		require.Equal(t, []byte("multipart-payload"), parts["payload"])
+
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success": true}`))
+	}))
+	defer server.Close()
+
+	response, err := NewRequestHandlerWithClient(createNewHTTPClient()).SendRequest(RequestConfig{
+		Method: "POST",
+		URL:    server.URL,
+		Headers: map[string]string{
+			HeaderContentType: contentType,
+		},
+		Body:   body,
+		Format: FormatJSON,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+}
+
+func TestSendRequestPrebuiltMultipartBodyRetainsExactBytesOnRetry(t *testing.T) {
+	t.Parallel()
+
+	files := []FormFile{
+		{
+			FieldName:   "payload",
+			FileName:    "payload.bin",
+			Content:     []byte("retry-payload"),
+			ContentType: ContentTypeOctetStream,
+		},
+	}
+	body, contentType, err := createMultipartFormData(files, false)
+	require.NoError(t, err)
+
+	var receivedBodies [][]byte
+	var receivedContentTypes []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		receivedBodies = append(receivedBodies, append([]byte(nil), receivedBody...))
+		receivedContentTypes = append(receivedContentTypes, r.Header.Get(HeaderContentType))
+
+		if len(receivedBodies) == 1 {
+			w.Header().Set(HeaderContentEncoding, ContentEncodingGzip)
+			w.Header().Set(HeaderContentType, ContentTypeJSON)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("not valid gzip data"))
+			return
+		}
+
+		parts := readMultipartBodyParts(t, contentType, receivedBody)
+		require.Equal(t, []byte("retry-payload"), parts["payload"])
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success": true}`))
+	}))
+	defer server.Close()
+
+	response, err := NewRequestHandlerWithClient(createNewHTTPClient()).SendRequest(RequestConfig{
+		Method: "POST",
+		URL:    server.URL,
+		Headers: map[string]string{
+			HeaderContentType: contentType,
+		},
+		Body:       body,
+		MaxRetries: 2,
+		Backoff:    10 * time.Millisecond,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	require.Len(t, receivedBodies, 2)
+	require.Equal(t, body, receivedBodies[0])
+	require.Equal(t, body, receivedBodies[1])
+	require.Equal(t, []string{contentType, contentType}, receivedContentTypes)
+}
+
+func TestSendRequestPrebuiltMultipartReaderBodyRetainsExactBytesOnRetry(t *testing.T) {
+	t.Parallel()
+
+	files := []FormFile{
+		{
+			FieldName:   "payload",
+			FileName:    "payload.bin",
+			Content:     []byte("reader-retry-payload"),
+			ContentType: ContentTypeOctetStream,
+		},
+	}
+	body, contentType, err := createMultipartFormData(files, false)
+	require.NoError(t, err)
+
+	var receivedBodies [][]byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedBody, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		receivedBodies = append(receivedBodies, append([]byte(nil), receivedBody...))
+
+		if len(receivedBodies) == 1 {
+			w.Header().Set(HeaderContentEncoding, ContentEncodingGzip)
+			w.Header().Set(HeaderContentType, ContentTypeJSON)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("not valid gzip data"))
+			return
+		}
+
+		require.Equal(t, contentType, r.Header.Get(HeaderContentType))
+		parts := readMultipartBodyParts(t, contentType, receivedBody)
+		require.Equal(t, []byte("reader-retry-payload"), parts["payload"])
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"success": true}`))
+	}))
+	defer server.Close()
+
+	response, err := NewRequestHandlerWithClient(createNewHTTPClient()).SendRequest(RequestConfig{
+		Method: "POST",
+		URL:    server.URL,
+		Headers: map[string]string{
+			HeaderContentType: contentType,
+		},
+		Body:       bytes.NewReader(body),
+		MaxRetries: 2,
+		Backoff:    10 * time.Millisecond,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	require.Len(t, receivedBodies, 2)
+	require.Equal(t, body, receivedBodies[0])
+	require.Equal(t, body, receivedBodies[1])
 }
 
 func TestSendJSONRequestWithGzipCompression(t *testing.T) {
@@ -1157,4 +1380,29 @@ func TestSendRequestFilesReaderRetainsContentOnRetry(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, filePayload, receivedFileContent, "retry must send the full original file content, not a drained reader")
+}
+
+func readMultipartBodyParts(t *testing.T, contentType string, body []byte) map[string][]byte {
+	t.Helper()
+
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	require.NoError(t, err)
+	require.Equal(t, "multipart/form-data", mediaType)
+	require.NotEmpty(t, params["boundary"])
+
+	reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+	parts := map[string][]byte{}
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		require.True(t, strings.HasPrefix(part.Header.Get(HeaderContentType), "application/"))
+		partBody, err := io.ReadAll(part)
+		require.NoError(t, err)
+		parts[part.FormName()] = partBody
+		require.NoError(t, part.Close())
+	}
+	return parts
 }

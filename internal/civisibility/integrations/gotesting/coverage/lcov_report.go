@@ -40,7 +40,7 @@ func WriteLCOVReportFromProfile(profilePath string, w io.Writer) error {
 
 	files := make(map[string]map[int]lcovLineCoverage)
 	for _, profileLine := range profile.lines {
-		if profileLine.block == nil || profileLine.block.numStmt == 0 {
+		if profileLine.block == nil {
 			continue
 		}
 		fileName := lcovSourceFilePath(profileLine.fileName)

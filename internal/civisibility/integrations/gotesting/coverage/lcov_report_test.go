@@ -53,6 +53,34 @@ DA:13,0
 LH:2
 LF:4
 end_of_record
+SF:ignored.go
+DA:1,1
+DA:2,1
+LH:2
+LF:2
+end_of_record
+`
+	if report.String() != expected {
+		t.Fatalf("unexpected LCOV report\nwant:\n%s\ngot:\n%s", expected, report.String())
+	}
+}
+
+func TestWriteLCOVReportFromProfileIncludesZeroStatementCoveredBlocks(t *testing.T) {
+	profilePath := writeLCOVTestProfile(t, `mode: count
+main.go:23.19,24.2 0 1
+`)
+
+	var report bytes.Buffer
+	if err := WriteLCOVReportFromProfile(profilePath, &report); err != nil {
+		t.Fatalf("WriteLCOVReportFromProfile() error = %v", err)
+	}
+
+	expected := `SF:main.go
+DA:23,1
+DA:24,1
+LH:2
+LF:2
+end_of_record
 `
 	if report.String() != expected {
 		t.Fatalf("unexpected LCOV report\nwant:\n%s\ngot:\n%s", expected, report.String())
@@ -169,17 +197,25 @@ end_of_record
 	}
 }
 
-func TestWriteLCOVReportFromProfileSkipsProfileWithoutExecutableLines(t *testing.T) {
+func TestWriteLCOVReportFromProfileIncludesProfileWithoutExecutableStatements(t *testing.T) {
 	profilePath := writeLCOVTestProfile(t, `mode: count
-github.com/acme/project/ignored.go:1.1,3.1 0 1
+ignored.go:1.1,3.1 0 1
 `)
 
 	var report bytes.Buffer
 	if err := WriteLCOVReportFromProfile(profilePath, &report); err != nil {
 		t.Fatalf("WriteLCOVReportFromProfile() error = %v", err)
 	}
-	if report.Len() != 0 {
-		t.Fatalf("expected empty LCOV report, got:\n%s", report.String())
+
+	expected := `SF:ignored.go
+DA:1,1
+DA:2,1
+LH:2
+LF:2
+end_of_record
+`
+	if report.String() != expected {
+		t.Fatalf("unexpected LCOV report\nwant:\n%s\ngot:\n%s", expected, report.String())
 	}
 }
 

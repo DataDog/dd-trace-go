@@ -28,11 +28,17 @@ func TestCoverageReportApiRequest(t *testing.T) {
 	const lcovReport = "SF:example.go\nDA:1,1\nLH:1\nLF:1\nend_of_record\n"
 
 	var requestContentLength int64
+	var requestContentType string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/"+coverageReportURLPath, r.URL.Path)
-		require.Contains(t, r.Header.Get(HeaderContentType), "multipart/form-data; boundary=")
+		requestContentType = r.Header.Get(HeaderContentType)
+		require.Contains(t, requestContentType, "multipart/form-data; boundary=")
 		require.Empty(t, r.Header.Get(HeaderContentEncoding))
-		requestContentLength = r.ContentLength
+		rawBody, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		require.Equal(t, int64(len(rawBody)), r.ContentLength)
+		requestContentLength = int64(len(rawBody))
+		r.Body = io.NopCloser(bytes.NewReader(rawBody))
 
 		parts := readCoverageReportMultipartParts(t, r)
 		event := parts["event"]
@@ -77,6 +83,7 @@ func TestCoverageReportApiRequest(t *testing.T) {
 	require.NotNil(t, client)
 	require.NoError(t, client.SendCoverageReport(bytes.NewReader([]byte(lcovReport)), FormatLCOV))
 	require.Greater(t, requestContentLength, int64(len(lcovReport)))
+	require.Contains(t, requestContentType, "multipart/form-data; boundary=")
 
 	requestMetric := telemetrytest.MetricKey{
 		Namespace: coretelemetry.NamespaceCIVisibility,
@@ -105,6 +112,72 @@ func TestCoverageReportApiRequest(t *testing.T) {
 		Tags:      "rq_compressed:true",
 		Kind:      "distribution",
 	})
+}
+
+func TestCoverageReportApiRequestDoesNotPersistMultipartContentTypeHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Contains(t, r.Header.Get(HeaderContentType), "multipart/form-data; boundary=")
+		require.Contains(t, readCoverageReportMultipartParts(t, r), "coverage")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+
+	setCiVisibilityEnv(path, server.URL)
+	clientInterface := NewClientForCoverageReportUpload()
+	require.NotNil(t, clientInterface)
+	client, ok := clientInterface.(*client)
+	require.True(t, ok)
+	require.NotContains(t, client.headers, HeaderContentType)
+
+	require.NoError(t, client.SendCoverageReport(bytes.NewReader([]byte("report")), FormatLCOV))
+	require.NotContains(t, client.headers, HeaderContentType)
+}
+
+func TestCoverageReportApiRequestRetainsMultipartBodyOnRetry(t *testing.T) {
+	const lcovReport = "SF:retry.go\nDA:1,1\nLH:1\nLF:1\nend_of_record\n"
+
+	var receivedBodies [][]byte
+	var receivedContentTypes []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/"+coverageReportURLPath, r.URL.Path)
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		receivedBodies = append(receivedBodies, append([]byte(nil), body...))
+		receivedContentTypes = append(receivedContentTypes, r.Header.Get(HeaderContentType))
+
+		if len(receivedBodies) == 1 {
+			w.Header().Set(HeaderContentEncoding, ContentEncodingGzip)
+			w.Header().Set(HeaderContentType, ContentTypeJSON)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("not valid gzip data"))
+			return
+		}
+
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		parts := readCoverageReportMultipartParts(t, r)
+		require.Equal(t, lcovReport, gunzipCoverageReportPart(t, parts["coverage"].body))
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	origEnv := saveEnv()
+	path := os.Getenv("PATH")
+	defer restoreEnv(origEnv)
+
+	setCiVisibilityEnv(path, server.URL)
+	client := NewClientForCoverageReportUpload()
+	require.NotNil(t, client)
+	require.NoError(t, client.SendCoverageReport(bytes.NewReader([]byte(lcovReport)), FormatLCOV))
+
+	require.Len(t, receivedBodies, 2)
+	require.Equal(t, receivedBodies[0], receivedBodies[1])
+	require.Len(t, receivedContentTypes, 2)
+	require.Equal(t, receivedContentTypes[0], receivedContentTypes[1])
+	require.Contains(t, receivedContentTypes[0], "multipart/form-data; boundary=")
 }
 
 func TestCoverageReportApiRequestRejectsInvalidInput(t *testing.T) {

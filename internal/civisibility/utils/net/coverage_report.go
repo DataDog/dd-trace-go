@@ -87,11 +87,10 @@ func (c *client) SendCoverageReport(report io.Reader, format string) error {
 	// Prebuild the multipart body instead of using RequestConfig.Files so
 	// coverage_upload.request_bytes reports the exact bytes sent on the wire.
 	request := RequestConfig{
-		Method:         "POST",
-		URL:            c.getURLPath(coverageReportURLPath),
-		Headers:        c.headers,
-		RawBody:        multipartBody,
-		RawContentType: contentType,
+		Method:  "POST",
+		URL:     c.getURLPath(coverageReportURLPath),
+		Headers: coverageReportHeaders(c.headers, contentType),
+		Body:    multipartBody,
 	}
 
 	telemetry.CoverageUploadRequest(telemetry.UncompressedRequestCompressedType)
@@ -120,6 +119,16 @@ func (c *client) SendCoverageReport(report io.Reader, format string) error {
 		len(multipartBody),
 	)
 	return nil
+}
+
+// coverageReportHeaders copies the client headers and adds the multipart content type.
+func coverageReportHeaders(base map[string]string, contentType string) map[string]string {
+	headers := make(map[string]string, len(base)+1)
+	for key, value := range base {
+		headers[key] = value
+	}
+	headers[HeaderContentType] = contentType
+	return headers
 }
 
 func coverageReportEvent(format string) map[string]string {
