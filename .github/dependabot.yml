@@ -55,3 +55,9 @@ updates:
       - "dependencies"
     cooldown:
       default-days: 2
+    ignore:
+      # amazonlinux:2 is pinned to a specific AL2 (glibc 2.26) digest.
+      # Allowing Dependabot to update this digest risks silently switching to
+      # AL2023 if the :2 tag is ever redirected, which would remove AL2 coverage.
+      - dependency-name: "amazonlinux"
+        versions: ["*"]
