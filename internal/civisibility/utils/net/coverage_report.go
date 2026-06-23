@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 	"time"
 
@@ -124,9 +125,7 @@ func (c *client) SendCoverageReport(report io.Reader, format string) error {
 // coverageReportHeaders copies the client headers and adds the multipart content type.
 func coverageReportHeaders(base map[string]string, contentType string) map[string]string {
 	headers := make(map[string]string, len(base)+1)
-	for key, value := range base {
-		headers[key] = value
-	}
+	maps.Copy(headers, base)
 	headers[HeaderContentType] = contentType
 	return headers
 }

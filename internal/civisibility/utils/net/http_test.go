@@ -237,7 +237,7 @@ func TestSendMultipartFormDataRequest(t *testing.T) {
 func TestRequestConfigDoesNotExposeRawBodyFields(t *testing.T) {
 	t.Parallel()
 
-	requestConfigType := reflect.TypeOf(RequestConfig{})
+	requestConfigType := reflect.TypeFor[RequestConfig]()
 
 	_, hasRawBody := requestConfigType.FieldByName("RawBody")
 	assert.False(t, hasRawBody)
