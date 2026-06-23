@@ -114,6 +114,7 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 		cacheRequest,
 		func() (readCacheLiveResult[*SettingsResponseData], error) {
 			request := c.getPostRequestConfig(settingsURLPath, body)
+			request.ExpectJSONResponse = true
 			if request.Compressed {
 				telemetry.GitRequestsSettings(telemetry.CompressedRequestCompressedType)
 			} else {
