@@ -14,8 +14,8 @@ import (
 // TestFlagEvaluationKillswitch verifies that DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true)
 // controls ONLY the EVP flagevaluation hook/writer, leaving the OTel flagEvalMetricsHook unaffected.
 //
-// When the killswitch is "false": the EVP hook (flagEvalEVPHook) is NOT registered in Hooks()
-// and flagEvalEVPWriter is nil.
+// When the killswitch is "false": the EVP hook (flagEvalLoggingHook) is NOT registered in Hooks()
+// and flagEvalLoggingWriter is nil.
 // When the killswitch is unset or "true": the EVP hook IS registered.
 // The OTel flagEvalMetricsHook is present in Hooks() in BOTH cases.
 func TestFlagEvaluationKillswitch(t *testing.T) {
@@ -49,18 +49,18 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 			p := newDatadogProvider(ProviderConfig{})
 
 			if tc.wantEVPEnabled {
-				if p.flagEvalEVPWriter == nil {
-					t.Error("expected flagEvalEVPWriter to be non-nil when killswitch is enabled")
+				if p.flagEvalLoggingWriter == nil {
+					t.Error("expected flagEvalLoggingWriter to be non-nil when killswitch is enabled")
 				}
-				if p.flagEvalEVPHook == nil {
-					t.Error("expected flagEvalEVPHook to be non-nil when killswitch is enabled")
+				if p.flagEvalLoggingHook == nil {
+					t.Error("expected flagEvalLoggingHook to be non-nil when killswitch is enabled")
 				}
 			} else {
-				if p.flagEvalEVPWriter != nil {
-					t.Error("expected flagEvalEVPWriter to be nil when killswitch is disabled")
+				if p.flagEvalLoggingWriter != nil {
+					t.Error("expected flagEvalLoggingWriter to be nil when killswitch is disabled")
 				}
-				if p.flagEvalEVPHook != nil {
-					t.Error("expected flagEvalEVPHook to be nil when killswitch is disabled")
+				if p.flagEvalLoggingHook != nil {
+					t.Error("expected flagEvalLoggingHook to be nil when killswitch is disabled")
 				}
 			}
 
@@ -72,7 +72,7 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 				switch h.(type) {
 				case *flagEvalMetricsHook:
 					otelPresent = true
-				case *flagEvalEVPHook:
+				case *flagEvalLoggingHook:
 					evpPresent = true
 				}
 			}
@@ -84,18 +84,18 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 
 			if evpPresent != tc.wantEVPEnabled {
 				if tc.wantEVPEnabled {
-					t.Error("expected EVP flagEvalEVPHook to be present in Hooks() when killswitch is enabled")
+					t.Error("expected EVP flagEvalLoggingHook to be present in Hooks() when killswitch is enabled")
 				} else {
-					t.Errorf("expected EVP flagEvalEVPHook to be absent from Hooks() when killswitch is disabled, but found one")
+					t.Errorf("expected EVP flagEvalLoggingHook to be absent from Hooks() when killswitch is disabled, but found one")
 				}
 			}
 
-			if tc.wantEVPEnabled && p.exposureWriter.evp != p.flagEvalEVPWriter.evp {
+			if tc.wantEVPEnabled && p.exposureWriter.evp != p.flagEvalLoggingWriter.evp {
 				t.Error("expected exposures and flag evaluations to share one EVP client")
 			}
 		})
 	}
 }
 
-// Compile-time assertion: flagEvalEVPHook implements the OpenFeature Hook interface.
-var _ of.Hook = (*flagEvalEVPHook)(nil)
+// Compile-time assertion: flagEvalLoggingHook implements the OpenFeature Hook interface.
+var _ of.Hook = (*flagEvalLoggingHook)(nil)

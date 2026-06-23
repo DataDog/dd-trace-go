@@ -75,8 +75,8 @@ type DatadogProvider struct {
 	// Flag evaluation EVP writer + hook (new Path B — EVP flagevaluation track).
 	// Both fields are nil when DD_FLAGGING_EVALUATION_COUNTS_ENABLED=false (killswitch).
 	// Named distinctly from flagEvalMetricsHook (OTel) to avoid collisions.
-	flagEvalEVPWriter *flagEvaluationWriter
-	flagEvalEVPHook   *flagEvalEVPHook
+	flagEvalLoggingWriter *flagEvalLoggingWriter
+	flagEvalLoggingHook   *flagEvalLoggingHook
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -126,9 +126,9 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// When false, both fields are left nil and the EVP path is disabled.
 	// The OTel hook (flagEvalMetricsHook above) is registered unconditionally.
 	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
-		evalWriter := newFlagEvaluationWriterWithEVP(config, evp)
-		p.flagEvalEVPWriter = evalWriter
-		p.flagEvalEVPHook = newFlagEvalEVPHook(evalWriter)
+		evalWriter := newFlagEvalLoggingWriterWithEVP(config, evp)
+		p.flagEvalLoggingWriter = evalWriter
+		p.flagEvalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	}
 
 	p.configChange.L = &p.mu
@@ -214,8 +214,8 @@ func (p *DatadogProvider) InitWithContext(ctx context.Context, _ openfeature.Eva
 	// Start periodic flushing for exposure writer.
 	p.exposureWriter.start()
 	// Start periodic flushing for EVP flag evaluation writer (nil when killswitch disabled).
-	if p.flagEvalEVPWriter != nil {
-		p.flagEvalEVPWriter.start()
+	if p.flagEvalLoggingWriter != nil {
+		p.flagEvalLoggingWriter.start()
 	}
 	return nil
 }
@@ -248,8 +248,8 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 			p.exposureWriter.stop()
 		}
 		// Stop the EVP flag evaluation writer (nil when killswitch disabled).
-		if p.flagEvalEVPWriter != nil {
-			p.flagEvalEVPWriter.stop()
+		if p.flagEvalLoggingWriter != nil {
+			p.flagEvalLoggingWriter.stop()
 		}
 		// Shut down flag evaluation metrics
 		if p.flagEvalMetricsHook != nil && p.flagEvalMetricsHook.metrics != nil {
@@ -457,8 +457,8 @@ func (p *DatadogProvider) Hooks() []openfeature.Hook {
 		hooks = append(hooks, p.flagEvalMetricsHook)
 	}
 	// EVP hook is nil when the killswitch disabled it.
-	if p.flagEvalEVPHook != nil {
-		hooks = append(hooks, p.flagEvalEVPHook)
+	if p.flagEvalLoggingHook != nil {
+		hooks = append(hooks, p.flagEvalLoggingHook)
 	}
 	return hooks
 }

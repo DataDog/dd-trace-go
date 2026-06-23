@@ -13,15 +13,15 @@ import (
 	of "github.com/open-feature/go-sdk/openfeature"
 )
 
-// setupTestWriter creates a flagEvaluationWriter configured for unit testing.
+// setupTestWriter creates a flagEvalLoggingWriter configured for unit testing.
 // The writer uses a large flush interval (24 h) so no automatic flush fires during tests.
-func setupTestWriter(t *testing.T) *flagEvaluationWriter {
+func setupTestWriter(t *testing.T) *flagEvalLoggingWriter {
 	t.Helper()
-	return &flagEvaluationWriter{
+	return &flagEvalLoggingWriter{
 		flushInterval: 24 * time.Hour, // effectively disabled; tests control flush manually
 		stopChan:      make(chan struct{}),
 		events:        make(chan evalEvent, defaultEvalEventBufferSize),
-		aggregator: flagEvaluationAggregator{
+		aggregator: flagEvalLoggingAggregator{
 			full:        make(map[evaluationAggregationKey]*evaluationEntry),
 			degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
 			perFlagFull: make(map[string]int),
@@ -206,9 +206,9 @@ func TestRecordUsesEvalTimeFromMetadata(t *testing.T) {
 	})
 }
 
-// TestFlagEvalEVPHookFinally verifies that the Finally hook records an entry for
+// TestFlagEvalLoggingHookFinally verifies that the Finally hook records an entry for
 // success, error-reason, and provider-not-ready paths.
-func TestFlagEvalEVPHookFinally(t *testing.T) {
+func TestFlagEvalLoggingHookFinally(t *testing.T) {
 	runtimeDefaultTrue := true
 
 	tests := []struct {
@@ -256,7 +256,7 @@ func TestFlagEvalEVPHookFinally(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := setupTestWriter(t)
-			hook := newFlagEvalEVPHook(w)
+			hook := newFlagEvalLoggingHook(w)
 
 			hookCtx := makeHookContext(tc.flagKey, tc.targetingKey, tc.attrs)
 			details := makeEvalDetails(tc.variant, tc.reason, tc.errorCode, tc.metadata...)
@@ -286,12 +286,12 @@ func TestFlagEvalEVPHookFinally(t *testing.T) {
 	}
 }
 
-// TestFlagEvalEVPHookContextCancelled verifies that a cancelled context does NOT
+// TestFlagEvalLoggingHookContextCancelled verifies that a cancelled context does NOT
 // drop the evaluation: record() is a non-blocking enqueue that ignores the request
 // context, so a cancelled request must still be counted.
-func TestFlagEvalEVPHookContextCancelled(t *testing.T) {
+func TestFlagEvalLoggingHookContextCancelled(t *testing.T) {
 	w := setupTestWriter(t)
-	hook := newFlagEvalEVPHook(w)
+	hook := newFlagEvalLoggingHook(w)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel BEFORE calling Finally
