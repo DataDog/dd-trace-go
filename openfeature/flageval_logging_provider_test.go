@@ -12,12 +12,12 @@ import (
 )
 
 // TestFlagEvaluationKillswitch verifies that DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true)
-// controls ONLY the EVP flagevaluation hook/writer, leaving the OTel flagEvalMetricsHook unaffected.
+// controls ONLY the EVP flagevaluation hook/writer, leaving the OTel flagEvalHook unaffected.
 //
-// When the killswitch is "false": the EVP hook (flagEvalLoggingHook) is NOT registered in Hooks()
-// and flagEvalLoggingWriter is nil.
+// When the killswitch is "false": the EVP hook (flagEvalEVPHook) is NOT registered in Hooks()
+// and flagEvalWriter is nil.
 // When the killswitch is unset or "true": the EVP hook IS registered.
-// The OTel flagEvalMetricsHook is present in Hooks() in BOTH cases.
+// The OTel flagEvalHook is present in Hooks() in BOTH cases.
 func TestFlagEvaluationKillswitch(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -50,17 +50,17 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 
 			if tc.wantEVPEnabled {
 				if p.flagEvalLoggingWriter == nil {
-					t.Error("expected flagEvalLoggingWriter to be non-nil when killswitch is enabled")
+					t.Error("expected flagEvalWriter to be non-nil when killswitch is enabled")
 				}
 				if p.flagEvalLoggingHook == nil {
-					t.Error("expected flagEvalLoggingHook to be non-nil when killswitch is enabled")
+					t.Error("expected flagEvalEVPHook to be non-nil when killswitch is enabled")
 				}
 			} else {
 				if p.flagEvalLoggingWriter != nil {
-					t.Error("expected flagEvalLoggingWriter to be nil when killswitch is disabled")
+					t.Error("expected flagEvalWriter to be nil when killswitch is disabled")
 				}
 				if p.flagEvalLoggingHook != nil {
-					t.Error("expected flagEvalLoggingHook to be nil when killswitch is disabled")
+					t.Error("expected flagEvalEVPHook to be nil when killswitch is disabled")
 				}
 			}
 
@@ -79,7 +79,7 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 
 			// The OTel hook must be present in EVERY case — the killswitch never affects it.
 			if !otelPresent {
-				t.Error("expected OTel flagEvalMetricsHook to be present in Hooks() regardless of the killswitch")
+				t.Error("expected OTel flagEvalHook to be present in Hooks() regardless of the killswitch")
 			}
 
 			if evpPresent != tc.wantEVPEnabled {

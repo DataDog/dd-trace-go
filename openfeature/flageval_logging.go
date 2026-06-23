@@ -21,7 +21,6 @@ import (
 	evpproxy "github.com/DataDog/dd-trace-go/v2/internal/evp"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	of "github.com/open-feature/go-sdk/openfeature"
@@ -70,15 +69,6 @@ const (
 	// Finally hook and the background aggregation worker. On overflow the hook drops the
 	// event and increments a counter rather than blocking the evaluation.
 	defaultEvalEventBufferSize = 4096
-
-	flagEvaluationDroppedMetric  = "flagevaluation.rows.dropped"
-	flagEvaluationDegradedMetric = "flagevaluation.rows.degraded"
-	flagEvaluationSplitsMetric   = "flagevaluation.payload.splits"
-
-	flagEvaluationReasonQueueOverflow  = "queue_overflow"
-	flagEvaluationReasonDegradedCap    = "degraded_cap"
-	flagEvaluationReasonPayloadLimit   = "payload_limit"
-	flagEvaluationReasonCardinalityCap = "cardinality_cap"
 )
 
 // evaluationAggregationKey identifies one full-tier aggregation bucket. Every field is an
@@ -378,7 +368,6 @@ func (w *flagEvalLoggingWriter) flush() {
 	// Surface best-effort backpressure drops (queue full) as an observable signal.
 	if d := w.dropped.Swap(0); d > 0 {
 		log.Debug("openfeature: flag evaluation queue full — dropped %d evaluation(s) under backpressure (best-effort telemetry)", d)
-		submitFlagEvaluationDropped(flagEvaluationReasonQueueOverflow, d)
 	}
 
 	w.aggregator.mu.Lock()
@@ -396,7 +385,6 @@ func (w *flagEvalLoggingWriter) flush() {
 		w.aggregator.mu.Unlock()
 		if degradedOverflow > 0 {
 			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
-			submitFlagEvaluationDropped(flagEvaluationReasonDegradedCap, degradedOverflow)
 		}
 		return
 	}
@@ -412,7 +400,6 @@ func (w *flagEvalLoggingWriter) flush() {
 
 	if degradedOverflow > 0 {
 		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
-		submitFlagEvaluationDropped(flagEvaluationReasonDegradedCap, degradedOverflow)
 	}
 
 	flushTimeMs := time.Now().UnixMilli()
@@ -442,7 +429,6 @@ func (w *flagEvalLoggingWriter) flush() {
 	// Degraded tier: required fields + variant + allocation + error; no targeting_key, no context.
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range degraded {
-		submitFlagEvaluationDegraded(flagEvaluationReasonCardinalityCap, e.count)
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
 		ev.RuntimeDefault = e.runtimeDefault
 		if key.variant != "" {
@@ -648,15 +634,8 @@ func (w *flagEvalLoggingWriter) sendEventsToAgent(events []flagEvalLoggingEvent,
 	if err != nil {
 		return 0, err
 	}
-	if result.degradedPayloadLimit > 0 {
-		submitFlagEvaluationDegraded(flagEvaluationReasonPayloadLimit, result.degradedPayloadLimit)
-	}
 	if result.droppedPayloadLimit > 0 {
 		log.Warn("openfeature: flag evaluation payload limit dropped %d oversized degraded event(s) (best-effort telemetry)", result.droppedPayloadLimit)
-		submitFlagEvaluationDropped(flagEvaluationReasonPayloadLimit, result.droppedPayloadLimit)
-	}
-	if splits := len(result.payloads) - 1; splits > 0 {
-		telemetry.Count(telemetry.NamespaceTracers, flagEvaluationSplitsMetric, nil).Submit(float64(splits))
 	}
 
 	sent := 0
@@ -761,20 +740,6 @@ func (w *flagEvalLoggingWriter) encodeEventForPayload(event flagEvalLoggingEvent
 		return encodedDegraded, flagEvalLoggingPayloadDegraded, nil
 	}
 	return nil, flagEvalLoggingPayloadDropped, nil
-}
-
-func submitFlagEvaluationDropped(reason string, count int64) {
-	if count <= 0 {
-		return
-	}
-	telemetry.Count(telemetry.NamespaceTracers, flagEvaluationDroppedMetric, []string{"reason:" + reason}).Submit(float64(count))
-}
-
-func submitFlagEvaluationDegraded(reason string, count int64) {
-	if count <= 0 {
-		return
-	}
-	telemetry.Count(telemetry.NamespaceTracers, flagEvaluationDegradedMetric, []string{"reason:" + reason}).Submit(float64(count))
 }
 
 func flagEvalLoggingEventFitsPayload(eventSize, basePayloadSize, sizeLimit int) bool {

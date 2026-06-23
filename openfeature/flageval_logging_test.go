@@ -18,9 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
-	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
-
 	of "github.com/open-feature/go-sdk/openfeature"
 )
 
@@ -517,47 +514,6 @@ func TestFlagEvaluationPayloadSchema(t *testing.T) {
 	})
 }
 
-func TestFlagEvaluationPayloadsSplitByEncodedSize(t *testing.T) {
-	w := newFlagEvalLoggingWriterWithEVP(ProviderConfig{}, newEVPClient())
-	events := []flagEvalLoggingEvent{
-		newTestFlagEvaluationPayloadEvent("flag-a", "user-a", map[string]any{"blob": strings.Repeat("a", 100)}),
-		newTestFlagEvaluationPayloadEvent("flag-b", "user-b", map[string]any{"blob": strings.Repeat("b", 100)}),
-		newTestFlagEvaluationPayloadEvent("flag-c", "user-c", map[string]any{"blob": strings.Repeat("c", 100)}),
-	}
-	singleResult, err := w.buildFlagEvaluationPayloads(events[:1], 1<<30)
-	if err != nil {
-		t.Fatalf("buildFlagEvaluationPayloads(single) returned error: %v", err)
-	}
-	if singleResult.droppedPayloadLimit != 0 {
-		t.Fatalf("single event unexpectedly dropped %d event(s)", singleResult.droppedPayloadLimit)
-	}
-	sizeLimit := len(singleResult.payloads[0].body)
-
-	result, err := w.buildFlagEvaluationPayloads(events, sizeLimit)
-	if err != nil {
-		t.Fatalf("buildFlagEvaluationPayloads returned error: %v", err)
-	}
-	if result.droppedPayloadLimit != 0 {
-		t.Fatalf("unexpected dropped count: got %d, want 0", result.droppedPayloadLimit)
-	}
-	payloads := result.payloads
-	if got, want := len(payloads), len(events); got != want {
-		t.Fatalf("payload count = %d, want %d", got, want)
-	}
-	for i, payload := range payloads {
-		if len(payload.body) > sizeLimit {
-			t.Fatalf("payload %d size = %d, limit = %d", i, len(payload.body), sizeLimit)
-		}
-		var decoded flagEvalLoggingPayload
-		if err := json.Unmarshal(payload.body, &decoded); err != nil {
-			t.Fatalf("payload %d is invalid JSON: %v", i, err)
-		}
-		if got := len(decoded.FlagEvaluations); got != 1 {
-			t.Fatalf("payload %d event count = %d, want 1", i, got)
-		}
-	}
-}
-
 func TestFlagEvaluationPayloadDegradesOversizedFullEventBeforeDrop(t *testing.T) {
 	w := newFlagEvalLoggingWriterWithEVP(ProviderConfig{}, newEVPClient())
 	fullEvent := newTestFlagEvaluationPayloadEvent("large", "customer-1", map[string]any{"blob": strings.Repeat("x", 1024)})
@@ -611,34 +567,25 @@ func TestFlagEvaluationPayloadDegradesOversizedFullEventBeforeDrop(t *testing.T)
 	if got := event.Flag.Key; got != "large" {
 		t.Fatalf("flag key = %q, want large", got)
 	}
-}
 
-func TestFlagEvaluationPayloadDropsOversizedDegradedEvent(t *testing.T) {
-	w := newFlagEvalLoggingWriterWithEVP(ProviderConfig{}, newEVPClient())
-	event := newTestFlagEvaluationPayloadEvent(strings.Repeat("f", 256), "", nil)
-
-	fullResult, err := w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{event}, 1<<30)
+	droppedEvent := newTestFlagEvaluationPayloadEvent(strings.Repeat("f", 256), "", nil)
+	droppedFullResult, err := w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{droppedEvent}, 1<<30)
 	if err != nil {
 		t.Fatalf("buildFlagEvaluationPayloads(full) returned error: %v", err)
 	}
-	sizeLimit := len(fullResult.payloads[0].body) - 1
-
-	result, err := w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{event}, sizeLimit)
+	result, err = w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{droppedEvent}, len(droppedFullResult.payloads[0].body)-1)
 	if err != nil {
 		t.Fatalf("buildFlagEvaluationPayloads returned error: %v", err)
 	}
 	if len(result.payloads) != 0 {
 		t.Fatalf("payload count = %d, want 0", len(result.payloads))
 	}
-	if result.droppedPayloadLimit != event.EvaluationCount {
-		t.Fatalf("dropped count = %d, want %d", result.droppedPayloadLimit, event.EvaluationCount)
+	if result.droppedPayloadLimit != droppedEvent.EvaluationCount {
+		t.Fatalf("dropped count = %d, want %d", result.droppedPayloadLimit, droppedEvent.EvaluationCount)
 	}
 }
 
 func TestFlagEvaluationSendEventsSplitsRequestsByEncodedSize(t *testing.T) {
-	recorder := new(telemetrytest.RecordClient)
-	defer telemetry.MockClient(recorder)()
-
 	requestBodies := make(chan []byte, 3)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -696,91 +643,6 @@ func TestFlagEvaluationSendEventsSplitsRequestsByEncodedSize(t *testing.T) {
 			t.Fatalf("timed out waiting for request %d", i)
 		}
 	}
-
-	assertTelemetryCount(t, recorder, flagEvaluationSplitsMetric, "", 1)
-	assertNoTelemetryCount(t, recorder, flagEvaluationDroppedMetric, "reason:"+flagEvaluationReasonPayloadLimit)
-	assertNoTelemetryCount(t, recorder, flagEvaluationDegradedMetric, "reason:"+flagEvaluationReasonPayloadLimit)
-}
-
-func TestFlagEvaluationTelemetryNormalPathEmitsNoDropOrDegradationMetrics(t *testing.T) {
-	recorder := new(telemetrytest.RecordClient)
-	defer telemetry.MockClient(recorder)()
-
-	w, cleanup := newTestFlagEvaluationHTTPWriter(t)
-	defer cleanup()
-	events := []flagEvalLoggingEvent{
-		newTestFlagEvaluationPayloadEvent("flag-a", "user-a", map[string]any{"tier": "premium"}),
-	}
-
-	if _, err := w.sendEventsToAgent(events, 1<<30); err != nil {
-		t.Fatalf("sendEventsToAgent returned error: %v", err)
-	}
-
-	assertNoTelemetryCount(t, recorder, flagEvaluationDroppedMetric, "reason:"+flagEvaluationReasonQueueOverflow)
-	assertNoTelemetryCount(t, recorder, flagEvaluationDroppedMetric, "reason:"+flagEvaluationReasonDegradedCap)
-	assertNoTelemetryCount(t, recorder, flagEvaluationDroppedMetric, "reason:"+flagEvaluationReasonPayloadLimit)
-	assertNoTelemetryCount(t, recorder, flagEvaluationDegradedMetric, "reason:"+flagEvaluationReasonCardinalityCap)
-	assertNoTelemetryCount(t, recorder, flagEvaluationDegradedMetric, "reason:"+flagEvaluationReasonPayloadLimit)
-	assertNoTelemetryCount(t, recorder, flagEvaluationSplitsMetric, "")
-}
-
-func TestFlagEvaluationTelemetryFlushDropAndDegradedCounters(t *testing.T) {
-	recorder := new(telemetrytest.RecordClient)
-	defer telemetry.MockClient(recorder)()
-
-	w, cleanup := newTestFlagEvaluationHTTPWriter(t)
-	defer cleanup()
-
-	w.dropped.Store(2)
-	w.aggregator.droppedDegradedOverflow = 3
-	nowMs := time.Now().UnixMilli()
-	w.aggregator.degraded[evaluationDegradedKey{flagKey: "flag-a", variant: "on"}] = &evaluationEntry{
-		count:           5,
-		firstEvaluation: nowMs,
-		lastEvaluation:  nowMs,
-	}
-
-	w.flush()
-
-	assertTelemetryCount(t, recorder, flagEvaluationDroppedMetric, "reason:"+flagEvaluationReasonQueueOverflow, 2)
-	assertTelemetryCount(t, recorder, flagEvaluationDroppedMetric, "reason:"+flagEvaluationReasonDegradedCap, 3)
-	assertTelemetryCount(t, recorder, flagEvaluationDegradedMetric, "reason:"+flagEvaluationReasonCardinalityCap, 5)
-}
-
-func TestFlagEvaluationTelemetryPayloadLimitCounters(t *testing.T) {
-	recorder := new(telemetrytest.RecordClient)
-	defer telemetry.MockClient(recorder)()
-
-	w, cleanup := newTestFlagEvaluationHTTPWriter(t)
-	defer cleanup()
-
-	fullEvent := newTestFlagEvaluationPayloadEvent("large", "customer-1", map[string]any{"blob": strings.Repeat("x", 1024)})
-	fullEvent.EvaluationCount = 7
-	degradedEvent, ok := degradeFlagEvaluationEventForPayloadLimit(fullEvent)
-	if !ok {
-		t.Fatal("expected full event to be degradable")
-	}
-	degradedResult, err := w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{degradedEvent}, 1<<30)
-	if err != nil {
-		t.Fatalf("buildFlagEvaluationPayloads(degraded) returned error: %v", err)
-	}
-
-	if _, err := w.sendEventsToAgent([]flagEvalLoggingEvent{fullEvent}, len(degradedResult.payloads[0].body)); err != nil {
-		t.Fatalf("sendEventsToAgent(degraded) returned error: %v", err)
-	}
-
-	droppedEvent := newTestFlagEvaluationPayloadEvent(strings.Repeat("f", 256), "", nil)
-	droppedEvent.EvaluationCount = 11
-	droppedFullResult, err := w.buildFlagEvaluationPayloads([]flagEvalLoggingEvent{droppedEvent}, 1<<30)
-	if err != nil {
-		t.Fatalf("buildFlagEvaluationPayloads(full) returned error: %v", err)
-	}
-	if _, err := w.sendEventsToAgent([]flagEvalLoggingEvent{droppedEvent}, len(droppedFullResult.payloads[0].body)-1); err != nil {
-		t.Fatalf("sendEventsToAgent(dropped) returned error: %v", err)
-	}
-
-	assertTelemetryCount(t, recorder, flagEvaluationDegradedMetric, "reason:"+flagEvaluationReasonPayloadLimit, 7)
-	assertTelemetryCount(t, recorder, flagEvaluationDroppedMetric, "reason:"+flagEvaluationReasonPayloadLimit, 11)
 }
 
 func newTestFlagEvaluationPayloadEvent(flagKey, targetingKey string, attrs map[string]any) flagEvalLoggingEvent {
@@ -799,59 +661,6 @@ func newTestFlagEvaluationPayloadEvent(flagKey, targetingKey string, attrs map[s
 		event.Context = &flagEvalEventContext{Evaluation: attrs}
 	}
 	return event
-}
-
-func newTestFlagEvaluationHTTPWriter(t *testing.T) (*flagEvalLoggingWriter, func()) {
-	t.Helper()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	agentURL, err := url.Parse(server.URL)
-	if err != nil {
-		server.Close()
-		t.Fatalf("failed to parse test server URL: %v", err)
-	}
-
-	evp := newEVPClient()
-	evp.agentURL = agentURL
-	evp.httpClient = server.Client()
-	return newFlagEvalLoggingWriterWithEVP(ProviderConfig{}, evp), server.Close
-}
-
-func assertTelemetryCount(t *testing.T, recorder *telemetrytest.RecordClient, name, tags string, want float64) {
-	t.Helper()
-
-	key := telemetrytest.MetricKey{
-		Namespace: telemetry.NamespaceTracers,
-		Name:      name,
-		Tags:      tags,
-		Kind:      "count",
-	}
-	handle, ok := recorder.Metrics[key]
-	if !ok {
-		t.Fatalf("missing telemetry count %s tags %q", name, tags)
-	}
-	if got := handle.Get(); got != want {
-		t.Fatalf("telemetry count %s tags %q = %v, want %v", name, tags, got, want)
-	}
-}
-
-func assertNoTelemetryCount(t *testing.T, recorder *telemetrytest.RecordClient, name, tags string) {
-	t.Helper()
-
-	key := telemetrytest.MetricKey{
-		Namespace: telemetry.NamespaceTracers,
-		Name:      name,
-		Tags:      tags,
-		Kind:      "count",
-	}
-	if recorder.Metrics == nil {
-		return
-	}
-	if handle, ok := recorder.Metrics[key]; ok {
-		t.Fatalf("unexpected telemetry count %s tags %q = %v", name, tags, handle.Get())
-	}
 }
 
 // TestAggregatorDistinctAllocationBuckets verifies that allocation is part of the aggregation key.

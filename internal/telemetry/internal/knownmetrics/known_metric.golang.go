@@ -9,9 +9,6 @@ package knownmetrics
 
 var golangMetrics = []Declaration{
 	{Type: "count", Name: "errorstack.source"},
-	{Type: "count", Name: "flagevaluation.payload.splits"},
-	{Type: "count", Name: "flagevaluation.rows.degraded"},
-	{Type: "count", Name: "flagevaluation.rows.dropped"},
 	{Type: "distribution", Name: "errorstack.duration"},
 	{Type: "gauge", Name: "orchestrion.enabled"},
 }

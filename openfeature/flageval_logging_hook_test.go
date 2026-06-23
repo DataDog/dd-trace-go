@@ -206,9 +206,9 @@ func TestRecordUsesEvalTimeFromMetadata(t *testing.T) {
 	})
 }
 
-// TestFlagEvalLoggingHookFinally verifies that the Finally hook records an entry for
+// TestFlagEvaluationHookFinally verifies that the Finally hook records an entry for
 // success, error-reason, and provider-not-ready paths.
-func TestFlagEvalLoggingHookFinally(t *testing.T) {
+func TestFlagEvaluationHookFinally(t *testing.T) {
 	runtimeDefaultTrue := true
 
 	tests := []struct {
@@ -286,10 +286,10 @@ func TestFlagEvalLoggingHookFinally(t *testing.T) {
 	}
 }
 
-// TestFlagEvalLoggingHookContextCancelled verifies that a cancelled context does NOT
+// TestFlagEvaluationHookContextCancelled verifies that a cancelled context does NOT
 // drop the evaluation: record() is a non-blocking enqueue that ignores the request
 // context, so a cancelled request must still be counted.
-func TestFlagEvalLoggingHookContextCancelled(t *testing.T) {
+func TestFlagEvaluationHookContextCancelled(t *testing.T) {
 	w := setupTestWriter(t)
 	hook := newFlagEvalLoggingHook(w)
 
