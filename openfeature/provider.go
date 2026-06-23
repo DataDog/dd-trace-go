@@ -65,9 +65,10 @@ type DatadogProvider struct {
 
 	configChange sync.Cond
 
+	hooks []openfeature.Hook
+
 	// Exposure tracking
 	exposureWriter *exposureWriter
-	exposureHook   *exposureHook
 
 	// Flag evaluation metrics hook (OTel counter via Finally hook)
 	flagEvalMetricsHook *flagEvalMetricsHook
@@ -124,12 +125,23 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	}
 
+	hooks := make([]openfeature.Hook, 0, 3)
+	if exposureLoggingHook != nil {
+		hooks = append(hooks, exposureLoggingHook)
+	}
+	if evalMetricsHook != nil {
+		hooks = append(hooks, evalMetricsHook)
+	}
+	if evalLoggingHook != nil {
+		hooks = append(hooks, evalLoggingHook)
+	}
+
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
+		hooks:                 hooks,
 		exposureWriter:        writer,
-		exposureHook:          exposureLoggingHook,
 		flagEvalMetricsHook:   evalMetricsHook,
 		flagEvalLoggingWriter: evalWriter,
 		flagEvalLoggingHook:   evalLoggingHook,
@@ -447,23 +459,10 @@ func (p *DatadogProvider) ObjectEvaluation(
 	}
 }
 
-// Hooks returns the hooks for this provider.
-// This includes the exposure tracking hook, the OTel flag evaluation metrics hook (always),
-// and the EVP flagevaluation hook (only when DD_FLAGGING_EVALUATION_COUNTS_ENABLED is true).
+// Hooks returns the provider's hooks, built once during Init.
+// Returns p.hooks directly to avoid per-evaluation allocations.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
-	var hooks []openfeature.Hook
-	if p.exposureHook != nil {
-		hooks = append(hooks, p.exposureHook)
-	}
-	// OTel hook is always registered — untouched by the EVP killswitch.
-	if p.flagEvalMetricsHook != nil {
-		hooks = append(hooks, p.flagEvalMetricsHook)
-	}
-	// EVP hook is nil when the killswitch disabled it.
-	if p.flagEvalLoggingHook != nil {
-		hooks = append(hooks, p.flagEvalLoggingHook)
-	}
-	return hooks
+	return p.hooks
 }
 
 // evaluate is the core evaluation method that all type-specific methods use.
