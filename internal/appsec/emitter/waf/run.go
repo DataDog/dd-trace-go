@@ -62,13 +62,6 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner wafRunn
 		log.Debug("appsec: WAF timeout value reached: %s", err.Error())
 	}
 
-	metrics := op.GetMetricsInstance()
-	if metrics == nil {
-		return
-	}
-
-	metrics.IncWafError(addrs, err)
-
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
 	rateLimited := op.AddEvents(result.Events...)
 	blocking := actions.SendActionEvents(eventReceiver, result.Actions)
@@ -83,13 +76,16 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner wafRunn
 		dyngo.EmitData(op, &SecurityEvent{})
 	}
 
-	metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
-		requestBlocked: blocking,
-		ruleTriggered:  result.HasEvents(),
-		wafTimeout:     wafTimeout,
-		rateLimited:    rateLimited,
-		wafError:       err != nil && !wafTimeout,
-	})
+	if metrics := op.GetMetricsInstance(); metrics != nil {
+		metrics.IncWafError(addrs, err)
+		metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
+			requestBlocked: blocking,
+			ruleTriggered:  result.HasEvents(),
+			wafTimeout:     wafTimeout,
+			rateLimited:    rateLimited,
+			wafError:       err != nil && !wafTimeout,
+		})
+	}
 }
 
 // RunSimple runs PERSISTENT address data on the request Context (HTTP body, etc.).
