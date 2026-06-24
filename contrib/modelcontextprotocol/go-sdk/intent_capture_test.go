@@ -142,6 +142,7 @@ func TestIntentCapture(t *testing.T) {
 	intentSchema := telemetryProps["intent"].(map[string]any)
 	assert.Equal(t, "string", intentSchema["type"])
 	assert.Equal(t, instrmcp.IntentPrompt, intentSchema["description"])
+	assert.Equal(t, false, telemetrySchema["additionalProperties"])
 
 	// Ensure telemetry is required, and others are not affected
 	required := schemaMap["required"].([]any)
