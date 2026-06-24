@@ -257,22 +257,44 @@ func TestChatSendMessage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Hi back!", resp.Text())
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
-	require.Len(t, spans, 1)
-	s := spans[0]
-	assert.Equal(t, "genai.chat.send_message", s.Name)
-	assert.Equal(t, "gemini-2.0-flash", s.Meta["model_name"])
+	// Second send: ensures we snapshot history *before* the call, since
+	// genai.Chat appends the just-sent turn to History on success.
+	resp, err = chat.SendMessage(context.Background(), genai.Part{Text: "Follow up?"})
+	require.NoError(t, err)
+	assert.Equal(t, "Hi back!", resp.Text())
 
-	inputJSON, _ := json.Marshal(s.Meta["input"])
+	spans := tt.WaitForLLMObsSpans(t, 2)
+	require.Len(t, spans, 2)
+
+	for _, s := range spans {
+		assert.Equal(t, "genai.chat.send_message", s.Name)
+		assert.Equal(t, "gemini-2.0-flash", s.Meta["model_name"])
+	}
+
+	// First-call span: history + first user message only. The assistant
+	// reply for this turn must NOT appear in this turn's recorded input.
+	inputJSON, _ := json.Marshal(spans[0].Meta["input"])
 	in := string(inputJSON)
-	// History plus the new user message should be included.
 	assert.Contains(t, in, "previous question")
 	assert.Contains(t, in, "previous answer")
 	assert.Contains(t, in, "Hello!")
+	assert.NotContains(t, in, "Follow up?")
+	assert.Equal(t, 0, strings.Count(in, "Hi back!"))
+	assert.Equal(t, 1, strings.Count(in, "Hello!"))
 
-	outputJSON, _ := json.Marshal(s.Meta["output"])
+	// Second-call span: includes the first completed turn (user + assistant)
+	// plus the new user message, with no duplicated user content.
+	inputJSON2, _ := json.Marshal(spans[1].Meta["input"])
+	in2 := string(inputJSON2)
+	assert.Contains(t, in2, "Hello!")
+	assert.Contains(t, in2, "Follow up?")
+	assert.Equal(t, 1, strings.Count(in2, "Hello!"))
+	assert.Equal(t, 1, strings.Count(in2, "Follow up?"))
+	assert.Equal(t, 1, strings.Count(in2, "Hi back!"))
+
+	outputJSON, _ := json.Marshal(spans[0].Meta["output"])
 	assert.Contains(t, string(outputJSON), "Hi back!")
-	assert.EqualValues(t, 7, s.Metrics["total_tokens"])
+	assert.EqualValues(t, 7, spans[0].Metrics["total_tokens"])
 }
 
 func TestGenerateContentError(t *testing.T) {

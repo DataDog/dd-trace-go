@@ -1244,8 +1244,8 @@
     "DD_TRACE_GOOGLE_GENAI_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
-        "type": "FIX_ME",
-        "default": "FIX_ME"
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_GOPG_ANALYTICS_ENABLED": [

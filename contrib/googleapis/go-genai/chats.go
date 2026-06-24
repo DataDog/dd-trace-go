@@ -58,16 +58,17 @@ func (c *Chat) History(curated bool) []*genai.Content {
 }
 
 // SendMessage sends a message to the chat and emits an LLM span. The input
-// captured on the span includes the existing chat history plus the new
-// user message.
+// captured on the span is a pre-call snapshot of the chat history plus the
+// new user message (genai.Chat mutates History during a successful call).
 func (c *Chat) SendMessage(ctx context.Context, parts ...genai.Part) (*genai.GenerateContentResponse, error) {
 	if c == nil || c.chat == nil {
 		return nil, errNilClient
 	}
+	input := c.snapshotInput(parts)
 	span, ctx := startLLMSpan(ctx, "genai.chat.send_message", c.model, c.provider)
 
 	resp, err := c.chat.SendMessage(ctx, parts...)
-	finishLLMSpan(span, c.inputForSpan(parts), c.config, resp, err)
+	finishLLMSpan(span, input, c.config, resp, err)
 	return resp, err
 }
 
@@ -79,6 +80,7 @@ func (c *Chat) SendMessageStream(ctx context.Context, parts ...genai.Part) iter.
 			yield(nil, errNilClient)
 			return
 		}
+		input := c.snapshotInput(parts)
 		span, ctx := startLLMSpan(ctx, "genai.chat.send_message_stream", c.model, c.provider)
 
 		acc := newStreamAccumulator()
@@ -93,14 +95,16 @@ func (c *Chat) SendMessageStream(ctx context.Context, parts ...genai.Part) iter.
 				break
 			}
 		}
-		finishLLMSpan(span, c.inputForSpan(parts), c.config, acc.response(), lastErr)
+		finishLLMSpan(span, input, c.config, acc.response(), lastErr)
 	}
 }
 
-// inputForSpan returns the existing history plus the new user message so the
-// span captures the full conversation state being sent to the model.
-func (c *Chat) inputForSpan(parts []genai.Part) []*genai.Content {
-	hist := c.chat.History(false)
+// snapshotInput returns the history at call time plus the new user message,
+// taken before genai.Chat mutates History with the turn being sent.
+func (c *Chat) snapshotInput(parts []genai.Part) []*genai.Content {
+	src := c.chat.History(false)
+	hist := make([]*genai.Content, len(src))
+	copy(hist, src)
 	userParts := make([]*genai.Part, 0, len(parts))
 	for i := range parts {
 		p := parts[i]

@@ -11,6 +11,7 @@ import (
 	"google.golang.org/genai"
 
 	genaitrace "github.com/DataDog/dd-trace-go/contrib/googleapis/go-genai/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
