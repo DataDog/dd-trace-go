@@ -29,28 +29,37 @@ func telemetrySchema() map[string]any {
 	}
 }
 
-// intentCaptureReceivingMiddleware is an mcp.Server receiving middleware
-// adding intent information to the tool call span.
-// Intent capture works by injecting an additional required parameter on tools that the
-// client agent will fill in to explain context about the task.
-// The middleware records this intent on the span, and then removes it from the arguments before the tool is called.
-func intentCaptureReceivingMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
-	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-		switch method {
-		case "tools/list":
-			// The additional parameter is added to the tool arguments returned by tools/list.
-			res, err := next(ctx, method, req)
-			if toolListRes, ok := res.(*mcp.ListToolsResult); ok {
-				injectToolsListResponse(toolListRes)
+// intentCaptureReceivingMiddlewareFor returns an mcp.Server receiving
+// middleware that adds intent information to the tool call span, gated
+// per-request by the supplied predicate. When the predicate returns false,
+// the request passes through untouched.
+//
+// Intent capture works by injecting an additional required parameter on
+// tools that the client agent will fill in to explain context about the
+// task. The middleware records this intent on the span, and then removes
+// it from the arguments before the tool is called.
+func intentCaptureReceivingMiddlewareFor(enabled func(context.Context) bool) func(mcp.MethodHandler) mcp.MethodHandler {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if !enabled(ctx) {
+				return next(ctx, method, req)
 			}
-			return res, err
-		case "tools/call":
-			// The intent is recorded and the argument is removed.
-			if toolReq, ok := req.(*mcp.CallToolRequest); ok {
-				return processToolCallIntent(next, ctx, method, toolReq)
+			switch method {
+			case "tools/list":
+				// The additional parameter is added to the tool arguments returned by tools/list.
+				res, err := next(ctx, method, req)
+				if toolListRes, ok := res.(*mcp.ListToolsResult); ok {
+					injectToolsListResponse(toolListRes)
+				}
+				return res, err
+			case "tools/call":
+				// The intent is recorded and the argument is removed.
+				if toolReq, ok := req.(*mcp.CallToolRequest); ok {
+					return processToolCallIntent(next, ctx, method, toolReq)
+				}
 			}
+			return next(ctx, method, req)
 		}
-		return next(ctx, method, req)
 	}
 }
 
