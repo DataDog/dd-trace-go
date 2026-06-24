@@ -44,13 +44,19 @@ func injectTelemetryListToolsHook(ctx context.Context, id any, message *mcp.List
 	for i := range result.Tools {
 		t := &result.Tools[i]
 
+		// mcp.ToolInputSchema only models type/properties/required/$defs;
+		// for tools defined with NewToolWithRawSchema we mutate the raw
+		// JSON via a generic map so keywords like additionalProperties,
+		// oneOf, or patternProperties pass through verbatim.
 		if t.RawInputSchema != nil {
-			var schema mcp.ToolInputSchema
-			if err := json.Unmarshal(t.RawInputSchema, &schema); err != nil {
-				continue
+			if newRaw, ok := injectTelemetryIntoRawSchema(t.RawInputSchema); ok {
+				t.RawInputSchema = newRaw
+				// mcp.NewTool sets InputSchema.Type="object" by default; keeping it
+				// alongside RawInputSchema makes Tool.MarshalJSON return a schema-
+				// conflict error.
+				t.InputSchema = mcp.ToolInputSchema{}
 			}
-			t.InputSchema = schema
-			t.RawInputSchema = nil
+			continue
 		}
 
 		if t.InputSchema.Type == "" {
@@ -70,6 +76,38 @@ func injectTelemetryListToolsHook(ctx context.Context, id any, message *mcp.List
 			t.InputSchema.Required = append(slices.Clone(t.InputSchema.Required), instrmcp.TelemetryKey)
 		}
 	}
+}
+
+// injectTelemetryIntoRawSchema mutates a raw JSON Schema document to add the
+// telemetry property and require it. Unknown top-level keywords pass through
+// verbatim. Returns false when the input can't be parsed as a JSON object.
+func injectTelemetryIntoRawSchema(raw json.RawMessage) (json.RawMessage, bool) {
+	var schema map[string]any
+	if json.Unmarshal(raw, &schema) != nil || schema == nil {
+		return nil, false
+	}
+	if _, ok := schema["type"]; !ok {
+		schema["type"] = "object"
+	}
+	props, _ := schema["properties"].(map[string]any)
+	props = maps.Clone(props)
+	if props == nil {
+		props = map[string]any{}
+	}
+	props[instrmcp.TelemetryKey] = telemetrySchema()
+	schema["properties"] = props
+
+	required, _ := schema["required"].([]any)
+	if !slices.Contains(required, any(instrmcp.TelemetryKey)) {
+		required = append(slices.Clone(required), instrmcp.TelemetryKey)
+	}
+	schema["required"] = required
+
+	out, err := json.Marshal(schema)
+	if err != nil {
+		return nil, false
+	}
+	return out, true
 }
 
 // Removing tracing parameters from the tool call request so its not sent to the tool.
