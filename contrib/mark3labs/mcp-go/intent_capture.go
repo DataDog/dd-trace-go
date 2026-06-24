@@ -7,6 +7,7 @@ package mcpgo
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"slices"
 
@@ -44,8 +45,10 @@ func injectTelemetryListToolsHook(ctx context.Context, id any, message *mcp.List
 		t := &result.Tools[i]
 
 		if t.RawInputSchema != nil {
-			instr.Logger().Warn("mcp-go intent capture: raw input schema not supported")
-			continue
+			if err := json.Unmarshal(t.RawInputSchema, &t.InputSchema); err != nil {
+				continue
+			}
+			t.RawInputSchema = nil
 		}
 
 		if t.InputSchema.Type == "" {
