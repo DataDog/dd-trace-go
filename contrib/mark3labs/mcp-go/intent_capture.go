@@ -32,8 +32,21 @@ func telemetrySchema() map[string]any {
 	}
 }
 
-// Injects tracing parameters into the tool list response by mutating it.
-func injectTelemetryListToolsHook(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
+// injectTelemetryListToolsHookFor returns an AfterListTools hook that injects
+// the telemetry parameter into the schemas of model-callable tools, but only
+// when the supplied predicate returns true for the request's context.
+func injectTelemetryListToolsHookFor(enabled func(context.Context) bool) func(context.Context, any, *mcp.ListToolsRequest, *mcp.ListToolsResult) {
+	return func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
+		if !enabled(ctx) {
+			return
+		}
+		injectTelemetryListTools(result)
+	}
+}
+
+// injectTelemetryListTools mutates result to add the telemetry parameter to
+// each model-callable tool's input schema.
+func injectTelemetryListTools(result *mcp.ListToolsResult) {
 	if result == nil || result.Tools == nil {
 		return
 	}
@@ -152,26 +165,36 @@ func ContextWithIntent(ctx context.Context, intent string) context.Context {
 	return context.WithValue(ctx, intentCtxKey{}, intent)
 }
 
-// Removing tracing parameters from the tool call request so its not sent to the tool.
-// This must be registered after the tool handler middleware (mcp-go runs middleware in registration order).
-// This removes the telemetry parameter before user-defined middleware or tool handlers can see it.
-var processAndRemoveTelemetryToolMiddleware = func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		if m, ok := request.Params.Arguments.(map[string]any); ok && m != nil {
-			if telemetryVal, has := m[instrmcp.TelemetryKey]; has {
-				if telemetryMap, ok := telemetryVal.(map[string]any); ok {
-					if intent := extractIntent(telemetryMap); intent != "" {
-						annotateIntentOnSpan(ctx, intent)
-						ctx = ContextWithIntent(ctx, intent)
-					}
-				} else if instr != nil && instr.Logger() != nil {
-					instr.Logger().Warn("mcp-go intent capture: telemetry value is not a map")
-				}
-				delete(m, instrmcp.TelemetryKey)
+// processAndRemoveTelemetryToolMiddlewareFor returns a tool handler middleware
+// that strips the telemetry parameter from a tools/call request and annotates
+// the active LLMObs span with the supplied intent, but only when the supplied
+// predicate returns true for the request's context. When the predicate
+// returns false, the middleware is a transparent pass-through.
+//
+// This must be registered after the tool handler middleware (mcp-go runs
+// middleware in registration order). This removes the telemetry parameter
+// before user-defined middleware or tool handlers can see it.
+func processAndRemoveTelemetryToolMiddlewareFor(enabled func(context.Context) bool) func(server.ToolHandlerFunc) server.ToolHandlerFunc {
+	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+		return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if !enabled(ctx) {
+				return next(ctx, request)
 			}
+			if m, ok := request.Params.Arguments.(map[string]any); ok && m != nil {
+				if telemetryVal, has := m[instrmcp.TelemetryKey]; has {
+					if telemetryMap, ok := telemetryVal.(map[string]any); ok {
+						if intent := extractIntent(telemetryMap); intent != "" {
+							annotateIntentOnSpan(ctx, intent)
+							ctx = ContextWithIntent(ctx, intent)
+						}
+					} else if instr != nil && instr.Logger() != nil {
+						instr.Logger().Warn("mcp-go intent capture: telemetry value is not a map")
+					}
+					delete(m, instrmcp.TelemetryKey)
+				}
+			}
+			return next(ctx, request)
 		}
-
-		return next(ctx, request)
 	}
 }
 
