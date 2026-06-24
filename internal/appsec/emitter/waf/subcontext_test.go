@@ -140,6 +140,88 @@ func TestSubcontextOperation_filters_unsupported_addresses_before_encoding(t *te
 	require.NotContains(t, data, addresses.GRPCServerResponseMessageAddr)
 }
 
+func TestSubcontextOperation_nil_context_is_safe_and_records_after_request_skip(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+
+	telemetryClient := new(telemetrytest.RecordClient)
+	previousClient := telemetry.SwapClient(telemetryClient)
+	t.Cleanup(func() { telemetry.SwapClient(previousClient) })
+
+	ctxOp, wafCtx, _ := newSubcontextTestOperation(t)
+	ctxOp.SwapContext(nil)
+	wafCtx.Close()
+
+	skipTags := []string{
+		"reason:after-request",
+		"rule_type:ssrf",
+		"rule_variant:request",
+		"waf_version:" + libddwaf.Version(),
+		"event_rules_version:1.99.0",
+	}
+	skipBefore := telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.skipped", skipTags).Get()
+
+	subOp := ctxOp.NewSubcontextOp()
+	require.Nil(t, subOp.subcontext)
+	require.NotPanics(t, func() {
+		subOp.Run(ctxOp, ssrfRequestRunData())
+		subOp.Close()
+	})
+	require.Equal(t, skipBefore+1, telemetryClient.Count(telemetry.NamespaceAppSec, "rasp.rule.skipped", skipTags).Get())
+}
+
+func TestSubcontextOperation_Close_is_idempotent_and_does_not_double_add_stats(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+
+	ctxOp, _, metrics := newSubcontextTestOperation(t)
+	subOp := ctxOp.NewSubcontextOp()
+	require.NotNil(t, subOp.subcontext)
+
+	subOp.Run(ctxOp, addresses.RunAddressData{
+		Data: map[string]any{
+			addresses.ServerIONetURLAddr: "http://example.com/" + strings.Repeat("c", 70000),
+		},
+		TimerKey: addresses.RASPScope,
+	})
+	subOp.Close()
+
+	merged := metrics.MergedTruncations(libddwaf.Truncations{})
+	duration := metrics.ExternalDuration(addresses.RASPScope, 0)
+	require.NotEmpty(t, merged.StringTooLong)
+	require.Positive(t, duration)
+
+	require.NotPanics(t, subOp.Close)
+	require.Equal(t, merged, metrics.MergedTruncations(libddwaf.Truncations{}))
+	require.Equal(t, duration, metrics.ExternalDuration(addresses.RASPScope, 0))
+}
+
+func TestSubcontextOperation_Close_records_each_scope_duration_from_shared_subcontext(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+
+	ctxOp, _, metrics := newSubcontextTestOperation(t)
+	subOp := ctxOp.NewSubcontextOp()
+	require.NotNil(t, subOp.subcontext)
+
+	subOp.Run(ctxOp, addresses.RunAddressData{
+		Data: map[string]any{
+			addresses.ServerIONetURLAddr: "http://example.com/" + strings.Repeat("d", 70000),
+		},
+		TimerKey: addresses.RASPScope,
+	})
+	subOp.Run(ctxOp, addresses.RunAddressData{
+		Data:     map[string]any{},
+		TimerKey: addresses.WAFScope,
+	})
+	subOp.Close()
+
+	require.Positive(t, metrics.ExternalDuration(addresses.RASPScope, 0), "later WAF-scope runs must not drop the RASP external duration")
+}
+
 func newSubcontextTestOperation(t *testing.T) (*ContextOperation, *libddwaf.Context, *ContextMetrics) {
 	t.Helper()
 

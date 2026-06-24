@@ -298,19 +298,16 @@ func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map
 	m.incWafRequestsCounts()
 }
 
-func (m *ContextMetrics) AddSubcontextStats(scope addresses.Scope, truncations libddwaf.Truncations, externalTimerStats map[timer.Key]time.Duration) {
+func (m *ContextMetrics) AddSubcontextStats(truncations libddwaf.Truncations, externalTimerStats map[timer.Key]time.Duration) {
 	if !truncations.IsEmpty() {
 		m.subcontextTruncationsMu.Lock()
 		m.subcontextTruncations.Merge(truncations)
 		m.subcontextTruncationsMu.Unlock()
 	}
-
-	if duration := externalTimerStats[scope]; duration > 0 {
-		if accumulator, ok := m.subcontextExternalDurations[scope]; ok {
+	for scope, accumulator := range m.subcontextExternalDurations {
+		if duration := externalTimerStats[scope]; duration > 0 {
 			accumulator.Add(int64(duration))
-			return
 		}
-		m.logger.Error("unexpected scope name", slog.String("scope", string(scope)))
 	}
 }
 

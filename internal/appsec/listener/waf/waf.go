@@ -148,6 +148,8 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 		return
 	}
 
+	// Subcontext owners defer Close before their request operation finishes, so
+	// subcontext stats are already merged into ContextMetrics by this point.
 	truncations := ctx.Truncations()
 	timerStats := ctx.Timer.Stats()
 	ctx.Close()

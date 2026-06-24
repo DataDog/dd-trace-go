@@ -18,7 +18,6 @@ import (
 type SubcontextOperation struct {
 	contextOp  *ContextOperation
 	subcontext *libddwaf.Subcontext
-	scope      addresses.Scope
 }
 
 func (op *ContextOperation) NewSubcontextOp() *SubcontextOperation {
@@ -38,7 +37,6 @@ func (op *ContextOperation) NewSubcontextOp() *SubcontextOperation {
 }
 
 func (sub *SubcontextOperation) Run(eventReceiver dyngo.Operation, addrs addresses.RunAddressData) {
-	sub.scope = addrs.TimerKey
 	if sub.subcontext == nil {
 		sub.contextOp.skipRASPRuleAfterRequest(addrs)
 		return
@@ -53,7 +51,7 @@ func (sub *SubcontextOperation) Close() {
 	}
 
 	if metrics := sub.contextOp.GetMetricsInstance(); metrics != nil {
-		metrics.AddSubcontextStats(sub.scope, sub.subcontext.Truncations(), sub.subcontext.Timer.Stats())
+		metrics.AddSubcontextStats(sub.subcontext.Truncations(), sub.subcontext.Timer.Stats())
 	}
 
 	sub.subcontext.Close()
