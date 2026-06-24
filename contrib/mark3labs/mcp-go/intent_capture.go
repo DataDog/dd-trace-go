@@ -45,9 +45,11 @@ func injectTelemetryListToolsHook(ctx context.Context, id any, message *mcp.List
 		t := &result.Tools[i]
 
 		if t.RawInputSchema != nil {
-			if err := json.Unmarshal(t.RawInputSchema, &t.InputSchema); err != nil {
+			var schema mcp.ToolInputSchema
+			if err := json.Unmarshal(t.RawInputSchema, &schema); err != nil {
 				continue
 			}
+			t.InputSchema = schema
 			t.RawInputSchema = nil
 		}
 
