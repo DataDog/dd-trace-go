@@ -9,25 +9,22 @@ import (
 	"context"
 	"encoding/json"
 
-	"maps"
-
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
-func telemetrySchema() *jsonschema.Schema {
-	return &jsonschema.Schema{
-		Type: "object",
-		Properties: map[string]*jsonschema.Schema{
-			instrmcp.IntentKey: {
-				Type:        "string",
-				Description: instrmcp.IntentPrompt,
+func telemetrySchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			instrmcp.IntentKey: map[string]any{
+				"type":        "string",
+				"description": instrmcp.IntentPrompt,
 			},
 		},
-		Required: []string{instrmcp.IntentKey},
+		"required": []any{instrmcp.IntentKey},
 	}
 }
 
@@ -58,31 +55,41 @@ func intentCaptureReceivingMiddleware(next mcp.MethodHandler) mcp.MethodHandler 
 
 func injectToolsListResponse(res *mcp.ListToolsResult) {
 	for i := range res.Tools {
-		inputSchema, ok := res.Tools[i].InputSchema.(*jsonschema.Schema)
-		if !ok {
-			instr.Logger().Warn("go-sdk intent capture: unexpected input schema type: %T", res.Tools[i].InputSchema)
+		// Round-trip the input schema through map[string]any so unknown JSON
+		// Schema keywords (additionalProperties, oneOf, patternProperties, etc.)
+		// that *jsonschema.Schema does not model pass through verbatim.
+		schemaBytes, err := json.Marshal(res.Tools[i].InputSchema)
+		if err != nil {
+			instr.Logger().Warn("go-sdk intent capture: failed to marshal input schema: %v", err)
 			continue
 		}
-
-		// Create copies of the tool and schema to avoid mutating the registered
-		// schema used for server-side validation in go-sdk v1.3+.
-		schemaCopy := *inputSchema
-		if schemaCopy.Type == "" {
-			schemaCopy.Type = "object"
+		var schema map[string]any
+		if err := json.Unmarshal(schemaBytes, &schema); err != nil {
+			instr.Logger().Warn("go-sdk intent capture: failed to unmarshal input schema: %v", err)
+			continue
+		}
+		if schema == nil {
+			schema = map[string]any{}
+		}
+		if _, ok := schema["type"]; !ok {
+			schema["type"] = "object"
 		}
 
-		newProps := make(map[string]*jsonschema.Schema, len(inputSchema.Properties)+1)
-		maps.Copy(newProps, inputSchema.Properties)
-		newProps[instrmcp.TelemetryKey] = telemetrySchema()
-		schemaCopy.Properties = newProps
+		props, _ := schema["properties"].(map[string]any)
+		if props == nil {
+			props = map[string]any{}
+		}
+		props[instrmcp.TelemetryKey] = telemetrySchema()
+		schema["properties"] = props
 
-		newRequired := make([]string, len(inputSchema.Required)+1)
-		copy(newRequired, inputSchema.Required)
-		newRequired[len(inputSchema.Required)] = instrmcp.TelemetryKey
-		schemaCopy.Required = newRequired
+		required, _ := schema["required"].([]any)
+		required = append(required, instrmcp.TelemetryKey)
+		schema["required"] = required
 
+		// Mutate a copy of the tool so the registered tool (used for server-side
+		// validation in go-sdk v1.3+) is not affected.
 		toolCopy := *res.Tools[i]
-		toolCopy.InputSchema = &schemaCopy
+		toolCopy.InputSchema = schema
 		res.Tools[i] = &toolCopy
 	}
 }
