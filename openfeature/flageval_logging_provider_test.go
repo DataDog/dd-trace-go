@@ -12,12 +12,12 @@ import (
 )
 
 // TestFlagEvaluationKillswitch verifies that DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true)
-// controls ONLY the EVP flagevaluation hook/writer, leaving the OTel flagEvalHook unaffected.
+// controls ONLY the EVP flagevaluation hook/writer, leaving the OTel flagEvalMetricsHook unaffected.
 //
 // When the killswitch is "false": the EVP hook (flagEvalLoggingHook) is NOT registered in Hooks()
 // and flagEvalWriter is nil.
 // When the killswitch is unset or "true": the EVP hook IS registered.
-// The OTel flagEvalHook is present in Hooks() in BOTH cases.
+// The OTel flagEvalMetricsHook is present in Hooks() in BOTH cases.
 func TestFlagEvaluationKillswitch(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -79,7 +79,7 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 
 			// The OTel hook must be present in EVERY case — the killswitch never affects it.
 			if !otelPresent {
-				t.Error("expected OTel flagEvalHook to be present in Hooks() regardless of the killswitch")
+				t.Error("expected OTel flagEvalMetricsHook to be present in Hooks() regardless of the killswitch")
 			}
 
 			if evpPresent != tc.wantEVPEnabled {

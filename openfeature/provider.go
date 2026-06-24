@@ -74,7 +74,7 @@ type DatadogProvider struct {
 
 	// Flag evaluation EVP writer + hook (new Path B — EVP flagevaluation track).
 	// Both fields are nil when DD_FLAGGING_EVALUATION_COUNTS_ENABLED=false (killswitch).
-	// Named distinctly from flagEvalHook (OTel) to avoid collisions.
+	// Named distinctly from flagEvalMetricsHook (OTel) to avoid collisions.
 	flagEvalLoggingWriter *flagEvalLoggingWriter
 	flagEvalLoggingHook   *flagEvalLoggingHook
 }
@@ -116,7 +116,7 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 	// Conditionally construct the EVP flagevaluation writer + hook.
 	// Gated by DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true).
 	// When false, both fields are left nil and the EVP path is disabled.
-	// The OTel hook (flagEvalHook above) is registered unconditionally.
+	// The OTel hook (flagEvalMetricsHook above) is registered unconditionally.
 	var evalWriter *flagEvalLoggingWriter
 	var evalLoggingHook *flagEvalLoggingHook
 	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {

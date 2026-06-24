@@ -12,7 +12,7 @@ import (
 )
 
 // flagEvalLoggingHook implements the OpenFeature Hook interface to record EVP flagevaluation events.
-// It uses the Finally hook stage (same as flagEvalHook) to cover success, error, and default paths.
+// It uses the Finally hook stage (same as flagEvalMetricsHook) to cover success, error, and default paths.
 // Finally fires on error/default paths, unlike After.
 type flagEvalLoggingHook struct {
 	of.UnimplementedHook
