@@ -310,11 +310,6 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	// put span in context's trace
 	context.trace.push(span)
 	context.traceID.cacheHex()
-	// Finalize the hex cache now that all SetLower/SetUpper mutations are done
-	// and before the context is shared with other goroutines. This keeps
-	// HexEncoded a pure cached read on the propagation hot path (Inject), so
-	// locally-started spans don't re-allocate the hex string on every call.
-	context.traceID.cacheHex()
 	// The span snapshot is populated by tracer.StartSpan after all
 	// env/version/service-mapping mutations, so we skip the intermediate
 	// write here. Direct callers of newSpanContext (tests) do not read
