@@ -110,6 +110,36 @@ func injectTelemetryIntoRawSchema(raw json.RawMessage) (json.RawMessage, bool) {
 	return out, true
 }
 
+// intentCtxKey is the context key used to stash the captured intent so tool
+// handlers can forward it downstream (e.g. to a search API). Kept unexported
+// to force callers through IntentFromContext.
+type intentCtxKey struct{}
+
+// IntentFromContext returns the captured intent for the current MCP tool call,
+// if intent capture is enabled and the client supplied a non-empty
+// telemetry.intent. The boolean is false when no intent is available.
+func IntentFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	v, ok := ctx.Value(intentCtxKey{}).(string)
+	if !ok || v == "" {
+		return "", false
+	}
+	return v, true
+}
+
+// ContextWithIntent returns a copy of ctx that carries the given intent. The
+// middleware uses this internally; it is exported so tests (and callers that
+// fabricate their own contexts outside the standard middleware chain) can seed
+// the value that IntentFromContext will later read.
+func ContextWithIntent(ctx context.Context, intent string) context.Context {
+	if intent == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, intentCtxKey{}, intent)
+}
+
 // Removing tracing parameters from the tool call request so its not sent to the tool.
 // This must be registered after the tool handler middleware (mcp-go runs middleware in registration order).
 // This removes the telemetry parameter before user-defined middleware or tool handlers can see it.
@@ -118,7 +148,10 @@ var processAndRemoveTelemetryToolMiddleware = func(next server.ToolHandlerFunc) 
 		if m, ok := request.Params.Arguments.(map[string]any); ok && m != nil {
 			if telemetryVal, has := m[instrmcp.TelemetryKey]; has {
 				if telemetryMap, ok := telemetryVal.(map[string]any); ok {
-					processTelemetry(ctx, telemetryMap)
+					if intent := extractIntent(telemetryMap); intent != "" {
+						annotateIntentOnSpan(ctx, intent)
+						ctx = ContextWithIntent(ctx, intent)
+					}
 				} else if instr != nil && instr.Logger() != nil {
 					instr.Logger().Warn("mcp-go intent capture: telemetry value is not a map")
 				}
@@ -130,26 +163,35 @@ var processAndRemoveTelemetryToolMiddleware = func(next server.ToolHandlerFunc) 
 	}
 }
 
-func processTelemetry(ctx context.Context, telemetryVal map[string]any) {
+// extractIntent pulls the intent string out of the telemetry map supplied by
+// the MCP client. It returns "" when the entry is missing, the wrong type, or
+// empty — callers should treat that as "no intent" and skip further work.
+func extractIntent(telemetryVal map[string]any) string {
 	if telemetryVal == nil {
-		return
+		return ""
 	}
-
 	intentVal, exists := telemetryVal[instrmcp.IntentKey]
 	if !exists {
-		return
+		return ""
 	}
-
 	intent, ok := intentVal.(string)
-	if !ok || intent == "" {
+	if !ok {
+		return ""
+	}
+	return intent
+}
+
+// annotateIntentOnSpan records intent on the active LLM Obs tool span, if one
+// is present on ctx. It is a no-op when no span is active or the active span
+// is not a tool span, so it is always safe to call.
+func annotateIntentOnSpan(ctx context.Context, intent string) {
+	if intent == "" {
 		return
 	}
-
 	span, ok := llmobs.SpanFromContext(ctx)
 	if !ok {
 		return
 	}
-
 	toolSpan, ok := span.AsTool()
 	if !ok {
 		return

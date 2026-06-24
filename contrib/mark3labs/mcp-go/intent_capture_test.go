@@ -25,6 +25,8 @@ func TestIntentCapture(t *testing.T) {
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
 	var receivedArgs map[string]any
+	var receivedIntent string
+	var receivedIntentOK bool
 	calcTool := mcp.NewTool("calculator",
 		mcp.WithDescription("A simple calculator"),
 		mcp.WithString("operation", mcp.Required(), mcp.Description("The operation to perform")),
@@ -33,6 +35,7 @@ func TestIntentCapture(t *testing.T) {
 
 	srv.AddTool(calcTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		receivedArgs = request.Params.Arguments.(map[string]any)
+		receivedIntent, receivedIntentOK = IntentFromContext(ctx)
 		return mcp.NewToolResultText(`{"result":8}`), nil
 	})
 
@@ -81,6 +84,11 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, float64(3), receivedArgs["y"])
 	assert.NotContains(t, receivedArgs, "telemetry")
 
+	// Verify intent was stashed in ctx so the handler can forward it downstream
+	// (e.g. into a search API request) without re-reading the telemetry blob.
+	assert.True(t, receivedIntentOK, "IntentFromContext should report a value")
+	assert.Equal(t, "test intent description", receivedIntent)
+
 	// Verify intent was recorded on the LLMObs span
 	spans := tt.WaitForLLMObsSpans(t, 1)
 	require.Len(t, spans, 1)
@@ -90,6 +98,53 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, "calculator", toolSpan.Name)
 	assert.Contains(t, toolSpan.Meta, "intent")
 	assert.Equal(t, "test intent description", toolSpan.Meta["intent"])
+}
+
+func TestIntentFromContext(t *testing.T) {
+	ctx := context.Background()
+
+	_, ok := IntentFromContext(ctx)
+	assert.False(t, ok)
+
+	ctx2 := ContextWithIntent(ctx, "find recent errors")
+	got, ok := IntentFromContext(ctx2)
+	assert.True(t, ok)
+	assert.Equal(t, "find recent errors", got)
+
+	// Empty intent does not seed the context.
+	ctx3 := ContextWithIntent(ctx, "")
+	_, ok = IntentFromContext(ctx3)
+	assert.False(t, ok)
+}
+
+func TestIntentFromContext_AbsentWhenNoTelemetry(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
+
+	var receivedIntent string
+	var receivedIntentOK bool
+	calcTool := mcp.NewTool("calculator",
+		mcp.WithDescription("A simple calculator"),
+		mcp.WithString("operation", mcp.Required(), mcp.Description("The operation to perform")),
+		mcp.WithNumber("x", mcp.Required(), mcp.Description("First number")),
+		mcp.WithNumber("y", mcp.Required(), mcp.Description("Second number")))
+
+	srv.AddTool(calcTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		receivedIntent, receivedIntentOK = IntentFromContext(ctx)
+		return mcp.NewToolResultText(`{"result":8}`), nil
+	})
+
+	ctx := context.Background()
+	session := &mockSession{id: "test"}
+	session.Initialize()
+	ctx = srv.WithContext(ctx, session)
+
+	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calculator","arguments":{"operation":"add","x":5,"y":3}}}`))
+
+	assert.False(t, receivedIntentOK, "IntentFromContext should be empty when no telemetry was supplied")
+	assert.Empty(t, receivedIntent)
 }
 
 func TestIntentCaptureRawInputSchemaViaNewToolListsWithoutConflict(t *testing.T) {
