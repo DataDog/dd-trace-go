@@ -483,7 +483,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			// Telemetry
 			assertCalled(t, telemetryClient,
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-env", Origin: telemetry.OriginDefault},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-from-env", Origin: telemetry.OriginEnvVar},
 				},
 			)
 		},
@@ -535,7 +535,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 			// Telemetry
 			assertCalled(t, telemetryClient,
 				[]telemetry.Configuration{
-					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-in-code", Origin: telemetry.OriginDefault},
+					{Name: "trace_header_tags", Value: "X-Test-Header:my-tag-name-in-code", Origin: telemetry.OriginCode},
 				},
 			)
 		},
@@ -620,7 +620,8 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Nil(t, err)
 		defer stop()
 
-		require.Equal(t, telemetry.OriginEnvVar, tracer.config.globalTags.cfgOrigin)
+		_, gtOrigin := tracer.config.internalConfig.GlobalTagsConfig().Baseline()
+		require.Equal(t, telemetry.OriginEnvVar, gtOrigin)
 
 		// Apply RC. Assert global tags have the RC tags key3:val3,key4:val4 applied + runtime ID
 		input := remoteconfig.ProductUpdate{
@@ -646,7 +647,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		require.Equal(t, globalconfig.RuntimeID(), runtimeID)
 		runtimeIDTag := ext.RuntimeID + ":" + globalconfig.RuntimeID()
 
-		// Telemetry
+		// runtimeID is always injected into the RC tag set
 		assertCalled(t, telemetryClient, []telemetry.Configuration{
 			{Name: "trace_tags", Value: "key3:val3,key4:val4," + runtimeIDTag, Origin: telemetry.OriginRemoteConfig},
 		},
@@ -675,7 +676,7 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 
 		// Telemetry
 		assertCalled(t, telemetryClient, []telemetry.Configuration{
-			{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: telemetry.OriginDefault},
+			{Name: "trace_tags", Value: "key0:val0,key1:val1,key2:val2," + runtimeIDTag, Origin: telemetry.OriginEnvVar},
 		},
 		)
 	})
@@ -796,18 +797,19 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 				if tt.expectedSamplingRate == rcSamplingRate {
 					samplingRateOrigin = telemetry.OriginRemoteConfig
 				}
-				headerTagOrigin := telemetry.OriginDefault
+				headerTagOrigin := telemetry.OriginEnvVar
 				if tt.expectedHeaderTag == rcHeaderTag {
 					headerTagOrigin = telemetry.OriginRemoteConfig
 				}
-				spanTagOrigin := telemetry.OriginDefault
+				spanTagOrigin := telemetry.OriginEnvVar
 				if tt.expectedSpanTag == rcSpanTag {
 					spanTagOrigin = telemetry.OriginRemoteConfig
 				}
+				spanTagValue := "ddtag:" + tt.expectedSpanTag + "," + ext.RuntimeID + ":" + globalconfig.RuntimeID() // runtimeID is always injected into the RC tag set
 				assertCalled(t, telemetryClient, []telemetry.Configuration{
 					{Name: "trace_sample_rate", Value: tt.expectedSamplingRate, Origin: samplingRateOrigin},
 					{Name: "trace_header_tags", Value: "X-Test-Header:" + tt.expectedHeaderTag, Origin: headerTagOrigin},
-					{Name: "trace_tags", Value: "ddtag:" + tt.expectedSpanTag + "," + ext.RuntimeID + ":" + globalconfig.RuntimeID(), Origin: spanTagOrigin},
+					{Name: "trace_tags", Value: spanTagValue, Origin: spanTagOrigin},
 				})
 			})
 		}
@@ -913,6 +915,46 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 		tr.onRemoteConfigUpdate(input)
 		// Tracer is still not subscribed; the remote config update did not override
 		// the tracer's explicit configuration.
+		checkLiveDebuggerRemoteConfigState(false)
+	})
+
+	// Test that Live Debugger cannot be enabled through RC if the env var has
+	// explicitly disabled it.
+	t.Run("enable Live Debugger through RC with env var explicitly disabling it", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(telemetryClient)()
+
+		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "false")
+
+		startRemoteConfig := func(tracer *tracer) {
+			t.Cleanup(remoteconfig.Reset)
+			t.Cleanup(remoteconfig.Stop)
+			err := tracer.startRemoteConfig(remoteconfig.DefaultClientConfig())
+			require.NoError(t, err)
+		}
+
+		tr, _, _, stop, err := startTestTracer(t,
+			WithService("my-service"), WithEnv("my-env"),
+		)
+		require.Nil(t, err)
+		defer stop()
+		startRemoteConfig(tr)
+
+		checkLiveDebuggerRemoteConfigState := func(enabled bool) {
+			found, err := remoteconfig.HasProduct(state.ProductLiveDebugging)
+			require.NoError(t, err)
+			require.Equal(t, enabled, found)
+		}
+
+		checkLiveDebuggerRemoteConfigState(false)
+
+		input := remoteconfig.ProductUpdate{
+			"path": []byte(
+				`{"lib_config": {"dynamic_instrumentation_enabled": true}, "service_target": {"service": "my-service", "env": "my-env"}}`,
+			),
+		}
+		tr.onRemoteConfigUpdate(input)
+		// Tracer is still not subscribed; the RC update did not override the env-var disable.
 		checkLiveDebuggerRemoteConfigState(false)
 	})
 

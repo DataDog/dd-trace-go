@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -44,26 +45,22 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "stats_computation_enabled", Value: c.canComputeStats()},
 		{Name: "dogstatsd_port", Value: a.StatsdPort},
 		{Name: "lambda_mode", Value: c.internalConfig.LogToStdout()},
-		{Name: "send_retries", Value: c.sendRetries},
 		{Name: "retry_interval", Value: c.internalConfig.RetryInterval()},
 		{Name: "trace_startup_logs_enabled", Value: c.internalConfig.LogStartup()},
 		{Name: "service", Value: c.internalConfig.ServiceName()},
-		{Name: "universal_version", Value: c.universalVersion},
 		{Name: "env", Value: c.internalConfig.Env()},
 		{Name: "version", Value: c.internalConfig.Version()},
 		{Name: "trace_agent_url", Value: c.internalConfig.AgentURL().String()},
 		{Name: "agent_hostname", Value: c.internalConfig.Hostname()},
 		{Name: "runtime_metrics_v2_enabled", Value: c.internalConfig.RuntimeMetricsV2Enabled()},
-		{Name: "dogstatsd_addr", Value: c.dogstatsdAddr},
+		{Name: "dogstatsd_addr", Value: c.internalConfig.DogstatsdAddr()},
 		{Name: "profiling_endpoints_enabled", Value: c.internalConfig.ProfilerEndpoints()},
 		{Name: "debug_stack_enabled", Value: c.internalConfig.DebugStack()},
 		{Name: "profiling_hotspots_enabled", Value: c.internalConfig.ProfilerHotspotsEnabled()},
 		{Name: "trace_peer_service_defaults_enabled", Value: c.internalConfig.PeerServiceDefaultsEnabled()},
-		{Name: "orchestrion_enabled", Value: c.orchestrionCfg.Enabled, Origin: telemetry.OriginCode},
+		{Name: "orchestrion_enabled", Value: orchestrion.Enabled(), Origin: telemetry.OriginCode},
 		{Name: "trace_enabled", Value: traceEnabled, Origin: traceEnabledOrigin},
 		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
-		c.headerAsTags.toTelemetry(),
-		c.globalTags.toTelemetry(),
 		c.traceSampleRules.toTelemetry(),
 		{Name: "span_sample_rules", Value: c.spanRules},
 	}
@@ -79,15 +76,14 @@ func startTelemetry(c *config) telemetry.Client {
 			telemetry.Configuration{Name: "trace_propagation_style_inject", Value: chained.injectorNames})
 		telemetryConfigs = append(telemetryConfigs,
 			telemetry.Configuration{Name: "trace_propagation_style_extract", Value: chained.extractorsNames})
+		telemetryConfigs = append(telemetryConfigs,
+			telemetry.Configuration{Name: "trace_propagation_behavior_extract", Value: chained.propagationBehaviorExtract})
 	}
 	for k, v := range c.internalConfig.FeatureFlags() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: k, Value: v})
 	}
 	for k, v := range c.internalConfig.ServiceMappings() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "service_mapping_" + k, Value: v})
-	}
-	for k, v := range c.globalTags.get() {
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "global_tag_" + k, Value: v})
 	}
 	rules := append(c.spanRules, c.traceRules...)
 	for _, rule := range rules {
@@ -103,8 +99,8 @@ func startTelemetry(c *config) telemetry.Client {
 			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
-	if c.orchestrionCfg.Enabled {
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_version", Value: c.orchestrionCfg.Metadata.Version, Origin: telemetry.OriginCode})
+	if orchestrion.Enabled() {
+		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "orchestrion_version", Value: orchestrion.Version, Origin: telemetry.OriginCode})
 	}
 	telemetryConfigs = append(telemetryConfigs, additionalConfigs...)
 	telemetry.RegisterAppConfigs(telemetryConfigs...)
@@ -119,7 +115,7 @@ func startTelemetry(c *config) telemetry.Client {
 	if (!a.reachable || a.hasTelemetryProxy) && !c.internalConfig.LogToStdout() {
 		cfg.AgentURL = c.internalConfig.AgentURL().String()
 	}
-	if c.internalConfig.LogToStdout() || c.ciVisibilityAgentless {
+	if c.internalConfig.LogToStdout() || c.internalConfig.CIVisibilityAgentlessActive() {
 		cfg.APIKey = c.internalConfig.APIKey()
 	}
 	client, err := telemetry.NewClient(c.internalConfig.ServiceName(), c.internalConfig.Env(), c.internalConfig.Version(), cfg)
@@ -128,9 +124,9 @@ func startTelemetry(c *config) telemetry.Client {
 		return nil
 	}
 
-	if c.orchestrionCfg.Enabled {
+	if orchestrion.Enabled() {
 		// If orchestrion is enabled, report it to the back-end via a telemetry metric on every flush.
-		handle := client.Gauge(telemetry.NamespaceTracers, "orchestrion.enabled", []string{"version:" + c.orchestrionCfg.Metadata.Version})
+		handle := client.Gauge(telemetry.NamespaceTracers, "orchestrion.enabled", []string{"version:" + orchestrion.Version})
 		client.AddFlushTicker(func(_ telemetry.Client) { handle.Submit(1) })
 	}
 

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -85,15 +84,16 @@ func (c *SQLCommentCarrier) Inject(ctx *SpanContext) error {
 		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, sampled)
 		fallthrough
 	case DBMPropagationModeService:
-		if ctx != nil && ctx.span != nil {
-			if e, ok := getMeta(ctx.span, ext.Environment); ok && e != "" {
-				tags[sqlCommentEnv] = e
+		if ctx != nil {
+			spanSnapshot := ctx.getSpanSnapshot()
+			if spanSnapshot.env != "" {
+				tags[sqlCommentEnv] = spanSnapshot.env
 			}
-			if v, ok := getMeta(ctx.span, ext.Version); ok && v != "" {
-				tags[sqlCommentParentVersion] = v
+			if spanSnapshot.version != "" {
+				tags[sqlCommentParentVersion] = spanSnapshot.version
 			}
-			if v, ok := getMeta(ctx.span, ext.PeerService); ok && v != "" {
-				tags[sqlCommentPeerService] = v
+			if spanSnapshot.peerService != "" {
+				tags[sqlCommentPeerService] = spanSnapshot.peerService
 			}
 		}
 		if c.PeerDBName != "" {

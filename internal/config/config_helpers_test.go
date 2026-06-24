@@ -53,3 +53,38 @@ func TestResolveOTLPTraceURL(t *testing.T) {
 		assert.Equal(t, defaultLocalhost, got)
 	})
 }
+
+func TestValidateSendRetries(t *testing.T) {
+	tests := []struct {
+		name    string
+		retries int
+		want    bool
+	}{
+		{"negative rejected", -1, false},
+		{"zero accepted", 0, true},
+		{"positive accepted", 3, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, validateSendRetries(tt.retries))
+		})
+	}
+}
+
+func TestParseGlobalTags(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want map[string]any
+	}{
+		{"empty string returns nil", "", nil},
+		{"normal tag parsed", "k:v", map[string]any{"k": "v"}},
+		{"only git metadata cleaned to nil", "git.repository_url:x", nil},
+		{"git metadata stripped, normal tags kept", "k:v,git.commit.sha:abc", map[string]any{"k": "v"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, parseGlobalTags(tt.in))
+		})
+	}
+}

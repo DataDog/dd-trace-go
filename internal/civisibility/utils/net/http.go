@@ -51,15 +51,16 @@ type FormFile struct {
 
 // RequestConfig holds configuration for a request.
 type RequestConfig struct {
-	Method     string            // HTTP method: GET or POST
-	URL        string            // Request URL
-	Headers    map[string]string // Additional HTTP headers
-	Body       any               // Request body for JSON, MessagePack, or raw bytes
-	Format     string            // Format: "json" or "msgpack"
-	Compressed bool              // Whether to use gzip compression
-	Files      []FormFile        // Files to be uploaded in a multipart form data request
-	MaxRetries int               // Maximum number of retries
-	Backoff    time.Duration     // Initial backoff duration for retries
+	Method             string            // HTTP method: GET or POST
+	URL                string            // Request URL
+	Headers            map[string]string // Additional HTTP headers
+	Body               any               // Request body for JSON, MessagePack, or raw bytes
+	Format             string            // Format: "json" or "msgpack"
+	Compressed         bool              // Whether to use gzip compression
+	Files              []FormFile        // Files to be uploaded in a multipart form data request
+	MaxRetries         int               // Maximum number of retries
+	Backoff            time.Duration     // Initial backoff duration for retries
+	ExpectJSONResponse bool              // When true, a 2xx response with a non-JSON Content-Type is retried instead of being returned as-is
 }
 
 // Response represents the HTTP response with deserialization capabilities and status code.
@@ -168,6 +169,32 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 	}
 	if config.URL == "" {
 		return nil, errors.New("URL is required")
+	}
+
+	// Buffer one-shot io.Reader payloads so every retry attempt re-sends the
+	// full body rather than a drained reader. config is a local copy (value
+	// receiver), so we can safely overwrite its fields here.
+	if r, ok := config.Body.(io.Reader); ok {
+		buf, err := io.ReadAll(r)
+		if err != nil {
+			return nil, err
+		}
+		config.Body = buf
+	}
+	if len(config.Files) > 0 {
+		// Copy the slice to avoid mutating the caller's FormFile backing array.
+		files := make([]FormFile, len(config.Files))
+		copy(files, config.Files)
+		for i := range files {
+			if r, ok := files[i].Content.(io.Reader); ok {
+				buf, err := io.ReadAll(r)
+				if err != nil {
+					return nil, err
+				}
+				files[i].Content = buf
+			}
+		}
+		config.Files = files
 	}
 
 	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
@@ -319,7 +346,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return true, nil, err
+		log.Debug("ciVisibilityHttpClient: error reading response body = %s", err.Error())
+		exponentialBackoff(attempt, config.Backoff)
+		return false, nil, nil
 	}
 
 	// Decompress response if it is gzip compressed
@@ -328,7 +357,9 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		compressedResponse = true
 		responseBody, err = decompressData(responseBody)
 		if err != nil {
-			return true, nil, err
+			log.Debug("ciVisibilityHttpClient: error decompressing response body = %s", err.Error())
+			exponentialBackoff(attempt, config.Backoff)
+			return false, nil, nil
 		}
 	}
 
@@ -339,6 +370,18 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		if mediaType == ContentTypeJSON || mediaType == ContentTypeJSONAlternative {
 			responseFormat = FormatJSON
 		}
+	}
+
+	// When the caller requires a JSON response but the server returned something
+	// unrecognised (e.g. a keep-alive reuse EOF that Go promotes to a 200 with an
+	// empty/plain-text body), treat it as a transient failure and retry.  Upload
+	// endpoints that never decode the response body must leave ExpectJSONResponse
+	// false so they are unaffected.
+	if config.ExpectJSONResponse && responseFormat == "unknown" && statusCode >= 200 && statusCode < 300 {
+		log.Debug("ciVisibilityHttpClient: expected JSON response but got format %q [method: %s, url: %s, status_code: %d]; retrying",
+			responseFormat, config.Method, config.URL, statusCode)
+		exponentialBackoff(attempt, config.Backoff)
+		return false, nil, nil
 	}
 
 	if log.DebugEnabled() {

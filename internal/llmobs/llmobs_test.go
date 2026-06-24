@@ -267,6 +267,7 @@ func TestStartSpan(t *testing.T) {
 		experimentID := "exp-dist-123"
 		experimentRunID := "run-uuid-xyz"
 		experimentRunIteration := 3
+		experimentProjectID := "proj-dist-456"
 
 		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			ctx := req.Context()
@@ -281,6 +282,7 @@ func TestStartSpan(t *testing.T) {
 				ID:           experimentID,
 				RunID:        experimentRunID,
 				RunIteration: experimentRunIteration,
+				ProjectID:    experimentProjectID,
 			}, llmobs.StartSpanConfig{})
 			defer experimentSpan.Finish(llmobs.FinishSpanConfig{})
 
@@ -312,6 +314,7 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, experimentID, findTag(serverLLM.Tags, "experiment_id"), "server span should inherit experiment_id via baggage")
 		assert.Equal(t, experimentRunID, findTag(serverLLM.Tags, "run_id"), "server span should inherit run_id via baggage")
 		assert.Equal(t, fmt.Sprintf("%d", experimentRunIteration), findTag(serverLLM.Tags, "run_iteration"), "server span should inherit run_iteration via baggage")
+		assert.Equal(t, experimentProjectID, findTag(serverLLM.Tags, "project_id"), "server span should inherit project_id via baggage")
 	})
 	t.Run("custom-start-and-finish-times", func(t *testing.T) {
 		tt, ll := testTracer(t)
@@ -347,6 +350,117 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, customFinishTime.Sub(customStartTime).Nanoseconds(), l0.Duration)
 	})
 
+}
+
+func TestToolVersionPropagation(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("threaded-to-child-tool-span", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		llmSpan, llmCtx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-op", llmobs.StartSpanConfig{})
+		llmSpan.Annotate(llmobs.SpanAnnotations{
+			ToolDefinitions: []llmobs.ToolDefinition{
+				{Name: "search", ToolVersion: "2.0.0"},
+			},
+		})
+		toolSpan, _ := ll.StartSpan(llmCtx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+		llmSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 2)
+		require.Len(t, spans, 2)
+		var toolMeta map[string]any
+		for _, s := range spans {
+			if s.Meta["span.kind"] == "tool" {
+				toolMeta = s.Meta
+			}
+		}
+		require.NotNil(t, toolMeta)
+		assert.Equal(t, "2.0.0", toolMeta["tool.version"])
+	})
+
+	t.Run("no-version-when-tool-name-unmatched", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		llmSpan, llmCtx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-op", llmobs.StartSpanConfig{})
+		llmSpan.Annotate(llmobs.SpanAnnotations{
+			ToolDefinitions: []llmobs.ToolDefinition{
+				{Name: "other-tool", ToolVersion: "1.0.0"},
+			},
+		})
+		toolSpan, _ := ll.StartSpan(llmCtx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+		llmSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 2)
+		require.Len(t, spans, 2)
+		for _, s := range spans {
+			if s.Meta["span.kind"] == "tool" {
+				assert.NotContains(t, s.Meta, "tool.version")
+			}
+		}
+	})
+
+	t.Run("no-version-when-llm-parent-has-empty-tool-version", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		llmSpan, llmCtx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-op", llmobs.StartSpanConfig{})
+		llmSpan.Annotate(llmobs.SpanAnnotations{
+			ToolDefinitions: []llmobs.ToolDefinition{
+				{Name: "search"},
+			},
+		})
+		toolSpan, _ := ll.StartSpan(llmCtx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+		llmSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 2)
+		require.Len(t, spans, 2)
+		for _, s := range spans {
+			if s.Meta["span.kind"] == "tool" {
+				assert.NotContains(t, s.Meta, "tool.version")
+			}
+		}
+	})
+
+	t.Run("no-version-when-no-llm-parent", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		toolSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 1)
+		require.Len(t, spans, 1)
+		assert.NotContains(t, spans[0].Meta, "tool.version")
+	})
+
+	t.Run("skips-non-llm-parent-to-find-llm-ancestor", func(t *testing.T) {
+		tt, ll := testTracer(t)
+
+		llmSpan, llmCtx := ll.StartSpan(ctx, llmobs.SpanKindLLM, "llm-op", llmobs.StartSpanConfig{})
+		llmSpan.Annotate(llmobs.SpanAnnotations{
+			ToolDefinitions: []llmobs.ToolDefinition{
+				{Name: "search", ToolVersion: "3.0.0"},
+			},
+		})
+		agentSpan, agentCtx := ll.StartSpan(llmCtx, llmobs.SpanKindAgent, "agent-op", llmobs.StartSpanConfig{})
+		toolSpan, _ := ll.StartSpan(agentCtx, llmobs.SpanKindTool, "search", llmobs.StartSpanConfig{})
+		toolSpan.Finish(llmobs.FinishSpanConfig{})
+		agentSpan.Finish(llmobs.FinishSpanConfig{})
+		llmSpan.Finish(llmobs.FinishSpanConfig{})
+
+		spans := tt.WaitForLLMObsSpans(t, 3)
+		require.Len(t, spans, 3)
+		var toolMeta map[string]any
+		for _, s := range spans {
+			if s.Meta["span.kind"] == "tool" {
+				toolMeta = s.Meta
+			}
+		}
+		require.NotNil(t, toolMeta)
+		assert.Equal(t, "3.0.0", toolMeta["tool.version"])
+	})
 }
 
 func TestSpanAnnotate(t *testing.T) {
@@ -864,6 +978,158 @@ func TestSpanAnnotate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSpanAnnotateCostTags(t *testing.T) {
+	t.Run("sets-cost-tags-on-span-event-metadata", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml", "feature": "chatbot", "debug_id": "abc"},
+			CostTags: []string{"team", "feature"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"team", "feature"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("dedupes-cost-tags-across-annotations", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml", "feature": "chatbot"},
+			CostTags: []string{"team", "feature", "team"},
+		})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"project": "alpha"},
+			CostTags: []string{"feature", "project"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"team", "feature", "project"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("skips-cost-tags-that-do-not-reference-span-tags", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml"},
+			CostTags: []string{"team", "missing"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"team"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("references-tags-from-a-prior-annotation", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{Tags: map[string]string{"team": "ml"}})
+		span.Annotate(llmobs.SpanAnnotations{CostTags: []string{"team"}})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"team"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("empty-list-does-not-create-metadata-dd", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml"},
+			CostTags: []string{},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.NotContains(t, llmSpans[0].Meta, "metadata")
+	})
+
+	t.Run("preserves-existing-metadata-dd-fields", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Metadata: map[string]any{"_dd": map[string]any{"existing": "value"}},
+			Tags:     map[string]string{"team": "ml"},
+			CostTags: []string{"team"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		metadata := llmSpans[0].Meta["metadata"].(map[string]any)
+		ddMetadata := metadata["_dd"].(map[string]any)
+		assert.Equal(t, "value", ddMetadata["existing"])
+		assert.Equal(t, []any{"team"}, ddMetadata["cost_tags"])
+	})
+
+	t.Run("serializes-cost-tags-on-non-llm-span", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{
+			Tags:     map[string]string{"team": "ml"},
+			CostTags: []string{"team"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, "workflow", llmSpans[0].Meta["span.kind"])
+		assert.Equal(t, []any{"team"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("references-session-id-from-start-config", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{
+			SessionID: "session-123",
+		})
+		span.Annotate(llmobs.SpanAnnotations{
+			CostTags: []string{"session_id"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, "session-123", llmSpans[0].SessionID)
+		assert.Equal(t, []any{"session_id"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("references-sdk-injected-tags", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{
+			MLApp: "custom-app",
+		})
+		span.Annotate(llmobs.SpanAnnotations{
+			CostTags: []string{"ml_app", "language"},
+		})
+		span.Finish(llmobs.FinishSpanConfig{})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.Equal(t, []any{"ml_app", "language"}, costTagsFromSpan(t, llmSpans[0]))
+	})
+
+	t.Run("drops-cost-tags-annotated-after-finish", func(t *testing.T) {
+		tt, ll := testTracer(t)
+		span, _ := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{Tags: map[string]string{"team": "ml"}})
+		span.Finish(llmobs.FinishSpanConfig{})
+		span.Annotate(llmobs.SpanAnnotations{CostTags: []string{"team"}})
+
+		llmSpans := tt.WaitForLLMObsSpans(t, 1)
+		assert.NotContains(t, llmSpans[0].Meta, "metadata")
+	})
+}
+
+func costTagsFromSpan(t *testing.T, span llmobstransport.LLMObsSpanEvent) []any {
+	t.Helper()
+
+	metadata, ok := span.Meta["metadata"].(map[string]any)
+	require.True(t, ok, "metadata should be present")
+	ddMetadata, ok := metadata["_dd"].(map[string]any)
+	require.True(t, ok, "metadata._dd should be present")
+	costTags, ok := ddMetadata["cost_tags"].([]any)
+	require.True(t, ok, "metadata._dd.cost_tags should be present")
+	return costTags
 }
 
 func TestSpanTruncation(t *testing.T) {
@@ -2193,10 +2459,12 @@ func TestDDAttributes(t *testing.T) {
 		experimentID := "test-experiment-789"
 		experimentRunID := "run-uuid-abc"
 		experimentRunIteration := 2
+		experimentProjectID := "test-project-789"
 		parentSpan, ctx := ll.StartExperimentSpan(ctx, "parent-experiment", llmobs.ExperimentInfo{
 			ID:           experimentID,
 			RunID:        experimentRunID,
 			RunIteration: experimentRunIteration,
+			ProjectID:    experimentProjectID,
 		}, llmobs.StartSpanConfig{})
 		childSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "child-llm", llmobs.StartSpanConfig{})
 
@@ -2214,6 +2482,7 @@ func TestDDAttributes(t *testing.T) {
 		require.NotNil(t, childLLM, "Child LLM span should exist")
 		assert.Contains(t, childLLM.Tags, "run_id:"+experimentRunID, "Child span should inherit run_id from baggage")
 		assert.Contains(t, childLLM.Tags, "run_iteration:2", "Child span should inherit run_iteration from baggage")
+		assert.Contains(t, childLLM.Tags, "project_id:"+experimentProjectID, "Child span should inherit project_id from baggage")
 	})
 	t.Run("child-span-trace-ids", func(t *testing.T) {
 		tt, ll := testTracer(t)

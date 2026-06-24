@@ -24,6 +24,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -275,7 +276,7 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 			defer countingSrv.Close()
 
 			w := newTestOTLPWriter(t, srv, func(c *config) {
-				c.sendRetries = tc.configRetries
+				c.internalConfig.SetSendRetries(tc.configRetries, internalconfig.OriginCode)
 				c.internalConfig.SetRetryInterval(time.Millisecond, internalconfig.OriginCode)
 			})
 			w.transport = newOTLPTransport(countingSrv.Client(), countingSrv.URL, nil)
@@ -447,4 +448,35 @@ func TestOTLPWriterDoesNotReuseAgentHTTPClient(t *testing.T) {
 	w.stop()
 
 	assert.Equal(t, 1, srv.requestCount(), "OTLP writer should reach TCP server, not the UDS agent socket")
+}
+
+// TestOTLPWriterProcessTagsDisabled verifies that _dd.tags.process does not
+// appear in OTLP output when the feature is disabled. End-to-end coverage for
+// the enabled path (via setTraceTagsLocked → span.meta → convertSpanAttributes)
+// lives in TestOTLPExportModeProcessTags.
+func TestOTLPWriterProcessTagsDisabled(t *testing.T) {
+	t.Cleanup(processtags.Reload)
+	t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+	processtags.Reload()
+
+	srv := newTestOTLPServer()
+	defer srv.Close()
+	w := newTestOTLPWriter(t, srv)
+
+	w.add([]*Span{newSpan("op1", "svc", "res", 1, 1, 0), newSpan("op2", "svc", "res", 2, 1, 1)})
+	w.stop()
+
+	for _, data := range srv.getPayloads() {
+		var td otlptrace.TracesData
+		require.NoError(t, proto.Unmarshal(data, &td))
+		for _, rs := range td.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				for i, s := range ss.Spans {
+					for _, attr := range s.Attributes {
+						assert.NotEqual(t, keyProcessTags, attr.Key, "span %d must not carry process tags when disabled", i)
+					}
+				}
+			}
+		}
+	}
 }

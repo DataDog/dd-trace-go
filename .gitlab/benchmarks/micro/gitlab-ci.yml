@@ -78,10 +78,18 @@ microbenchmarks-1:
 microbenchmarks-2:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
+    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-2"
+
+microbenchmarks-3:
+  extends: .microbenchmarks
+  variables:
+    BENCHMARKS: "BenchmarkOpenFeatureClientEvaluation|BenchmarkOpenFeatureClientConcurrentEvaluations|BenchmarkBooleanEvaluation|BenchmarkStringEvaluation|BenchmarkIntEvaluation|BenchmarkFloatEvaluation|BenchmarkEvaluation|BenchmarkEvaluationWithVaryingContextSize|BenchmarkEvaluationWithVaryingFlagCounts|BenchmarkConcurrentEvaluations"
+    CPUS_PER_BENCHMARK: 1
+    REPETITIONS: 10
+    GROUP_ID: "group-3"
 
 pr-performance-gates:
   stage: microbenchmarks
