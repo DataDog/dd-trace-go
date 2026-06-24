@@ -110,7 +110,7 @@ func (t *TokenTicker) updateBucket(startTime time.Time, ticksChan <-chan time.Ti
 // The ticker is set to tick at a fixed rate of 500us.
 func (t *TokenTicker) Start() {
 	timeNow := time.Now()
-	t.ticker = time.NewTicker(500 * time.Microsecond)
+	t.ticker = time.NewTicker(1 * time.Hour)
 	t.start(timeNow, t.ticker.C, nil)
 }
 
