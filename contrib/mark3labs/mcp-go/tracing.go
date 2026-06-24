@@ -33,7 +33,13 @@ func appendTracingHooks(hooks *server.Hooks) {
 
 var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)))
+		startOpts := []llmobs.StartSpanOption{
+			llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)),
+		}
+		if session := server.ClientSessionFromContext(ctx); session != nil {
+			startOpts = append(startOpts, llmobs.WithSessionID(session.SessionID()))
+		}
+		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, startOpts...)
 
 		var result *mcp.CallToolResult
 		var err error
