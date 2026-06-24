@@ -594,8 +594,8 @@ func TestOnRCUpdate(t *testing.T) {
 					"testcard": "1234567890",
 				},
 			},
-			Scope: addresses.WAFScope,
-		}.ToLibddwaf())
+			TimerKey: addresses.WAFScope,
+		})
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{
 			"_dd.appsec.s.req.bodytest": []any{map[string]any{
@@ -757,7 +757,7 @@ func TestWafRCUpdate(t *testing.T) {
 		}
 
 		// Make sure the rule matches as expected
-		result, err := wafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, Scope: addresses.WAFScope}.ToLibddwaf())
+		result, err := wafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, TimerKey: addresses.WAFScope})
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
@@ -772,7 +772,7 @@ func TestWafRCUpdate(t *testing.T) {
 		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result, err = newWafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, Scope: addresses.WAFScope}.ToLibddwaf())
+		result, err = newWafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, TimerKey: addresses.WAFScope})
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block_request")

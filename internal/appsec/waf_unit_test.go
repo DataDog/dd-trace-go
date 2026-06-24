@@ -128,9 +128,9 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 						"query": {"$http_server_vars"},
 					},
 				},
-				Scope: addresses.WAFScope,
+				TimerKey: addresses.WAFScope,
 			}
-			res, err := wafCtx.Run(context.Background(), runData.ToLibddwaf())
+			res, err := wafCtx.Run(context.Background(), runData)
 			require.NoError(t, err)
 			require.NotNil(t, res)
 			require.True(t, res.HasDerivatives())
@@ -203,11 +203,10 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 				Data: map[string]any{
 					"waf.context.processor": map[string]any{"extract-schema": true},
 				},
-				Ephemeral: true,
 			}
 			maps.Copy(runData.Data, tc.addresses)
 
-			wafRes, err := wafCtx.Run(context.Background(), runData.ToLibddwaf())
+			wafRes, err := wafCtx.Run(context.Background(), runData)
 			require.NoError(t, err)
 			require.True(t, wafRes.HasDerivatives())
 			for k, v := range wafRes.Derivatives {

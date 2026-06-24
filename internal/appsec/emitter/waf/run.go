@@ -32,7 +32,6 @@ type wafRunner interface {
 func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs addresses.RunAddressData) {
 	ctx := op.context.Load()
 	if ctx == nil { // Context was closed concurrently
-		op.skipRASPRuleAfterRequest(addrs)
 		return
 	}
 
@@ -40,7 +39,7 @@ func (op *ContextOperation) Run(eventReceiver dyngo.Operation, addrs addresses.R
 }
 
 func (op *ContextOperation) skipRASPRuleAfterRequest(addrs addresses.RunAddressData) {
-	if addrs.Scope != addresses.RASPScope || op.metrics == nil {
+	if addrs.TimerKey != addresses.RASPScope || op.metrics == nil {
 		return
 	}
 	if ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs); ok {
@@ -58,7 +57,7 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner wafRunn
 		return !ok
 	})
 
-	result, err := runner.Run(context.Background(), addrs.ToLibddwaf())
+	result, err := runner.Run(context.Background(), addrs)
 	if errors.Is(err, waferrors.ErrTimeout) {
 		log.Debug("appsec: WAF timeout value reached: %s", err.Error())
 	}
@@ -93,7 +92,7 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner wafRunn
 	})
 }
 
-// RunSimple runs the WAF with the given address data and returns an error that should be forwarded to the caller
+// RunSimple runs PERSISTENT address data on the request Context (HTTP body, etc.).
 func RunSimple(ctx context.Context, addrs addresses.RunAddressData, errorLog string) error {
 	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil {
@@ -107,21 +106,32 @@ func RunSimple(ctx context.Context, addrs addresses.RunAddressData, errorLog str
 		err = e
 	})
 
-	if addrs.Ephemeral {
-		ctxOp, ok := dyngo.FindOperation[ContextOperation](ctx)
-		if !ok {
-			log.Error("%s", errorLog)
-			return nil
-		}
-		subOp := ctxOp.NewSubcontextOp()
-		defer subOp.Close()
-		subOp.Run(op, addrs)
-		return err
-	}
-
 	dyngo.EmitData(op, RunEvent{
 		Operation:      op,
 		RunAddressData: addrs,
 	})
+	return err
+}
+
+// RunSimpleSubcontext runs EPHEMERAL address data on a short-lived subcontext (gRPC messages, etc.).
+func RunSimpleSubcontext(ctx context.Context, addrs addresses.RunAddressData, errorLog string) error {
+	parent, _ := dyngo.FromContext(ctx)
+	if parent == nil {
+		log.Error("%s", errorLog)
+		return nil
+	}
+	ctxOp, ok := dyngo.FindOperation[ContextOperation](ctx)
+	if !ok {
+		log.Error("%s", errorLog)
+		return nil
+	}
+	var err error
+	op := dyngo.NewOperation(parent)
+	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
+		err = e
+	})
+	subOp := ctxOp.NewSubcontextOp()
+	defer subOp.Close()
+	subOp.Run(op, addrs)
 	return err
 }

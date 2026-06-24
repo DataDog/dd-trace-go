@@ -43,7 +43,7 @@ func (r RASPRuleType) String() string {
 
 // RASPRuleTypeFromAddressSet returns the RASPRuleType for the given address set if it has a RASP address.
 func RASPRuleTypeFromAddressSet(addressSet RunAddressData) (RASPRuleType, bool) {
-	if !addressSet.Ephemeral || addressSet.Scope != RASPScope {
+	if addressSet.TimerKey != RASPScope {
 		return math.MaxUint8, false
 	}
 

@@ -30,6 +30,10 @@ const ssrfURL = "http://169.254.169.254/latest/meta-data"
 const ssrfPayload = "169.254.169.254"
 
 func TestSubcontextOperation_uses_subcontext_and_closes_it(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+
 	ctxOp, wafCtx, _ := newSubcontextTestOperation(t)
 	subOp := ctxOp.NewSubcontextOp()
 	require.NotNil(t, subOp.subcontext)
@@ -39,8 +43,7 @@ func TestSubcontextOperation_uses_subcontext_and_closes_it(t *testing.T) {
 		Data: map[string]any{
 			addresses.ServerIONetURLAddr: oversizedURL,
 		},
-		Scope:     addresses.RASPScope,
-		Ephemeral: true,
+		TimerKey: addresses.RASPScope,
 	})
 
 	require.NotEmpty(t, subOp.subcontext.Truncations().StringTooLong)
@@ -52,6 +55,10 @@ func TestSubcontextOperation_uses_subcontext_and_closes_it(t *testing.T) {
 }
 
 func TestSubcontextOperation_aggregates_truncations_and_external_rasp_timer(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+
 	ctxOp, _, metrics := newSubcontextTestOperation(t)
 	subOp := ctxOp.NewSubcontextOp()
 	require.NotNil(t, subOp.subcontext)
@@ -60,8 +67,7 @@ func TestSubcontextOperation_aggregates_truncations_and_external_rasp_timer(t *t
 		Data: map[string]any{
 			addresses.ServerIONetURLAddr: "http://example.com/" + strings.Repeat("b", 70000),
 		},
-		Scope:     addresses.RASPScope,
-		Ephemeral: true,
+		TimerKey: addresses.RASPScope,
 	})
 	subOp.Close()
 
@@ -71,6 +77,10 @@ func TestSubcontextOperation_aggregates_truncations_and_external_rasp_timer(t *t
 }
 
 func TestSubcontextOperation_does_not_refire_ssrf_request_on_response_run(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+
 	telemetryClient := new(telemetrytest.RecordClient)
 	previousClient := telemetry.SwapClient(telemetryClient)
 	t.Cleanup(func() { telemetry.SwapClient(previousClient) })
@@ -110,6 +120,10 @@ func TestSubcontextOperation_does_not_refire_ssrf_request_on_response_run(t *tes
 }
 
 func TestSubcontextOperation_filters_unsupported_addresses_before_encoding(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+
 	ctxOp, _, _ := newSubcontextTestOperation(t)
 	ctxOp.SetSupportedAddresses(config.NewAddressSet([]string{addresses.ServerIONetURLAddr}))
 	subOp := ctxOp.NewSubcontextOp()
@@ -120,7 +134,7 @@ func TestSubcontextOperation_filters_unsupported_addresses_before_encoding(t *te
 		addresses.ServerIONetURLAddr:            ssrfURL,
 		addresses.GRPCServerResponseMessageAddr: map[string]any{"unsupported": strings.Repeat("x", 70000)},
 	}
-	subOp.Run(ctxOp, addresses.RunAddressData{Data: data, Scope: addresses.RASPScope, Ephemeral: true})
+	subOp.Run(ctxOp, addresses.RunAddressData{Data: data, TimerKey: addresses.RASPScope})
 
 	require.Contains(t, data, addresses.ServerIONetURLAddr)
 	require.NotContains(t, data, addresses.GRPCServerResponseMessageAddr)
@@ -186,7 +200,7 @@ func seedRequestContext(t *testing.T, ctxOp *ContextOperation) {
 				"payload": {ssrfPayload},
 			},
 		},
-		Scope: addresses.WAFScope,
+		TimerKey: addresses.WAFScope,
 	})
 }
 
@@ -199,8 +213,7 @@ func ssrfRequestRunData() addresses.RunAddressData {
 				"host": {"169.254.169.254"},
 			},
 		},
-		Scope:     addresses.RASPScope,
-		Ephemeral: true,
+		TimerKey: addresses.RASPScope,
 	}
 }
 
@@ -212,8 +225,7 @@ func ssrfResponseRunData() addresses.RunAddressData {
 				"content-type": {"text/plain"},
 			},
 		},
-		Scope:     addresses.RASPScope,
-		Ephemeral: true,
+		TimerKey: addresses.RASPScope,
 	}
 }
 

@@ -997,8 +997,8 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 						"param": "value",
 					},
 				},
-				Scope: addresses.WAFScope,
-			}.ToLibddwaf())
+				TimerKey: addresses.WAFScope,
+			})
 
 		if err != nil {
 			b.Fatalf("error running waf: %v", err)
@@ -1015,8 +1015,8 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 					},
 					addresses.ServerResponseStatusAddr: 200,
 				},
-				Scope: addresses.WAFScope,
-			}.ToLibddwaf())
+				TimerKey: addresses.WAFScope,
+			})
 
 		if err != nil {
 			b.Fatalf("error running waf: %v", err)
@@ -1139,8 +1139,7 @@ func TestAPI10ResponseBody(t *testing.T) {
 		Data: map[string]any{
 			addresses.ServerIONetResponseBodyAddr: encodable,
 		},
-		Ephemeral: true,
-	}.ToLibddwaf())
+	})
 
 	require.NoError(t, err)
 

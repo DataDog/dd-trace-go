@@ -10,56 +10,36 @@ import (
 	"strconv"
 
 	libddwaf "github.com/DataDog/go-libddwaf/v5"
-	"github.com/DataDog/go-libddwaf/v5/timer"
 )
 
 const contextProcessKey = "waf.context.processor"
 
-type RunAddressData struct {
-	Data      map[string]any
-	Scope     timer.Key
-	Ephemeral bool
-}
-
-func (d RunAddressData) ToLibddwaf() libddwaf.RunAddressData {
-	var runData libddwaf.RunAddressData
-	runData.Data = d.Data
-	runData.TimerKey = d.Scope
-	return runData
-}
+type RunAddressData = libddwaf.RunAddressData
 
 type RunAddressDataBuilder struct {
 	data RunAddressData
-
-	// These booleans preserve the old v4 Persistent/Ephemeral split while all addresses are stored in data.Data.
-	// Build asserts that callers did not add both lifetimes to the same WAF run.
-	hasPersistent bool
-	hasEphemeral  bool
 }
 
 func NewAddressesBuilder() *RunAddressDataBuilder {
 	return &RunAddressDataBuilder{
 		data: RunAddressData{
-			Data:  make(map[string]any, 1),
-			Scope: WAFScope,
+			Data:     make(map[string]any, 1),
+			TimerKey: WAFScope,
 		},
 	}
 }
 
 func (b *RunAddressDataBuilder) setPersistent(address string, value any) {
 	b.data.Data[address] = value
-	b.hasPersistent = true
 }
 
 func (b *RunAddressDataBuilder) setEphemeral(address string, value any) {
 	b.data.Data[address] = value
-	b.data.Ephemeral = true
-	b.hasEphemeral = true
 }
 
 func (b *RunAddressDataBuilder) setRASPEphemeral(address string, value any) {
 	b.setEphemeral(address, value)
-	b.data.Scope = RASPScope
+	b.data.TimerKey = RASPScope
 }
 
 func (b *RunAddressDataBuilder) WithMethod(method string) *RunAddressDataBuilder {
@@ -359,8 +339,5 @@ func (b *RunAddressDataBuilder) NoExtractSchema() *RunAddressDataBuilder {
 }
 
 func (b *RunAddressDataBuilder) Build() RunAddressData {
-	if b.hasPersistent && b.hasEphemeral {
-		panic("addresses: persistent and ephemeral addresses cannot be mixed in a single run")
-	}
 	return b.data
 }

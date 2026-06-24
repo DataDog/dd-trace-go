@@ -29,6 +29,10 @@ import (
 )
 
 func TestProtectRoundTrip_closes_shared_subcontext_when_ssrf_request_blocks(t *testing.T) {
+	if ok, _ := libddwaf.Usable(); !ok {
+		t.Skip("WAF cannot be used")
+	}
+
 	handle := newRASPTestHandle(t)
 	wafCtx, err := handle.NewContext(context.Background(), timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
 	require.NoError(t, err)
@@ -103,6 +107,6 @@ func seedRoundTripRequestContext(t *testing.T, ctxOp *wafemitter.ContextOperatio
 				"payload": {"169.254.169.254"},
 			},
 		},
-		Scope: addresses.WAFScope,
+		TimerKey: addresses.WAFScope,
 	})
 }

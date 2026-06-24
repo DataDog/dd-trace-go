@@ -38,7 +38,7 @@ func (op *ContextOperation) NewSubcontextOp() *SubcontextOperation {
 }
 
 func (sub *SubcontextOperation) Run(eventReceiver dyngo.Operation, addrs addresses.RunAddressData) {
-	sub.scope = addrs.Scope
+	sub.scope = addrs.TimerKey
 	if sub.subcontext == nil {
 		sub.contextOp.skipRASPRuleAfterRequest(addrs)
 		return

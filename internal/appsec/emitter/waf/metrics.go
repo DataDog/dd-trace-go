@@ -363,10 +363,10 @@ func (m *ContextMetrics) incWafRequestsCounts() {
 // - `waf.duration`
 func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerStats map[timer.Key]time.Duration, tags RequestMilestones) {
 	for key, value := range timerStats {
-		m.SumDurations[addrs.Scope][key].Add(int64(value))
+		m.SumDurations[addrs.TimerKey][key].Add(int64(value))
 	}
 
-	switch addrs.Scope {
+	switch addrs.TimerKey {
 	case addresses.RASPScope:
 		m.SumRASPCalls.Add(1)
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
@@ -412,7 +412,7 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 			m.Milestones.wafError = true
 		}
 	default:
-		m.logger.Error("unexpected scope name", slog.String("scope", string(addrs.Scope)))
+		m.logger.Error("unexpected scope name", slog.String("scope", string(addrs.TimerKey)))
 	}
 }
 
@@ -426,7 +426,7 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 	}
 
 	if !errors.Is(in, waferrors.ErrTimeout) {
-		switch addrs.Scope {
+		switch addrs.TimerKey {
 		case addresses.RASPScope:
 			m.RecordException(ExceptionTypeRASP, in)
 		default:
@@ -434,7 +434,7 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 		}
 	}
 
-	switch addrs.Scope {
+	switch addrs.TimerKey {
 	case addresses.RASPScope:
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
@@ -445,7 +445,7 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 	case addresses.WAFScope, "":
 		m.wafError(in)
 	default:
-		m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unexpected WAF error scope %q: %w", addrs.Scope, in))
+		m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unexpected WAF error scope %q: %w", addrs.TimerKey, in))
 	}
 }
 
