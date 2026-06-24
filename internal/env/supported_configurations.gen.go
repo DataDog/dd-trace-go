@@ -185,6 +185,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_GOCQL_COMPAT":                                           {},
 	"DD_TRACE_GOJI_ANALYTICS_ENABLED":                                 {},
 	"DD_TRACE_GOOGLE_API_ANALYTICS_ENABLED":                           {},
+	"DD_TRACE_GOOGLE_GENAI_ANALYTICS_ENABLED":                         {},
 	"DD_TRACE_GOPG_ANALYTICS_ENABLED":                                 {},
 	"DD_TRACE_GQLGEN_ANALYTICS_ENABLED":                               {},
 	"DD_TRACE_GRAPHQL_ANALYTICS_ENABLED":                              {},

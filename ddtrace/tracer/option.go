@@ -86,6 +86,7 @@ var contribIntegrations = map[string]struct {
 	"github.com/gofiber/fiber/v2":                   {"Fiber", false},
 	"github.com/gomodule/redigo":                    {"Redigo", false},
 	"google.golang.org/api":                         {"Google API", false},
+	"google.golang.org/genai":                       {"Google GenAI", false},
 	"google.golang.org/grpc":                        {"gRPC", false},
 	"github.com/gorilla/mux":                        {"Gorilla Mux", false},
 	"gorm.io/gorm.v1":                               {"Gorm v1", false},
