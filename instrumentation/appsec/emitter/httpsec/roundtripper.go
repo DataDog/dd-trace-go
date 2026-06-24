@@ -127,8 +127,8 @@ func ProtectRoundTrip(ctx context.Context, req *http.Request) (func(*http.Respon
 }
 
 func (op *RoundTripOperation) Finish(res RoundTripOperationRes) {
+	defer op.SubcontextOperation.Close()
 	dyngo.FinishOperation(op, res)
-	op.SubcontextOperation.Close()
 }
 
 func (r *RoundTripOperation) URL() string {

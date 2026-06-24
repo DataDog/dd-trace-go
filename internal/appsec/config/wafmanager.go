@@ -106,9 +106,9 @@ func (m *WAFManager) configPaths(filter string) ([]string, error) {
 // version of the rules that were used to build it.
 func (m *WAFManager) NewHandle() (*libddwaf.Handle, string) {
 	m.mu.RLock()
+	defer m.mu.RUnlock()
 	rulesVersion := m.rulesVersion
 	hdl, err := m.builder.Build()
-	m.mu.RUnlock()
 	if err != nil {
 		telemetrylog.Error("failed to build WAF handle", slog.Any("error", telemetrylog.NewSafeError(err)))
 	}
