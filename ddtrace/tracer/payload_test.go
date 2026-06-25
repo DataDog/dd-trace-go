@@ -1154,6 +1154,35 @@ func BenchmarkPayloadVersions(b *testing.B) {
 				_, _ = p.push(metaStructSpans)
 			}
 		})
+
+		b.Run(fmt.Sprintf("spankind_%dspans/v0.4", n), func(b *testing.B) {
+			newSpans := newSpanList(n)
+			for _, s := range newSpans {
+				s.meta.Set(ext.SpanKind, ext.SpanKindInternal)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p := newPayloadV04()
+				_, _ = p.push(newSpans)
+			}
+		})
+
+		b.Run(fmt.Sprintf("spankind_%dspans/v1.0", n), func(b *testing.B) {
+			newSpans := newSpanList(n)
+			for _, s := range newSpans {
+				s.meta.Set(ext.SpanKind, ext.SpanKindInternal)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				p := getPayloadV1()
+				_, _ = p.push(newSpans)
+				putPayloadV1(p)
+			}
+		})
 	}
 }
 
