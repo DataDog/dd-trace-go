@@ -156,6 +156,11 @@ type Client struct {
 	endpoint   string
 	repository *rc.Repository
 	stop       chan struct{}
+	// pollNow signals the poll loop to perform an out-of-cycle config request,
+	// e.g. right after a product or capability is registered, so the first
+	// useful poll does not have to wait a full PollInterval. It is buffered
+	// (size 1) so signals coalesce and senders never block.
+	pollNow chan struct{}
 
 	// When acquiring several locks and using defer to release them, make sure to acquire the locks in the following order:
 	callbacks       []Callback
@@ -212,6 +217,7 @@ func newClient(config ClientConfig) (*Client, error) {
 		endpoint:     fmt.Sprintf("%s/v0.7/config", config.AgentURL),
 		repository:   repo,
 		stop:         make(chan struct{}),
+		pollNow:      make(chan struct{}, 1),
 		lastError:    nil,
 		callbacks:    []Callback{},
 		capabilities: map[Capability]struct{}{},
@@ -243,6 +249,7 @@ func Start(config ClientConfig) error {
 	var (
 		pollInterval = client.PollInterval
 		stop         = client.stop
+		pollNow      = client.pollNow
 	)
 	go func() {
 		ticker := time.NewTicker(pollInterval)
@@ -253,6 +260,18 @@ func Start(config ClientConfig) error {
 			case <-stop:
 				close(stop)
 				return
+			case <-pollNow:
+				// An out-of-cycle poll was requested (e.g. a product or
+				// capability was just registered). Poll immediately so the first
+				// useful request does not wait a full PollInterval, then realign
+				// the ticker so the steady-state cadence is measured from here.
+				if client == nil {
+					return
+				}
+				client.Lock()
+				client.updateState()
+				client.Unlock()
+				ticker.Reset(pollInterval)
 			case <-ticker.C:
 				if client == nil {
 					return
@@ -377,6 +396,17 @@ func (c *Client) updateState() {
 	c.lastError = c.applyUpdate(&update)
 }
 
+// requestPoll asks the poll loop to perform an out-of-cycle configuration
+// request. It is non-blocking: if a poll is already pending, the signal is
+// coalesced (pollNow is buffered with size 1). Safe to call while holding the
+// client's other locks since it never blocks and acquires no locks.
+func (c *Client) requestPoll() {
+	select {
+	case c.pollNow <- struct{}{}:
+	default:
+	}
+}
+
 type SubscriptionToken int
 
 // Subscribe registers a product and its callback to be invoked when the client
@@ -419,6 +449,9 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 	for _, cap := range capabilities {
 		client.capabilities[cap] = struct{}{}
 	}
+	// Trigger an immediate poll so the newly-advertised product/capabilities are
+	// fetched on the next request rather than after a full PollInterval.
+	client.requestPoll()
 	return SubscriptionToken(id), nil
 }
 
@@ -485,6 +518,9 @@ func RegisterProduct(p string) error {
 	}
 
 	client.products[p] = struct{}{}
+	// Trigger an immediate poll so the newly-registered product is fetched on the
+	// next request rather than after a full PollInterval.
+	client.requestPoll()
 	return nil
 }
 
@@ -532,6 +568,9 @@ func RegisterCapability(cpb Capability) error {
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
 	client.capabilities[cpb] = struct{}{}
+	// Trigger an immediate poll so the newly-registered capability is advertised
+	// on the next request rather than after a full PollInterval.
+	client.requestPoll()
 	return nil
 }
 

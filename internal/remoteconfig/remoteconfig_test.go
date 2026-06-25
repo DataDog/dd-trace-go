@@ -10,9 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -598,5 +601,53 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("allCapabilities deadlocked with concurrent subscribe")
+	}
+}
+
+// TestPollOnRegistration verifies that registering a product or capability
+// triggers an immediate out-of-cycle config poll rather than waiting a full
+// PollInterval. This brings dd-trace-go to parity with the other server SDKs
+// (see FFL-2604).
+func TestPollOnRegistration(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+
+	register := map[string]func() error{
+		"Subscribe": func() error {
+			_, err := Subscribe("TEST_PRODUCT", func(ProductUpdate) map[string]state.ApplyStatus { return nil }, FFEFlagEvaluation)
+			return err
+		},
+		"RegisterProduct":    func() error { return RegisterProduct("TEST_PRODUCT") },
+		"RegisterCapability": func() error { return RegisterCapability(FFEFlagEvaluation) },
+	}
+
+	for name, reg := range register {
+		t.Run(name, func(t *testing.T) {
+			// Reset the package-global RC singleton up front so the test is
+			// robust to ordering and to a prior test panicking before cleanup.
+			Reset()
+			defer Stop()
+
+			var polls int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				atomic.AddInt64(&polls, 1)
+				w.Write([]byte(`{}`))
+			}))
+			defer srv.Close()
+
+			cfg := DefaultClientConfig()
+			cfg.AgentURL = srv.URL
+			cfg.ServiceName = "test"
+			// A long interval so any poll observed within the test window must be
+			// the out-of-cycle poll triggered by registration, not a scheduled tick.
+			cfg.PollInterval = time.Hour
+			require.NoError(t, Start(cfg))
+
+			require.NoError(t, reg())
+
+			require.Eventually(t, func() bool {
+				return atomic.LoadInt64(&polls) >= 1
+			}, 5*time.Second, 5*time.Millisecond,
+				name+" should trigger an out-of-cycle poll well before PollInterval elapses")
+		})
 	}
 }
