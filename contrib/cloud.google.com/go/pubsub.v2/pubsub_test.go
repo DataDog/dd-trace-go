@@ -274,6 +274,83 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 	assert.Equal("cloud.google.com/go/pubsub.v2", spans[0].Integration())
 }
 
+func TestPropagationAsSpanLinksOption(t *testing.T) {
+	assert := assert.New(t)
+	ctx, cancel, mt, pub, sub := setup(t)
+
+	// Publisher
+	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test")
+	_, err := Publish(pctx, pub, &pubsub.Message{Data: []byte("hello")}).Get(pctx)
+	assert.NoError(err)
+	span.Finish()
+
+	// Subscriber with WithPropagationAsSpanLinks option
+	var called bool
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+		assert.False(called, "callback called twice")
+		msg.Ack()
+		called = true
+		cancel()
+	}, WithPropagationAsSpanLinks()))
+	assert.True(called, "callback not called")
+	assert.NoError(err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3, "wrong number of spans")
+
+	publishSpan := spans[0]
+	assert.Equal("pubsub.publish", publishSpan.OperationName())
+
+	receiveSpan := spans[2]
+	assert.Equal("pubsub.receive", receiveSpan.OperationName())
+
+	// Receive span must NOT share the producer trace — traces stay separate.
+	assert.NotEqual(publishSpan.TraceID(), receiveSpan.TraceID(), "receive span should start a new trace")
+	assert.Equal(uint64(0), receiveSpan.ParentID(), "receive span should have no parent")
+
+	// The pubsub.publish span must appear as a span link on the receive span.
+	links := receiveSpan.Links()
+	require.Len(t, links, 1, "expected exactly one span link")
+	assert.Equal(publishSpan.SpanID(), links[0].SpanID, "span link should point to publish span")
+}
+
+func TestPropagationAsSpanLinksEnvVar(t *testing.T) {
+	t.Setenv("DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS", "true")
+
+	assert := assert.New(t)
+	ctx, cancel, mt, pub, sub := setup(t)
+
+	// Publisher
+	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test")
+	_, err := Publish(pctx, pub, &pubsub.Message{Data: []byte("hello")}).Get(pctx)
+	assert.NoError(err)
+	span.Finish()
+
+	// Subscriber — no explicit option, env var drives behavior.
+	var called bool
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+		assert.False(called, "callback called twice")
+		msg.Ack()
+		called = true
+		cancel()
+	}))
+	assert.True(called, "callback not called")
+	assert.NoError(err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3, "wrong number of spans")
+
+	publishSpan := spans[0]
+	receiveSpan := spans[2]
+	assert.Equal("pubsub.receive", receiveSpan.OperationName())
+	assert.NotEqual(publishSpan.TraceID(), receiveSpan.TraceID(), "receive span should start a new trace")
+	assert.Equal(uint64(0), receiveSpan.ParentID(), "receive span should have no parent")
+
+	links := receiveSpan.Links()
+	require.Len(t, links, 1, "expected exactly one span link")
+	assert.Equal(publishSpan.SpanID(), links[0].SpanID, "span link should point to publish span")
+}
+
 func filterTags(m map[string]any) map[string]any {
 	delete(m, "_dd.p.tid")
 	delete(m, "_dd.profiling.enabled")

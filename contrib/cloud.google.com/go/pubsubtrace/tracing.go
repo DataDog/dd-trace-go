@@ -123,7 +123,6 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 			tracer.Tag(ext.MessagingOperationName, "receive"),
 			tracer.Tag(ext.MessagingDestinationName, s.String()),
-			tracer.ChildOf(parentSpanCtx),
 		}
 		if cfg.propagationAsSpanLinks && parentSpanCtx != nil {
 			// Record the producer span as a span link
