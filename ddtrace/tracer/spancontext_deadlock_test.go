@@ -34,12 +34,21 @@ import (
 // pool-seeding approach seeds the global spanPool with [childA (private), root
 // (shared.head)] so that the next two StartSpan calls return them in swapped roles.
 //
-// Because sync.Pool gives no ordering guarantees (the pool is shared with the
-// tracer worker and the Go runtime), seeding is wrapped in a bounded retry: the
-// pool is explicitly drained of stale/foreign entries, re-seeded in LIFO order,
-// and the returned instances are checked for pointer identity. On mismatch the
-// attempt is discarded and the loop retries. If all attempts are exhausted the
-// test skips with a diagnostic instead of failing non-deterministically.
+// Because sync.Pool gives no ordering guarantees (spanPool is process-global and
+// shared with the tracer worker, the Go runtime, and every other span-pool-enabled
+// tracer in the binary), seeding is wrapped in a bounded retry: the pool is
+// explicitly drained of stale/foreign entries, re-seeded in LIFO order, and the
+// returned instances are checked for pointer identity. On mismatch the attempt is
+// discarded and the loop retries. If all attempts are exhausted the test skips
+// with a diagnostic instead of failing non-deterministically.
+//
+// The same caveat applies to the final StartSpan acquisition. Single-threaded the
+// restore->acquire handoff is deterministic, but spanPool is process-global: any
+// other goroutine that performs a spanPool.Get in that window (every StartSpan on
+// a span-pool-enabled tracer in the binary does one) steals a seeded instance from
+// P0, and the acquiring Get then returns a different span. So the acquired
+// instances are likewise checked for identity and the test skips (after cleanup)
+// rather than failing if they diverge.
 //
 // Under the fixed code, s.mu is released before fSpan.mu is acquired, so neither
 // direction is ever recorded and the test passes cleanly.
@@ -135,15 +144,40 @@ func TestPartialFlushSpanLockOrderingCycle(t *testing.T) {
 	}
 
 	// Acquire the instances via StartSpan while GOMAXPROCS=1 and GC are still
-	// active: the worker never calls spanPool.Get, so no other goroutine can
-	// steal the seeded spans between the verification Put and these Gets.
+	// active.
+	//
+	// Single-threaded this handoff is deterministic: the verification above left
+	// childA in P0.private and root in P0.shared, so the two StartSpan Gets return
+	// them in order. But spanPool is process-global. If any other goroutine runs a
+	// spanPool.Get in the window between the restore above and these Gets, it pops
+	// childA out of P0.private and the first Get here returns root (or a fresh
+	// span) instead — every StartSpan on a span-pool-enabled tracer in the binary
+	// does exactly one Get, and GOMAXPROCS=1 does not prevent that goroutine from
+	// being scheduled. When the seeded pair does not come back the swapped-role
+	// reverse-ordering scenario can no longer be built on the same Span pointers,
+	// so we clean up and skip rather than fail non-deterministically — consistent
+	// with the seeding-exhaustion skip above. On the cooperative happy path the
+	// seeded instances come back and the cycle is exercised.
 	newRoot := tracer.StartSpan("newRoot", Tag(ext.ManualKeep, true))
 	newChildA := tracer.StartSpan("newChildA", ChildOf(newRoot.Context()))
 	debug.SetGCPercent(prevGC)
 	runtime.GOMAXPROCS(numCPU)
 
-	require.Same(t, childA, newRoot)
-	require.Same(t, root, newChildA)
+	if newRoot != childA || newChildA != root {
+		// The seeded pair did not come back (another goroutine touched the global
+		// pool). Tear down the spans we created plus the still-open Phase 1 span,
+		// then skip. Clearing rootFlushed keeps Phase 1's full-trace flush from
+		// recycling root a second time (root's fate is already decided by the
+		// StartSpan Gets above, exactly as on the happy path below).
+		childB.context.trace.mu.Lock()
+		childB.context.trace.rootFlushed = false
+		childB.context.trace.mu.Unlock()
+		newChildA.Finish()
+		newRoot.Finish()
+		childB.Finish()
+		t.Skip("span pool returned unexpected instances after seeding " +
+			"(concurrent pool access); skipping deadlock-cycle check")
+	}
 	newChildB := tracer.StartSpan("newChildB", ChildOf(newRoot.Context()))
 
 	newRoot.Finish()   // childA instance is now finishedSpans[0] = fSpan

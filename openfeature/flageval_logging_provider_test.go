@@ -49,17 +49,17 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 			p := newDatadogProvider(ProviderConfig{})
 
 			if tc.wantEVPEnabled {
-				if p.flagEvalWriter == nil {
+				if p.flagEvalLoggingWriter == nil {
 					t.Error("expected flagEvalWriter to be non-nil when killswitch is enabled")
 				}
-				if p.flagEvalEVPHook == nil {
+				if p.flagEvalLoggingHook == nil {
 					t.Error("expected flagEvalEVPHook to be non-nil when killswitch is enabled")
 				}
 			} else {
-				if p.flagEvalWriter != nil {
+				if p.flagEvalLoggingWriter != nil {
 					t.Error("expected flagEvalWriter to be nil when killswitch is disabled")
 				}
-				if p.flagEvalEVPHook != nil {
+				if p.flagEvalLoggingHook != nil {
 					t.Error("expected flagEvalEVPHook to be nil when killswitch is disabled")
 				}
 			}
@@ -70,9 +70,9 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 			evpPresent := false
 			for _, h := range hooks {
 				switch h.(type) {
-				case *flagEvalHook:
+				case *flagEvalMetricsHook:
 					otelPresent = true
-				case *flagEvaluationHook:
+				case *flagEvalLoggingHook:
 					evpPresent = true
 				}
 			}
@@ -84,18 +84,18 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 
 			if evpPresent != tc.wantEVPEnabled {
 				if tc.wantEVPEnabled {
-					t.Error("expected EVP flagEvaluationHook to be present in Hooks() when killswitch is enabled")
+					t.Error("expected EVP flagEvalLoggingHook to be present in Hooks() when killswitch is enabled")
 				} else {
-					t.Errorf("expected EVP flagEvaluationHook to be absent from Hooks() when killswitch is disabled, but found one")
+					t.Errorf("expected EVP flagEvalLoggingHook to be absent from Hooks() when killswitch is disabled, but found one")
 				}
 			}
 
-			if tc.wantEVPEnabled && p.exposureWriter.evp != p.flagEvalWriter.evp {
+			if tc.wantEVPEnabled && p.exposureWriter.evp != p.flagEvalLoggingWriter.evp {
 				t.Error("expected exposures and flag evaluations to share one EVP client")
 			}
 		})
 	}
 }
 
-// Compile-time assertion: flagEvaluationHook implements the OpenFeature Hook interface.
-var _ of.Hook = (*flagEvaluationHook)(nil)
+// Compile-time assertion: flagEvalLoggingHook implements the OpenFeature Hook interface.
+var _ of.Hook = (*flagEvalLoggingHook)(nil)

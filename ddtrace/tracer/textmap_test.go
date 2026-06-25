@@ -32,6 +32,7 @@ const otelHeaderPropagationStyle = "OTEL_PROPAGATORS"
 func traceIDFrom64Bits(i uint64) traceID {
 	t := traceID{}
 	t.SetLower(i)
+	t.cacheHex()
 	return t
 }
 
@@ -39,6 +40,7 @@ func traceIDFrom128Bits(u, l uint64) traceID {
 	t := traceID{}
 	t.SetLower(l)
 	t.SetUpper(u)
+	t.cacheHex()
 	return t
 }
 
@@ -3536,4 +3538,86 @@ func TestSpanContextDebugLoggingSecurity(t *testing.T) {
 
 	// This test ensures that the SafeDebugString() method is used instead of %#v
 	// to prevent sensitive baggage data from being exposed in debug logs.
+}
+
+// TestConcurrentInjectTraceIDHex reproduces the data race on
+// traceID.hexEncoded reported in v2.8.0-rc.2. (*traceID).HexEncoded uses an
+// unsynchronized check-then-act lazy cache, so concurrent Inject callers on
+// the same SpanContext (e.g. Sarama/Kafka producer fan-out) can torn-read the
+// {ptr,len} string header and panic in isValidPropagatableTag with
+// "invalid memory address or nil pointer dereference".
+//
+// It covers both hex-cache states a shared SpanContext can be in when injected
+// concurrently:
+//
+//   - cold cache: a locally started span. newSpanContext does not populate
+//     hexEncoded, so every UpperHex() takes the non-caching fallback.
+//   - hot cache: an extracted context. extractTextMap finalizes the traceID via
+//     cacheHex, so UpperHex() returns the cached string.
+//
+// Run with -race to catch the write/read race directly:
+//
+//	go test -race -run TestConcurrentInjectTraceIDHex -count=5 ./ddtrace/tracer/
+func TestConcurrentInjectTraceIDHex(t *testing.T) {
+	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(headerPropagationStyleExtract, "datadog")
+	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
+
+	tracer, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	// fanOutInject runs many concurrent Inject calls on the same SpanContext.
+	// Under -race this surfaces any write performed on the HexEncoded read path.
+	fanOutInject := func(t *testing.T, spanCtx *SpanContext) {
+		const goroutines = 64
+		const iterations = 200
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+		for range goroutines {
+			go func() {
+				defer wg.Done()
+				for range iterations {
+					if err := tracer.Inject(spanCtx, TextMapCarrier(map[string]string{})); err != nil {
+						t.Errorf("Inject failed: %v", err)
+						return
+					}
+				}
+			}()
+		}
+		wg.Wait()
+	}
+
+	t.Run("cold cache (local span)", func(t *testing.T) {
+		span := tracer.StartSpan("op")
+		defer span.Finish()
+		spanCtx := span.Context()
+
+		require.True(t, spanCtx.traceID.HasUpper(), "test requires a 128-bit traceID so injectTextMap calls UpperHex()")
+		// A locally started span is never finalized via cacheHex, so the cache
+		// is already empty and every concurrent UpperHex() exercises the
+		// non-caching fallback. Assert the precondition rather than forcing it,
+		// so the test fails loudly if newSpanContext ever starts caching.
+		require.Empty(t, spanCtx.traceID.hexEncoded, "local span is expected to have a cold hex cache")
+
+		fanOutInject(t, spanCtx)
+	})
+
+	t.Run("hot cache (extracted context)", func(t *testing.T) {
+		// Round-trip through Inject/Extract so the context is built by
+		// extractTextMap, which finalizes the traceID via cacheHex.
+		headers := TextMapCarrier(map[string]string{})
+		src := tracer.StartSpan("op")
+		defer src.Finish()
+		require.NoError(t, tracer.Inject(src.Context(), headers))
+
+		extracted, err := tracer.Extract(headers)
+		require.NoError(t, err)
+		spanCtx := extracted
+
+		require.True(t, spanCtx.traceID.HasUpper(), "test requires a 128-bit traceID so injectTextMap calls UpperHex()")
+		require.NotEmpty(t, spanCtx.traceID.hexEncoded, "extracted context is expected to have a hot hex cache")
+
+		fanOutInject(t, spanCtx)
+	})
 }

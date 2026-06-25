@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// These tests drive flagEvaluationAggregator.add directly (no client, no hooks, no async worker)
+// These tests drive flagEvalLoggingAggregator.add directly (no client, no hooks, no async worker)
 // to assert the 2,500-flag scale target against production aggregation caps.
 
 // scaleFlagShape describes the realistic per-flag structure used to size the degraded tier.
@@ -61,7 +61,7 @@ func legitimateDegradedCardinality(flags []scaleFlagShape) int {
 // The context cardinality knob (numContexts) is what splits the FULL tier: the full key includes
 // targetingKey + contextKey, so more distinct subjects => more full buckets => earlier full-tier
 // saturation => earlier cascade into degraded.
-func driveScale(agg *flagEvaluationAggregator, flags []scaleFlagShape, numContexts, evalsPerCombo int) int64 {
+func driveScale(agg *flagEvalLoggingAggregator, flags []scaleFlagShape, numContexts, evalsPerCombo int) int64 {
 	nowMs := time.Now().UnixMilli()
 	var calls int64
 	ctxCounter := 0
@@ -104,7 +104,7 @@ type tierCounts struct {
 	sumCounts      int64
 }
 
-func snapshot(agg *flagEvaluationAggregator) tierCounts {
+func snapshot(agg *flagEvalLoggingAggregator) tierCounts {
 	agg.mu.Lock()
 	defer agg.mu.Unlock()
 	tc := tierCounts{
