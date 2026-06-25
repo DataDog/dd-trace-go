@@ -9,13 +9,12 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -604,6 +603,34 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	}
 }
 
+// roundTripFunc adapts a function to an http.RoundTripper.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// recordingClientConfig returns an RC client config whose HTTP client records
+// each outgoing request on requests (non-blocking) and returns an empty config
+// body. PollInterval is 1h so the ticker cannot be responsible for a request
+// observed within a short window — only a registration-driven poll can be.
+func recordingClientConfig(requests chan<- struct{}) ClientConfig {
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test"
+	cfg.PollInterval = time.Hour
+	cfg.HTTP = &http.Client{
+		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			select {
+			case requests <- struct{}{}:
+			default:
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+			}, nil
+		}),
+	}
+	return cfg
+}
+
 // TestPollOnRegistration verifies that registering a product or capability
 // triggers an out-of-cycle poll instead of waiting a full PollInterval.
 func TestPollOnRegistration(t *testing.T) {
@@ -623,24 +650,62 @@ func TestPollOnRegistration(t *testing.T) {
 			Reset() // clear any client left by a prior test
 			defer Stop()
 
-			var polls int64
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				atomic.AddInt64(&polls, 1)
-				w.Write([]byte(`{}`))
-			}))
-			defer srv.Close()
-
-			cfg := DefaultClientConfig()
-			cfg.AgentURL = srv.URL
-			cfg.ServiceName = "test"
-			cfg.PollInterval = time.Hour // long: any poll here is the registration-triggered one
-			require.NoError(t, Start(cfg))
-
+			requests := make(chan struct{}, 1)
+			require.NoError(t, Start(recordingClientConfig(requests)))
 			require.NoError(t, reg())
 
-			require.Eventually(t, func() bool {
-				return atomic.LoadInt64(&polls) >= 1
-			}, 5*time.Second, 5*time.Millisecond, name+" should poll before PollInterval")
+			select {
+			case <-requests:
+				// Out-of-cycle poll fired right after registration.
+			case <-time.After(2 * time.Second):
+				t.Fatalf("%s did not trigger a poll within 2s (PollInterval is 1h, so the ticker can't be the cause)", name)
+			}
 		})
+	}
+}
+
+// TestNoPollWithoutRegistration verifies that Start alone does not fire a poll;
+// out-of-cycle polling only happens after a product/capability is registered.
+func TestNoPollWithoutRegistration(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(requests)))
+
+	select {
+	case <-requests:
+		t.Fatal("unexpected poll: Start fired a request with nothing registered")
+	case <-time.After(200 * time.Millisecond):
+		// No poll without a registration.
+	}
+}
+
+// TestPollOnEachRegistration verifies that a second registration triggers
+// another poll once the first has drained: pollNow coalesces while a signal is
+// queued, but still fires for later registrations after the channel drains.
+func TestPollOnEachRegistration(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(requests)))
+
+	require.NoError(t, RegisterProduct("product-a"))
+	select {
+	case <-requests:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no poll within 2s after the first registration")
+	}
+
+	// The channel is drained; a later registration must trigger its own poll.
+	require.NoError(t, RegisterProduct("product-b"))
+	select {
+	case <-requests:
+		// Second registration triggered another poll.
+	case <-time.After(2 * time.Second):
+		t.Fatal("no poll within 2s after the second registration")
 	}
 }
