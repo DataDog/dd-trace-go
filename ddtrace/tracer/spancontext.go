@@ -50,11 +50,22 @@ type traceID struct {
 	hexEncoded string
 }
 
+// HexEncoded returns the 32-character hex representation of the 128-bit
+// trace ID. It returns the cached value populated by cacheHex when the
+// traceID is finalized at construction (the context-extraction paths). When
+// the cache is empty it falls back to a non-caching computation. An empty
+// cache is the normal state for a locally started span: newSpanContext
+// deliberately does not call cacheHex (see the note there), so every
+// HexEncoded call on such a span recomputes the hex and allocates. It is also
+// the state for a traceID built via direct field assignment (e.g. in tests).
+// The non-caching fallback is required for concurrency: HexEncoded is called
+// from Inject on a SpanContext that may be shared across goroutines, and
+// writing to t.hexEncoded here would race.
 func (t *traceID) HexEncoded() string {
-	if t.hexEncoded == "" {
-		t.computeAndCacheHex()
+	if t.hexEncoded != "" {
+		return t.hexEncoded
 	}
-	return t.hexEncoded
+	return hex.EncodeToString(t.value[:])
 }
 
 func (t *traceID) Lower() uint64 {
@@ -104,7 +115,11 @@ func (t *traceID) HasUpper() bool {
 
 func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
 
-func (t *traceID) computeAndCacheHex() {
+// cacheHex populates the hexEncoded cache. It must be called at traceID
+// construction finalization, before the enclosing SpanContext is shared with
+// other goroutines. After cacheHex returns, HexEncoded becomes a pure read
+// and is safe under concurrent access.
+func (t *traceID) cacheHex() {
 	t.hexEncoded = hex.EncodeToString(t.value[:])
 }
 
@@ -186,6 +201,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 
 	ctxSpl, ok := c.(spanContextWithSamplingDecision)
 	if !ok {
+		sc.traceID.cacheHex()
 		return &sc
 	}
 
@@ -233,6 +249,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 
 	ctx, ok := c.(spanContextV1Adapter)
 	if !ok {
+		sc.traceID.cacheHex()
 		return &sc
 	}
 
@@ -245,6 +262,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	if dm, ok := sc.trace.propagatingTags[keyDecisionMaker]; ok { // +checklocksignore - Initialization time, not shared yet.
 		sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
 	}
+	sc.traceID.cacheHex()
 	return &sc
 }
 
@@ -302,6 +320,15 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
 	context.updated = false
+	// Note: we deliberately do NOT call context.traceID.cacheHex() here.
+	// Unlike the extraction paths (extractTextMap, FromGenericCtx, ...), which
+	// finalize the cache before returning, locally started spans rely on the
+	// non-caching HexEncoded fallback. Caching here would add a hex allocation
+	// to every StartSpan, including spans that are never propagated. The
+	// trade-off is that HexEncoded/UpperHex allocates on each call for a local
+	// span (e.g. once per Inject, and once at finish via setTraceTagsLocked for
+	// 128-bit spans). This is safe under concurrent Inject because the fallback
+	// performs no write. See HexEncoded and cacheHex for the full contract.
 	return context
 }
 
