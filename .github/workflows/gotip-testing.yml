@@ -132,9 +132,11 @@ jobs:
           path: ${{ env.TEST_RESULTS }}
           tags: go:gotip,arch:${{ runner.arch }},os:${{ runner.os }}
 
-      - name: Upload Coverage
+      - name: Upload Coverage to Datadog
         if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
-        uses: ./.github/actions/codecov-upload
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
+          format: go-coverprofile

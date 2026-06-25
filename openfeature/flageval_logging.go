@@ -29,8 +29,8 @@ const (
 	// Dedicated 10 s timer; separate from exposureWriter's 1 s interval.
 	defaultFlagEvalFlushInterval = 10 * time.Second
 
-	// flagEvaluationEndpoint is the EVP proxy endpoint for flag evaluation events.
-	flagEvaluationEndpoint = "/evp_proxy/v2/api/v2/flagevaluation"
+	// flagEvalLoggingEndpoint is the EVP proxy endpoint for flag evaluation events.
+	flagEvalLoggingEndpoint = "/evp_proxy/v2/api/v2/flagevaluation"
 
 	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH.
 	maxContextFields = 256
@@ -147,8 +147,8 @@ func newEvaluationEntry(evaluationTimeMs int64) *evaluationEntry {
 	}
 }
 
-// flagEvaluationAggregator holds the two-tier aggregation maps (full → degraded → drop).
-type flagEvaluationAggregator struct {
+// flagEvalLoggingAggregator holds the two-tier aggregation maps (full → degraded → drop).
+type flagEvalLoggingAggregator struct {
 	mu          sync.Mutex
 	full        map[evaluationAggregationKey]*evaluationEntry
 	degraded    map[evaluationDegradedKey]*evaluationEntry
@@ -159,14 +159,14 @@ type flagEvaluationAggregator struct {
 	degradedCap int
 	// dropped counts evaluations whose count was lost because a NEW degraded bucket would have
 	// exceeded degradedCap. It is the observable signal that legitimate counts are being
-	// dropped and that degradedCap should be raised. It is distinct from flagEvaluationWriter.dropped
+	// dropped and that degradedCap should be raised. It is distinct from flagEvalLoggingWriter.dropped
 	// (which counts async-queue backpressure drops).
 	droppedDegradedOverflow int64
 }
 
-// flagEvaluationEvent matches flagevaluation.json — required fields always present;
+// flagEvalLoggingEvent matches flagevaluation.json — required fields always present;
 // optional fields use omitempty (absent = schema-valid for the degraded tier).
-type flagEvaluationEvent struct {
+type flagEvalLoggingEvent struct {
 	Timestamp       int64                 `json:"timestamp"`
 	Flag            flagEvalFlag          `json:"flag"`
 	FirstEvaluation int64                 `json:"first_evaluation"`
@@ -211,12 +211,12 @@ type flagEvalContextDD struct {
 	Service string `json:"service,omitempty"`
 }
 
-// flagEvaluationPayload is the SDK's EVP flagevaluation batch envelope.
+// flagEvalLoggingPayload is the SDK's EVP flagevaluation batch envelope.
 // Keep JSON field names aligned with the worker contract; do not vendor the
 // worker schema here, because dd-source owns that contract.
-type flagEvaluationPayload struct {
-	Context         flagEvalDDContext     `json:"context"`
-	FlagEvaluations []flagEvaluationEvent `json:"flagEvaluations"`
+type flagEvalLoggingPayload struct {
+	Context         flagEvalDDContext      `json:"context"`
+	FlagEvaluations []flagEvalLoggingEvent `json:"flagEvaluations"`
 }
 
 // flagEvalDDContext carries service/env/version for the batch-level context.
@@ -226,9 +226,9 @@ type flagEvalDDContext struct {
 	Version string `json:"version,omitempty"`
 }
 
-// flagEvaluationWriter manages aggregation and periodic flushing of EVP flag evaluation events.
-type flagEvaluationWriter struct {
-	aggregator    flagEvaluationAggregator
+// flagEvalLoggingWriter manages aggregation and periodic flushing of EVP flag evaluation events.
+type flagEvalLoggingWriter struct {
+	aggregator    flagEvalLoggingAggregator
 	flushInterval time.Duration
 	evp           *evpClient
 	ddContext     flagEvalDDContext // service/env/version — same source as exposureContext
@@ -254,7 +254,7 @@ type evalEvent struct {
 }
 
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
-// Used only by flagEvaluationHook; does NOT replace extraction in flageval_metrics.go.
+// Used only by flagEvalLoggingHook; does NOT replace extraction in flageval_metrics.go.
 type evalDetails struct {
 	flagKey        string
 	variant        string
@@ -265,17 +265,17 @@ type evalDetails struct {
 	evalTimeMs     int64
 }
 
-// newFlagEvaluationWriter creates a new flag evaluation writer.
-func newFlagEvaluationWriter(config ProviderConfig) *flagEvaluationWriter {
-	return newFlagEvaluationWriterWithEVP(config, newEVPClient())
+// newFlagEvalLoggingWriter creates a new flag evaluation writer.
+func newFlagEvalLoggingWriter(config ProviderConfig) *flagEvalLoggingWriter {
+	return newFlagEvalLoggingWriterWithEVP(config, newEVPClient())
 }
 
-func newFlagEvaluationWriterWithEVP(config ProviderConfig, evp *evpClient) *flagEvaluationWriter {
+func newFlagEvalLoggingWriterWithEVP(config ProviderConfig, evp *evpClient) *flagEvalLoggingWriter {
 	executable, _ := os.Executable()
 
 	flushInterval := cmp.Or(config.FlagEvaluationFlushInterval, defaultFlagEvalFlushInterval)
 
-	return &flagEvaluationWriter{
+	return &flagEvalLoggingWriter{
 		flushInterval: flushInterval,
 		evp:           evp,
 		stopChan:      make(chan struct{}),
@@ -286,7 +286,7 @@ func newFlagEvaluationWriterWithEVP(config ProviderConfig, evp *evpClient) *flag
 			Version: env.Get("DD_VERSION"),
 			Env:     env.Get("DD_ENV"),
 		},
-		aggregator: flagEvaluationAggregator{
+		aggregator: flagEvalLoggingAggregator{
 			full:        make(map[evaluationAggregationKey]*evaluationEntry),
 			degraded:    make(map[evaluationDegradedKey]*evaluationEntry),
 			perFlagFull: make(map[string]int),
@@ -299,7 +299,7 @@ func newFlagEvaluationWriterWithEVP(config ProviderConfig, evp *evpClient) *flag
 
 // start begins the periodic flushing — called from InitWithContext(), NOT from the constructor.
 // Mirrors exposure.go's start() goroutine + panic recovery pattern.
-func (w *flagEvaluationWriter) start() {
+func (w *flagEvalLoggingWriter) start() {
 	w.ticker = time.NewTicker(w.flushInterval)
 	go func() {
 		defer func() {
@@ -333,7 +333,7 @@ func (w *flagEvaluationWriter) start() {
 }
 
 // stop stops the flush ticker and marks the writer as stopped.
-func (w *flagEvaluationWriter) stop() {
+func (w *flagEvalLoggingWriter) stop() {
 	w.enqueueMu.Lock()
 	// Single idempotency gate: the atomic Swap is the guard for both "mark stopped" and the
 	// downstream close(stopChan). enqueueMu prevents a record() call that observed stopped=false
@@ -357,7 +357,7 @@ func (w *flagEvaluationWriter) stop() {
 }
 
 // flush drains the aggregator, assembles per-tier events, and sends them to the agent.
-func (w *flagEvaluationWriter) flush() {
+func (w *flagEvalLoggingWriter) flush() {
 	// Surface best-effort backpressure drops (queue full) as an observable signal.
 	if d := w.dropped.Swap(0); d > 0 {
 		log.Debug("openfeature: flag evaluation queue full — dropped %d evaluation(s) under backpressure (best-effort telemetry)", d)
@@ -396,12 +396,12 @@ func (w *flagEvaluationWriter) flush() {
 	}
 
 	flushTimeMs := time.Now().UnixMilli()
-	var events []flagEvaluationEvent
+	var events []flagEvalLoggingEvent
 
 	// Full tier: required fields + variant + allocation + targeting_key + context + error.
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range full {
-		ev := baseFlagEvaluationEvent(key.flagKey, e, flushTimeMs)
+		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
 		ev.RuntimeDefault = e.runtimeDefault
 		ev.TargetingKey = e.targetingKey
 		if key.variant != "" {
@@ -422,7 +422,7 @@ func (w *flagEvaluationWriter) flush() {
 	// Degraded tier: required fields + variant + allocation + error; no targeting_key, no context.
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range degraded {
-		ev := baseFlagEvaluationEvent(key.flagKey, e, flushTimeMs)
+		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
 		ev.RuntimeDefault = e.runtimeDefault
 		if key.variant != "" {
 			ev.Variant = &flagEvalVariant{Key: key.variant}
@@ -440,7 +440,7 @@ func (w *flagEvaluationWriter) flush() {
 		return
 	}
 
-	payload := flagEvaluationPayload{
+	payload := flagEvalLoggingPayload{
 		Context:         w.ddContext,
 		FlagEvaluations: events,
 	}
@@ -452,12 +452,12 @@ func (w *flagEvaluationWriter) flush() {
 	}
 }
 
-// baseFlagEvaluationEvent builds a flagEvaluationEvent with ONLY the five required schema
+// baseFlagEvalLoggingEvent builds a flagEvalLoggingEvent with ONLY the five required schema
 // fields (timestamp, flag.key, first/last evaluation, evaluation_count). It is tier-agnostic
 // and sets no optional field — RuntimeDefault and the rest are decoration applied by each tier
 // loop in flush() after the call.
-func baseFlagEvaluationEvent(flagKey string, e *evaluationEntry, flushTimeMs int64) flagEvaluationEvent {
-	return flagEvaluationEvent{
+func baseFlagEvalLoggingEvent(flagKey string, e *evaluationEntry, flushTimeMs int64) flagEvalLoggingEvent {
+	return flagEvalLoggingEvent{
 		Timestamp:       flushTimeMs,
 		Flag:            flagEvalFlag{Key: flagKey},
 		FirstEvaluation: e.firstEvaluation,
@@ -471,7 +471,7 @@ func baseFlagEvaluationEvent(flagKey string, e *evaluationEntry, flushTimeMs int
 // or context flattening happens here; the background worker does that. If the queue is full
 // the event is dropped and counted (best-effort), never blocking the evaluation. Called from
 // the Finally hook after every evaluation.
-func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
+func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
 	w.enqueueMu.RLock()
 	defer w.enqueueMu.RUnlock()
 
@@ -504,7 +504,7 @@ func (w *flagEvaluationWriter) record(hookContext of.HookContext, details of.Int
 }
 
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
-func (w *flagEvaluationWriter) aggregate(ev evalEvent) {
+func (w *flagEvalLoggingWriter) aggregate(ev evalEvent) {
 	contextAttrs := flattenAndPruneContext(ev.evaluationContext.Attributes())
 	w.aggregator.add(ev.d, contextAttrs, ev.evaluationTimeMs)
 }
@@ -608,7 +608,7 @@ func contextFitsWithoutFlattening(attrs map[string]any) bool {
 
 // drainAndFlush processes any buffered events and performs a final flush. Called by the
 // worker when stopping so a final batch is not lost on shutdown.
-func (w *flagEvaluationWriter) drainAndFlush() {
+func (w *flagEvalLoggingWriter) drainAndFlush() {
 	for {
 		select {
 		case ev := <-w.events:
@@ -622,8 +622,8 @@ func (w *flagEvaluationWriter) drainAndFlush() {
 
 // sendToAgent sends the flag evaluation payload to the Datadog Agent via EVP proxy.
 // Reuses evpSubdomainHeader / evpSubdomainValue constants from exposure.go.
-func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error {
-	return w.evp.post(flagEvaluationEndpoint, "flag evaluation", payload)
+func (w *flagEvalLoggingWriter) sendToAgent(payload flagEvalLoggingPayload) error {
+	return w.evp.post(flagEvalLoggingEndpoint, "flag evaluation", payload)
 }
 
 // add records one evaluation observation into the appropriate aggregation tier.
@@ -635,7 +635,7 @@ func (w *flagEvaluationWriter) sendToAgent(payload flagEvaluationPayload) error 
 // globalCap is full, a flag that accumulates enough attempts (>= perFlagCap) still
 // follows the degraded path — keeping the per-flag overflow path alive even after the
 // global full-tier cap is exhausted.
-func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]any, evaluationTimeMs int64) {
+func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]any, evaluationTimeMs int64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -701,7 +701,7 @@ func (a *flagEvaluationAggregator) add(d evalDetails, contextAttrs map[string]an
 // sized (defaultEvalDegradedCap) to hold the legitimate degraded cardinality at the target
 // scale, so this drop only fires under cardinality far beyond that target (e.g. an unbounded
 // dynamic/abusive flag key) and the dropped counter makes such overflow observable.
-func (a *flagEvaluationAggregator) addToDegraded(d evalDetails, evaluationTimeMs int64) {
+func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeMs int64) {
 	degKey := evaluationDegradedKey{
 		flagKey:        d.flagKey,
 		variant:        d.variant,
@@ -866,7 +866,7 @@ func pruneContext(raw map[string]any) map[string]any {
 }
 
 // extractEvalDetails extracts EVP-relevant fields from hook context and evaluation details.
-// This helper is used only by flagEvaluationHook — it does NOT replace the extraction in
+// This helper is used only by flagEvalLoggingHook — it does NOT replace the extraction in
 // flageval_metrics.go (that file is left untouched to preserve the OTel path).
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
