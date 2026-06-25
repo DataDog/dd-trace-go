@@ -155,8 +155,10 @@ type Client struct {
 	clientID   string
 	endpoint   string
 	repository *rc.Repository
-	stop       chan struct{}
-	// pollNow requests an out-of-cycle poll. Buffered(1): sends coalesce and never block.
+	stop       chan struct{} // closed once by Stop/Reset to tell the poll goroutine to exit
+	done       chan struct{} // closed by the poll goroutine when it exits
+	stopOnce   sync.Once
+	// pollNow requests an out-of-cycle poll. Buffered size 1: sends are coalesced and non-blocking.
 	pollNow chan struct{}
 
 	// When acquiring several locks and using defer to release them, make sure to acquire the locks in the following order:
@@ -214,6 +216,7 @@ func newClient(config ClientConfig) (*Client, error) {
 		endpoint:     fmt.Sprintf("%s/v0.7/config", config.AgentURL),
 		repository:   repo,
 		stop:         make(chan struct{}),
+		done:         make(chan struct{}),
 		pollNow:      make(chan struct{}, 1),
 		lastError:    nil,
 		callbacks:    []Callback{},
@@ -252,13 +255,13 @@ func Start(config ClientConfig) error {
 		pollNow      = c.pollNow
 	)
 	go func() {
+		defer close(c.done)
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-stop:
-				close(stop)
 				return
 			case <-pollNow: // a product/capability was registered
 				c.Lock()
@@ -291,9 +294,9 @@ func Stop() {
 		return
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
-	client.stop <- struct{}{}
+	client.stopOnce.Do(func() { close(client.stop) })
 	select {
-	case <-client.stop:
+	case <-client.done:
 		log.Debug("remoteconfig: client stopped successfully")
 	case <-time.After(time.Second):
 		log.Debug("remoteconfig: client stopping timeout")
@@ -308,6 +311,12 @@ func Reset() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
 
+	// Signal any running poll goroutine to exit. Closing is safe even if the
+	// client was never started; Reset only clears singleton state and does not
+	// wait for the goroutine to finish.
+	if client != nil {
+		client.stopOnce.Do(func() { close(client.stop) })
+	}
 	client = nil
 	started = false
 }
