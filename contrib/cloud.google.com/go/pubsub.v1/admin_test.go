@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	vkit "cloud.google.com/go/pubsub/v2/apiv1"
-	"cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
-	"cloud.google.com/go/pubsub/v2/pstest"
+	vkit "cloud.google.com/go/pubsub/apiv1"
+	pubsubpb "cloud.google.com/go/pubsub/apiv1/pubsubpb"
+	"cloud.google.com/go/pubsub/pstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/iterator"
@@ -27,7 +27,7 @@ import (
 
 const adminProjectID = "project"
 
-func setupAdmin(t *testing.T) (context.Context, mocktracer.Tracer, *TopicAdminClient, *SubscriptionAdminClient) {
+func setupAdmin(t *testing.T) (context.Context, mocktracer.Tracer, *PublisherClient, *SubscriberClient) {
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
 
@@ -41,12 +41,12 @@ func setupAdmin(t *testing.T) (context.Context, mocktracer.Tracer, *TopicAdminCl
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, conn.Close()) })
 
-	tac, err := vkit.NewTopicAdminClient(ctx, option.WithGRPCConn(conn))
+	pc, err := vkit.NewPublisherClient(ctx, option.WithGRPCConn(conn))
 	require.NoError(t, err)
-	sac, err := vkit.NewSubscriptionAdminClient(ctx, option.WithGRPCConn(conn))
+	sc, err := vkit.NewSubscriberClient(ctx, option.WithGRPCConn(conn))
 	require.NoError(t, err)
 
-	return ctx, mt, WrapTopicAdminClient(tac), WrapSubscriptionAdminClient(sac)
+	return ctx, mt, WrapPublisherClient(pc), WrapSubscriberClient(sc)
 }
 
 func topicName(id string) string {
@@ -58,15 +58,15 @@ func subName(id string) string {
 }
 
 func TestTraceAdminTopicOperations(t *testing.T) {
-	ctx, mt, tac, _ := setupAdmin(t)
+	ctx, mt, pc, _ := setupAdmin(t)
 
-	_, err := tac.CreateTopic(ctx, &pubsubpb.Topic{Name: topicName("topic")})
+	_, err := pc.CreateTopic(ctx, &pubsubpb.Topic{Name: topicName("topic")})
 	require.NoError(t, err)
 
-	_, err = tac.GetTopic(ctx, &pubsubpb.GetTopicRequest{Topic: topicName("topic")})
+	_, err = pc.GetTopic(ctx, &pubsubpb.GetTopicRequest{Topic: topicName("topic")})
 	require.NoError(t, err)
 
-	it := tac.ListTopics(ctx, &pubsubpb.ListTopicsRequest{Project: fmt.Sprintf("projects/%s", adminProjectID)})
+	it := pc.ListTopics(ctx, &pubsubpb.ListTopicsRequest{Project: fmt.Sprintf("projects/%s", adminProjectID)})
 	for {
 		if _, err := it.Next(); err == iterator.Done {
 			break
@@ -75,7 +75,7 @@ func TestTraceAdminTopicOperations(t *testing.T) {
 		}
 	}
 
-	err = tac.DeleteTopic(ctx, &pubsubpb.DeleteTopicRequest{Topic: topicName("topic")})
+	err = pc.DeleteTopic(ctx, &pubsubpb.DeleteTopicRequest{Topic: topicName("topic")})
 	require.NoError(t, err)
 
 	spans := mt.FinishedSpans()
@@ -88,21 +88,21 @@ func TestTraceAdminTopicOperations(t *testing.T) {
 }
 
 func TestTraceAdminSubscriptionOperations(t *testing.T) {
-	ctx, mt, tac, sac := setupAdmin(t)
+	ctx, mt, pc, sc := setupAdmin(t)
 
-	_, err := tac.CreateTopic(ctx, &pubsubpb.Topic{Name: topicName("topic")})
+	_, err := pc.CreateTopic(ctx, &pubsubpb.Topic{Name: topicName("topic")})
 	require.NoError(t, err)
 
-	_, err = sac.CreateSubscription(ctx, &pubsubpb.Subscription{
+	_, err = sc.CreateSubscription(ctx, &pubsubpb.Subscription{
 		Name:  subName("sub"),
 		Topic: topicName("topic"),
 	})
 	require.NoError(t, err)
 
-	_, err = sac.GetSubscription(ctx, &pubsubpb.GetSubscriptionRequest{Subscription: subName("sub")})
+	_, err = sc.GetSubscription(ctx, &pubsubpb.GetSubscriptionRequest{Subscription: subName("sub")})
 	require.NoError(t, err)
 
-	err = sac.DeleteSubscription(ctx, &pubsubpb.DeleteSubscriptionRequest{Subscription: subName("sub")})
+	err = sc.DeleteSubscription(ctx, &pubsubpb.DeleteSubscriptionRequest{Subscription: subName("sub")})
 	require.NoError(t, err)
 
 	spans := mt.FinishedSpans()
@@ -115,10 +115,9 @@ func TestTraceAdminSubscriptionOperations(t *testing.T) {
 }
 
 func TestTraceAdminError(t *testing.T) {
-	ctx, mt, tac, _ := setupAdmin(t)
+	ctx, mt, pc, _ := setupAdmin(t)
 
-	// Getting a topic that does not exist returns an error, which must be recorded on the span.
-	_, err := tac.GetTopic(ctx, &pubsubpb.GetTopicRequest{Topic: topicName("missing")})
+	_, err := pc.GetTopic(ctx, &pubsubpb.GetTopicRequest{Topic: topicName("missing")})
 	require.Error(t, err)
 
 	spans := mt.FinishedSpans()
@@ -141,10 +140,10 @@ func TestTraceAdminWithService(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, conn.Close()) }()
 
-	tac, err := vkit.NewTopicAdminClient(ctx, option.WithGRPCConn(conn))
+	pc, err := vkit.NewPublisherClient(ctx, option.WithGRPCConn(conn))
 	require.NoError(t, err)
 
-	wrapped := WrapTopicAdminClient(tac, WithService("my-admin-service"))
+	wrapped := WrapPublisherClient(pc, WithService("my-admin-service"))
 	_, err = wrapped.CreateTopic(ctx, &pubsubpb.Topic{Name: topicName("topic")})
 	require.NoError(t, err)
 
@@ -153,16 +152,15 @@ func TestTraceAdminWithService(t *testing.T) {
 	assert.Equal(t, "my-admin-service", spans[0].Tag(ext.ServiceName))
 }
 
-
 func assertAdminSpan(t *testing.T, span *mocktracer.Span, method, resource string) {
 	t.Helper()
 	assert.Equal(t, "gcp.pubsub.request", span.OperationName())
 	assert.Equal(t, resource, span.Tag(ext.ResourceName))
 	assert.Equal(t, ext.SpanTypeWorker, span.Tag(ext.SpanType))
 	assert.Equal(t, ext.SpanKindClient, span.Tag(ext.SpanKind))
-	assert.Equal(t, "cloud.google.com/go/pubsub.v2", span.Tag(ext.Component))
+	assert.Equal(t, "cloud.google.com/go/pubsub.v1", span.Tag(ext.Component))
 	assert.Equal(t, ext.MessagingSystemGCPPubsub, span.Tag(ext.MessagingSystem))
 	assert.Equal(t, method, span.Tag("pubsub.method"))
 	assert.Equal(t, adminProjectID, span.Tag("gcloud.project_id"))
-	assert.Equal(t, "cloud.google.com/go/pubsub.v2", span.Integration())
+	assert.Equal(t, "cloud.google.com/go/pubsub.v1", span.Integration())
 }

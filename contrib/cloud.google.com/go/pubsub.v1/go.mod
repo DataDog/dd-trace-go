@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	cloud.google.com/go/pubsub v1.50.1
 	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
+	github.com/googleapis/gax-go/v2 v2.20.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.273.1
 	google.golang.org/grpc v1.80.0
@@ -47,7 +48,6 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
-	github.com/googleapis/gax-go/v2 v2.20.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect

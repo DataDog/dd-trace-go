@@ -1,3 +1,7 @@
+cloud.google.com/go/pubsub v1.50.1 h1:fzbXpPyJnSGvWXF1jabhQeXyxdbCIkXTpjXHy7xviBM=
+cloud.google.com/go/pubsub v1.50.1/go.mod h1:6YVJv3MzWJUVdvQXG081sFvS0dWQOdnV+oTo++q/xFk=
+cloud.google.com/go/pubsub/v2 v2.0.0 h1:0qS6mRJ41gD1lNmM/vdm6bR7DQu6coQcVwD+VPf0Bz0=
+cloud.google.com/go/pubsub/v2 v2.0.0/go.mod h1:0aztFxNzVQIRSZ8vUr79uH2bS3jwLebwK6q1sgEub+E=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.79.0 h1:VZlYzVCzCsY3TsEdDCFHklzL2k2C3OeQvgDhU2gllg0=
 github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.79.0/go.mod h1:dz3fkTBxANLLLigy9KQ5jhNZ28nA4dI9AxuLoGrmR0o=
 github.com/DataDog/datadog-agent/pkg/obfuscate v0.79.0 h1:PeYLm/gZQM7iKXOG4NgbKo6ZfpG73/+f8TSzmCUtA6g=

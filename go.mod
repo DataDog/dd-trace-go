@@ -57,6 +57,8 @@ require (
 )
 
 require (
+	cloud.google.com/go/pubsub v1.50.1 // indirect
+	cloud.google.com/go/pubsub/v2 v2.0.0 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace v0.79.0 // indirect

@@ -144,7 +144,9 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 	}
 }
 
-// TraceAdmin starts a span for a Pub/Sub admin operation (e.g. createTopic, listSubscriptions, deleteSchema)
+// TraceAdmin starts a span for a Pub/Sub admin operation (e.g. CreateTopic, ListSubscriptions, DeleteSchema).
+// Prefer the per-method helpers in admin.go (TraceCreateTopic, TraceGetTopic, ...) so the
+// (method, resourcePath) mapping has a single source of truth shared with the orchestrion aspects.
 func (tr *Tracer) TraceAdmin(ctx context.Context, method string, resourcePath string, opts ...Option) (context.Context, func(err error)) {
 	cfg := tr.defaultConfig()
 	for _, opt := range opts {
@@ -169,6 +171,7 @@ func (tr *Tracer) TraceAdmin(ctx context.Context, method string, resourcePath st
 	if cfg.serviceName != "" {
 		spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 	}
+
 	span, ctx := tracer.StartSpanFromContext(ctx, cfg.requestSpanName, spanOpts...)
 
 	var once sync.Once

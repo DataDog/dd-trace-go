@@ -136,7 +136,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "createTopic", {{ $req }}.GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceCreateTopic({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -156,7 +156,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "updateTopic", {{ $req }}.GetTopic().GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceUpdateTopic({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -176,7 +176,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "getTopic", {{ $req }}.GetTopic())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceGetTopic({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -195,7 +195,7 @@ aspects:
           template: |-
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listTopics", {{ $req }}.GetProject())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceListTopics({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan(nil)
@@ -214,7 +214,7 @@ aspects:
           template: |-
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listTopicSubscriptions", {{ $req }}.GetTopic())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceListTopicSubscriptions({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan(nil)
@@ -233,7 +233,7 @@ aspects:
           template: |-
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listTopicSnapshots", {{ $req }}.GetTopic())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceListTopicSnapshots({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan(nil)
@@ -253,7 +253,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 0 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteTopic", {{ $req }}.GetTopic())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceDeleteTopic({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -273,7 +273,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "detachSubscription", {{ $req }}.GetSubscription())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceDetachSubscription({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -293,7 +293,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "createSubscription", {{ $req }}.GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceCreateSubscription({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -313,7 +313,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "getSubscription", {{ $req }}.GetSubscription())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceGetSubscription({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -333,7 +333,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "updateSubscription", {{ $req }}.GetSubscription().GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceUpdateSubscription({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -352,7 +352,7 @@ aspects:
           template: |-
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listSubscriptions", {{ $req }}.GetProject())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceListSubscriptions({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan(nil)
@@ -372,7 +372,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 0 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteSubscription", {{ $req }}.GetSubscription())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceDeleteSubscription({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -392,7 +392,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 0 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "modifyPushConfig", {{ $req }}.GetSubscription())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceModifyPushConfig({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -412,7 +412,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "getSnapshot", {{ $req }}.GetSnapshot())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceGetSnapshot({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -431,7 +431,7 @@ aspects:
           template: |-
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listSnapshots", {{ $req }}.GetProject())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceListSnapshots({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan(nil)
@@ -451,7 +451,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "createSnapshot", {{ $req }}.GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceCreateSnapshot({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -471,7 +471,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "updateSnapshot", {{ $req }}.GetSnapshot().GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceUpdateSnapshot({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -491,7 +491,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 0 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteSnapshot", {{ $req }}.GetSnapshot())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceDeleteSnapshot({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -511,7 +511,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "seek", {{ $req }}.GetSubscription())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceSeek({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -531,7 +531,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "createSchema", {{ $req }}.GetParent())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceCreateSchema({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -551,7 +551,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "getSchema", {{ $req }}.GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceGetSchema({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -570,7 +570,7 @@ aspects:
           template: |-
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listSchemas", {{ $req }}.GetParent())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceListSchemas({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan(nil)
@@ -589,7 +589,7 @@ aspects:
           template: |-
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "listSchemaRevisions", {{ $req }}.GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceListSchemaRevisions({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan(nil)
@@ -609,7 +609,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "commitSchema", {{ $req }}.GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceCommitSchema({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -629,7 +629,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "rollbackSchema", {{ $req }}.GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceRollbackSchema({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -649,7 +649,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteSchemaRevision", {{ $req }}.GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceDeleteSchemaRevision({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -669,7 +669,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 0 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "deleteSchema", {{ $req }}.GetName())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceDeleteSchema({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -689,7 +689,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "validateSchema", {{ $req }}.GetParent())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceValidateSchema({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
@@ -709,7 +709,7 @@ aspects:
             {{- $ctx := .Function.Argument 0 -}}
             {{- $req := .Function.Argument 1 -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceAdmin({{ $ctx }}, "validateMessage", {{ $req }}.GetParent())
+            __dd_ctx, __dd_closeSpan := __dd_pstrace_admin.TraceValidateMessage({{ $ctx }}, {{ $req }})
             {{ $ctx }} = __dd_ctx
             defer func() {
               __dd_closeSpan({{ $err }})
