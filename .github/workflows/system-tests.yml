@@ -50,7 +50,7 @@ jobs:
         run: |
           echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
       - name: Cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
@@ -78,7 +78,7 @@ jobs:
     steps:
       - name: Restore repo cache
         id: restore-repo-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: .git
           key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
@@ -226,7 +226,7 @@ jobs:
     steps:
       - name: Restore repo cache
         id: restore-repo-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: .git
           key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
@@ -267,7 +267,7 @@ jobs:
           echo "DD_APP_KEY=${{ steps.dd-sts.outputs.app_key }}" >> "$GITHUB_ENV"
 
       - name: Cache npm packages for datadog-ci
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: ~/.npm
           key: npm-datadog-ci-${{ runner.os }}-v1
@@ -302,7 +302,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@c39534efde335d32b08e7086f080ef42b173aaa0
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@44e3e8110dc92d3fa702d338ce5ff1ffdb73a0c9
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -411,7 +411,7 @@ jobs:
           policy: dd-trace-go-app-key
 
       - name: Cache npm packages for datadog-ci
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: ~/.npm
           key: npm-datadog-ci-${{ runner.os }}-v1
@@ -436,7 +436,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@c39534efde335d32b08e7086f080ef42b173aaa0
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@44e3e8110dc92d3fa702d338ce5ff1ffdb73a0c9
 
       - name: Compress artifact
         if: ${{ always() }}
