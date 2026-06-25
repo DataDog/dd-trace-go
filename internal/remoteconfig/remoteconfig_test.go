@@ -320,6 +320,121 @@ func TestEagerInitialPoll(t *testing.T) {
 	}
 }
 
+// TestNoEagerPollWithoutRegistration verifies that Start alone does not trigger
+// an immediate poll — the poll goroutine should only wake up via the ticker or
+// a product registration.
+func TestNoEagerPollWithoutRegistration(t *testing.T) {
+	Stop()
+	Reset()
+	defer Stop()
+
+	requestCh := make(chan struct{}, 1)
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test"
+	cfg.PollInterval = 1 * time.Hour
+	cfg.HTTP = &http.Client{
+		Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			select {
+			case requestCh <- struct{}{}:
+			default:
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+			}, nil
+		}),
+	}
+
+	require.NoError(t, Start(cfg))
+
+	select {
+	case <-requestCh:
+		t.Fatal("unexpected HTTP request: poll fired without any product registration")
+	case <-time.After(100 * time.Millisecond):
+		// Success: no poll fired without a registration.
+	}
+}
+
+// TestEagerPollOnEachRegistration verifies that each product registration
+// triggers its own poll once the previous one has drained. Back-to-back
+// registrations are debounced to a single poll; this test registers a second
+// product only after confirming the first poll has completed.
+func TestEagerPollOnEachRegistration(t *testing.T) {
+	Stop()
+	Reset()
+	defer Stop()
+
+	requestCh := make(chan struct{}, 10)
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test"
+	cfg.PollInterval = 1 * time.Hour
+	cfg.HTTP = &http.Client{
+		Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			requestCh <- struct{}{}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+			}, nil
+		}),
+	}
+
+	require.NoError(t, Start(cfg))
+
+	_, err := Subscribe("product-a", func(ProductUpdate) map[string]state.ApplyStatus { return nil })
+	require.NoError(t, err)
+
+	// Wait for the first poll to complete before registering the second product.
+	select {
+	case <-requestCh:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("no HTTP request within 500ms after first Subscribe")
+	}
+
+	require.NoError(t, RegisterProduct("product-b"))
+
+	select {
+	case <-requestCh:
+		// Success: second registration triggered its own poll.
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("no HTTP request within 500ms after second RegisterProduct")
+	}
+}
+
+// TestEagerPollViaRegisterProduct verifies that RegisterProduct (not just
+// Subscribe) also triggers an immediate poll.
+func TestEagerPollViaRegisterProduct(t *testing.T) {
+	Stop()
+	Reset()
+	defer Stop()
+
+	requestCh := make(chan struct{}, 1)
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test"
+	cfg.PollInterval = 1 * time.Hour
+	cfg.HTTP = &http.Client{
+		Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			select {
+			case requestCh <- struct{}{}:
+			default:
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+			}, nil
+		}),
+	}
+
+	require.NoError(t, Start(cfg))
+	require.NoError(t, RegisterProduct("test-product"))
+
+	select {
+	case <-requestCh:
+		// Success: eager poll fired after RegisterProduct.
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("no HTTP request within 500ms; eager poll after RegisterProduct did not fire (poll interval is 1h, so ticker cannot be the cause)")
+	}
+}
+
 func dummyCallback1(map[string]ProductUpdate) map[string]state.ApplyStatus {
 	return nil
 }
