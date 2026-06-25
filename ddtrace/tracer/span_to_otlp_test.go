@@ -222,6 +222,29 @@ func TestConvertSpanAttributes(t *testing.T) {
 	assert.Contains(t, m, "span.type")
 }
 
+// TestConvertSpanAttributesIntEncoding verifies that attributes the OTel semantic
+// conventions define as integers are exported as OTLP int, while other numeric
+// metrics remain doubles.
+func TestConvertSpanAttributesIntEncoding(t *testing.T) {
+	s := newBasicSpan("op")
+	s.metrics = map[string]float64{
+		"http.response.status_code": 200,
+		"server.port":               8080,
+		"network.peer.port":         54321,
+		"http.response.body.size":   1024,
+		"custom.metric":             1.5,
+	}
+
+	m := keyValuesToMap(convertSpanAttributes(s, ""))
+
+	assert.Equal(t, int64(200), m["http.response.status_code"])
+	assert.Equal(t, int64(8080), m["server.port"])
+	assert.Equal(t, int64(54321), m["network.peer.port"])
+	assert.Equal(t, int64(1024), m["http.response.body.size"])
+	// Non-semconv-int metrics stay doubles.
+	assert.Equal(t, 1.5, m["custom.metric"])
+}
+
 func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 	s := newBasicSpan("op")
 	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{"tag": "val"})
