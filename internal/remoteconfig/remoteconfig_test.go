@@ -635,23 +635,43 @@ func recordingClientConfig(requests chan<- struct{}) ClientConfig {
 	return cfg
 }
 
-// TestPollOnRegistration verifies that registering a product or capability
-// triggers an out-of-cycle poll instead of waiting a full PollInterval.
-func TestPollOnRegistration(t *testing.T) {
+// TestPollOnSubscribe verifies that Subscribe triggers an out-of-cycle poll
+// instead of waiting a full PollInterval. Subscribe registers the product,
+// callback, and capabilities atomically, so the poll can't race a callback that
+// isn't registered yet.
+func TestPollOnSubscribe(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(requests)))
+	_, err := Subscribe("TEST_PRODUCT", func(ProductUpdate) map[string]state.ApplyStatus { return nil }, FFEFlagEvaluation)
+	require.NoError(t, err)
+
+	select {
+	case <-requests:
+		// Out-of-cycle poll fired right after Subscribe.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Subscribe did not trigger a poll within 2s (PollInterval is 1h, so the ticker can't be the cause)")
+	}
+}
+
+// TestNoImmediatePollOnRegisterProductOrCapability verifies that the lower-level
+// RegisterProduct/RegisterCapability do NOT trigger an immediate poll. They are
+// used piecemeal (e.g. by AppSec) before a callback is registered, so an eager
+// poll could store config the repository later dedupes before the callback
+// exists; they are picked up on the next scheduled tick instead.
+func TestNoImmediatePollOnRegisterProductOrCapability(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
 
 	register := map[string]func() error{
-		"Subscribe": func() error {
-			_, err := Subscribe("TEST_PRODUCT", func(ProductUpdate) map[string]state.ApplyStatus { return nil }, FFEFlagEvaluation)
-			return err
-		},
 		"RegisterProduct":    func() error { return RegisterProduct("TEST_PRODUCT") },
 		"RegisterCapability": func() error { return RegisterCapability(FFEFlagEvaluation) },
 	}
-
 	for name, reg := range register {
 		t.Run(name, func(t *testing.T) {
-			Reset() // clear any client left by a prior test
+			Reset()
 			defer Stop()
 
 			requests := make(chan struct{}, 1)
@@ -660,16 +680,16 @@ func TestPollOnRegistration(t *testing.T) {
 
 			select {
 			case <-requests:
-				// Out-of-cycle poll fired right after registration.
-			case <-time.After(2 * time.Second):
-				t.Fatalf("%s did not trigger a poll within 2s (PollInterval is 1h, so the ticker can't be the cause)", name)
+				t.Fatalf("%s should not trigger an immediate poll", name)
+			case <-time.After(200 * time.Millisecond):
+				// Expected: picked up on the next tick, not eagerly.
 			}
 		})
 	}
 }
 
 // TestNoPollWithoutRegistration verifies that Start alone does not fire a poll;
-// out-of-cycle polling only happens after a product/capability is registered.
+// out-of-cycle polling only happens after a Subscribe.
 func TestNoPollWithoutRegistration(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
 	Reset()
@@ -686,30 +706,33 @@ func TestNoPollWithoutRegistration(t *testing.T) {
 	}
 }
 
-// TestPollOnEachRegistration verifies that a second registration triggers
-// another poll once the first has drained: pollNow coalesces while a signal is
-// queued, but still fires for later registrations after the channel drains.
-func TestPollOnEachRegistration(t *testing.T) {
+// TestPollOnEachSubscribe verifies that a second Subscribe triggers another poll
+// once the first has drained: pollNow coalesces while a signal is queued, but
+// still fires for later subscriptions after the channel drains.
+func TestPollOnEachSubscribe(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
 	Reset()
 	defer Stop()
 
 	requests := make(chan struct{}, 1)
 	require.NoError(t, Start(recordingClientConfig(requests)))
+	cb := func(ProductUpdate) map[string]state.ApplyStatus { return nil }
 
-	require.NoError(t, RegisterProduct("product-a"))
+	_, err := Subscribe("product-a", cb, FFEFlagEvaluation)
+	require.NoError(t, err)
 	select {
 	case <-requests:
 	case <-time.After(2 * time.Second):
-		t.Fatal("no poll within 2s after the first registration")
+		t.Fatal("no poll within 2s after the first Subscribe")
 	}
 
-	// The channel is drained; a later registration must trigger its own poll.
-	require.NoError(t, RegisterProduct("product-b"))
+	// The channel is drained; a later Subscribe must trigger its own poll.
+	_, err = Subscribe("product-b", cb)
+	require.NoError(t, err)
 	select {
 	case <-requests:
-		// Second registration triggered another poll.
+		// Second Subscribe triggered another poll.
 	case <-time.After(2 * time.Second):
-		t.Fatal("no poll within 2s after the second registration")
+		t.Fatal("no poll within 2s after the second Subscribe")
 	}
 }

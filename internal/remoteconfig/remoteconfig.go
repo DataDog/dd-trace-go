@@ -281,8 +281,11 @@ func Start(config ClientConfig) error {
 	return nil
 }
 
-// Stop stops the client's update poll loop and clears the singleton, so a later
-// Start() can create a fresh client without calling Reset() first.
+// Stop stops the client's update poll loop, waits for the poll goroutine to
+// exit (up to the HTTP client's timeout, since a poll may be in flight), then
+// clears the singleton so a later Start() creates a fresh client. If stopping
+// times out (e.g. no HTTP timeout is configured), the singleton is cleared
+// anyway and a restart could briefly overlap the in-flight poll.
 // Noop if the client is not running.
 func Stop() {
 	clientMux.Lock()
@@ -298,13 +301,14 @@ func Stop() {
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
 	client.stopOnce.Do(func() { close(client.stop) })
-	// A poll may be in-flight for up to the HTTP client's timeout, so wait at
-	// least that long for the goroutine to exit before clearing the singleton —
-	// otherwise a fresh Start() could overlap a still-running client. Bounded so
-	// we don't block forever when no HTTP timeout is configured.
+	// A poll may be in-flight for up to the HTTP client's timeout, so wait that
+	// long (plus a small grace, so done — closed just after the request returns —
+	// wins over the timeout) before clearing the singleton; otherwise a fresh
+	// Start() could overlap a still-running client. Floored at 1s so we don't
+	// block forever when no HTTP timeout is configured.
 	wait := time.Second
-	if client.HTTP != nil && client.HTTP.Timeout > wait {
-		wait = client.HTTP.Timeout
+	if client.HTTP != nil && client.HTTP.Timeout > 0 {
+		wait = client.HTTP.Timeout + time.Second
 	}
 	select {
 	case <-client.done:
@@ -456,6 +460,11 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 	for _, cap := range capabilities {
 		client.capabilities[cap] = struct{}{}
 	}
+	// Subscribe registers the product, callback, and capabilities atomically, so
+	// an immediate poll can't deliver config before the callback exists. The
+	// lower-level RegisterProduct/RegisterCapability are used piecemeal (e.g. by
+	// AppSec, before its callback is registered), so they do NOT poll eagerly —
+	// they're picked up on the next scheduled tick.
 	client.requestPoll()
 	return SubscriptionToken(id), nil
 }
@@ -523,7 +532,9 @@ func RegisterProduct(p string) error {
 	}
 
 	client.products[p] = struct{}{}
-	client.requestPoll()
+	// No eager poll here: RegisterProduct is used before a callback is registered
+	// (see Subscribe), so a poll could store config the repository later dedupes
+	// before the callback exists. Picked up on the next scheduled tick.
 	return nil
 }
 
@@ -571,7 +582,7 @@ func RegisterCapability(cpb Capability) error {
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
 	client.capabilities[cpb] = struct{}{}
-	client.requestPoll()
+	// No eager poll here (see RegisterProduct / Subscribe): picked up next tick.
 	return nil
 }
 
