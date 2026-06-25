@@ -264,23 +264,26 @@ func Start(config ClientConfig) error {
 			case <-stop:
 				return
 			case <-pollNow: // a product/capability was registered
-				c.Lock()
-				c.updateState()
-				c.Unlock()
 			case <-ticker.C:
-				c.Lock()
-				c.updateState()
-				c.Unlock()
 			}
+			// If shutdown was requested at the same time as a pollNow/ticker
+			// wakeup (select picks a ready case at random), exit without polling.
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			c.Lock()
+			c.updateState()
+			c.Unlock()
 		}
 	}()
 	return nil
 }
 
-// Stop stops the client's update poll loop.
-// Noop if the client has already been stopped.
-// The remote config client is supposed to have the same lifecycle as the tracer.
-// It can't be restarted after a call to Stop() unless explicitly calling Reset().
+// Stop stops the client's update poll loop and clears the singleton, so a later
+// Start() can create a fresh client without calling Reset() first.
+// Noop if the client is not running.
 func Stop() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
