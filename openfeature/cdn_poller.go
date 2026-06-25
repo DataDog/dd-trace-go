@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"path"
@@ -22,6 +23,10 @@ const (
 	cdnAPIKeyHeader      = "DD-API-KEY"
 
 	maxCDNResponseBodyBytes = 10 << 20
+	cdnRetryAttempts        = 3
+
+	defaultCDNRetryInitialBackoff = 100 * time.Millisecond
+	defaultCDNRetryMaxBackoff     = 2 * time.Second
 )
 
 type cdnPollerConfig struct {
@@ -48,8 +53,11 @@ type cdnPoller struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	mu   sync.Mutex
-	etag string
+	pollMu sync.Mutex
+
+	mu            sync.Mutex
+	etag          string
+	lastKnownGood *universalFlagsConfiguration
 }
 
 func newCDNPoller(config cdnPollerConfig) (*cdnPoller, error) {
@@ -71,6 +79,9 @@ func newCDNPoller(config cdnPollerConfig) (*cdnPoller, error) {
 	}
 	if config.apply == nil {
 		return nil, fmt.Errorf("missing CDN configuration apply callback")
+	}
+	if config.backoff == nil {
+		config.backoff = defaultCDNBackoff
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -117,7 +128,10 @@ func (p *cdnPoller) run() {
 			select {
 			case <-p.ctx.Done():
 				return
-			case <-p.tickC:
+			case _, ok := <-p.tickC:
+				if !ok {
+					return
+				}
 				_ = p.pollOnce(p.ctx)
 			}
 		}
@@ -151,7 +165,10 @@ func (p *cdnPoller) stop(ctx context.Context) error {
 }
 
 func (p *cdnPoller) pollOnce(ctx context.Context) error {
-	body, etag, notModified, err := p.fetch(ctx)
+	p.pollMu.Lock()
+	defer p.pollMu.Unlock()
+
+	body, etag, notModified, err := p.fetchWithRetry(ctx)
 	if err != nil {
 		return err
 	}
@@ -167,17 +184,36 @@ func (p *cdnPoller) pollOnce(ctx context.Context) error {
 
 	p.mu.Lock()
 	p.etag = etag
+	p.lastKnownGood = config
 	p.mu.Unlock()
 	return nil
 }
 
-func (p *cdnPoller) fetch(ctx context.Context) ([]byte, string, bool, error) {
+func (p *cdnPoller) fetchWithRetry(ctx context.Context) ([]byte, string, bool, error) {
+	var lastErr error
+	for attempt := 1; attempt <= cdnRetryAttempts; attempt++ {
+		body, etag, notModified, retryable, err := p.fetch(ctx)
+		if err == nil {
+			return body, etag, notModified, nil
+		}
+		lastErr = err
+		if !retryable || attempt == cdnRetryAttempts {
+			return nil, "", false, err
+		}
+		if err := sleepWithContext(ctx, p.backoff(attempt)); err != nil {
+			return nil, "", false, err
+		}
+	}
+	return nil, "", false, lastErr
+}
+
+func (p *cdnPoller) fetch(ctx context.Context) ([]byte, string, bool, bool, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, p.requestTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, p.endpoint, nil)
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", false, false, err
 	}
 	req.Header.Set(cdnAPIKeyHeader, p.apiKey)
 	p.mu.Lock()
@@ -189,24 +225,64 @@ func (p *cdnPoller) fetch(ctx context.Context) ([]byte, string, bool, error) {
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", false, ctx.Err() == nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotModified {
-		return nil, "", true, nil
+		return nil, "", true, false, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
-		return nil, "", false, fmt.Errorf("feature flag CDN request failed with status %d", resp.StatusCode)
+		return nil, "", false, retryableCDNStatus(resp.StatusCode), fmt.Errorf("feature flag CDN request failed with status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCDNResponseBodyBytes+1))
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", false, true, err
 	}
 	if len(body) > maxCDNResponseBodyBytes {
-		return nil, "", false, fmt.Errorf("feature flag CDN response exceeds %d bytes", maxCDNResponseBodyBytes)
+		return nil, "", false, false, fmt.Errorf("feature flag CDN response exceeds %d bytes", maxCDNResponseBodyBytes)
 	}
-	return body, resp.Header.Get("ETag"), false, nil
+	return body, resp.Header.Get("ETag"), false, false, nil
+}
+
+func retryableCDNStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status >= 500
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func defaultCDNBackoff(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	backoff := defaultCDNRetryInitialBackoff
+	for i := 1; i < attempt; i++ {
+		backoff *= 2
+		if backoff >= defaultCDNRetryMaxBackoff {
+			backoff = defaultCDNRetryMaxBackoff
+			break
+		}
+	}
+	if backoff <= 0 {
+		return 0
+	}
+	jitterLimit := int64(backoff / 2)
+	if jitterLimit <= 0 {
+		return backoff
+	}
+	return backoff + time.Duration(rand.Int63n(jitterLimit+1))
 }
