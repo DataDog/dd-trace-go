@@ -83,6 +83,8 @@ type proxyContext struct {
 
 type pubsubContext struct {
 	subscriptionName string
+	projectID        string
+	subscriptionID   string
 	messageID        string
 }
 
@@ -178,11 +180,11 @@ func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
 	if err == nil {
 		return startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
 	} else {
-		log.Debug("%s\n", err.Error())
+		log.Debug("unable to start inferred proxy span: %s\n", err.Error())
 	}
 
-	pubsubSpanContext, pubsubErr := extractInferredPubsubSpan(headers)
-	if pubsubErr == nil {
+	pubsubCtx := extractInferredPubsubContext(headers)
+	if pubsubCtx != nil {
 		if cfg.pubsubPropagationAsSpanLinks && spanParentCtx != nil {
 			// Record the producer span as a span link, keeping producer and consumer traces separate.
 			link := tracer.SpanLink{
@@ -191,59 +193,62 @@ func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
 				SpanID:      spanParentCtx.SpanID(),
 			}
 			inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
-			return startInferredPubsubSpan(pubsubSpanContext, nil, inferredStartSpanOpts...)
+			return startInferredPubsubPushSubscriptionSpan(pubsubCtx, nil, inferredStartSpanOpts...)
 		}
-		return startInferredPubsubSpan(pubsubSpanContext, spanParentCtx, inferredStartSpanOpts...)
+		return startInferredPubsubPushSubscriptionSpan(pubsubCtx, spanParentCtx, inferredStartSpanOpts...)
 	} else {
-		log.Debug("%s\n", pubsubErr.Error())
+		log.Debug("Unable to create inferred pubsub span. Skipping")
 	}
 
 	return nil
 }
 
-// validatePubsubSubscriptionResourceName checks that name matches the full
-// the expected format projects/{project_id}/subscriptions/{subscription_id}
-func validatePubsubSubscriptionResourceName(name string) error {
-	if name == "" {
-		return errors.New("pubsub subscription name is empty")
-	}
-	parts := strings.Split(name, "/")
-	if len(parts) != 4 {
-		return fmt.Errorf("pubsub subscription name must have 4 path segments, got %d", len(parts))
-	}
-	if parts[0] != "projects" || parts[2] != "subscriptions" {
-		return errors.New("pubsub subscription name must be projects/{project_id}/subscriptions/{subscription_id}")
-	}
-	if parts[1] == "" || parts[3] == "" {
-		return errors.New("pubsub subscription name has empty project_id or subscription_id")
-	}
-	return nil
-}
-
-func extractInferredPubsubSpan(headers http.Header) (*pubsubContext, error) {
-	if _, ok := headers[PubsubHeaderSubscriptionName]; !ok {
-		return nil, errors.New("pubsub header subscription name does not exist")
-	}
-
+// extractInferredPubsubContext reads Pub/Sub push metadata headers and returns a
+// fully populated pubsubContext, or an error if headers are missing or invalid.
+func extractInferredPubsubContext(headers http.Header) *pubsubContext {
 	subscriptionName := headers.Get(PubsubHeaderSubscriptionName)
-	if err := validatePubsubSubscriptionResourceName(subscriptionName); err != nil {
-		return nil, err
+	if subscriptionName == "" {
+		return nil
 	}
 
-	if _, ok := headers[PubsubHeaderMessageID]; !ok {
-		return nil, errors.New("pubsub header message Id does not exist")
+	parts := strings.Split(subscriptionName, "/")
+
+	// check that subscriptionName matches format projects/{project_id}/subscriptions/{subscription_id}.
+	if len(parts) != 4 || // must have 4 segments
+		parts[0] != "projects" || parts[2] != "subscriptions" || // must match 'projects' and 'subscriptions'
+		parts[1] == "" || parts[3] == "" { // project and subscription IDs can't be empty
+		return nil
 	}
 
+	projectID := parts[1]
+	subscriptionID := parts[3]
+
+	if projectID == "" || subscriptionID == "" {
+		return nil
+	}
+
+	messageID := headers.Get(PubsubHeaderMessageID)
+	if messageID == "" {
+		return nil
+	}
 	return &pubsubContext{
 		subscriptionName: subscriptionName,
-		messageID:        headers.Get(PubsubHeaderMessageID),
-	}, nil
+		projectID:        projectID,
+		subscriptionID:   subscriptionID,
+		messageID:        messageID,
+	}
 }
-func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
 
+// startInferredPubsubPushSubscriptionSpan starts an inferred pubsub.receive consumer span
+// for HTTP handlers that process gcp Pub/Sub push deliveries. The span is tagged like
+// library-instrumented subscribe/receive paths so push-based workloads show the same
+// messaging layer in the trace as pull/subscribe flows.
+//
+// See: https://cloud.google.com/pubsub/docs/push
+func startInferredPubsubPushSubscriptionSpan(pubsubContex *pubsubContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
 	configService := globalconfig.ServiceName()
 	spanName := "pubsub.receive"
-	component := "cloud.google.com/go/pubsub"
+	component := "net/http"
 	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+1)
 	copy(optsLocal, opts)
 
@@ -253,11 +258,6 @@ func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanCon
 				cfg.Tags = make(map[string]any)
 			}
 
-			// subscription name is formatted as projects/{project_id}/subscriptions/{sub_id}
-			parts := strings.Split(pubsubContex.subscriptionName, "/")
-			projectID := parts[1]
-			subID := parts[3]
-
 			cfg.Parent = parent
 			cfg.Tags[ext.SpanType] = ext.SpanTypeMessageConsumer
 			cfg.Tags[ext.SpanName] = spanName
@@ -265,11 +265,11 @@ func startInferredPubsubSpan(pubsubContex *pubsubContext, parent *tracer.SpanCon
 			cfg.Tags[ext.Component] = component
 			cfg.Tags[ext.ResourceName] = pubsubContex.subscriptionName
 			cfg.Tags[ext.SpanKind] = ext.SpanKindConsumer
-			cfg.Tags[ext.MessagingDestinationName] = subID
-			cfg.Tags["messaging.operation"] = "receive"
-			cfg.Tags["messaging.message_id"] = pubsubContex.messageID
+			cfg.Tags[ext.MessagingDestinationName] = pubsubContex.subscriptionID
+			cfg.Tags[ext.MessagingOperationName] = "receive"
+			cfg.Tags[ext.MessagingMessageID] = pubsubContex.messageID
 			cfg.Tags["message_id"] = pubsubContex.messageID // duplicate to align with existing pubsub tags for pull subscriptions
-			cfg.Tags["gcloud.project_id"] = projectID
+			cfg.Tags["gcloud.project_id"] = pubsubContex.projectID
 			cfg.Tags[ext.MessagingSystem] = "googlepubsub"
 			cfg.Tags["_dd.inferred_span"] = 1
 		},
