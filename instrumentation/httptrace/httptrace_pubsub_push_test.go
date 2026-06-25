@@ -89,8 +89,8 @@ func TestInferredPubsubPushSpans(t *testing.T) {
 		assert.Equal(t, testSubscriptionName, pubsubSpan.Tag(ext.ResourceName))
 		assert.Equal(t, ext.SpanKindConsumer, pubsubSpan.Tag(ext.SpanKind))
 		assert.Equal(t, testSubscriptionID, pubsubSpan.Tag(ext.MessagingDestinationName))
-		assert.Equal(t, "receive", pubsubSpan.Tag("messaging.operation"))
-		assert.Equal(t, testMessageID, pubsubSpan.Tag("messaging.message_id"))
+		assert.Equal(t, "receive", pubsubSpan.Tag(ext.MessagingOperationName))
+		assert.Equal(t, testMessageID, pubsubSpan.Tag(ext.MessagingMessageID))
 		assert.Equal(t, testMessageID, pubsubSpan.Tag("message_id"))
 		assert.Equal(t, testProjectID, pubsubSpan.Tag("gcloud.project_id"))
 		assert.Equal(t, "googlepubsub", pubsubSpan.Tag(ext.MessagingSystem))
@@ -296,40 +296,41 @@ func TestExtractInferredPubsubContext(t *testing.T) {
 		headers.Set(PubsubHeaderSubscriptionName, testSubscriptionName)
 		headers.Set(PubsubHeaderMessageID, testMessageID)
 
-		ctx, err := extractInferredPubsubSpan(headers)
+		ctx := extractInferredPubsubContext(headers)
 
-		require.NoError(t, err)
 		assert.Equal(t, testSubscriptionName, ctx.subscriptionName)
+		assert.Equal(t, testProjectID, ctx.projectID)
+		assert.Equal(t, testSubscriptionID, ctx.subscriptionID)
 		assert.Equal(t, testMessageID, ctx.messageID)
 	})
 
-	t.Run("returns error when subscription name header is absent", func(t *testing.T) {
+	t.Run("returns nil when subscription name header is absent", func(t *testing.T) {
 		headers := http.Header{}
 		headers.Set(PubsubHeaderMessageID, testMessageID)
 
-		_, err := extractInferredPubsubSpan(headers)
+		ctx := extractInferredPubsubContext(headers)
 
-		require.Error(t, err)
+		require.Nil(t, ctx)
 	})
 
-	t.Run("returns error when message ID header is absent", func(t *testing.T) {
+	t.Run("returns nil when message ID header is absent", func(t *testing.T) {
 		headers := http.Header{}
 		headers.Set(PubsubHeaderSubscriptionName, testSubscriptionName)
 
-		_, err := extractInferredPubsubSpan(headers)
+		ctx := extractInferredPubsubContext(headers)
 
-		require.Error(t, err)
+		require.Nil(t, ctx)
 	})
 
-	t.Run("returns error when both headers are absent", func(t *testing.T) {
+	t.Run("returns nil when both headers are absent", func(t *testing.T) {
 		headers := http.Header{}
 
-		_, err := extractInferredPubsubSpan(headers)
+		ctx := extractInferredPubsubContext(headers)
 
-		require.Error(t, err)
+		require.Nil(t, ctx)
 	})
 
-	t.Run("returns error when subscription name has wrong format", func(t *testing.T) {
+	t.Run("returns nil when subscription name has wrong format", func(t *testing.T) {
 		for _, bad := range []string{
 			"",
 			"my-subscription",
@@ -345,9 +346,9 @@ func TestExtractInferredPubsubContext(t *testing.T) {
 				headers.Set(PubsubHeaderSubscriptionName, bad)
 				headers.Set(PubsubHeaderMessageID, testMessageID)
 
-				_, err := extractInferredPubsubSpan(headers)
+				ctx := extractInferredPubsubContext(headers)
 
-				require.Error(t, err)
+				require.Nil(t, ctx)
 			})
 		}
 	})

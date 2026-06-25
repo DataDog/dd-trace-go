@@ -65,6 +65,11 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 		tracer.Tag(ext.Component, tr.component),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
+		tracer.Tag(ext.MessagingOperationName, "send"),
+		tracer.Tag(ext.MessagingDestinationName, topic.String()),
+	}
+	if projectID := projectIDFromResourceName(topic.String()); projectID != "" {
+		spanOpts = append(spanOpts, tracer.Tag("gcloud.project_id", projectID))
 	}
 	if cfg.serviceName != "" {
 		spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
@@ -89,6 +94,7 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 	closeSpan := func(serverID string, err error) {
 		once.Do(func() {
 			span.SetTag("server_id", serverID)
+			span.SetTag(ext.MessagingMessageID, serverID)
 			span.Finish(tracer.WithError(err))
 		})
 	}
@@ -110,10 +116,13 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 			tracer.Tag("num_attributes", len(msg.Attributes)),
 			tracer.Tag("ordering_key", msg.OrderingKey),
 			tracer.Tag("message_id", msg.ID),
+			tracer.Tag(ext.MessagingMessageID, msg.ID),
 			tracer.Tag("publish_time", msg.PublishTime.String()),
 			tracer.Tag(ext.Component, tr.component),
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
+			tracer.Tag(ext.MessagingOperationName, "receive"),
+			tracer.Tag(ext.MessagingDestinationName, s.String()),
 		}
 		if cfg.propagationAsSpanLinks && parentSpanCtx != nil {
 			// Record the producer span as a span link
@@ -129,6 +138,9 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 			if parentSpanCtx != nil && parentSpanCtx.SpanLinks() != nil {
 				opts = append(opts, tracer.WithSpanLinks(parentSpanCtx.SpanLinks()))
 			}
+		}
+		if projectID := projectIDFromResourceName(s.String()); projectID != "" {
+			opts = append(opts, tracer.Tag("gcloud.project_id", projectID))
 		}
 		if cfg.serviceName != "" {
 			opts = append(opts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))

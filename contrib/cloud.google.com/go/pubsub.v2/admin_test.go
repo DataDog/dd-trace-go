@@ -153,7 +153,6 @@ func TestTraceAdminWithService(t *testing.T) {
 	assert.Equal(t, "my-admin-service", spans[0].Tag(ext.ServiceName))
 }
 
-
 func assertAdminSpan(t *testing.T, span *mocktracer.Span, method, resource string) {
 	t.Helper()
 	assert.Equal(t, "gcp.pubsub.request", span.OperationName())
