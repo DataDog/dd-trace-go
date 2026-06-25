@@ -49,10 +49,6 @@ type ProcessTags struct {
 	mu sync.RWMutex
 	// +checklocks:mu
 	tags map[string]string
-	// +checklocks:mu
-	str string
-	// +checklocks:mu
-	slice []string
 
 	sliceAtomic atomic.Pointer[[]string]
 	strAtomic   atomic.Pointer[string]
@@ -119,8 +115,6 @@ func (p *ProcessTags) rebuild() {
 		tagsSlice = append(tagsSlice, keyVal)
 	}
 	str := b.String()
-	p.slice = tagsSlice
-	p.str = str
 	p.sliceAtomic.Store(&tagsSlice)
 	p.strAtomic.Store(&str)
 }

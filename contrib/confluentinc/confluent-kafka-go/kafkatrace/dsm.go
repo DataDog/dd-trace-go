@@ -49,7 +49,7 @@ func (tr *Tracer) SetConsumeCheckpoint(msg Message) {
 	topic := msg.GetTopicPartition().GetTopic()
 	groupID := tr.groupID
 	clusterID := tr.ClusterID()
-	key := "in\x00" + topic + "\x00" + groupID + "\x00" + clusterID
+	key := edgeFingerprint("in", topic, groupID, clusterID)
 	edges := tr.dsmTagCache.get(key)
 	if edges == nil {
 		edges = []string{"direction:in", "topic:" + topic, "type:kafka"}
@@ -79,7 +79,7 @@ func (tr *Tracer) SetProduceCheckpoint(msg Message) {
 	}
 	topic := msg.GetTopicPartition().GetTopic()
 	clusterID := tr.ClusterID()
-	key := "out\x00" + topic + "\x00" + clusterID
+	key := edgeFingerprint("out", topic, "", clusterID)
 	edges := tr.dsmTagCache.get(key)
 	if edges == nil {
 		edges = []string{"direction:out", "topic:" + topic, "type:kafka"}

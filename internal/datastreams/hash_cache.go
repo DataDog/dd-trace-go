@@ -47,11 +47,13 @@ func (c *hashCache) get(service, env string, edgeTags, processTags []string, con
 		return v.(uint64)
 	}
 	hash := pathwayHash(nodeHash(service, env, edgeTags, processTags, containerTagsHash), parentHash)
-	if c.size.Load() >= maxHashCacheSize {
+	// Reserve a slot atomically; give it back if we'd exceed the bound or the key is already present.
+	if c.size.Add(1) > maxHashCacheSize {
+		c.size.Add(-1)
 		return hash
 	}
-	if _, loaded := c.m.LoadOrStore(fp, hash); !loaded {
-		c.size.Add(1)
+	if _, loaded := c.m.LoadOrStore(fp, hash); loaded {
+		c.size.Add(-1)
 	}
 	return hash
 }
