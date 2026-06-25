@@ -753,6 +753,55 @@ func TestSendRequestWithUnsupportedResponseFormat(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported format 'unknown'")
 }
 
+// TestSendRequestExpectJSONResponseRetriesOnUnknownFormat verifies that when
+// ExpectJSONResponse is true a 2xx response with a non-JSON Content-Type is
+// retried up to MaxRetries times and then surfaces an error.  When
+// ExpectJSONResponse is false the existing behaviour (return as success) is
+// preserved so upload endpoints are unaffected.
+func TestSendRequestExpectJSONResponseRetriesOnUnknownFormat(t *testing.T) {
+	t.Parallel()
+
+	// Count how many times the server is called.
+	calls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set(HeaderContentType, "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("not json"))
+	}))
+	defer ts.Close()
+
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
+
+	// With ExpectJSONResponse: true — should exhaust retries and return an error.
+	// The loop runs attempt 0..MaxRetries inclusive, so MaxRetries=2 → 3 total calls.
+	config := RequestConfig{
+		Method:             "GET",
+		URL:                ts.URL,
+		MaxRetries:         2,
+		Backoff:            1, // minimal backoff for tests
+		ExpectJSONResponse: true,
+	}
+	resp, err := handler.SendRequest(config)
+	assert.Nil(t, resp)
+	assert.Error(t, err)
+	assert.Equal(t, "max retries exceeded", err.Error())
+	assert.Equal(t, 3, calls, "expected MaxRetries+1 total calls")
+
+	// With ExpectJSONResponse: false (default) — should return the response as-is, no retry.
+	calls = 0
+	config2 := RequestConfig{
+		Method:             "GET",
+		URL:                ts.URL,
+		ExpectJSONResponse: false,
+	}
+	resp2, err2 := handler.SendRequest(config2)
+	assert.NoError(t, err2)
+	assert.NotNil(t, resp2)
+	assert.Equal(t, "unknown", resp2.Format)
+	assert.Equal(t, 1, calls, "expected exactly 1 call without retry")
+}
+
 func TestPrepareContentWithNonByteContentForOctetStream(t *testing.T) {
 	t.Parallel()
 	_, err := prepareContent(12345, ContentTypeOctetStream)
@@ -1023,4 +1072,138 @@ func TestSerializeDataWithInvalidDataType(t *testing.T) {
 	_, err := serializeData(make(chan int), FormatJSON)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported type: chan int")
+}
+
+func TestSendRequestWithBodyDecompressErrorRetries(t *testing.T) {
+	t.Parallel()
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if attempts == 0 {
+			// First attempt: claim gzip but send garbage → decompress error → must retry
+			w.Header().Set(HeaderContentEncoding, ContentEncodingGzip)
+			w.Header().Set(HeaderContentType, ContentTypeJSON)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("not valid gzip data"))
+			attempts++
+			return
+		}
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"success": true}`))
+	}))
+	defer ts.Close()
+
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
+	config := RequestConfig{
+		Method:     "GET",
+		URL:        ts.URL,
+		MaxRetries: 2,
+		Backoff:    10 * time.Millisecond,
+	}
+
+	resp, err := handler.SendRequest(config)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.True(t, resp.CanUnmarshal)
+
+	var data map[string]bool
+	err = resp.Unmarshal(&data)
+	assert.NoError(t, err)
+	assert.True(t, data["success"])
+}
+
+// TestSendRequestBodyReaderRetainsContentOnRetry verifies that when a request
+// body is an io.Reader and a retry is triggered by a bad gzip response, the
+// retry sends the full original payload rather than an empty/drained reader.
+func TestSendRequestBodyReaderRetainsContentOnRetry(t *testing.T) {
+	t.Parallel()
+	const payload = `{"logs":"data"}`
+	attempts := 0
+	var receivedBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts == 0 {
+			// Trigger decompress-error retry path: claim gzip, send garbage.
+			w.Header().Set(HeaderContentEncoding, ContentEncodingGzip)
+			w.Header().Set(HeaderContentType, ContentTypeJSON)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("not valid gzip data"))
+			attempts++
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		receivedBody = string(body)
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"success": true}`))
+	}))
+	defer ts.Close()
+
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
+	config := RequestConfig{
+		Method:     "POST",
+		URL:        ts.URL,
+		Body:       bytes.NewReader([]byte(payload)),
+		Format:     FormatJSON,
+		MaxRetries: 2,
+		Backoff:    10 * time.Millisecond,
+	}
+
+	resp, err := handler.SendRequest(config)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, payload, receivedBody, "retry must send the full original body, not a drained reader")
+}
+
+// TestSendRequestFilesReaderRetainsContentOnRetry verifies that when a
+// multipart file's Content is an io.Reader and a retry is triggered, the retry
+// sends the full original file content rather than empty bytes.
+func TestSendRequestFilesReaderRetainsContentOnRetry(t *testing.T) {
+	t.Parallel()
+	const filePayload = "binary-file-content"
+	attempts := 0
+	var receivedFileContent string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts == 0 {
+			// Trigger decompress-error retry path.
+			w.Header().Set(HeaderContentEncoding, ContentEncodingGzip)
+			w.Header().Set(HeaderContentType, ContentTypeJSON)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("not valid gzip data"))
+			attempts++
+			return
+		}
+		if err := r.ParseMultipartForm(DefaultMultipartMemorySize); err != nil {
+			http.Error(w, "bad multipart", http.StatusBadRequest)
+			return
+		}
+		if f, _, err := r.FormFile("payload"); err == nil {
+			content, _ := io.ReadAll(f)
+			receivedFileContent = string(content)
+		}
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"success": true}`))
+	}))
+	defer ts.Close()
+
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
+	config := RequestConfig{
+		Method: "POST",
+		URL:    ts.URL,
+		Files: []FormFile{
+			{
+				FieldName:   "payload",
+				FileName:    "data.bin",
+				Content:     bytes.NewReader([]byte(filePayload)),
+				ContentType: ContentTypeOctetStream,
+			},
+		},
+		MaxRetries: 2,
+		Backoff:    10 * time.Millisecond,
+	}
+
+	resp, err := handler.SendRequest(config)
+	assert.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, filePayload, receivedFileContent, "retry must send the full original file content, not a drained reader")
 }

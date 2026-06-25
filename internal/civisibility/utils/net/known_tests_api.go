@@ -112,6 +112,7 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 
 			for {
 				request := c.getPostRequestConfig(knownTestsURLPath, body)
+				request.ExpectJSONResponse = true
 				if request.Compressed {
 					telemetry.KnownTestsRequest(telemetry.CompressedRequestCompressedType)
 				} else {
