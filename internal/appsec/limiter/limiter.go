@@ -45,10 +45,7 @@ func newLimiter(tokens, maxTokens int64, interval time.Duration) *rate.Limiter {
 	limit := rate.Limit(float64(maxTokens) / interval.Seconds())
 	lim := rate.NewLimiter(limit, burst)
 	t0 := time.Now()
-	initial := tokens
-	if initial > int64(burst) {
-		initial = int64(burst)
-	}
+	initial := min(tokens, int64(burst))
 	if drain := int64(burst) - initial; drain > 0 {
 		lim.AllowN(t0, int(drain))
 	}
