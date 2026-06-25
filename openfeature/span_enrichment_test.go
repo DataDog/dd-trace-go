@@ -161,6 +161,32 @@ func TestBuildEvaluation(t *testing.T) {
 				DefaultValue: "fallback",
 			},
 		},
+		{
+			// Type mismatches are special: the provider can resolve a real variant
+			// and carry serial metadata before the typed OpenFeature API returns
+			// the caller default. Span enrichment must follow the value returned
+			// to the application, not the stale assignment metadata.
+			name:    "type mismatch with serial id records runtime default",
+			evalCtx: of.NewEvaluationContext("user-222", map[string]any{}),
+			details: of.InterfaceEvaluationDetails{
+				Value: "fallback",
+				EvaluationDetails: of.EvaluationDetails{
+					FlagKey: "typed-flag",
+					ResolutionDetail: of.ResolutionDetail{
+						Variant:   "configured",
+						ErrorCode: of.TypeMismatchCode,
+						FlagMetadata: of.FlagMetadata{
+							metadataSerialIDKey: uint32(202),
+							metadataDoLogKey:    true,
+						},
+					},
+				},
+			},
+			expected: &i.FeatureFlagEvaluation{
+				FlagKey:      "typed-flag",
+				DefaultValue: "fallback",
+			},
+		},
 	}
 
 	for _, tt := range tests {
