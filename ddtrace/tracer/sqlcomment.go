@@ -8,9 +8,13 @@ package tracer
 import (
 	"strconv"
 	"strings"
+	"sync/atomic"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
 
@@ -30,6 +34,12 @@ const (
 	DBMPropagationModeService DBMPropagationMode = "service"
 	// DBMPropagationModeFull represents the dbm propagation mode where both service tags and tracing tags are propagated. Tracing tags include span id, trace id and the sampled flag.
 	DBMPropagationModeFull DBMPropagationMode = "full"
+	// DBMPropagationModeDynamicService is like DBMPropagationModeService but also injects a
+	// base service hash (ddsh) and tags the span with _dd.propagated_hash. It does not inject
+	// traceparent. The hash is only injected once process tags are enabled
+	// (DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED) and the Agent has returned a container
+	// tags hash; until then this mode behaves like DBMPropagationModeService.
+	DBMPropagationModeDynamicService DBMPropagationMode = "dynamic_service"
 )
 
 // Key names for SQL comment tags.
@@ -45,6 +55,7 @@ const (
 	sqlCommentPeerDBName   = "dddb"
 	// This is for when peer.service is explicitly set as a tag
 	sqlCommentPeerService = "ddprs"
+	sqlCommentBaseHash    = "ddsh"
 )
 
 // Current trace context version (see https://www.w3.org/TR/trace-context/#version)
@@ -61,6 +72,7 @@ type SQLCommentCarrier struct {
 	PeerDBHostname string
 	PeerDBName     string
 	PeerService    string
+	BaseHash       string
 }
 
 // Inject injects a span context in the carrier's Query field as a comment.
@@ -82,36 +94,84 @@ func (c *SQLCommentCarrier) Inject(ctx *SpanContext) error {
 			traceID = ctx.traceID.Lower()
 		}
 		tags[sqlCommentTraceParent] = encodeTraceParent(traceID, c.SpanID, sampled)
-		fallthrough
+		c.injectServiceTags(ctx, tags)
+	case DBMPropagationModeDynamicService:
+		if hash := computeBaseHash(); hash != "" {
+			tags[sqlCommentBaseHash] = hash
+			c.BaseHash = hash
+		}
+		c.injectServiceTags(ctx, tags)
 	case DBMPropagationModeService:
-		if ctx != nil {
-			spanSnapshot := ctx.getSpanSnapshot()
-			if spanSnapshot.env != "" {
-				tags[sqlCommentEnv] = spanSnapshot.env
-			}
-			if spanSnapshot.version != "" {
-				tags[sqlCommentParentVersion] = spanSnapshot.version
-			}
-			if spanSnapshot.peerService != "" {
-				tags[sqlCommentPeerService] = spanSnapshot.peerService
-			}
-		}
-		if c.PeerDBName != "" {
-			tags[sqlCommentPeerDBName] = c.PeerDBName
-		}
-		if c.PeerDBHostname != "" {
-			tags[sqlCommentPeerHostname] = c.PeerDBHostname
-		}
-		if tags[sqlCommentPeerService] == "" && c.PeerService != "" {
-			tags[sqlCommentPeerService] = c.PeerService
-		}
-		if globalconfig.ServiceName() != "" {
-			tags[sqlCommentParentService] = globalconfig.ServiceName()
-		}
-		tags[sqlCommentDBService] = c.DBServiceName
+		c.injectServiceTags(ctx, tags)
 	}
 	c.Query = commentQuery(c.Query, tags)
 	return nil
+}
+
+func (c *SQLCommentCarrier) injectServiceTags(ctx *SpanContext, tags map[string]string) {
+	if ctx != nil {
+		spanSnapshot := ctx.getSpanSnapshot()
+		if spanSnapshot.env != "" {
+			tags[sqlCommentEnv] = spanSnapshot.env
+		}
+		if spanSnapshot.version != "" {
+			tags[sqlCommentParentVersion] = spanSnapshot.version
+		}
+		if spanSnapshot.peerService != "" {
+			tags[sqlCommentPeerService] = spanSnapshot.peerService
+		}
+	}
+	if c.PeerDBName != "" {
+		tags[sqlCommentPeerDBName] = c.PeerDBName
+	}
+	if c.PeerDBHostname != "" {
+		tags[sqlCommentPeerHostname] = c.PeerDBHostname
+	}
+	if tags[sqlCommentPeerService] == "" && c.PeerService != "" {
+		tags[sqlCommentPeerService] = c.PeerService
+	}
+	if globalconfig.ServiceName() != "" {
+		tags[sqlCommentParentService] = globalconfig.ServiceName()
+	}
+	tags[sqlCommentDBService] = c.DBServiceName
+}
+
+type baseHashEntry struct {
+	containerHash string
+	result        string
+}
+
+var cachedBaseHash atomic.Pointer[baseHashEntry]
+
+// computeBaseHash returns the DBM base hash as a signed decimal string.
+func computeBaseHash() string {
+	svc := globalconfig.ServiceName()
+	if svc == "" {
+		return ""
+	}
+	pTags := processtags.GlobalTags()
+	if pTags == nil {
+		return ""
+	}
+	containerTagsHash := processtags.ContainerTagsHash()
+	if containerTagsHash == "" {
+		return ""
+	}
+	// The cache is keyed only on containerTagsHash, yet the result also depends on svc, env
+	// and process tags. This is safe because those are assumed immutable for the cache's
+	// lifetime: svc/env are installed during newTracer and process tags are stable, while
+	// resetBaseHashCache() runs on every Start to drop stale values across tracer restarts.
+	if entry := cachedBaseHash.Load(); entry != nil && entry.containerHash == containerTagsHash {
+		return entry.result
+	}
+	env := internalconfig.Get().Env()
+	result := strconv.FormatInt(int64(datastreams.BaseHash(svc, env, pTags.Slice(), containerTagsHash)), 10)
+	cachedBaseHash.Store(&baseHashEntry{containerHash: containerTagsHash, result: result})
+	return result
+}
+
+func resetBaseHashCache() {
+	cachedBaseHash.Store(nil)
 }
 
 // encodeTraceParent encodes trace parent as per the w3c trace context spec (https://www.w3.org/TR/trace-context/#version).
@@ -154,7 +214,7 @@ func commentQuery(query string, tags map[string]string) string {
 	var b strings.Builder
 	// the sqlcommenter specification dictates that tags should be sorted. Since we know all injected keys,
 	// we skip a sorting operation by specifying the order of keys statically
-	orderedKeys := []string{sqlCommentDBService, sqlCommentEnv, sqlCommentParentService, sqlCommentParentVersion, sqlCommentTraceParent, sqlCommentPeerHostname, sqlCommentPeerDBName, sqlCommentPeerService}
+	orderedKeys := []string{sqlCommentDBService, sqlCommentEnv, sqlCommentParentService, sqlCommentParentVersion, sqlCommentBaseHash, sqlCommentTraceParent, sqlCommentPeerHostname, sqlCommentPeerDBName, sqlCommentPeerService}
 	first := true
 	for _, k := range orderedKeys {
 		if v, ok := tags[k]; ok {
