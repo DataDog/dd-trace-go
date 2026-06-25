@@ -581,27 +581,7 @@ func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, s
 	p.buf = append(p.buf, byte(fieldID))
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(tc))) // number of chunks
 	for _, chunk := range tc {
-		// droppedTrace (field 5) is intentionally omitted: it is set by the agent,
-		// not by tracers. Emitting it causes the agent to reject the payload.
-		p.buf = msgp.AppendMapHeader(p.buf, 6) // number of fields in chunk
-
-		// priority
-		p.buf = encodeField(p.buf, fullSetBitmap, 1, chunk.priority, st)
-
-		// origin
-		p.buf = encodeStringField(p.buf, fullSetBitmap, 2, chunk.origin, st)
-
-		// attributes
-		p.encodeAttributes(fullSetBitmap, 3, chunk.attributes, st)
-
-		// spans
-		p.encodeSpans(fullSetBitmap, 4, chunk.spans, st)
-
-		// traceID
-		p.buf = encodeField(p.buf, fullSetBitmap, 6, chunk.traceID, st)
-
-		// samplingMechanism
-		p.buf = encodeField(p.buf, fullSetBitmap, 7, chunk.samplingMechanism, st)
+		p.encodeTraceChunk(chunk, st)
 	}
 
 	return true, nil
