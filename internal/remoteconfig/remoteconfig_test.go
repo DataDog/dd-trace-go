@@ -609,9 +609,8 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // recordingClientConfig returns an RC client config whose HTTP client records
-// each outgoing request on requests (non-blocking) and returns an empty config
-// body. PollInterval is 1h so the ticker cannot be responsible for a request
-// observed within a short window — only a registration-driven poll can be.
+// each request (non-blocking) and returns an empty body. PollInterval is 1h, so
+// a request seen within the test window can only be a Subscribe-driven poll.
 func recordingClientConfig(requests chan<- struct{}) ClientConfig {
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test"
@@ -635,10 +634,8 @@ func recordingClientConfig(requests chan<- struct{}) ClientConfig {
 	return cfg
 }
 
-// TestPollOnSubscribe verifies that Subscribe triggers an out-of-cycle poll
-// instead of waiting a full PollInterval. Subscribe registers the product,
-// callback, and capabilities atomically, so the poll can't race a callback that
-// isn't registered yet.
+// TestPollOnSubscribe verifies Subscribe triggers an out-of-cycle poll instead
+// of waiting a full PollInterval.
 func TestPollOnSubscribe(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
 	Reset()
@@ -657,11 +654,9 @@ func TestPollOnSubscribe(t *testing.T) {
 	}
 }
 
-// TestNoImmediatePollOnRegisterProductOrCapability verifies that the lower-level
-// RegisterProduct/RegisterCapability do NOT trigger an immediate poll. They are
-// used piecemeal (e.g. by AppSec) before a callback is registered, so an eager
-// poll could store config the repository later dedupes before the callback
-// exists; they are picked up on the next scheduled tick instead.
+// TestNoImmediatePollOnRegisterProductOrCapability verifies RegisterProduct and
+// RegisterCapability do NOT poll immediately — they're used before a callback
+// exists (e.g. AppSec), so they wait for the next tick.
 func TestNoImmediatePollOnRegisterProductOrCapability(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
 
@@ -706,9 +701,8 @@ func TestNoPollWithoutRegistration(t *testing.T) {
 	}
 }
 
-// TestPollOnEachSubscribe verifies that a second Subscribe triggers another poll
-// once the first has drained: pollNow coalesces while a signal is queued, but
-// still fires for later subscriptions after the channel drains.
+// TestPollOnEachSubscribe verifies a second Subscribe polls again after the
+// first drains (pollNow coalesces while queued, then fires for later Subscribes).
 func TestPollOnEachSubscribe(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
 	Reset()

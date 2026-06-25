@@ -155,10 +155,10 @@ type Client struct {
 	clientID   string
 	endpoint   string
 	repository *rc.Repository
-	stop       chan struct{} // closed once by Stop/Reset to tell the poll goroutine to exit
-	done       chan struct{} // closed by the poll goroutine when it exits
+	stop       chan struct{} // closed once (by Stop/Reset) to stop the poll goroutine
+	done       chan struct{} // closed by the poll goroutine on exit
 	stopOnce   sync.Once
-	// pollNow requests an out-of-cycle poll. Buffered size 1: sends are coalesced and non-blocking.
+	// pollNow requests an out-of-cycle poll. Buffered(1): coalesced, non-blocking.
 	pollNow chan struct{}
 
 	// When acquiring several locks and using defer to release them, make sure to acquire the locks in the following order:
@@ -246,8 +246,7 @@ func Start(config ClientConfig) error {
 	}
 	started = true
 
-	// Capture the client locally so the goroutine never reads the package-global
-	// client, which Stop/Reset mutate under clientMux.
+	// Capture client locally; the goroutine must not read the global (Stop/Reset mutate it).
 	var (
 		c            = client
 		pollInterval = c.PollInterval
@@ -263,11 +262,10 @@ func Start(config ClientConfig) error {
 			select {
 			case <-stop:
 				return
-			case <-pollNow: // a product/capability was registered
+			case <-pollNow: // Subscribe requested a poll
 			case <-ticker.C:
 			}
-			// If shutdown was requested at the same time as a pollNow/ticker
-			// wakeup (select picks a ready case at random), exit without polling.
+			// stop may be ready alongside pollNow/ticker (select is random); don't poll after stop.
 			select {
 			case <-stop:
 				return
@@ -281,12 +279,10 @@ func Start(config ClientConfig) error {
 	return nil
 }
 
-// Stop stops the client's update poll loop, waits for the poll goroutine to
-// exit (up to the HTTP client's timeout, since a poll may be in flight), then
-// clears the singleton so a later Start() creates a fresh client. If stopping
-// times out (e.g. no HTTP timeout is configured), the singleton is cleared
-// anyway and a restart could briefly overlap the in-flight poll.
-// Noop if the client is not running.
+// Stop ends the poll loop, waits for the goroutine to exit (up to the HTTP
+// timeout, since a poll may be in flight), then clears the singleton so a later
+// Start() is fresh. On wait timeout it clears anyway (a restart could briefly
+// overlap the in-flight poll). Noop if not running.
 func Stop() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
@@ -301,11 +297,8 @@ func Stop() {
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
 	client.stopOnce.Do(func() { close(client.stop) })
-	// A poll may be in-flight for up to the HTTP client's timeout, so wait that
-	// long (plus a small grace, so done — closed just after the request returns —
-	// wins over the timeout) before clearing the singleton; otherwise a fresh
-	// Start() could overlap a still-running client. Floored at 1s so we don't
-	// block forever when no HTTP timeout is configured.
+	// Wait for the goroutine, up to the HTTP timeout (+1s grace so done wins) since
+	// a poll may be in flight. Floored at 1s; bounded so we don't block forever.
 	wait := time.Second
 	if client.HTTP != nil && client.HTTP.Timeout > 0 {
 		wait = client.HTTP.Timeout + time.Second
@@ -326,9 +319,7 @@ func Reset() {
 	clientMux.Lock()
 	defer clientMux.Unlock()
 
-	// Signal any running poll goroutine to exit. Closing is safe even if the
-	// client was never started; Reset only clears singleton state and does not
-	// wait for the goroutine to finish.
+	// Signal the goroutine to exit (safe even if never started); Reset doesn't wait.
 	if client != nil {
 		client.stopOnce.Do(func() { close(client.stop) })
 	}
@@ -409,8 +400,7 @@ func (c *Client) updateState() {
 	c.lastError = c.applyUpdate(&update)
 }
 
-// requestPoll triggers a poll without waiting for the next tick. Non-blocking,
-// acquires no locks, so it is safe to call while holding the client's locks.
+// requestPoll asks the loop to poll now. Non-blocking, no locks (safe under the client's locks).
 func (c *Client) requestPoll() {
 	select {
 	case c.pollNow <- struct{}{}:
@@ -460,11 +450,9 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 	for _, cap := range capabilities {
 		client.capabilities[cap] = struct{}{}
 	}
-	// Subscribe registers the product, callback, and capabilities atomically, so
-	// an immediate poll can't deliver config before the callback exists. The
-	// lower-level RegisterProduct/RegisterCapability are used piecemeal (e.g. by
-	// AppSec, before its callback is registered), so they do NOT poll eagerly —
-	// they're picked up on the next scheduled tick.
+	// Poll now: Subscribe registers product+callback+capabilities atomically, so
+	// the poll can't arrive before the callback. (RegisterProduct/RegisterCapability
+	// don't — they're used before a callback exists; see those.)
 	client.requestPoll()
 	return SubscriptionToken(id), nil
 }
@@ -532,9 +520,8 @@ func RegisterProduct(p string) error {
 	}
 
 	client.products[p] = struct{}{}
-	// No eager poll here: RegisterProduct is used before a callback is registered
-	// (see Subscribe), so a poll could store config the repository later dedupes
-	// before the callback exists. Picked up on the next scheduled tick.
+	// No eager poll: used before a callback exists (see Subscribe), so an early
+	// poll's config would be dedup'd before the callback sees it. Picked up next tick.
 	return nil
 }
 
@@ -582,7 +569,7 @@ func RegisterCapability(cpb Capability) error {
 	client.capabilitiesMu.Lock()
 	defer client.capabilitiesMu.Unlock()
 	client.capabilities[cpb] = struct{}{}
-	// No eager poll here (see RegisterProduct / Subscribe): picked up next tick.
+	// No eager poll (see Subscribe); picked up next tick.
 	return nil
 }
 
