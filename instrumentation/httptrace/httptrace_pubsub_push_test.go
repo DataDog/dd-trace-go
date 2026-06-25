@@ -84,7 +84,7 @@ func TestInferredPubsubPushSpans(t *testing.T) {
 
 		assert.Equal(t, ext.SpanTypeMessageConsumer, pubsubSpan.Tag(ext.SpanType))
 		assert.Equal(t, "pubsub.receive", pubsubSpan.Tag(ext.SpanName))
-		assert.Equal(t, "cloud.google.com/go/pubsub", pubsubSpan.Tag(ext.Component))
+		assert.Equal(t, "net/http", pubsubSpan.Tag(ext.Component))
 		assert.Equal(t, testSubscriptionName, pubsubSpan.Tag(ext.ResourceName))
 		assert.Equal(t, ext.SpanKindConsumer, pubsubSpan.Tag(ext.SpanKind))
 		assert.Equal(t, testSubscriptionID, pubsubSpan.Tag(ext.MessagingDestinationName))
