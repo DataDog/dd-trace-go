@@ -617,7 +617,11 @@ func recordingClientConfig(requests chan<- struct{}) ClientConfig {
 	cfg.ServiceName = "test"
 	cfg.PollInterval = time.Hour
 	cfg.HTTP = &http.Client{
-		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			// http.RoundTripper is responsible for closing the request body.
+			if r.Body != nil {
+				r.Body.Close()
+			}
 			select {
 			case requests <- struct{}{}:
 			default:

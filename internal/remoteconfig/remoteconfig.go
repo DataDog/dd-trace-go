@@ -298,10 +298,18 @@ func Stop() {
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
 	client.stopOnce.Do(func() { close(client.stop) })
+	// A poll may be in-flight for up to the HTTP client's timeout, so wait at
+	// least that long for the goroutine to exit before clearing the singleton —
+	// otherwise a fresh Start() could overlap a still-running client. Bounded so
+	// we don't block forever when no HTTP timeout is configured.
+	wait := time.Second
+	if client.HTTP != nil && client.HTTP.Timeout > wait {
+		wait = client.HTTP.Timeout
+	}
 	select {
 	case <-client.done:
 		log.Debug("remoteconfig: client stopped successfully")
-	case <-time.After(time.Second):
+	case <-time.After(wait):
 		log.Debug("remoteconfig: client stopping timeout")
 	}
 	client = nil
