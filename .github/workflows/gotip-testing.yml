@@ -138,3 +138,12 @@ jobs:
         uses: ./.github/actions/codecov-upload
         with:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload Coverage to Datadog
+        if: always() && steps.restore.outcome == 'success'
+        continue-on-error: true
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
+        with:
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
+          format: go-coverprofile
