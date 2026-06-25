@@ -1026,6 +1026,98 @@ func BenchmarkSampleWAFContext(b *testing.B) {
 	}
 }
 
+// BenchmarkSampleWAFSubContext benchmarks the creation of a WAF context and running the WAF on a request/response pair
+// This is a basic sample of what could happen in a real-world scenario.
+func BenchmarkSampleWAFSubContext(b *testing.B) {
+	builder, err := libddwaf.NewBuilder()
+	require.NoError(b, err)
+	defer builder.Close()
+
+	_, err = builder.AddDefaultRecommendedRuleset()
+	require.NoError(b, err)
+
+	handle, err := builder.Build()
+	require.NoError(b, err)
+	require.NotNil(b, handle)
+
+	for b.Loop() {
+		ctx, err := handle.NewContext(context.Background(), timer.WithBudget(time.Second), timer.WithComponents(addresses.Scopes[:]...))
+		if err != nil || ctx == nil {
+			b.Fatal("nil context")
+		}
+
+		// Request WAF Run
+		_, err = ctx.Run(context.Background(),
+			addresses.RunAddressData{
+				Data: map[string]any{
+					addresses.ClientIPAddr:            "1.1.1.1",
+					addresses.ServerRequestMethodAddr: "GET",
+					addresses.ServerRequestRawURIAddr: "/",
+					addresses.ServerRequestHeadersNoCookiesAddr: map[string][]string{
+						"host":            {"example.com"},
+						"content-length":  {"0"},
+						"Accept":          {"application/json"},
+						"User-Agent":      {"curl/7.64.1"},
+						"Accept-Encoding": {"gzip"},
+						"Connection":      {"close"},
+					},
+					addresses.ServerRequestCookiesAddr: map[string][]string{
+						"cookie": {"session=1234"},
+					},
+					addresses.ServerRequestQueryAddr: map[string][]string{
+						"query": {"value"},
+					},
+					addresses.ServerRequestPathParamsAddr: map[string]string{
+						"param": "value",
+					},
+				},
+				TimerKey: addresses.WAFScope,
+			})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		// RASP Call
+		sub, err := ctx.NewSubcontext(context.Background())
+		if err != nil {
+			b.Fatalf("error creating subcontext: %v", err)
+		}
+
+		_, err = sub.Run(context.Background(), libddwaf.RunAddressData{
+			Data: map[string]any{
+				addresses.ServerIOFSFileAddr: "/etc/passwd",
+			},
+		})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		sub.Close()
+
+		// Response WAF Run
+		_, err = ctx.Run(context.Background(),
+			addresses.RunAddressData{
+				Data: map[string]any{
+					addresses.ServerResponseHeadersNoCookiesAddr: map[string][]string{
+						"content-type":   {"application/json"},
+						"content-length": {"0"},
+						"Connection":     {"close"},
+					},
+					addresses.ServerResponseStatusAddr: 200,
+				},
+				TimerKey: addresses.WAFScope,
+			})
+
+		if err != nil {
+			b.Fatalf("error running waf: %v", err)
+		}
+
+		ctx.Close()
+	}
+}
+
 func TestAttackerFingerprinting(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "testdata/fp.json")
 	testutils.StartAppSec(t)
