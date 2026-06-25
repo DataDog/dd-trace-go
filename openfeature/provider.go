@@ -54,6 +54,10 @@ type ProviderConfig struct {
 	// FlagEvaluationFlushInterval is the interval for flushing EVP flag evaluation events.
 	// Default: 10 seconds. Leave zero to use the default.
 	FlagEvaluationFlushInterval time.Duration
+
+	// Source controls where the provider receives UFC flag configuration from.
+	// The zero value resolves from environment and defaults to CDN mode.
+	Source FeatureFlagSourceConfig
 }
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
@@ -77,6 +81,10 @@ type DatadogProvider struct {
 	// Named distinctly from flagEvalHook (OTel) to avoid collisions.
 	flagEvalLoggingWriter *flagEvalLoggingWriter
 	flagEvalLoggingHook   *flagEvalLoggingHook
+
+	sourceMode          FeatureFlagSourceMode
+	cdnSource           *cdnSource
+	remoteConfigStarted bool
 }
 
 // NewDatadogProvider creates a new Datadog OpenFeature provider with default configuration.
@@ -94,7 +102,21 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 		return &openfeature.NoopProvider{}, nil
 	}
 
-	return startWithRemoteConfig(config)
+	sourceConfig, err := resolveFeatureFlagSourceConfig(config.Source)
+	if err != nil {
+		return nil, err
+	}
+
+	switch sourceConfig.Mode {
+	case FeatureFlagSourceModeCDN:
+		return startWithCDN(config, sourceConfig.CDN)
+	case FeatureFlagSourceModeRemoteConfig:
+		return startWithRemoteConfig(config)
+	case FeatureFlagSourceModeOffline:
+		return startWithOffline(config, sourceConfig.Offline)
+	default:
+		return nil, fmt.Errorf("unsupported feature flag source mode %q", sourceConfig.Mode)
+	}
 }
 
 func newDatadogProvider(config ProviderConfig) *DatadogProvider {
@@ -240,7 +262,13 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 
 	go func() {
 		// Perform the shutdown operations
-		err := stopRemoteConfig()
+		var err error
+		switch {
+		case p.cdnSource != nil:
+			err = p.cdnSource.stop(ctx)
+		case p.remoteConfigStarted:
+			err = stopRemoteConfig()
+		}
 
 		p.mu.Lock()
 		defer p.mu.Unlock()

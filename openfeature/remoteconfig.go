@@ -20,6 +20,8 @@ import (
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	provider := newDatadogProvider(config)
+	provider.sourceMode = FeatureFlagSourceModeRemoteConfig
+	provider.remoteConfigStarted = true
 
 	// Subscribe via the internal package, which serializes with tracer subscription
 	// and starts RC only if needed (slow path).
@@ -68,17 +70,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Parse the configuration
 	log.Debug("openfeature: remote config: processing configuration update %q", path)
 
-	var config universalFlagsConfiguration
-	if err := json.Unmarshal(data, &config); err != nil {
-		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error())
-		return rc.ApplyStatus{
-			State: rc.ApplyStateError,
-			Error: fmt.Sprintf("failed to unmarshal configuration: %v", err),
-		}
-	}
-
-	// Validate the configuration
-	err := validateConfiguration(&config)
+	config, err := parseAndValidateConfiguration(data)
 	if err != nil {
 		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error())
 		return rc.ApplyStatus{
@@ -88,12 +80,23 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Update the provider with the new configuration
-	provider.updateConfiguration(&config)
+	provider.updateConfiguration(config)
 	log.Debug("openfeature: remote config: successfully applied configuration %q with %d flags", path, len(config.Flags))
 
 	return rc.ApplyStatus{
 		State: rc.ApplyStateAcknowledged,
 	}
+}
+
+func parseAndValidateConfiguration(data []byte) (*universalFlagsConfiguration, error) {
+	var config universalFlagsConfiguration
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
+	}
+	if err := validateConfiguration(&config); err != nil {
+		return nil, err
+	}
+	return &config, nil
 }
 
 // validateConfiguration performs basic validation on a serverConfiguration.

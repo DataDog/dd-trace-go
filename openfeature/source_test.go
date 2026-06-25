@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	of "github.com/open-feature/go-sdk/openfeature"
+
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/stretchr/testify/require"
@@ -131,7 +133,7 @@ func TestSourceModeOfflineReservedDoesNotStartNetwork(t *testing.T) {
 	require.False(t, ddProvider.remoteConfigStarted)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	require.ErrorIs(t, ddProvider.InitWithContext(ctx, nil), context.DeadlineExceeded)
+	require.ErrorIs(t, ddProvider.InitWithContext(ctx, of.EvaluationContext{}), context.DeadlineExceeded)
 	require.Zero(t, cdnRequests.Load())
 }
 
