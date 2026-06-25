@@ -1132,6 +1132,49 @@ func WithStatsAdditionalTags(tags []string) StartOption {
 	}
 }
 
+// WithStatsCardinalityLimit sets the whole-key cardinality limit for client-side stats.
+// When the number of distinct aggregation keys in a flush bucket exceeds this limit,
+// excess spans are collapsed to a single overflow bucket keyed by "tracer_blocked_value".
+// This is the backstop that guarantees a hard memory bound regardless of which field causes explosion.
+// Can also be configured via DD_TRACE_STATS_CARDINALITY_LIMIT. Default: 2048.
+func WithStatsCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsWholeKeyCardinalityLimit(limit)
+	}
+}
+
+// WithStatsResourceCardinalityLimit sets the per-field cardinality limit for the resource field.
+// Can also be configured via DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT. Default: 1024.
+func WithStatsResourceCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsResourceCardinalityLimit(limit)
+	}
+}
+
+// WithStatsHTTPEndpointCardinalityLimit sets the per-field cardinality limit for http_endpoint.
+// Can also be configured via DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT. Default: 512.
+func WithStatsHTTPEndpointCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsHTTPEndpointCardinalityLimit(limit)
+	}
+}
+
+// WithStatsPeerTagsCardinalityLimit sets the per-field cardinality limit for peer_tags.
+// Can also be configured via DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT. Default: 512.
+func WithStatsPeerTagsCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsPeerTagsCardinalityLimit(limit)
+	}
+}
+
+// WithStatsOriginCardinalityLimit sets the per-field cardinality limit for origin.
+// Can also be configured via DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT. Default: 20.
+func WithStatsOriginCardinalityLimit(limit int) StartOption {
+	return func(c *config) {
+		c.internalConfig.SetStatsOriginCardinalityLimit(limit)
+	}
+}
+
 // WithDynamicInstrumentationEnabled enables or disables dynamic
 // instrumentation, allowing the tracer to place probes for the Live Debugger
 // and Dynamic Instrumentation products.

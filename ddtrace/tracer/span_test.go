@@ -1886,6 +1886,7 @@ func TestStatsAfterFinish(t *testing.T) {
 
 func TestStatsAdditionalMetricTags(t *testing.T) {
 	t.Run("tags-present", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
 		tracer, err := newTracer(
 			WithStatsComputation(true),
 			WithStatsAdditionalTags([]string{"region", "tenant_id"}),
@@ -1921,6 +1922,7 @@ func TestStatsAdditionalMetricTags(t *testing.T) {
 		assert.Contains(t, additionalTags, "tenant_id:acme-corp")
 	})
 	t.Run("tags-missing", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
 		tracer, err := newTracer(
 			WithStatsComputation(true),
 			WithStatsAdditionalTags([]string{"region"}),

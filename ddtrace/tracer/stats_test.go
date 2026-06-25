@@ -8,6 +8,8 @@ package tracer
 import (
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -53,6 +55,11 @@ func newTestConfigWithTransport(t *testing.T, transport ddTransport) *config {
 	})
 	assert.NoError(err)
 	return cfg
+}
+
+func additionalMetricTagsCardinalityLimit(c *concentrator) int {
+	limits := reflect.ValueOf(c.spanConcentrator).Elem().FieldByName("cardinalityLimits")
+	return int(limits.FieldByName("AdditionalTags").Int())
 }
 
 func TestConcentrator(t *testing.T) {
@@ -200,6 +207,90 @@ func TestConcentrator(t *testing.T) {
 			assert.Empty(t, gotStats[0].ProcessTags)
 		})
 	})
+}
+
+func TestNewConcentratorAdditionalMetricTagsCardinalityLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		gate  string
+		tags  string
+		limit string
+		want  int
+	}{
+		{name: "gate off with keys", tags: "customer_id", limit: "7"},
+		{name: "gate on without keys", gate: "true", limit: "7"},
+		{name: "gate on with keys default limit", gate: "true", tags: "customer_id", want: 100},
+		{name: "gate on with keys custom limit", gate: "true", tags: "customer_id", limit: "7", want: 7},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.gate != "" {
+				t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", tc.gate)
+			}
+			if tc.tags != "" {
+				t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", tc.tags)
+			}
+			if tc.limit != "" {
+				t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", tc.limit)
+			}
+
+			cfg, err := newTestConfig()
+			require.NoError(t, err)
+			concentrator := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+			assert.Equal(t, tc.want, additionalMetricTagsCardinalityLimit(concentrator))
+		})
+	}
+}
+
+func TestFlushAndSendCollapsedSpansMetric(t *testing.T) {
+	t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+	t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "customer_id,oversized")
+	t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	spans := []Span{
+		{
+			name:     "checkout.process",
+			service:  "checkout",
+			resource: "POST /checkout",
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta: tinternal.NewSpanMetaFromMap(map[string]string{
+				"customer_id": "a",
+				"oversized":   strings.Repeat("x", 201),
+			}),
+		},
+		{
+			name:     "checkout.process",
+			service:  "checkout",
+			resource: "POST /checkout",
+			start:    now + 1,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta: tinternal.NewSpanMetaFromMap(map[string]string{
+				"customer_id": "b",
+			}),
+		},
+	}
+
+	for i := range spans {
+		ss, ok := c.newTracerStatSpan(&spans[i], nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.Len(t, calls, 2)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "oversized:additional_metric_tags"))
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:additional_metric_tags"))
+
+	testStats.Reset()
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	assert.Empty(t, testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans"))
 }
 
 func TestShouldObfuscate(t *testing.T) {

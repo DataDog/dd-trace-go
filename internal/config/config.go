@@ -123,11 +123,31 @@ type Config struct {
 	// statsComputationEnabled enables client-side stats computation (aka trace metrics).
 	statsComputationEnabled bool
 	traceAnalyticsEnabled   bool
+	// experimentalFeaturesEnabled controls tracer features that are not generally available.
+	experimentalFeaturesEnabled bool
 	// statsAdditionalTags is a list of tag keys to extract from spans and use as
 	// additional aggregation dimensions for client-side stats.
 	// Configured via DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
-	statsAdditionalTags          []string
-	dataStreamsMonitoringEnabled bool
+	statsAdditionalTags []string
+	// statsAdditionalTagsCardinalityLimit is the maximum number of distinct
+	// additional metric tag stats entries per bucket.
+	statsAdditionalTagsCardinalityLimit int
+	// statsWholeKeyCardinalityLimit caps total distinct BucketsAggregationKeys per bucket.
+	// Configured via DD_TRACE_STATS_CARDINALITY_LIMIT.
+	statsWholeKeyCardinalityLimit int
+	// statsResourceCardinalityLimit caps distinct resource values per bucket.
+	// Configured via DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT.
+	statsResourceCardinalityLimit int
+	// statsHTTPEndpointCardinalityLimit caps distinct http_endpoint values per bucket.
+	// Configured via DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT.
+	statsHTTPEndpointCardinalityLimit int
+	// statsPeerTagsCardinalityLimit caps distinct peer_tags combinations per bucket.
+	// Configured via DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT.
+	statsPeerTagsCardinalityLimit int
+	// statsOriginCardinalityLimit caps distinct origin values per bucket.
+	// Configured via DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT.
+	statsOriginCardinalityLimit int
+	dataStreamsMonitoringEnabled        bool
 	// dynamicInstrumentationEnabled controls whether the target application can
 	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
 	// explicitly set to false (as opposed to starting as false by default), then
@@ -253,6 +273,7 @@ func loadConfig() *Config {
 	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
 	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
 	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
+	cfg.experimentalFeaturesEnabled = p.GetBool("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", false)
 	if v := p.GetString("DD_TRACE_STATS_ADDITIONAL_TAGS", ""); v != "" {
 		var tags []string
 		for t := range strings.SplitSeq(v, ",") {
@@ -260,7 +281,37 @@ func loadConfig() *Config {
 				tags = append(tags, t)
 			}
 		}
-		cfg.statsAdditionalTags = tags
+		cfg.statsAdditionalTags = capAdditionalTagKeys(tags)
+	}
+	cfg.statsAdditionalTagsCardinalityLimit = p.GetInt("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", defaultStatsAdditionalTagsCardinalityLimit)
+	if cfg.statsAdditionalTagsCardinalityLimit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT: non-positive value %d", cfg.statsAdditionalTagsCardinalityLimit)
+		cfg.statsAdditionalTagsCardinalityLimit = defaultStatsAdditionalTagsCardinalityLimit
+	}
+	cfg.statsWholeKeyCardinalityLimit = p.GetInt("DD_TRACE_STATS_CARDINALITY_LIMIT", defaultStatsWholeKeyCardinalityLimit)
+	if cfg.statsWholeKeyCardinalityLimit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsWholeKeyCardinalityLimit, defaultStatsWholeKeyCardinalityLimit)
+		cfg.statsWholeKeyCardinalityLimit = defaultStatsWholeKeyCardinalityLimit
+	}
+	cfg.statsResourceCardinalityLimit = p.GetInt("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", defaultStatsResourceCardinalityLimit)
+	if cfg.statsResourceCardinalityLimit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsResourceCardinalityLimit, defaultStatsResourceCardinalityLimit)
+		cfg.statsResourceCardinalityLimit = defaultStatsResourceCardinalityLimit
+	}
+	cfg.statsHTTPEndpointCardinalityLimit = p.GetInt("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", defaultStatsHTTPEndpointCardinalityLimit)
+	if cfg.statsHTTPEndpointCardinalityLimit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsHTTPEndpointCardinalityLimit, defaultStatsHTTPEndpointCardinalityLimit)
+		cfg.statsHTTPEndpointCardinalityLimit = defaultStatsHTTPEndpointCardinalityLimit
+	}
+	cfg.statsPeerTagsCardinalityLimit = p.GetInt("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", defaultStatsPeerTagsCardinalityLimit)
+	if cfg.statsPeerTagsCardinalityLimit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsPeerTagsCardinalityLimit, defaultStatsPeerTagsCardinalityLimit)
+		cfg.statsPeerTagsCardinalityLimit = defaultStatsPeerTagsCardinalityLimit
+	}
+	cfg.statsOriginCardinalityLimit = p.GetInt("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", defaultStatsOriginCardinalityLimit)
+	if cfg.statsOriginCardinalityLimit <= 0 {
+		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsOriginCardinalityLimit, defaultStatsOriginCardinalityLimit)
+		cfg.statsOriginCardinalityLimit = defaultStatsOriginCardinalityLimit
 	}
 	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
@@ -802,13 +853,23 @@ func (c *Config) TraceAnalyticsEnabled() bool {
 	return c.traceAnalyticsEnabled
 }
 
+func (c *Config) ExperimentalFeaturesEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.experimentalFeaturesEnabled
+}
+
 func (c *Config) StatsAdditionalTags() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if !c.experimentalFeaturesEnabled {
+		return nil
+	}
 	return c.statsAdditionalTags
 }
 
 func (c *Config) SetStatsAdditionalTags(tags []string, origin telemetry.Origin, product ...Product) {
+	tags = capAdditionalTagKeys(tags)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.checkProductConflict("DD_TRACE_STATS_ADDITIONAL_TAGS", origin, tags, product...) {
@@ -816,6 +877,87 @@ func (c *Config) SetStatsAdditionalTags(tags []string, origin telemetry.Origin, 
 	}
 	c.statsAdditionalTags = tags
 	configtelemetry.Report("DD_TRACE_STATS_ADDITIONAL_TAGS", tags, origin)
+}
+
+func (c *Config) StatsAdditionalTagsCardinalityLimit() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsAdditionalTagsCardinalityLimit
+}
+
+func (c *Config) StatsWholeKeyCardinalityLimit() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsWholeKeyCardinalityLimit
+}
+
+func (c *Config) SetStatsWholeKeyCardinalityLimit(limit int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if limit <= 0 {
+		return
+	}
+	c.statsWholeKeyCardinalityLimit = limit
+}
+
+func (c *Config) StatsResourceCardinalityLimit() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsResourceCardinalityLimit
+}
+
+func (c *Config) SetStatsResourceCardinalityLimit(limit int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if limit <= 0 {
+		return
+	}
+	c.statsResourceCardinalityLimit = limit
+}
+
+func (c *Config) StatsHTTPEndpointCardinalityLimit() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsHTTPEndpointCardinalityLimit
+}
+
+func (c *Config) SetStatsHTTPEndpointCardinalityLimit(limit int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if limit <= 0 {
+		return
+	}
+	c.statsHTTPEndpointCardinalityLimit = limit
+}
+
+func (c *Config) StatsPeerTagsCardinalityLimit() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsPeerTagsCardinalityLimit
+}
+
+func (c *Config) SetStatsPeerTagsCardinalityLimit(limit int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if limit <= 0 {
+		return
+	}
+	c.statsPeerTagsCardinalityLimit = limit
+}
+
+func (c *Config) StatsOriginCardinalityLimit() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.statsOriginCardinalityLimit
+}
+
+func (c *Config) SetStatsOriginCardinalityLimit(limit int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if limit <= 0 {
+		return
+	}
+	c.statsOriginCardinalityLimit = limit
 }
 
 func (c *Config) LogDirectory() string {

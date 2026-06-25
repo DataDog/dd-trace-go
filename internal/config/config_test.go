@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -408,6 +409,110 @@ func resetGlobalState() {
 	mu = sync.Mutex{}
 	instance = nil
 	useFreshConfig = false
+}
+
+func TestStatsAdditionalTagsExperimentalGate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		gate    string
+		want    []string
+		wantOn  bool
+		wantNil bool
+	}{
+		{name: "unset", wantNil: true},
+		{name: "false", gate: "false", wantNil: true},
+		{name: "true", gate: "true", want: []string{"region", "tenant_id"}, wantOn: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", "region,tenant_id")
+			if tc.gate != "" {
+				t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", tc.gate)
+			}
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+			assert.Equal(t, tc.wantOn, cfg.ExperimentalFeaturesEnabled())
+			if tc.wantNil {
+				assert.Nil(t, cfg.StatsAdditionalTags())
+				return
+			}
+			assert.Equal(t, tc.want, cfg.StatsAdditionalTags())
+		})
+	}
+}
+
+func TestStatsAdditionalTagsKeyCap(t *testing.T) {
+	input := []string{"zeta", "alpha", "beta", "alpha", "eta", "delta", "gamma", "theta", "epsilon"}
+	want := []string{"alpha", "beta", "delta", "epsilon", "eta", "gamma"}
+	wantDropped := "dropping configured tag keys: theta,zeta"
+
+	t.Run("env", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS", strings.Join(input, ","))
+		tp := new(log.RecordLogger)
+		defer log.UseLogger(tp)()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, want, cfg.StatsAdditionalTags())
+		assert.Contains(t, strings.Join(tp.Logs(), "\n"), wantDropped)
+	})
+
+	t.Run("setter", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		tp := new(log.RecordLogger)
+		defer log.UseLogger(tp)()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		cfg.SetStatsAdditionalTags(input, telemetry.OriginCode)
+		assert.Equal(t, want, cfg.StatsAdditionalTags())
+		assert.Contains(t, strings.Join(tp.Logs(), "\n"), wantDropped)
+	})
+}
+
+func TestStatsAdditionalTagsCardinalityLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		envValue string
+		want     int
+		wantWarn bool
+	}{
+		{name: "default", want: defaultStatsAdditionalTagsCardinalityLimit},
+		{name: "valid", envValue: "42", want: 42},
+		{name: "zero", envValue: "0", want: defaultStatsAdditionalTagsCardinalityLimit, wantWarn: true},
+		{name: "negative", envValue: "-1", want: defaultStatsAdditionalTagsCardinalityLimit, wantWarn: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			if tc.envValue != "" {
+				t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", tc.envValue)
+			}
+			tp := new(log.RecordLogger)
+			defer log.UseLogger(tp)()
+
+			cfg := Get()
+			require.NotNil(t, cfg)
+			assert.Equal(t, tc.want, cfg.StatsAdditionalTagsCardinalityLimit())
+			logs := strings.Join(tp.Logs(), "\n")
+			if tc.wantWarn {
+				assert.Contains(t, logs, "ignoring DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT: non-positive value")
+				return
+			}
+			assert.Empty(t, logs)
+		})
+	}
 }
 
 func TestSetFeatureFlagsReportsFullList(t *testing.T) {
