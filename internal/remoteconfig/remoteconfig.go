@@ -248,19 +248,26 @@ func Start(config ClientConfig) error {
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
+		// Prime with one value so the first iteration fires immediately,
+		// avoiding a full poll-interval wait before the initial RC payload
+		// is delivered to subscribers (e.g. the OpenFeature provider).
+		immediate := make(chan struct{}, 1)
+		immediate <- struct{}{}
+
 		for {
 			select {
 			case <-stop:
 				close(stop)
 				return
+			case <-immediate:
 			case <-ticker.C:
-				if client == nil {
-					return
-				}
-				client.Lock()
-				client.updateState()
-				client.Unlock()
 			}
+			if client == nil {
+				return
+			}
+			client.Lock()
+			client.updateState()
+			client.Unlock()
 		}
 	}()
 	return nil

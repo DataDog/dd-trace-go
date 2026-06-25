@@ -9,7 +9,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -273,6 +275,47 @@ func TestConfig(t *testing.T) {
 			})
 		}
 	})
+}
+
+// roundTripFunc allows using a plain function as an http.RoundTripper.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// TestEagerInitialPoll verifies that the RC polling goroutine fires an immediate
+// updateState call on startup without waiting for the first ticker interval.
+// It uses a 1-hour poll interval so the ticker cannot be responsible for any
+// request that arrives within the 500ms assertion window.
+func TestEagerInitialPoll(t *testing.T) {
+	Stop()
+	Reset()
+	defer Stop()
+
+	requestCh := make(chan struct{}, 1)
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test"
+	cfg.PollInterval = 1 * time.Hour
+	cfg.HTTP = &http.Client{
+		Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			select {
+			case requestCh <- struct{}{}:
+			default:
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+			}, nil
+		}),
+	}
+
+	require.NoError(t, Start(cfg))
+
+	select {
+	case <-requestCh:
+		// Success: eager first poll fired immediately without waiting for the ticker.
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("no HTTP request within 500ms; eager initial poll did not fire (poll interval is 1h, so ticker cannot be the cause)")
+	}
 }
 
 func dummyCallback1(map[string]ProductUpdate) map[string]state.ApplyStatus {
