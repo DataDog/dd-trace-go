@@ -244,6 +244,7 @@ func Start(opts ...StartOption) error {
 	if err != nil {
 		return err
 	}
+	resetBaseHashCache()
 	if !t.config.enabled.get() {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
