@@ -605,9 +605,7 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 }
 
 // TestPollOnRegistration verifies that registering a product or capability
-// triggers an immediate out-of-cycle config poll rather than waiting a full
-// PollInterval. This brings dd-trace-go to parity with the other server SDKs
-// (see FFL-2604).
+// triggers an out-of-cycle poll instead of waiting a full PollInterval.
 func TestPollOnRegistration(t *testing.T) {
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
 
@@ -622,9 +620,7 @@ func TestPollOnRegistration(t *testing.T) {
 
 	for name, reg := range register {
 		t.Run(name, func(t *testing.T) {
-			// Reset the package-global RC singleton up front so the test is
-			// robust to ordering and to a prior test panicking before cleanup.
-			Reset()
+			Reset() // clear any client left by a prior test
 			defer Stop()
 
 			var polls int64
@@ -637,17 +633,14 @@ func TestPollOnRegistration(t *testing.T) {
 			cfg := DefaultClientConfig()
 			cfg.AgentURL = srv.URL
 			cfg.ServiceName = "test"
-			// A long interval so any poll observed within the test window must be
-			// the out-of-cycle poll triggered by registration, not a scheduled tick.
-			cfg.PollInterval = time.Hour
+			cfg.PollInterval = time.Hour // long: any poll here is the registration-triggered one
 			require.NoError(t, Start(cfg))
 
 			require.NoError(t, reg())
 
 			require.Eventually(t, func() bool {
 				return atomic.LoadInt64(&polls) >= 1
-			}, 5*time.Second, 5*time.Millisecond,
-				name+" should trigger an out-of-cycle poll well before PollInterval elapses")
+			}, 5*time.Second, 5*time.Millisecond, name+" should poll before PollInterval")
 		})
 	}
 }
