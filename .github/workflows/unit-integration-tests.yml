@@ -260,12 +260,13 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      - name: Upload Coverage
+      - name: Merge contrib coverage files
         if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          echo "mode: atomic" > coverage-contrib-merged.txt
+          find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
+            -name "coverage-*.txt" -print0 \
+            | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
 
       - name: Upload Coverage to Datadog
         if: always()
@@ -273,9 +274,8 @@ jobs:
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage-contrib-merged.txt
           format: go-coverprofile
-          flags: contrib
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
@@ -442,22 +442,14 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
-
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
           format: go-coverprofile
-          flags: core
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
