@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -19,153 +20,125 @@ import (
 )
 
 func TestLimiterUnit(t *testing.T) {
-	startTime := time.Now()
-
 	t.Run("no-ticks-1", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 1, 100)
-		l.start(startTime)
-		defer l.stop()
-		// No ticks between the requests
-		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
-		require.False(t, l.Allow(), "Second call to limiter.Allow() should return False")
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(1, 100)
+			require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
+			require.False(t, l.Allow(), "Second call to limiter.Allow() should return False")
+		})
 	})
 
 	t.Run("no-ticks-2", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 100, 100)
-		l.start(startTime)
-		defer l.stop()
-		// No ticks between the requests
-		for range 100 {
-			require.True(t, l.Allow())
-		}
-		require.False(t, l.Allow())
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(100, 100)
+			for range 100 {
+				require.True(t, l.Allow())
+			}
+			require.False(t, l.Allow())
+		})
 	})
 
 	t.Run("10ms-ticks", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 1, 100)
-		l.start(startTime)
-		defer l.stop()
-		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
-		require.False(t, l.Allow(), "Second call to limiter.Allow() should return false")
-		l.tick(10 * time.Millisecond)
-		require.True(t, l.Allow(), "Third call to limiter.Allow() after 10ms should return True")
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(1, 100)
+			require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
+			require.False(t, l.Allow(), "Second call to limiter.Allow() should return false")
+			time.Sleep(10 * time.Millisecond)
+			require.True(t, l.Allow(), "Third call to limiter.Allow() after 10ms should return True")
+		})
 	})
 
 	t.Run("9ms-ticks", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 1, 100)
-		l.start(startTime)
-		defer l.stop()
-		require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
-		l.tick(9 * time.Millisecond)
-		require.False(t, l.Allow(), "Second call to limiter.Allow() after 9ms should return False")
-		l.tick(10 * time.Millisecond)
-		require.True(t, l.Allow(), "Third call to limiter.Allow() after 10ms should return True")
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(1, 100)
+			require.True(t, l.Allow(), "First call to limiter.Allow() should return True")
+			time.Sleep(9 * time.Millisecond)
+			require.False(t, l.Allow(), "Second call to limiter.Allow() after 9ms should return False")
+			time.Sleep(10 * time.Millisecond)
+			require.True(t, l.Allow(), "Third call to limiter.Allow() after 10ms should return True")
+		})
 	})
 
 	t.Run("1s-rate", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 1, 1)
-		l.start(startTime)
-		defer l.stop()
-		require.True(t, l.Allow(), "First call to limiter.Allow() should return True with 1s per token")
-		l.tick(500 * time.Millisecond)
-		require.False(t, l.Allow(), "Second call to limiter.Allow() should return False with 1s per Token")
-		l.tick(1000 * time.Millisecond)
-		require.True(t, l.Allow(), "Third call to limiter.Allow() should return True with 1s per Token")
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(1, 1)
+			require.True(t, l.Allow(), "First call to limiter.Allow() should return True with 1s per token")
+			time.Sleep(500 * time.Millisecond)
+			require.False(t, l.Allow(), "Second call to limiter.Allow() should return False with 1s per Token")
+			time.Sleep(1000 * time.Millisecond)
+			require.True(t, l.Allow(), "Third call to limiter.Allow() should return True with 1s per Token")
+		})
 	})
 
 	t.Run("100-requests-burst", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 100, 100)
-		l.start(startTime)
-		defer l.stop()
-		for i := range 100 {
-			require.Truef(t, l.Allow(),
-				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
-			l.tick(50 * time.Millisecond)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(100, 100)
+			for i := range 100 {
+				require.Truef(t, l.Allow(),
+					"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
+				time.Sleep(50 * time.Millisecond)
+			}
+		})
 	})
 
 	t.Run("101-requests-burst", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 100, 100)
-		l.start(startTime)
-		defer l.stop()
-		for i := range 100 {
-			require.Truef(t, l.Allow(),
-				"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
-			l.tick(50 * time.Microsecond)
-		}
-		require.False(t, l.Allow(),
-			"Burst call 101 to limiter.Allow() should return False with 100 initial tokens")
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(100, 100)
+			for i := range 100 {
+				require.Truef(t, l.Allow(),
+					"Burst call %d to limiter.Allow() should return True with 100 initial tokens", i)
+				time.Sleep(50 * time.Microsecond)
+			}
+			require.False(t, l.Allow(),
+				"Burst call 101 to limiter.Allow() should return False with 100 initial tokens")
+		})
 	})
 
 	t.Run("bucket-refill-short", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 100, 100)
-		l.start(startTime)
-		defer l.stop()
-
-		for range 1000 {
-			l.tick(time.Millisecond)
-			require.Equalf(t, int64(100), int64(l.t.lim.TokensAt(l.clock.now())), "Bucket should have exactly 100 tokens")
-		}
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(100, 100)
+			time.Sleep(time.Millisecond)
+			require.Equal(t, 100, drain(l))
+		})
 	})
 
 	t.Run("bucket-refill-long", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 100, 100)
-		l.start(startTime)
-		defer l.stop()
-
-		for range 1000 {
-			l.tick(3 * time.Second)
-		}
-		require.Equalf(t, int64(100), int64(l.t.lim.TokensAt(l.clock.now())), "Bucket should have exactly 100 tokens")
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(100, 100)
+			time.Sleep(3 * time.Second)
+			require.Equal(t, 100, drain(l))
+		})
 	})
 
-	t.Run("allow-after-stop", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 3, 3)
-		l.start(startTime)
-		require.True(t, l.Allow())
-		l.stop()
-		// The limiter keeps allowing until there's no more tokens
-		require.True(t, l.Allow())
-		require.True(t, l.Allow())
-		require.False(t, l.Allow())
+	t.Run("exhaust-burst-no-refill", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(3, 3)
+			require.True(t, l.Allow())
+			require.True(t, l.Allow())
+			require.True(t, l.Allow())
+			require.False(t, l.Allow())
+		})
 	})
 
-	t.Run("allow-before-start", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
-
-		l := newTestTicker(startTime, 2, 100)
-		// The limiter keeps allowing until there's no more tokens
-		require.True(t, l.Allow())
-		require.True(t, l.Allow())
-		require.False(t, l.Allow())
-		l.start(startTime)
-		// Start is a no-op, so the fake clock has not advanced enough to lazily refill a token yet.
-		require.False(t, l.Allow())
-		l.tick(10 * time.Millisecond)
-		// Advancing the fake clock refills the next token lazily on Allow.
-		require.True(t, l.Allow())
-		l.stop()
+	t.Run("refill-after-empty", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTicker(2, 100)
+			require.True(t, l.Allow())
+			require.True(t, l.Allow())
+			require.False(t, l.Allow())
+			require.False(t, l.Allow())
+			time.Sleep(10 * time.Millisecond)
+			require.True(t, l.Allow())
+		})
 	})
+}
+
+func drain(l Limiter) int {
+	n := 0
+	for l.Allow() {
+		n++
+	}
+	return n
 }
 
 func TestLimiter(t *testing.T) {
@@ -198,8 +171,6 @@ func TestLimiter(t *testing.T) {
 					})
 				}
 
-				l.Start()
-				defer l.Stop()
 				start := time.Now()
 				startBarrier.Done() // Unblock the user goroutines
 				stopBarrier.Wait()  // Wait for the user goroutines to be done
@@ -213,38 +184,33 @@ func TestLimiter(t *testing.T) {
 
 		burstFreq := 1000 * time.Millisecond
 		burstSize := 101
-		startTime := time.Now()
-		// Simulate sporadic bursts during up to 1 minute
 		for burstAmount := 1; burstAmount <= 10; burstAmount++ {
 			t.Run(fmt.Sprintf("requests-bursts-%d-iterations", burstAmount), func(t *testing.T) {
-				defer goleak.VerifyNone(t)
+				synctest.Test(t, func(t *testing.T) {
+					skipped := 0
+					kept := 0
+					l := NewTokenTicker(100, 100)
 
-				skipped := 0
-				kept := 0
-				l := newTestTicker(startTime, 100, 100)
-				l.start(startTime)
-				defer l.stop()
-
-				for c := 0; c < burstAmount; c++ {
-					for range burstSize {
-						if !l.Allow() {
-							skipped++
-						} else {
-							kept++
+					for c := 0; c < burstAmount; c++ {
+						for range burstSize {
+							if !l.Allow() {
+								skipped++
+							} else {
+								kept++
+							}
 						}
+						time.Sleep(burstFreq)
 					}
-					// Schedule next burst 1sec later
-					l.tick(burstFreq)
-				}
 
-				expectedSkipped := (burstSize - 100) * burstAmount
-				expectedKept := 100 * burstAmount
-				if burstSize < 100 {
-					expectedSkipped = 0
-					expectedKept = burstSize * burstAmount
-				}
-				require.Equalf(t, kept, expectedKept, "Expected %d burst requests to be kept", expectedKept)
-				require.Equalf(t, expectedSkipped, skipped, "Expected %d burst requests to be skipped", expectedSkipped)
+					expectedSkipped := (burstSize - 100) * burstAmount
+					expectedKept := 100 * burstAmount
+					if burstSize < 100 {
+						expectedSkipped = 0
+						expectedKept = burstSize * burstAmount
+					}
+					require.Equalf(t, kept, expectedKept, "Expected %d burst requests to be kept", expectedKept)
+					require.Equalf(t, expectedSkipped, skipped, "Expected %d burst requests to be skipped", expectedSkipped)
+				})
 			})
 		}
 	})
@@ -257,8 +223,6 @@ func BenchmarkLimiter(b *testing.B) {
 		b.Run(fmt.Sprintf("%d-users", nbUsers), func(b *testing.B) {
 			var skipped, kept atomic.Uint64
 			limiter := NewTokenTicker(0, 100)
-			limiter.Start()
-			defer limiter.Stop()
 
 			for b.Loop() {
 				var startBarrier, stopBarrier sync.WaitGroup
@@ -291,89 +255,34 @@ func BenchmarkLimiter(b *testing.B) {
 	}
 }
 
-type TestTicker struct {
-	clock *fakeClock
-	t     *TokenTicker
-}
-
-type fakeClock struct {
-	t time.Time
-}
-
-func (c *fakeClock) now() time.Time {
-	return c.t
-}
-
-func (c *fakeClock) advance(delta time.Duration) {
-	c.t = c.t.Add(delta)
-}
-
-func newTestTicker(startTime time.Time, tokens, maxTokens int64) *TestTicker {
-	clock := &fakeClock{t: startTime}
-	return &TestTicker{
-		clock: clock,
-		t:     newTokenTicker(tokens, maxTokens, time.Second, clock.now),
-	}
-}
-
-func (t *TestTicker) start(timestamp time.Time) {
-	t.clock.t = timestamp
-	t.t.Start()
-}
-
-func (t *TestTicker) stop() {
-	t.t.Stop()
-}
-
-func (t *TestTicker) tick(delta time.Duration) {
-	t.clock.advance(delta)
-}
-
-func (t *TestTicker) Allow() bool {
-	return t.t.Allow()
-}
-
-func newTestTickerWithInterval(startTime time.Time, tokens, maxTokens int64, interval time.Duration) *TestTicker {
-	clock := &fakeClock{t: startTime}
-	return &TestTicker{
-		clock: clock,
-		t:     newTokenTicker(tokens, maxTokens, interval, clock.now),
-	}
-}
-
 func TestLimiterWithInterval(t *testing.T) {
-	startTime := time.Now()
 	t.Run("60-per-minute-rate", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTickerWithInterval(1, 60, time.Minute)
+			require.True(t, l.Allow(), "First call should be allowed")
+			require.False(t, l.Allow(), "Second call should be disallowed")
 
-		l := newTestTickerWithInterval(startTime, 1, 60, time.Minute) // 60 tokens per minute, so 1 per second
-		l.start(startTime)
-		defer l.stop()
-		require.True(t, l.Allow(), "First call should be allowed")
-		require.False(t, l.Allow(), "Second call should be disallowed")
+			time.Sleep(500 * time.Millisecond)
+			require.False(t, l.Allow(), "A call after 0.5s should be disallowed")
 
-		l.tick(500 * time.Millisecond)
-		require.False(t, l.Allow(), "A call after 0.5s should be disallowed")
-
-		l.tick(500 * time.Millisecond) // Total 1 second passed
-		require.True(t, l.Allow(), "A call after 1s should be allowed")
-		require.False(t, l.Allow(), "Another call should be disallowed")
+			time.Sleep(500 * time.Millisecond)
+			require.True(t, l.Allow(), "A call after 1s should be allowed")
+			require.False(t, l.Allow(), "Another call should be disallowed")
+		})
 	})
 
 	t.Run("1-per-100ms-rate", func(t *testing.T) {
-		defer goleak.VerifyNone(t)
+		synctest.Test(t, func(t *testing.T) {
+			l := NewTokenTickerWithInterval(1, 1, 100*time.Millisecond)
+			require.True(t, l.Allow(), "First call should be allowed")
+			require.False(t, l.Allow(), "Second call should be disallowed")
 
-		l := newTestTickerWithInterval(startTime, 1, 1, 100*time.Millisecond) // 1 token per 100ms
-		l.start(startTime)
-		defer l.stop()
-		require.True(t, l.Allow(), "First call should be allowed")
-		require.False(t, l.Allow(), "Second call should be disallowed")
+			time.Sleep(50 * time.Millisecond)
+			require.False(t, l.Allow(), "A call after 50ms should be disallowed")
 
-		l.tick(50 * time.Millisecond)
-		require.False(t, l.Allow(), "A call after 50ms should be disallowed")
-
-		l.tick(50 * time.Millisecond) // Total 100ms passed
-		require.True(t, l.Allow(), "A call after 100ms should be allowed")
-		require.False(t, l.Allow(), "Another call should be disallowed")
+			time.Sleep(50 * time.Millisecond)
+			require.True(t, l.Allow(), "A call after 100ms should be allowed")
+			require.False(t, l.Allow(), "Another call should be disallowed")
+		})
 	})
 }

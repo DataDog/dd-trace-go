@@ -48,7 +48,6 @@ func NewProxySampler(rate int, interval time.Duration) Sampler {
 	}
 	r := int64(rate)
 	l := limiter.NewTokenTickerWithInterval(r, r, interval)
-	l.Start()
 	return &proxySampler{
 		limiter: l,
 	}
