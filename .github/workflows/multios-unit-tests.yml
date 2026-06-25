@@ -90,13 +90,6 @@ jobs:
           path: ./
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
 
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
-
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
