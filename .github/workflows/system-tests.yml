@@ -44,7 +44,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: andrew.glaude/v1FieldsDupes
+          ref: ${{ inputs.ref }}
       - name: Pin exact commit SHA for system-tests
         id: pin
         run: |
@@ -245,7 +245,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: andrew.glaude/v1FieldsDupes
+          ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -392,7 +392,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: andrew.glaude/v1FieldsDupes
+          ref: ${{ inputs.ref }}
 
       - name: Set ${{ matrix.image_name }} image name
         run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
