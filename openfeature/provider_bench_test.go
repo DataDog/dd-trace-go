@@ -409,10 +409,10 @@ func runFlagEvalBenchmark(b *testing.B, configureHooks func(p *DatadogProvider))
 //	  -benchmem -count=3 -cpu=8
 func BenchmarkFlagEvaluationNoop(b *testing.B) {
 	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
-		p.flagEvalHook = nil
-		p.flagEvalEVPHook = nil
-		p.flagEvalWriter = nil
 		p.exposureHook = nil
+		p.flagEvalMetricsHook = nil
+		p.flagEvalLoggingHook = nil
+		p.flagEvalLoggingWriter = nil
 	})
 }
 
@@ -421,9 +421,9 @@ func BenchmarkFlagEvaluationNoop(b *testing.B) {
 // are disabled so this column isolates the OTel hook's cost.
 func BenchmarkFlagEvaluationOTelOnly(b *testing.B) {
 	runFlagEvalBenchmark(b, func(p *DatadogProvider) {
-		p.flagEvalEVPHook = nil
-		p.flagEvalWriter = nil
 		p.exposureHook = nil
+		p.flagEvalLoggingHook = nil
+		p.flagEvalLoggingWriter = nil
 	})
 }
 
@@ -444,7 +444,7 @@ func BenchmarkFlagEvaluationOTelPlusEVP(b *testing.B) {
 func BenchmarkFlagEvaluationEVPRecord(b *testing.B) {
 	for _, p := range flagEvalBenchProfiles {
 		b.Run(p.name, func(b *testing.B) {
-			w := newFlagEvaluationWriter(ProviderConfig{FlagEvaluationFlushInterval: 24 * time.Hour})
+			w := newFlagEvalLoggingWriter(ProviderConfig{FlagEvaluationFlushInterval: 24 * time.Hour})
 
 			// Discard drainer: keep the queue empty without aggregating, so only the
 			// synchronous enqueue cost is measured here.
@@ -489,7 +489,7 @@ func scaleBenchProfile() flagEvalBenchProfile {
 // through a real OpenFeature client with BOTH the OTel hook and the new EVP flagevaluation
 // hook enabled, at the >=2,500-flag scale profile. Because every
 // concurrent evaluation funnels through the EVP writer's single aggregator mutex
-// (flagEvaluationAggregator.add), this is the bench that surfaces lock contention under
+// (flagEvalLoggingAggregator.add), this is the bench that surfaces lock contention under
 // realistic multi-goroutine server load.
 //
 // Each goroutine rotates its own flag key and targeting key across the full cardinality so the
