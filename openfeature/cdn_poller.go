@@ -65,9 +65,6 @@ func newCDNPoller(config cdnPollerConfig) (*cdnPoller, error) {
 	if err != nil {
 		return nil, err
 	}
-	if config.apiKey == "" {
-		return nil, fmt.Errorf("missing DD_API_KEY for feature flag CDN source")
-	}
 	if config.httpClient == nil {
 		config.httpClient = http.DefaultClient
 	}
@@ -215,7 +212,9 @@ func (p *cdnPoller) fetch(ctx context.Context) ([]byte, string, bool, bool, erro
 	if err != nil {
 		return nil, "", false, false, err
 	}
-	req.Header.Set(cdnAPIKeyHeader, p.apiKey)
+	if p.apiKey != "" {
+		req.Header.Set(cdnAPIKeyHeader, p.apiKey)
+	}
 	p.mu.Lock()
 	etag := p.etag
 	p.mu.Unlock()
