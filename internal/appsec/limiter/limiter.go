@@ -3,12 +3,14 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022-present Datadog, Inc.
 
-// Package limiter provides simple rate limiting primitives, and an implementation of a token bucket rate limiter.
+// Package limiter provides simple rate limiting primitives backed by a synchronous token bucket.
 package limiter
 
 import (
-	"sync/atomic"
+	"math"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // Limiter is used to abstract the rate limiter implementation to only expose the needed function for rate limiting.
@@ -18,136 +20,68 @@ type Limiter interface {
 	Allow() bool
 }
 
-// TokenTicker is a thread-safe and lock-free rate limiter based on a token bucket.
-// The idea is to have a goroutine that will update  the bucket with fresh tokens at regular intervals using a time.Ticker.
-// The advantage of using a goroutine here is  that the implementation becomes easily thread-safe using a few
-// atomic operations with little overhead overall. TokenTicker.Start() *should* be called before the first call to
-// TokenTicker.Allow() and TokenTicker.Stop() *must* be called once done using. Note that calling TokenTicker.Allow()
-// before TokenTicker.Start() is valid, but it means the bucket won't be refilling until the call to TokenTicker.Start() is made
+// TokenTicker is a thread-safe rate limiter based on a lazily refilled token bucket.
+// Start and Stop are retained for compatibility and do not affect refill behavior.
 type TokenTicker struct {
-	tokens    atomic.Int64  // The amount of tokens currently available
-	maxTokens int64         // The maximum amount of tokens the bucket can hold
-	interval  time.Duration // The interval at which the tokens are refilled
-	ticker    *time.Ticker  // The ticker used to update the bucket (nil if not started yet)
-	stopChan  chan struct{} // The channel to stop the ticker updater (nil if not started yet)
+	lim *rate.Limiter
+	now func() time.Time
 }
 
 // NewTokenTicker is a utility function that allocates a token ticker, initializes necessary fields and returns it
 func NewTokenTicker(tokens, maxTokens int64) *TokenTicker {
-	return NewTokenTickerWithInterval(tokens, maxTokens, time.Second)
+	return newTokenTicker(tokens, maxTokens, time.Second, time.Now)
 }
 
 // NewTokenTickerWithInterval is a utility function that allocates a token ticker with a custom interval
 func NewTokenTickerWithInterval(tokens, maxTokens int64, interval time.Duration) *TokenTicker {
-	t := &TokenTicker{
-		maxTokens: maxTokens,
-		interval:  interval,
+	return newTokenTicker(tokens, maxTokens, interval, time.Now)
+}
+
+func newTokenTicker(tokens, maxTokens int64, interval time.Duration, now func() time.Time) *TokenTicker {
+	if now == nil {
+		now = time.Now
 	}
-	t.tokens.Store(tokens)
-	return t
-}
 
-// updateBucket performs a select loop to update the token amount in the bucket.
-// Used in a goroutine by the rate limiter.
-func (t *TokenTicker) updateBucket(startTime time.Time, ticksChan <-chan time.Time, stopChan <-chan struct{}, syncChan chan<- struct{}) {
-	nsPerToken := t.interval.Nanoseconds() / t.maxTokens
-	elapsedNs := int64(0)
-	prevStamp := startTime
-
-	for {
-		select {
-		case <-stopChan:
-			if syncChan != nil {
-				close(syncChan)
-			}
-			return
-		case stamp, ok := <-ticksChan:
-			if !ok {
-				// The ticker has been closed, stamp is a zero-value, we ignore that. We nil-out the
-				// ticksChan so we don't get stuck endlessly reading from this closed channel again.
-				ticksChan = nil
-				continue
-			}
-
-			// Compute the time in nanoseconds that passed between the previous timestamp and this one
-			// This will be used to know how many tokens can be added into the bucket depending on the limiter rate
-			elapsedNs += stamp.Sub(prevStamp).Nanoseconds()
-			if elapsedNs > t.maxTokens*nsPerToken {
-				elapsedNs = t.maxTokens * nsPerToken
-			}
-			prevStamp = stamp
-			// Update the number of tokens in the bucket if enough nanoseconds have passed
-			if elapsedNs >= nsPerToken {
-				// Atomic spin lock to make sure we don't race for `t.tokens`
-				for {
-					tokens := t.tokens.Load()
-					if tokens == t.maxTokens {
-						break // Bucket is already full, nothing to do
-					}
-					inc := elapsedNs / nsPerToken
-					// Make sure not to add more tokens than we are allowed to into the bucket
-					if tokens+inc > t.maxTokens {
-						inc -= (tokens + inc) % t.maxTokens
-					}
-					if t.tokens.CompareAndSwap(tokens, tokens+inc) {
-						// Keep track of remaining elapsed ns that were not taken into account for this computation,
-						// so that increment computation remains precise over time
-						elapsedNs = elapsedNs % nsPerToken
-						break
-					}
-				}
-			}
-			// Sync channel used to signify that the goroutine is done updating the bucket. Used for tests to guarantee
-			// that the goroutine ticked at least once.
-			if syncChan != nil {
-				syncChan <- struct{}{}
-			}
-		}
+	if tokens < 0 {
+		tokens = 0
+	} else if tokens > maxTokens {
+		tokens = maxTokens
 	}
+
+	if maxTokens <= 0 || interval <= 0 {
+		// Non-positive intervals are deny-safe: computing a rate from them could create an infinite limiter.
+		return &TokenTicker{lim: rate.NewLimiter(0, 0), now: now}
+	}
+
+	burst := int(maxTokens)
+	if maxTokens > int64(math.MaxInt) {
+		burst = math.MaxInt
+	}
+
+	limit := rate.Limit(float64(maxTokens) / interval.Seconds())
+	lim := rate.NewLimiter(limit, burst)
+	t0 := now()
+	initial := tokens
+	if initial > int64(burst) {
+		initial = int64(burst)
+	}
+	if drain := int64(burst) - initial; drain > 0 {
+		lim.AllowN(t0, int(drain))
+	}
+
+	return &TokenTicker{lim: lim, now: now}
 }
 
-// Start starts the ticker and launches the goroutine responsible for updating the token bucket.
-// The ticker is set to tick at a fixed rate of 500us.
-func (t *TokenTicker) Start() {
-	timeNow := time.Now()
-	t.ticker = time.NewTicker(500 * time.Microsecond)
-	t.start(timeNow, t.ticker.C, nil)
-}
+// Start is retained for compatibility and is safe to call any number of times.
+func (t *TokenTicker) Start() {}
 
-// start is used for internal testing. Controlling the ticker means being able to test per-tick
-// rather than per-duration, which is more reliable if the app is under a lot of stress. The
-// syncChan, if non-nil, will receive one message after each tick from the ticksChan has been
-// processed, providing a strong synchronization primitive. The limiter will close the syncChan when
-// it is stopped, signaling that no further ticks will be processed.
-func (t *TokenTicker) start(startTime time.Time, ticksChan <-chan time.Time, syncChan chan<- struct{}) {
-	t.stopChan = make(chan struct{})
-	go t.updateBucket(startTime, ticksChan, t.stopChan, syncChan)
-}
-
-// Stop shuts down the rate limiter, taking care stopping the ticker and closing all channels
+// Stop is retained for compatibility and is safe to call any number of times.
 func (t *TokenTicker) Stop() {
-	// Stop the ticker only if it has been instantiated (not the case when testing by calling start() directly)
-	if t.ticker != nil {
-		t.ticker.Stop()
-		t.ticker = nil // Ensure stop can be called multiple times idempotently.
-	}
-	// Close the stop channel only if it has been created. This covers the case where Stop() is called without any prior
-	// call to Start()
-	if t.stopChan != nil {
-		close(t.stopChan)
-		t.stopChan = nil // Ensure stop can be called multiple times idempotently.
-	}
 }
 
 // Allow checks and returns whether a token can be retrieved from the bucket and consumed.
 // Thread-safe.
 func (t *TokenTicker) Allow() bool {
-	for {
-		tokens := t.tokens.Load()
-		if tokens == 0 {
-			return false
-		} else if t.tokens.CompareAndSwap(tokens, tokens-1) {
-			return true
-		}
-	}
+	// Use AllowN with the injected clock; Allow reads time.Now internally and would bypass tests.
+	return t.lim.AllowN(t.now(), 1)
 }
