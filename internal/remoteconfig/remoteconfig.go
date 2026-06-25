@@ -175,6 +175,12 @@ type Client struct {
 
 	lastError        error
 	lastConfigStates []*configState
+
+	// immediateUpdate is a buffered channel of size 1 used to trigger an
+	// out-of-band poll. A non-blocking send queues one extra poll; subsequent
+	// sends while a poll is already queued are silently dropped, acting as a
+	// natural debounce.
+	immediateUpdate chan struct{}
 }
 
 // subscription represents a callback that was registered to run on updates to a
@@ -207,15 +213,16 @@ func newClient(config ClientConfig) (*Client, error) {
 	}
 
 	return &Client{
-		ClientConfig: config,
-		clientID:     generateID(),
-		endpoint:     fmt.Sprintf("%s/v0.7/config", config.AgentURL),
-		repository:   repo,
-		stop:         make(chan struct{}),
-		lastError:    nil,
-		callbacks:    []Callback{},
-		capabilities: map[Capability]struct{}{},
-		products:     map[string]struct{}{},
+		ClientConfig:    config,
+		clientID:        generateID(),
+		endpoint:        fmt.Sprintf("%s/v0.7/config", config.AgentURL),
+		repository:      repo,
+		stop:            make(chan struct{}),
+		lastError:       nil,
+		callbacks:       []Callback{},
+		capabilities:    map[Capability]struct{}{},
+		products:        map[string]struct{}{},
+		immediateUpdate: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -241,25 +248,20 @@ func Start(config ClientConfig) error {
 	started = true
 
 	var (
-		pollInterval = client.PollInterval
-		stop         = client.stop
+		pollInterval    = client.PollInterval
+		stop            = client.stop
+		immediateUpdate = client.immediateUpdate
 	)
 	go func() {
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
-
-		// Prime with one value so the first iteration fires immediately,
-		// avoiding a full poll-interval wait before the initial RC payload
-		// is delivered to subscribers (e.g. the OpenFeature provider).
-		immediate := make(chan struct{}, 1)
-		immediate <- struct{}{}
 
 		for {
 			select {
 			case <-stop:
 				close(stop)
 				return
-			case <-immediate:
+			case <-immediateUpdate:
 			case <-ticker.C:
 			}
 			if client == nil {
@@ -271,6 +273,18 @@ func Start(config ClientConfig) error {
 		}
 	}()
 	return nil
+}
+
+// triggerUpdate queues an immediate out-of-band poll. If a poll is already
+// queued, this is a no-op — the buffered channel acts as a natural debounce.
+func triggerUpdate() {
+	if client == nil {
+		return
+	}
+	select {
+	case client.immediateUpdate <- struct{}{}:
+	default:
+	}
 }
 
 // Stop stops the client's update poll loop.
@@ -426,6 +440,8 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 	for _, cap := range capabilities {
 		client.capabilities[cap] = struct{}{}
 	}
+
+	triggerUpdate()
 	return SubscriptionToken(id), nil
 }
 
@@ -492,6 +508,7 @@ func RegisterProduct(p string) error {
 	}
 
 	client.products[p] = struct{}{}
+	triggerUpdate()
 	return nil
 }
 

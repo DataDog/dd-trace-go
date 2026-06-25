@@ -283,9 +283,9 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // TestEagerInitialPoll verifies that the RC polling goroutine fires an immediate
-// updateState call on startup without waiting for the first ticker interval.
-// It uses a 1-hour poll interval so the ticker cannot be responsible for any
-// request that arrives within the 500ms assertion window.
+// updateState call after a product is registered, without waiting for the first
+// ticker interval. It uses a 1-hour poll interval so the ticker cannot be
+// responsible for any request that arrives within the 500ms assertion window.
 func TestEagerInitialPoll(t *testing.T) {
 	Stop()
 	Reset()
@@ -309,12 +309,14 @@ func TestEagerInitialPoll(t *testing.T) {
 	}
 
 	require.NoError(t, Start(cfg))
+	_, err := Subscribe("test-product", func(ProductUpdate) map[string]state.ApplyStatus { return nil })
+	require.NoError(t, err)
 
 	select {
 	case <-requestCh:
-		// Success: eager first poll fired immediately without waiting for the ticker.
+		// Success: eager poll fired immediately after Subscribe, without waiting for the ticker.
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("no HTTP request within 500ms; eager initial poll did not fire (poll interval is 1h, so ticker cannot be the cause)")
+		t.Fatal("no HTTP request within 500ms; eager poll after Subscribe did not fire (poll interval is 1h, so ticker cannot be the cause)")
 	}
 }
 
