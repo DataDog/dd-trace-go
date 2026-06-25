@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -117,6 +119,18 @@ func NewMeterProviderWithContext(ctx context.Context, opts ...Option) (otelmetri
 	res, err := buildDatadogResource(ctx, cfg.resourceOptions...)
 	if err != nil {
 		return nil, err
+	}
+
+	// If the caller configured a temporality selector (via WithDeltaTemporality,
+	// WithCumulativeTemporality, or WithTemporalitySelector), append it to the
+	// per-protocol exporter option slices so it overrides the hardcoded delta
+	// default that buildHTTPExporterOptions/buildGRPCExporterOptions set first.
+	// The build functions use last-wins ordering, so this append is sufficient.
+	if cfg.temporalitySelector != nil {
+		cfg.httpExporterOptions = append(cfg.httpExporterOptions,
+			otlpmetrichttp.WithTemporalitySelector(cfg.temporalitySelector))
+		cfg.grpcExporterOptions = append(cfg.grpcExporterOptions,
+			otlpmetricgrpc.WithTemporalitySelector(cfg.temporalitySelector))
 	}
 
 	// Create OTLP exporter with DD defaults (supports both HTTP and gRPC)
