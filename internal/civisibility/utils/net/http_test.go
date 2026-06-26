@@ -13,6 +13,7 @@ import (
 	stdnet "net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -800,6 +801,45 @@ func TestSendRequestExpectJSONResponseRetriesOnUnknownFormat(t *testing.T) {
 	assert.NotNil(t, resp2)
 	assert.Equal(t, "unknown", resp2.Format)
 	assert.Equal(t, 1, calls, "expected exactly 1 call without retry")
+}
+
+func TestSendRequestExpectJSONResponseRecoversAfterUnknownFormat(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set(HeaderContentType, "text/plain")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("not json"))
+			return
+		}
+
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer ts.Close()
+
+	handler := NewRequestHandlerWithClient(createNewHTTPClient())
+	config := RequestConfig{
+		Method:             "GET",
+		URL:                ts.URL,
+		MaxRetries:         2,
+		Backoff:            1,
+		ExpectJSONResponse: true,
+	}
+
+	resp, err := handler.SendRequest(config)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, FormatJSON, resp.Format)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, int32(2), calls.Load(), "expected retry to recover on the second call")
+
+	var data map[string]bool
+	require.NoError(t, resp.Unmarshal(&data))
+	assert.True(t, data["ok"])
 }
 
 func TestPrepareContentWithNonByteContentForOctetStream(t *testing.T) {
