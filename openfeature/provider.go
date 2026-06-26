@@ -191,36 +191,31 @@ func (p *DatadogProvider) Init(evaluationContext openfeature.EvaluationContext) 
 }
 
 // waitForConfigurationUpdate waits for a configuration update or context cancellation.
-// Assumes mutex is locked on entry, temporarily unlocks during wait, relocks on exit.
+// Assumes mutex is locked on entry.
 func (p *DatadogProvider) waitForConfigurationUpdate(ctx context.Context) error {
-	defer p.mu.Lock() // Always relock when function exits
-
-	// Check if context was cancelled before waiting
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	// Create channel to signal condition variable completion
 	done := make(chan struct{})
+	waitCtx, cancel := context.WithCancel(ctx)
 	go func() {
-		defer close(done)
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		p.configChange.Wait()
+		select {
+		case <-waitCtx.Done():
+			p.mu.Lock()
+			p.configChange.Broadcast()
+			p.mu.Unlock()
+		case <-done:
+		}
+	}()
+	defer func() {
+		close(done)
+		cancel()
 	}()
 
-	// Temporarily unlock to allow configuration update and context handling
-	p.mu.Unlock()
-
-	// Wait for either context cancellation or configuration update
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return nil // Configuration updated, defer will relock
+	for p.configuration == nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		p.configChange.Wait()
 	}
+	return nil
 }
 
 // InitWithContext initializes the provider with context support.
@@ -431,6 +426,8 @@ func (p *DatadogProvider) IntEvaluation(
 			intValue = int64(v)
 		} else {
 			conversionErr = fmt.Errorf("%w: flag %q returned float with decimal part: %v", errTypeMismatch, flagKey, v)
+			result.Reason = openfeature.ErrorReason
+			intValue = defaultValue
 		}
 	default:
 		if result.Error == nil {

@@ -34,6 +34,7 @@ func TestSourceModeDefaultsToCDN(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, defaultCDNConfigPath, r.URL.Path)
 		require.NotEmpty(t, r.Header.Get(cdnAPIKeyHeader))
+		require.Equal(t, string(FeatureFlagSourceModeCDN), r.Header.Get(cdnSourceModeHeader))
 		requests.Add(1)
 		w.Header().Set("ETag", `"ufc-default"`)
 		_, _ = w.Write(mustMarshalUFC(t, createTestConfig()))

@@ -185,6 +185,49 @@ func TestSemanticShutdownIsIdempotentAndStopsCDNRequests(t *testing.T) {
 	require.Nil(t, provider.getConfiguration())
 }
 
+func TestParseAndValidateConfigurationRejectsUnsafeShards(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*universalFlagsConfiguration)
+	}{
+		{
+			name: "nil shard",
+			mutate: func(config *universalFlagsConfiguration) {
+				config.Flags["bool-flag"].Allocations[0].Splits[0].Shards = []*shard{nil}
+			},
+		},
+		{
+			name: "zero total shards",
+			mutate: func(config *universalFlagsConfiguration) {
+				config.Flags["bool-flag"].Allocations[0].Splits[0].Shards[0].TotalShards = 0
+			},
+		},
+		{
+			name: "nil shard range",
+			mutate: func(config *universalFlagsConfiguration) {
+				config.Flags["bool-flag"].Allocations[0].Splits[0].Shards[0].Ranges = []*shardRange{nil}
+			},
+		},
+		{
+			name: "range beyond total shards",
+			mutate: func(config *universalFlagsConfiguration) {
+				config.Flags["bool-flag"].Allocations[0].Splits[0].Shards[0].Ranges[0].End = 8193
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			config := createTestConfig()
+			tc.mutate(config)
+			require.NotPanics(t, func() {
+				_, err := parseAndValidateConfiguration(mustMarshalUFC(t, config))
+				require.Error(t, err)
+			})
+		})
+	}
+}
+
 type semanticSnapshot struct {
 	value   any
 	variant string

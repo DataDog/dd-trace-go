@@ -154,10 +154,22 @@ func validateFlag(flagKey string, flag *flag) error {
 				return fmt.Errorf("flag %q allocation %d split %d is nil", flagKey, i, j)
 			}
 
-			for _, shard := range split.Shards {
-				if shard.TotalShards < 0 {
-					return fmt.Errorf("flag %q allocation %d split %d has shard with non-positive TotalShards %d",
-						flagKey, i, j, shard.TotalShards)
+			for k, shard := range split.Shards {
+				if shard == nil {
+					return fmt.Errorf("flag %q allocation %d split %d shard %d is nil", flagKey, i, j, k)
+				}
+				if shard.TotalShards <= 0 {
+					return fmt.Errorf("flag %q allocation %d split %d shard %d has non-positive TotalShards %d",
+						flagKey, i, j, k, shard.TotalShards)
+				}
+				for l, shardRange := range shard.Ranges {
+					if shardRange == nil {
+						return fmt.Errorf("flag %q allocation %d split %d shard %d range %d is nil", flagKey, i, j, k, l)
+					}
+					if shardRange.Start < 0 || shardRange.End < shardRange.Start || shardRange.End > shard.TotalShards {
+						return fmt.Errorf("flag %q allocation %d split %d shard %d range %d has invalid range [%d,%d)",
+							flagKey, i, j, k, l, shardRange.Start, shardRange.End)
+					}
 				}
 			}
 

@@ -189,6 +189,7 @@ func TestCDNPollerMissingAuthFailsClosed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
 		require.Empty(t, r.Header.Get(cdnAPIKeyHeader))
+		require.Equal(t, string(FeatureFlagSourceModeCDN), r.Header.Get(cdnSourceModeHeader))
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	t.Cleanup(srv.Close)
@@ -200,6 +201,16 @@ func TestCDNPollerMissingAuthFailsClosed(t *testing.T) {
 	require.Error(t, poller.pollOnce(context.Background()))
 	recorder.requireCount(t, 0)
 	require.EqualValues(t, 1, requests.Load())
+}
+
+func TestCDNPollerRejectsNonLocalHTTPBaseURL(t *testing.T) {
+	_, err := buildCDNConfigEndpoint("http://feature-flags.datadoghq.com")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must use https")
+
+	endpoint, err := buildCDNConfigEndpoint("http://host.docker.internal:4900")
+	require.NoError(t, err)
+	require.Contains(t, endpoint, defaultCDNConfigPath)
 }
 
 type pollerApplyRecorder struct {

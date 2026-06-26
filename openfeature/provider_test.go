@@ -8,6 +8,7 @@ package openfeature
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -445,6 +446,25 @@ func TestIntEvaluation(t *testing.T) {
 		}
 		if result.Reason != openfeature.DefaultReason {
 			t.Errorf("expected DefaultReason, got %s", result.Reason)
+		}
+	})
+
+	t.Run("fractional numeric value returns caller default and error reason", func(t *testing.T) {
+		result := provider.IntEvaluation(ctx, "float-flag", 5, openfeature.FlattenedContext{
+			"targetingKey": "user-123",
+			"tier":         "premium",
+		})
+		if result.Value != 5 {
+			t.Errorf("expected default 5, got %d", result.Value)
+		}
+		if result.Reason != openfeature.ErrorReason {
+			t.Errorf("expected ErrorReason, got %s", result.Reason)
+		}
+		if result.ResolutionError.Error() == "" {
+			t.Errorf("expected type mismatch resolution error")
+		}
+		if !strings.Contains(result.ResolutionError.Error(), string(openfeature.TypeMismatchCode)) {
+			t.Errorf("expected TypeMismatchCode, got %v", result.ResolutionError)
 		}
 	})
 }

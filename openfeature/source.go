@@ -74,9 +74,6 @@ type resolvedFeatureFlagCDNConfig struct {
 
 func resolveFeatureFlagSourceConfig(config FeatureFlagSourceConfig) (resolvedFeatureFlagSourceConfig, error) {
 	mode := config.Mode
-	if mode == "" && len(config.Offline.Payload) > 0 {
-		mode = FeatureFlagSourceModeOffline
-	}
 	if mode == "" {
 		mode = FeatureFlagSourceMode(os.Getenv(envFeatureFlagSourceMode))
 	}

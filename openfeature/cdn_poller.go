@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -21,6 +22,7 @@ import (
 const (
 	defaultCDNConfigPath = "/mock/ufc/config"
 	cdnAPIKeyHeader      = "DD-API-KEY"
+	cdnSourceModeHeader  = "DD-Flagging-Source-Mode"
 
 	maxCDNResponseBodyBytes = 10 << 20
 	cdnRetryAttempts        = 3
@@ -102,6 +104,9 @@ func buildCDNConfigEndpoint(baseURL string) (string, error) {
 	}
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
 		return "", fmt.Errorf("invalid feature flag CDN base URL scheme %q", parsed.Scheme)
+	}
+	if parsed.Scheme == "http" && !isLocalCDNHost(parsed.Hostname()) {
+		return "", fmt.Errorf("feature flag CDN base URL must use https")
 	}
 	if parsed.Host == "" {
 		return "", fmt.Errorf("invalid feature flag CDN base URL: missing host")
@@ -215,6 +220,7 @@ func (p *cdnPoller) fetch(ctx context.Context) ([]byte, string, bool, bool, erro
 	if p.apiKey != "" {
 		req.Header.Set(cdnAPIKeyHeader, p.apiKey)
 	}
+	req.Header.Set(cdnSourceModeHeader, string(FeatureFlagSourceModeCDN))
 	p.mu.Lock()
 	etag := p.etag
 	p.mu.Unlock()
@@ -244,6 +250,14 @@ func (p *cdnPoller) fetch(ctx context.Context) ([]byte, string, bool, bool, erro
 		return nil, "", false, false, fmt.Errorf("feature flag CDN response exceeds %d bytes", maxCDNResponseBodyBytes)
 	}
 	return body, resp.Header.Get("ETag"), false, false, nil
+}
+
+func isLocalCDNHost(host string) bool {
+	if host == "localhost" || host == "host.docker.internal" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func retryableCDNStatus(status int) bool {
