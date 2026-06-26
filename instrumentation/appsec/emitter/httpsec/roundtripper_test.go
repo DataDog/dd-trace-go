@@ -44,8 +44,7 @@ func TestProtectRoundTrip_closes_shared_subcontext_when_ssrf_request_blocks(t *t
 	ctxOp.SetSupportedAddresses(config.NewAddressSet(handle.Addresses()))
 	ctxOp.SetLimiter(limiter.NewTokenTicker(100, 100))
 	handleMetrics := wafemitter.NewMetricsInstance(handle, "1.99.0")
-	metrics := handleMetrics.NewContextMetrics()
-	ctxOp.SetMetricsInstance(metrics)
+	ctxOp.SetMetricsInstance(handleMetrics.NewContextMetrics())
 	seedRoundTripRequestContext(t, ctxOp)
 
 	handlerOp, _, handlerCtx := StartOperation(ctx, HandlerOperationArgs{Method: http.MethodGet}, tracelib.NoopTagSetter{})
@@ -64,7 +63,7 @@ func TestProtectRoundTrip_closes_shared_subcontext_when_ssrf_request_blocks(t *t
 	require.Nil(t, finish)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, &events.BlockingSecurityEvent{}))
-	require.Positive(t, metrics.ExternalDuration(addresses.RASPScope, 0), "block path must close the shared subcontext and merge timer stats")
+	require.Positive(t, wafCtx.Timer.Stats()[addresses.RASPScope], "block path must close the shared subcontext and roll up timer stats")
 }
 
 func newRASPTestHandle(t *testing.T) *libddwaf.Handle {

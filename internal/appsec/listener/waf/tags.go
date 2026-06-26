@@ -87,7 +87,6 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 	// Add metrics like `waf.duration` and `rasp.duration_ext`
 	for scope, value := range timerStats {
 		scope := addresses.Scope(scope)
-		value = metrics.ExternalDuration(scope, value)
 		th.SetTag(wafSpanTagPrefix+string(scope)+durationExtSuffix, float64(value.Nanoseconds())/float64(time.Microsecond.Nanoseconds()))
 		for component, atomicValue := range metrics.SumDurations[scope] {
 			if value := atomicValue.Load(); value > 0 {
@@ -109,7 +108,6 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 		th.SetTag(raspTimeoutTag, sumRASPTimeouts)
 	}
 
-	truncations = metrics.MergedTruncations(truncations)
 	addTruncationTag(th, libddwaf.StringTooLong, truncations.StringTooLong)
 	addTruncationTag(th, libddwaf.ContainerTooLarge, truncations.ContainerTooLarge)
 	addTruncationTag(th, libddwaf.ObjectTooDeep, truncations.ObjectTooDeep)

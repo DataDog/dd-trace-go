@@ -51,7 +51,7 @@ func TestSubcontextOperation_uses_subcontext_and_closes_it(t *testing.T) {
 
 	subOp.Close()
 	require.Nil(t, subOp.subcontext)
-	require.NotEmpty(t, ctxOp.GetMetricsInstance().MergedTruncations(libddwaf.Truncations{}).StringTooLong)
+	require.NotEmpty(t, wafCtx.Truncations().StringTooLong)
 }
 
 func TestSubcontextOperation_aggregates_truncations_and_external_rasp_timer(t *testing.T) {
@@ -59,7 +59,7 @@ func TestSubcontextOperation_aggregates_truncations_and_external_rasp_timer(t *t
 		t.Skip("WAF cannot be used")
 	}
 
-	ctxOp, _, metrics := newSubcontextTestOperation(t)
+	ctxOp, wafCtx, _ := newSubcontextTestOperation(t)
 	subOp := ctxOp.NewSubcontextOp()
 	require.NotNil(t, subOp.subcontext)
 
@@ -71,9 +71,8 @@ func TestSubcontextOperation_aggregates_truncations_and_external_rasp_timer(t *t
 	})
 	subOp.Close()
 
-	merged := metrics.MergedTruncations(libddwaf.Truncations{})
-	require.NotEmpty(t, merged.StringTooLong)
-	require.Positive(t, metrics.ExternalDuration(addresses.RASPScope, 0))
+	require.NotEmpty(t, wafCtx.Truncations().StringTooLong)
+	require.Positive(t, wafCtx.Timer.Stats()[addresses.RASPScope])
 }
 
 func TestSubcontextOperation_does_not_refire_ssrf_request_on_response_run(t *testing.T) {
@@ -176,7 +175,7 @@ func TestSubcontextOperation_Close_is_idempotent_and_does_not_double_add_stats(t
 		t.Skip("WAF cannot be used")
 	}
 
-	ctxOp, _, metrics := newSubcontextTestOperation(t)
+	ctxOp, wafCtx, _ := newSubcontextTestOperation(t)
 	subOp := ctxOp.NewSubcontextOp()
 	require.NotNil(t, subOp.subcontext)
 
@@ -188,14 +187,14 @@ func TestSubcontextOperation_Close_is_idempotent_and_does_not_double_add_stats(t
 	})
 	subOp.Close()
 
-	merged := metrics.MergedTruncations(libddwaf.Truncations{})
-	duration := metrics.ExternalDuration(addresses.RASPScope, 0)
-	require.NotEmpty(t, merged.StringTooLong)
+	truncations := wafCtx.Truncations()
+	duration := wafCtx.Timer.Stats()[addresses.RASPScope]
+	require.NotEmpty(t, truncations.StringTooLong)
 	require.Positive(t, duration)
 
 	require.NotPanics(t, subOp.Close)
-	require.Equal(t, merged, metrics.MergedTruncations(libddwaf.Truncations{}))
-	require.Equal(t, duration, metrics.ExternalDuration(addresses.RASPScope, 0))
+	require.Equal(t, truncations, wafCtx.Truncations())
+	require.Equal(t, duration, wafCtx.Timer.Stats()[addresses.RASPScope])
 }
 
 func TestSubcontextOperation_Close_records_each_scope_duration_from_shared_subcontext(t *testing.T) {
@@ -203,7 +202,7 @@ func TestSubcontextOperation_Close_records_each_scope_duration_from_shared_subco
 		t.Skip("WAF cannot be used")
 	}
 
-	ctxOp, _, metrics := newSubcontextTestOperation(t)
+	ctxOp, wafCtx, _ := newSubcontextTestOperation(t)
 	subOp := ctxOp.NewSubcontextOp()
 	require.NotNil(t, subOp.subcontext)
 
@@ -219,7 +218,7 @@ func TestSubcontextOperation_Close_records_each_scope_duration_from_shared_subco
 	})
 	subOp.Close()
 
-	require.Positive(t, metrics.ExternalDuration(addresses.RASPScope, 0), "later WAF-scope runs must not drop the RASP external duration")
+	require.Positive(t, wafCtx.Timer.Stats()[addresses.RASPScope], "later WAF-scope runs must not drop the RASP external duration")
 }
 
 func newSubcontextTestOperation(t *testing.T) (*ContextOperation, *libddwaf.Context, *ContextMetrics) {

@@ -148,8 +148,9 @@ func (waf *Feature) onFinish(op *waf.ContextOperation, _ waf.ContextRes) {
 		return
 	}
 
-	// Subcontext owners defer Close before their request operation finishes, so
-	// subcontext stats are already merged into ContextMetrics by this point.
+	// Subcontext owners defer Close before their request operation finishes, and
+	// go-libddwaf rc.2 folds subcontext timer/truncations into the Context on Close,
+	// so the values read here already include subcontext contributions.
 	truncations := ctx.Truncations()
 	timerStats := ctx.Timer.Stats()
 	ctx.Close()

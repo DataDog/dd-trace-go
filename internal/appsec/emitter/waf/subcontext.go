@@ -50,10 +50,6 @@ func (sub *SubcontextOperation) Close() {
 		return
 	}
 
-	if metrics := sub.contextOp.GetMetricsInstance(); metrics != nil {
-		metrics.AddSubcontextStats(sub.subcontext.Truncations(), sub.subcontext.Timer.Stats())
-	}
-
 	sub.subcontext.Close()
 	sub.subcontext = nil
 }

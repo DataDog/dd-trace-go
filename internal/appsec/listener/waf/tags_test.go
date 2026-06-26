@@ -86,20 +86,19 @@ func TestAddRulesMonitoringTagsRCClientID(t *testing.T) {
 	})
 }
 
-func TestAddWAFMonitoringTags_includes_subcontext_stats(t *testing.T) {
+func TestAddWAFMonitoringTags_includes_provided_stats(t *testing.T) {
 	th := make(trace.TestTagSetter)
 	handleMetrics := emitter.NewMetricsInstance(nil, "1.2.3")
 	metrics := handleMetrics.NewContextMetrics()
-	metrics.AddSubcontextStats(libddwaf.Truncations{
-		StringTooLong: []int{42},
-	}, map[timer.Key]time.Duration{
-		addresses.RASPScope: 2 * time.Millisecond,
-	})
 
-	AddWAFMonitoringTags(&th, metrics, "1.2.3", libddwaf.Truncations{}, map[timer.Key]time.Duration{
-		addresses.WAFScope:  0,
-		addresses.RASPScope: 0,
-	})
+	truncations := libddwaf.Truncations{
+		StringTooLong: []int{42},
+	}
+	timerStats := map[timer.Key]time.Duration{
+		addresses.RASPScope: 2 * time.Millisecond,
+	}
+
+	AddWAFMonitoringTags(&th, metrics, "1.2.3", truncations, timerStats)
 
 	tags := th.Tags()
 	require.Equal(t, float64(2000), tags[raspDurationExtTag])
