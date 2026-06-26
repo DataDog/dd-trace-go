@@ -424,36 +424,39 @@ type SubscriptionToken int
 // Subscribe should be preferred over RegisterProduct and RegisterCallback if
 // your callback only handles a single product.
 func Subscribe(product string, callback ProductCallback, capabilities ...Capability) (SubscriptionToken, error) {
-	if client == nil {
+	// Capture the singleton once so a concurrent Stop/Reset (which nils the
+	// global) can't cause a nil deref mid-function.
+	c := client
+	if c == nil {
 		return 0, ErrClientNotStarted
 	}
-	client.productsMu.RLock()
-	defer client.productsMu.RUnlock()
-	if _, found := client.products[product]; found {
+	c.productsMu.RLock()
+	defer c.productsMu.RUnlock()
+	if _, found := c.products[product]; found {
 		return 0, fmt.Errorf("product %s already registered via RegisterProduct", product)
 	}
 
-	client.subscriptionsMu.Lock()
-	defer client.subscriptionsMu.Unlock()
-	client.subscriptionsMu.idAllocator++
-	id := client.subscriptionsMu.idAllocator
+	c.subscriptionsMu.Lock()
+	defer c.subscriptionsMu.Unlock()
+	c.subscriptionsMu.idAllocator++
+	id := c.subscriptionsMu.idAllocator
 	sub := subscription{
 		id:           id,
 		product:      product,
 		capabilities: capabilities,
 		callback:     callback,
 	}
-	client.subscriptionsMu.subs = append(client.subscriptionsMu.subs, sub)
+	c.subscriptionsMu.subs = append(c.subscriptionsMu.subs, sub)
 
-	client.capabilitiesMu.Lock()
-	defer client.capabilitiesMu.Unlock()
+	c.capabilitiesMu.Lock()
+	defer c.capabilitiesMu.Unlock()
 	for _, cap := range capabilities {
-		client.capabilities[cap] = struct{}{}
+		c.capabilities[cap] = struct{}{}
 	}
 	// Poll now: Subscribe registers product+callback+capabilities atomically, so
 	// the poll can't arrive before the callback. (RegisterProduct/RegisterCapability
 	// don't — they're used before a callback exists; see those.)
-	client.requestPoll()
+	c.requestPoll()
 	return SubscriptionToken(id), nil
 }
 
