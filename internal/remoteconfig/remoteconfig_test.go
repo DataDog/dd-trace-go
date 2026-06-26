@@ -611,12 +611,18 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 // recordingClientConfig returns an RC client config whose HTTP client records
 // each request (non-blocking) and returns an empty body. PollInterval is 1h, so
 // a request seen within the test window can only be a Subscribe-driven poll.
-func recordingClientConfig(requests chan<- struct{}) ClientConfig {
+// AgentURL is set so updateState builds an absolute request URL (as in prod),
+// which the RoundTripper asserts.
+func recordingClientConfig(t *testing.T, requests chan<- struct{}) ClientConfig {
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test"
+	cfg.AgentURL = "http://agent.test" // non-routable; the transport is faked anyway
 	cfg.PollInterval = time.Hour
 	cfg.HTTP = &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if !r.URL.IsAbs() {
+				t.Errorf("RC request URL is not absolute: %q", r.URL)
+			}
 			// http.RoundTripper is responsible for closing the request body.
 			if r.Body != nil {
 				r.Body.Close()
@@ -642,7 +648,7 @@ func TestPollOnSubscribe(t *testing.T) {
 	defer Stop()
 
 	requests := make(chan struct{}, 1)
-	require.NoError(t, Start(recordingClientConfig(requests)))
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
 	_, err := Subscribe("TEST_PRODUCT", func(ProductUpdate) map[string]state.ApplyStatus { return nil }, FFEFlagEvaluation)
 	require.NoError(t, err)
 
@@ -670,7 +676,7 @@ func TestNoImmediatePollOnRegisterProductOrCapability(t *testing.T) {
 			defer Stop()
 
 			requests := make(chan struct{}, 1)
-			require.NoError(t, Start(recordingClientConfig(requests)))
+			require.NoError(t, Start(recordingClientConfig(t, requests)))
 			require.NoError(t, reg())
 
 			select {
@@ -691,7 +697,7 @@ func TestNoPollWithoutRegistration(t *testing.T) {
 	defer Stop()
 
 	requests := make(chan struct{}, 1)
-	require.NoError(t, Start(recordingClientConfig(requests)))
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
 
 	select {
 	case <-requests:
@@ -709,7 +715,7 @@ func TestPollOnEachSubscribe(t *testing.T) {
 	defer Stop()
 
 	requests := make(chan struct{}, 1)
-	require.NoError(t, Start(recordingClientConfig(requests)))
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
 	cb := func(ProductUpdate) map[string]state.ApplyStatus { return nil }
 
 	_, err := Subscribe("product-a", cb, FFEFlagEvaluation)
