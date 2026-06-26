@@ -26,6 +26,7 @@ func TestSettingsApiRequest(t *testing.T) {
 	expectedResponse.Data.Type = settingsRequestType
 	expectedResponse.Data.Attributes.FlakyTestRetriesEnabled = true
 	expectedResponse.Data.Attributes.CodeCoverage = true
+	expectedResponse.Data.Attributes.CoverageReportUploadEnabled = true
 	expectedResponse.Data.Attributes.TestsSkipping = true
 	expectedResponse.Data.Attributes.ItrEnabled = true
 	expectedResponse.Data.Attributes.RequireGit = true
@@ -128,6 +129,7 @@ func TestSettingsApiRequestFromManifestCache(t *testing.T) {
 	expectedResponse := settingsResponse{}
 	expectedResponse.Data.Attributes.FlakyTestRetriesEnabled = true
 	expectedResponse.Data.Attributes.CodeCoverage = true
+	expectedResponse.Data.Attributes.CoverageReportUploadEnabled = true
 	expectedResponse.Data.Attributes.TestsSkipping = true
 	expectedResponse.Data.Attributes.ItrEnabled = true
 	expectedResponse.Data.Attributes.KnownTestsEnabled = true
@@ -169,7 +171,7 @@ func TestSettingsApiRequestFromManifestCache(t *testing.T) {
 	assert.Equal(t, 0, hits)
 	assert.True(t, containsLogLine(recordLogger.Logs(), "reading .testoptimization/cache/http/settings.json"))
 	assert.True(t, containsLogLine(recordLogger.Logs(), "loaded settings from .testoptimization/cache/http/settings.json"))
-	assert.True(t, containsLogLine(recordLogger.Logs(), "enabled features [code_coverage:true itr:true tests_skipping:true known_tests:true impacted_tests:true early_flake_detection:false flaky_test_retries:true test_management:true require_git:false attempt_to_fix_retries:0]"))
+	assert.True(t, containsLogLine(recordLogger.Logs(), "enabled features [code_coverage:true coverage_report_upload:true itr:true tests_skipping:true known_tests:true impacted_tests:true early_flake_detection:false flaky_test_retries:true test_management:true require_git:false attempt_to_fix_retries:0]"))
 }
 
 func TestSettingsApiRequestFromManifestCacheMissingFile(t *testing.T) {

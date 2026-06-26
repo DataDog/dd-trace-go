@@ -184,12 +184,11 @@ func orchestrionScenario() fixtureScenario {
 	case "repo-wide-backend-coverage":
 		defaultScenario.coverage = repoWideCoverage
 		return defaultScenario
-	case "backfill-disabled-when-response-includes-out-of-process-test":
+	case "backfill-ignores-out-of-process-test":
 		defaultScenario.tests = []mockci.SkippableTest{
 			{Suite: "app_test.go", Name: "TestCoversLib"},
 			{Suite: "other_package_test.go", Name: "TestOutsideProcess"},
 		}
-		defaultScenario.expectPositiveCoverage = false
 		return defaultScenario
 	case "backfill-disabled-when-response-has-parameters":
 		defaultScenario.tests = []mockci.SkippableTest{

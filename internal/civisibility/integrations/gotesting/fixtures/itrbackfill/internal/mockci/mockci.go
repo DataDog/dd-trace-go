@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -39,9 +40,11 @@ type Server struct {
 
 	payloads         []Payload
 	coverageUploads  []UploadedCoverageFile
+	coverageReports  []UploadedCoverageReport
 	coverageByFile   map[string][]byte
 	skippableRequest int
 	coverageRequest  int
+	reportRequest    int
 	restore          func()
 }
 
@@ -49,6 +52,12 @@ type Server struct {
 type UploadedCoverageFile struct {
 	Filename string
 	Bitmap   []byte
+}
+
+// UploadedCoverageReport is one captured Code Coverage report upload.
+type UploadedCoverageReport struct {
+	Event  map[string]string
+	Report string
 }
 
 // Payload is the decoded CI Visibility test-cycle payload shape used by fixtures.
@@ -85,6 +94,8 @@ func Start(settings net.SettingsResponseData, tests []SkippableTest, coverage ma
 			mock.handleSkippable(w, tests, coverage)
 		case "/api/v2/citestcov":
 			mock.handleCoverageUpload(w, r)
+		case "/api/v2/cicovreprt":
+			mock.handleCoverageReportUpload(w, r)
 		case "/api/v2/git/repository/search_commits":
 			_ = drain(r.Body)
 			w.Header().Set("Content-Type", "application/json")
@@ -143,6 +154,30 @@ func (s *Server) CoverageRequests() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.coverageRequest
+}
+
+// CoverageReportRequests returns how many coverage report requests were received.
+func (s *Server) CoverageReportRequests() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reportRequest
+}
+
+// CoverageReports returns captured Code Coverage report uploads.
+func (s *Server) CoverageReports() []UploadedCoverageReport {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	reports := make([]UploadedCoverageReport, 0, len(s.coverageReports))
+	for _, report := range s.coverageReports {
+		event := make(map[string]string, len(report.Event))
+		maps.Copy(event, report.Event)
+		reports = append(reports, UploadedCoverageReport{
+			Event:  event,
+			Report: report.Report,
+		})
+	}
+	return reports
 }
 
 // UploadedCoverage returns uploaded source-file bitmaps keyed by filename.
@@ -332,6 +367,58 @@ func (s *Server) handleCoverageUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.storeUploadedCoverage(uploads)
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) handleCoverageReportUpload(w http.ResponseWriter, r *http.Request) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	upload := UploadedCoverageReport{Event: map[string]string{}}
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		switch part.FormName() {
+		case "event":
+			if err := json.NewDecoder(part).Decode(&upload.Event); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		case "coverage":
+			gzipReader, err := gzip.NewReader(part)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			report, err := io.ReadAll(gzipReader)
+			closeErr := gzipReader.Close()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if closeErr != nil {
+				http.Error(w, closeErr.Error(), http.StatusInternalServerError)
+				return
+			}
+			upload.Report = string(report)
+		default:
+			_ = drain(part)
+		}
+	}
+
+	s.mu.Lock()
+	s.reportRequest++
+	s.coverageReports = append(s.coverageReports, upload)
+	s.mu.Unlock()
 	w.WriteHeader(http.StatusAccepted)
 }
 
