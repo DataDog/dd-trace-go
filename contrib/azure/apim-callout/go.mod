@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/azure/apim-callout/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.9.1-rc.3
+	github.com/DataDog/dd-trace-go/v2 v2.9.1
 	github.com/google/uuid v1.6.0
 	github.com/jellydator/ttlcache/v3 v3.4.0
 	github.com/stretchr/testify v1.11.1
