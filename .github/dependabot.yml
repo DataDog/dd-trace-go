@@ -60,4 +60,3 @@ updates:
       # Allowing Dependabot to update this digest risks silently switching to
       # AL2023 if the :2 tag is ever redirected, which would remove AL2 coverage.
       - dependency-name: "amazonlinux"
-        versions: ["*"]
