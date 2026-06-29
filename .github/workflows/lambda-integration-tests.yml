@@ -26,14 +26,14 @@ jobs:
           persist-credentials: false
 
       - name: Configure AWS Credentials via OIDC (Build-Stable)
-        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: arn:aws:iam::486234852809:role/dd-trace-go-github-actions
           role-session-name: dd-trace-go-lambda-${{ github.run_id }}
           aws-region: us-east-1
 
       - name: Configure AWS Credentials for Serverless Sandbox
-        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: arn:aws:iam::425362996713:role/gha-dd-trace-lambda-integration-test
           role-session-name: dd-trace-go-lambda-${{ github.run_id }}
@@ -52,7 +52,7 @@ jobs:
 
       - name: Cache Node modules
         id: cache-node-modules
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: "**/node_modules"
           key: ${{ runner.os }}-modules-${{ hashFiles('**/yarn.lock') }}
