@@ -6,12 +6,74 @@
 package processtags
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestSetServiceNameTag(t *testing.T) {
+	t.Run("auto-assigned sets svc.auto", func(t *testing.T) {
+		t.Cleanup(Reload)
+		Reload()
+		SetServiceNameTag("myapp", false)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.auto:myapp")
+		assert.NotContains(t, tags.String(), "svc.user")
+		assert.Contains(t, tags.Slice(), "svc.auto:myapp")
+	})
+
+	t.Run("user-defined sets svc.user", func(t *testing.T) {
+		t.Cleanup(Reload)
+		Reload()
+		SetServiceNameTag("myapp", true)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+		assert.Contains(t, tags.Slice(), "svc.user:true")
+	})
+
+	t.Run("switching from auto to user removes svc.auto", func(t *testing.T) {
+		t.Cleanup(Reload)
+		Reload()
+		SetServiceNameTag("myapp", false)
+		SetServiceNameTag("myapp", true)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.user:true")
+		assert.NotContains(t, tags.String(), "svc.auto")
+	})
+
+	t.Run("switching from user to auto removes svc.user", func(t *testing.T) {
+		t.Cleanup(Reload)
+		Reload()
+		SetServiceNameTag("myapp", true)
+		SetServiceNameTag("otherapp", false)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.auto:otherapp")
+		assert.NotContains(t, tags.String(), "svc.user")
+	})
+
+	t.Run("works when tags map not yet initialised", func(t *testing.T) {
+		t.Cleanup(Reload)
+		// Simulate collect() returning empty (e.g. os.Executable fails):
+		// Reload creates pTags but add is never called, leaving pTags.tags nil.
+		pTags = &ProcessTags{}
+		SetServiceNameTag("myapp", false)
+		tags := GlobalTags()
+		assert.Contains(t, tags.String(), "svc.auto:myapp")
+	})
+
+	t.Run("no-op when disabled", func(t *testing.T) {
+		t.Cleanup(Reload) // register before t.Setenv so it runs after env is restored
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		Reload()
+		SetServiceNameTag("myapp", false)
+		assert.Nil(t, GlobalTags())
+	})
+}
 
 func TestProcessTags(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
@@ -34,4 +96,42 @@ func TestProcessTags(t *testing.T) {
 		assert.Empty(t, p.String())
 		assert.Empty(t, p.Slice())
 	})
+}
+
+func TestDirectoryTagValue(t *testing.T) {
+	t.Run("filters non-informative directory names", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			dir  string
+		}{
+			{name: "empty", dir: ""},
+			{name: "bin", dir: "bin"},
+			{name: "root", dir: string(os.PathSeparator)},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				dir := tc.dir
+				_, ok := directoryTagValue(dir)
+				assert.False(t, ok)
+			})
+		}
+	})
+
+	t.Run("keeps informative directory names", func(t *testing.T) {
+		got, ok := directoryTagValue(filepath.Join("usr", "local", "app"))
+		assert.True(t, ok)
+		assert.Equal(t, "app", got)
+	})
+}
+
+func TestContainerTagsHash(t *testing.T) {
+	t.Cleanup(func() { SetContainerTagsHash("") })
+
+	SetContainerTagsHash("hash-1")
+	assert.Equal(t, "hash-1", ContainerTagsHash())
+
+	SetContainerTagsHash("hash-2")
+	assert.Equal(t, "hash-2", ContainerTagsHash())
+
+	SetContainerTagsHash("")
+	assert.Empty(t, ContainerTagsHash())
 }

@@ -25,14 +25,20 @@ jobs:
          startsWith(github.event.milestone.title, 'Incident')))
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
       pull-requests: read # Fetches PRs
       statuses: write # add a commit status check
       issues: read # Required to query milestone information
-    env:
-      GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
     steps:
+      - name: Get GitHub Token via dd-octo-sts
+        id: generate-token
+        uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.code-freeze-start
+
       - name: Log code freeze trigger
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -42,13 +48,13 @@ jobs:
           fi
 
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Freeze PRs
         uses: ./.github/actions/pr-status-updater
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ steps.generate-token.outputs.token }}
           state: failure
           workflow_name: code_freeze_start.yml

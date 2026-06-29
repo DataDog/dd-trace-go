@@ -1,0 +1,108 @@
+# @see https://github.com/DataDog/benchmarking-platform-tools/blob/main/images/templates/gitlab/build-ci-images.template.yml
+include:
+  project: 'DataDog/benchmarking-platform-tools'
+  file: 'images/templates/gitlab/build-ci-images.template.yml'
+
+variables:
+  # Image suffix that is used for building dd-trace-go microbenchmarks Docker image. Don't change!
+  BASE_CI_IMAGE_SUFFIX: dd-trace-go-${CI_PIPELINE_ID}
+  BASE_CI_IMAGE_CONTAINER_DIR: .gitlab/benchmarks/micro/container
+
+  # Benchmarks image is created here: https://gitlab.ddbuild.io/DataDog/apm-reliability/dd-trace-go/-/jobs/1657729516
+  MICROBENCHMARKS_CI_IMAGE: registry.ddbuild.io/ci/benchmarking-platform:dd-trace-go-111525540
+
+  # Changes smaller than SIGNIFICANT_IMPACT_THRESHOLD will be treated as a noise
+  SIGNIFICANT_IMPACT_THRESHOLD: 2.0
+
+  # Known flaky benchmarks
+  FLAKY_BENCHMARKS_REGEX: "BenchmarkOTLPTraceWriterFlush"
+
+.benchmark-rules: &benchmark-rules
+  - if: '$CI_COMMIT_TAG =~ /^.*\/v\d+\.\d+\.\d+(?:-.*\.\d+)?$/'
+    when: never
+  - if: '$CI_COMMIT_BRANCH =~ /^graphite-base\/.*$/'
+    when: never
+  - if: '$CI_COMMIT_BRANCH =~ /^mq-working-branch-.*$/'
+    when: never
+  - if: '$CI_COMMIT_BRANCH == "main"'
+    when: always
+    interruptible: false
+  - when: always
+    interruptible: true
+
+.microbenchmarks:
+  stage: microbenchmarks
+  image: $MICROBENCHMARKS_CI_IMAGE
+  rules: *benchmark-rules
+  timeout: 45m
+  tags: ["runner:apm-k8s-m8g-metal"]
+  needs: []
+  variables:
+    GOTOOLCHAIN: auto
+
+    KUBERNETES_CPU_REQUEST: "48"
+    KUBERNETES_CPU_LIMIT: "48"
+  script:
+    - export GO_VERSION=$(go version | sed 's/go version //')
+    - export S3_URL=s3://relenv-benchmarking-data/${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}/${CI_PIPELINE_ID}/${CI_JOB_ID}/
+    - bp-runner .gitlab/benchmarks/micro/bp-runner.yml --debug
+  retry:
+    max: 2
+    when:
+      - unknown_failure
+      - data_integrity_failure
+      - runner_system_failure
+      - scheduler_failure
+      - api_failure
+  artifacts:
+    name: "artifacts"
+    when: always
+    paths:
+      - artifacts/
+    expire_in: "30 days"
+
+
+# Please set maximum 44 / $CPUS_PER_BENCHMARK scenarios per group!
+# One single CI job has up to 48 CPU cores. Keep cores 0-3 reserved for kernel & background tasks; cores 4-47 can be used for benchmarks as specified in bp-runner.yml.
+#
+# parallel:matrix can't be used, because of bug https://gitlab.com/gitlab-org/gitlab/-/work_items/285853#note_2781385941
+# Because CI job names can't be larger than 255 characters, Gitlab pipeline generation will fail.
+microbenchmarks-1:
+  extends: .microbenchmarks
+  variables:
+    BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
+    CPUS_PER_BENCHMARK: 1
+    REPETITIONS: 10
+    GROUP_ID: "group-1"
+
+microbenchmarks-2:
+  extends: .microbenchmarks
+  variables:
+    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
+    CPUS_PER_BENCHMARK: 1
+    REPETITIONS: 10
+    GROUP_ID: "group-2"
+
+microbenchmarks-3:
+  extends: .microbenchmarks
+  variables:
+    BENCHMARKS: "BenchmarkOpenFeatureClientEvaluation|BenchmarkOpenFeatureClientConcurrentEvaluations|BenchmarkBooleanEvaluation|BenchmarkStringEvaluation|BenchmarkIntEvaluation|BenchmarkFloatEvaluation|BenchmarkEvaluation|BenchmarkEvaluationWithVaryingContextSize|BenchmarkEvaluationWithVaryingFlagCounts|BenchmarkConcurrentEvaluations"
+    CPUS_PER_BENCHMARK: 1
+    REPETITIONS: 10
+    GROUP_ID: "group-3"
+
+pr-performance-gates:
+  stage: microbenchmarks
+  needs: [microbenchmarks-1, microbenchmarks-2]
+  rules: *benchmark-rules
+  tags:
+    - "arch:amd64"
+  image: $MICROBENCHMARKS_CI_IMAGE
+  script:
+    - bp-runner .gitlab/benchmarks/pr-gate.thresholds.yml --debug
+  artifacts:
+    name: "artifacts"
+    when: always
+    paths:
+      - artifacts/
+    expire_in: "30 days"

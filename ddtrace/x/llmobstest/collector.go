@@ -30,6 +30,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 	_ "unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -57,7 +58,8 @@ type Collector struct {
 	mu         sync.Mutex
 	spans      []LLMObsSpan
 	metrics    []LLMObsMetric
-	batchSizes []int // raw body byte-lengths, one entry per span batch HTTP request
+	batchSizes []int         // raw body byte-lengths, one entry per span batch HTTP request
+	spanDelay  time.Duration // artificial delay applied before responding to span batches
 }
 
 // New creates a Collector that routes LLMObs requests via an in-process
@@ -125,6 +127,17 @@ func (c *Collector) RequireSpan(tb testing.TB, name string) *LLMObsSpan {
 	return s
 }
 
+// Spans returns a copy of all LLMObs spans collected so far, in arrival order.
+// Use it when a span has no distinguishing name (e.g. spans started with an
+// empty name) and must be addressed positionally. Call after [tracer.Flush].
+func (c *Collector) Spans() []LLMObsSpan {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]LLMObsSpan, len(c.spans))
+	copy(out, c.spans)
+	return out
+}
+
 // SpanCount returns the number of LLMObs spans collected so far.
 func (c *Collector) SpanCount() int {
 	c.mu.Lock()
@@ -175,7 +188,23 @@ func (c *Collector) MetricCount() int {
 	return len(c.metrics)
 }
 
+// SetSpanResponseDelay makes the collector sleep for d before responding to
+// each span-batch request, simulating a slow transport. Use it to exercise
+// flush timing behaviour (e.g. that FlushSync blocks until the send completes).
+func (c *Collector) SetSpanResponseDelay(d time.Duration) {
+	c.mu.Lock()
+	c.spanDelay = d
+	c.mu.Unlock()
+}
+
 func (c *Collector) handleSpans(w http.ResponseWriter, r *http.Request) {
+	c.mu.Lock()
+	delay := c.spanDelay
+	c.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)

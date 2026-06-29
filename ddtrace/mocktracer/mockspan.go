@@ -21,10 +21,10 @@ import (
 )
 
 //go:linkname spanStart github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.spanStart
-func spanStart(operationName string, sharedAttrs unsafe.Pointer, options ...tracer.StartSpanOption) *tracer.Span
+func spanStart(operationName string, sharedAttrs unsafe.Pointer, poolEnabled bool, options ...tracer.StartSpanOption) *tracer.Span
 
 func newSpan(operationName string, cfg *tracer.StartSpanConfig) *tracer.Span {
-	return spanStart(operationName, nil, func(c *tracer.StartSpanConfig) {
+	return spanStart(operationName, nil, false, func(c *tracer.StartSpanConfig) {
 		*c = *cfg
 	})
 }

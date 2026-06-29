@@ -57,10 +57,12 @@ const (
 	PackageRsZerolog                 Package = "rs/zerolog"
 	PackageShopifySarama             Package = "Shopify/sarama"
 	PackageSegmentioKafkaGo          Package = "segmentio/kafka-go"
+	PackageTwmbFranzGo               Package = "twmb/franz-go"
 	PackageRedisGoRedisV9            Package = "redis/go-redis.v9"
 	PackageOlivereElasticV5          Package = "olivere/elastic.v5"
 	PackageMiekgDNS                  Package = "miekg/dns"
 	PackageLabstackEchoV4            Package = "labstack/echo.v4"
+	PackageLabstackEchoV5            Package = "labstack/echo.v5"
 	PackageK8SClientGo               Package = "k8s.io/client-go"
 	PackageK8SGatewayAPI             Package = "k8s.io/gateway-api"
 	PackageJulienschmidtHTTPRouter   Package = "julienschmidt/httprouter"
@@ -649,6 +651,24 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageTwmbFranzGo: {
+		TracedPackage: "github.com/twmb/franz-go",
+		EnvVarPrefix:  "KAFKA",
+		naming: map[Component]componentNames{
+			ComponentConsumer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.consume"),
+				buildOpNameV1:      staticName("kafka.process"),
+			},
+			ComponentProducer: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName("kafka"),
+				buildOpNameV0:      staticName("kafka.produce"),
+				buildOpNameV1:      staticName("kafka.send"),
+			},
+		},
+	},
 	PackageRedisGoRedisV9: {
 		TracedPackage: "github.com/redis/go-redis/v9",
 		EnvVarPrefix:  "REDIS",
@@ -690,6 +710,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageLabstackEchoV4: {
 		TracedPackage: "github.com/labstack/echo/v4",
+		EnvVarPrefix:  "ECHO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("echo"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageLabstackEchoV5: {
+		TracedPackage: "github.com/labstack/echo/v5",
 		EnvVarPrefix:  "ECHO",
 		naming: map[Component]componentNames{
 			ComponentServer: {

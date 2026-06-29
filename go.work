@@ -49,6 +49,7 @@ use (
 	./contrib/k8s.io/client-go
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
+	./contrib/labstack/echo.v5
 	./contrib/log/slog
 	./contrib/mark3labs/mcp-go
 	./contrib/miekg/dns
@@ -62,6 +63,7 @@ use (
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
+	./contrib/twmb/franz-go
 	./contrib/twitchtv/twirp
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
@@ -77,6 +79,7 @@ use (
 	./internal/setup-smoke-test
 	./internal/traceprof/traceproftest
 	./orchestrion/all
+	./scripts/autoreleasetagger
 	./scripts/fixmodules
 	./tools/v2fix
 	./tools/v2fix/_stage

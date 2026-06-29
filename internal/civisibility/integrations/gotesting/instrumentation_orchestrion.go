@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -56,7 +58,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	if settings != nil {
 		if settings.CodeCoverage {
 			// Initialize the runtime coverage if enabled.
-			coverage.InitializeCoverage(m)
+			coverage.InitializeCoverage(m, true)
 			coverageInitialized = true
 		}
 		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
@@ -67,7 +69,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 	// Check if the coverage was enabled by not initialized
 	if !coverageInitialized && testing.CoverMode() != "" {
-		coverage.InitializeCoverage(m)
+		coverage.InitializeCoverage(m, false)
 	}
 
 	ddm := (*M)(m)
@@ -89,8 +91,18 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
-			// let's try first with our coverage package
-			cov := coverage.GetCoverage()
+			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
+			uploadFinalCoverageReport(settings)
+			if !publishCoverage {
+				session.Close(exitCode)
+				coverage.CleanupRuntimeCoverageSnapshot()
+				integrations.ExitCiVisibility()
+				return
+			}
+			if !corrected {
+				// let's try first with our coverage package
+				cov = coverage.GetCoverage()
+			}
 			if cov == 0 {
 				// if not we try we the default testing package
 				cov = testing.Coverage()
@@ -102,9 +114,44 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 		// Close the session and return the exit code.
 		session.Close(exitCode)
+		coverage.CleanupRuntimeCoverageSnapshot()
 
 		// Finalize CI Visibility
 		integrations.ExitCiVisibility()
+	}
+}
+
+func uploadFinalCoverageReport(settings *civisibilitynet.SettingsResponseData) {
+	if settings == nil {
+		log.Debug("instrumentTestingM: coverage report upload skipped because settings are unavailable")
+		return
+	}
+	if !settings.CoverageReportUploadEnabled {
+		log.Debug("instrumentTestingM: coverage report upload disabled by settings")
+		return
+	}
+
+	var report bytes.Buffer
+	if err := coverage.WriteLCOVReport(&report); err != nil {
+		log.Debug("instrumentTestingM: failed to create LCOV coverage report: %s", err.Error())
+		return
+	}
+	if report.Len() == 0 {
+		log.Debug("instrumentTestingM: LCOV coverage report is empty; skipping upload")
+		return
+	}
+	log.Debug("instrumentTestingM: uploading LCOV coverage report [report_bytes:%d]", report.Len())
+
+	client := civisibilitynet.NewClientForCoverageReportUpload()
+	if client == nil {
+		log.Debug("instrumentTestingM: coverage report upload client is unavailable")
+		return
+	}
+	if closer, ok := client.(interface{ CloseIdleConnections() }); ok {
+		defer closer.CloseIdleConnections()
+	}
+	if err := client.SendCoverageReport(&report, civisibilitynet.FormatLCOV); err != nil {
+		log.Debug("instrumentTestingM: failed to upload coverage report: %s", err.Error())
 	}
 }
 
@@ -227,15 +274,20 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 
 			cancelExecution := setTestTagsFromExecutionMetadata(test, execMeta)
 			if cancelExecution {
-				checkModuleAndSuite(module, suite)
+				if !execMeta.hasAdditionalFeatureWrapper {
+					// Disabled fast-path subtests close their test event before normal finalization is registered.
+					checkModuleAndSuite(module, suite)
+				}
 				return
 			}
 
 			defer func() {
 				duration := time.Since(startTime)
+				runAndApplyTestCleanup(currentT, execMeta)
 				collectAndWriteLogs(currentT, test)
 
 				if r := recover(); r != nil {
+					stacktrace := utils.GetStacktrace(1)
 					// Compute whether this is the final execution.
 					finalExec := isFinalExecution(true, false, execMeta, duration)
 
@@ -255,12 +307,22 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 							test.SetTag(constants.TestAttemptToFixPassed, "false")
 						}
 					}
-					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), utils.GetStacktrace(1)))
+					test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(r), stacktrace))
 					test.Close(integrations.ResultStatusFail)
-					checkModuleAndSuite(module, suite)
-					if checkIfCIVisibilityExitIsRequiredByPanic() && !execMeta.isAttemptToFix {
-						integrations.ExitCiVisibility()
+					if execMeta.hasAdditionalFeatureWrapper {
+						// Retry wrappers own panic propagation. Record the panic as this
+						// attempt's failure and let runTestWithRetry decide whether to
+						// retry or re-panic after the final execution.
+						currentT.Fail()
+						execMeta.panicData = r
+						execMeta.panicStacktrace = stacktrace
+						return
 					}
+					// This branch re-panics immediately, so retry wrappers cannot run their normal
+					// end-of-attempt cleanup. Close suite/module counters and flush CI Visibility
+					// before handing the panic back to the Go test runner.
+					checkModuleAndSuite(module, suite)
+					integrations.ExitCiVisibility()
 					panic(r)
 				}
 
@@ -289,7 +351,11 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 							test.SetTag(constants.TestAttemptToFixPassed, "false")
 						}
 					}
-					test.SetTag(ext.Error, true)
+					if execMeta.panicData != nil {
+						test.SetError(integrations.WithErrorInfo("panic", fmt.Sprint(execMeta.panicData), execMeta.panicStacktrace))
+					} else {
+						test.SetTag(ext.Error, true)
+					}
 					suite.SetTag(ext.Error, true)
 					module.SetTag(ext.Error, true)
 					test.Close(integrations.ResultStatusFail)
@@ -329,7 +395,10 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 					}
 					test.Close(integrations.ResultStatusPass)
 				}
-				checkModuleAndSuite(module, suite)
+				if !execMeta.hasAdditionalFeatureWrapper {
+					// Additional-feature wrappers own module and suite closure after all retry attempts finish.
+					checkModuleAndSuite(module, suite)
+				}
 			}()
 
 			f(currentT)
@@ -628,9 +697,22 @@ func instrumentTestingParallel(t *testing.T) bool {
 
 	meta := getTestMetadata(t)
 	if meta != nil && meta.originalTest != nil {
-		// if we have an original test, we call parallel on it
-		log.Debug("instrumentTestingParallel: calling Parallel on original test")
-		meta.originalTest.Parallel()
+		if meta.parallelForwarded.Swap(true) {
+			log.Debug("instrumentTestingParallel: calling duplicate Parallel on original test")
+			if state := meta.parallelForwardState; state != nil {
+				state.callDuplicate(meta.originalTest)
+			} else {
+				meta.originalTest.Parallel()
+			}
+			return true
+		}
+
+		log.Debug("instrumentTestingParallel: forwarding Parallel to original test")
+		if state := meta.parallelForwardState; state != nil {
+			state.forward(meta.originalTest)
+		} else {
+			meta.originalTest.Parallel()
+		}
 		return true
 	}
 

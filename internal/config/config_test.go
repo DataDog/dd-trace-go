@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -261,6 +262,9 @@ var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
 	},
 	"SetPeerServiceMapping": func(c *Config, origin telemetry.Origin) {
 		c.SetPeerServiceMapping("old-peer", "new-peer", origin)
+	},
+	"SetGlobalTag": func(c *Config, origin telemetry.Origin) {
+		c.SetGlobalTag("tag-key", "tag-value", origin)
 	},
 }
 
@@ -537,6 +541,34 @@ func TestOTLPHeaders(t *testing.T) {
 		assert.Equal(t, "secret", headers["api-key"])
 		assert.Equal(t, "value", headers["x-custom"])
 		assert.Equal(t, OTLPContentTypeHeader, headers["Content-Type"])
+	})
+
+	t.Run("OTEL_EXPORTER_OTLP_TRACES_HEADERS not reported in configuration telemetry", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "api-key=SENTINEL_OTLP_TRACES,x-custom=value")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		// The value is still resolved and parsed for export use.
+		headers := cfg.OTLPHeaders()
+		assert.Equal(t, "SENTINEL_OTLP_TRACES", headers["api-key"])
+
+		// But it must not be reported in configuration telemetry, and no reported
+		// configuration value may contain the sentinel.
+		for _, c := range rec.Configuration {
+			assert.NotEqual(t, "OTEL_EXPORTER_OTLP_TRACES_HEADERS", c.Name,
+				"OTEL_EXPORTER_OTLP_TRACES_HEADERS should not be reported in configuration telemetry")
+			if s, ok := c.Value.(string); ok {
+				assert.NotContains(t, s, "SENTINEL_OTLP_TRACES",
+					"configuration value for %s must not contain the OTLP traces headers sentinel", c.Name)
+			}
+		}
 	})
 
 }
@@ -865,5 +897,112 @@ func TestAdditiveConfigs(t *testing.T) {
 		to, ok := cfg.ServiceMapping("web")
 		assert.True(t, ok)
 		assert.Equal(t, "frontend-v2", to, "last write wins for same mapping key")
+	})
+}
+
+func TestAPIKey(t *testing.T) {
+	t.Run("from env", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		t.Setenv("DD_API_KEY", "test-api-key-32charslongfake12")
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "test-api-key-32charslongfake12", cfg.APIKey())
+	})
+	t.Run("default empty when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "", cfg.APIKey())
+	})
+}
+
+func TestCIVisibilityAgentlessActive(t *testing.T) {
+	// Agentless is only "active" when CI Visibility is also enabled.
+	// Agentless alone must not flip agent-bypass behavior in normal tracer mode.
+	cases := []struct {
+		name      string
+		ciVis     string
+		agentless string
+		want      bool
+	}{
+		{"both unset", "", "", false},
+		{"agentless only", "", "true", false},
+		{"ci vis only", "true", "", false},
+		{"both set", "true", "true", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			if tc.ciVis != "" {
+				t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, tc.ciVis)
+			}
+			if tc.agentless != "" {
+				t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, tc.agentless)
+			}
+			cfg := CreateNew()
+			assert.Equal(t, tc.want, cfg.CIVisibilityAgentlessActive())
+		})
+	}
+}
+
+func TestAgentTimeout(t *testing.T) {
+	t.Run("default is 10s when unset", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("DD_TRACE_AGENT_TIMEOUT overrides default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "30")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 30*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("invalid DD_TRACE_AGENT_TIMEOUT falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "not-a-number")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("negative DD_TRACE_AGENT_TIMEOUT falls back to default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("DD_TRACE_AGENT_TIMEOUT", "-5")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		assert.Equal(t, 10*time.Second, cfg.AgentTimeout())
+	})
+
+	t.Run("SetAgentTimeout updates value", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+
+		cfg.SetAgentTimeout(45*time.Second, OriginCalculated)
+		assert.Equal(t, 45*time.Second, cfg.AgentTimeout())
 	})
 }

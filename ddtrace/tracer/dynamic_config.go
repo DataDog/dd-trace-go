@@ -48,12 +48,6 @@ func (dc *dynamicConfig[T]) get() T {
 	return dc.current
 }
 
-func (dc *dynamicConfig[T]) set(f func(current T) T) {
-	dc.mu.Lock()
-	defer dc.mu.Unlock()
-	dc.current = f(dc.current)
-}
-
 // update applies a new configuration value
 func (dc *dynamicConfig[T]) update(val T, origin telemetry.Origin) bool {
 	dc.mu.Lock()
@@ -121,40 +115,6 @@ func (dc *dynamicConfig[T]) getCurrentAndOrigin() (T, telemetry.Origin) {
 	return dc.current, dc.cfgOrigin
 }
 
-// setStartup updates the startup value (used during initialization)
-func (dc *dynamicConfig[T]) setStartup(val T) {
-	dc.mu.Lock()
-	defer dc.mu.Unlock()
-	dc.startup = val
-}
-
 func equal[T comparable](x, y T) bool {
 	return x == y
-}
-
-// equalSlice compares two slices of comparable values
-// The comparison takes into account the order of the elements
-func equalSlice[T comparable](x, y []T) bool {
-	if len(x) != len(y) {
-		return false
-	}
-	for i, v := range x {
-		if v != y[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// equalMap compares two maps of comparable keys and values
-func equalMap[T comparable](x, y map[T]any) bool {
-	if len(x) != len(y) {
-		return false
-	}
-	for k, v := range x {
-		if yv, ok := y[k]; !ok || yv != v {
-			return false
-		}
-	}
-	return true
 }

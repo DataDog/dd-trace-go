@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 
@@ -67,6 +68,7 @@ type concentrator struct {
 type tracerStatSpan struct {
 	statSpan *stats.StatSpan
 	origin   string
+	version  string // per-span version tag; "" means use global aggKey version
 }
 
 // newConcentrator creates a new concentrator using the given tracer
@@ -197,9 +199,11 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		return nil, false
 	}
 	origin, _ := s.meta.Get(keyOrigin)
+	version, _ := s.meta.Version()
 	return &tracerStatSpan{
 		statSpan: statSpan,
 		origin:   origin,
+		version:  version,
 	}, true
 }
 
@@ -211,7 +215,11 @@ func (c *concentrator) shouldObfuscate() bool {
 
 // add s into the concentrator's internal stats buckets.
 func (c *concentrator) add(s *tracerStatSpan) {
-	c.spanConcentrator.AddSpan(s.statSpan, c.aggregationKey, "", nil, s.origin)
+	aggKey := c.aggregationKey
+	if s.version != "" {
+		aggKey.Version = s.version
+	}
+	c.spanConcentrator.AddSpan(s.statSpan, aggKey, "", nil, s.origin)
 }
 
 // Stop stops the concentrator and blocks until the operation completes.
@@ -259,17 +267,21 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	flushedBuckets := 0
 	// Given we use a constant PayloadAggregationKey there should only ever be 1 of these, but to be forward
 	// compatible in case this ever changes we can just iterate through all of them.
+	sendRetries := c.cfg.internalConfig.SendRetries()
+	retryInterval := c.cfg.internalConfig.RetryInterval()
 	for _, csp := range csps {
+		csp.RuntimeID = globalconfig.RuntimeID()
+		csp.Service = c.cfg.internalConfig.ServiceName()
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
 		var err error
-		for attempt := 0; attempt <= c.cfg.sendRetries; attempt++ {
+		for attempt := 0; attempt <= sendRetries; attempt++ {
 			err = c.cfg.ddTransport.sendStats(csp, obfVersion)
 			if err == nil {
 				break
 			}
-			if attempt < c.cfg.sendRetries {
-				time.Sleep(c.cfg.internalConfig.RetryInterval())
+			if attempt < sendRetries {
+				time.Sleep(retryInterval)
 			}
 		}
 		if err != nil {

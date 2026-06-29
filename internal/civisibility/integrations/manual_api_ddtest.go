@@ -8,10 +8,6 @@ package integrations
 import (
 	"context"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"math"
 	"runtime"
 	"slices"
 	"strings"
@@ -71,7 +67,7 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 	resourceName := fmt.Sprintf("%s.%s", suite.name, name)
 
 	// Test tags should include suite, module, and session tags so the backend can calculate the suite, module, and session fingerprint from the test.
-	testTags := append(slices.Clone(suite.tags), tracer.Tag(constants.TestName, name))
+	testTags := append(slices.Clone(suite.tags), ciVisibilityTag(constants.TestName, name))
 	testOpts := append(fillCommonTags([]tracer.StartSpanOption{
 		tracer.ResourceName(resourceName),
 		tracer.SpanType(constants.SpanTypeTest),
@@ -80,10 +76,10 @@ func createTest(suite *tslvTestSuite, name string, startTime time.Time) Test {
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	if suite.module.session != nil {
-		span.SetTag(constants.TestSessionIDTag, fmt.Sprint(suite.module.session.sessionID))
+		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, fmt.Sprint(suite.module.session.sessionID))
 	}
-	span.SetTag(constants.TestModuleIDTag, fmt.Sprint(suite.module.moduleID))
-	span.SetTag(constants.TestSuiteIDTag, fmt.Sprint(suite.suiteID))
+	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, fmt.Sprint(suite.module.moduleID))
+	setCIVisibilitySpanTag(span, constants.TestSuiteIDTag, fmt.Sprint(suite.suiteID))
 	testID := span.Context().SpanID()
 
 	t := &tslvTest{
@@ -141,15 +137,15 @@ func (t *tslvTest) Close(status TestResultStatus, options ...TestCloseOption) {
 
 	switch status {
 	case ResultStatusPass:
-		t.span.SetTag(constants.TestStatus, constants.TestStatusPass)
+		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusPass)
 	case ResultStatusFail:
-		t.span.SetTag(constants.TestStatus, constants.TestStatusFail)
+		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusFail)
 	case ResultStatusSkip:
-		t.span.SetTag(constants.TestStatus, constants.TestStatusSkip)
+		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusSkip)
 	}
 
 	if defaults.skipReason != "" {
-		t.span.SetTag(constants.TestSkipReason, defaults.skipReason)
+		setCIVisibilitySpanTag(t.span, constants.TestSkipReason, defaults.skipReason)
 	}
 
 	if globalEventFinishHook != nil {
@@ -233,41 +229,28 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		return
 	}
 
-	// let's get the file path and the start line of the function
-	absolutePath, startLine := fn.FileLine(fn.Entry())
-	file := utils.GetRelativePathFromCITagsSourceRoot(absolutePath)
-	log.Debug("civisibility: resolving test source location [function:%s file:%s start_line:%d relative_file:%s entry:%#x]",
-		fn.Name(), absolutePath, startLine, file, fn.Entry())
+	// Resolve the runtime file into separate tag and filesystem paths. Go -trimpath can
+	// return a logical module path here, while source parsing still needs a local file path.
+	runtimePath, runtimeStartLine := fn.FileLine(fn.Entry())
+	sourcePath := resolveTestSourcePath(runtimePath)
+	file := sourcePath.RelativePath
+	log.Debug("civisibility: resolving test source location [function:%s file:%s start_line:%d relative_file:%s runtime_file:%s filesystem_file:%s filesystem_known:%t entry:%#x]",
+		fn.Name(), runtimePath, runtimeStartLine, file, sourcePath.RuntimePath, sourcePath.FilesystemPath, sourcePath.FilesystemKnown, fn.Entry())
 	t.SetTag(constants.TestSourceFile, file)
-	t.SetTag(constants.TestSourceStartLine, startLine)
+	t.SetTag(constants.TestSourceStartLine, runtimeStartLine)
 	t.suite.SetTag(constants.TestSourceFile, file)
 
-	// now, let's try to get the end line of the function using ast
-	// parse the entire file where the function is defined to create an abstract syntax tree (AST)
-	// if we can't parse the file (source code is not available) we silently bail out
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, absolutePath, nil, parser.AllErrors|parser.ParseComments)
-	if err != nil {
-		log.Debug("civisibility: failed parsing test source file [function:%s file:%s start_line:%d error:%v]",
-			fn.Name(), absolutePath, startLine, err)
+	// Source inspection is cached per file so repeated retries/subtests do not reparse the same file.
+	metadata := loadSourceFileMetadata(sourcePath.FilesystemPath)
+	if !metadata.parseOK {
+		log.Debug("civisibility: failed parsing test source file [function:%s file:%s runtime_file:%s relative_file:%s start_line:%d error:%v]",
+			fn.Name(), sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine, metadata.parseErr)
 	}
-	if err == nil {
-
+	if metadata.parseOK {
 		// let's check if the suite was marked as unskippable before
 		isUnskippable, hasUnskippableValue := t.suite.getContextValue(constants.TestUnskippable).(bool)
 		if !hasUnskippableValue {
-			// check for suite level unskippable comment at the top of the file
-			for _, commentGroup := range fileNode.Comments {
-				for _, comment := range commentGroup.List {
-					if strings.Contains(comment.Text, "//dd:suite.unskippable") {
-						isUnskippable = true
-						break
-					}
-				}
-				if isUnskippable {
-					break
-				}
-			}
+			isUnskippable = metadata.suiteUnskippable
 			t.suite.setContextValue(constants.TestUnskippable, isUnskippable)
 		}
 
@@ -275,63 +258,34 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 		fullName := fn.Name()
 		firstDot := strings.LastIndex(fullName, ".") + 1
 		name := fullName[firstDot:]
-		log.Debug("civisibility: scanning AST for test source range [function:%s short_name:%s file:%s runtime_start_line:%d]",
-			fullName, name, absolutePath, startLine)
+		log.Debug("civisibility: scanning AST for test source range [function:%s short_name:%s file:%s runtime_file:%s relative_file:%s runtime_start_line:%d]",
+			fullName, name, sourcePath.FilesystemPath, runtimePath, file, runtimeStartLine)
 
-		// variable to store the ending line of the function
-		var endLine int
+		// Resolve the source range from cached metadata but keep the existing declaration/literal
+		// matching rules and the same debug logs the tests already assert.
+		resolution := resolveSourceLocation(metadata, name, runtimeStartLine)
+		startLine := resolution.startLine
+		endLine := resolution.endLine
+		if resolution.matchedDeclaration != nil {
+			log.Debug("civisibility: matched AST function declaration [function:%s decl_name:%s decl_start_line:%d body_start_line:%d body_end_line:%d runtime_start_line:%d]",
+				fullName, name, resolution.matchedDeclaration.declStartLine, resolution.matchedDeclaration.bodyStartLine, resolution.matchedDeclaration.endLine, runtimeStartLine)
+		}
+		for _, literal := range resolution.inspectedLiterals {
+			delta := literal.bodyStartLine - runtimeStartLine
+			log.Debug("civisibility: inspecting AST function literal candidate [function:%s literal_start_line:%d literal_end_line:%d runtime_start_line:%d delta:%d]",
+				fullName, literal.bodyStartLine, literal.endLine, runtimeStartLine, delta)
+		}
+		if resolution.matchedLiteral != nil {
+			log.Debug("civisibility: matched AST function literal [function:%s adjusted_start_line:%d end_line:%d]",
+				fullName, startLine, endLine)
+		}
+		if !isUnskippable && resolution.functionUnskippable {
+			isUnskippable = true
+		}
 
-		// traverse the AST to find the function declaration for the target function
-		ast.Inspect(fileNode, func(n ast.Node) bool {
-			// check if the current node is a function declaration
-			if funcDecl, ok := n.(*ast.FuncDecl); ok {
-				// if the function name matches the target function name
-				if funcDecl.Name.Name == name {
-					declStartLine := fset.Position(funcDecl.Pos()).Line
-					bodyStartLine := fset.Position(funcDecl.Body.Pos()).Line
-					// get the line number of the end of the function body
-					endLine = fset.Position(funcDecl.Body.End()).Line
-					log.Debug("civisibility: matched AST function declaration [function:%s decl_name:%s decl_start_line:%d body_start_line:%d body_end_line:%d runtime_start_line:%d]",
-						fullName, funcDecl.Name.Name, declStartLine, bodyStartLine, endLine, startLine)
-					// check for comments above the function declaration to look for unskippable tag
-					// but only if we haven't found a suite level unskippable comment
-					if !isUnskippable && funcDecl.Doc != nil {
-						for _, comment := range funcDecl.Doc.List {
-							if strings.Contains(comment.Text, "//dd:test.unskippable") {
-								isUnskippable = true
-								break
-							}
-						}
-					}
-
-					// stop further inspection since we have found the target function
-					return false
-				}
-			}
-			// check if the current node is a function literal (FuncLit)
-			if funcLit, ok := n.(*ast.FuncLit); ok {
-				// get the line number of the start of the function literal
-				funcStartLine := fset.Position(funcLit.Body.Pos()).Line
-				funcEndLine := fset.Position(funcLit.Body.End()).Line
-				delta := funcStartLine - startLine
-				log.Debug("civisibility: inspecting AST function literal candidate [function:%s literal_start_line:%d literal_end_line:%d runtime_start_line:%d delta:%d]",
-					fullName, funcStartLine, funcEndLine, startLine, delta)
-				// if the start line matches the known start line, record the end line
-				// startLine is not so accurate because it is the line of the first instruction of the function (Go 1.24)
-				// so we need to check if the function literal is the one we are looking for (we are going to leave an error of 1 line)
-				if math.Abs(float64(funcStartLine-startLine)) <= 1 {
-					startLine = funcStartLine
-					endLine = funcEndLine
-					log.Debug("civisibility: matched AST function literal [function:%s adjusted_start_line:%d end_line:%d]",
-						fullName, startLine, endLine)
-					return false // stop further inspection since we have found the function
-				}
-			}
-			// continue inspecting other nodes
-			return true
-		})
-
-		// if we found an endLine we check is greater than the calculated startLine
+		// Only publish the AST-derived range when it is complete. Otherwise keep the runtime start
+		// line that was already tagged above; this does not clear any previous end-line tag if the
+		// same test object is reused.
 		if endLine >= startLine {
 			t.SetTag(constants.TestSourceStartLine, startLine)
 			t.SetTag(constants.TestSourceEndLine, endLine)
@@ -371,12 +325,17 @@ func (t *tslvTest) SetTestFunc(fn *runtime.Func) {
 	}
 }
 
+// resolveTestSourcePath resolves a runtime source path using the production CI tag context.
+func resolveTestSourcePath(runtimePath string) utils.SourceFilePath {
+	return utils.ResolveSourceFilePathFromCITags(runtimePath)
+}
+
 // SetBenchmarkData sets benchmark data for the test.
 func (t *tslvTest) SetBenchmarkData(measureType string, data map[string]any) {
-	t.span.SetTag(constants.TestType, constants.TestTypeBenchmark)
+	setCIVisibilitySpanTag(t.span, constants.TestType, constants.TestTypeBenchmark)
 	t.setContextValue(constants.TestType, constants.TestTypeBenchmark)
 	for k, v := range data {
-		t.span.SetTag(fmt.Sprintf("benchmark.%s.%s", measureType, k), v)
+		setCIVisibilitySpanTag(t.span, fmt.Sprintf("benchmark.%s.%s", measureType, k), v)
 	}
 }
 

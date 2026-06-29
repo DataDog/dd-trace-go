@@ -34,17 +34,17 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: stable
           cache: false
@@ -84,7 +84,7 @@ jobs:
           - 8125:8125/udp
           - 8126:8126
       testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.61.1@sha256:0b428281c1ba33f4af9f81efe79330a7577c8810609a7bcd1cecf8c7de82abec
         options: >-
           --health-cmd "bash -c '</dev/tcp/127.0.0.1/9126'"
         ports:
@@ -98,7 +98,7 @@ jobs:
           DD_POOL_TRACE_CHECK_FAILURES: true
           DD_DISABLE_ERROR_RESPONSES: true
       cassandra:
-        image: cassandra:3.11
+        image: cassandra:3.11@sha256:9a14b18eb658851e8939cfdeca8fcbca389f5f0d00fca4a995d80b6accfcbd96
         env:
           JVM_OPTS: "-Xms750m -Xmx750m"
           CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -107,7 +107,7 @@ jobs:
         ports:
           - 9042:9042
       mysql:
-        image: cimg/mysql:8.0
+        image: cimg/mysql:8.0@sha256:3f14424dee82da7c784350ac9b7d292edcc2eac921d24fd0099dd4c45edd1fcd
         env:
           MYSQL_ROOT_PASSWORD: admin
           MYSQL_PASSWORD: test
@@ -116,7 +116,7 @@ jobs:
         ports:
           - 3306:3306
       postgres:
-        image: cimg/postgres:16.4
+        image: cimg/postgres:16.4@sha256:2e4f1a965bdd9ba77aa6a0a7b93968c07576ba2a8a7cf86d5eb7b31483db1378
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
@@ -124,53 +124,53 @@ jobs:
         ports:
           - 5432:5432
       mssql:
-        image: mcr.microsoft.com/mssql/server:2019-latest
+        image: mcr.microsoft.com/mssql/server:2019-latest@sha256:fdee98d3f631673cd8fb9be6d29d7883d7111be9fc0246103dc0cfbbffdabd5a
         env:
           SA_PASSWORD: myPassw0rd
           ACCEPT_EULA: Y
         ports:
           - 1433:1433
       consul:
-        image: consul:1.6.0
+        image: consul:1.6.0@sha256:63e1a07260418ba05be08b6dc53f4a3bb95aa231cd53922f7b5b5ee5fd77ef3f
         ports:
           - 8500:8500
       redis:
-        image: redis:3.2
+        image: redis:3.2@sha256:7b0a40301bc1567205e6461c5bf94c38e1e1ad0169709e49132cafc47f6b51f3
         ports:
           - 6379:6379
       valkey:
-        image: valkey/valkey:8
+        image: valkey/valkey:8@sha256:1f84517eca8e0dd9585ed57c572796f32839e1b0e7ce07ad28e6bce098468371
         env:
           VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
         ports:
           - 6380:6380
       elasticsearch2:
-        image: elasticsearch:2
+        image: elasticsearch:2@sha256:41ed3a1a16b63de740767944d5405843db00e55058626c22838f23b413aa4a39
         env:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
         ports:
           - 9200:9200
       elasticsearch5:
-        image: elasticsearch:5
+        image: elasticsearch:5@sha256:d0e119779df7ddf9d476102691d9d0b8783c13434e00d77f01327019c1297839
         env:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
         ports:
           - 9201:9200
       elasticsearch6:
-        image: elasticsearch:6.8.13
+        image: elasticsearch:6.8.13@sha256:8d4e29332dc159e7c256efa131453bd62a35b6e90f32aa9ab3f76632e29372c3
         env:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
         ports:
           - 9202:9200
       elasticsearch7:
-        image: elasticsearch:7.14.1
+        image: elasticsearch:7.14.1@sha256:80bc3fe9d3ab2da410abadc2245eb5833c7ef7bb58ce2d89b24dabfb8c3d5233
         env:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
           discovery.type: single-node
         ports:
           - 9203:9200
       elasticsearch8:
-        image: elasticsearch:8.6.2
+        image: elasticsearch:8.6.2@sha256:93bc71907ca0e6e3b4f181e0dc850b90bb6cb2686c2778def0b8542398983c28
         env:
           ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
           discovery.type: single-node
@@ -178,19 +178,19 @@ jobs:
         ports:
           - 9204:9200
       mongo3:
-        image: mongo:3
+        image: mongo:3@sha256:146c1fd999a660e697aac40bc6da842b005c7868232eb0b7d8996c8f3545b05d
         ports:
           - 27018:27017
       mongo:
-        image: mongo:8
+        image: mongo:8@sha256:7abfba0d07c9330373f8173981ea4d09cd8a82cdf0e86ccaf7008848d1d24f62
         ports:
           - 27017:27017
       memcached:
-        image: memcached:1.5.9
+        image: memcached:1.5.9@sha256:dc68a9ffa03b81dde70ce536bc96655e3d23503916b0d931078391d752bb4e27
         ports:
           - 11211:11211
       kafka:
-        image: confluentinc/confluent-local:7.5.0
+        image: confluentinc/confluent-local:7.5.0@sha256:8e391de42cfcd3498e7317dcf159790f1f1cc3f3ffce900b30d7da23888687fd
         env:
           KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
           KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9093,BROKER://localhost:9092"
@@ -213,17 +213,17 @@ jobs:
         options: >-
           --name "kafka"
       localstack:
-        image: localstack/localstack:4.14.0
+        image: localstack/localstack:4.14.0@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a
         ports:
           - 4566:4566
     steps:
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
@@ -247,7 +247,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go
 
@@ -260,22 +260,22 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      - name: Upload Coverage
+      - name: Merge contrib coverage files
         if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          echo "mode: atomic" > coverage-contrib-merged.txt
+          find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
+            -name "coverage-*.txt" -print0 \
+            | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
 
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
-        uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage-contrib-merged.txt
           format: go-coverprofile
-          flags: contrib
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
@@ -309,7 +309,7 @@ jobs:
       - name: Upload Trace Check Results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trace-check-results-${{ strategy.job-index }}
           path: /tmp/trace-check-results/
@@ -399,12 +399,12 @@ jobs:
           - 8126:8126
     steps:
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         if: always()
         with:
           persist-credentials: false
@@ -429,7 +429,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go
 
@@ -442,22 +442,14 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
-
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
-        uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
           format: go-coverprofile
-          flags: core
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check

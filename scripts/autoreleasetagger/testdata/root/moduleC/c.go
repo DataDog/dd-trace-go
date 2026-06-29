@@ -1,0 +1,15 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2025 Datadog, Inc.
+
+package moduleC
+
+import (
+	"example.com/root/v2"
+)
+
+// HelloC returns a greeting that includes the root module's greeting.
+func HelloC() string {
+	return "Hello C + " + root.HelloRoot()
+}

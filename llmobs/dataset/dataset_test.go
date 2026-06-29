@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -611,28 +612,31 @@ func TestDatasetPull(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				w.Write(respData)
-			case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
-				// Return records with string input (not a map) - this simulates a dataset created externally
-				rawJSON := `{
-					"data": [
-						{
-							"id": "record-1",
-							"type": "dataset_records",
-							"attributes": {
-								"id": "record-1",
-								"input": "This is a simple string input, not a map",
-								"expected_output": "Some output",
-								"version": 1
-							}
-						}
-					]
-				}`
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(rawJSON))
 			default:
 				w.WriteHeader(http.StatusNotFound)
 			}
+		})
+		coll.HandleFunc("/api/v2/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			// Records are fetched from the v2 endpoint, which returns a flat
+			// record shape (no "attributes" wrapper) and no per-record version.
+			if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			// Return a record with string input (not a map) - this simulates a dataset created externally
+			rawJSON := `{
+				"data": [
+					{
+						"id": "record-1",
+						"input": "This is a simple string input, not a map",
+						"expected_output": "Some output"
+					}
+				],
+				"meta": {}
+			}`
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(rawJSON))
 		})
 		_, err = tracertest.Start(t, agent,
 			tracer.WithLLMObsEnabled(true),
@@ -691,29 +695,32 @@ func TestDatasetPull(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				w.Write(respData)
-			case strings.Contains(path, "/datasets/") && strings.HasSuffix(path, "/records") && r.Method == http.MethodGet:
-				// Return records with string metadata (not a map) - this simulates a dataset created externally
-				rawJSON := `{
-					"data": [
-						{
-							"id": "record-1",
-							"type": "dataset_records",
-							"attributes": {
-								"id": "record-1",
-								"input": {"question": "What is AI?"},
-								"expected_output": "Artificial Intelligence",
-								"metadata": "simple string metadata from UI",
-								"version": 1
-							}
-						}
-					]
-				}`
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(rawJSON))
 			default:
 				w.WriteHeader(http.StatusNotFound)
 			}
+		})
+		coll.HandleFunc("/api/v2/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			// Records are fetched from the v2 endpoint, which returns a flat
+			// record shape (no "attributes" wrapper) and no per-record version.
+			if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			// Return a record with string metadata (not a map) - this simulates a dataset created externally
+			rawJSON := `{
+				"data": [
+					{
+						"id": "record-1",
+						"input": {"question": "What is AI?"},
+						"expected_output": "Artificial Intelligence",
+						"metadata": "simple string metadata from UI"
+					}
+				],
+				"meta": {}
+			}`
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(rawJSON))
 		})
 		_, err = tracertest.Start(t, agent,
 			tracer.WithLLMObsEnabled(true),
@@ -779,89 +786,76 @@ func TestDatasetPull(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				w.Write(respData)
-			case strings.Contains(path, "/datasets/") && strings.Contains(path, "/records") && r.Method == http.MethodGet:
-				// Simulate 3 pages of results
-				requestCount++
-				var rawJSON string
-
-				switch requestCount {
-				case 1:
-					// First page - has cursor for next page
-					rawJSON = `{
-						"data": [
-							{
-								"id": "record-1",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-1",
-									"input": {"question": "Q1"},
-									"expected_output": "A1",
-									"metadata": {},
-									"version": 1
-								}
-							},
-							{
-								"id": "record-2",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-2",
-									"input": {"question": "Q2"},
-									"expected_output": "A2",
-									"metadata": {},
-									"version": 1
-								}
-							}
-						],
-						"meta": {
-							"after": "cursor-page-2"
-						}
-					}`
-				case 2:
-					// Second page - has cursor for next page
-					rawJSON = `{
-						"data": [
-							{
-								"id": "record-3",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-3",
-									"input": {"question": "Q3"},
-									"expected_output": "A3",
-									"metadata": {},
-									"version": 1
-								}
-							}
-						],
-						"meta": {
-							"after": "cursor-page-3"
-						}
-					}`
-				default:
-					// Third page - no cursor (last page)
-					rawJSON = `{
-						"data": [
-							{
-								"id": "record-4",
-								"type": "dataset_records",
-								"attributes": {
-									"id": "record-4",
-									"input": {"question": "Q4"},
-									"expected_output": "A4",
-									"metadata": {},
-									"version": 1
-								}
-							}
-						],
-						"meta": {}
-					}`
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(rawJSON))
 			default:
 				w.WriteHeader(http.StatusNotFound)
 			}
+		})
+		coll.HandleFunc("/api/v2/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			// Records are fetched from the v2 endpoint, which returns a flat
+			// record shape (no "attributes" wrapper) and no per-record version.
+			if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			// Simulate 3 pages of results
+			requestCount++
+			var rawJSON string
+
+			switch requestCount {
+			case 1:
+				// First page - has cursor for next page
+				rawJSON = `{
+					"data": [
+						{
+							"id": "record-1",
+							"input": {"question": "Q1"},
+							"expected_output": "A1",
+							"metadata": {}
+						},
+						{
+							"id": "record-2",
+							"input": {"question": "Q2"},
+							"expected_output": "A2",
+							"metadata": {}
+						}
+					],
+					"meta": {
+						"after": "cursor-page-2"
+					}
+				}`
+			case 2:
+				// Second page - has cursor for next page
+				rawJSON = `{
+					"data": [
+						{
+							"id": "record-3",
+							"input": {"question": "Q3"},
+							"expected_output": "A3",
+							"metadata": {}
+						}
+					],
+					"meta": {
+						"after": "cursor-page-3"
+					}
+				}`
+			default:
+				// Third page - no cursor (last page)
+				rawJSON = `{
+					"data": [
+						{
+							"id": "record-4",
+							"input": {"question": "Q4"},
+							"expected_output": "A4",
+							"metadata": {}
+						}
+					],
+					"meta": {}
+				}`
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(rawJSON))
 		})
 		_, err = tracertest.Start(t, agent,
 			tracer.WithLLMObsEnabled(true),
@@ -893,6 +887,89 @@ func TestDatasetPull(t *testing.T) {
 			assert.Equal(t, fmt.Sprintf("Q%d", i+1), inputMap["question"])
 			assert.Equal(t, fmt.Sprintf("A%d", i+1), rec.ExpectedOutput)
 		}
+	})
+	t.Run("pull-with-version-option", func(t *testing.T) {
+		var capturedQuery url.Values
+		var capturedHeaders http.Header
+
+		agent, err := tracertest.StartAgent(t)
+		require.NoError(t, err)
+		coll := llmobstest.New(t)
+		coll.HandleFunc("/api/unstable/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			path := strings.TrimPrefix(r.URL.Path, "/api/unstable/llm-obs/v1")
+			switch {
+			case path == "/projects" && r.Method == http.MethodPost:
+				handleMockProjectCreate(w, r)
+			case strings.Contains(path, "/datasets") && r.Method == http.MethodGet && !strings.Contains(path, "/records"):
+				response := llmobstransport.GetDatasetResponse{
+					Data: []llmobstransport.ResponseData[llmobstransport.DatasetView]{
+						{
+							ID:   "versioned-dataset-id",
+							Type: "datasets",
+							Attributes: llmobstransport.DatasetView{
+								ID:             "versioned-dataset-id",
+								Name:           "versioned-dataset",
+								CurrentVersion: 5,
+							},
+						},
+					},
+				}
+				respData, _ := json.Marshal(response)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write(respData)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		})
+		coll.HandleFunc("/api/v2/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+			// v2 project-scoped records endpoint — capture the query params and headers
+			if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			capturedQuery = r.URL.Query()
+			capturedHeaders = r.Header.Clone()
+			rawJSON := `{
+				"data": [
+					{"id":"record-1","input":{"q":"v2 record"},"expected_output":"ans"}
+				],
+				"meta": {}
+			}`
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(rawJSON))
+		})
+		_, err = tracertest.Start(t, agent,
+			tracer.WithLLMObsEnabled(true),
+			tracer.WithLLMObsMLApp("test-app"),
+			tracer.WithLLMObsAgentlessEnabled(false),
+			tracer.WithLLMObsProjectName("test-project"),
+			tracer.WithService("test-service"),
+			tracer.WithLogStartup(false),
+			coll.TracerOption(),
+		)
+		require.NoError(t, err)
+
+		ds, err := Pull(context.Background(), "versioned-dataset", WithPullVersion(2))
+		require.NoError(t, err)
+		assert.NotNil(t, ds)
+		assert.Equal(t, 1, ds.Len())
+
+		// Confirm filter[version]=2 was sent in the records request
+		require.NotNil(t, capturedQuery, "records request should have been made")
+		assert.Equal(t, "2", capturedQuery.Get("filter[version]"))
+
+		// Confirm the auth header was sent on the v2 records path
+		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "auth header must be present on v2 records path")
+
+		// Confirm ds.Version() reflects the requested version, not the dataset's current_version (5)
+		assert.Equal(t, 2, ds.Version(), "Version() must return the pulled version, not the latest current_version")
+
+		// Confirm each record's Version is stamped with the requested version
+		rec, ok := ds.Record(0)
+		require.True(t, ok)
+		assert.Equal(t, 2, rec.Version(), "record Version must equal the pulled snapshot version")
 	})
 }
 
@@ -1195,6 +1272,36 @@ func testTracer(t *testing.T, tracerOpts ...tracer.StartOption) *llmobstest.Coll
 
 func registerMockHandlers(coll *llmobstest.Collector) {
 	coll.HandleFunc("/api/unstable/llm-obs/v1/", createMockHandler())
+	// Dataset records are fetched from the v2 endpoint (see endpointPrefixDNEStable).
+	coll.HandleFunc("/api/v2/llm-obs/v1/", handleMockDatasetRecordsV2)
+}
+
+// handleMockDatasetRecordsV2 serves the v2 dataset-records endpoint. The v2 wire
+// format is a flat record object (id, input, expected_output, metadata) with no
+// "attributes" wrapper and no per-record version field.
+func handleMockDatasetRecordsV2(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	recordsResponse := llmobstransport.GetDatasetRecordsResponseV2{
+		Data: []llmobstransport.DatasetRecordItemV2{
+			{
+				ID:             "record-1",
+				Input:          map[string]any{"question": "What is AI?"},
+				ExpectedOutput: "Artificial Intelligence",
+			},
+			{
+				ID:             "record-2",
+				Input:          map[string]any{"question": "What is ML?"},
+				ExpectedOutput: "Machine Learning",
+			},
+		},
+	}
+	respData, _ := json.Marshal(recordsResponse)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respData)
 }
 
 // createMockHandler creates a mock handler for dataset-related requests

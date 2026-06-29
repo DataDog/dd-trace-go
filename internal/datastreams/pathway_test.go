@@ -8,6 +8,7 @@ package datastreams
 import (
 	"context"
 	"hash/fnv"
+	"strconv"
 	"testing"
 	"time"
 
@@ -35,9 +36,9 @@ func TestPathway(t *testing.T) {
 		end := middle.Add(time.Hour)
 		processor.timeSource = func() time.Time { return end }
 		ctx = processor.SetCheckpoint(ctx, "topic:topic2")
-		hash1 := pathwayHash(nodeHash("service-1", "env", nil, processTags), 0)
-		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic1"}, processTags), hash1)
-		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic2"}, processTags), hash2)
+		hash1 := pathwayHash(nodeHash("service-1", "env", nil, processTags, ""), 0)
+		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic1"}, processTags, ""), hash1)
+		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"topic:topic2"}, processTags, ""), hash2)
 		p, _ := PathwayFromContext(ctx)
 		assert.Equal(t, hash3, p.GetHash())
 		assert.Equal(t, start, p.PathwayStart())
@@ -86,9 +87,9 @@ func TestPathway(t *testing.T) {
 		pathwayWith2EdgeTags, _ := PathwayFromContext(processor.SetCheckpoint(context.Background(), "type:internal", "some_other_key:some_other_val"))
 
 		processTags := processtags.GlobalTags().Slice()
-		hash1 := pathwayHash(nodeHash("service-1", "env", nil, processTags), 0)
-		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal"}, processTags), 0)
-		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal", "some_other_key:some_other_val"}, processTags), 0)
+		hash1 := pathwayHash(nodeHash("service-1", "env", nil, processTags, ""), 0)
+		hash2 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal"}, processTags, ""), 0)
+		hash3 := pathwayHash(nodeHash("service-1", "env", []string{"type:internal", "some_other_key:some_other_val"}, processTags, ""), 0)
 		assert.Equal(t, hash1, pathwayWithNoEdgeTags.GetHash())
 		assert.Equal(t, hash2, pathwayWith1EdgeTag.GetHash())
 		assert.Equal(t, hash3, pathwayWith2EdgeTags.GetHash())
@@ -106,28 +107,32 @@ func TestPathway(t *testing.T) {
 
 	t.Run("test nodeHash", func(t *testing.T) {
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", []string{"type:internal"}, nil),
-			nodeHash("service-1", "env", []string{"type:kafka"}, nil),
+			nodeHash("service-1", "env", []string{"type:internal"}, nil, ""),
+			nodeHash("service-1", "env", []string{"type:kafka"}, nil, ""),
 		)
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", []string{"exchange:1"}, nil),
-			nodeHash("service-1", "env", []string{"exchange:2"}, nil),
+			nodeHash("service-1", "env", []string{"exchange:1"}, nil, ""),
+			nodeHash("service-1", "env", []string{"exchange:2"}, nil, ""),
 		)
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", []string{"topic:1"}, nil),
-			nodeHash("service-1", "env", []string{"topic:2"}, nil),
+			nodeHash("service-1", "env", []string{"topic:1"}, nil, ""),
+			nodeHash("service-1", "env", []string{"topic:2"}, nil, ""),
 		)
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", []string{"group:1"}, nil),
-			nodeHash("service-1", "env", []string{"group:2"}, nil),
+			nodeHash("service-1", "env", []string{"group:1"}, nil, ""),
+			nodeHash("service-1", "env", []string{"group:2"}, nil, ""),
 		)
 		assert.NotEqual(t,
-			nodeHash("service-1", "env", []string{"event_type:1"}, nil),
-			nodeHash("service-1", "env", []string{"event_type:2"}, nil),
+			nodeHash("service-1", "env", []string{"event_type:1"}, nil, ""),
+			nodeHash("service-1", "env", []string{"event_type:2"}, nil, ""),
 		)
 		assert.Equal(t,
-			nodeHash("service-1", "env", []string{"partition:0"}, nil),
-			nodeHash("service-1", "env", []string{"partition:1"}, nil),
+			nodeHash("service-1", "env", []string{"partition:0"}, nil, ""),
+			nodeHash("service-1", "env", []string{"partition:1"}, nil, ""),
+		)
+		assert.NotEqual(t,
+			nodeHash("service-1", "env", []string{"type:kafka"}, nil, "container-hash-1"),
+			nodeHash("service-1", "env", []string{"type:kafka"}, nil, "container-hash-2"),
 		)
 	})
 
@@ -171,8 +176,37 @@ func TestPathway(t *testing.T) {
 	})
 
 	t.Run("test GetHash", func(t *testing.T) {
-		pathway := Pathway{hash: nodeHash("service", "env", []string{"direction:in"}, nil)}
+		pathway := Pathway{hash: nodeHash("service", "env", []string{"direction:in"}, nil, "")}
 		assert.Equal(t, pathway.hash, pathway.GetHash())
+	})
+
+	t.Run("test BaseHash", func(t *testing.T) {
+		assert.NotEqual(t, BaseHash("svc-a", "env", nil, ""), BaseHash("svc-b", "env", nil, ""), "different service must produce different hash")
+		assert.NotEqual(t, BaseHash("svc-a", "env", nil, ""), BaseHash("svc-a", "staging", nil, ""), "different env must produce different hash")
+		assert.NotEqual(t, BaseHash("svc-a", "env", nil, ""), BaseHash("svc-a", "env", []string{"entrypoint:main"}, ""), "different processTags must produce different hash")
+		assert.NotEqual(t, BaseHash("svc-a", "env", nil, "ch-1"), BaseHash("svc-a", "env", nil, "ch-2"), "different containerTagsHash must produce different hash")
+		assert.Equal(t, BaseHash("svc-a", "env", nil, "ch-1"), BaseHash("svc-a", "env", nil, "ch-1"), "same inputs must produce same hash")
+
+		// BaseHash must differ from nodeHash with edge tags for the same service/env.
+		assert.NotEqual(t,
+			BaseHash("svc-a", "env", nil, ""),
+			nodeHash("svc-a", "env", []string{"type:kafka"}, nil, ""),
+			"BaseHash (no edge tags) must differ from nodeHash with edge tags",
+		)
+
+		// BaseHash with nil edge tags must equal nodeHash with nil edge tags.
+		assert.Equal(t,
+			BaseHash("svc-a", "env", []string{"pt:v"}, "ch"),
+			nodeHash("svc-a", "env", nil, []string{"pt:v"}, "ch"),
+			"BaseHash must equal nodeHash when edgeTags is nil",
+		)
+
+		// Golden value: guards against format or algorithm regressions.
+		// Pre-computed for ("svc", "env", nil, "ch") using FNV-1 64-bit, formatted as signed decimal.
+		assert.Equal(t, "-9046347542012827189",
+			strconv.FormatInt(int64(BaseHash("svc", "env", nil, "ch")), 10),
+			"BaseHash decimal encoding must match Java Long.toString semantics (signed two's complement)",
+		)
 	})
 }
 
@@ -187,6 +221,6 @@ func BenchmarkNodeHash(b *testing.B) {
 	env := "test"
 	edgeTags := []string{"event_type:dog", "exchange:local", "group:all", "topic:off", "type:writer"}
 	for b.Loop() {
-		nodeHash(service, env, edgeTags, nil)
+		nodeHash(service, env, edgeTags, nil, "")
 	}
 }

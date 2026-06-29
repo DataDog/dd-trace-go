@@ -21,14 +21,15 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, true, true))
 	bazel.ResetForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	var uploadCalls int
 	uploadRepositoryChangesFunc = func() (int64, error) {
@@ -46,12 +47,16 @@ func TestEnsureSettingsInitializationManifestModeSkipsRepositoryUpload(t *testin
 
 func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDisablesImpactedTests(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, true, true))
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+	// Registered after TempDir so it executes before TempDir's RemoveAll (LIFO).
+	// Drains the async Flush goroutine started by telemetry.StartApp, preventing
+	// a race where that goroutine writes to payloads/telemetry while RemoveAll runs.
+	t.Cleanup(telemetry.StopApp)
 	bazel.ResetForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	var uploadCalls int
 	uploadRepositoryChangesFunc = func() (int64, error) {
@@ -69,11 +74,11 @@ func TestEnsureSettingsInitializationPayloadFilesModeSkipsRepositoryUploadAndDis
 
 func TestEnsureSettingsInitializationManifestModeAppliesSubtestFeaturesEnvOverride(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	t.Setenv(bazel.ManifestFilePathEnv, writeSettingsManifestCache(t, true, false, false))
 	t.Setenv(constants.CIVisibilitySubtestFeaturesEnabled, "false")
 	bazel.ResetForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	ensureSettingsInitialization("manifest-service")
 
@@ -84,7 +89,6 @@ func TestEnsureSettingsInitializationManifestModeAppliesSubtestFeaturesEnvOverri
 
 func TestEnsureSettingsInitializationOnlineSettingsErrorRegistersCloseAction(t *testing.T) {
 	resetCIVisibilityStateForTesting()
-	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "temporary backend error", http.StatusInternalServerError)
@@ -103,6 +107,7 @@ func TestEnsureSettingsInitializationOnlineSettingsErrorRegistersCloseAction(t *
 		uploadDone <- struct{}{}
 		return 0, nil
 	}
+	t.Cleanup(resetCIVisibilityStateForTesting)
 
 	ensureSettingsInitialization("online-service")
 
@@ -198,11 +203,12 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 				"id":   "settings-id",
 				"type": "ci_app_test_service_libraries_settings",
 				"attributes": map[string]any{
-					"require_git":                false,
-					"flaky_test_retries_enabled": true,
-					"impacted_tests_enabled":     true,
-					"known_tests_enabled":        false,
-					"tests_skipping":             false,
+					"require_git":                    false,
+					"coverage_report_upload_enabled": true,
+					"flaky_test_retries_enabled":     true,
+					"impacted_tests_enabled":         true,
+					"known_tests_enabled":            false,
+					"tests_skipping":                 false,
 					"test_management": map[string]any{
 						"enabled":                true,
 						"attempt_to_fix_retries": 2,
@@ -223,6 +229,7 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DD_GIT_COMMIT_SHA", "1234567890abcdef1234567890abcdef12345678")
 	t.Setenv("DD_GIT_BRANCH", "refs/heads/main")
 	t.Setenv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, "false")
+	t.Setenv(constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable, "false")
 	t.Setenv(constants.CIVisibilityImpactedTestsDetectionEnabled, "false")
 	t.Setenv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, "false")
 	t.Setenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable, "7")
@@ -244,6 +251,7 @@ func TestEnsureSettingsInitializationAppliesEnvironmentOverrides(t *testing.T) {
 	}
 
 	assert.False(t, ciVisibilitySettings.FlakyTestRetriesEnabled)
+	assert.False(t, ciVisibilitySettings.CoverageReportUploadEnabled)
 	assert.False(t, ciVisibilitySettings.ImpactedTestsEnabled)
 	assert.False(t, ciVisibilitySettings.TestManagement.Enabled)
 	assert.False(t, ciVisibilitySettings.EarlyFlakeDetection.Enabled)

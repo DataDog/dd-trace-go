@@ -54,6 +54,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2"                 // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes"              // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2"                         // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2"                         // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"                                 // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/v2"                                 // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2"                        // integration
@@ -62,6 +63,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2"                       // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2"                          // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2"                           // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2"                            // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2"                      // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2"                         // integration
 	_ "github.com/DataDog/dd-trace-go/v2/contrib/os"                                       // integration

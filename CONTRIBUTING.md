@@ -229,6 +229,10 @@ The script provides:
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
 It will help tremendously in avoiding comments and speeding up the PR process.
 
+### Comments
+
+Add comments only for non-obvious intent, trade-offs, or constraints the code can't carry. Don't narrate what the diff already shows.
+
 ### Local Development
 
 For local development, use make targets as the primary interface:
@@ -269,6 +273,15 @@ docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v1.63.3 golangci-l
 ```
 
 ## Code quality
+
+### Favor using internal implementations over external
+
+When possible, prioritize creating or using internal implementations for repetitive work instead of importing a new dependency. The tracer already supports replacements for common Go packages. For example:
+
+1. Logging: [internal/log](./internal/log) instead of `fmt`.
+2. Locking: [internal/locking](./internal/locking) instead of `sync.mutex`.
+3. OS: [internal/env](./internal/env) instead of `os.Getenv`. This is also available at [instrumentation/env](./instrumentation/env/) for those packages that cannot import internal modules.
+4. Errors: [instrumentation/errortrace](./instrumentation/errortrace/) instead of `errors`.
 
 ### Favor string concatenation and string builders over fmt.Sprintf and its variants
 
@@ -347,10 +360,11 @@ Then start by updating the main `go.mod` file, e.g. by running a `go get` comman
 go get <import-path>@<new-version>
 ```
 
-Then run the following command to update all `go.mod` and `go.sum` files in the repository:
+Then run the following commands to update all `go.mod` and `go.sum` files in the repository:
 
 ```
 make fix-modules
+make generate
 ```
 
 This is neccessary because dd-trace-go is a multi-module repository.

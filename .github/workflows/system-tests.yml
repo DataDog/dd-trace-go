@@ -40,7 +40,7 @@ jobs:
       sha: ${{ steps.pin.outputs.sha }}
     steps:
       - name: Checkout system-tests
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
@@ -50,10 +50,72 @@ jobs:
         run: |
           echo "sha=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
       - name: Cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-system-tests-${{ steps.pin.outputs.sha }}
+  build-weblog-images:
+    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    runs-on: ubuntu-latest
+    needs:
+      - warm-repo-cache
+    strategy:
+      fail-fast: false
+      matrix:
+        weblog-variant:
+          - net-http
+          - echo
+          - chi
+          - gin
+          - uds-echo
+          - graph-gophers
+          - graphql-go
+          - gqlgen
+    name: Build weblog (${{ matrix.weblog-variant }})
+    env:
+      TEST_LIBRARY: golang
+      WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
+    steps:
+      - name: Restore repo cache
+        id: restore-repo-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .git
+          key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
+
+      - name: Checkout system tests (using cache)
+        if: steps.restore-repo-cache.outcome == 'success' && steps.restore-repo-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          git config safe.directory "$GITHUB_WORKSPACE"
+          git checkout -f ${{ needs.warm-repo-cache.outputs.sha }}
+
+      # Fall back in case of a cache miss, which can occur when retrying old runs.
+      - name: Checkout system tests (cache miss)
+        if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          repository: 'DataDog/system-tests'
+          ref: ${{ inputs.ref }}
+
+      - name: Checkout dd-trace-go
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.branch_ref || github.ref }}
+          path: 'binaries/dd-trace-go'
+
+      - name: Build and save weblog image
+        run: ./build.sh -i weblog --save-to-binaries
+
+      - name: Upload weblog image artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: weblog-image-${{ matrix.weblog-variant }}
+          path: binaries/golang-${{ matrix.weblog-variant }}-weblog.tar.zst
+          retention-days: 1
+
   system-tests:
     if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
     # Note: Not using large runners because the jobs spawned by this pipeline
@@ -61,6 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - warm-repo-cache
+      - build-weblog-images
     strategy:
       matrix:
         weblog-variant:
@@ -142,6 +205,19 @@ jobs:
             scenario: APM_TRACING_EFFICIENT_PAYLOAD
           - weblog-variant: net-http
             scenario: FEATURE_FLAGGING_AND_EXPERIMENTATION
+          # Client-side stats — run across all weblogs, plus the client_drop_p0s variant on net-http
+          - weblog-variant: net-http
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: echo
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: chi
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: gin
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: uds-echo
+            scenario: TRACE_STATS_COMPUTATION
+          - weblog-variant: net-http
+            scenario: TRACE_STATS_COMPUTATION_CLIENT_DROP_P0S_FALSE
       fail-fast: false
     env:
       TEST_LIBRARY: golang
@@ -150,7 +226,7 @@ jobs:
     steps:
       - name: Restore repo cache
         id: restore-repo-cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .git
           key: gitdb-system-tests-${{ needs.warm-repo-cache.outputs.sha }}
@@ -165,14 +241,14 @@ jobs:
       # Fall back in case of a cache miss, which can occur when retrying old runs.
       - name: Checkout system tests (cache miss)
         if: steps.restore-repo-cache.outcome == 'failure' || steps.restore-repo-cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
           ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
@@ -181,7 +257,7 @@ jobs:
       # Use the app key policy to obtain DD_APP_KEY
       - name: Get Datadog credentials
         id: dd-sts
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go-app-key
           
@@ -189,6 +265,26 @@ jobs:
         run: |
           echo "DD_API_KEY=${{ steps.dd-sts.outputs.api_key }}" >> "$GITHUB_ENV"
           echo "DD_APP_KEY=${{ steps.dd-sts.outputs.app_key }}" >> "$GITHUB_ENV"
+
+      - name: Cache npm packages for datadog-ci
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-datadog-ci-${{ runner.os }}-v1
+          restore-keys: |
+            npm-datadog-ci-${{ runner.os }}-
+
+      # Pre-install datadog-ci early so the action's npm install is instant.
+      # continue-on-error: the action has its own retry; this is best-effort.
+      - name: Pre-install datadog-ci
+        continue-on-error: true
+        run: npm install -g @datadog/datadog-ci
+
+      - name: Download pre-built weblog image
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: weblog-image-${{ matrix.weblog-variant }}
+          path: binaries/
 
       - name: Build weblog
         run: ./build.sh -i weblog
@@ -206,9 +302,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
-        with:
-          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@5293aff628e580005cc32ea2c34a0894e12e4511
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -220,7 +314,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
@@ -294,7 +388,7 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: docker load -i ${{ matrix.image_artifact }}.tar
       - name: Checkout system tests
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
@@ -304,7 +398,7 @@ jobs:
         run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
@@ -312,9 +406,21 @@ jobs:
       
       - name: Get Datadog credentials
         id: dd-sts
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go-app-key
+
+      - name: Cache npm packages for datadog-ci
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-datadog-ci-${{ runner.os }}-v1
+          restore-keys: |
+            npm-datadog-ci-${{ runner.os }}-
+
+      - name: Pre-install datadog-ci
+        continue-on-error: true
+        run: npm install -g @datadog/datadog-ci
 
       - name: Build runner
         uses: ./.github/actions/install_runner
@@ -330,9 +436,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@b5df157a67a0bd5ce78a7d775ddea7b621fcbb61
-        with:
-          datadog_api_key: ${{ steps.dd-sts.outputs.api_key }}
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@5293aff628e580005cc32ea2c34a0894e12e4511
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -344,7 +448,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
@@ -359,7 +463,6 @@ jobs:
     with:
       library: golang
       scenarios_groups: tracer-release
-      skip_empty_scenarios: true
       _system_tests_dev_mode: true
       push_to_test_optimization: true
       desired_execution_time: 300
@@ -367,6 +470,7 @@ jobs:
   system-tests-done:
     name: System Tests
     needs:
+      - build-weblog-images
       - system-tests
       - system-tests-docker-images
       - tracer-release
@@ -375,13 +479,15 @@ jobs:
     steps:
       - name: Success
         if: |
-          needs.system-tests.result == 'success'
+          needs.build-weblog-images.result == 'success'
+          && needs.system-tests.result == 'success'
           && needs.system-tests-docker-images.result == 'success'
           && (needs.tracer-release.result == 'success' || needs.tracer-release.result == 'skipped')
         run: echo "Success!"
       - name: Failure
         if: |
-          needs.system-tests.result != 'success'
+          needs.build-weblog-images.result != 'success'
+          || needs.system-tests.result != 'success'
           || needs.system-tests-docker-images.result != 'success'
           || (needs.tracer-release.result != 'success' && needs.tracer-release.result != 'skipped')
         run: echo "Failure!" && exit 1

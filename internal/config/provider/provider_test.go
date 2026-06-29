@@ -162,6 +162,34 @@ func TestGetMethods(t *testing.T) {
 			assert.Equal(t, false, p.GetBool("TEST_BOOL", false), "Expected default (false) for invalid value %q", val)
 		}
 	})
+	t.Run("GetBoolWithOrigin returns OriginDefault when unset", func(t *testing.T) {
+		p := newTestProvider(newTestConfigSource(nil, telemetry.OriginEnvVar))
+		v, origin := p.GetBoolWithOrigin("TEST_BOOL", false)
+		assert.Equal(t, false, v)
+		assert.Equal(t, telemetry.OriginDefault, origin)
+
+		v, origin = p.GetBoolWithOrigin("TEST_BOOL", true)
+		assert.Equal(t, true, v)
+		assert.Equal(t, telemetry.OriginDefault, origin)
+	})
+	t.Run("GetBoolWithOrigin returns source origin when set", func(t *testing.T) {
+		for _, origin := range []telemetry.Origin{
+			telemetry.OriginEnvVar,
+			telemetry.OriginLocalStableConfig,
+			telemetry.OriginManagedStableConfig,
+		} {
+			p := newTestProvider(newTestConfigSource(map[string]string{"TEST_BOOL": "true"}, origin))
+			v, gotOrigin := p.GetBoolWithOrigin("TEST_BOOL", false)
+			assert.Equal(t, true, v)
+			assert.Equal(t, origin, gotOrigin)
+		}
+	})
+	t.Run("GetBoolWithOrigin returns OriginDefault for invalid value", func(t *testing.T) {
+		p := newTestProvider(newTestConfigSource(map[string]string{"TEST_BOOL": "notabool"}, telemetry.OriginEnvVar))
+		v, origin := p.GetBoolWithOrigin("TEST_BOOL", true)
+		assert.Equal(t, true, v)
+		assert.Equal(t, telemetry.OriginDefault, origin)
+	})
 }
 
 func TestNew(t *testing.T) {

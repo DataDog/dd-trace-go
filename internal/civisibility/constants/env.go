@@ -6,9 +6,10 @@
 package constants
 
 const (
-	// CIVisibilityEnabledEnvironmentVariable indicates if CI Visibility mode is enabled.
-	// This environment variable should be set to "1" or "true" to enable CI Visibility mode, which activates tracing and other
-	// features related to CI Visibility in the Datadog platform.
+	// CIVisibilityEnabledEnvironmentVariable controls whether CI Visibility mode is enabled.
+	// It accepts normal boolean values parsed by strconv.ParseBool. It also accepts
+	// "parent", which enables CI Visibility for the current process and rewrites the
+	// variable after bootstrap so child processes inherit disabled CI Visibility.
 	CIVisibilityEnabledEnvironmentVariable = "DD_CIVISIBILITY_ENABLED"
 
 	// CIVisibilityAgentlessEnabledEnvironmentVariable indicates if CI Visibility agentless mode is enabled.
@@ -31,6 +32,14 @@ const (
 	// CIVisibilityFlakyRetryEnabledEnvironmentVariable kill-switch that allows to explicitly disable retries even if the remote setting is enabled.
 	// This environment variable should be set to "0" or "false" to disable the flaky retry feature.
 	CIVisibilityFlakyRetryEnabledEnvironmentVariable = "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED"
+
+	// CIVisibilityGitUploadEnabledEnvironmentVariable kill-switch that allows explicitly disabling CI Visibility repository upload.
+	// This environment variable should be set to "0" or "false" to skip uploading git metadata while keeping CI Visibility enabled.
+	CIVisibilityGitUploadEnabledEnvironmentVariable = "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED"
+
+	// CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable kill-switch that allows explicitly disabling code coverage report upload.
+	// This environment variable should be set to "0" or "false" to skip uploading code coverage reports while keeping CI Visibility enabled.
+	CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable = "DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED"
 
 	// CIVisibilityFlakyRetryCountEnvironmentVariable indicates the maximum number of retry attempts for a single test case.
 	CIVisibilityFlakyRetryCountEnvironmentVariable = "DD_CIVISIBILITY_FLAKY_RETRY_COUNT"

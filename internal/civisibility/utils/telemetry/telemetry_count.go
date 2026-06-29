@@ -141,6 +141,18 @@ func EndpointPayloadRequestsErrors(endpointType EndpointType, errorType ErrorTyp
 	telemetry.Count(telemetry.NamespaceCIVisibility, "endpoint_payload.requests_errors", removeEmptyStrings(tags)).Submit(1.0)
 }
 
+// CoverageUploadRequest records the number of code coverage report upload requests.
+func CoverageUploadRequest(requestCompressed RequestCompressedType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "coverage_upload.request", removeEmptyStrings([]string{
+		string(requestCompressed),
+	})).Submit(1.0)
+}
+
+// CoverageUploadRequestErrors records the number of code coverage report upload requests that errored.
+func CoverageUploadRequestErrors(errorType ErrorType) {
+	telemetry.Count(telemetry.NamespaceCIVisibility, "coverage_upload.request_errors", removeEmptyStrings(errorType)).Submit(1.0)
+}
+
 // EndpointPayloadDropped the number of payloads dropped after all retries by CI Visibility
 func EndpointPayloadDropped(endpointType EndpointType) {
 	telemetry.Count(telemetry.NamespaceCIVisibility, "endpoint_payload.dropped", removeEmptyStrings([]string{

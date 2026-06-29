@@ -8,14 +8,18 @@ package gotesting
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -40,7 +44,10 @@ func TestMain(m *testing.M) {
 
 	const scenarioStarted = "**** [Scenario %s started] ****\n\n"
 	// We need to spawn separated test process for each scenario
-	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection"}
+	scenarios := []string{"TestFlakyTestRetries", "TestEarlyFlakeDetection", "TestFlakyTestRetriesAndEarlyFlakeDetection", "TestIntelligentTestRunner", "TestManagementTests", "TestImpactedTests", "TestParallelEarlyFlakeDetection", "TestFlakyTestRetriesWithTransientSettingsFailure"}
+	if coverageModeSupportsITRBackfill() {
+		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
+	}
 
 	if internal.BoolEnv(scenarios[0], false) {
 		fmt.Printf(scenarioStarted, scenarios[0])
@@ -63,6 +70,12 @@ func TestMain(m *testing.M) {
 	} else if internal.BoolEnv(scenarios[6], false) {
 		fmt.Printf(scenarioStarted, scenarios[6])
 		runParallelEarlyFlakyTestDetectionTests(m)
+	} else if internal.BoolEnv(scenarios[7], false) {
+		fmt.Printf(scenarioStarted, scenarios[7])
+		runFlakyTestRetriesWithTransientSettingsFailureTests(m)
+	} else if len(scenarios) > 8 && internal.BoolEnv(scenarios[8], false) {
+		fmt.Printf(scenarioStarted, scenarios[8])
+		runIntelligentTestRunnerWithCoverageBackfillTests(m)
 	} else if internal.BoolEnv("Bypass", false) {
 		os.Exit(m.Run())
 	} else {
@@ -97,6 +110,15 @@ func TestMain(m *testing.M) {
 	os.Exit(0)
 }
 
+func coverageModeSupportsITRBackfill() bool {
+	switch testing.CoverMode() {
+	case "count", "atomic":
+		return true
+	default:
+		return false
+	}
+}
+
 func runFlakyTestRetriesTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
 	server := setUpHTTPServer(true, true, false, &net.KnownTestsResponseData{
@@ -114,7 +136,8 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	},
 		false, nil,
 		false, nil,
-		false)
+		false,
+		nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -257,6 +280,97 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	os.Exit(0)
 }
 
+// runFlakyTestRetriesWithTransientSettingsFailureTests reproduces the root cause of the flaky
+// TestRetryWithPanic crash: a transient failure on the settings fetch.
+//
+// It stands up the same backend as the flaky-test-retries scenario but routes the tracer through
+// a fault-injecting proxy that, on the first settings request, returns a 200 OK response claiming
+// gzip encoding while carrying a body that cannot be decompressed. This is exactly the transient
+// body/decompress failure that the fetch hardening now retries.
+//
+// With the hardening in place the client retries the settings call, the flaky-retry wrapper is
+// reliably installed, and the synthetic panic/fail tests run wrapped (4 executions each) so the
+// process exits cleanly. Without it the first failure permanently disables every feature, the
+// synthetic tests run unwrapped, and TestRetryWithPanic crashes this subprocess — which the parent
+// TestMain observes as a non-zero exit code.
+func runFlakyTestRetriesWithTransientSettingsFailureTests(m *testing.M) {
+	// Backend mock identical to the standard flaky-test-retries scenario.
+	backend := setUpHTTPServer(true, true, false, &net.KnownTestsResponseData{
+		Tests: net.KnownTestsResponseDataModules{
+			"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting": net.KnownTestsResponseDataSuites{
+				"reflections_test.go": []string{
+					"TestGetFieldPointerFrom",
+					"TestGetInternalTestArray",
+					"TestGetInternalBenchmarkArray",
+					"TestCommonPrivateFields_AddLevel",
+					"TestGetBenchmarkPrivateFields",
+				},
+			},
+		},
+	},
+		false, nil,
+		false, nil,
+		false,
+		nil)
+	defer backend.Close()
+
+	backendURL, err := url.Parse(backend.URL)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse backend url: %s", err))
+	}
+	proxy := httputil.NewSingleHostReverseProxy(backendURL)
+
+	// Fail the first settings request with an undecodable gzip body, then proxy everything
+	// (including the retry) to the real backend.
+	var settingsFailed atomic.Bool
+	faulty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/libraries/tests/services/setting" && settingsFailed.CompareAndSwap(false, true) {
+			log.Debug("MockApi injecting transient settings failure (undecodable gzip body)")
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set(net.HeaderContentEncoding, net.ContentEncodingGzip)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("this is not valid gzip data"))
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	defer faulty.Close()
+
+	// Point the tracer at the fault-injecting proxy instead of the backend.
+	os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, faulty.URL)
+
+	// set a custom retry count
+	os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "10")
+
+	// initialize the mock tracer for doing assertions on the finished spans
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+
+	// execute the tests; the suite must not crash even though the settings fetch failed once
+	exitCode := RunM(m)
+	if exitCode != 0 {
+		panic("expected the exit code to be 0. Got exit code: " + fmt.Sprintf("%d", exitCode))
+	}
+
+	// the transient failure must actually have been exercised
+	if !settingsFailed.Load() {
+		panic("expected the settings endpoint to have been called at least once")
+	}
+
+	// get all finished spans
+	finishedSpans := mTracer.FinishedSpans()
+	showResourcesNameFromSpans(finishedSpans)
+
+	// The settings fetch was retried, so the flaky-retry wrapper owns the synthetic tests: they
+	// panic/fail on the first executions and pass after the auto retries, producing 4 executions
+	// each. This proves the wrapper was reliably installed despite the transient failure.
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 4)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 6)
+
+	os.Exit(0)
+}
+
 func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// mock the settings api to enable automatic test retries
 	server := setUpHTTPServer(false, true, true, &net.KnownTestsResponseData{
@@ -274,7 +388,8 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	},
 		false, nil,
 		false, nil,
-		false)
+		false,
+		nil)
 	defer server.Close()
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -298,7 +413,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 11 TestMyTest01
 	// 11 TestMyTest02 + 22 subtests
 	// 11 Test_Foo + 33 subtests
-	// 11 TestSkip
+	// 1 TestSkip
 	// 11 TestRetryWithPanic
 	// 11 TestRetryWithFail
 	// 11 TestNormalPassingAfterRetryAlwaysFail
@@ -320,7 +435,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 11)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 11)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 11)
@@ -335,21 +450,26 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 	}
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 220)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 200)
-	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 200)[0]
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 210)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 190)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 190)[0]
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
 
-	// check test.final_status - EFD runs 11 executions (1 original + 10 retries), final_status only on the last
+	// check test.final_status - most EFD tests run 11 executions (1 original + 10 retries), final_status only on the last
+	// Clean skips are terminal and report final_status on their single execution.
 	// TestMyTest01 passes all 11 times -> final_status=pass (only on last execution)
 	efdTestMyTest01Spans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 11)
 	checkSpansByTagValue(efdTestMyTest01Spans, constants.TestFinalStatus, constants.TestStatusPass, 1)
 
-	// TestSkip skips all 11 times -> final_status=skip (only on last execution)
-	efdTestSkipSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 11)
+	// TestSkip clean-skips once and does not schedule EFD retries -> final_status=skip
+	efdTestSkipSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
+	checkSpansByTagValue(efdTestSkipSpans, constants.TestStatus, constants.TestStatusSkip, 1)
 	checkSpansByTagValue(efdTestSkipSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+	checkSpansByTagName(efdTestSkipSpans, constants.TestRetryReason, 0)
+	checkSpansByTagName(efdTestSkipSpans, constants.TestIsRetry, 0)
+	checkSpansByTagValue(efdTestSkipSpans, constants.TestSkipReason, "Nothing to do here, skipping!", 1)
 
 	// TestRetryWithPanic fails first 3 times, passes 4-11 -> anyPassed=true -> final_status=pass (only on last execution)
 	efdTestRetryWithPanicSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
@@ -374,7 +494,7 @@ func runEarlyFlakyTestDetectionTests(m *testing.M) {
 		1,
 		1,
 		4,
-		225,
+		215,
 		0)
 
 	// check capabilities tags
@@ -403,7 +523,8 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	},
 		false, nil,
 		false, nil,
-		false)
+		false,
+		nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -437,7 +558,8 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	// 1 TestNormalPassingAfterRetryAlwaysFail
 	// 11 TestEarlyFlakeDetection
 	// 2 normal spans from testing_test.go
-	// 3 tests from testify_test.go and testify_test.go/MySuite
+	// 1 clean skipped test from testify_test.go
+	// 2 normal spans from testify_test.go and testify_test.go/MySuite
 
 	// check spans by resource name
 	checkSpansByResourceName(finishedSpans, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", 1)
@@ -448,26 +570,39 @@ func runParallelEarlyFlakyTestDetectionTests(m *testing.M) {
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 11)
-	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 11)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 11)
 	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 11)
-	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 11)
+	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 1)
 
 	// check spans by tag
-	checkSpansByTagName(finishedSpans, constants.TestIsNew, 198)
-	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 180)
-	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 180)[0]
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 178)
+	checkSpansByTagName(finishedSpans, constants.TestIsRetry, 160)
+	trrSpan := checkSpansByTagName(finishedSpans, constants.TestRetryReason, 160)[0]
 	if trrSpan.Tag(constants.TestRetryReason) != "early_flake_detection" {
 		panic(fmt.Sprintf("expected retry reason to be %s, got %s", "early_flake_detection", trrSpan.Tag(constants.TestRetryReason)))
 	}
 
-	// check test.final_status - parallel EFD uses Option A: no final_status is set for EFD tests
-	// because all parallel executions capture the same remainingRetries value.
-	// Only the 5 known tests from reflections_test.go (single execution, no EFD) have final_status=pass
-	checkSpansByTagName(finishedSpans, constants.TestFinalStatus, 5)
+	// check test.final_status - parallel EFD still skips final_status for fanned-out
+	// EFD attempts. A clean skip stops before fan-out, so it keeps final_status=skip.
+	// The 5 known tests from reflections_test.go (single execution, no EFD) have final_status=pass.
+	checkSpansByTagName(finishedSpans, constants.TestFinalStatus, 7)
 	checkSpansByTagValue(finishedSpans, constants.TestFinalStatus, constants.TestStatusPass, 5)
+	checkSpansByTagValue(finishedSpans, constants.TestFinalStatus, constants.TestStatusSkip, 2)
+	parallelEFDTestSkipSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
+	checkSpansByTagValue(parallelEFDTestSkipSpans, constants.TestStatus, constants.TestStatusSkip, 1)
+	checkSpansByTagValue(parallelEFDTestSkipSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+	checkSpansByTagName(parallelEFDTestSkipSpans, constants.TestRetryReason, 0)
+	checkSpansByTagName(parallelEFDTestSkipSpans, constants.TestIsRetry, 0)
+	checkSpansByTagValue(parallelEFDTestSkipSpans, constants.TestSkipReason, "Nothing to do here, skipping!", 1)
+	parallelEFDTestifySkipSpans := checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 1)
+	checkSpansByTagValue(parallelEFDTestifySkipSpans, constants.TestStatus, constants.TestStatusSkip, 1)
+	checkSpansByTagValue(parallelEFDTestifySkipSpans, constants.TestFinalStatus, constants.TestStatusSkip, 1)
+	checkSpansByTagName(parallelEFDTestifySkipSpans, constants.TestRetryReason, 0)
+	checkSpansByTagName(parallelEFDTestifySkipSpans, constants.TestIsRetry, 0)
+	checkSpansByTagName(parallelEFDTestifySkipSpans, constants.TestSkipReason, 0)
 
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
@@ -513,7 +648,8 @@ func runFlakyTestRetriesWithEarlyFlakyTestDetectionTests(m *testing.M, impactedT
 	},
 		false, nil,
 		false, nil,
-		impactedTests)
+		impactedTests,
+		nil)
 	defer server.Close()
 
 	// set a custom retry count
@@ -685,7 +821,8 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 		},
 	},
 		false, nil,
-		false)
+		false,
+		nil)
 	defer server.Close()
 
 	// initialize the mock tracer for doing assertions on the finished spans
@@ -701,6 +838,11 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	// get all finished spans
 	finishedSpans := mTracer.FinishedSpans()
 	showResourcesNameFromSpans(finishedSpans)
+
+	if testing.CoverMode() != "" {
+		checkIntelligentTestRunnerWithMissingBackendCoverage(finishedSpans)
+		os.Exit(0)
+	}
 
 	// 1 session span
 	// 1 module span
@@ -750,18 +892,7 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
 	}
 
-	// check ITR spans
-	// 5 tests skipped by ITR and 1 normal skipped test
-	checkSpansByTagValue(finishedSpans, constants.TestStatus, constants.TestStatusSkip, 6)
-	checkSpansByTagValue(finishedSpans, constants.TestSkipReason, constants.SkippedByITRReason, 5)
-
-	// check test.final_status for ITR-skipped tests (5 ITR-skipped + 1 normal skip = 6 total with final_status=skip)
-	checkSpansByTagValue(finishedSpans, constants.TestFinalStatus, constants.TestStatusSkip, 6)
-
-	// check unskippable tests
-	// 5 tests from unskippable suite in reflections_test.go and 2 unskippable tests from testing_test.go
-	checkSpansByTagValue(finishedSpans, constants.TestUnskippable, "true", 7)
-	checkSpansByTagValue(finishedSpans, constants.TestForcedToRun, "true", 1)
+	checkIntelligentTestRunnerSkipTags(finishedSpans)
 
 	// check if suite has both test code owners and source file tags
 	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
@@ -780,8 +911,151 @@ func runIntelligentTestRunnerTests(m *testing.M) {
 	// check capabilities tags
 	checkCapabilitiesTags(finishedSpans)
 
+	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	if len(sessionSpans) != 1 {
+		panic(fmt.Sprintf("expected exactly one session span, got %d", len(sessionSpans)))
+	}
+	if got := sessionSpans[0].Tag(constants.CodeCoverageEnabled); got != "false" {
+		panic(fmt.Sprintf("expected %s=false when ITR is enabled without coverage, got %v", constants.CodeCoverageEnabled, got))
+	}
+	checkITRTestsSkippingEnabledTag(finishedSpans, "true")
+
 	fmt.Println("All tests passed.")
 	os.Exit(0)
+}
+
+func runIntelligentTestRunnerWithCoverageBackfillTests(m *testing.M) {
+	backendCoverage := map[string][]byte{
+		"internal/civisibility/integrations/gotesting/testing.go": {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+	}
+	server := setUpHTTPServer(true, true, false, nil, true, []net.SkippableResponseDataAttributes{
+		{
+			Suite: "testing_test.go",
+			Name:  "TestMyTest01",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestMyTest02",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "Test_Foo",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestRetryWithPanic",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestRetryWithFail",
+		},
+		{
+			Suite: "testing_test.go",
+			Name:  "TestNormalPassingAfterRetryAlwaysFail",
+		},
+	},
+		false, nil,
+		false,
+		backendCoverage)
+	defer server.Close()
+
+	currentM = m
+	mTracer = integrations.InitializeCIVisibilityMock()
+
+	exitCode := RunM(m)
+	if exitCode != 0 {
+		panic("expected the exit code to be 0. All tests should pass (failed ones should be skipped by ITR).")
+	}
+
+	finishedSpans := mTracer.FinishedSpans()
+	showResourcesNameFromSpans(finishedSpans)
+	checkIntelligentTestRunnerWithCoverageBackfill(finishedSpans)
+
+	fmt.Println("All tests passed.")
+	os.Exit(0)
+}
+
+func checkIntelligentTestRunnerWithMissingBackendCoverage(finishedSpans []*mocktracer.Span) {
+	// Missing aggregate backend coverage disables coverage backfill only. ITR
+	// skipping still follows the backend skippable-test list, matching the Java
+	// reference implementation.
+	checkSpansByResourceName(finishedSpans, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetFieldPointerFrom", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetInternalTestArray", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetInternalBenchmarkArray", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestCommonPrivateFields_AddLevel", 1)
+	checkSpansByResourceName(finishedSpans, "reflections_test.go.TestGetBenchmarkPrivateFields", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest01", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01", 0)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestMyTest02/sub01/sub03", 0)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/yellow_should_return_color", 0)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/banana_should_return_fruit", 0)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.Test_Foo/duck_should_return_animal", 0)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestSkip", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestNormalPassingAfterRetryAlwaysFail", 1)
+	checkSpansByResourceName(finishedSpans, "testing_test.go.TestEarlyFlakeDetection", 1)
+	checkSpansByResourceName(finishedSpans, "testify_test.go.TestTestifyLikeTest", 1)
+	testifySub01 := checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite", 1)[0]
+	checkSpansByResourceName(finishedSpans, "testify_test.go/MySuite.TestTestifyLikeTest/TestMySuite/sub01", 1)
+
+	if !strings.HasSuffix(testifySub01.Tag("test.source.file").(string), "/testify_test.go") {
+		panic(fmt.Sprintf("source file should be testify_test.go, got %s", testifySub01.Tag("test.source.file").(string)))
+	}
+
+	checkSpansByTagName(finishedSpans, constants.TestIsNew, 0)
+	checkIntelligentTestRunnerSkipTags(finishedSpans)
+
+	suiteSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSuite)
+	checkSpansByTagName(suiteSpans, constants.TestCodeOwners, 4)
+	checkSpansByTagName(suiteSpans, constants.TestSourceFile, 4)
+
+	checkSpansByType(finishedSpans,
+		17,
+		1,
+		1,
+		4,
+		20,
+		0)
+
+	checkCapabilitiesTags(finishedSpans)
+
+	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	if len(sessionSpans) != 1 {
+		panic(fmt.Sprintf("expected exactly one session span, got %d", len(sessionSpans)))
+	}
+	if got := sessionSpans[0].Tag(constants.CodeCoverageEnabled); got != "false" {
+		panic(fmt.Sprintf("expected %s=false when ITR is enabled without backend coverage, got %v", constants.CodeCoverageEnabled, got))
+	}
+	checkITRTestsSkippingEnabledTag(finishedSpans, "true")
+
+	checkLogs()
+}
+
+func checkIntelligentTestRunnerWithCoverageBackfill(finishedSpans []*mocktracer.Span) {
+	checkIntelligentTestRunnerSkipTags(finishedSpans)
+
+	sessionSpans := getSpansWithType(finishedSpans, constants.SpanTypeTestSession)
+	if len(sessionSpans) != 1 {
+		panic(fmt.Sprintf("expected exactly one session span, got %d", len(sessionSpans)))
+	}
+}
+
+func checkIntelligentTestRunnerSkipTags(finishedSpans []*mocktracer.Span) {
+	checkSpansByTagValue(finishedSpans, constants.TestStatus, constants.TestStatusSkip, 6)
+	checkSpansByTagValue(finishedSpans, constants.TestSkippedByITR, "true", 5)
+	checkSpansByTagValue(finishedSpans, constants.TestSkipReason, constants.SkippedByITRReason, 5)
+	checkSpansByTagValue(finishedSpans, constants.TestFinalStatus, constants.TestStatusSkip, 6)
+	checkSpansByTagValue(finishedSpans, constants.TestUnskippable, "true", 7)
+	checkSpansByTagValue(finishedSpans, constants.TestForcedToRun, "true", 1)
+	checkITRTestsSkippingEnabledTag(finishedSpans, "true")
 }
 
 func runTestManagementTests(m *testing.M) {
@@ -831,7 +1105,8 @@ func runTestManagementTests(m *testing.M) {
 				},
 			},
 		},
-		false)
+		false,
+		nil)
 
 	defer server.Close()
 
@@ -884,6 +1159,7 @@ func runTestManagementTests(m *testing.M) {
 	checkSpansByTagValue(testMyTest01, constants.TestAttemptToFixPassed, "true", 0)       // Attempt to fix passed false (reported in the latest retry)
 	checkSpansByTagValue(testMyTest01, constants.TestAttemptToFixPassed, "false", 0)      // Attempt to fix passed false (reported in the latest retry)
 	checkSpansByTagValue(testMyTest01, constants.TestStatus, constants.TestStatusSkip, 1) // Because is not an attempt to fix we just skip it
+	checkSpansByTagValue(testMyTest01, constants.TestSkipReason, constants.TestDisabledSkipReason, 1)
 
 	// Quarantined test without an attempt to fix (it executed but reported as skipped)
 	testRetryWithFail := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithFail", 1)
@@ -1024,6 +1300,9 @@ func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesAutoTestRetries)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesAutoTestRetries))
 	}
+	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesCoverageReportUpload)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesCoverageReportUpload))
+	}
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestManagementQuarantine)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestManagementQuarantine))
 	}
@@ -1032,6 +1311,29 @@ func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 	}
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestManagementAttemptToFix)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestManagementAttemptToFix))
+	}
+}
+
+func checkITRTestsSkippingEnabledTag(finishedSpans []*mocktracer.Span, tagValue string) {
+	for _, spanType := range []struct {
+		name string
+		typ  string
+	}{
+		{name: "session", typ: constants.SpanTypeTestSession},
+		{name: "module", typ: constants.SpanTypeTestModule},
+		{name: "suite", typ: constants.SpanTypeTestSuite},
+		{name: "test", typ: constants.SpanTypeTest},
+	} {
+		for _, sp := range getSpansWithType(finishedSpans, spanType.typ) {
+			if got := sp.Tag(constants.ITRTestsSkippingEnabled); got != tagValue {
+				panic(fmt.Sprintf("expected %s %s=%s on %s, got %v",
+					spanType.name,
+					constants.ITRTestsSkippingEnabled,
+					tagValue,
+					sp.Tag(ext.ResourceName),
+					got))
+			}
+		}
 	}
 }
 
@@ -1051,7 +1353,8 @@ type (
 	}
 
 	skippableResponseMeta struct {
-		CorrelationID string `json:"correlation_id"`
+		CorrelationID string            `json:"correlation_id"`
+		Coverage      map[string]string `json:"coverage,omitempty"`
 	}
 
 	skippableResponseData struct {
@@ -1070,7 +1373,8 @@ func setUpHTTPServer(
 	itrData []net.SkippableResponseDataAttributes,
 	testManagement bool,
 	testManagementData *net.TestManagementTestsResponseDataModules,
-	impactedTests bool) *httptest.Server {
+	impactedTests bool,
+	itrCoverage map[string][]byte) *httptest.Server {
 	// Reset the collected logs for the new server instance.
 	logsEntries = nil
 	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
@@ -1144,6 +1448,12 @@ func setUpHTTPServer(
 					CorrelationID: "correlation_id",
 				},
 				Data: []skippableResponseData{},
+			}
+			if itrCoverage != nil {
+				response.Meta.Coverage = make(map[string]string, len(itrCoverage))
+				for file, bitmap := range itrCoverage {
+					response.Meta.Coverage[file] = base64.StdEncoding.EncodeToString(bitmap)
+				}
 			}
 			for i, data := range itrData {
 				response.Data = append(response.Data, skippableResponseData{
