@@ -11,7 +11,11 @@ import "fmt"
 // raw string and numeric tags respectively; Tags is a merged view of both plus
 // top-level attributes (name, service, resource, type) for convenience.
 type Span struct {
-	SpanID    uint64
+	SpanID uint64
+	// TraceID holds the lower 64 bits of the trace ID. For 128-bit trace IDs
+	// (which the tracer generates when DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED
+	// is set) the upper 64 bits are available in Meta["_dd.p.tid"]. Assertions on
+	// full 128-bit identity should use that tag rather than this field.
 	TraceID   uint64
 	ParentID  uint64
 	Service   string

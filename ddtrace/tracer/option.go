@@ -159,7 +159,7 @@ type config struct {
 	httpClient *http.Client
 
 	// agentTransport, if set, is applied as the HTTP client's round-tripper
-	// unconditionally after finishConfig builds c.httpClient — including after
+	// unconditionally after newConfig builds c.httpClient — including after
 	// the orchestrion override that discards any WithHTTPClient value. This
 	// escape hatch exists specifically because orchestrion replaces c.httpClient
 	// to avoid self-tracing, which would cause test helpers to dial the real
@@ -167,7 +167,7 @@ type config struct {
 	// (e.g. tracertest) should set this field.
 	agentTransport http.RoundTripper
 
-	// llmobsHTTPClient overrides c.llmobs.TracerConfig.HTTPClient after finishConfig
+	// llmobsHTTPClient overrides c.llmobs.TracerConfig.HTTPClient after newConfig
 	// builds it (so it is not clobbered by the agentTransport-based c.httpClient).
 	// For test use only (via ddtrace/x/llmobstest).
 	llmobsHTTPClient *http.Client
@@ -1342,7 +1342,7 @@ func withLLMObsInProcessTransport(testBaseURL string, rt http.RoundTripper) Star
 // under orchestrion: orchestrion unconditionally replaces c.httpClient to
 // prevent self-tracing, which would cause the in-process agent transport to be
 // discarded and leave the tracer dialing the real network. agentTransport is
-// applied after that override in finishConfig so it always takes precedence.
+// applied after that override in newConfig so it always takes precedence.
 // For use in test helpers only.
 func withAgentTransport(rt http.RoundTripper) StartOption {
 	return func(c *config) {
