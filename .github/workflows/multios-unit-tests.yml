@@ -75,6 +75,7 @@ jobs:
           policy: dd-trace-go
       - name: Configure Datadog Test Optimization
         if: inputs.runs-on == 'ubuntu-latest' && steps.dd-sts.outputs.api_key != ''
+        continue-on-error: true
         uses: datadog/test-visibility-github-action@v2
         with:
           languages: go
