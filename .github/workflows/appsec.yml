@@ -91,7 +91,7 @@ jobs:
 
       - name: Cache Go modules
         id: cache
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.cfg.outputs.path }}
           key: ${{ steps.cfg.outputs.key }}
@@ -122,7 +122,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -235,7 +235,7 @@ jobs:
           policy: dd-trace-go
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
@@ -317,7 +317,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Restore Go modules cache
-        uses: actions/cache/restore@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ needs.go-mod-caching.outputs.path }}
           key: ${{ needs.go-mod-caching.outputs.key }}
