@@ -972,7 +972,7 @@ func TestPropagationDefaults(t *testing.T) {
 	pctx := propagated
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, pctx.traceID)
+	assert.Equal(ctx.traceID.HexEncoded(), pctx.traceID.HexEncoded())
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
@@ -1017,7 +1017,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 	assert.Nil(err)
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, propagated.traceID)
+	assert.Equal(ctx.traceID.HexEncoded(), propagated.traceID.HexEncoded())
 	assert.Equal(ctx.spanID, propagated.spanID)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
 	assert.Equal(ctx.baggage, propagated.baggage)
@@ -2443,13 +2443,14 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
 // while partial flushing is enabled.
 func BenchmarkPartialFlushing(b *testing.B) {
+	addr := mockAgentEndpoint(b, "/v1.0/traces")
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
-		genBigTraces(b)
+		genBigTraces(b, WithAgentAddr(addr.Host))
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b)
+		genBigTraces(b, WithAgentAddr(addr.Host))
 	})
 }
 

@@ -42,15 +42,23 @@ func exerciseITRCoverageBackfillState(t *testing.T) {
 
 	state = newExerciseITRState()
 	state.validateCoverageBackfillScope([]*testingTInfo{exerciseTestInfo("TestSafeSkip")})
-	if state.coverageBackfillReady {
-		t.Fatal("expected out-of-process skippable response to disable coverage backfill")
-	}
-	if state.disabledReason != itrBackfillReasonResponseScope {
-		t.Fatalf("expected response scope reason, got %q", state.disabledReason)
+	if !state.coverageBackfillReady || state.disabledReason != "" {
+		t.Fatalf("expected out-of-process skippable candidates to be ignored, ready=%t reason=%q", state.coverageBackfillReady, state.disabledReason)
 	}
 	scopeDecision := state.decisionFor(exerciseTestInfo("TestSafeSkip"), &testExecutionMetadata{}, false)
 	if !scopeDecision.skip || scopeDecision.forcedRun {
-		t.Fatal("expected response-scope validation to disable backfill without disabling ITR skip")
+		t.Fatal("expected in-process safe candidate to remain skippable")
+	}
+
+	state = newExerciseITRState()
+	state.response.Skippables["other_suite_test.go"] = map[string][]net.SkippableResponseDataAttributes{
+		"TestOutsideProcess": {
+			{Suite: "other_suite_test.go", Name: "TestOutsideProcess", Parameters: `{"case":"one"}`},
+		},
+	}
+	state.validateCoverageBackfillScope([]*testingTInfo{exerciseTestInfo("TestSafeSkip")})
+	if !state.coverageBackfillReady || state.disabledReason != "" {
+		t.Fatalf("expected out-of-process parameters to be ignored, ready=%t reason=%q", state.coverageBackfillReady, state.disabledReason)
 	}
 
 	state = newExerciseITRState()

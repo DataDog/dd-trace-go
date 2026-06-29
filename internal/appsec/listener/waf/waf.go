@@ -33,7 +33,7 @@ import (
 
 type Feature struct {
 	timeout         time.Duration
-	limiter         *limiter.TokenTicker
+	limiter         limiter.Limiter
 	handle          *libddwaf.Handle
 	supportedAddrs  config.AddressSet
 	rulesVersion    string
@@ -77,13 +77,10 @@ func NewWAFFeature(cfg *config.Config, rootOp dyngo.Operation) (listener.Feature
 
 	cfg.SupportedAddresses = config.NewAddressSet(newHandle.Addresses())
 
-	tokenTicker := limiter.NewTokenTicker(cfg.TraceRateLimit, cfg.TraceRateLimit)
-	tokenTicker.Start()
-
 	feature := &Feature{
 		handle:              newHandle,
 		timeout:             cfg.WAFTimeout,
-		limiter:             tokenTicker,
+		limiter:             limiter.NewTokenTicker(cfg.TraceRateLimit, cfg.TraceRateLimit),
 		supportedAddrs:      cfg.SupportedAddresses,
 		telemetryMetrics:    telemetryMetrics,
 		metaStructAvailable: cfg.MetaStructAvailable,
@@ -180,6 +177,5 @@ func (*Feature) String() string {
 }
 
 func (waf *Feature) Stop() {
-	waf.limiter.Stop()
 	waf.handle.Close()
 }
