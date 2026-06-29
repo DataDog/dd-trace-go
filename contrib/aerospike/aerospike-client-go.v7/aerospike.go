@@ -9,10 +9,15 @@
 // the same methods, so should be seamless for existing applications. It also
 // has an additional `WithContext` method which can be used to connect a span
 // to an existing trace.
+//
+// When using Orchestrion for automatic instrumentation, `WrapClientWithContext`
+// is called at each call site so that the caller's context.Context is threaded
+// through without modifying the Aerospike API.
 package aerospike // import "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2"
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v7"
@@ -21,6 +26,15 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
+
+// orchestrionCfg caches the default clientConfig so that WrapClientWithContext
+// (called at every instrumented call site by Orchestrion) only resolves service
+// and operation names from the instrumentation registry once.
+var orchestrionCfg = sync.OnceValue(func() *clientConfig {
+	cfg := new(clientConfig)
+	defaults(cfg)
+	return cfg
+})
 
 // WrapClient wraps an aerospike.Client so that all requests are traced using
 // the default tracer with the service name "aerospike".
@@ -36,6 +50,18 @@ func WrapClient(client *as.Client, opts ...ClientOption) *Client {
 		cfg:     cfg,
 		context: context.Background(),
 	}
+}
+
+// WrapClientWithContext wraps client for a single call using the provided ctx.
+// It is called by the Orchestrion-injected advice at each instrumented call
+// site. Passing a nil ctx falls back to context.Background(); under Orchestrion
+// the tracer's SpanFromContext is GLS-aware, so same-goroutine parent spans are
+// automatically detected even when no explicit context is in scope.
+func WrapClientWithContext(client *as.Client, ctx context.Context) *Client {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &Client{Client: client, cfg: orchestrionCfg(), context: ctx}
 }
 
 // A Client is used to trace requests to the Aerospike server.

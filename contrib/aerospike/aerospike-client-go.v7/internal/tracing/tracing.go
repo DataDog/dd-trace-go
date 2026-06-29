@@ -3,10 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-// Package tracing provides span helpers shared between the aerospike contrib
-// wrapper and the Orchestrion advice template. It intentionally does not import
-// aerospike-client-go so that the orchestrion path does not drag the SDK into
-// instrumented binaries via the injected declarations.
+// Package tracing provides span helpers used by the aerospike contrib wrapper.
 package tracing
 
 import (
@@ -41,26 +38,6 @@ func StartSpan(ctx context.Context, serviceName, serviceSource, operationName, r
 		tracer.Tag(ext.DBSystem, ext.DBSystemAerospike),
 	)
 	return span
-}
-
-// StartDefaultSpan starts a span from context.Background() using the service
-// and operation names resolved from the instrumentation registry.
-func StartDefaultSpan(resourceName string) *Span {
-	return StartSpanWithContext(context.Background(), resourceName)
-}
-
-// StartSpanWithContext starts a span from the provided context using the
-// service and operation names resolved from the instrumentation registry.
-// Used by the Orchestrion advice template, which stores and retrieves the
-// context via WithContext.
-func StartSpanWithContext(ctx context.Context, resourceName string) *Span {
-	return StartSpan(
-		ctx,
-		Instr.ServiceName(instrumentation.ComponentDefault, nil),
-		string(instrumentation.PackageAerospikeClientGoV7),
-		Instr.OperationName(instrumentation.ComponentDefault, nil),
-		resourceName,
-	)
 }
 
 // FinishSpan finishes span, tagging it with err if non-nil.

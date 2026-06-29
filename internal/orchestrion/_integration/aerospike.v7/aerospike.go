@@ -92,8 +92,15 @@ var (
 	_ = newClientArgument
 )
 
+// putWithContext is a named helper so that Orchestrion's method-call advice can
+// see the ctx parameter and rewrite client.Put(...) →
+// WrapClientWithContext(client, ctx).Put(...).
+func putWithContext(ctx context.Context, client *as.Client, key *as.Key, bins as.BinMap) as.Error {
+	return client.Put(nil, key, bins)
+}
+
 // TestCaseConcurrent verifies that spans started in goroutines are correctly
-// linked to a parent span when WithContext is called inside each goroutine.
+// linked to a parent span when context is passed explicitly into each goroutine.
 type TestCaseConcurrent struct {
 	client *as.Client
 }
@@ -139,7 +146,7 @@ func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
 	for i := range n {
 		go func(i int) {
 			defer wg.Done()
-			errs[i] = tc.client.WithContext(ctx).Put(nil, keys[i], as.BinMap{"value": i})
+			errs[i] = putWithContext(ctx, tc.client, keys[i], as.BinMap{"value": i})
 		}(i)
 	}
 	wg.Wait()
