@@ -166,11 +166,8 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 		}
 	drained:
 		tracer.traceWriter.flush()
-		switch tw := tracer.traceWriter.(type) {
-		case *agentTraceWriter:
-			tw.wg.Wait()
-		case *otlpTraceWriter:
-			tw.wg.Wait()
+		if w, ok := tracer.traceWriter.(flushWaiter); ok {
+			w.wait()
 		}
 		// Synchronously flush LLMObs so spans are guaranteed to arrive at the
 		// collector before this function returns. This eliminates the need for
