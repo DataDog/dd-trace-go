@@ -7,6 +7,7 @@ package agenttest
 
 import (
 	"io"
+	"maps"
 	"net/http"
 	"runtime"
 	"strings"
@@ -31,9 +32,7 @@ func makeSpan(name, service, resource, spanType string, tags map[string]any) *Sp
 	s.Tags["service"] = service
 	s.Tags["resource"] = resource
 	s.Tags["type"] = spanType
-	for k, v := range tags {
-		s.Tags[k] = v
-	}
+	maps.Copy(s.Tags, tags)
 	return s
 }
 
