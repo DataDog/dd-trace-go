@@ -51,15 +51,16 @@ type FormFile struct {
 
 // RequestConfig holds configuration for a request.
 type RequestConfig struct {
-	Method     string            // HTTP method: GET or POST
-	URL        string            // Request URL
-	Headers    map[string]string // Additional HTTP headers
-	Body       any               // Request body for JSON, MessagePack, or raw bytes
-	Format     string            // Format: "json" or "msgpack"
-	Compressed bool              // Whether to use gzip compression
-	Files      []FormFile        // Files to be uploaded in a multipart form data request
-	MaxRetries int               // Maximum number of retries
-	Backoff    time.Duration     // Initial backoff duration for retries
+	Method             string            // HTTP method: GET or POST
+	URL                string            // Request URL
+	Headers            map[string]string // Additional HTTP headers
+	Body               any               // Request body for JSON, MessagePack, or raw bytes
+	Format             string            // Format: "json" or "msgpack"
+	Compressed         bool              // Whether to use gzip compression
+	Files              []FormFile        // Files to be uploaded in a multipart form data request
+	MaxRetries         int               // Maximum number of retries
+	Backoff            time.Duration     // Initial backoff duration for retries
+	ExpectJSONResponse bool              // When true, a 2xx response with a non-JSON Content-Type is retried instead of being returned as-is
 }
 
 // Response represents the HTTP response with deserialization capabilities and status code.
@@ -209,8 +210,8 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int) (stopRetries bool, response *Response, requestError error) {
 	var req *http.Request
 
-	// Check if it's a multipart form data request
 	if len(config.Files) > 0 {
+		// Check if it's a multipart form data request
 		// Create multipart form data body
 		body, contentType, err := createMultipartFormData(config.Files, config.Compressed)
 		if err != nil {
@@ -369,6 +370,18 @@ func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int
 		if mediaType == ContentTypeJSON || mediaType == ContentTypeJSONAlternative {
 			responseFormat = FormatJSON
 		}
+	}
+
+	// When the caller requires a JSON response but the server returned something
+	// unrecognised (e.g. a keep-alive reuse EOF that Go promotes to a 200 with an
+	// empty/plain-text body), treat it as a transient failure and retry.  Upload
+	// endpoints that never decode the response body must leave ExpectJSONResponse
+	// false so they are unaffected.
+	if config.ExpectJSONResponse && responseFormat == "unknown" && statusCode >= 200 && statusCode < 300 {
+		log.Debug("ciVisibilityHttpClient: expected JSON response but got format %q [method: %s, url: %s, status_code: %d]; retrying",
+			responseFormat, config.Method, config.URL, statusCode)
+		exponentialBackoff(attempt, config.Backoff)
+		return false, nil, nil
 	}
 
 	if log.DebugEnabled() {

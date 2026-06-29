@@ -294,6 +294,25 @@ func TestGetFilesCoveredBuildsBitmapForMultipleCoveredBlocks(t *testing.T) {
 	assertCoveredFile(t, filesCovered, "pkg/lib.go", want.ToArray())
 }
 
+func TestGetFilesCoveredIncludesZeroStatementCoveredBlocks(t *testing.T) {
+	before := map[string][]coverageBlock{
+		"pkg/lib.go": {
+			{startLine: 23, startCol: 19, endLine: 24, endCol: 2, numStmt: 0, count: 0},
+		},
+	}
+	after := map[string][]coverageBlock{
+		"pkg/lib.go": {
+			{startLine: 23, startCol: 19, endLine: 24, endCol: 2, numStmt: 0, count: 1},
+		},
+	}
+
+	filesCovered := getFilesCovered("pkg/lib_test.go", before, after)
+	want := filebitmap.FromLineCount(24)
+	want.Set(23)
+	want.Set(24)
+	assertCoveredFile(t, filesCovered, "pkg/lib.go", want.ToArray())
+}
+
 func TestGetFilesCoveredSkipsZeroAndNegativeDeltas(t *testing.T) {
 	before := map[string][]coverageBlock{
 		"pkg/lib.go": {
@@ -866,6 +885,52 @@ func TestFinalizeBackfillFailsClosedWhenCoverageDoesNotMatchProfile(t *testing.T
 	}
 	if string(updated) != "mode: count\npkg/file.go:2.1,2.10 1 0\n" {
 		t.Fatalf("profile should not have changed: %s", string(updated))
+	}
+}
+
+func TestFinalizeBackfillRewritesZeroStatementMatchingBlocks(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	profilePath := filepath.Join(t.TempDir(), "coverage.out")
+	original := `mode: count
+pkg/file.go:23.19,24.2 0 0
+pkg/file.go:30.1,30.10 2 0
+`
+	if err := os.WriteFile(profilePath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mode = "count"
+	tearDown = func(_, _ string) (string, error) { return "", nil }
+	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
+	ConfigureBackfill(BackfillInput{
+		BackendCoverage: map[string]*filebitmap.FileBitmap{
+			"pkg/file.go": filebitmap.FromActiveRange(23, 24),
+		},
+		ActualSkips: 1,
+	})
+
+	result := FinalizeBackfill()
+	if result.Reason != "" {
+		t.Fatalf("unexpected reason: %s", result.Reason)
+	}
+	if !result.Applied {
+		t.Fatal("expected zero-statement block to be backfilled")
+	}
+	if result.Coverage != 0 {
+		t.Fatalf("zero-statement backfill must not change statement coverage, got %v", result.Coverage)
+	}
+	updated, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `mode: count
+pkg/file.go:23.19,24.2 0 1
+pkg/file.go:30.1,30.10 2 0
+`
+	if string(updated) != expected {
+		t.Fatalf("unexpected profile contents:\n%s", string(updated))
 	}
 }
 
