@@ -16,7 +16,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
@@ -179,11 +178,12 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 		llmobs.FlushSync()
 		done <- struct{}{}
 	}
-	// The following lines are related to services that need to be started for
-	// the tests to work. This is kind of hack because we can't call `tracer.Start`.
-	// We should refactor the initialization of these services as `startServices` at
-	// some point.
-	appsec.Start(tracer.config.appsecStartOptions...)
+	// Start AppSec and LLMObs using the same helpers as the production Start path
+	// so that options like WithAppSecEnabled activate identically. Telemetry,
+	// runtime metrics, and storeConfig are intentionally omitted: they spawn
+	// background goroutines and process-global side effects that break the
+	// inspectable tracer's synctest/no-network guarantees.
+	tracer.startAppSec()
 	if tracer.config.llmobs.Enabled {
 		if err := llmobs.Start(tracer.config.llmobs, &llmobsTracerAdapter{}); err != nil {
 			return nil, fmt.Errorf("failed to start llmobs: %w", err)
