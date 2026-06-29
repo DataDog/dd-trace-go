@@ -92,15 +92,13 @@ var (
 	_ = newClientArgument
 )
 
-// putWithContext is a named helper so that Orchestrion's method-call advice can
-// see the ctx parameter and rewrite client.Put(...) →
-// WrapClientWithContext(client, ctx).Put(...).
-func putWithContext(ctx context.Context, client *as.Client, key *as.Key, bins as.BinMap) as.Error {
-	return client.Put(nil, key, bins)
-}
-
 // TestCaseConcurrent verifies that spans started in goroutines are correctly
-// linked to a parent span when context is passed explicitly into each goroutine.
+// linked to a parent span when Orchestrion's injected WithContext method is
+// used to propagate context across goroutine boundaries.  Without the
+// struct-definition aspect that injects WithContext into *as.Client, the
+// interface assertion below returns the client unchanged, GLS cannot cross the
+// goroutine boundary, and the Put spans would be roots — causing the test to
+// fail.
 type TestCaseConcurrent struct {
 	client *as.Client
 }
@@ -140,13 +138,34 @@ func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	// withContext resolves the WithContext method that Orchestrion's
+	// struct-definition aspect injects into *as.Client at compile time.  The
+	// interface assertion compiles and runs without Orchestrion (returning c
+	// unchanged, so GLS would be the fallback — which cannot cross goroutine
+	// boundaries and would make the spans roots); with Orchestrion it stores ctx
+	// in a goroutine-keyed map consumed by the __ddGetCtx() call in the
+	// method-call advice template, producing correct parent–child spans.
+	withContext := func(c *as.Client, ctx context.Context) *as.Client {
+		type withContexter interface {
+			WithContext(context.Context) *as.Client
+		}
+		if wc, ok := any(c).(withContexter); ok {
+			return wc.WithContext(ctx)
+		}
+		return c
+	}
+
 	errs := make([]as.Error, n)
 	var wg sync.WaitGroup
 	wg.Add(n)
 	for i := range n {
 		go func(i int) {
 			defer wg.Done()
-			errs[i] = putWithContext(ctx, tc.client, keys[i], as.BinMap{"value": i})
+			// ctx is captured from the outer scope, not a function argument of
+			// this goroutine. Orchestrion's method-call template cannot find a
+			// context.Context parameter here (else branch → __ddGetCtx()), so
+			// the context must be stored first via the injected WithContext.
+			errs[i] = withContext(tc.client, ctx).Put(nil, keys[i], as.BinMap{"value": i})
 		}(i)
 	}
 	wg.Wait()

@@ -10,9 +10,20 @@
 // has an additional `WithContext` method which can be used to connect a span
 // to an existing trace.
 //
-// When using Orchestrion for automatic instrumentation, `WrapClientWithContext`
-// is called at each call site so that the caller's context.Context is threaded
-// through without modifying the Aerospike API.
+// When using Orchestrion for automatic instrumentation, two aspects cooperate:
+//
+//  1. A struct-definition aspect injects `WithContext(ctx) *as.Client` and
+//     `__ddGetCtx() context.Context` into the aerospike library's `Client`
+//     type.  `WithContext` stores ctx in a per-goroutine map so that goroutine
+//     fan-out patterns work without a helper function:
+//
+//     go func() { client.WithContext(ctx).Put(nil, key, bins) }()
+//
+//  2. A method-call aspect rewrites every `client.Method(...)` call site.
+//     When a `context.Context` argument is in scope it is passed directly;
+//     otherwise `__ddGetCtx()` is called to retrieve any context stored via
+//     `WithContext`, falling back to `context.Background()` → GLS when none
+//     was stored.
 package aerospike // import "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2"
 
 import (
@@ -54,9 +65,9 @@ func WrapClient(client *as.Client, opts ...ClientOption) *Client {
 
 // WrapClientWithContext wraps client for a single call using the provided ctx.
 // It is called by the Orchestrion-injected advice at each instrumented call
-// site. Passing a nil ctx falls back to context.Background(); under Orchestrion
-// the tracer's SpanFromContext is GLS-aware, so same-goroutine parent spans are
-// automatically detected even when no explicit context is in scope.
+// site. A nil ctx (returned by __ddGetCtx when no WithContext call preceded
+// this one in the current goroutine) falls back to context.Background(); the
+// tracer's GLS then provides same-goroutine parenting automatically.
 func WrapClientWithContext(client *as.Client, ctx context.Context) *Client {
 	if ctx == nil {
 		ctx = context.Background()
