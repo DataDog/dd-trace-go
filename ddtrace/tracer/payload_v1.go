@@ -548,7 +548,9 @@ func (p *payloadV1) encodeAttributes(bm bitmap, fieldID int, kv map[string]anyVa
 // It is called from push() to perform incremental encoding while the spans
 // are still valid (before any span-pool release).
 func (p *payloadV1) encodeTraceChunk(chunk traceChunk, st *stringTable) {
-	p.buf = msgp.AppendMapHeader(p.buf, 7) // 7 fields per chunk
+	// droppedTrace (field 5) is intentionally omitted: it is set by the agent,
+	// not by tracers. Emitting it causes the agent to reject the payload.
+	p.buf = msgp.AppendMapHeader(p.buf, 6) // 6 fields per chunk
 
 	// priority
 	p.buf = encodeField(p.buf, fullSetBitmap, 1, chunk.priority, st)
@@ -561,9 +563,6 @@ func (p *payloadV1) encodeTraceChunk(chunk traceChunk, st *stringTable) {
 
 	// spans
 	p.encodeSpans(fullSetBitmap, 4, chunk.spans, st)
-
-	// droppedTrace
-	p.buf = encodeField(p.buf, fullSetBitmap, 5, chunk.droppedTrace, st)
 
 	// traceID
 	p.buf = encodeField(p.buf, fullSetBitmap, 6, chunk.traceID, st)
@@ -582,28 +581,7 @@ func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, s
 	p.buf = append(p.buf, byte(fieldID))
 	p.buf = msgp.AppendArrayHeader(p.buf, uint32(len(tc))) // number of chunks
 	for _, chunk := range tc {
-		p.buf = msgp.AppendMapHeader(p.buf, 7) // number of fields in chunk
-
-		// priority
-		p.buf = encodeField(p.buf, fullSetBitmap, 1, chunk.priority, st)
-
-		// origin
-		p.buf = encodeStringField(p.buf, fullSetBitmap, 2, chunk.origin, st)
-
-		// attributes
-		p.encodeAttributes(fullSetBitmap, 3, chunk.attributes, st)
-
-		// spans
-		p.encodeSpans(fullSetBitmap, 4, chunk.spans, st)
-
-		// droppedTrace
-		p.buf = encodeField(p.buf, fullSetBitmap, 5, chunk.droppedTrace, st)
-
-		// traceID
-		p.buf = encodeField(p.buf, fullSetBitmap, 6, chunk.traceID, st)
-
-		// samplingMechanism
-		p.buf = encodeField(p.buf, fullSetBitmap, 7, chunk.samplingMechanism, st)
+		p.encodeTraceChunk(chunk, st)
 	}
 
 	return true, nil
