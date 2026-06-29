@@ -2541,4 +2541,24 @@ func TestFlushSync(t *testing.T) {
 		assert.GreaterOrEqual(t, elapsed, delay-20*time.Millisecond,
 			"FlushSync should block until the batchSend triggered by the preceding Flush completes")
 	})
+	t.Run("does-not-hang-after-stop", func(t *testing.T) {
+		_, _, ll := testTracer(t)
+		ll.Stop()
+
+		// After Stop the worker has exited; FlushSync must return promptly via the
+		// stopCh-guarded select instead of blocking forever on the unbuffered
+		// flushSyncCh send.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for range 20 {
+				ll.FlushSync()
+			}
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("FlushSync hung after Stop")
+		}
+	})
 }

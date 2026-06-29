@@ -356,10 +356,18 @@ func (l *LLMObs) Flush() {
 }
 
 // FlushSync flushes all currently buffered data and blocks until the HTTP send completes.
+// If the instance has already been stopped, FlushSync returns immediately instead of
+// blocking forever on the unbuffered flushSyncCh send.
 func (l *LLMObs) FlushSync() {
 	done := make(chan struct{})
-	l.flushSyncCh <- done
-	<-done
+	select {
+	case l.flushSyncCh <- done:
+		select {
+		case <-done:
+		case <-l.stopCh:
+		}
+	case <-l.stopCh:
+	}
 }
 
 // Stop requests shutdown, drains what’s already in the channels, flushes, and waits.
