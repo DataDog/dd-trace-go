@@ -47,6 +47,21 @@ func nodeHash(service, env string, edgeTags, processTags []string, containerTags
 	return h.Sum64()
 }
 
+// BaseHash computes the FNV-1 64-bit hash of service, env, processTags and containerTagsHash,
+// using the same algorithm as nodeHash but without edge tags.
+func BaseHash(service, env string, processTags []string, containerTagsHash string) uint64 {
+	h := fnv.New64()
+	h.Write([]byte(service))
+	h.Write([]byte(env))
+	for _, t := range processTags {
+		h.Write([]byte(t))
+	}
+	if containerTagsHash != "" {
+		h.Write([]byte(containerTagsHash))
+	}
+	return h.Sum64()
+}
+
 func pathwayHash(nodeHash, parentHash uint64) uint64 {
 	b := make([]byte, 16)
 	binary.LittleEndian.PutUint64(b, nodeHash)

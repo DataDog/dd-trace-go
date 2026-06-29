@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -430,6 +431,38 @@ func TestPartialFlush(t *testing.T) {
 		assert.False(t, remainingNames["root"], "root must not reappear in second chunk")
 		assert.True(t, remainingNames["child2"])
 		assert.True(t, remainingNames["child3"])
+	})
+
+	// Regression test for the partial-flush path where the span that triggers the
+	// flush is NOT the first span in the chunk. In finishedOneLocked this is the
+	// !finishingSpanIsFirstInChunk branch: the trace-level tags and sampling
+	// priority must still be written onto the first span (root here), even though
+	// it finished earlier and s.mu is released around the fSpan update.
+	t.Run("FirstSpanInChunkUpdatedWhenNotFinishingSpan", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "3")
+		tracer, transport, flush, stop, err := startTestTracer(t)
+		require.NoError(t, err)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		root.context.trace.setTag("someTraceTag", "someValue")
+		child0 := tracer.StartSpan("child0", ChildOf(root.Context()))
+		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+
+		// root finishes first (so it is finishedSpans[0]), but child1 is the span
+		// that crosses the partial-flush threshold and drives finishedOneLocked.
+		root.Finish()
+		child0.Finish()
+		child1.SetTag(ext.ManualKeep, true)
+		child1.Finish()
+		flush(1)
+
+		ts := transport.Traces()
+		require.Len(t, ts, 1)
+		require.Len(t, ts[0], 3)
+		require.Equal(t, "root", ts[0][0].name)
+		require.Contains(t, ts[0][0].metrics, keySamplingPriority)
+		require.Equal(t, "someValue", ts[0][0].meta.Map(true)["someTraceTag"])
 	})
 
 	// Verify that the backing array tail is cleared after in-place compaction so that
@@ -1299,7 +1332,7 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 func TestTraceIDHexEncoded(t *testing.T) {
 	var tid traceID
 	tid.value[15] = 5
-	tid.computeAndCacheHex()
+	tid.cacheHex()
 	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
 }
 
@@ -1336,24 +1369,23 @@ func TestSpanIDHexEncoded(t *testing.T) {
 
 func TestSpanProcessTags(t *testing.T) {
 	testCases := []struct {
-		name    string
-		enabled bool
+		name     string
+		enabled  bool
+		protocol float64
 	}{
-		{
-			name:    "disabled",
-			enabled: false,
-		},
-		{
-			name:    "enabled",
-			enabled: true,
-		},
+		{name: "v0.4/disabled", enabled: false, protocol: traceProtocolV04},
+		{name: "v0.4/enabled", enabled: true, protocol: traceProtocolV04},
+		{name: "v1/disabled", enabled: false, protocol: traceProtocolV1},
+		{name: "v1/enabled", enabled: true, protocol: traceProtocolV1},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", strconv.FormatBool(tc.enabled))
 			processtags.Reload()
-			tracer, transport, flush, stop, err := startTestTracer(t)
+			tracer, transport, flush, stop, err := startTestTracer(t, func(c *config) {
+				c.internalConfig.SetTraceProtocol(tc.protocol, internalconfig.OriginCode)
+			})
 			assert.NoError(t, err)
 			t.Cleanup(stop)
 
@@ -1375,14 +1407,11 @@ func TestSpanProcessTags(t *testing.T) {
 			root := traces[0][0]
 			assert.Equal(t, "p", root.name)
 			if tc.enabled {
-				v, _ := root.meta.Get("_dd.tags.process")
-				assert.NotEmpty(t, v)
+				assertProcessTags(t, traces)
 			} else {
-				assert.False(t, root.meta.Has("_dd.tags.process"))
-			}
-
-			for _, s := range traces[0][1:] {
-				assert.False(t, s.meta.Has("_dd.tags.process"))
+				for _, s := range traces[0] {
+					assert.False(t, s.meta.Has("_dd.tags.process"))
+				}
 			}
 		})
 	}

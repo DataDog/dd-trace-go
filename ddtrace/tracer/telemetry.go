@@ -58,7 +58,6 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "trace_peer_service_defaults_enabled", Value: c.internalConfig.PeerServiceDefaultsEnabled()},
 		{Name: "orchestrion_enabled", Value: orchestrion.Enabled(), Origin: telemetry.OriginCode},
 		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
-		c.globalTags.toTelemetry(),
 		c.traceSampleRules.toTelemetry(),
 		{Name: "span_sample_rules", Value: c.spanRules},
 	}
@@ -82,9 +81,6 @@ func startTelemetry(c *config) telemetry.Client {
 	}
 	for k, v := range c.internalConfig.ServiceMappings() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "service_mapping_" + k, Value: v})
-	}
-	for k, v := range c.globalTags.get() {
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "global_tag_" + k, Value: v})
 	}
 	rules := append(c.spanRules, c.traceRules...)
 	for _, rule := range rules {

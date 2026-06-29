@@ -215,3 +215,32 @@ func assertTelemetryReport(t *testing.T, cfgs []telemetry.Configuration, name st
 	}
 	t.Errorf("expected telemetry report Name=%q Value=%v Origin=%v not found in %v", name, value, origin, cfgs)
 }
+
+func TestEqualMap(t *testing.T) {
+	t.Run("equal regardless of order", func(t *testing.T) {
+		assert.True(t, equalMap(map[string]any{"a": "1", "b": "2"}, map[string]any{"b": "2", "a": "1"}))
+	})
+	t.Run("different length", func(t *testing.T) {
+		assert.False(t, equalMap(map[string]any{"a": "1"}, map[string]any{"a": "1", "b": "2"}))
+	})
+	t.Run("different value", func(t *testing.T) {
+		assert.False(t, equalMap(map[string]any{"a": "1"}, map[string]any{"a": "2"}))
+	})
+	t.Run("missing key", func(t *testing.T) {
+		assert.False(t, equalMap(map[string]any{"a": "1"}, map[string]any{"b": "1"}))
+	})
+	t.Run("empty and nil are equal", func(t *testing.T) {
+		assert.True(t, equalMap(map[string]any{}, map[string]any{}))
+		assert.True(t, equalMap[string](nil, nil))
+		assert.True(t, equalMap(nil, map[string]any{}))
+	})
+	t.Run("non-comparable values do not panic", func(t *testing.T) {
+		// WithGlobalTag accepts any value, including slices, on which == would
+		// panic; equalMap must compare them with reflect.DeepEqual instead.
+		a := map[string]any{"k": []string{"x", "y"}}
+		b := map[string]any{"k": []string{"x", "y"}}
+		assert.True(t, equalMap(a, b))
+		c := map[string]any{"k": []string{"x", "z"}}
+		assert.False(t, equalMap(a, c))
+	})
+}

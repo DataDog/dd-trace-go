@@ -83,6 +83,8 @@ var (
 
 	// ciVisibilitySkippables contains the CI Visibility skippable tests for this session
 	ciVisibilitySkippables map[string]map[string][]net.SkippableResponseDataAttributes
+	// ciVisibilitySkippablesResponse contains the full skippable-tests response for this session.
+	ciVisibilitySkippablesResponse *net.SkippableTestsResponse
 
 	// ciVisibilityTestManagementTests contains the CI Visibility test management tests for this session
 	ciVisibilityTestManagementTests net.TestManagementTestsResponseDataModules
@@ -211,6 +213,12 @@ func ensureSettingsInitialization(serviceName string) {
 			ciSettings.ImpactedTestsEnabled = false
 		}
 
+		// check if code coverage report upload is disabled by env-vars
+		if ciSettings.CoverageReportUploadEnabled && !internal.BoolEnv(constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable, true) {
+			log.Warn("civisibility: code coverage report upload was disabled by the environment variable")
+			ciSettings.CoverageReportUploadEnabled = false
+		}
+
 		// check if test management is disabled by env-vars
 		if ciSettings.TestManagement.Enabled && !internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
 			log.Warn("civisibility: test management was disabled by the environment variable")
@@ -300,6 +308,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 		// set the default values for the additional tags
 		additionalTags[constants.LibraryCapabilitiesEarlyFlakeDetection] = "1"
 		additionalTags[constants.LibraryCapabilitiesAutoTestRetries] = "1"
+		additionalTags[constants.LibraryCapabilitiesCoverageReportUpload] = "1"
 		additionalTags[constants.LibraryCapabilitiesTestImpactAnalysis] = "1"
 		additionalTags[constants.LibraryCapabilitiesTestManagementQuarantine] = "1"
 		additionalTags[constants.LibraryCapabilitiesTestManagementDisable] = "1"
@@ -346,13 +355,14 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 		if currentSettings.TestsSkipping {
 			wg.Go(func() {
 				// get the skippable tests
-				correlationID, skippableTests, err := ciVisibilityClient.GetSkippableTests()
+				response, err := ciVisibilityClient.GetSkippableTests()
 				if err != nil {
 					log.Error("civisibility: error getting CI visibility skippable tests: %s", err.Error())
-				} else if skippableTests != nil {
-					log.Debug("civisibility: skippable tests loaded: %d suites", len(skippableTests))
-					setAdditionalTags(constants.ItrCorrelationIDTag, correlationID)
-					ciVisibilitySkippables = skippableTests
+				} else if response != nil {
+					log.Debug("civisibility: skippable tests loaded: %d suites", len(response.Skippables))
+					setAdditionalTags(constants.ItrCorrelationIDTag, response.CorrelationID)
+					ciVisibilitySkippables = response.Skippables
+					ciVisibilitySkippablesResponse = response
 				}
 			})
 		}
@@ -421,6 +431,13 @@ func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttrib
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return ciVisibilitySkippables
+}
+
+// GetSkippableTestsResponse gets the full skippable-tests response from the backend.
+func GetSkippableTestsResponse() *net.SkippableTestsResponse {
+	// call to ensure the additional features initialization is completed (service name can be null here)
+	ensureAdditionalFeaturesInitialization("")
+	return ciVisibilitySkippablesResponse
 }
 
 // GetImpactedTestsAnalyzer gets the impacted tests analyzer

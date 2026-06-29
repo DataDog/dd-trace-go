@@ -1,0 +1,172 @@
+name: Build Metrics
+
+# Build Metrics Workflow
+#
+# Measures build time and binary size for representative Orchestrion integration samples
+# built two ways from identical source:
+#   - Standard Go toolchain (go test -c)
+#   - Orchestrion (go test -c -toolexec='orchestrion toolexec')
+#
+# Key features:
+# - Cold cache measurement: cleans build cache before each measurement to capture full compilation cost
+# - Warm module cache: runs go mod download (untimed) so measurement reflects compilation, not network
+# - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
+# - Runs on: Pull requests (when this file, scripts/*, orchestrion.yml, or any go.mod changes) and pushes to main
+# - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version
+#
+# Dashboard: View trends in Datadog CI Visibility (filter @git.branch:main, split by build.toolchain)
+# Monitor: Alerts on binary size or build time regressions >5% (size) or >25% (duration) vs main baseline
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/build-metrics.yml
+      - scripts/measure_build.sh
+      - scripts/publish_build_metrics.sh
+      - '**/orchestrion.yml'
+      - '**/go.mod'
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-metrics.yml
+      - scripts/measure_build.sh
+      - scripts/publish_build_metrics.sh
+      - '**/orchestrion.yml'
+      - '**/go.mod'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-metrics:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [standard, orchestrion]
+        sample:
+          - 99designs.gqlgen
+          - aws.v1
+          - aws.v2
+          - chi.v5
+          - civisibility
+          - civisibility_failnow
+          - civisibility_failnow_benchmark
+          - civisibility_failnow_retry
+          - confluent-kafka-go.v1
+          - confluent-kafka-go.v2
+          - dd-span
+          - echo.v4
+          - fiber.v2
+          - gcp_pubsub.v1
+          - gcp_pubsub.v2
+          - gin
+          - gls
+          - gls-leak
+          - go-elasticsearch
+          - go-redis.v0
+          - go-redis.v7
+          - go-redis.v8
+          - go-redis.v9
+          - gocql
+          - gorilla_mux
+          - gorm
+          - graph-gophers
+          - graphql-go
+          - grpc
+          - ibm_sarama
+          - julienschmidt_httprouter
+          - k8s_client_go
+          - logrus
+          - mongo
+          - mongo.v2
+          - net_http
+          - os
+          - parallel_testing_retries
+          - pgx
+          - redigo
+          - rueidis
+          - segmentio_kafka.v0
+          - shopify_sarama
+          - slog
+          - sql
+          - twirp
+          - twirp_quantize
+          - twmb_franz_go
+          - valkey-go
+          - valyala_fasthttp
+          - vault
+          - zerolog
+    runs-on: ubuntu-latest
+    name: Build Metrics (${{ matrix.sample }}, ${{ matrix.mode }})
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: stable
+          cache: false  # Cold build cache for accurate measurements
+          check-latest: true
+
+      - name: Measure build
+        id: measure
+        run: ./scripts/measure_build.sh --sample ${{ matrix.sample }} --mode ${{ matrix.mode }} --output "$RUNNER_TEMP/metrics.json"
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-metrics-${{ matrix.sample }}-${{ matrix.mode }}
+          path: ${{ runner.temp }}/metrics.json
+          if-no-files-found: error
+          retention-days: 7
+
+      # ---- Publish to Datadog: main repo only (forks lack OIDC) ----
+      - name: Get Datadog credentials
+        id: dd-sts
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+        continue-on-error: true
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        with:
+          policy: dd-trace-go
+
+      # Install datadog-ci using the same pattern as dd-ci-upload action
+      - name: Set datadog-ci platform
+        if: steps.dd-sts.outcome == 'success'
+        run: echo "DD_CI_CLI_BUILD=linux-x64" >> "$GITHUB_ENV"
+
+      - name: Cache datadog-ci
+        if: steps.dd-sts.outcome == 'success'
+        id: dd-ci-cli-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ./datadog-ci
+          key: datadog-ci-cli-${{ env.DD_CI_CLI_BUILD }}
+
+      - name: Install datadog-ci
+        if: steps.dd-sts.outcome == 'success' && steps.dd-ci-cli-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" --output datadog-ci
+          chmod +x datadog-ci
+
+      - name: Add datadog-ci to PATH
+        if: steps.dd-sts.outcome == 'success'
+        run: echo "${{ github.workspace }}" >> "$GITHUB_PATH"
+
+      - name: Publish measures to CI Visibility
+        if: steps.dd-sts.outcome == 'success'
+        env:
+          DATADOG_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DATADOG_SITE: datadoghq.com
+          METRICS_FILE: ${{ runner.temp }}/metrics.json
+        run: ./scripts/publish_build_metrics.sh
