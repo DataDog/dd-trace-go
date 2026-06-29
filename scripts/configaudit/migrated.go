@@ -18,11 +18,12 @@ import (
 // providerGetterPrefixes are the method names on *provider.Provider that read
 // a DD_* config value. Keep in sync with internal/config/provider/provider.go.
 var providerGetterPrefixes = []string{
-	"GetString", "GetStringWithValidator",
-	"GetBool",
+	"GetString", "GetStringWithValidator", "GetStringWithOrigin",
+	"GetBool", "GetBoolWithOrigin",
 	"GetInt", "GetIntWithValidator",
 	"GetFloat", "GetFloatWithValidator", "GetFloatWithValidatorOrigin",
 	"GetDuration",
+	"GetMap",
 }
 
 func isProviderGetter(name string) bool {

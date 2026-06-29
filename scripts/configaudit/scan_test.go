@@ -55,7 +55,7 @@ func TestScan_RealRepoFindsUnmigratedReads(t *testing.T) {
 	// and is outside the tracer migration scope, so it should always appear as
 	// an unmigrated call site.
 	root := filepath.Join("..", "..")
-	got, err := scan(root, defaultRecognizers(), defaultExcludes(root))
+	got, err := scan(root, defaultRecognizers(), defaultExcludes())
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}

@@ -57,7 +57,7 @@ func defaultRecognizers() recognizers {
 	}
 }
 
-func defaultExcludes(root string) []string {
+func defaultExcludes() []string {
 	// Patterns are matched as a substring of the file path returned by go/packages.
 	return []string{
 		"/internal/config/",
@@ -114,7 +114,15 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 					return true
 				}
 				pos := pkg.Fset.Position(call.Pos())
-				if suppressed[pos.Line] {
+				end := pkg.Fset.Position(call.End())
+				isSuppressed := false
+				for line := pos.Line; line <= end.Line; line++ {
+					if suppressed[line] {
+						isSuppressed = true
+						break
+					}
+				}
+				if isSuppressed {
 					return true
 				}
 				out[key] = append(out[key], CallSite{
@@ -130,6 +138,25 @@ func scan(root string, r recognizers, exclude []string) (map[string][]CallSite, 
 	return out, nil
 }
 
+// hasNolintConfigaudit reports whether text is a nolint comment that names
+// configaudit as one of its linters (e.g. "//nolint:configaudit" or
+// "// nolint:foo,configaudit").
+func hasNolintConfigaudit(text string) bool {
+	text = strings.TrimSpace(strings.TrimLeft(text, "/"))
+	if !strings.HasPrefix(text, "nolint:") {
+		return false
+	}
+	for _, seg := range strings.Split(strings.TrimPrefix(text, "nolint:"), ",") {
+		// A linter name ends at the first whitespace; anything after (reason
+		// text, em dashes, etc.) is not part of the name.
+		fields := strings.Fields(strings.TrimSpace(seg))
+		if len(fields) > 0 && fields[0] == "configaudit" {
+			return true
+		}
+	}
+	return false
+}
+
 // suppressedLines returns the set of 1-based line numbers in file that carry
 // a //nolint:configaudit annotation. Calls on those lines are intentionally
 // not migrated and are excluded from the audit output.
@@ -137,7 +164,7 @@ func suppressedLines(file *ast.File, pkg *packages.Package) map[int]bool {
 	out := map[int]bool{}
 	for _, cg := range file.Comments {
 		for _, c := range cg.List {
-			if strings.Contains(c.Text, "nolint:configaudit") {
+			if hasNolintConfigaudit(c.Text) {
 				out[pkg.Fset.Position(c.Pos()).Line] = true
 			}
 		}

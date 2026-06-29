@@ -38,7 +38,7 @@ func run(root, format, pkgPrefix string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	reads, err := scan(root, defaultRecognizers(), defaultExcludes(root))
+	reads, err := scan(root, defaultRecognizers(), defaultExcludes())
 	if err != nil {
 		return err
 	}
