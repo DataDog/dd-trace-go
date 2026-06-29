@@ -55,6 +55,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2"                 // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes"              // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2"                         // integration
+	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2"                         // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/log/slog/v2"                                 // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/v2"                                 // integration
 	_ "github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2"                        // integration

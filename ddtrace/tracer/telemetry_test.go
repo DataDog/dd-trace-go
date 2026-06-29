@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 	"github.com/DataDog/dd-trace-go/v2/profiler"
@@ -31,7 +32,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			if r.URL.Path == "/info" {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"endpoints": ["/v0.4/traces", "/v0.6/stats"],"client_drop_p0s":true}`))
+				w.Write([]byte(`{"endpoints": ["/v1.0/traces", "/v0.6/stats"],"client_drop_p0s":true}`))
 				return
 			}
 			w.WriteHeader(http.StatusOK)
@@ -169,18 +170,24 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "service", "test-serv")
 	})
 	t.Run("orchestrion telemetry", func(t *testing.T) {
+		// orchestrion.Enabled() / orchestrion.Version are build-time linker values
+		// with no in-process override, so assertions track the actual build value.
+		// The enabled=true branch is exercised by internal/orchestrion/_integration/.
 		telemetryClient := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(telemetryClient)()
 
-		Start(func(c *config) {
-			c.orchestrionCfg = orchestrionConfig{
-				Enabled:  true,
-				Metadata: &orchestrionMetadata{Version: "v1337.42.0-phony"},
-			}
-		})
+		Start()
 		defer Stop()
 
-		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "orchestrion_enabled", true)
-		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "orchestrion_version", "v1337.42.0-phony")
+		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "orchestrion_enabled", orchestrion.Enabled())
+		if orchestrion.Enabled() {
+			telemetrytest.CheckConfig(t, telemetryClient.Configuration, "orchestrion_version", orchestrion.Version)
+		} else {
+			for _, cfg := range telemetryClient.Configuration {
+				if cfg.Name == "orchestrion_version" {
+					t.Fatalf("unexpected orchestrion_version telemetry entry: %+v", cfg)
+				}
+			}
+		}
 	})
 }

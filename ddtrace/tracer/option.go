@@ -16,14 +16,12 @@ import (
 	"io"
 	"maps"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -41,7 +39,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
-	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -122,15 +119,6 @@ var contribIntegrations = map[string]struct {
 	"github.com/valkey-io/valkey-go":                {"Valkey", false},
 }
 
-var (
-	// defaultSocketDSD specifies the socket path to use for connecting to the statsd server.
-	// Replaced in tests
-	defaultSocketDSD = "/var/run/datadog/dsd.socket"
-
-	// defaultStatsdPort specifies the default port to use for connecting to the statsd server.
-	defaultStatsdPort = "8125"
-)
-
 // Supported trace protocols.
 const (
 	traceProtocolV04 = internalconfig.TraceProtocolV04
@@ -158,20 +146,8 @@ type config struct {
 	// if they have a version of the library available to integrate.
 	integrations map[string]integrationConfig
 
-	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon
-	// failure.
-	sendRetries int
-
-	// universalVersion, reports whether span service name and config service name
-	// should match to set application version tag. False by default
-	universalVersion bool
-
 	// sampler specifies the sampler that will be used for sampling traces.
 	sampler RateSampler
-
-	// globalTags holds a set of tags that will be automatically applied to
-	// all spans.
-	globalTags dynamicConfig[map[string]any]
 
 	// ddTransport specifies the Datadog transport used to send msgpack traces and stats to the agent.
 	ddTransport ddTransport
@@ -185,11 +161,6 @@ type config struct {
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
 	logger Logger
-
-	// dogstatsdAddr specifies the address to connect for sending metrics to the
-	// Datadog Agent. If not set, it defaults to "localhost:8125" or to the
-	// combination of the environment variables DD_AGENT_HOST and DD_DOGSTATSD_PORT.
-	dogstatsdAddr string
 
 	// statsdClient is set when a user provides a custom statsd client for tracking metrics
 	// associated with the runtime and the tracer.
@@ -210,15 +181,8 @@ type config struct {
 	// enabled reports whether tracing is enabled.
 	enabled dynamicConfig[bool]
 
-	// orchestrionCfg holds Orchestrion (aka auto-instrumentation) configuration.
-	// Only used for telemetry currently.
-	orchestrionCfg orchestrionConfig
-
 	// traceSampleRules holds the trace sampling rules
 	traceSampleRules dynamicConfig[[]SamplingRule]
-
-	// headerAsTags holds the header as tags configuration.
-	headerAsTags dynamicConfig[[]string]
 
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
@@ -230,21 +194,6 @@ type config struct {
 	spanPoolEnabled bool
 }
 
-// orchestrionConfig contains Orchestrion configuration.
-type (
-	orchestrionConfig struct {
-		// Enabled indicates whether this tracer was instanciated via Orchestrion.
-		Enabled bool `json:"enabled"`
-
-		// Metadata holds Orchestrion specific metadata (e.g orchestrion version, mode (toolexec or manual) etc..)
-		Metadata *orchestrionMetadata `json:"metadata,omitempty"`
-	}
-	orchestrionMetadata struct {
-		// Version is the version of the orchestrion tool that was used to instrument the application.
-		Version string `json:"version,omitempty"`
-	}
-)
-
 // StartOption represents a function that can be provided as a parameter to Start.
 type StartOption func(*config)
 
@@ -253,14 +202,6 @@ type StartOption func(*config)
 func newConfig(opts ...StartOption) (*config, error) {
 	c := new(config)
 	c.internalConfig = internalconfig.CreateNew()
-
-	// If this was built with a recent-enough version of Orchestrion, force the orchestrion config to
-	// the baked-in values. We do this early so that opts can be used to override the baked-in values,
-	// which is necessary for some tests to work properly.
-	c.orchestrionCfg.Enabled = orchestrion.Enabled()
-	if orchestrion.Version != "" {
-		c.orchestrionCfg.Metadata = &orchestrionMetadata{Version: orchestrion.Version}
-	}
 
 	c.sampler = NewAllSampler()
 
@@ -271,21 +212,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		if err := c.internalConfig.HostnameLookupError(); err != nil {
 			return c, fmt.Errorf("unable to look up hostname: %s", err.Error())
 		}
-	}
-	c.headerAsTags = newDynamicConfig("trace_header_tags", nil, setHeaderTags, equalSlice[string])
-	if v := env.Get("DD_TRACE_HEADER_TAGS"); v != "" {
-		c.headerAsTags.update(strings.Split(v, ","), telemetry.OriginEnvVar)
-		// Required to ensure that the startup header tags are set on reset.
-		c.headerAsTags.setStartup(c.headerAsTags.get())
-	}
-	if v := getDDorOtelConfig("resourceAttributes"); v != "" {
-		tags := internal.ParseTagString(v)
-		internal.CleanGitMetadataTags(tags)
-		for key, val := range tags {
-			WithGlobalTag(key, val)(c)
-		}
-		// TODO: should we track the origin of these tags individually?
-		c.globalTags.setOrigin(telemetry.OriginEnvVar)
 	}
 	c.enabled = newDynamicConfig("tracing_enabled", internal.BoolVal(getDDorOtelConfig("enabled"), true), func(_ bool) bool { return true }, equal[bool])
 	if _, ok := env.Lookup("DD_TRACE_ENABLED"); ok {
@@ -308,6 +234,18 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 		fn(c)
 	}
+	// The experimental span pool and Orchestrion's GLS weave are mutually
+	// exclusive. Span pooling recycles a finished span via sync.Pool; under
+	// Orchestrion that span may still be referenced from a goroutine-local
+	// storage (GLS) stack whose stale entry has not been drained, so reusing it
+	// can resurface a recycled span or leak the entry (see orchestrion#782).
+	// Until the reclaim signal is decoupled from the pooled span, disable
+	// pooling when Orchestrion is active and warn once. Checked after the option
+	// loop so an explicit WithSpanPool(true) is gated too.
+	if shouldDisableSpanPool(c.spanPoolEnabled, orchestrion.Enabled()) {
+		c.spanPoolEnabled = false
+		log.Warn("the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED / WithSpanPool) is incompatible with Orchestrion and has been disabled")
+	}
 	rawAgentURL := c.internalConfig.RawAgentURL()
 	if c.httpClient == nil || orchestrion.Enabled() {
 		if orchestrion.Enabled() && c.httpClient != nil {
@@ -324,18 +262,25 @@ func newConfig(opts ...StartOption) (*config, error) {
 		}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
-	globalTags := c.globalTags.get()
+	// TODO: env/version/service fall back to global tags when unset. This runs
+	// here (after options) rather than in loadConfig because programmatic
+	// WithGlobalTag tags — which outrank DD_TAGS — are only applied once the
+	// StartOptions have run. Once env/version/service carry origin information
+	// through internal/config, this fallback can move into loadConfig and resolve
+	// precedence without the tracer's involvement.
+	globalTags := c.internalConfig.GlobalTags()
+	_, globalTagsOrigin := c.internalConfig.GlobalTagsConfig().Baseline()
 	if c.internalConfig.Env() == "" {
 		if v, ok := globalTags["env"]; ok {
 			if e, ok := v.(string); ok {
-				c.internalConfig.SetEnv(e, c.globalTags.Origin(), internalconfig.ProductTracer)
+				c.internalConfig.SetEnv(e, globalTagsOrigin, internalconfig.ProductTracer)
 			}
 		}
 	}
 	if c.internalConfig.Version() == "" {
 		if v, ok := globalTags["version"]; ok {
 			if ver, ok := v.(string); ok {
-				c.internalConfig.SetVersion(ver, c.globalTags.Origin(), internalconfig.ProductTracer)
+				c.internalConfig.SetVersion(ver, globalTagsOrigin, internalconfig.ProductTracer)
 			}
 		}
 	}
@@ -343,7 +288,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	if c.internalConfig.ServiceName() == "" {
 		if v, ok := globalTags["service"]; ok {
 			if s, ok := v.(string); ok {
-				c.internalConfig.SetServiceName(s, c.globalTags.Origin(), internalconfig.ProductTracer)
+				c.internalConfig.SetServiceName(s, globalTagsOrigin, internalconfig.ProductTracer)
 				globalconfig.SetServiceName(s)
 			}
 		} else {
@@ -388,7 +333,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.agent.store(af)
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4
 	// Also downgrade if CSS is disabled, as v1 is not compatible without CSS.
-	if c.internalConfig.TraceProtocol() == traceProtocolV04 || !af.v1ProtocolAvailable || !c.internalConfig.StatsComputationEnabled() {
+	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 		if t, ok := c.ddTransport.(*httpTransport); ok && t.traceURL == agentURL.String()+tracesAPIPathV1 {
 			t.traceURL = agentURL.String() + tracesAPIPath
@@ -402,21 +347,18 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.loadContribIntegrations(info.Deps)
 	}
 	if c.statsdClient == nil {
-		// configure statsd client
-		addr := resolveDogstatsdAddr(c.dogstatsdAddr, af, defaultSocketDSD)
-		globalconfig.SetDogstatsdAddr(addr)
-		c.dogstatsdAddr = addr
+		// Push the agent-reported StatsdPort into internal/config so it can
+		// fill in the resolved port if no other source provided one. Then
+		// mirror the resolved value into globalconfig for contrib readers.
+		c.internalConfig.ApplyAgentReportedStatsdPort(af.StatsdPort)
+		globalconfig.SetDogstatsdAddr(c.internalConfig.DogstatsdAddr())
 	}
-	// Re-initialize the globalTags config with the value constructed from the environment and start options
-	// This allows persisting the initial value of globalTags for future resets and updates.
-	globalTagsOrigin := c.globalTags.Origin()
-	c.initGlobalTags(c.globalTags.get(), globalTagsOrigin)
 	if tracingEnabled, _, _ := stableconfig.Bool("DD_APM_TRACING_ENABLED", true); !tracingEnabled {
 		apmTracingDisabled(c)
 	}
 	// Update the llmobs config with stuff needed from the tracer.
 	c.llmobs.TracerConfig = llmobsconfig.TracerConfig{
-		DDTags:     c.globalTags.get(),
+		DDTags:     c.internalConfig.GlobalTags(),
 		Env:        c.internalConfig.Env(),
 		Service:    c.internalConfig.ServiceName(),
 		Version:    c.internalConfig.Version(),
@@ -433,6 +375,16 @@ func newConfig(opts ...StartOption) (*config, error) {
 	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
 
 	return c, nil
+}
+
+// shouldDisableSpanPool reports whether the experimental span pool must be
+// turned off because Orchestrion's GLS weave is active. The two are mutually
+// exclusive: pooling can recycle a finished span whose stale GLS entry has not
+// yet been drained, which the GLS reclaim path does not yet tolerate
+// (orchestrion#782). It is a pure helper so the gate is unit-testable without an
+// Orchestrion build (orchestrion.Enabled() is a build-time constant).
+func shouldDisableSpanPool(spanPoolEnabled, orchestrionEnabled bool) bool {
+	return spanPoolEnabled && orchestrionEnabled
 }
 
 func llmobsAgentlessEnabledFromEnv() *bool {
@@ -471,66 +423,14 @@ func resolveTraceTransport(cfg *internalconfig.Config) (traceURL string, headers
 	return traceURL, datadogHeaders()
 }
 
-// resolveDogstatsdAddr resolves the Dogstatsd address to use with the following
-// priority order:
-//  1. Explicitly configured address via WithDogstatsdAddr.
-//  2. Environment variables DD_DOGSTATSD_HOST (or DD_AGENT_HOST) and DD_DOGSTATSD_PORT.
-//  3. Auto-discovery: UDS socket at /var/run/datadog/dsd.socket, agent-reported port,
-//     or the default localhost:8125.
-func resolveDogstatsdAddr(configAddr string, af agentFeatures, socketDSDPath string) string {
-	// 1. User explicitly set address via WithDogstatsdAddr; honor it as-is.
-	if configAddr != "" {
-		return configAddr
-	}
-
-	// 2. Build address from dogstatsd-specific environment variables.
-	// DD_AGENT_HOST is only used as a host fallback when DD_DOGSTATSD_HOST or
-	// DD_DOGSTATSD_PORT is set — on its own it does not trigger this path.
-	envHost := env.Get("DD_DOGSTATSD_HOST")
-	envPort := env.Get("DD_DOGSTATSD_PORT")
-	if envHost != "" || envPort != "" {
-		host := envHost
-		if host == "" {
-			host = env.Get("DD_AGENT_HOST")
-		}
-		if host == "" {
-			host = defaultHostname
-		}
-		// For the port, prefer the env var, then the agent-reported port
-		// (loaded from the trace-agent /info endpoint), then the default.
-		port := envPort
-		if port == "" && af.StatsdPort != 0 {
-			port = strconv.Itoa(af.StatsdPort)
-		} else if port == "" {
-			port = defaultStatsdPort
-		}
-		return net.JoinHostPort(host, port)
-	}
-
-	// 3. No user configuration at all — auto-discover.
-	// Check for the UDS socket first; this is the preferred transport when available.
-	if _, err := os.Stat(socketDSDPath); err == nil {
-		return "unix://" + socketDSDPath
-	}
-	// For TCP, use DD_AGENT_HOST as the hostname if available, otherwise localhost.
-	host := env.Get("DD_AGENT_HOST")
-	if host == "" {
-		host = defaultHostname
-	}
-	// Use the agent-reported port if available. Agent features are loaded from
-	// the trace-agent, which may not be running — in that case StatsdPort is 0.
-	if af.StatsdPort != 0 {
-		return net.JoinHostPort(host, strconv.Itoa(af.StatsdPort))
-	}
-	// Fall back to default port 8125.
-	return net.JoinHostPort(host, defaultStatsdPort)
-}
-
 func newStatsdClient(c *config) (internal.StatsdClient, error) {
+	if !c.internalConfig.InternalMetricsEnabled() {
+		return &statsd.NoOpClientDirect{}, nil
+	}
 	if c.statsdClient != nil {
 		return c.statsdClient, nil
 	}
-	return internal.NewStatsdClient(c.dogstatsdAddr, statsTags(c))
+	return internal.NewStatsdClient(c.internalConfig.DogstatsdAddr(), statsTags(c))
 }
 
 type integrationConfig struct {
@@ -796,7 +696,8 @@ func statsTags(c *config) []string {
 	if v := c.internalConfig.Hostname(); v != "" {
 		tags = append(tags, "host:"+v)
 	}
-	for k, v := range c.globalTags.get() {
+	globalTags := c.internalConfig.GlobalTags()
+	for k, v := range globalTags {
 		if vstr, ok := v.(string); ok {
 			tags = append(tags, k+":"+vstr)
 		}
@@ -888,7 +789,7 @@ func WithLambdaMode(enabled bool) StartOption {
 // most `retries` times.
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
-		c.sendRetries = retries
+		c.internalConfig.SetSendRetries(retries, telemetry.OriginCode)
 	}
 }
 
@@ -1011,25 +912,8 @@ func WithPeerServiceMapping(from, to string) StartOption {
 // created by tracer. This option may be used multiple times.
 func WithGlobalTag(k string, v any) StartOption {
 	return func(c *config) {
-		if c.globalTags.get() == nil {
-			c.initGlobalTags(map[string]any{}, telemetry.OriginDefault)
-		}
-		c.globalTags.set(func(current map[string]any) map[string]any {
-			current[k] = v
-			return current
-		})
+		c.internalConfig.SetGlobalTag(k, v, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
-}
-
-// initGlobalTags initializes the globalTags config with the provided init value
-func (c *config) initGlobalTags(init map[string]any, origin telemetry.Origin) {
-	apply := func(tags map[string]any) bool {
-		// always set the runtime ID on updates
-		tags[ext.RuntimeID] = globalconfig.RuntimeID()
-		return true
-	}
-	c.globalTags = newDynamicConfig("trace_tags", init, apply, equalMap[string])
-	c.globalTags.setOrigin(origin)
 }
 
 // WithSampler sets the given sampler to be used with the tracer. By default
@@ -1107,8 +991,7 @@ func WithRuntimeMetrics() StartOption {
 // This option is in effect when WithRuntimeMetrics is enabled.
 func WithDogstatsdAddr(addr string) StartOption {
 	return func(cfg *config) {
-		cfg.dogstatsdAddr = addr
-		globalconfig.SetDogstatsdAddr(addr)
+		cfg.internalConfig.SetDogstatsdAddr(addr, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1132,7 +1015,7 @@ func WithSamplingRules(rules []SamplingRule) StartOption {
 func WithServiceVersion(version string) StartOption {
 	return func(cfg *config) {
 		cfg.internalConfig.SetVersion(version, telemetry.OriginCode, internalconfig.ProductTracer)
-		cfg.universalVersion = false
+		cfg.internalConfig.SetUniversalVersion(false, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1142,7 +1025,7 @@ func WithServiceVersion(version string) StartOption {
 func WithUniversalVersion(version string) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetVersion(version, telemetry.OriginCode, internalconfig.ProductTracer)
-		c.universalVersion = true
+		c.internalConfig.SetUniversalVersion(true, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1364,8 +1247,7 @@ func WithStartSpanConfig(cfg *StartSpanConfig) StartSpanOption {
 // Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
 func WithHeaderTags(headerAsTags []string) StartOption {
 	return func(c *config) {
-		c.headerAsTags = newDynamicConfig("trace_header_tags", headerAsTags, setHeaderTags, equalSlice[string])
-		setHeaderTags(headerAsTags)
+		c.internalConfig.SetHeaderAsTags(headerAsTags, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 
@@ -1481,7 +1363,7 @@ func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 }
 
 func (t *dummyTransport) endpoint() string {
-	return "http://localhost:9/v0.4/traces"
+	return "http://localhost:9/v1.0/traces"
 }
 
 func decode(p payloadReader) (spanLists, []uint64, error) {
@@ -1558,21 +1440,6 @@ func (t *dummyTransport) TraceIDs() []uint64 {
 	ids := t.traceIDs
 	t.traceIDs = nil
 	return ids
-}
-
-// setHeaderTags sets the global header tags.
-// Always resets the global value and returns true.
-func setHeaderTags(headerAsTags []string) bool {
-	globalconfig.ClearHeaderTags()
-	for _, h := range headerAsTags {
-		header, tag := normalizer.HeaderTag(h)
-		if len(header) == 0 || len(tag) == 0 {
-			log.Debug("Header-tag input is in unsupported format; dropping input value %q", h)
-			continue
-		}
-		globalconfig.SetHeaderTag(header, tag)
-	}
-	return true
 }
 
 // UserMonitoringConfig is used to configure what is used to identify a user.

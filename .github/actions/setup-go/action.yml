@@ -13,7 +13,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
       with:
         go-version: ${{ inputs.go-version }}
         cache: true
@@ -21,7 +21,7 @@ runs:
 
     - name: Cache tools
       id: cache-tools
-      uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+      uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
       with:
         path: ${{ inputs.tools-bin }}
         key: ${{ runner.os }}-go-${{ inputs.go-version }}-tools-${{ inputs.tools-dir }}-${{ inputs.tools-bin}}-${{ hashFiles('**/go.mod', '**/go.sum') }}

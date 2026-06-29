@@ -34,17 +34,17 @@ jobs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
           clean: false
-      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: stable
           cache: false
@@ -84,7 +84,7 @@ jobs:
           - 8125:8125/udp
           - 8126:8126
       testagent:
-        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.11.0@sha256:e2cc1ef75f867229f332cbef162c77f0a53a38030ecb08a78e09d7886189326a
+        image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.61.1@sha256:0b428281c1ba33f4af9f81efe79330a7577c8810609a7bcd1cecf8c7de82abec
         options: >-
           --health-cmd "bash -c '</dev/tcp/127.0.0.1/9126'"
         ports:
@@ -222,12 +222,12 @@ jobs:
           - 3000:3000
     steps:
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
@@ -251,7 +251,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go
 
@@ -264,22 +264,22 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      - name: Upload Coverage
+      - name: Merge contrib coverage files
         if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          echo "mode: atomic" > coverage-contrib-merged.txt
+          find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
+            -name "coverage-*.txt" -print0 \
+            | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
 
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
-        uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage-contrib-merged.txt
           format: go-coverprofile
-          flags: contrib
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check
@@ -313,7 +313,7 @@ jobs:
       - name: Upload Trace Check Results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trace-check-results-${{ strategy.job-index }}
           path: /tmp/trace-check-results/
@@ -403,12 +403,12 @@ jobs:
           - 8126:8126
     steps:
       - name: Restore repo cache
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
         with:
           path: .git
           key: gitdb-${{ github.repository_id }}-${{ github.sha }}
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         if: always()
         with:
           persist-credentials: false
@@ -433,7 +433,7 @@ jobs:
       - name: Get Datadog credentials
         id: dd-sts
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go
 
@@ -446,22 +446,14 @@ jobs:
           path: ${{ env.TEST_RESULT_PATH }}
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
-
       - name: Upload Coverage to Datadog
         if: always()
         continue-on-error: true
-        uses: DataDog/coverage-upload-github-action@d2cf302a39c05e0ad22063360a2bf6ce0cc4906c
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
           api_key: ${{ steps.dd-sts.outputs.api_key }}
-          files: coverage.txt
+          files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
           format: go-coverprofile
-          flags: core
 
       # Check for changes in the supported_configurations.json file
       - name: Supported Configurations Diff Check

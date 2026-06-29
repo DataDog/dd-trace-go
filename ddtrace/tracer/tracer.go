@@ -35,6 +35,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelprocesscontext"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -243,6 +244,7 @@ func Start(opts ...StartOption) error {
 	if err != nil {
 		return err
 	}
+	resetBaseHashCache()
 	if !t.config.enabled.get() {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
@@ -271,7 +273,19 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	if t.config.internalConfig.RuntimeMetricsV2Enabled() {
+	otelRuntimeMetricsShouldBeEnabled := otelmetricsinstall.StartHook != nil &&
+		t.config.internalConfig.RuntimeMetricsOtelEnabled() &&
+		t.config.internalConfig.OTLPExportMetricsMode() &&
+		(t.config.internalConfig.RuntimeMetricsV2Enabled() || t.config.internalConfig.RuntimeMetricsEnabled())
+
+	if otelRuntimeMetricsShouldBeEnabled {
+		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
+			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
+		} else {
+			log.Debug("OTel runtime metrics enabled.")
+		}
+	} else if t.config.internalConfig.RuntimeMetricsV2Enabled() {
+		// DD statsd path — only when OTel runtime metrics are not active.
 		l := slog.New(slogHandler{})
 		opts := &runtimemetrics.Options{Logger: l}
 		if t.runtimeMetrics, err = runtimemetrics.NewEmitter(t.statsd, opts); err == nil {
@@ -550,7 +564,7 @@ func buildSharedAttrs(c *config, base, mainSvc *traceinternal.SpanAttributes) {
 		mainSvc.Set(traceinternal.AttrEnv, env)
 	}
 	if ver := c.internalConfig.Version(); ver != "" {
-		if c.universalVersion {
+		if c.internalConfig.UniversalVersion() {
 			base.Set(traceinternal.AttrVersion, ver)
 		}
 		// Always pre-populate mainSvc with version so that main-service spans
@@ -958,7 +972,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	// For non-universal version, promote main-service spans to the version-inclusive
 	// shared attrs before applying any tags. This makes the subsequent version write
 	// (from config or global tags) a COW no-op instead of triggering a Clone.
-	if !t.config.universalVersion && span.service == cSnap.ServiceName {
+	if !cSnap.UniversalVersion && span.service == cSnap.ServiceName {
 		span.meta.ReplaceSharedAttrs(&t.sharedAttrs, &t.sharedAttrsForMainSvc)
 	}
 
@@ -969,7 +983,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable
 
 	// add global tags
-	span.setTags(t.config.globalTags.get())
+	span.setTags(cSnap.GlobalTags)
 
 	if newSvc, ok := t.config.internalConfig.ServiceMapping(span.service); ok {
 		span.service = newSvc
@@ -977,7 +991,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	}
 
 	if cSnap.Version != "" {
-		if t.config.universalVersion || span.service == cSnap.ServiceName {
+		if cSnap.UniversalVersion || span.service == cSnap.ServiceName {
 			delete(span.metrics, ext.Version)
 			span.meta.Set(ext.Version, cSnap.Version)
 		}
@@ -1093,6 +1107,13 @@ func (t *tracer) Stop() {
 	t.traceWriter.stop()
 	if t.runtimeMetrics != nil {
 		t.runtimeMetrics.Stop()
+	}
+	if otelmetricsinstall.ShutdownHook != nil {
+		ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 5*time.Second)
+		defer cancel()
+		if err := otelmetricsinstall.ShutdownHook(ctx); err != nil {
+			log.Error("Failed to shut down OTel meter provider: %v", err.Error())
+		}
 	}
 	t.statsd.Close()
 	if t.dataStreams != nil {

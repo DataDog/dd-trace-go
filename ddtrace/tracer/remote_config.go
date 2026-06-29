@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -225,6 +226,21 @@ func (t *tags) toMap() *map[string]any {
 	return &m
 }
 
+// newRCTagsMap builds the tag map passed to GlobalTagsConfig().HandleRC,
+// always injecting the runtime ID so it ends up on every span. RC replaces the
+// whole tag map, so the runtime ID must be re-added on each update; this is
+// race-free because the map isn't shared with readers yet. Returns nil on reset
+// (t == nil), where HandleRC restores the startup baseline (which already
+// carries the runtime ID).
+func newRCTagsMap(t *tags) *map[string]any {
+	if t == nil {
+		return nil
+	}
+	m := t.toMap()
+	(*m)[ext.RuntimeID] = globalconfig.RuntimeID()
+	return m
+}
+
 // onRemoteConfigUpdate is a remote config callaback responsible for processing APM_TRACING RC-product updates.
 func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	statuses := map[string]state.ApplyStatus{}
@@ -261,14 +277,8 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	if updated {
 		telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
 	}
-	updated = t.config.headerAsTags.handleRC(merged.HeaderTags.toSlice())
-	if updated {
-		telemConfigs = append(telemConfigs, t.config.headerAsTags.toTelemetry())
-	}
-	updated = t.config.globalTags.handleRC(merged.Tags.toMap())
-	if updated {
-		telemConfigs = append(telemConfigs, t.config.globalTags.toTelemetry())
-	}
+	t.config.internalConfig.HeaderAsTagsConfig().HandleRC(merged.HeaderTags.toSlice())
+	t.config.internalConfig.GlobalTagsConfig().HandleRC(newRCTagsMap(merged.Tags))
 
 	t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled)
 

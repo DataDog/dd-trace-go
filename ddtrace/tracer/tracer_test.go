@@ -28,6 +28,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"go.uber.org/goleak"
 	"google.golang.org/protobuf/proto"
@@ -41,6 +42,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 
@@ -735,7 +737,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.NoError(t, err)
 		found := false
 		for _, log := range tp.Logs() {
-			if strings.Contains(log, "DEBUG: Runtime metrics enabled") {
+			if strings.Contains(log, "Runtime metrics") {
 				found = true
 				break
 			}
@@ -752,7 +754,7 @@ func TestTracerRuntimeMetrics(t *testing.T) {
 		assert.NoError(t, err)
 		found := false
 		for _, log := range tp.Logs() {
-			if strings.Contains(log, "DEBUG: Runtime metrics enabled") {
+			if strings.Contains(log, "Runtime metrics") {
 				found = true
 				break
 			}
@@ -970,7 +972,7 @@ func TestPropagationDefaults(t *testing.T) {
 	pctx := propagated
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, pctx.traceID)
+	assert.Equal(ctx.traceID.HexEncoded(), pctx.traceID.HexEncoded())
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
@@ -1015,7 +1017,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 	assert.Nil(err)
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, propagated.traceID)
+	assert.Equal(ctx.traceID.HexEncoded(), propagated.traceID.HexEncoded())
 	assert.Equal(ctx.spanID, propagated.spanID)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
 	assert.Equal(ctx.baggage, propagated.baggage)
@@ -1568,6 +1570,106 @@ func TestOTLPExportModeStatsSkipped(t *testing.T) {
 	assert.Equal(t, spanCount, totalSpans, "all spans should be retained in OTLP mode, not dropped by nil concentrator")
 }
 
+// TestOTLPExportModeProcessTags verifies that _dd.tags.process appears on the
+// first span of an OTLP-exported trace when process tag propagation is enabled,
+// and is absent on all spans when it is disabled. This is an end-to-end test
+// that exercises the full span lifecycle (Start → Finish → flush → OTLP encode).
+func TestOTLPExportModeProcessTags(t *testing.T) {
+	findAttr := func(attrs []*otlpcommon.KeyValue, key string) bool {
+		for _, kv := range attrs {
+			if kv.Key == key {
+				return true
+			}
+		}
+		return false
+	}
+
+	newOTLPTracer := func(t *testing.T, srv *testOTLPServer) *tracer {
+		t.Helper()
+		trc, err := newTracer(func(c *config) {
+			c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+			c.ddTransport = newDummyTransport()
+		})
+		require.NoError(t, err)
+		w := trc.traceWriter.(*otlpTraceWriter)
+		w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+		setGlobalTracer(trc)
+		t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+		return trc
+	}
+
+	decodeSpans := func(t *testing.T, payloads [][]byte) []*otlptrace.Span {
+		t.Helper()
+		var spans []*otlptrace.Span
+		for _, p := range payloads {
+			var td otlptrace.TracesData
+			require.NoError(t, proto.Unmarshal(p, &td))
+			for _, rs := range td.ResourceSpans {
+				for _, ss := range rs.ScopeSpans {
+					spans = append(spans, ss.Spans...)
+				}
+			}
+		}
+		return spans
+	}
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Cleanup(processtags.Reload)
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "true")
+		processtags.Reload()
+
+		srv := newTestOTLPServer()
+		defer srv.Close()
+		trc := newOTLPTracer(t, srv)
+
+		// Root span + child in the same trace; only the root (t.spans[0]) gets
+		// the process-tag stamp from otlpTraceWriter.add.
+		root := trc.newRootSpan("root.op", "test-svc", "/")
+		child := trc.newChildSpan("child.op", root)
+		child.Finish()
+		root.Finish()
+		trc.Stop()
+
+		spans := decodeSpans(t, srv.getPayloads())
+		require.Len(t, spans, 2)
+
+		// The root has no parent span ID; the child does.
+		var rootSpan, childSpan *otlptrace.Span
+		for _, s := range spans {
+			if len(s.ParentSpanId) == 0 {
+				rootSpan = s
+			} else {
+				childSpan = s
+			}
+		}
+		require.NotNil(t, rootSpan, "root span not found in OTLP output")
+		require.NotNil(t, childSpan, "child span not found in OTLP output")
+
+		assert.True(t, findAttr(rootSpan.Attributes, keyProcessTags),
+			"root span must carry %s when process tags are enabled", keyProcessTags)
+		assert.False(t, findAttr(childSpan.Attributes, keyProcessTags),
+			"child span must not carry %s", keyProcessTags)
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		t.Cleanup(processtags.Reload)
+		t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", "false")
+		processtags.Reload()
+
+		srv := newTestOTLPServer()
+		defer srv.Close()
+		trc := newOTLPTracer(t, srv)
+
+		trc.newRootSpan("root.op", "test-svc", "/").Finish()
+		trc.Stop()
+
+		for _, s := range decodeSpans(t, srv.getPayloads()) {
+			assert.False(t, findAttr(s.Attributes, keyProcessTags),
+				"span must not carry %s when process tags are disabled", keyProcessTags)
+		}
+	})
+}
+
 func TestTracerConcurrent(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport, flush, stop, err := startTestTracer(t)
@@ -2109,6 +2211,19 @@ func TestVersion(t *testing.T) {
 		v, _ := sp.meta.Get(ext.Version)
 		assert.Equal("4.5.6", v)
 	})
+	t.Run("env-universal", func(t *testing.T) {
+		t.Setenv("DD_SERVICE", "servenv")
+		t.Setenv("DD_VERSION", "4.5.6")
+		t.Setenv("DD_TRACE_UNIVERSAL_VERSION_ENABLED", "true")
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		assert := assert.New(t)
+		sp := tracer.StartSpan("http.request", ServiceName("otherservenv"))
+		v, _ := sp.meta.Get(ext.Version)
+		assert.Equal("4.5.6", v)
+	})
 	t.Run("service/universal", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t, WithServiceVersion("4.5.6"),
 			WithService("servenv"), WithUniversalVersion("1.2.3"))
@@ -2328,13 +2443,14 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
 // while partial flushing is enabled.
 func BenchmarkPartialFlushing(b *testing.B) {
+	addr := mockAgentEndpoint(b, "/v1.0/traces")
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
-		genBigTraces(b)
+		genBigTraces(b, WithAgentAddr(addr.Host))
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b)
+		genBigTraces(b, WithAgentAddr(addr.Host))
 	})
 }
 
