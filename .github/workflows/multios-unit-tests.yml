@@ -76,7 +76,7 @@ jobs:
       - name: Configure Datadog Test Optimization
         if: inputs.runs-on == 'ubuntu-latest' && steps.dd-sts.outputs.api_key != ''
         continue-on-error: true
-        uses: datadog/test-visibility-github-action@v2
+        uses: datadog/test-visibility-github-action@4e7afb05b464fd349275e41e65a7f4de83e7f46b # v2.10.0
         with:
           languages: go
           api_key: ${{ steps.dd-sts.outputs.api_key }}
