@@ -333,7 +333,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.agent.store(af)
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4
 	// Also downgrade if CSS is disabled, as v1 is not compatible without CSS.
-	if c.internalConfig.TraceProtocol() == traceProtocolV04 || !af.v1ProtocolAvailable || !c.internalConfig.StatsComputationEnabled() {
+	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 		if t, ok := c.ddTransport.(*httpTransport); ok && t.traceURL == agentURL.String()+tracesAPIPathV1 {
 			t.traceURL = agentURL.String() + tracesAPIPath
@@ -1363,7 +1363,7 @@ func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 }
 
 func (t *dummyTransport) endpoint() string {
-	return "http://localhost:9/v0.4/traces"
+	return "http://localhost:9/v1.0/traces"
 }
 
 func decode(p payloadReader) (spanLists, []uint64, error) {
