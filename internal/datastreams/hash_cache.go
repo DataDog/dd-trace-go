@@ -6,73 +6,58 @@
 package datastreams
 
 import (
-	"strings"
+	"encoding/binary"
+	"hash/maphash"
 	"sync"
+	"sync/atomic"
 )
 
 const (
 	maxHashCacheSize = 1000
 )
 
+// hashCache maps a fingerprint to a pathway hash. sync.Map gives lock-free reads on the per-message hot path; size bounds growth.
 type hashCache struct {
-	mu sync.RWMutex
-	m  map[string]uint64
+	m    sync.Map // map[uint64]uint64
+	size atomic.Int32
 }
 
-func getHashKey(edgeTags, processTags []string, containerTagsHash string, parentHash uint64) string {
-	var s strings.Builder
-	l := 0
-	for _, t := range edgeTags {
-		l += len(t)
-	}
-	for _, t := range processTags {
-		l += len(t)
-	}
-	l += len(containerTagsHash)
-	l += 8
-	s.Grow(l)
-	for _, t := range edgeTags {
-		s.WriteString(t)
-	}
-	for _, t := range processTags {
-		s.WriteString(t)
-	}
-	s.WriteString(containerTagsHash)
-	s.WriteByte(byte(parentHash))
-	s.WriteByte(byte(parentHash >> 8))
-	s.WriteByte(byte(parentHash >> 16))
-	s.WriteByte(byte(parentHash >> 24))
-	s.WriteByte(byte(parentHash >> 32))
-	s.WriteByte(byte(parentHash >> 40))
-	s.WriteByte(byte(parentHash >> 48))
-	s.WriteByte(byte(parentHash >> 56))
-	return s.String()
-}
+var maphashSeed = maphash.MakeSeed()
 
-func (c *hashCache) computeAndGet(key string, parentHash uint64, service, env string, edgeTags, processTags []string, containerTagsHash string) uint64 {
-	hash := pathwayHash(nodeHash(service, env, edgeTags, processTags, containerTagsHash), parentHash)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.m) >= maxHashCacheSize {
-		// high cardinality of hashes shouldn't happen in practice, due to a limited amount of topics consumed
-		// by each service.
-		c.m = make(map[string]uint64)
+// computeFingerprint returns a fast, allocation-free fingerprint for a cache lookup key.
+func computeFingerprint(edgeTags, processTags []string, containerTagsHash string, parentHash uint64) uint64 {
+	var h maphash.Hash
+	h.SetSeed(maphashSeed)
+	for _, t := range edgeTags {
+		_, _ = h.WriteString(t)
 	}
-	c.m[key] = hash
-	return hash
+	for _, t := range processTags {
+		_, _ = h.WriteString(t)
+	}
+	_, _ = h.WriteString(containerTagsHash)
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], parentHash)
+	_, _ = h.Write(b[:])
+	return h.Sum64()
 }
 
 func (c *hashCache) get(service, env string, edgeTags, processTags []string, containerTagsHash string, parentHash uint64) uint64 {
-	key := getHashKey(edgeTags, processTags, containerTagsHash, parentHash)
-	c.mu.RLock()
-	if hash, ok := c.m[key]; ok {
-		c.mu.RUnlock()
+	fp := computeFingerprint(edgeTags, processTags, containerTagsHash, parentHash)
+	if v, ok := c.m.Load(fp); ok {
+		return v.(uint64)
+	}
+	hash := pathwayHash(nodeHash(service, env, edgeTags, processTags, containerTagsHash), parentHash)
+	// Reserve a slot atomically; give it back if we'd exceed the bound or the key is already present.
+	if c.size.Add(1) > maxHashCacheSize {
+		c.size.Add(-1)
 		return hash
 	}
-	c.mu.RUnlock()
-	return c.computeAndGet(key, parentHash, service, env, edgeTags, processTags, containerTagsHash)
+	if _, loaded := c.m.LoadOrStore(fp, hash); loaded {
+		c.size.Add(-1)
+	}
+	return hash
 }
 
 func newHashCache() *hashCache {
-	return &hashCache{m: make(map[string]uint64)}
+	return &hashCache{}
 }
