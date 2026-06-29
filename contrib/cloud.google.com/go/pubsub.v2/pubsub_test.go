@@ -72,19 +72,19 @@ func TestPropagation(t *testing.T) {
 	assert.Equal(spans[1].SpanID(), spans[0].ParentID())
 	assert.Equal(uint64(42), spans[0].TraceID())
 	assert.Subset(filterTags(spans[0].Tags()), map[string]any{
-		"message_size":             float64(5),
-		"num_attributes":           float64(5),
-		"ordering_key":             "xxx",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(5),
+		ext.PubsubOrderingKey:      "xxx",
 		ext.ResourceName:           "projects/project/topics/topic",
 		ext.SpanType:               ext.SpanTypeMessageProducer,
-		"server_id":                srvID,
+		ext.PubsubServerID:         srvID,
 		ext.ServiceName:            "",
 		ext.Component:              "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:               ext.SpanKindProducer,
 		ext.MessagingSystem:        "googlepubsub",
 		ext.MessagingOperationName: "send",
 		ext.MessagingMessageID:     srvID,
-		"gcloud.project_id":        "project",
+		ext.GCPProjectID:           "project",
 		ext.SpanName:               "pubsub.publish",
 	}, spans[0].Tags())
 	assert.Equal("cloud.google.com/go/pubsub.v2", spans[0].Integration())
@@ -93,19 +93,19 @@ func TestPropagation(t *testing.T) {
 	assert.Equal(uint64(42), spans[2].TraceID())
 	assert.Equal(spanID, spans[2].SpanID())
 	assert.Subset(filterTags(spans[2].Tags()), map[string]any{
-		"message_size":             float64(5),
-		"num_attributes":           float64(5),
-		"ordering_key":             "xxx",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(5),
+		ext.PubsubOrderingKey:      "xxx",
 		ext.ResourceName:           "projects/project/subscriptions/subscription",
 		ext.SpanType:               ext.SpanTypeMessageConsumer,
-		"message_id":               msgID,
-		"publish_time":             pubTime,
+		ext.PubsubMessageID:        msgID,
+		ext.PubsubPublishTime:      pubTime,
 		ext.Component:              "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:               ext.SpanKindConsumer,
 		ext.MessagingSystem:        "googlepubsub",
 		ext.MessagingOperationName: "receive",
 		ext.MessagingMessageID:     msgID,
-		"gcloud.project_id":        "project",
+		ext.GCPProjectID:           "project",
 		ext.ServiceName:            "",
 		ext.SpanName:               "pubsub.receive",
 	}, spans[2].Tags())
@@ -175,18 +175,18 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal(spans[0].TraceID(), spans[0].SpanID())
 	assert.Equal(traceID, spans[0].Context().TraceID())
 	assert.Subset(filterTags(spans[0].Tags()), map[string]any{
-		"message_size":             float64(5),
-		"num_attributes":           float64(5),
-		"ordering_key":             "xxx",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(5),
+		ext.PubsubOrderingKey:      "xxx",
 		ext.ResourceName:           "projects/project/topics/topic",
 		ext.SpanType:               ext.SpanTypeMessageProducer,
-		"server_id":                srvID,
+		ext.PubsubServerID:         srvID,
 		ext.Component:              "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:               ext.SpanKindProducer,
 		ext.MessagingSystem:        "googlepubsub",
 		ext.MessagingOperationName: "send",
 		ext.MessagingMessageID:     srvID,
-		"gcloud.project_id":        "project",
+		ext.GCPProjectID:           "project",
 		ext.ServiceName:            "",
 		ext.SpanName:               "pubsub.publish",
 	}, spans[0].Tags())
@@ -196,19 +196,19 @@ func TestPropagationNoParentSpan(t *testing.T) {
 	assert.Equal(traceID, spans[1].Context().TraceID())
 	assert.Equal(spanID, spans[1].SpanID())
 	assert.Subset(filterTags(spans[1].Tags()), map[string]any{
-		"message_size":             float64(5),
-		"num_attributes":           float64(5),
-		"ordering_key":             "xxx",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(5),
+		ext.PubsubOrderingKey:      "xxx",
 		ext.ResourceName:           "projects/project/subscriptions/subscription",
 		ext.SpanType:               ext.SpanTypeMessageConsumer,
-		"message_id":               msgID,
-		"publish_time":             pubTime,
+		ext.PubsubMessageID:        msgID,
+		ext.PubsubPublishTime:      pubTime,
 		ext.Component:              "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:               ext.SpanKindConsumer,
 		ext.MessagingSystem:        "googlepubsub",
 		ext.MessagingOperationName: "receive",
 		ext.MessagingMessageID:     msgID,
-		"gcloud.project_id":        "project",
+		ext.GCPProjectID:           "project",
 		ext.ServiceName:            "",
 		ext.SpanName:               "pubsub.receive",
 	}, spans[1].Tags())
@@ -255,19 +255,19 @@ func TestPropagationNoPublisherSpan(t *testing.T) {
 	assert.Equal(traceID, spans[0].Context().TraceID())
 	assert.Equal(spanID, spans[0].SpanID())
 	assert.Subset(filterTags(spans[0].Tags()), map[string]any{
-		"message_size":             float64(5),
-		"num_attributes":           float64(0), // no attributes, since no publish middleware sent them
-		"ordering_key":             "xxx",
+		ext.PubsubMessageSize:      float64(5),
+		ext.PubsubNumAttributes:    float64(0), // no attributes, since no publish middleware sent them
+		ext.PubsubOrderingKey:      "xxx",
 		ext.ResourceName:           "projects/project/subscriptions/subscription",
 		ext.SpanType:               ext.SpanTypeMessageConsumer,
-		"message_id":               msgID,
-		"publish_time":             pubTime,
+		ext.PubsubMessageID:        msgID,
+		ext.PubsubPublishTime:      pubTime,
 		ext.Component:              "cloud.google.com/go/pubsub.v2",
 		ext.SpanKind:               ext.SpanKindConsumer,
 		ext.MessagingSystem:        "googlepubsub",
 		ext.MessagingOperationName: "receive",
 		ext.MessagingMessageID:     msgID,
-		"gcloud.project_id":        "project",
+		ext.GCPProjectID:           "project",
 		ext.ServiceName:            "",
 		ext.SpanName:               "pubsub.receive",
 	}, spans[0].Tags())
