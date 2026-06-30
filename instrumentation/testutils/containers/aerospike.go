@@ -24,7 +24,7 @@ func StartAerospikeTestContainer(t testing.TB) (testcontainers.Container, string
 	ctx := context.Background()
 
 	req := testcontainers.ContainerRequest{
-		Image:        "aerospike:ce-7.2.0.6",
+		Image:        "aerospike:ce-7.2.0.6@sha256:79c30951edab8878b14b650f32db416106a21d458be994344e488756fe8b651f",
 		ExposedPorts: []string{"3000/tcp"},
 		WaitingFor:   wait.ForListeningPort("3000/tcp"),
 	}
