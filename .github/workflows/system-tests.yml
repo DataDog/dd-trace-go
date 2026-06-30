@@ -85,9 +85,6 @@ jobs:
             image_artifact: haproxy-spoa-image-linux-amd64
             buildable-weblog: false
     name: Build weblog (${{ matrix.weblog-variant }})
-    env:
-      TEST_LIBRARY: golang
-      WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
     steps:
       - name: Restore repo cache
         id: restore-repo-cache
@@ -123,7 +120,7 @@ jobs:
       # regular weblog images
       - name: Build and save weblog image
         if: ${{ matrix.buildable-weblog }}
-        run: ./build.sh -i weblog --save-to-binaries
+        run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }} --save-to-binaries
 
       - name: Upload weblog image artifact
         if: ${{ matrix.buildable-weblog }}
@@ -260,8 +257,7 @@ jobs:
             scenario: APPSEC_BLOCKING
       fail-fast: false
     env:
-      TEST_LIBRARY: golang
-      WEBLOG_VARIANT: ${{ matrix.weblog-variant }}
+      SYSTEM_TESTS_WEBLOG: ${{ matrix.weblog-variant }}
     name: Test (${{ matrix.weblog-variant }}, ${{ matrix.scenario }})
     steps:
       - name: Restore repo cache
