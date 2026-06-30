@@ -1300,6 +1300,9 @@ func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesAutoTestRetries)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesAutoTestRetries))
 	}
+	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesCoverageReportUpload)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesCoverageReportUpload))
+	}
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestManagementQuarantine)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestManagementQuarantine))
 	}

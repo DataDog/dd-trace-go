@@ -213,6 +213,12 @@ func ensureSettingsInitialization(serviceName string) {
 			ciSettings.ImpactedTestsEnabled = false
 		}
 
+		// check if code coverage report upload is disabled by env-vars
+		if ciSettings.CoverageReportUploadEnabled && !internal.BoolEnv(constants.CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable, true) {
+			log.Warn("civisibility: code coverage report upload was disabled by the environment variable")
+			ciSettings.CoverageReportUploadEnabled = false
+		}
+
 		// check if test management is disabled by env-vars
 		if ciSettings.TestManagement.Enabled && !internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
 			log.Warn("civisibility: test management was disabled by the environment variable")
@@ -302,6 +308,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 		// set the default values for the additional tags
 		additionalTags[constants.LibraryCapabilitiesEarlyFlakeDetection] = "1"
 		additionalTags[constants.LibraryCapabilitiesAutoTestRetries] = "1"
+		additionalTags[constants.LibraryCapabilitiesCoverageReportUpload] = "1"
 		additionalTags[constants.LibraryCapabilitiesTestImpactAnalysis] = "1"
 		additionalTags[constants.LibraryCapabilitiesTestManagementQuarantine] = "1"
 		additionalTags[constants.LibraryCapabilitiesTestManagementDisable] = "1"

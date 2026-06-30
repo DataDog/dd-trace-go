@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -27,7 +28,6 @@ const (
 	itrBackfillReasonUnsupportedMode    = "coverage mode unsupported"
 	itrBackfillReasonNarrowingFlags     = "narrowing test flags present"
 	itrBackfillReasonBazelUnsupported   = "bazel coverage mode unsupported"
-	itrBackfillReasonResponseScope      = "skippable response outside current test process"
 	itrBackfillReasonParameterized      = "skippable response has unsupported test parameters"
 )
 
@@ -90,6 +90,12 @@ func newITRState(settings *net.SettingsResponseData) *itrState {
 		}
 	}
 
+	if state.coverageBackfillReady {
+		log.Debug("civisibility.itr: coverage backfill is ready [backend_files:%d]", len(state.response.Coverage))
+	} else if state.disabledReason != "" {
+		log.Debug("civisibility.itr: coverage backfill disabled [reason:%s]", state.disabledReason)
+	}
+
 	activeITRState.Store(state)
 	return state
 }
@@ -117,10 +123,10 @@ func (s *itrState) hasSkippableTests() bool {
 	return s != nil && s.response != nil && len(s.response.Skippables) > 0
 }
 
-// validateCoverageBackfillScope keeps response-level aggregate coverage tied to
-// the current test binary. If the skippable response contains candidates that
-// cannot be executed by this process, its meta.coverage aggregate may include
-// coverage from tests this process will never skip.
+// validateCoverageBackfillScope validates only skippable candidates that belong
+// to the current test binary. Go test package patterns run one test binary per
+// package, while the skippable-tests response is cached per repository commit
+// and can contain candidates for other packages.
 func (s *itrState) validateCoverageBackfillScope(testInfos []*testingTInfo) {
 	if s == nil || !s.coverageActive || !s.coverageBackfillReady || s.response == nil || len(s.response.Skippables) == 0 {
 		return
@@ -129,17 +135,15 @@ func (s *itrState) validateCoverageBackfillScope(testInfos []*testingTInfo) {
 	localTests := localTestLookup(testInfos)
 	for suiteName, tests := range s.response.Skippables {
 		for testName, candidates := range tests {
-			if localTests[suiteName][testName] {
-				for _, candidate := range candidates {
-					if strings.TrimSpace(candidate.Parameters) != "" {
-						s.disableCoverageBackfill(itrBackfillReasonParameterized)
-						return
-					}
-				}
+			if !localTests[suiteName][testName] {
 				continue
 			}
-			s.disableCoverageBackfill(itrBackfillReasonResponseScope)
-			return
+			for _, candidate := range candidates {
+				if strings.TrimSpace(candidate.Parameters) != "" {
+					s.disableCoverageBackfill(itrBackfillReasonParameterized)
+					return
+				}
+			}
 		}
 	}
 }
@@ -166,6 +170,7 @@ func localTestLookup(testInfos []*testingTInfo) map[string]map[string]bool {
 func (s *itrState) disableCoverageBackfill(reason string) {
 	s.coverageBackfillReady = false
 	s.disabledReason = reason
+	log.Debug("civisibility.itr: coverage backfill disabled [reason:%s]", reason)
 }
 
 func (s *itrState) decisionFor(testInfo *testingTInfo, execMeta *testExecutionMetadata, isUnskippable bool) itrSkipDecision {
@@ -236,17 +241,24 @@ func (s *itrState) actualSkipCount() int {
 func finalizeITRCoverageBackfill() (float64, bool, bool) {
 	state := currentITRState()
 	if !state.coverageActive || !state.coverageBackfillReady || state.response == nil {
+		log.Debug("civisibility.itr: coverage backfill finalization skipped [coverage_active:%t backfill_ready:%t response_available:%t reason:%s actual_skips:%d]",
+			state.coverageActive, state.coverageBackfillReady, state.response != nil, state.disabledReason, state.actualSkipCount())
 		return 0, false, true
 	}
 
+	log.Debug("civisibility.itr: finalizing coverage backfill [backend_files:%d actual_skips:%d]", len(state.response.Coverage), state.actualSkipCount())
 	coverage.ConfigureBackfill(coverage.BackfillInput{
 		BackendCoverage: state.response.Coverage,
 		ActualSkips:     state.actualSkipCount(),
 	})
 	result := coverage.FinalizeBackfill()
 	if result.Reason != "" {
+		log.Debug("civisibility.itr: coverage backfill finalization failed [reason:%s profile:%s matched_files:%d unmatched_backend_files:%d matched_blocks:%d updated_blocks:%d actual_skips:%d]",
+			result.Reason, result.ProfilePath, result.MatchedFiles, result.UnmatchedBackendFiles, result.MatchedBlocks, result.UpdatedBlocks, state.actualSkipCount())
 		return 0, false, state.actualSkipCount() == 0
 	}
+	log.Debug("civisibility.itr: coverage backfill finalized [applied:%t coverage_pct:%.2f profile:%s matched_files:%d unmatched_backend_files:%d matched_blocks:%d updated_blocks:%d actual_skips:%d]",
+		result.Applied, result.Coverage*100, result.ProfilePath, result.MatchedFiles, result.UnmatchedBackendFiles, result.MatchedBlocks, result.UpdatedBlocks, state.actualSkipCount())
 	return result.Coverage, true, true
 }
 
