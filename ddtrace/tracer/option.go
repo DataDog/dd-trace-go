@@ -40,6 +40,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -189,6 +190,10 @@ type config struct {
 
 	// spanPoolEnabled controls whether finished spans are recycled via sync.Pool.
 	spanPoolEnabled bool
+
+	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
+	// should be started instead of the DD statsd runtime metrics paths.
+	otelRuntimeMetricsShouldBeEnabled bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -366,7 +371,16 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Set global 128-bits trace ID generation variable
 	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
 
+	c.otelRuntimeMetricsShouldBeEnabled = computeOtelRuntimeMetricsShouldBeEnabled(c)
+
 	return c, nil
+}
+
+func computeOtelRuntimeMetricsShouldBeEnabled(c *config) bool {
+	return otelmetricsinstall.StartHook != nil &&
+		c.internalConfig.RuntimeMetricsOtelEnabled() &&
+		c.internalConfig.OTLPExportMetricsMode() &&
+		(c.internalConfig.RuntimeMetricsV2Enabled() || c.internalConfig.RuntimeMetricsEnabled())
 }
 
 // shouldDisableSpanPool reports whether the experimental span pool must be

@@ -1213,12 +1213,12 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := env.Get("DD_ENV"); env != "" {
+			} else if env := env.Get("DD_ENV"); env != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := env.Get("DD_VERSION"); v != "" {
+			} else if v := env.Get("DD_VERSION"); v != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}

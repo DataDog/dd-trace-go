@@ -240,6 +240,7 @@ func Start(opts ...StartOption) error {
 	defer startStopMu.Unlock()
 
 	defer reportInitTime(time.Now())
+
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err
@@ -273,12 +274,7 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	otelRuntimeMetricsShouldBeEnabled := otelmetricsinstall.StartHook != nil &&
-		t.config.internalConfig.RuntimeMetricsOtelEnabled() &&
-		t.config.internalConfig.OTLPExportMetricsMode() &&
-		(t.config.internalConfig.RuntimeMetricsV2Enabled() || t.config.internalConfig.RuntimeMetricsEnabled())
-
-	if otelRuntimeMetricsShouldBeEnabled {
+	if t.config.otelRuntimeMetricsShouldBeEnabled {
 		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
 			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
 		} else {
@@ -591,12 +587,13 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	}
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
-	if c.internalConfig.RuntimeMetricsEnabled() {
+	if c.internalConfig.RuntimeMetricsEnabled() && !c.otelRuntimeMetricsShouldBeEnabled {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Go(func() {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		})
 	}
+
 	if c.internalConfig.DebugAbandonedSpans() {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
