@@ -125,16 +125,25 @@ jobs:
         if: ${{ matrix.buildable-weblog }}
         run: ./build.sh -i weblog --save-to-binaries
 
+      - name: Upload weblog image artifact
+        if: ${{ matrix.buildable-weblog }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: weblog-image-${{ matrix.weblog-variant }}
+          path: binaries/golang-${{ matrix.weblog-variant }}-weblog.tar.zst
+          retention-days: 1
+
       # proxy integrations (haproxy and envoy)
       - name: Set ${{ matrix.image_name }} image name
         if: ${{ !matrix.buildable-weblog }}
         run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
       - name: Upload weblog image artifact
+        if: ${{ !matrix.buildable-weblog }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: weblog-image-${{ matrix.weblog-variant }}
-          path: binaries/golang-${{ matrix.weblog-variant }}-weblog.tar.zst
+          path: binaries/golang-${{ matrix.image_name }}-image
           retention-days: 1
 
   system-tests:
