@@ -9,13 +9,17 @@ import (
 	"encoding/json"
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-var groovyGetAttribute = regexp.MustCompile(`getAttribute\(\s*'([^']+)'\s*\)`)
+var (
+	groovyGetAttribute = regexp.MustCompile(`getAttribute\(\s*'([^']+)'\s*\)`)
+	jsonPathExpr       = regexp.MustCompile(`jsonPath\([^,]+,\s*'([^']+)'\)`)
+)
 
 // TestBoomiTemplateAttributeConsistency guards against the class of bug where a
 // Boomi block enforcer reads a context attribute that the callout template never
@@ -76,4 +80,43 @@ func groovyAttributeNames(t *testing.T, path string) []string {
 		}
 	}
 	return names
+}
+
+// TestBoomiRequestResponseBlockCoherence verifies the request and response callout
+// templates extract the block decision coherently: the response attributes mirror
+// the request ones (dd-block<suffix> <-> dd-resp-block<suffix>) and both read the
+// same $.block... JSON paths. It catches drift where one side adds, drops, or
+// renames a block field (or its source path) without the other.
+func TestBoomiRequestResponseBlockCoherence(t *testing.T) {
+	req := blockFieldPaths(t, "deploy/boomi/boomi-request-callout.json", "dd-block")
+	resp := blockFieldPaths(t, "deploy/boomi/boomi-response-callout.json", "dd-resp-block")
+	require.NotEmpty(t, req, "no dd-block* attributes found in the request callout")
+	require.NotEmpty(t, resp, "no dd-resp-block* attributes found in the response callout")
+	assert.Equal(t, req, resp,
+		"request (dd-block*) and response (dd-resp-block*) callouts must extract the same block fields from the same JSON paths")
+}
+
+// blockFieldPaths maps each block sub-field suffix (name minus prefix) to the JSON
+// path it is extracted from, e.g. "-status" -> "$.block.status".
+func blockFieldPaths(t *testing.T, path, prefix string) map[string]string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var tmpl struct {
+		Variables []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"variables"`
+	}
+	require.NoError(t, json.Unmarshal(data, &tmpl))
+	out := map[string]string{}
+	for _, v := range tmpl.Variables {
+		if !strings.HasPrefix(v.Name, prefix) {
+			continue
+		}
+		m := jsonPathExpr.FindStringSubmatch(v.Value)
+		require.NotNilf(t, m, "variable %q value %q has no jsonPath expression", v.Name, v.Value)
+		out[strings.TrimPrefix(v.Name, prefix)] = m[1]
+	}
+	return out
 }
