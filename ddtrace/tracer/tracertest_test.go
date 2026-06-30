@@ -136,13 +136,12 @@ func (a *testAgent) handleTracesV04(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *testAgent) handleTracesV1(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	// Copy the body directly into the payload buffer rather than buffering the
+	// whole request with io.ReadAll first: payloadV1.Write appends to p.buf,
+	// which decodeBuffer consumes in place, so a separate full-body slice would
+	// just be an extra copy.
 	p := newPayloadV1()
-	if _, err := p.Write(body); err != nil {
+	if _, err := io.Copy(p, r.Body); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

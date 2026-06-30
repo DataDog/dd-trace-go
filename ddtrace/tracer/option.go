@@ -1395,12 +1395,11 @@ func decode(p payloadReader) (spanLists, []uint64, error) {
 		}
 		return traces, ids, nil
 	case first == msgpackMap16 || first == msgpackMap32 || first&0xf0 == msgpackMapFix:
-		buf, err := io.ReadAll(br)
-		if err != nil {
+		payload := newPayloadV1()
+		payload.buf = make([]byte, 0, p.size())
+		if _, err := io.Copy(payload, br); err != nil {
 			return nil, nil, err
 		}
-		payload := newPayloadV1()
-		payload.buf = buf
 		if _, err := payload.decodeBuffer(); err != nil {
 			return nil, nil, err
 		}
