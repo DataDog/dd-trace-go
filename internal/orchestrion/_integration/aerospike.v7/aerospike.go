@@ -93,12 +93,12 @@ var (
 )
 
 // TestCaseConcurrent verifies that spans started in goroutines are correctly
-// linked to a parent span when the context is passed into each goroutine as a
-// parameter.  Orchestrion's method-call aspect resolves the parent context from
-// the enclosing function's context.Context argument, so the Put spans become
-// children of test.root.  GLS is goroutine-local and is not copied across
-// goroutine boundaries, so capturing ctx instead of passing it would make the
-// Put spans roots — hence the explicit ctx parameter on the goroutine closure.
+// linked to a parent span. Two patterns work:
+//   - Pass ctx as a goroutine parameter (method-call aspect resolves it).
+//   - Call client.WithContext(ctx).Method(...) inside the goroutine
+//     (struct-definition aspect stores ctx per-goroutine ID).
+//
+// This test uses the ctx-parameter pattern.
 type TestCaseConcurrent struct {
 	client *as.Client
 }
@@ -142,11 +142,6 @@ func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(n)
 	for i := range n {
-		// ctx is passed into the goroutine as a parameter (not captured) so that
-		// Orchestrion's method-call template can find a context.Context argument
-		// in the closure's signature (if branch → WrapClientWithContext(client,
-		// ctx)). This is what links each Put span to test.root across the
-		// goroutine boundary, where GLS cannot reach.
 		go func(ctx context.Context, i int) {
 			defer wg.Done()
 			errs[i] = tc.client.Put(nil, keys[i], as.BinMap{"value": i})

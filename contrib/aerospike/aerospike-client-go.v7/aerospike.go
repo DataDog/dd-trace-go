@@ -10,19 +10,20 @@
 // has an additional `WithContext` method which can be used to connect a span
 // to an existing trace.
 //
-// When using Orchestrion for automatic instrumentation, a method-call aspect
-// rewrites every `client.Method(...)` call site to
-// `WrapClientWithContext(client, ctx).Method(...)`. The context is resolved
-// from the enclosing function's `context.Context` argument (via
-// `.Function.ArgumentOfType`); when none is in scope a nil is passed and the
-// tracer's GLS-aware `SpanFromContext` provides same-goroutine parenting
-// automatically.
+// When using Orchestrion for automatic instrumentation, two aspects cooperate:
 //
-// GLS is goroutine-local and is not copied across goroutine boundaries, so to
-// parent spans created inside a goroutine, pass the context into the goroutine
-// as a parameter rather than capturing it, so the aspect can see it in scope:
+//  1. A struct-definition aspect injects `WithContext(ctx) *as.Client` and
+//     `__ddGetCtx() context.Context` into the aerospike library's `Client`
+//     type.  `WithContext` stores ctx in a per-goroutine map so that goroutine
+//     fan-out patterns work without a helper function:
 //
-//	go func(ctx context.Context) { client.Put(nil, key, bins) }(ctx)
+//     go func() { client.WithContext(ctx).Put(nil, key, bins) }()
+//
+//  2. A method-call aspect rewrites every `client.Method(...)` call site.
+//     When a `context.Context` argument is in scope it is passed directly;
+//     otherwise `__ddGetCtx()` is called to retrieve any context stored via
+//     `WithContext`, falling back to `context.Background()` → GLS when none
+//     was stored.
 package aerospike // import "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2"
 
 import (
