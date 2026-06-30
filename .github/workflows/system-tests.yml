@@ -327,6 +327,7 @@ jobs:
           path: binaries/
 
       - name: Build weblog
+        if: ${{ matrix.weblog-variant != "envoy" && matrix.weblog-variant != "haproxy" }} 
         run: ./build.sh -i weblog
 
       - name: Build runner
