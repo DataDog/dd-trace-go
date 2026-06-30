@@ -44,7 +44,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: 78bf716e817134bc9d24ea0e385653f03b11c436. # DO NOT MERGE, real value should be ${{ inputs.ref }}
       - name: Pin exact commit SHA for system-tests
         id: pin
         run: |
@@ -71,6 +71,19 @@ jobs:
           - graph-gophers
           - graphql-go
           - gqlgen
+        buildable-weblog:
+          - true
+        include:
+          - weblog_variant: envoy
+            target: external_processing
+            image_name: service-extensions-callout
+            image_artifact: service-extensions-image-linux-amd64
+            buildable-weblog: false
+          - weblog_variant: haproxy-spoa
+            target: haproxy
+            image_name: haproxy-spoa
+            image_artifact: haproxy-spoa-image-linux-amd64
+            buildable-weblog: false
     name: Build weblog (${{ matrix.weblog-variant }})
     env:
       TEST_LIBRARY: golang
@@ -100,14 +113,22 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
+        if: ${{ matrix.buildable-weblog }}
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
+      # regular weblog images
       - name: Build and save weblog image
+        if: ${{ matrix.buildable-weblog }}
         run: ./build.sh -i weblog --save-to-binaries
+
+      # proxy integrations (haproxy and envoy)
+      - name: Set ${{ matrix.image_name }} image name
+        if: ${{ !matrix.buildable-weblog }}
+        run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
       - name: Upload weblog image artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -124,6 +145,8 @@ jobs:
     needs:
       - warm-repo-cache
       - build-weblog-images
+      - build-service-extensions-callout
+      - build-haproxy
     strategy:
       matrix:
         weblog-variant:
@@ -218,6 +241,14 @@ jobs:
             scenario: TRACE_STATS_COMPUTATION
           - weblog-variant: net-http
             scenario: TRACE_STATS_COMPUTATION_CLIENT_DROP_P0S_FALSE
+          - weblog-variant: envoy
+            scenario: DEFAULT
+          - weblog-variant: envoy
+            scenario: APPSEC_BLOCKING
+          - weblog-variant: haproxy
+            scenario: DEFAULT
+          - weblog-variant: haproxy
+            scenario: APPSEC_BLOCKING
       fail-fast: false
     env:
       TEST_LIBRARY: golang
@@ -350,109 +381,109 @@ jobs:
       push: ${{ github.ref == 'refs/heads/main' }}
       platforms: '["linux/amd64"]'
 
-  system-tests-docker-images:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
-    runs-on: ubuntu-latest
-    needs:
-      - build-service-extensions-callout
-      - build-haproxy
-      - warm-repo-cache
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario:
-          - GO_PROXIES
-          - GO_PROXIES_BLOCKING
-        weblog_variant:
-          - envoy
-          - haproxy-spoa
-        include:
-          - weblog_variant: envoy
-            target: external_processing
-            image_name: service-extensions-callout
-            image_artifact: service-extensions-image-linux-amd64
-          - weblog_variant: haproxy-spoa
-            target: haproxy
-            image_name: haproxy-spoa
-            image_artifact: haproxy-spoa-image-linux-amd64
+  # system-tests-docker-images:
+  #   if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - build-service-extensions-callout
+  #     - build-haproxy
+  #     - warm-repo-cache
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       scenario:
+  #         - GO_PROXIES
+  #         - GO_PROXIES_BLOCKING
+  #       weblog_variant:
+  #         - envoy
+  #         - haproxy-spoa
+  #       include:
+  #         - weblog_variant: envoy
+  #           target: external_processing
+  #           image_name: service-extensions-callout
+  #           image_artifact: service-extensions-image-linux-amd64
+  #         - weblog_variant: haproxy-spoa
+  #           target: haproxy
+  #           image_name: haproxy-spoa
+  #           image_artifact: haproxy-spoa-image-linux-amd64
 
-    name: Test (${{ matrix.weblog_variant }}, ${{ matrix.scenario }})
-    steps:
-      - name: Download ${{ matrix.target }} artifacts
-        if: github.ref != 'refs/heads/main'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ matrix.image_artifact }}
+  #   name: Test (${{ matrix.weblog_variant }}, ${{ matrix.scenario }})
+  #   steps:
+  #     - name: Download ${{ matrix.target }} artifacts
+  #       if: github.ref != 'refs/heads/main'
+  #       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+  #       with:
+  #         name: ${{ matrix.image_artifact }}
 
-      - name: Load ${{ matrix.target }} image
-        if: github.ref != 'refs/heads/main'
-        run: docker load -i ${{ matrix.image_artifact }}.tar
-      - name: Checkout system tests
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-          repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+  #     - name: Load ${{ matrix.target }} image
+  #       if: github.ref != 'refs/heads/main'
+  #       run: docker load -i ${{ matrix.image_artifact }}.tar
+  #     - name: Checkout system tests
+  #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+  #       with:
+  #         persist-credentials: false
+  #         repository: 'DataDog/system-tests'
+  #         ref: ${{ inputs.ref }}
 
-      - name: Set ${{ matrix.image_name }} image name
-        run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
+  #     - name: Set ${{ matrix.image_name }} image name
+  #       run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
-      - name: Checkout dd-trace-go
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-          ref: ${{ inputs.branch_ref || github.ref }}
-          path: 'binaries/dd-trace-go'
+  #     - name: Checkout dd-trace-go
+  #       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+  #       with:
+  #         persist-credentials: false
+  #         ref: ${{ inputs.branch_ref || github.ref }}
+  #         path: 'binaries/dd-trace-go'
       
-      - name: Get Datadog credentials
-        id: dd-sts
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
-        with:
-          policy: dd-trace-go-app-key
+  #     - name: Get Datadog credentials
+  #       id: dd-sts
+  #       uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+  #       with:
+  #         policy: dd-trace-go-app-key
 
-      - name: Cache npm packages for datadog-ci
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.npm
-          key: npm-datadog-ci-${{ runner.os }}-v1
-          restore-keys: |
-            npm-datadog-ci-${{ runner.os }}-
+  #     - name: Cache npm packages for datadog-ci
+  #       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+  #       with:
+  #         path: ~/.npm
+  #         key: npm-datadog-ci-${{ runner.os }}-v1
+  #         restore-keys: |
+  #           npm-datadog-ci-${{ runner.os }}-
 
-      - name: Pre-install datadog-ci
-        continue-on-error: true
-        run: npm install -g @datadog/datadog-ci
+  #     - name: Pre-install datadog-ci
+  #       continue-on-error: true
+  #       run: npm install -g @datadog/datadog-ci
 
-      - name: Build runner
-        uses: ./.github/actions/install_runner
+  #     - name: Build runner
+  #       uses: ./.github/actions/install_runner
 
-      - name: Build agent
-        run: ./build.sh -i agent
+  #     - name: Build agent
+  #       run: ./build.sh -i agent
 
-      - name: Run
-        run: ./run.sh ${{ matrix.scenario }}
-        env:
-          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
-          WEBLOG_VARIANT: ${{ matrix.weblog_variant }}
+  #     - name: Run
+  #       run: ./run.sh ${{ matrix.scenario }}
+  #       env:
+  #         DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+  #         WEBLOG_VARIANT: ${{ matrix.weblog_variant }}
 
-      - name: Upload test results to Test Optimization
-        if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@5293aff628e580005cc32ea2c34a0894e12e4511
+  #     - name: Upload test results to Test Optimization
+  #       if: ${{ always() }}
+  #       uses: DataDog/system-tests/.github/actions/push_to_test_optim@5293aff628e580005cc32ea2c34a0894e12e4511
 
-      - name: Compress artifact
-        if: ${{ always() }}
-        run: |
-          if compgen -G "logs*/" > /dev/null; then
-            tar -czvf artifact.tar.gz logs*/
-          else
-            echo "No logs*/ found; skipping tar."
-          fi
+  #     - name: Compress artifact
+  #       if: ${{ always() }}
+  #       run: |
+  #         if compgen -G "logs*/" > /dev/null; then
+  #           tar -czvf artifact.tar.gz logs*/
+  #         else
+  #           echo "No logs*/ found; skipping tar."
+  #         fi
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: ${{ always() }}
-        with:
-          name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
-          path: artifact.tar.gz
+  #     - name: Upload artifact
+  #       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  #       if: ${{ always() }}
+  #       with:
+  #         name: logs_${{ matrix.weblog_variant }}_${{ matrix.scenario }}
+  #         path: artifact.tar.gz
 
   tracer-release:
     if: github.event_name == 'schedule'
