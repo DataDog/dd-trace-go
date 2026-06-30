@@ -49,3 +49,8 @@ include:
   - project: 'DataDog/apm-reliability/apm-sdks-benchmarks'
     file: '.gitlab/ci-go-go-prof-app-parallel.yml'
     ref: 'main'
+  # LLM Validation gate: reusable job shipped by the platform repo — only the local .llm-validation/ suite
+  # stays in this repo. The job auto-skips when no monitored file changed; a FAIL blocks the merge.
+  - project: 'DataDog/llm-validation-platform'
+    ref: main
+    file: '/ci/llm-validation.gitlab-ci.yml'
