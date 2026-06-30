@@ -153,10 +153,53 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: ${{ matrix.go-version }}
-          cache: true
-          cache-dependency-path: |-
-            ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration/go.mod
-            ${{ github.workspace }}/orchestrion/all/go.mod
+          # Caching is handled explicitly below. actions/setup-go only saves a
+          # cache on a key MISS (GitHub cache keys are immutable), so it never
+          # re-persists freshly-woven Orchestrion artifacts that land in the Go
+          # build cache. We instead use a rolling key + restore-keys so the build
+          # cache is restored warm and re-saved every run.
+          cache: false
+
+      - name: Resolve cache key inputs
+        id: cache-keys
+        shell: bash
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+        run: |-
+          echo "gocache=$(go env GOCACHE)" >> "${GITHUB_OUTPUT}"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "${GITHUB_OUTPUT}"
+          # Orchestrion version straight from go.mod (no network / module graph needed).
+          orch=$(awk '$1=="github.com/DataDog/orchestrion"{print $2; exit}' go.mod)
+          echo "orchestrion=${orch}" >> "${GITHUB_OUTPUT}"
+          # Fingerprint of every orchestrion.yml: mirrors the invalidation surface
+          # of Orchestrion's `toolexec -V=full` version suffix. Uses git blob OIDs
+          # piped through hash-object so it is portable across Linux/macOS/Windows
+          # runners (git only; no sha256sum, which macOS lacks).
+          yml=$(git -C "${{ github.workspace }}/dd-trace-go" ls-files -s '*orchestrion.yml' | git -C "${{ github.workspace }}/dd-trace-go" hash-object --stdin)
+          echo "ymls=${yml:0:16}" >> "${GITHUB_OUTPUT}"
+
+      - name: Cache Go module cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache-keys.outputs.gomodcache }}
+          key: orchestrion-gomod-${{ runner.os }}-go${{ matrix.go-version }}-${{ hashFiles('dd-trace-go/internal/orchestrion/_integration/go.sum') }}
+          restore-keys: |
+            orchestrion-gomod-${{ runner.os }}-go${{ matrix.go-version }}-
+
+      - name: Cache Go build cache (Orchestrion-woven artifacts)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.cache-keys.outputs.gocache }}
+          # Rolling key (github.run_id) ⇒ always saved; restore-keys (most- to
+          # least-specific) ⇒ always restore the closest prior cache. An
+          # orchestrion.yml change rotates the `yml…` segment but the broader
+          # prefixes still restore, so we re-weave only the delta and the next run
+          # is warm again.
+          key: orchestrion-gobuild-${{ runner.os }}-${{ runner.arch }}-go${{ matrix.go-version }}-${{ matrix.mode }}-orch${{ steps.cache-keys.outputs.orchestrion }}-yml${{ steps.cache-keys.outputs.ymls }}-${{ hashFiles('dd-trace-go/internal/orchestrion/_integration/go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            orchestrion-gobuild-${{ runner.os }}-${{ runner.arch }}-go${{ matrix.go-version }}-${{ matrix.mode }}-orch${{ steps.cache-keys.outputs.orchestrion }}-yml${{ steps.cache-keys.outputs.ymls }}-${{ hashFiles('dd-trace-go/internal/orchestrion/_integration/go.sum') }}-
+            orchestrion-gobuild-${{ runner.os }}-${{ runner.arch }}-go${{ matrix.go-version }}-${{ matrix.mode }}-orch${{ steps.cache-keys.outputs.orchestrion }}-yml${{ steps.cache-keys.outputs.ymls }}-
+            orchestrion-gobuild-${{ runner.os }}-${{ runner.arch }}-go${{ matrix.go-version }}-${{ matrix.mode }}-orch${{ steps.cache-keys.outputs.orchestrion }}-
+            orchestrion-gobuild-${{ runner.os }}-${{ runner.arch }}-go${{ matrix.go-version }}-${{ matrix.mode }}-
 
       - name: Install development tools
         run: make -C ${{ github.workspace }}/dd-trace-go tools-install
@@ -233,6 +276,13 @@ jobs:
           echo "Working directory: ${PWD}"
           orchestrion version
           PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
+          if [ "${MODE}" != "DRIVER" ]; then
+            # The TOOLEXEC and GOFLAGS modes only validate that those invocation
+            # mechanisms behave like DRIVER, not per-contrib behavior (DRIVER
+            # already runs every package). Run a small representative subset to
+            # save CI time.
+            PACKAGE_NAMES="./net_http ./gls ./sql ./dd-span"
+          fi
 
           case "${MODE}" in
           "DRIVER")
@@ -262,7 +312,10 @@ jobs:
         env:
           MODE: ${{ matrix.mode }}
           # The "buildtag" tag is used in //dd:span integration tests
-          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
+          # -p=8 matches the 8-core Ubuntu runner; weaving is CPU-bound and is the
+          # bottleneck. Drop to -p=6 if peak memory (woven compiles + service
+          # containers) causes OOM/instability.
+          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=8' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
           # Prevent auto-respawn, which is problematic with installs from commit SHA
           DD_ORCHESTRION_IS_GOMOD_VERSION: true
           # Ryuk is problematic with concurrent executions, and unnecessary in ephemeral environments like GHA.
