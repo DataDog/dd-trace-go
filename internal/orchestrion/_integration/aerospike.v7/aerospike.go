@@ -9,7 +9,6 @@ package aerospikev7
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strconv"
 	"sync"
@@ -93,11 +92,16 @@ var (
 )
 
 // TestCaseConcurrent verifies that concurrent calls on a shared *as.Client do
-// not race or deadlock and that a span is recorded for each call. Because the
-// function-body aspect relies on tracer GLS (goroutine-local), spans started
-// inside the goroutines are roots rather than children of test.root.
+// not race or deadlock and that a span is recorded for each distinct operation.
+// Because the function-body aspect relies on tracer GLS (goroutine-local),
+// spans started inside goroutines are roots rather than children of test.root.
+// Each goroutine calls a different operation (Put / Get / Delete) so that the
+// three expected spans are uniquely matchable by resource name.
 type TestCaseConcurrent struct {
-	client *as.Client
+	client   *as.Client
+	putKey   *as.Key // written by goroutine 0
+	getKey   *as.Key // pre-populated in Setup; read by goroutine 1
+	delKey   *as.Key // pre-populated in Setup; deleted by goroutine 2
 }
 
 func (tc *TestCaseConcurrent) Setup(ctx context.Context, t *testing.T) {
@@ -121,42 +125,46 @@ func (tc *TestCaseConcurrent) Setup(ctx context.Context, t *testing.T) {
 		),
 	)
 	t.Cleanup(func() { tc.client.Close() })
+
+	tc.putKey, err = as.NewKey("test", "testset", "concurrent-put")
+	require.NoError(t, err)
+	tc.getKey, err = as.NewKey("test", "testset", "concurrent-get")
+	require.NoError(t, err)
+	tc.delKey, err = as.NewKey("test", "testset", "concurrent-del")
+	require.NoError(t, err)
+
+	// Pre-populate getKey and delKey before the tracer starts so these Puts
+	// don't generate spans of their own.
+	require.NoError(t, tc.client.Put(nil, tc.getKey, as.BinMap{"value": "get"}))
+	require.NoError(t, tc.client.Put(nil, tc.delKey, as.BinMap{"value": "del"}))
 }
 
 func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	span, _ := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
 
-	const n = 3
-	keys := make([]*as.Key, n)
-	for i := range n {
-		var err error
-		keys[i], err = as.NewKey("test", "testset", fmt.Sprintf("concurrent-key-%d", i))
-		require.NoError(t, err)
-	}
-
-	errs := make([]as.Error, n)
+	type result struct{ err as.Error }
+	results := make([]result, 3)
 	var wg sync.WaitGroup
-	wg.Add(n)
-	for i := range n {
-		go func(ctx context.Context, i int) {
-			defer wg.Done()
-			errs[i] = tc.client.Put(nil, keys[i], as.BinMap{"value": i})
-		}(ctx, i)
-	}
+	wg.Add(3)
+
+	go func() { defer wg.Done(); results[0].err = tc.client.Put(nil, tc.putKey, as.BinMap{"value": "put"}) }()
+	go func() { defer wg.Done(); _, results[1].err = tc.client.Get(nil, tc.getKey) }()
+	go func() { defer wg.Done(); _, results[2].err = tc.client.Delete(nil, tc.delKey) }()
+
 	wg.Wait()
-	for _, err := range errs {
-		require.NoError(t, err)
+	for _, r := range results {
+		require.NoError(t, r.err)
 	}
 }
 
 func (tc *TestCaseConcurrent) ExpectedTraces() trace.Traces {
-	putSpan := func() *trace.Trace {
+	span := func(resource string) *trace.Trace {
 		return &trace.Trace{
 			Tags: map[string]any{
 				"name":     "aerospike.command",
 				"service":  "aerospike",
-				"resource": "Put",
+				"resource": resource,
 				"type":     "aerospike",
 			},
 			Meta: map[string]string{
@@ -166,12 +174,14 @@ func (tc *TestCaseConcurrent) ExpectedTraces() trace.Traces {
 			},
 		}
 	}
-	// Spans started inside goroutines are roots: the function-body aspect uses
-	// tracer GLS which is goroutine-local and is not copied across goroutine
-	// boundaries.
+	// Each goroutine calls a different operation, so the three spans are
+	// uniquely identifiable by resource name — no two expected entries match
+	// the same actual span.
 	return trace.Traces{
 		{Tags: map[string]any{"name": "test.root"}},
-		putSpan(), putSpan(), putSpan(),
+		span("Put"),
+		span("Get"),
+		span("Delete"),
 	}
 }
 
