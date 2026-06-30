@@ -39,9 +39,19 @@ aspects:
             goid: github.com/petermattis/goid
             tracing: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing
           template: |-
-            // __dd_aerospike_ctxs maps goroutine ID → context.Context. Keys are
-            // short-lived: WithContext stores a context and the very next
-            // instrumented method call on that goroutine retrieves and deletes it.
+            // __dd_aerospike_ctxs maps goroutine ID → context.Context.
+            // Keys are short-lived: WithContext stores a context and the very next
+            // instrumented method call on that goroutine retrieves and deletes it via
+            // LoadAndDelete in __dd_aerospike_get_ctx.
+            //
+            // Goroutine-exit hazard: if the goroutine exits after WithContext but
+            // before any instrumented method fires, the entry is never consumed and
+            // persists until the Go runtime recycles that goroutine ID.  The next
+            // Aerospike call on the new goroutine with the same ID will then pick up
+            // a stale context.  There is no Go API to hook goroutine exit, so this
+            // is an inherent limitation of the goroutine-ID approach.  Mitigation:
+            // always chain WithContext with the very next instrumented call in the
+            // same goroutine — do not store the returned *Client and use it later.
             var __dd_aerospike_ctxs sync.Map // map[int64]context.Context
 
             // WithContext stores ctx so that the immediately following method call
@@ -119,6 +129,12 @@ aspects:
           - function:
               - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
               - name: Truncate
+          # PutObject and GetObject are part of the reflection-based Object API
+          # defined in aerospike-client-go's client_reflect.go under
+          # //go:build !as_performance.  When the library is compiled with
+          # -tags as_performance these methods do not exist, so the join points
+          # below match nothing and are silent no-ops — they do NOT cause a
+          # build error.
           - function:
               - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
               - name: PutObject
@@ -204,6 +220,10 @@ aspects:
           - function:
               - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
               - name: ScanPartitions
+          # The following methods are part of the reflection-based Object API
+          # (aerospike-client-go's client_reflect.go, //go:build !as_performance).
+          # Under -tags as_performance they do not exist; these join points match
+          # nothing and are silent no-ops.
           - function:
               - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
               - name: BatchGetObjects
