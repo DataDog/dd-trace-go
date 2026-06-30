@@ -61,6 +61,7 @@ var contribIntegrations = map[string]struct {
 	imported bool   // true if the user has imported the integration
 }{
 	"github.com/99designs/gqlgen":                   {"gqlgen", false},
+	"github.com/aerospike/aerospike-client-go/v7":   {"Aerospike", false},
 	"github.com/aws/aws-sdk-go":                     {"AWS SDK", false},
 	"github.com/aws/aws-sdk-go-v2":                  {"AWS SDK v2", false},
 	"github.com/bradfitz/gomemcache":                {"Memcache", false},
