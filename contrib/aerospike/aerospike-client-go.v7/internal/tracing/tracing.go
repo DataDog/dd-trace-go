@@ -40,6 +40,20 @@ func StartSpan(ctx context.Context, serviceName, serviceSource, operationName, r
 	return span
 }
 
+// StartDefaultSpan starts a span from context.Background() using service and
+// operation names resolved from the instrumentation registry. Used by the
+// Orchestrion function-body advice template where no client config is in scope.
+// Span parenting relies on the tracer's GLS (same goroutine only).
+func StartDefaultSpan(resourceName string) *Span {
+	return StartSpan(
+		context.Background(),
+		Instr.ServiceName(instrumentation.ComponentDefault, nil),
+		string(instrumentation.PackageAerospikeClientGoV7),
+		Instr.OperationName(instrumentation.ComponentDefault, nil),
+		resourceName,
+	)
+}
+
 // FinishSpan finishes span, tagging it with err if non-nil.
 func FinishSpan(span *Span, err error) {
 	span.Finish(tracer.WithError(err))

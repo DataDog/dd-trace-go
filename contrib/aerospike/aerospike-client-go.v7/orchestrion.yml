@@ -9,192 +9,145 @@ meta:
   description: Aerospike client for Go.
 
 aspects:
-  - id: Client.WithContext
+  - id: Client
     join-point:
       struct-definition: github.com/aerospike/aerospike-client-go/v7.Client
     advice:
       - inject-declarations:
           imports:
-            context: context
-            sync: sync
-            goid: github.com/petermattis/goid
+            tracing: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing
           template: |-
-            // __dd_aerospike_ctxs stores the context set via WithContext for each
-            // goroutine. Keying by goroutine ID lets multiple goroutines share the
-            // same *Client pointer without overwriting each other's context slot.
-            var __dd_aerospike_ctxs sync.Map // map[int64]context.Context
-
-            // WithContext stores ctx so that the immediately following method call on
-            // this client creates its span as a child of the span in ctx. It MUST be
-            // chained directly with the method call (same goroutine):
-            //
-            //   client.WithContext(ctx).Put(nil, key, bins)
-            //
-            // Storing the returned *Client and calling the method from a different
-            // goroutine will not propagate ctx; call WithContext inside that goroutine.
-            func (c *Client) WithContext(ctx context.Context) *Client {
-              __dd_aerospike_ctxs.Store(goid.Get(), ctx)
-              return c
+            func __dd_startAerospikeSpan(resourceName string) *tracing.Span {
+              return tracing.StartDefaultSpan(resourceName)
             }
 
-            // __ddGetCtx retrieves and removes the context stored by the most recent
-            // WithContext call in this goroutine. Returns nil when none was stored,
-            // which causes WrapClientWithContext to fall back to context.Background()
-            // and rely on the tracer's goroutine-local storage for parenting.
-            func (c *Client) __ddGetCtx() context.Context {
-              if v, ok := __dd_aerospike_ctxs.LoadAndDelete(goid.Get()); ok {
-                return v.(context.Context)
-              }
-              return nil
+            func __dd_finishAerospikeSpan(span *tracing.Span, err error) {
+              tracing.FinishSpan(span, err)
             }
 
-  - id: Client.Operations
+  - id: Client.Operation.Error
     join-point:
-      all-of:
-        - not:
-            import-path: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2
-        - one-of:
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Add
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: AddBins
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Append
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: AppendBins
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: BatchDelete
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: BatchExecute
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: BatchExists
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: BatchGet
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: BatchGetComplex
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: BatchGetHeader
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: BatchGetOperate
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: BatchOperate
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Delete
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Execute
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: ExecuteUDF
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: ExecuteUDFNode
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Exists
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Get
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: GetHeader
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Operate
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Prepend
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: PrependBins
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Put
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: PutBins
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Query
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: QueryExecute
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: QueryNode
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: QueryPartitions
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: ScanAll
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: ScanNode
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: ScanPartitions
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Touch
-                match: pointer-only
-            - method-call:
-                receiver: "github.com/aerospike/aerospike-client-go/v7.Client"
-                name: Truncate
-                match: pointer-only
+      function-body:
+        one-of:
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Add
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: AddBins
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Append
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: AppendBins
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: BatchGetComplex
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: BatchOperate
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Prepend
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: PrependBins
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Put
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: PutBins
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Touch
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Truncate
     advice:
-      - wrap-expression:
-          imports:
-            __ddaerospike: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2
+      - prepend-statements:
           template: |-
-            {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
-            {{- $ellipsis := .AST.Ellipsis -}}
-            {{- if $ctx -}}
-              __ddaerospike.WrapClientWithContext({{ .AST.Fun.X }}, {{ $ctx }}).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
-            {{- else -}}
-              __ddaerospike.WrapClientWithContext({{ .AST.Fun.X }}, {{ .AST.Fun.X }}.__ddGetCtx()).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
-            {{- end -}}
+            {{- $name := .Function.Name -}}
+            {{- $err := .Function.Result 0 -}}
+            __dd_span := __dd_startAerospikeSpan({{ printf "%q" $name }})
+            defer func() {
+              __dd_finishAerospikeSpan(__dd_span, {{ $err }})
+            }()
+
+  - id: Client.Operation.ValueError
+    join-point:
+      function-body:
+        one-of:
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: BatchDelete
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: BatchExecute
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: BatchExists
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: BatchGet
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: BatchGetHeader
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: BatchGetOperate
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Delete
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Execute
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: ExecuteUDF
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: ExecuteUDFNode
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Exists
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Get
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: GetHeader
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Operate
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: Query
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: QueryExecute
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: QueryNode
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: QueryPartitions
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: ScanAll
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: ScanNode
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: ScanPartitions
+    advice:
+      - prepend-statements:
+          template: |-
+            {{- $name := .Function.Name -}}
+            {{- $err := .Function.Result 1 -}}
+            __dd_span := __dd_startAerospikeSpan({{ printf "%q" $name }})
+            defer func() {
+              __dd_finishAerospikeSpan(__dd_span, {{ $err }})
+            }()

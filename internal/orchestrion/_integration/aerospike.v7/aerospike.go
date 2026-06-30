@@ -92,13 +92,10 @@ var (
 	_ = newClientArgument
 )
 
-// TestCaseConcurrent verifies that spans started in goroutines are correctly
-// linked to a parent span. Two patterns work:
-//   - Pass ctx as a goroutine parameter (method-call aspect resolves it).
-//   - Call client.WithContext(ctx).Method(...) inside the goroutine
-//     (struct-definition aspect stores ctx per-goroutine ID).
-//
-// This test uses the ctx-parameter pattern.
+// TestCaseConcurrent verifies that concurrent calls on a shared *as.Client do
+// not race or deadlock and that a span is recorded for each call. Because the
+// function-body aspect relies on tracer GLS (goroutine-local), spans started
+// inside the goroutines are roots rather than children of test.root.
 type TestCaseConcurrent struct {
 	client *as.Client
 }
@@ -169,13 +166,12 @@ func (tc *TestCaseConcurrent) ExpectedTraces() trace.Traces {
 			},
 		}
 	}
+	// Spans started inside goroutines are roots: the function-body aspect uses
+	// tracer GLS which is goroutine-local and is not copied across goroutine
+	// boundaries.
 	return trace.Traces{
-		{
-			Tags: map[string]any{"name": "test.root"},
-			Children: trace.Traces{
-				putSpan(), putSpan(), putSpan(),
-			},
-		},
+		{Tags: map[string]any{"name": "test.root"}},
+		putSpan(), putSpan(), putSpan(),
 	}
 }
 
