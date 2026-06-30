@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2"
 	as "github.com/aerospike/aerospike-client-go/v7"
@@ -37,6 +38,8 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxElapsedTime = 2 * time.Minute
 	require.NoError(t,
 		backoff.Retry(
 			func() error {
@@ -44,7 +47,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 				tc.client, aerr = newClientReturn(host, port)
 				return aerr
 			},
-			backoff.NewExponentialBackOff(),
+			bo,
 		),
 	)
 	t.Cleanup(func() { tc.client.Close() })
@@ -131,6 +134,8 @@ func (tc *TestCaseConcurrent) Setup(ctx context.Context, t *testing.T) {
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 
+	bo2 := backoff.NewExponentialBackOff()
+	bo2.MaxElapsedTime = 2 * time.Minute
 	require.NoError(t,
 		backoff.Retry(
 			func() error {
@@ -138,7 +143,7 @@ func (tc *TestCaseConcurrent) Setup(ctx context.Context, t *testing.T) {
 				tc.client, aerr = newClientReturn(host, port)
 				return aerr
 			},
-			backoff.NewExponentialBackOff(),
+			bo2,
 		),
 	)
 	t.Cleanup(func() { tc.client.Close() })
