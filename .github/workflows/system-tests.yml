@@ -74,12 +74,12 @@ jobs:
         buildable-weblog:
           - true
         include:
-          - weblog_variant: envoy
+          - weblog-variant: envoy
             target: external_processing
             image_name: service-extensions-callout
             image_artifact: service-extensions-image-linux-amd64
             buildable-weblog: false
-          - weblog_variant: haproxy-spoa
+          - weblog-variant: haproxy-spoa
             target: haproxy
             image_name: haproxy-spoa
             image_artifact: haproxy-spoa-image-linux-amd64
