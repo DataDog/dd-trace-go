@@ -9,22 +9,76 @@ meta:
   description: Aerospike client for Go.
 
 aspects:
+  # Injects span helpers and a goroutine-local context store into the aerospike
+  # Client package.  Two concerns are handled here:
+  #
+  # 1. Span creation helpers (__dd_startAerospikeSpan / __dd_finishAerospikeSpan)
+  #    called by the function-body aspects below.
+  #
+  # 2. Cross-goroutine context propagation via WithContext/__dd_aerospike_get_ctx.
+  #    Because aerospike Client methods take no context.Context parameter, there
+  #    is no argument for the function-body template to resolve.  Instead users
+  #    (or generated code) call client.WithContext(ctx) immediately before the
+  #    method call inside the goroutine:
+  #
+  #      go func() { client.WithContext(ctx).Put(nil, key, bins) }()
+  #
+  #    WithContext stores ctx in a sync.Map keyed by goroutine ID.
+  #    __dd_aerospike_get_ctx retrieves and removes it so the next method call on
+  #    this goroutine picks up the right parent.  For same-goroutine calls where
+  #    WithContext was not used, __dd_aerospike_get_ctx falls back to
+  #    context.Background() and the tracer's GLS provides parenting automatically.
   - id: Client
     join-point:
       struct-definition: github.com/aerospike/aerospike-client-go/v7.Client
     advice:
       - inject-declarations:
           imports:
+            context: context
+            sync: sync
+            goid: github.com/petermattis/goid
             tracing: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing
           template: |-
+            // __dd_aerospike_ctxs maps goroutine ID → context.Context. Keys are
+            // short-lived: WithContext stores a context and the very next
+            // instrumented method call on that goroutine retrieves and deletes it.
+            var __dd_aerospike_ctxs sync.Map // map[int64]context.Context
+
+            // WithContext stores ctx so that the immediately following method call
+            // on this client creates its span as a child of the span in ctx.
+            // It MUST be chained directly with the method call in the same goroutine:
+            //
+            //   go func() { client.WithContext(ctx).Put(nil, key, bins) }()
+            //
+            // Storing the returned *Client and calling the method from a different
+            // goroutine will not propagate the context; call WithContext inside the
+            // goroutine that executes the method.
+            func (c *Client) WithContext(ctx context.Context) *Client {
+              __dd_aerospike_ctxs.Store(goid.Get(), ctx)
+              return c
+            }
+
+            // __dd_aerospike_get_ctx retrieves and removes the context stored by
+            // the most recent WithContext call on this goroutine.  Returns
+            // context.Background() when none was stored, which lets the tracer's
+            // GLS provide same-goroutine parenting automatically.
+            func __dd_aerospike_get_ctx() context.Context {
+              if v, ok := __dd_aerospike_ctxs.LoadAndDelete(goid.Get()); ok {
+                return v.(context.Context)
+              }
+              return context.Background()
+            }
+
             func __dd_startAerospikeSpan(resourceName string) *tracing.Span {
-              return tracing.StartDefaultSpan(resourceName)
+              return tracing.StartDefaultSpan(__dd_aerospike_get_ctx(), resourceName)
             }
 
             func __dd_finishAerospikeSpan(span *tracing.Span, err error) {
               tracing.FinishSpan(span, err)
             }
 
+  # Instruments every write/batch-write method on *as.Client.
+  # These methods return a single error value (result index 0).
   - id: Client.Operation.Error
     join-point:
       function-body:
@@ -75,6 +129,8 @@ aspects:
               __dd_finishAerospikeSpan(__dd_span, {{ $err }})
             }()
 
+  # Instruments read/query/scan methods on *as.Client.
+  # These methods return (value, error) — the error is result index 1.
   - id: Client.Operation.ValueError
     join-point:
       function-body:

@@ -12,14 +12,18 @@
 //
 // When using Orchestrion for automatic instrumentation, two aspects cooperate:
 //
-//  1. A struct-definition aspect injects helper functions
-//     `__dd_startAerospikeSpan` and `__dd_finishAerospikeSpan` into the
-//     aerospike library's `Client` package.
+//  1. A struct-definition aspect injects `WithContext(ctx) *as.Client` and
+//     helper functions into the aerospike library's `Client` type.
+//     `WithContext` stores ctx in a per-goroutine map so that the immediately
+//     following method call creates its span as a child of the span in ctx:
 //
-//  2. Function-body aspects prepend span start/finish logic to each
-//     instrumented method on `*as.Client`. Span parenting relies on the
-//     tracer's goroutine-local storage (GLS); spans created in a different
-//     goroutine from the active span will be roots.
+//     go func() { client.WithContext(ctx).Put(nil, key, bins) }()
+//
+//  2. Function-body aspects prepend span start/finish to each instrumented
+//     method on `*as.Client`. The context is resolved from the goroutine-local
+//     map (set by `WithContext`) when available, otherwise from
+//     `context.Background()` — the tracer's GLS then provides same-goroutine
+//     parenting automatically.
 package aerospike // import "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2"
 
 import (

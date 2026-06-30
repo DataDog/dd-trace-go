@@ -91,17 +91,34 @@ var (
 	_ = newClientArgument
 )
 
-// TestCaseConcurrent verifies that concurrent calls on a shared *as.Client do
-// not race or deadlock and that a span is recorded for each distinct operation.
-// Because the function-body aspect relies on tracer GLS (goroutine-local),
-// spans started inside goroutines are roots rather than children of test.root.
-// Each goroutine calls a different operation (Put / Get / Delete) so that the
-// three expected spans are uniquely matchable by resource name.
+// withContexter is satisfied by *as.Client when built with Orchestrion, which
+// injects a WithContext method via the struct-definition aspect. The interface
+// lets the test compile and run without Orchestrion (the assertion simply
+// fails and the goroutine falls back to unparented spans).
+type withContexter interface {
+	WithContext(ctx context.Context) *as.Client
+}
+
+// applyCtx calls client.WithContext(ctx) when the injected method is present
+// (Orchestrion build), storing ctx in the goroutine-local map so the next
+// instrumented method call on this goroutine creates a child span. Without
+// Orchestrion the client is returned unchanged.
+func applyCtx(client *as.Client, ctx context.Context) *as.Client {
+	if wc, ok := any(client).(withContexter); ok {
+		return wc.WithContext(ctx)
+	}
+	return client
+}
+
+// TestCaseConcurrent verifies that concurrent calls on a shared *as.Client
+// are each instrumented with a span that is correctly parented under test.root.
+// Each goroutine calls a different operation (Put / Get / Delete) on its own
+// key, making the three expected child spans uniquely matchable by resource name.
 type TestCaseConcurrent struct {
-	client   *as.Client
-	putKey   *as.Key // written by goroutine 0
-	getKey   *as.Key // pre-populated in Setup; read by goroutine 1
-	delKey   *as.Key // pre-populated in Setup; deleted by goroutine 2
+	client *as.Client
+	putKey *as.Key // written by goroutine 0
+	getKey *as.Key // pre-populated in Setup; read by goroutine 1
+	delKey *as.Key // pre-populated in Setup; deleted by goroutine 2
 }
 
 func (tc *TestCaseConcurrent) Setup(ctx context.Context, t *testing.T) {
@@ -140,7 +157,7 @@ func (tc *TestCaseConcurrent) Setup(ctx context.Context, t *testing.T) {
 }
 
 func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
-	span, _ := tracer.StartSpanFromContext(ctx, "test.root")
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
 	defer span.Finish()
 
 	type result struct{ err as.Error }
@@ -148,9 +165,12 @@ func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(3)
 
-	go func() { defer wg.Done(); results[0].err = tc.client.Put(nil, tc.putKey, as.BinMap{"value": "put"}) }()
-	go func() { defer wg.Done(); _, results[1].err = tc.client.Get(nil, tc.getKey) }()
-	go func() { defer wg.Done(); _, results[2].err = tc.client.Delete(nil, tc.delKey) }()
+	// applyCtx(tc.client, ctx) calls client.WithContext(ctx) when Orchestrion
+	// has injected it, storing ctx in the per-goroutine map so the method call
+	// that follows creates a child span of test.root.
+	go func() { defer wg.Done(); results[0].err = applyCtx(tc.client, ctx).Put(nil, tc.putKey, as.BinMap{"value": "put"}) }()
+	go func() { defer wg.Done(); _, results[1].err = applyCtx(tc.client, ctx).Get(nil, tc.getKey) }()
+	go func() { defer wg.Done(); _, results[2].err = applyCtx(tc.client, ctx).Delete(nil, tc.delKey) }()
 
 	wg.Wait()
 	for _, r := range results {
@@ -159,7 +179,7 @@ func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
 }
 
 func (tc *TestCaseConcurrent) ExpectedTraces() trace.Traces {
-	span := func(resource string) *trace.Trace {
+	child := func(resource string) *trace.Trace {
 		return &trace.Trace{
 			Tags: map[string]any{
 				"name":     "aerospike.command",
@@ -174,14 +194,18 @@ func (tc *TestCaseConcurrent) ExpectedTraces() trace.Traces {
 			},
 		}
 	}
-	// Each goroutine calls a different operation, so the three spans are
-	// uniquely identifiable by resource name — no two expected entries match
-	// the same actual span.
+	// Each goroutine uses a different operation so the three child spans are
+	// uniquely matchable by resource name — no two expected entries can resolve
+	// to the same actual span.
 	return trace.Traces{
-		{Tags: map[string]any{"name": "test.root"}},
-		span("Put"),
-		span("Get"),
-		span("Delete"),
+		{
+			Tags: map[string]any{"name": "test.root"},
+			Children: trace.Traces{
+				child("Put"),
+				child("Get"),
+				child("Delete"),
+			},
+		},
 	}
 }
 
