@@ -9,45 +9,6 @@ meta:
   description: Aerospike client for Go.
 
 aspects:
-  - id: Client.WithContext
-    join-point:
-      struct-definition: github.com/aerospike/aerospike-client-go/v7.Client
-    advice:
-      - inject-declarations:
-          imports:
-            context: context
-            sync: sync
-            goid: github.com/petermattis/goid
-          template: |-
-            // __dd_aerospike_ctxs stores the context set via WithContext for each
-            // goroutine. Keying by goroutine ID lets multiple goroutines share the
-            // same *Client pointer without overwriting each other's context slot.
-            var __dd_aerospike_ctxs sync.Map // map[int64]context.Context
-
-            // WithContext stores ctx so that the immediately following method call on
-            // this client creates its span as a child of the span in ctx. It MUST be
-            // chained directly with the method call (same goroutine):
-            //
-            //   client.WithContext(ctx).Put(nil, key, bins)
-            //
-            // Storing the returned *Client and calling the method from a different
-            // goroutine will not propagate ctx; call WithContext inside that goroutine.
-            func (c *Client) WithContext(ctx context.Context) *Client {
-              __dd_aerospike_ctxs.Store(goid.Get(), ctx)
-              return c
-            }
-
-            // __ddGetCtx retrieves and removes the context stored by the most recent
-            // WithContext call in this goroutine. Returns nil when none was stored,
-            // which causes WrapClientWithContext to fall back to context.Background()
-            // and rely on the tracer's goroutine-local storage for parenting.
-            func (c *Client) __ddGetCtx() context.Context {
-              if v, ok := __dd_aerospike_ctxs.LoadAndDelete(goid.Get()); ok {
-                return v.(context.Context)
-              }
-              return nil
-            }
-
   - id: Client.Operations
     join-point:
       all-of:
@@ -196,5 +157,5 @@ aspects:
             {{- if $ctx -}}
               __ddaerospike.WrapClientWithContext({{ .AST.Fun.X }}, {{ $ctx }}).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- else -}}
-              __ddaerospike.WrapClientWithContext({{ .AST.Fun.X }}, {{ .AST.Fun.X }}.__ddGetCtx()).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
+              __ddaerospike.WrapClientWithContext({{ .AST.Fun.X }}, nil).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- end -}}

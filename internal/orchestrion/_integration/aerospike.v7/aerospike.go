@@ -93,12 +93,12 @@ var (
 )
 
 // TestCaseConcurrent verifies that spans started in goroutines are correctly
-// linked to a parent span when Orchestrion's injected WithContext method is
-// used to propagate context across goroutine boundaries.  Without the
-// struct-definition aspect that injects WithContext into *as.Client, the
-// interface assertion below returns the client unchanged, GLS cannot cross the
-// goroutine boundary, and the Put spans would be roots — causing the test to
-// fail.
+// linked to a parent span when the context is passed into each goroutine as a
+// parameter.  Orchestrion's method-call aspect resolves the parent context from
+// the enclosing function's context.Context argument, so the Put spans become
+// children of test.root.  GLS is goroutine-local and is not copied across
+// goroutine boundaries, so capturing ctx instead of passing it would make the
+// Put spans roots — hence the explicit ctx parameter on the goroutine closure.
 type TestCaseConcurrent struct {
 	client *as.Client
 }
@@ -138,35 +138,19 @@ func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// withContext resolves the WithContext method that Orchestrion's
-	// struct-definition aspect injects into *as.Client at compile time.  The
-	// interface assertion compiles and runs without Orchestrion (returning c
-	// unchanged, so GLS would be the fallback — which cannot cross goroutine
-	// boundaries and would make the spans roots); with Orchestrion it stores ctx
-	// in a goroutine-keyed map consumed by the __ddGetCtx() call in the
-	// method-call advice template, producing correct parent–child spans.
-	withContext := func(c *as.Client, ctx context.Context) *as.Client {
-		type withContexter interface {
-			WithContext(context.Context) *as.Client
-		}
-		if wc, ok := any(c).(withContexter); ok {
-			return wc.WithContext(ctx)
-		}
-		return c
-	}
-
 	errs := make([]as.Error, n)
 	var wg sync.WaitGroup
 	wg.Add(n)
 	for i := range n {
-		go func(i int) {
+		// ctx is passed into the goroutine as a parameter (not captured) so that
+		// Orchestrion's method-call template can find a context.Context argument
+		// in the closure's signature (if branch → WrapClientWithContext(client,
+		// ctx)). This is what links each Put span to test.root across the
+		// goroutine boundary, where GLS cannot reach.
+		go func(ctx context.Context, i int) {
 			defer wg.Done()
-			// ctx is captured from the outer scope, not a function argument of
-			// this goroutine. Orchestrion's method-call template cannot find a
-			// context.Context parameter here (else branch → __ddGetCtx()), so
-			// the context must be stored first via the injected WithContext.
-			errs[i] = withContext(tc.client, ctx).Put(nil, keys[i], as.BinMap{"value": i})
-		}(i)
+			errs[i] = tc.client.Put(nil, keys[i], as.BinMap{"value": i})
+		}(ctx, i)
 	}
 	wg.Wait()
 	for _, err := range errs {
