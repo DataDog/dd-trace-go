@@ -54,3 +54,6 @@ include:
   - project: 'DataDog/llm-validation-platform'
     ref: anna.yafi/make-generic
     file: '/ci/llm-validation.gitlab-ci.yml'
+
+variables:
+  LLMVAL_BASE_REF: "main"
