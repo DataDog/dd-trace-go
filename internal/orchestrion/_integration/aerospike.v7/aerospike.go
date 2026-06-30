@@ -168,7 +168,10 @@ func (tc *TestCaseConcurrent) Run(ctx context.Context, t *testing.T) {
 	// applyCtx(tc.client, ctx) calls client.WithContext(ctx) when Orchestrion
 	// has injected it, storing ctx in the per-goroutine map so the method call
 	// that follows creates a child span of test.root.
-	go func() { defer wg.Done(); results[0].err = applyCtx(tc.client, ctx).Put(nil, tc.putKey, as.BinMap{"value": "put"}) }()
+	go func() {
+		defer wg.Done()
+		results[0].err = applyCtx(tc.client, ctx).Put(nil, tc.putKey, as.BinMap{"value": "put"})
+	}()
 	go func() { defer wg.Done(); _, results[1].err = applyCtx(tc.client, ctx).Get(nil, tc.getKey) }()
 	go func() { defer wg.Done(); _, results[2].err = applyCtx(tc.client, ctx).Delete(nil, tc.delKey) }()
 
