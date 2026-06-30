@@ -119,6 +119,12 @@ aspects:
           - function:
               - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
               - name: Truncate
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: PutObject
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: GetObject
     advice:
       - prepend-statements:
           template: |-
@@ -198,6 +204,30 @@ aspects:
           - function:
               - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
               - name: ScanPartitions
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: BatchGetObjects
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: ScanAllObjects
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: ScanNodeObjects
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: ScanPartitionObjects
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: QueryObjects
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: QueryNodeObjects
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: QueryPartitionObjects
+          - function:
+              - receiver: '*github.com/aerospike/aerospike-client-go/v7.Client'
+              - name: QueryAggregate
     advice:
       - prepend-statements:
           template: |-

@@ -361,3 +361,83 @@ func (c *Client) Truncate(policy *as.InfoPolicy, namespace, set string, beforeLa
 	span.Finish(tracer.WithError(err))
 	return err
 }
+
+// PutObject invokes and traces Client.PutObject.
+func (c *Client) PutObject(policy *as.WritePolicy, key *as.Key, obj interface{}) as.Error {
+	span := c.startSpan("PutObject")
+	err := c.Client.PutObject(policy, key, obj)
+	span.Finish(tracer.WithError(err))
+	return err
+}
+
+// GetObject invokes and traces Client.GetObject.
+func (c *Client) GetObject(policy *as.BasePolicy, key *as.Key, obj interface{}) as.Error {
+	span := c.startSpan("GetObject")
+	err := c.Client.GetObject(policy, key, obj)
+	span.Finish(tracer.WithError(err))
+	return err
+}
+
+// BatchGetObjects invokes and traces Client.BatchGetObjects.
+func (c *Client) BatchGetObjects(policy *as.BatchPolicy, keys []*as.Key, objects []interface{}) ([]bool, as.Error) {
+	span := c.startSpan("BatchGetObjects")
+	found, err := c.Client.BatchGetObjects(policy, keys, objects)
+	span.Finish(tracer.WithError(err))
+	return found, err
+}
+
+// ScanAllObjects invokes and traces Client.ScanAllObjects.
+func (c *Client) ScanAllObjects(apolicy *as.ScanPolicy, objChan interface{}, namespace string, setName string, binNames ...string) (*as.Recordset, as.Error) {
+	span := c.startSpan("ScanAllObjects")
+	recordset, err := c.Client.ScanAllObjects(apolicy, objChan, namespace, setName, binNames...)
+	span.Finish(tracer.WithError(err))
+	return recordset, err
+}
+
+// ScanNodeObjects invokes and traces Client.ScanNodeObjects.
+func (c *Client) ScanNodeObjects(apolicy *as.ScanPolicy, node *as.Node, objChan interface{}, namespace string, setName string, binNames ...string) (*as.Recordset, as.Error) {
+	span := c.startSpan("ScanNodeObjects")
+	recordset, err := c.Client.ScanNodeObjects(apolicy, node, objChan, namespace, setName, binNames...)
+	span.Finish(tracer.WithError(err))
+	return recordset, err
+}
+
+// ScanPartitionObjects invokes and traces Client.ScanPartitionObjects.
+func (c *Client) ScanPartitionObjects(apolicy *as.ScanPolicy, objChan interface{}, partitionFilter *as.PartitionFilter, namespace string, setName string, binNames ...string) (*as.Recordset, as.Error) {
+	span := c.startSpan("ScanPartitionObjects")
+	recordset, err := c.Client.ScanPartitionObjects(apolicy, objChan, partitionFilter, namespace, setName, binNames...)
+	span.Finish(tracer.WithError(err))
+	return recordset, err
+}
+
+// QueryObjects invokes and traces Client.QueryObjects.
+func (c *Client) QueryObjects(policy *as.QueryPolicy, statement *as.Statement, objChan interface{}) (*as.Recordset, as.Error) {
+	span := c.startSpan("QueryObjects")
+	recordset, err := c.Client.QueryObjects(policy, statement, objChan)
+	span.Finish(tracer.WithError(err))
+	return recordset, err
+}
+
+// QueryNodeObjects invokes and traces Client.QueryNodeObjects.
+func (c *Client) QueryNodeObjects(policy *as.QueryPolicy, node *as.Node, statement *as.Statement, objChan interface{}) (*as.Recordset, as.Error) {
+	span := c.startSpan("QueryNodeObjects")
+	recordset, err := c.Client.QueryNodeObjects(policy, node, statement, objChan)
+	span.Finish(tracer.WithError(err))
+	return recordset, err
+}
+
+// QueryPartitionObjects invokes and traces Client.QueryPartitionObjects.
+func (c *Client) QueryPartitionObjects(policy *as.QueryPolicy, statement *as.Statement, objChan interface{}, partitionFilter *as.PartitionFilter) (*as.Recordset, as.Error) {
+	span := c.startSpan("QueryPartitionObjects")
+	recordset, err := c.Client.QueryPartitionObjects(policy, statement, objChan, partitionFilter)
+	span.Finish(tracer.WithError(err))
+	return recordset, err
+}
+
+// QueryAggregate invokes and traces Client.QueryAggregate.
+func (c *Client) QueryAggregate(policy *as.QueryPolicy, statement *as.Statement, packageName, functionName string, functionArgs ...as.Value) (*as.Recordset, as.Error) {
+	span := c.startSpan("QueryAggregate")
+	recordset, err := c.Client.QueryAggregate(policy, statement, packageName, functionName, functionArgs...)
+	span.Finish(tracer.WithError(err))
+	return recordset, err
+}
