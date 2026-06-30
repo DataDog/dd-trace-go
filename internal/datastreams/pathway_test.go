@@ -8,6 +8,7 @@ package datastreams
 import (
 	"context"
 	"hash/fnv"
+	"strconv"
 	"testing"
 	"time"
 
@@ -177,6 +178,35 @@ func TestPathway(t *testing.T) {
 	t.Run("test GetHash", func(t *testing.T) {
 		pathway := Pathway{hash: nodeHash("service", "env", []string{"direction:in"}, nil, "")}
 		assert.Equal(t, pathway.hash, pathway.GetHash())
+	})
+
+	t.Run("test BaseHash", func(t *testing.T) {
+		assert.NotEqual(t, BaseHash("svc-a", "env", nil, ""), BaseHash("svc-b", "env", nil, ""), "different service must produce different hash")
+		assert.NotEqual(t, BaseHash("svc-a", "env", nil, ""), BaseHash("svc-a", "staging", nil, ""), "different env must produce different hash")
+		assert.NotEqual(t, BaseHash("svc-a", "env", nil, ""), BaseHash("svc-a", "env", []string{"entrypoint:main"}, ""), "different processTags must produce different hash")
+		assert.NotEqual(t, BaseHash("svc-a", "env", nil, "ch-1"), BaseHash("svc-a", "env", nil, "ch-2"), "different containerTagsHash must produce different hash")
+		assert.Equal(t, BaseHash("svc-a", "env", nil, "ch-1"), BaseHash("svc-a", "env", nil, "ch-1"), "same inputs must produce same hash")
+
+		// BaseHash must differ from nodeHash with edge tags for the same service/env.
+		assert.NotEqual(t,
+			BaseHash("svc-a", "env", nil, ""),
+			nodeHash("svc-a", "env", []string{"type:kafka"}, nil, ""),
+			"BaseHash (no edge tags) must differ from nodeHash with edge tags",
+		)
+
+		// BaseHash with nil edge tags must equal nodeHash with nil edge tags.
+		assert.Equal(t,
+			BaseHash("svc-a", "env", []string{"pt:v"}, "ch"),
+			nodeHash("svc-a", "env", nil, []string{"pt:v"}, "ch"),
+			"BaseHash must equal nodeHash when edgeTags is nil",
+		)
+
+		// Golden value: guards against format or algorithm regressions.
+		// Pre-computed for ("svc", "env", nil, "ch") using FNV-1 64-bit, formatted as signed decimal.
+		assert.Equal(t, "-9046347542012827189",
+			strconv.FormatInt(int64(BaseHash("svc", "env", nil, "ch")), 10),
+			"BaseHash decimal encoding must match Java Long.toString semantics (signed two's complement)",
+		)
 	})
 }
 
