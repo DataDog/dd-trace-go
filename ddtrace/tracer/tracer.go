@@ -246,7 +246,7 @@ func Start(opts ...StartOption) error {
 		return err
 	}
 	resetBaseHashCache()
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -953,7 +953,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 // +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
 	span := spanStart(operationName, &t.sharedAttrs, t.config.spanPoolEnabled, options...)
@@ -1130,7 +1130,7 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx *SpanContext, carrier any) error {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
 
@@ -1177,7 +1177,7 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier any) (*SpanContext, error) {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return nil, nil
 	}
 	ctx, err := t.config.propagator.Extract(carrier)
@@ -1203,7 +1203,7 @@ func (t *tracer) TracerConf() TracerConf {
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
-		Disabled:             !t.config.enabled.get(),
+		Disabled:             !t.config.internalConfig.TracingEnabled(),
 		PartialFlush:         pfEnabled,
 		PartialFlushMinSpans: pfMin,
 		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
@@ -1217,7 +1217,7 @@ func (t *tracer) TracerConf() TracerConf {
 }
 
 func (t *tracer) submit(s *Span) {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return
 	}
 	// we have an active tracer
