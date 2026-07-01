@@ -40,6 +40,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -61,6 +62,7 @@ var contribIntegrations = map[string]struct {
 	imported bool   // true if the user has imported the integration
 }{
 	"github.com/99designs/gqlgen":                   {"gqlgen", false},
+	"github.com/aerospike/aerospike-client-go/v7":   {"Aerospike", false},
 	"github.com/aws/aws-sdk-go":                     {"AWS SDK", false},
 	"github.com/aws/aws-sdk-go-v2":                  {"AWS SDK v2", false},
 	"github.com/bradfitz/gomemcache":                {"Memcache", false},
@@ -192,6 +194,10 @@ type config struct {
 
 	// spanPoolEnabled controls whether finished spans are recycled via sync.Pool.
 	spanPoolEnabled bool
+
+	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
+	// should be started instead of the DD statsd runtime metrics paths.
+	otelRuntimeMetricsShouldBeEnabled bool
 }
 
 // StartOption represents a function that can be provided as a parameter to Start.
@@ -333,7 +339,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	c.agent.store(af)
 	// If the agent doesn't support the v1 protocol, downgrade to v0.4
 	// Also downgrade if CSS is disabled, as v1 is not compatible without CSS.
-	if c.internalConfig.TraceProtocol() == traceProtocolV04 || !af.v1ProtocolAvailable || !c.internalConfig.StatsComputationEnabled() {
+	if c.internalConfig.TraceProtocol() == traceProtocolV1 && (!af.v1ProtocolAvailable || !c.canComputeStats()) {
 		c.internalConfig.SetTraceProtocol(traceProtocolV04, internalconfig.OriginCalculated)
 		if t, ok := c.ddTransport.(*httpTransport); ok && t.traceURL == agentURL.String()+tracesAPIPathV1 {
 			t.traceURL = agentURL.String() + tracesAPIPath
@@ -374,7 +380,16 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Set global 128-bits trace ID generation variable
 	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
 
+	c.otelRuntimeMetricsShouldBeEnabled = computeOtelRuntimeMetricsShouldBeEnabled(c)
+
 	return c, nil
+}
+
+func computeOtelRuntimeMetricsShouldBeEnabled(c *config) bool {
+	return otelmetricsinstall.StartHook != nil &&
+		c.internalConfig.RuntimeMetricsOtelEnabled() &&
+		c.internalConfig.OTLPExportMetricsMode() &&
+		(c.internalConfig.RuntimeMetricsV2Enabled() || c.internalConfig.RuntimeMetricsEnabled())
 }
 
 // shouldDisableSpanPool reports whether the experimental span pool must be
@@ -1363,7 +1378,7 @@ func (t *dummyTransport) send(p payload) (io.ReadCloser, error) {
 }
 
 func (t *dummyTransport) endpoint() string {
-	return "http://localhost:9/v0.4/traces"
+	return "http://localhost:9/v1.0/traces"
 }
 
 // discardTransport drains and discards trace payloads without decoding them.
