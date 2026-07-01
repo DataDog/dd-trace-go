@@ -8,6 +8,7 @@ package gosdk
 import (
 	"context"
 	"encoding/json"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -26,10 +27,10 @@ func TestIntentCapturePredicate(t *testing.T) {
 	defer tt.Stop()
 	ctx := context.Background()
 
-	var enabled bool
+	var enabled atomic.Bool
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
 	AddTracing(server, WithIntentCapturePredicate(func(context.Context) bool {
-		return enabled
+		return enabled.Load()
 	}))
 
 	var receivedArgs map[string]any
@@ -52,7 +53,7 @@ func TestIntentCapturePredicate(t *testing.T) {
 	defer clientSession.Close()
 
 	// Predicate false: schema not injected, telemetry argument passed through.
-	enabled = false
+	enabled.Store(false)
 	listResult, err := clientSession.ListTools(ctx, &mcp.ListToolsParams{})
 	require.NoError(t, err)
 	require.Len(t, listResult.Tools, 1)
@@ -70,7 +71,7 @@ func TestIntentCapturePredicate(t *testing.T) {
 	assert.Contains(t, receivedArgs, "telemetry", "telemetry should pass through when predicate is false")
 
 	// Predicate true: schema injected, telemetry stripped.
-	enabled = true
+	enabled.Store(true)
 	listResult, err = clientSession.ListTools(ctx, &mcp.ListToolsParams{})
 	require.NoError(t, err)
 	schema, ok := listResult.Tools[0].InputSchema.(map[string]any)
