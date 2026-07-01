@@ -254,3 +254,139 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 		},
 	}
 }
+
+// TestCaseScanAll verifies that a direct ScanAll call produces exactly one span
+// named "ScanAll".  In an Orchestrion build, ScanAll delegates internally to
+// ScanPartitions (also instrumented); the re-entrancy guard must suppress the
+// inner span so only the outer "ScanAll" span is reported.
+type TestCaseScanAll struct {
+	client *as.Client
+}
+
+func (tc *TestCaseScanAll) Setup(ctx context.Context, t *testing.T) {
+	containers.SkipIfProviderIsNotHealthy(t)
+
+	_, addr := containers.StartAerospikeTestContainer(t)
+
+	host, portStr, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	port, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
+
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxElapsedTime = 2 * time.Minute
+	require.NoError(t,
+		backoff.Retry(
+			func() error {
+				var aerr as.Error
+				tc.client, aerr = newClientReturn(host, port)
+				return aerr
+			},
+			bo,
+		),
+	)
+	t.Cleanup(func() { tc.client.Close() })
+}
+
+func (tc *TestCaseScanAll) Run(ctx context.Context, t *testing.T) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	defer span.Finish()
+
+	_ = ctx // WithContext pattern not used here; GLS provides parenting.
+	rs, err := tc.client.ScanAll(nil, "test", "testset")
+	require.NoError(t, err)
+	if rs != nil {
+		rs.Close()
+	}
+}
+
+func (tc *TestCaseScanAll) ExpectedTraces() trace.Traces {
+	return trace.Traces{
+		{
+			Tags: map[string]any{"name": "test.root"},
+			Children: trace.Traces{
+				{
+					Tags: map[string]any{
+						"name":     "aerospike.command",
+						"service":  "aerospike",
+						"resource": "ScanAll",
+						"type":     "aerospike",
+					},
+					Meta: map[string]string{
+						"component": "aerospike/aerospike-client-go.v7",
+						"span.kind": "client",
+						"db.system": "aerospike",
+					},
+				},
+			},
+		},
+	}
+}
+
+// TestCaseQuery verifies that a direct Query call produces exactly one span
+// named "Query".  Query delegates internally to QueryPartitions; the guard must
+// suppress the inner span.
+type TestCaseQuery struct {
+	client *as.Client
+}
+
+func (tc *TestCaseQuery) Setup(ctx context.Context, t *testing.T) {
+	containers.SkipIfProviderIsNotHealthy(t)
+
+	_, addr := containers.StartAerospikeTestContainer(t)
+
+	host, portStr, err := net.SplitHostPort(addr)
+	require.NoError(t, err)
+	port, err := strconv.Atoi(portStr)
+	require.NoError(t, err)
+
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxElapsedTime = 2 * time.Minute
+	require.NoError(t,
+		backoff.Retry(
+			func() error {
+				var aerr as.Error
+				tc.client, aerr = newClientReturn(host, port)
+				return aerr
+			},
+			bo,
+		),
+	)
+	t.Cleanup(func() { tc.client.Close() })
+}
+
+func (tc *TestCaseQuery) Run(ctx context.Context, t *testing.T) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	defer span.Finish()
+
+	_ = ctx
+	stmt := as.NewStatement("test", "testset")
+	rs, err := tc.client.Query(nil, stmt)
+	require.NoError(t, err)
+	if rs != nil {
+		rs.Close()
+	}
+}
+
+func (tc *TestCaseQuery) ExpectedTraces() trace.Traces {
+	return trace.Traces{
+		{
+			Tags: map[string]any{"name": "test.root"},
+			Children: trace.Traces{
+				{
+					Tags: map[string]any{
+						"name":     "aerospike.command",
+						"service":  "aerospike",
+						"resource": "Query",
+						"type":     "aerospike",
+					},
+					Meta: map[string]string{
+						"component": "aerospike/aerospike-client-go.v7",
+						"span.kind": "client",
+						"db.system": "aerospike",
+					},
+				},
+			},
+		},
+	}
+}
