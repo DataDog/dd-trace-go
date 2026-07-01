@@ -161,6 +161,10 @@ aspects:
               - name: GetObject
     advice:
       - prepend-statements:
+          imports:
+            context: context
+            goid: github.com/petermattis/goid
+            tracing: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing
           template: |-
             {{- $name := .Function.Name -}}
             {{- $err := .Function.Result 0 -}}
@@ -279,6 +283,10 @@ aspects:
               - name: QueryAggregate
     advice:
       - prepend-statements:
+          imports:
+            context: context
+            goid: github.com/petermattis/goid
+            tracing: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2/internal/tracing
           template: |-
             {{- $name := .Function.Name -}}
             {{- $err := .Function.Result 1 -}}
