@@ -1139,8 +1139,8 @@ func TestSpanTruncation(t *testing.T) {
 		ctx := context.Background()
 		span, _ := ll.StartSpan(ctx, llmobs.SpanKindTask, "", llmobs.StartSpanConfig{})
 
-		// Create very large strings that will exceed the EVP proxy request-body limit when JSON marshaled
-		largeContent := strings.Repeat("x", 6_000_000) // 6MB each
+		// Create very large strings that will exceed the 5MB size limit when JSON marshaled
+		largeContent := strings.Repeat("x", 3_000_000) // 3MB each
 
 		span.Annotate(llmobs.SpanAnnotations{
 			InputText:  largeContent,
@@ -1184,7 +1184,7 @@ func TestSpanTruncation(t *testing.T) {
 		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "", llmobs.StartSpanConfig{})
 
 		// Create large messages
-		largeContent := strings.Repeat("x", 6_000_000) // 6MB each
+		largeContent := strings.Repeat("x", 3_000_000) // 3MB each
 
 		span.Annotate(llmobs.SpanAnnotations{
 			InputMessages: []llmobs.LLMMessage{
@@ -1219,7 +1219,7 @@ func TestSpanTruncation(t *testing.T) {
 		span, _ := ll.StartSpan(ctx, llmobs.SpanKindEmbedding, "", llmobs.StartSpanConfig{})
 
 		// Create large embedded documents
-		largeContent := strings.Repeat("x", 6_000_000) // 6MB each
+		largeContent := strings.Repeat("x", 3_000_000) // 3MB each
 
 		span.Annotate(llmobs.SpanAnnotations{
 			InputEmbeddedDocs: []llmobs.EmbeddedDocument{
@@ -1252,7 +1252,7 @@ func TestSpanTruncation(t *testing.T) {
 		span, _ := ll.StartSpan(ctx, llmobs.SpanKindRetrieval, "", llmobs.StartSpanConfig{})
 
 		// Create large retrieved documents
-		largeContent := strings.Repeat("x", 6_000_000) // 6MB each
+		largeContent := strings.Repeat("x", 3_000_000) // 3MB each
 
 		span.Annotate(llmobs.SpanAnnotations{
 			InputText: "search query",
@@ -2542,11 +2542,11 @@ func assertAPMTraceID(t *testing.T, apmSpan testtracer.Span, llmSpan llmobstrans
 }
 
 // TestSpanEventsSizeBasedFlushing reproduces the issue where the span events buffer can grow beyond
-// the EVP proxy request-body limit before being flushed, causing a single HTTP request payload to
-// exceed the backend's size limit.
+// the 5MB EVP event size limit before being flushed, causing a single HTTP request payload to exceed
+// the backend's size limit.
 //
 // The fix (PR #4524) adds size-based flushing: before appending a new event to the buffer, if the
-// cumulative size would exceed sizeLimitEVPEvent, the current buffer is flushed first.
+// cumulative size would exceed sizeLimitEVPEvent (5MB), the current buffer is flushed first.
 func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 	var mu sync.Mutex
 	var batchSizes []int
@@ -2579,11 +2579,11 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 	ll, err := llmobs.ActiveLLMObs()
 	require.NoError(t, err)
 
-	// Each span has ~3.5MB of input text. Four spans exceed the EVP proxy request-body limit.
-	// Without size-based flushing, all four are buffered and sent in a single oversized HTTP
-	// request.
+	// Each span has ~1.7MB of input text. Four spans total ~6.8MB, which exceeds the 5MB limit.
+	// Without size-based flushing, all four are buffered and sent in a single HTTP request that
+	// is ~6.8MB — over the 5MB backend limit.
 	const numSpans = 4
-	largeContent := strings.Repeat("x", 3_500_000)
+	largeContent := strings.Repeat("x", 1_700_000)
 
 	ctx := context.Background()
 	for i := range numSpans {
@@ -2600,8 +2600,8 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 
 	require.NotEmpty(t, sizes, "expected at least one HTTP request to the LLMObs endpoint")
 	for _, size := range sizes {
-		assert.LessOrEqual(t, size, evpproxy.PayloadSizeLimit,
-			"HTTP batch payload (%d bytes) exceeds the EVP proxy request-body limit; without size-based flushing, "+
+		assert.LessOrEqual(t, size, evpproxy.EventSizeLimit,
+			"HTTP batch payload (%d bytes) exceeds the 5MB limit; without size-based flushing, "+
 				"all spans accumulate in a single batch that is too large to send", size)
 	}
 }

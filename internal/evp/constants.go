@@ -12,4 +12,8 @@ const (
 	// datadog-agent/pkg/trace/config/config.go defaults EVPProxy.MaxPayloadSize to
 	// 10 * 1024 * 1024.
 	PayloadSizeLimit = 10 * 1024 * 1024
+
+	// EventSizeLimit is the default individual EVP event-size limit used by product writers
+	// that need a local cap before request batching.
+	EventSizeLimit = 5_000_000
 )
