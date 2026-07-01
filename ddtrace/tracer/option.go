@@ -1381,6 +1381,32 @@ func (t *dummyTransport) endpoint() string {
 	return "http://localhost:9/v1.0/traces"
 }
 
+// discardTransport drains and discards trace payloads without decoding them.
+// It reads the whole body like a real HTTP send would (so encoded-buffer
+// lifetime and flush timing stay realistic) but never returns decoded
+// spans.
+// To use over dummyTransport in benchmarks that measure span creation/encoding
+// and doesn't care for decoding overhead that a customer app never performs.
+type discardTransport struct{}
+
+var _ ddTransport = discardTransport{}
+
+func (discardTransport) send(p payload) (io.ReadCloser, error) {
+	defer p.Close()
+	if _, err := io.Copy(io.Discard, p); err != nil {
+		return nil, err
+	}
+	return io.NopCloser(strings.NewReader("OK")), nil
+}
+
+func (discardTransport) sendStats(*pb.ClientStatsPayload, int) error {
+	return nil
+}
+
+func (discardTransport) endpoint() string {
+	return "http://localhost:9/v1.0/traces"
+}
+
 func decode(p payloadReader) (spanLists, []uint64, error) {
 	br := bufio.NewReader(p)
 	head, err := br.Peek(1)
