@@ -23,10 +23,10 @@ func TestConcurrent(t *testing.T) {
 	harness.Run(t, new(TestCaseConcurrent))
 }
 
-func TestScanAll(t *testing.T) {
-	harness.Run(t, new(TestCaseScanAll))
-}
-
 func TestQuery(t *testing.T) {
 	harness.Run(t, new(TestCaseQuery))
+}
+
+func TestScanAll(t *testing.T) {
+	harness.Run(t, new(TestCaseScanAll))
 }
