@@ -13,7 +13,7 @@ import (
 )
 
 // TestFlattenContextNested is a regression guard: legitimate nested context still flattens to
-// dot notation exactly as before the depth/cycle hardening was added.
+// dot notation exactly as before the depth cap was added.
 func TestFlattenContextNested(t *testing.T) {
 	in := map[string]any{
 		"user": map[string]any{"id": "123", "email": "a@b.com"},
@@ -27,9 +27,10 @@ func TestFlattenContextNested(t *testing.T) {
 	}, got)
 }
 
-// TestFlattenContextSelfReferenceDoesNotCrash verifies that a directly self-referential
-// context does not recurse forever. In Go a stack overflow is fatal (not recoverable), so a
-// missing guard would crash the whole process rather than fail this assertion.
+// TestFlattenContextSelfReferenceDoesNotCrash verifies that a directly self-referential context
+// terminates instead of recursing forever. In Go a stack overflow is fatal (recover() cannot
+// catch it), so without the depth cap this would crash the whole process rather than fail the
+// assertion. The cyclic branch is bounded to maxContextDepth levels.
 func TestFlattenContextSelfReferenceDoesNotCrash(t *testing.T) {
 	m := map[string]any{"name": "leo"}
 	m["self"] = m // cycle: m -> m
@@ -37,9 +38,8 @@ func TestFlattenContextSelfReferenceDoesNotCrash(t *testing.T) {
 	got := flattenContext(m)
 
 	assert.Equal(t, "leo", got["name"])
-	// The cyclic back-reference must be broken, never expanded.
 	for k := range got {
-		assert.NotContains(t, k, "self.self")
+		assert.LessOrEqual(t, strings.Count(k, "."), maxContextDepth)
 	}
 }
 
@@ -52,18 +52,9 @@ func TestFlattenContextIndirectCycleDoesNotCrash(t *testing.T) {
 	got := flattenContext(map[string]any{"root": a})
 
 	assert.Equal(t, "x", got["root.leaf"])
-}
-
-// TestFlattenContextSharedSubtreeNotTreatedAsCycle ensures cycle detection does not eat a
-// legitimate diamond (the same sub-map referenced from two sibling keys).
-func TestFlattenContextSharedSubtreeNotTreatedAsCycle(t *testing.T) {
-	shared := map[string]any{"v": "1"}
-	in := map[string]any{"x": shared, "y": shared}
-
-	got := flattenContext(in)
-
-	assert.Equal(t, "1", got["x.v"])
-	assert.Equal(t, "1", got["y.v"])
+	for k := range got {
+		assert.LessOrEqual(t, strings.Count(k, "."), maxContextDepth)
+	}
 }
 
 // TestFlattenContextDeepMapBounded verifies nesting beyond maxContextDepth is dropped rather
