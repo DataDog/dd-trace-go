@@ -322,6 +322,9 @@ jobs:
           name: weblog-image-${{ matrix.weblog-variant }}
           path: binaries/
 
+      - name: Display the content of binaries folder
+        run: ls -la binaries
+
       - name: Build weblog
         if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' }} 
         run: ./build.sh -i weblog
