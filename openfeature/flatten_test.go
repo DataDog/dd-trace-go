@@ -61,7 +61,7 @@ func TestFlattenContextIndirectCycleDoesNotCrash(t *testing.T) {
 // than exhausting the stack.
 func TestFlattenContextDeepMapBounded(t *testing.T) {
 	deep := map[string]any{"leaf": "deep-value"}
-	for i := 0; i < maxContextDepth+10; i++ {
+	for range maxContextDepth + 10 {
 		deep = map[string]any{"n": deep}
 	}
 
@@ -77,7 +77,7 @@ func TestFlattenContextDeepMapBounded(t *testing.T) {
 // TestFlattenContextDeepArrayBounded is the array analogue of the deep-map bound.
 func TestFlattenContextDeepArrayBounded(t *testing.T) {
 	var deep any = "leaf-value"
-	for i := 0; i < maxContextDepth+10; i++ {
+	for range maxContextDepth + 10 {
 		deep = []any{deep}
 	}
 
