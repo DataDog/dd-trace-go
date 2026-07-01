@@ -281,7 +281,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: 78bf716e817134bc9d24ea0e385653f03b11c436 # DO NOT MERGE, real value should be ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
