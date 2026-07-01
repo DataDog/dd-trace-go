@@ -85,7 +85,7 @@ const (
 )
 
 const (
-	sizeLimitEVPEvent        = evpproxy.EventSizeLimit
+	sizeLimitEVPEvent        = evpproxy.PayloadSizeLimit
 	collectionErrorDroppedIO = "dropped_io"
 	droppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
 )
@@ -669,7 +669,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		truncated := false
 		if rawSize > sizeLimitEVPEvent {
 			log.Warn(
-				"llmobs: dropping llmobs span event input/output because its size (%s) exceeds the event size limit (5MB)",
+				"llmobs: dropping llmobs span event input/output because its size (%s) exceeds the EVP proxy request-body limit",
 				readableBytes(rawSize),
 			)
 			truncated = dropSpanEventIO(ev)

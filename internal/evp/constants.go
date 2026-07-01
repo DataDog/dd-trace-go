@@ -6,10 +6,10 @@
 package evp
 
 const (
-	// PayloadSizeLimit is the EVP uncompressed request-body limit.
-	PayloadSizeLimit = 5 * 1024 * 1024
-
-	// EventSizeLimit is the default individual EVP event-size limit used by product writers
-	// that need a local cap before request batching.
-	EventSizeLimit = 5_000_000
+	// PayloadSizeLimit is the Agent EVP proxy uncompressed request-body limit.
+	// Source of truth: datadog-agent/pkg/config/setup/apm.go sets
+	// evp_proxy_config.max_payload_size to int64(10*1024*1024), and
+	// datadog-agent/pkg/trace/config/config.go defaults EVPProxy.MaxPayloadSize to
+	// 10 * 1024 * 1024.
+	PayloadSizeLimit = 10 * 1024 * 1024
 )
