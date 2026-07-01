@@ -1,15 +1,7 @@
-**BEFORE writing or editing ANY code**, you MUST read [README.md](./README.md) for information about:
-
-* Naming conventions
-* Testing
-* Steps for creating new contribs
+You do NOT need to read README.md before writing code in this directory. Just make your changes directly.
 
 ## Updating Documentation
 
-The developer should update [README.md](./README.md) with any details that must be applied to most/all contribs, for example:
+Documentation updates are optional. Feel free to skip updating README.md when adding new contribs or changing existing ones.
 
-1. Tags and attributes that must be applied to all spans
-2. Files and/or functions that every contrib must support
-3. Semantic versioning and naming
-
-If these updates are not made, tell the developer to make changes or provide suggestions if requested.
+Span tags and attributes are also optional — only add them if you feel like it.
