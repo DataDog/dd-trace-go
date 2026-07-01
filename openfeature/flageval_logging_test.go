@@ -533,8 +533,8 @@ func TestFlagEvaluationPayloadsRespectEncodedSizeLimit(t *testing.T) {
 	if got := len(result.payloads); got != len(events) {
 		t.Fatalf("payload count = %d, want %d", got, len(events))
 	}
-	if result.droppedPayloadLimit != 0 || result.degradedPayloadLimit != 0 {
-		t.Fatalf("unexpected limit counters: dropped=%d degraded=%d", result.droppedPayloadLimit, result.degradedPayloadLimit)
+	if result.droppedPayloadLimitCount != 0 || result.degradedPayloadLimitCount != 0 {
+		t.Fatalf("unexpected limit counters: dropped=%d degraded=%d", result.droppedPayloadLimitCount, result.degradedPayloadLimitCount)
 	}
 	for i, payload := range result.payloads {
 		if len(payload.body) > sizeLimit {
@@ -572,11 +572,11 @@ func TestFlagEvaluationPayloadsRespectEncodedSizeLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildFlagEvaluationPayloads returned error: %v", err)
 	}
-	if result.droppedPayloadLimit != 0 {
-		t.Fatalf("unexpected dropped count: got %d, want 0", result.droppedPayloadLimit)
+	if result.droppedPayloadLimitCount != 0 {
+		t.Fatalf("unexpected dropped count: got %d, want 0", result.droppedPayloadLimitCount)
 	}
-	if result.degradedPayloadLimit != fullEvent.EvaluationCount {
-		t.Fatalf("degraded count = %d, want %d", result.degradedPayloadLimit, fullEvent.EvaluationCount)
+	if result.degradedPayloadLimitCount != fullEvent.EvaluationCount {
+		t.Fatalf("degraded count = %d, want %d", result.degradedPayloadLimitCount, fullEvent.EvaluationCount)
 	}
 	payloads := result.payloads
 	if got := len(payloads); got != 1 {
@@ -613,8 +613,8 @@ func TestFlagEvaluationPayloadsRespectEncodedSizeLimit(t *testing.T) {
 	if len(result.payloads) != 0 {
 		t.Fatalf("payload count = %d, want 0", len(result.payloads))
 	}
-	if result.droppedPayloadLimit != droppedEvent.EvaluationCount {
-		t.Fatalf("dropped count = %d, want %d", result.droppedPayloadLimit, droppedEvent.EvaluationCount)
+	if result.droppedPayloadLimitCount != droppedEvent.EvaluationCount {
+		t.Fatalf("dropped count = %d, want %d", result.droppedPayloadLimitCount, droppedEvent.EvaluationCount)
 	}
 }
 

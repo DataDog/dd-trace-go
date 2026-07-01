@@ -623,24 +623,29 @@ func (w *flagEvalLoggingWriter) drainAndFlush() {
 	}
 }
 
-// sendToAgent sends the flag evaluation payload to the Datadog Agent via EVP proxy.
-// Reuses evpSubdomainHeader / evpSubdomainValue constants from exposure.go.
-func (w *flagEvalLoggingWriter) sendToAgent(payload flagEvalLoggingPayload) error {
-	return w.evp.post(flagEvalLoggingEndpoint, "flag evaluation", payload)
-}
-
 func (w *flagEvalLoggingWriter) sendEventsToAgent(events []flagEvalLoggingEvent, sizeLimit int) (int, error) {
 	result, err := w.buildFlagEvaluationPayloads(events, sizeLimit)
 	if err != nil {
 		return 0, err
 	}
-	if result.droppedPayloadLimit > 0 {
-		log.Warn("openfeature: flag evaluation payload limit dropped %d oversized degraded event(s) (best-effort telemetry)", result.droppedPayloadLimit)
+	if result.degradedPayloadLimitCount > 0 {
+		log.Debug("openfeature: flag evaluation payload limit degraded %d evaluation(s) (best-effort telemetry)", result.degradedPayloadLimitCount)
+	}
+	if result.droppedPayloadLimitCount > 0 {
+		log.Warn("openfeature: flag evaluation payload limit dropped %d oversized degraded evaluation(s) (best-effort telemetry)", result.droppedPayloadLimitCount)
 	}
 
 	sent := 0
-	for _, payload := range result.payloads {
+	for i, payload := range result.payloads {
 		if err := w.evp.postBytes(flagEvalLoggingEndpoint, "flag evaluation", payload.body); err != nil {
+			remainingPayloads := len(result.payloads) - i - 1
+			remainingEvents := 0
+			for _, remaining := range result.payloads[i+1:] {
+				remainingEvents += remaining.eventCount
+			}
+			if remainingPayloads > 0 {
+				log.Debug("openfeature: skipped %d unsent flag evaluation payload(s) containing %d event(s) after post failure", remainingPayloads, remainingEvents)
+			}
 			return sent, err
 		}
 		sent += payload.eventCount
@@ -649,9 +654,9 @@ func (w *flagEvalLoggingWriter) sendEventsToAgent(events []flagEvalLoggingEvent,
 }
 
 type flagEvalLoggingPayloadBuildResult struct {
-	payloads             []encodedFlagEvaluationPayload
-	droppedPayloadLimit  int64
-	degradedPayloadLimit int64
+	payloads                  []encodedFlagEvaluationPayload
+	droppedPayloadLimitCount  int64
+	degradedPayloadLimitCount int64
 }
 
 type flagEvalLoggingPayloadEncodeStatus int
@@ -690,10 +695,10 @@ func (w *flagEvalLoggingWriter) buildFlagEvaluationPayloads(events []flagEvalLog
 		}
 		switch status {
 		case flagEvalLoggingPayloadDropped:
-			result.droppedPayloadLimit += event.EvaluationCount
+			result.droppedPayloadLimitCount += event.EvaluationCount
 			continue
 		case flagEvalLoggingPayloadDegraded:
-			result.degradedPayloadLimit += event.EvaluationCount
+			result.degradedPayloadLimitCount += event.EvaluationCount
 		}
 
 		separatorSize := 0
