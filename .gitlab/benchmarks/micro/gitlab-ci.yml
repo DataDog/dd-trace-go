@@ -78,7 +78,7 @@ microbenchmarks-1:
 microbenchmarks-2:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
+    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkSampleWAFSubContext"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-2"
