@@ -10,10 +10,10 @@ meta:
 
 aspects:
   # Injects span helpers and a goroutine-local context store into the aerospike
-  # Client package.  Two concerns are handled here:
+  # Client package.  Three concerns are handled here:
   #
-  # 1. Span creation helpers (__dd_startAerospikeSpan / __dd_finishAerospikeSpan)
-  #    called by the function-body aspects below.
+  # 1. Span creation helper (tracing.StartDefaultSpan, called directly from
+  #    the function-body templates below) and __dd_finishAerospikeSpan.
   #
   # 2. Cross-goroutine context propagation via WithContext/__dd_aerospike_get_ctx.
   #    Because aerospike Client methods take no context.Context parameter, there
@@ -28,6 +28,15 @@ aspects:
   #    this goroutine picks up the right parent.  For same-goroutine calls where
   #    WithContext was not used, __dd_aerospike_get_ctx falls back to
   #    context.Background() and the tracer's GLS provides parenting automatically.
+  #
+  # 3. Re-entrancy guard via __dd_aerospike_active_key embedded in the context.
+  #    Some public methods are thin wrappers that immediately delegate to another
+  #    public method also in this advice list (e.g. Query→QueryPartitions,
+  #    ScanAll→ScanPartitions).  Without a guard, one user call would produce two
+  #    spans.  The guard marks the context before delegating; the inner call sees
+  #    the marker, skips span creation, and stores the marked context back so any
+  #    further nesting is also suppressed.  No new sync.Map is needed — the marker
+  #    travels through the existing __dd_aerospike_ctxs mechanism.
   - id: Client
     join-point:
       struct-definition: github.com/aerospike/aerospike-client-go/v7.Client
@@ -54,6 +63,16 @@ aspects:
             // same goroutine — do not store the returned *Client and use it later.
             var __dd_aerospike_ctxs sync.Map // map[int64]context.Context
 
+            // __dd_aerospike_active_key is an unexported context key injected by
+            // Orchestrion into the aerospike-client-go package.  It is embedded in
+            // the goroutine's context to signal that an instrumented Aerospike call
+            // is already in progress on this goroutine, preventing double-spans when
+            // a public method delegates internally to another public method that is
+            // also in the advice list (e.g. Query → QueryPartitions).
+            // Because the type is unexported and lives in the aerospike-client-go
+            // package, no external code can produce a context with this key set.
+            type __dd_aerospike_active_key struct{}
+
             // WithContext stores ctx so that the immediately following method call
             // on this client creates its span as a child of the span in ctx.
             // It MUST be chained directly with the method call in the same goroutine:
@@ -79,16 +98,15 @@ aspects:
               return context.Background()
             }
 
-            func __dd_startAerospikeSpan(resourceName string) *tracing.Span {
-              return tracing.StartDefaultSpan(__dd_aerospike_get_ctx(), resourceName)
-            }
-
             func __dd_finishAerospikeSpan(span *tracing.Span, err error) {
               tracing.FinishSpan(span, err)
             }
 
   # Instruments every write/batch-write method on *as.Client.
   # These methods return a single error value (result index 0).
+  # The re-entrancy guard (see __dd_aerospike_active_key above) is applied so
+  # that if any of these methods is ever called from inside another instrumented
+  # Aerospike method on the same goroutine, only the outermost call creates a span.
   - id: Client.Operation.Error
     join-point:
       function-body:
@@ -146,13 +164,24 @@ aspects:
           template: |-
             {{- $name := .Function.Name -}}
             {{- $err := .Function.Result 0 -}}
-            __dd_span := __dd_startAerospikeSpan({{ printf "%q" $name }})
-            defer func() {
-              __dd_finishAerospikeSpan(__dd_span, {{ $err }})
-            }()
+            __dd_ctx := __dd_aerospike_get_ctx()
+            var __dd_span *tracing.Span
+            if __dd_ctx.Value(__dd_aerospike_active_key{}) == nil {
+              __dd_aerospike_ctxs.Store(goid.Get(), context.WithValue(__dd_ctx, __dd_aerospike_active_key{}, struct{}{}))
+              __dd_span = tracing.StartDefaultSpan(__dd_ctx, {{ printf "%q" $name }})
+              defer func() {
+                __dd_aerospike_ctxs.Delete(goid.Get())
+                __dd_finishAerospikeSpan(__dd_span, {{ $err }})
+              }()
+            } else {
+              __dd_aerospike_ctxs.Store(goid.Get(), __dd_ctx)
+            }
 
   # Instruments read/query/scan methods on *as.Client.
   # These methods return (value, error) — the error is result index 1.
+  # The same re-entrancy guard prevents double-spans for the pairs that
+  # delegate internally: Query→QueryPartitions, ScanAll→ScanPartitions,
+  # QueryObjects→QueryPartitionObjects, ScanAllObjects→ScanPartitionObjects.
   - id: Client.Operation.ValueError
     join-point:
       function-body:
@@ -253,7 +282,15 @@ aspects:
           template: |-
             {{- $name := .Function.Name -}}
             {{- $err := .Function.Result 1 -}}
-            __dd_span := __dd_startAerospikeSpan({{ printf "%q" $name }})
-            defer func() {
-              __dd_finishAerospikeSpan(__dd_span, {{ $err }})
-            }()
+            __dd_ctx := __dd_aerospike_get_ctx()
+            var __dd_span *tracing.Span
+            if __dd_ctx.Value(__dd_aerospike_active_key{}) == nil {
+              __dd_aerospike_ctxs.Store(goid.Get(), context.WithValue(__dd_ctx, __dd_aerospike_active_key{}, struct{}{}))
+              __dd_span = tracing.StartDefaultSpan(__dd_ctx, {{ printf "%q" $name }})
+              defer func() {
+                __dd_aerospike_ctxs.Delete(goid.Get())
+                __dd_finishAerospikeSpan(__dd_span, {{ $err }})
+              }()
+            } else {
+              __dd_aerospike_ctxs.Store(goid.Get(), __dd_ctx)
+            }

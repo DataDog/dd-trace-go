@@ -194,6 +194,96 @@ func TestWithService(t *testing.T) {
 	assert.Equal(t, "my-aerospike", spans[0].Tag(ext.ServiceName))
 }
 
+// TestScanAll, TestScanPartitions, TestQuery, TestQueryPartitions verify that
+// each method produces exactly one span.  ScanAll and Query are thin wrappers
+// in the library that delegate to ScanPartitions / QueryPartitions; in an
+// Orchestrion build the re-entrancy guard prevents the inner call from creating
+// a second span.  In the manual-wrapper path tested here the delegation happens
+// at the raw *as.Client level (never through this wrapper), so one span is
+// produced in either case — these tests lock down that contract.
+
+func TestScanAll(t *testing.T) {
+	requireIntegration(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := getClient(t, WithService("test-aerospike"))
+	defer client.Close()
+
+	rs, err := client.ScanAll(nil, testNamespace, testSet)
+	if rs != nil {
+		rs.Close()
+	}
+	assert.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	validateAerospikeSpan(t, spans[0], "ScanAll")
+	assert.Equal(t, "test-aerospike", spans[0].Tag(ext.ServiceName))
+}
+
+func TestScanPartitions(t *testing.T) {
+	requireIntegration(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := getClient(t, WithService("test-aerospike"))
+	defer client.Close()
+
+	rs, err := client.ScanPartitions(nil, as.NewPartitionFilterAll(), testNamespace, testSet)
+	if rs != nil {
+		rs.Close()
+	}
+	assert.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	validateAerospikeSpan(t, spans[0], "ScanPartitions")
+	assert.Equal(t, "test-aerospike", spans[0].Tag(ext.ServiceName))
+}
+
+func TestQuery(t *testing.T) {
+	requireIntegration(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := getClient(t, WithService("test-aerospike"))
+	defer client.Close()
+
+	stmt := as.NewStatement(testNamespace, testSet)
+	rs, err := client.Query(nil, stmt)
+	if rs != nil {
+		rs.Close()
+	}
+	assert.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	validateAerospikeSpan(t, spans[0], "Query")
+	assert.Equal(t, "test-aerospike", spans[0].Tag(ext.ServiceName))
+}
+
+func TestQueryPartitions(t *testing.T) {
+	requireIntegration(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	client := getClient(t, WithService("test-aerospike"))
+	defer client.Close()
+
+	stmt := as.NewStatement(testNamespace, testSet)
+	rs, err := client.QueryPartitions(nil, stmt, as.NewPartitionFilterAll())
+	if rs != nil {
+		rs.Close()
+	}
+	assert.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	validateAerospikeSpan(t, spans[0], "QueryPartitions")
+	assert.Equal(t, "test-aerospike", spans[0].Tag(ext.ServiceName))
+}
+
 // Unit tests that do not require a running Aerospike server.
 
 // newMockClient builds a Client with a nil *as.Client suitable for unit tests
