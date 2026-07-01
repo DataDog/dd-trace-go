@@ -24,7 +24,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
-	evpproxy "github.com/DataDog/dd-trace-go/v2/internal/evp"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
@@ -2600,7 +2599,7 @@ func TestSpanEventsSizeBasedFlushing(t *testing.T) {
 
 	require.NotEmpty(t, sizes, "expected at least one HTTP request to the LLMObs endpoint")
 	for _, size := range sizes {
-		assert.LessOrEqual(t, size, evpproxy.EventSizeLimit,
+		assert.LessOrEqual(t, size, 5_000_000,
 			"HTTP batch payload (%d bytes) exceeds the 5MB limit; without size-based flushing, "+
 				"all spans accumulate in a single batch that is too large to send", size)
 	}

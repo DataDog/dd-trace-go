@@ -22,7 +22,6 @@ import (
 	"unicode"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	evpproxy "github.com/DataDog/dd-trace-go/v2/internal/evp"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -85,7 +84,7 @@ const (
 )
 
 const (
-	sizeLimitEVPEvent        = evpproxy.EventSizeLimit
+	sizeLimitEVPEvent        = 5_000_000 // 5MB
 	collectionErrorDroppedIO = "dropped_io"
 	droppedValueText         = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
 )
