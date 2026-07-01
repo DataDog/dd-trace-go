@@ -1022,6 +1022,13 @@
         "default": "10m"
       }
     ],
+    "DD_TRACE_AEROSPIKE_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_AGENT_PORT": [
       {
         "implementation": "A",
