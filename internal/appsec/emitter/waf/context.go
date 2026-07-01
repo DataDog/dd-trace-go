@@ -168,6 +168,14 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 			continue
 		}
 
+		// First-write-wins, intentionally: ephemeral subcontexts (e.g. per-hop downstream
+		// evaluation of a redirect chain) don't share the WAF's in-context attribute dedup, so
+		// without this guard the last hop would overwrite the first. Keeping the first value makes
+		// appsec.api.redirection.move_target reflect the FIRST redirect hop, not the last.
+		if _, ok := op.derivatives[k]; ok {
+			continue
+		}
+
 		op.derivatives[k] = v
 	}
 }
