@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.10.0-rc.1
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/kafka v0.42.0
