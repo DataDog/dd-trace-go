@@ -327,7 +327,7 @@ jobs:
 
       - name: Build weblog
         if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' }} 
-        run: ./build.sh -i weblog
+        run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }}
 
       - name: Build runner
         uses: ./.github/actions/install_runner
