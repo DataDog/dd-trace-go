@@ -34,6 +34,15 @@ type evaluationResult struct {
 	Metadata map[string]any
 }
 
+const (
+	metadataAllocationKey = "dd.allocation.key"
+	metadataDoLogKey      = "dd.doLog"
+	metadataSerialIDKey   = "dd.serialId"
+	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
+	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time.
+	metadataEvalTimeKey = "dd.eval.timestamp_ms"
+)
+
 // evaluateFlag evaluates a feature flag with the given context. The caller supplies the
 // evaluation time (now) so a single timestamp is shared between the allocation time-window
 // checks here and the EVP eval-time metadata stamped by DatadogProvider.evaluate — avoiding a
@@ -91,6 +100,10 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 				doLog = *allocation.DoLog
 			}
 			metadata[metadataDoLogKey] = doLog
+
+			if split.SerialID != nil {
+				metadata[metadataSerialIDKey] = *split.SerialID
+			}
 
 			// Determine reason:
 			//   rules matched           → TARGETING_MATCH
