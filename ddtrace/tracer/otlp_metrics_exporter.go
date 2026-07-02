@@ -49,7 +49,7 @@ func newOTLPMetricsExporter(cfg *internalconfig.Config) *otlpMetricsExporter {
 // export converts payload to an OTLP ExportMetricsServiceRequest and sends it.
 // A nil or empty payload produces no request. Errors are logged and returned.
 func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
-	rms := BuildOTLPMetricsRequest(payload, e.cfg)
+	rms := buildOTLPMetricsRequest(payload, e.cfg)
 	if len(rms) == 0 {
 		return nil
 	}
