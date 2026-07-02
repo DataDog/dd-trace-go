@@ -868,6 +868,13 @@
         "default": "[]"
       }
     ],
+    "DD_SPAN_SAMPLING_RULES_FILE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_TAGS": [
       {
         "implementation": "A",
@@ -1566,6 +1573,13 @@
         "implementation": "C",
         "type": "string",
         "default": ""
+      }
+    ],
+    "DD_TRACE_SAMPLING_RULES_FILE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
       }
     ],
     "DD_TRACE_SARAMA_ANALYTICS_ENABLED": [
