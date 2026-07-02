@@ -27,15 +27,11 @@ import (
 
 const spanDurationMetricName = "traces.span.sdk.metrics.duration"
 
-// spanMetricBounds are the fixed histogram bucket boundaries in seconds (16 boundaries, 17 buckets).
-// These match the OTel Span Metrics Connector defaults, scaled from milliseconds to seconds.
+// spanMetricBounds are histogram bucket boundaries (seconds), matching OTel Span Metrics Connector defaults.
 var spanMetricBounds = [16]float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1, 1.4, 2, 5, 10, 15}
 
-// BuildOTLPMetricsRequest converts a ClientStatsPayload into a slice of OTLP ResourceMetrics.
-// Service identity (service.name, service.version, deployment.environment.name) is placed on the
-// Resource. When a grouped-stats entry carries a different service than the payload's configured
-// default, service.name is additionally emitted as a data-point attribute. The resulting histogram
-// uses DELTA temporality. Returns nil when the payload produces no data points.
+// buildOTLPMetricsRequest converts a ClientStatsPayload to OTLP ResourceMetrics (DELTA histogram).
+// Non-default services carry service.name as a data-point attribute. Returns nil when empty.
 func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) []*otlpmetrics.ResourceMetrics {
 	otelMode := cfg.OTLPSemanticsMode()
 
@@ -79,9 +75,7 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 	}
 }
 
-// buildMetricsResource constructs the OTLP Resource for the metrics payload.
-// Includes SDK identification, service identity, optional host.name, and datadog.* process-tag
-// attributes (default mode only).
+// buildMetricsResource builds the OTLP Resource; adds host.name and datadog.* attrs in default mode.
 func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportHostname bool, hostname string) *otlpresource.Resource {
 	attrs := []*otlpcommon.KeyValue{
 		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
@@ -116,10 +110,8 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportH
 	return &otlpresource.Resource{Attributes: attrs}
 }
 
-// buildGroupDataPoints builds histogram data points for a single ClientGroupedStats group.
-// It produces one data point for OK spans (OkSummary) and one for error spans (ErrorSummary)
-// when those summaries are non-empty. defaultService is the payload's configured service name;
-// when gs.Service differs from it, service.name is added as a data-point attribute.
+// buildGroupDataPoints produces up to two OTLP histogram data points (ok + error) from a ClientGroupedStats.
+// Non-default services carry service.name as a data-point attribute.
 func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, defaultService string, otelMode bool) []*otlpmetrics.HistogramDataPoint {
 	var pts []*otlpmetrics.HistogramDataPoint
 
@@ -168,13 +160,11 @@ func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, star
 	return dp
 }
 
-// buildDataPointAttributes returns the data-point attributes for a ClientGroupedStats group.
-// When gs.Service differs from defaultService, service.name is added so the backend can
-// distinguish spans from non-default services without a separate resource.
+// buildDataPointAttributes returns OTLP data-point attributes; adds service.name for non-default services.
 func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultService string, otelMode bool) []*otlpcommon.KeyValue {
 	var attrs []*otlpcommon.KeyValue
 
-	// OTel semantic-convention attributes (both modes).
+	// OTel semantic-convention attributes.
 	if gs.Resource != "" {
 		attrs = append(attrs, otlpKeyValue("span.name", otlpStringValue(gs.Resource)))
 	}
@@ -200,8 +190,7 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 	if isError {
 		attrs = append(attrs, otlpKeyValue("status.code", otlpIntValue(2)))
 	}
-	// grpc.method.name is a first-class RFC dimension emitted as rpc.method. It arrives via
-	// PeerTags because ClientGroupedStats has no dedicated grpc_method field (unlike libdatadog).
+	// grpc.method.name arrives via PeerTags (no dedicated field in ClientGroupedStats) and maps to rpc.method.
 	for _, tag := range gs.PeerTags {
 		if k, v, ok := strings.Cut(tag, ":"); ok && k == "grpc.method.name" && v != "" {
 			attrs = append(attrs, otlpKeyValue("rpc.method", otlpStringValue(v)))
@@ -209,7 +198,6 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 		}
 	}
 
-	// When the span's service differs from the payload default, carry it on the data point.
 	if svc := gs.Service; svc != "" && svc != defaultService {
 		attrs = append(attrs, otlpKeyValue("service.name", otlpStringValue(svc)))
 	}
@@ -222,8 +210,7 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 		if gs.Type != "" {
 			attrs = append(attrs, otlpKeyValue("datadog.span.type", otlpStringValue(gs.Type)))
 		}
-		// A group is top-level only when every span in it was top-level (TopLevelHits == Hits).
-		// A mixed group (some top-level, some not) is conservatively reported as non-top-level.
+		// top_level is true only when all spans in the group were top-level (TopLevelHits == Hits).
 		attrs = append(attrs, otlpKeyValue("datadog.span.top_level", otlpBoolValue(gs.Hits > 0 && gs.TopLevelHits == gs.Hits)))
 		if gs.Synthetics {
 			attrs = append(attrs, otlpKeyValue("datadog.origin", otlpStringValue("synthetics")))
@@ -233,10 +220,8 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 	return attrs
 }
 
-// sketchToHistogram decodes a DDSketch from protobuf bytes (proto.Marshal of DDSketch.ToProto(),
-// as produced by the stats concentrator) and projects its values into fixed histogram buckets.
-// Sketch values are in nanoseconds; the function converts them to seconds.
-// Returns (bucketCounts, sumSec, minSec, maxSec, totalCount, error).
+// sketchToHistogram decodes a proto-marshaled DDSketch (values in ns) and maps it into histogram
+// buckets (seconds), returning (bucketCounts, sum, min, max, count, error).
 func sketchToHistogram(sketchBytes []byte, bounds []float64) ([]uint64, float64, float64, float64, uint64, error) {
 	var skPb sketchpb.DDSketch
 	if err := proto.Unmarshal(sketchBytes, &skPb); err != nil {
@@ -259,8 +244,7 @@ func sketchToHistogram(sketchBytes []byte, bounds []float64) ([]uint64, float64,
 		c := uint64(math.Round(count))
 		totalCount += c
 		sumSec += valueSec * count
-		// Find the bucket: first index i where bounds[i] >= valueSec.
-		// OTLP convention: bucket i covers (bounds[i-1], bounds[i]] — upper-bound inclusive.
+		// OTLP: bucket i covers (bounds[i-1], bounds[i]], upper-bound inclusive.
 		idx := sort.Search(len(bounds), func(i int) bool { return bounds[i] >= valueSec })
 		buckets[idx] += c
 		return false
