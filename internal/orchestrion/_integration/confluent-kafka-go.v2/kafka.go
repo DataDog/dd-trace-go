@@ -89,7 +89,14 @@ func (tc *TestCase) produceMessageWithNilDeliveryChannel(t *testing.T) {
 
 	producer, err := kafka.NewProducer(cfg)
 	require.NoError(t, err, "failed to create producer")
-	defer producer.Close()
+	defer func() {
+		// A nil delivery channel is redirected to the producer's Events() channel
+		// by the instrumentation. Drain the delivery report before Close() so
+		// the tracer's WrapDeliveryChannel goroutine finishes forwarding before
+		// that channel is closed (otherwise: "send on closed channel" panic).
+		<-producer.Events()
+		producer.Close()
+	}()
 
 	err = producer.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{
