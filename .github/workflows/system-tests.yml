@@ -71,19 +71,6 @@ jobs:
           - graph-gophers
           - graphql-go
           - gqlgen
-        buildable-weblog:
-          - true
-        include:
-          - weblog-variant: envoy
-            target: external_processing
-            image_name: service-extensions-callout
-            image_artifact: service-extensions-image-linux-amd64
-            buildable-weblog: false
-          - weblog-variant: haproxy
-            target: haproxy
-            image_name: haproxy-spoa
-            image_artifact: haproxy-spoa-image-linux-amd64
-            buildable-weblog: false
     name: Build weblog (${{ matrix.weblog-variant }})
     steps:
       - name: Restore repo cache
@@ -117,30 +104,14 @@ jobs:
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
-      # regular weblog images
       - name: Build and save weblog image
-        if: ${{ matrix.buildable-weblog }}
         run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }} --save-to-binaries
 
       - name: Upload weblog image artifact
-        if: ${{ matrix.buildable-weblog }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: weblog-image-${{ matrix.weblog-variant }}
           path: binaries/golang-${{ matrix.weblog-variant }}-weblog.tar.zst
-          retention-days: 1
-
-      # proxy integrations (haproxy and envoy)
-      - name: Set ${{ matrix.image_name }} image name
-        if: ${{ !matrix.buildable-weblog }}
-        run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
-
-      - name: Upload weblog image artifact
-        if: ${{ !matrix.buildable-weblog }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: weblog-image-${{ matrix.weblog-variant }}
-          path: binaries/golang-${{ matrix.image_name }}-image
           retention-days: 1
 
   system-tests:
@@ -249,12 +220,20 @@ jobs:
             scenario: TRACE_STATS_COMPUTATION_CLIENT_DROP_P0S_FALSE
           - weblog-variant: envoy
             scenario: DEFAULT
+            image_artifact: service-extensions-image-linux-amd64
+            image_name: service-extensions-callout
           - weblog-variant: envoy
             scenario: APPSEC_BLOCKING
+            image_artifact: service-extensions-image-linux-amd64
+            image_name: service-extensions-callout
           - weblog-variant: haproxy
             scenario: DEFAULT
+            image_artifact: haproxy-spoa-image-linux-amd64
+            image_name: haproxy-spoa
           - weblog-variant: haproxy
             scenario: APPSEC_BLOCKING
+            image_artifact: haproxy-spoa-image-linux-amd64
+            image_name: haproxy-spoa
       fail-fast: false
     env:
       SYSTEM_TESTS_WEBLOG: ${{ matrix.weblog-variant }}
@@ -326,8 +305,22 @@ jobs:
         run: ls -la binaries
 
       - name: Build weblog
-        if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' }} 
+        if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' }}
         run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }}
+
+      - name: Download ${{ matrix.weblog-variant }} artifacts
+        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' && matrix.weblog-variant == 'haproxy') }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.image_artifact }}
+
+      - name: Load ${{ matrix.weblog-variant }} image
+        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' && matrix.weblog-variant == 'haproxy') }}
+        run: docker load -i ${{ matrix.image_artifact }}.tar
+      
+      - name: Set ${{ matrix.image_name }} image name
+        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' && matrix.weblog-variant == 'haproxy') }}
+        run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
       - name: Build runner
         uses: ./.github/actions/install_runner
