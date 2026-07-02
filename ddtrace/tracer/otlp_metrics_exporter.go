@@ -45,7 +45,6 @@ func newOTLPMetricsExporter(cfg *internalconfig.Config) *otlpMetricsExporter {
 }
 
 // export converts payload to an OTLP ExportMetricsServiceRequest and sends it.
-// A nil or empty payload produces no request. Errors are logged and returned.
 func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 	rms := buildOTLPMetricsRequest(payload, e.cfg)
 	if len(rms) == 0 {
@@ -75,10 +74,8 @@ func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 	return nil
 }
 
-// marshalExportRequestProto encodes a ResourceMetrics slice as the protobuf binary of
-// ExportMetricsServiceRequest (field 1: repeated ResourceMetrics). This avoids importing
-// the collector package which transitively pulls in grpc-gateway and conflicts with
-// older monolithic google.golang.org/genproto in some contrib modules.
+// marshalExportRequestProto hand-encodes ExportMetricsServiceRequest (field 1: repeated ResourceMetrics)
+// to avoid importing the collector package, which conflicts with some contrib modules via google.golang.org/genproto.
 func marshalExportRequestProto(rms []*otlpmetrics.ResourceMetrics) ([]byte, error) {
 	var buf []byte
 	for _, rm := range rms {

@@ -408,9 +408,7 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 	return merged
 }
 
-// resolveOTLPMetricsProtocol normalises OTEL_EXPORTER_OTLP_METRICS_PROTOCOL to one of
-// "http/json" or "http/protobuf". Unknown values and the empty string default to "http/protobuf"
-// per the OTel specification.
+// resolveOTLPMetricsProtocol normalises OTEL_EXPORTER_OTLP_METRICS_PROTOCOL to "http/json" or "http/protobuf"; unknown values default to "http/protobuf".
 func resolveOTLPMetricsProtocol(v string) string {
 	if v == "http/json" {
 		return "http/json"
