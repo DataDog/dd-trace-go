@@ -36,7 +36,7 @@ var spanMetricBounds = []float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.
 // Resource. When a grouped-stats entry carries a different service than the payload's configured
 // default, service.name is additionally emitted as a data-point attribute. The resulting histogram
 // uses DELTA temporality. Returns nil when the payload produces no data points.
-func BuildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) []*otlpmetrics.ResourceMetrics {
+func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) []*otlpmetrics.ResourceMetrics {
 	otelMode := cfg.OTLPSemanticsMode()
 
 	var allPoints []*otlpmetrics.HistogramDataPoint
