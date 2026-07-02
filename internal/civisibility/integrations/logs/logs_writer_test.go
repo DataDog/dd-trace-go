@@ -238,11 +238,12 @@ func (r *logSendRecorder) messages() map[string]int {
 type MockClient struct {
 	SendCoveragePayloadFunc           func(ciTestCovPayload io.Reader) error
 	SendCoveragePayloadWithFormatFunc func(ciTestCovPayload io.Reader, format string) error
+	SendCoverageReportFunc            func(report io.Reader, format string) error
 	GetSettingsFunc                   func() (*net.SettingsResponseData, error)
 	GetKnownTestsFunc                 func() (*net.KnownTestsResponseData, error)
 	GetCommitsFunc                    func(localCommits []string) ([]string, error)
 	SendPackFilesFunc                 func(commitSha string, packFiles []string) (bytes int64, err error)
-	GetSkippableTestsFunc             func() (correlationId string, skippables map[string]map[string][]net.SkippableResponseDataAttributes, err error)
+	GetSkippableTestsFunc             func() (*net.SkippableTestsResponse, error)
 	GetTestManagementTestsFunc        func() (*net.TestManagementTestsResponseDataModules, error)
 	SendLogsFunc                      func(logsPayload io.Reader) error
 }
@@ -253,6 +254,13 @@ func (m *MockClient) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 
 func (m *MockClient) SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error {
 	return m.SendCoveragePayloadWithFormatFunc(ciTestCovPayload, format)
+}
+
+func (m *MockClient) SendCoverageReport(report io.Reader, format string) error {
+	if m.SendCoverageReportFunc != nil {
+		return m.SendCoverageReportFunc(report, format)
+	}
+	return nil
 }
 
 func (m *MockClient) GetSettings() (*net.SettingsResponseData, error) {
@@ -271,7 +279,7 @@ func (m *MockClient) SendPackFiles(commitSha string, packFiles []string) (bytes 
 	return m.SendPackFilesFunc(commitSha, packFiles)
 }
 
-func (m *MockClient) GetSkippableTests() (_ string, _ map[string]map[string][]net.SkippableResponseDataAttributes, err error) {
+func (m *MockClient) GetSkippableTests() (*net.SkippableTestsResponse, error) {
 	return m.GetSkippableTestsFunc()
 }
 

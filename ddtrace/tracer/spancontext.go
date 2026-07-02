@@ -39,7 +39,7 @@ const TraceIDZero string = "00000000000000000000000000000000"
 var traceID128BitEnabled atomic.Bool
 
 func init() {
-	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true))
+	traceID128BitEnabled.Store(sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)) //nolint:configaudit — intentional: atomic cache for hot path; re-seeded from internalConfig on tracer.Start
 }
 
 var _ ddtrace.SpanContext = (*SpanContext)(nil)
@@ -50,11 +50,22 @@ type traceID struct {
 	hexEncoded string
 }
 
+// HexEncoded returns the 32-character hex representation of the 128-bit
+// trace ID. It returns the cached value populated by cacheHex when the
+// traceID is finalized at construction (the context-extraction paths). When
+// the cache is empty it falls back to a non-caching computation. An empty
+// cache is the normal state for a locally started span: newSpanContext
+// deliberately does not call cacheHex (see the note there), so every
+// HexEncoded call on such a span recomputes the hex and allocates. It is also
+// the state for a traceID built via direct field assignment (e.g. in tests).
+// The non-caching fallback is required for concurrency: HexEncoded is called
+// from Inject on a SpanContext that may be shared across goroutines, and
+// writing to t.hexEncoded here would race.
 func (t *traceID) HexEncoded() string {
-	if t.hexEncoded == "" {
-		t.computeAndCacheHex()
+	if t.hexEncoded != "" {
+		return t.hexEncoded
 	}
-	return t.hexEncoded
+	return hex.EncodeToString(t.value[:])
 }
 
 func (t *traceID) Lower() uint64 {
@@ -104,7 +115,11 @@ func (t *traceID) HasUpper() bool {
 
 func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
 
-func (t *traceID) computeAndCacheHex() {
+// cacheHex populates the hexEncoded cache. It must be called at traceID
+// construction finalization, before the enclosing SpanContext is shared with
+// other goroutines. After cacheHex returns, HexEncoded becomes a pure read
+// and is safe under concurrent access.
+func (t *traceID) cacheHex() {
 	t.hexEncoded = hex.EncodeToString(t.value[:])
 }
 
@@ -186,6 +201,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 
 	ctxSpl, ok := c.(spanContextWithSamplingDecision)
 	if !ok {
+		sc.traceID.cacheHex()
 		return &sc
 	}
 
@@ -233,6 +249,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 
 	ctx, ok := c.(spanContextV1Adapter)
 	if !ok {
+		sc.traceID.cacheHex()
 		return &sc
 	}
 
@@ -245,6 +262,7 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 	if dm, ok := sc.trace.propagatingTags[keyDecisionMaker]; ok { // +checklocksignore - Initialization time, not shared yet.
 		sc.trace.dm = parseDecisionMaker(dm) // +checklocksignore - Initialization time, not shared yet.
 	}
+	sc.traceID.cacheHex()
 	return &sc
 }
 
@@ -302,6 +320,15 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	// between initializing properties of the span (priority)
 	// and updating them after extracting context through propagators
 	context.updated = false
+	// Note: we deliberately do NOT call context.traceID.cacheHex() here.
+	// Unlike the extraction paths (extractTextMap, FromGenericCtx, ...), which
+	// finalize the cache before returning, locally started spans rely on the
+	// non-caching HexEncoded fallback. Caching here would add a hex allocation
+	// to every StartSpan, including spans that are never propagated. The
+	// trade-off is that HexEncoded/UpperHex allocates on each call for a local
+	// span (e.g. once per Inject, and once at finish via setTraceTagsLocked for
+	// 128-bit spans). This is safe under concurrent Inject because the fallback
+	// performs no write. See HexEncoded and cacheHex for the full contract.
 	return context
 }
 
@@ -928,11 +955,11 @@ func (t *trace) finishedOneLocked(s *Span) {
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_closed", nil).Submit(float64(len(finishedSpans)))
 	telemetry.Distribution(telemetry.NamespaceTracers, "trace_partial_flush.spans_remaining", nil).Submit(float64(leftIdx))
 
-	// #incident-46344 -- if we set metrics and tags on a different span than what was passed into this function,
-	// we need to lock this new span. However, to preserve lock ordering (span.mu -> trace.mu), we must
-	// release trace.mu before acquiring fSpan.mu.
+	// #incident-46344 -- the first span in the chunk (fSpan) may differ from the
+	// span being finished; the chunk-level metrics and tags are set on it below.
+	// See the locking note before that update for the span.mu/fSpan.mu ordering.
 	fSpan := finishedSpans[0]
-	currentSpanIsFirstInChunk := s == fSpan
+	finishingSpanIsFirstInChunk := s == fSpan
 	needsFirstSpanTags := s != originalFirst
 	willSend := decisionKeep == samplingDecision(atomic.LoadUint32((*uint32)(&t.samplingDecision)))
 	spansToRelease := finishedSpans
@@ -954,11 +981,22 @@ func (t *trace) finishedOneLocked(s *Span) {
 	t.finished = 0 // important, because a buffer can be used for several flushes
 	t.mu.Unlock()
 
-	// Set sampling priority and trace-level tags on first span in chunk
-	// If fSpan == s, lock is already held by caller; otherwise acquire it
-	if !currentSpanIsFirstInChunk {
+	// Set sampling priority and trace-level tags on the first span in the chunk.
+	//
+	// When fSpan != s, fSpan is a different span of the same lock class as s.
+	// We must not hold s.mu while locking fSpan.mu: nesting two Span.mu in
+	// inconsistent order across goroutines is a deadlock cycle (and fSpan may
+	// still be inside its own finish() -> tracer.submit, reading its meta/metrics
+	// under fSpan.mu, so the lock is load-bearing, not vestigial). Release s.mu
+	// around the fSpan update, then re-lock it before submitChunkWithTracer: the
+	// re-lock is required because Span.clear() acquires s.mu to serialize after
+	// finish()'s deferred unlock, and the channel send inside the submit must
+	// happen while s.mu is still held.
+	//
+	// When fSpan == s, the caller's s.mu is already held and is the right lock.
+	if !finishingSpanIsFirstInChunk {
+		s.mu.Unlock()
 		fSpan.mu.Lock()
-		defer fSpan.mu.Unlock()
 	}
 	if priority != nil {
 		fSpan.setMetricLocked(keySamplingPriority, *priority)
@@ -967,6 +1005,10 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RLock()
 		t.setTraceTagsLocked(fSpan)
 		t.mu.RUnlock()
+	}
+	if !finishingSpanIsFirstInChunk {
+		fSpan.mu.Unlock()
+		s.mu.Lock()
 	}
 
 	submitChunkWithTracer(submitTracerForFinishedChunk(tr, finishedSpans), &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease})

@@ -34,7 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	iof "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -570,12 +570,6 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
-func (s *Span) setProcessTags(pTags string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.setMetaLocked(keyProcessTags, pTags)
-}
-
 // root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
 func (s *Span) Root() *Span {
@@ -956,6 +950,47 @@ func (s *Span) serializeSpanEvents() {
 	s.meta.Set("events", string(b))
 }
 
+// recordFFEEvaluation records a feature flag evaluation for FFE span enrichment.
+// Used by github.com/DataDog/dd-trace-go/v2/openfeature via go:linkname.
+//
+// Feature flag evaluations are collected while a request is in progress and
+// copied onto the root span as tags when the span finishes. The temporary
+// storage lives in internal/openfeature, but access to it must be coordinated
+// with the span lifecycle here.
+//
+// The OpenFeature hook reaches this function instead of writing to the store
+// directly because it cannot safely inspect or synchronize with Span.finished.
+// Holding s.mu serializes recording an evaluation with Finish draining the
+// stored evaluations. The s.finished check prevents recording evaluations after
+// the span has already finished; Finish drains the stored evaluations exactly
+// once while holding the same lock.
+func recordFFEEvaluation(s *Span, eval *iof.FeatureFlagEvaluation) {
+	if s == nil || eval == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.finished {
+		return
+	}
+	iof.AddSpanEnrichment(s, eval)
+}
+
+// serializeFFEEvaluations writes the accumulated OpenFeature evaluation tags onto
+// the span and removes the pending FFE span enrichment from the temporary store.
+// +checklocks:s.mu
+func (s *Span) serializeFFEEvaluations() {
+	assert.RWMutexLocked(&s.mu)
+	enrichment := iof.DrainSpanEnrichment(s)
+	if enrichment == nil {
+		return
+	}
+	for tag, value := range enrichment.GetSpanTags() {
+		s.meta.Set(tag, value)
+	}
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *Span) Finish(opts ...FinishOption) {
@@ -1014,7 +1049,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	s.finish(t)
-	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
 }
 
 // SetOperationName sets or changes the operation name.
@@ -1060,6 +1094,7 @@ func (s *Span) finish(finishTime int64) {
 
 	s.serializeSpanLinksInMeta()
 	s.serializeSpanEvents()
+	s.serializeFFEEvaluations()
 	s.enrichServiceSource()
 
 	if s.duration == 0 {
@@ -1075,7 +1110,7 @@ func (s *Span) finish(finishTime int64) {
 	keep := true
 	tracer, hasTracer := getGlobalTracer().(*tracer)
 	if hasTracer {
-		if !tracer.config.enabled.get() {
+		if !tracer.config.internalConfig.TracingEnabled() {
 			return
 		}
 		if tracer.config.canDropP0s() {
@@ -1221,12 +1256,12 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := env.Get("DD_ENV"); env != "" {
+			} else if env := env.Get("DD_ENV"); env != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := env.Get("DD_VERSION"); v != "" {
+			} else if v := env.Get("DD_VERSION"); v != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}

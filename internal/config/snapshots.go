@@ -26,12 +26,17 @@ type SpanStartSnapshot struct {
 	ProfilerHotspotsEnabled bool
 	ProfilerEndpoints       bool
 	SpanPoolEnabled         bool
+	// The map is the live internal map, shared with the config, not a copy.
+	// Callers must not mutate it; use Config.GlobalTags() to get a safe copy.
+	GlobalTags map[string]any
 }
 
 // SpanStartSnapshot returns a snapshot of the config fields read by
 // tracer.StartSpan. Service mappings are not included because the lookup key
 // (the resolved span service) isn't known until after this snapshot is read.
 func (c *Config) SpanStartSnapshot() SpanStartSnapshot {
+	// SetGlobalTag takes c.mu then globalTags's lock; read globalTags outside c.mu to avoid inversion.
+	tags := c.globalTags.Get()
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return SpanStartSnapshot{
@@ -46,5 +51,6 @@ func (c *Config) SpanStartSnapshot() SpanStartSnapshot {
 		ProfilerHotspotsEnabled: c.profilerHotspots,
 		ProfilerEndpoints:       c.profilerEndpoints,
 		SpanPoolEnabled:         c.spanPoolEnabled,
+		GlobalTags:              tags,
 	}
 }

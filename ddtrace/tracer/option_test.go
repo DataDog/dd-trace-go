@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -220,6 +221,41 @@ func TestAutoDetectStatsd(t *testing.T) {
 	})
 }
 
+func TestInternalMetricsDisabled(t *testing.T) {
+	isNoop := func(c internal.StatsdClient) bool {
+		_, ok := c.(*statsd.NoOpClientDirect)
+		return ok
+	}
+
+	t.Run("default non-Lambda: real client", func(t *testing.T) {
+		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.False(t, isNoop(tr.statsd), "statsd should be real by default, got %T", tr.statsd)
+	})
+
+	t.Run("Lambda without explicit config: no-op client", func(t *testing.T) {
+		// In Lambda the core config layer defaults internal metrics to off so the
+		// tracer emits no statsd traffic by default.
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.True(t, isNoop(tr.statsd), "statsd should be a no-op in Lambda by default, got %T", tr.statsd)
+	})
+
+	t.Run("Lambda with explicit opt-in: real client", func(t *testing.T) {
+		// If the user explicitly enables internal metrics in Lambda, the real
+		// client is used and their setting is reported with origin env_var.
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
+		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "true")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.False(t, isNoop(tr.statsd), "statsd should be real when user opts in, got %T", tr.statsd)
+	})
+}
+
 func TestLoadAgentFeatures(t *testing.T) {
 	t.Run("zero", func(t *testing.T) {
 		t.Run("disabled", func(t *testing.T) {
@@ -336,7 +372,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 57, len(cfg.integrations))
+		assert.Equal(t, 58, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -776,8 +812,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.True(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginDefault)
+			val, origin := c.internalConfig.TracingEnabledConfig().Baseline()
+			assert.True(t, val)
+			assert.Equal(t, telemetry.OriginDefault, origin)
 		})
 
 		t.Run("override", func(t *testing.T) {
@@ -786,8 +823,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.False(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginEnvVar)
+			val, origin := c.internalConfig.TracingEnabledConfig().Baseline()
+			assert.False(t, val)
+			assert.Equal(t, telemetry.OriginEnvVar, origin)
 		})
 	})
 
@@ -805,8 +843,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.Rate())
 		assert.Equal(&url.URL{Scheme: "http", Host: "127.0.0.1:58126"}, c.internalConfig.RawAgentURL())
-		assert.NotNil(c.globalTags.get())
-		assert.Equal("v", c.globalTags.get()["k"])
+		assert.NotNil(c.internalConfig.GlobalTags())
+		assert.Equal("v", c.internalConfig.GlobalTags()["k"])
 		assert.Equal("testEnv", c.internalConfig.Env())
 		assert.True(c.internalConfig.Debug())
 	})
@@ -817,7 +855,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithAgentTimeout(2))
 		assert.NoError(err)
-		globalTags := c.globalTags.get()
+		globalTags := c.internalConfig.GlobalTags()
 		assert.Equal("test", globalTags["env"])
 		assert.Equal("aVal", globalTags["aKey"])
 		assert.Equal("bVal", globalTags["bKey"])
@@ -1265,7 +1303,7 @@ func TestOtelResourceAtttributes(t *testing.T) {
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		globalTags := c.globalTags.get()
+		globalTags := c.internalConfig.GlobalTags()
 		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
 		assert.Len(globalTags, 11)
 	})
@@ -1358,7 +1396,7 @@ func TestTagSeparators(t *testing.T) {
 			t.Setenv("DD_TAGS", tag.in)
 			c, err := newTestConfig()
 			assert.NoError(err)
-			globalTags := c.globalTags.get()
+			globalTags := c.internalConfig.GlobalTags()
 			for key, expected := range tag.out {
 				got, ok := globalTags[key]
 				assert.True(ok, "tag not found")
@@ -1627,15 +1665,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithTraceEnabled(false))
 		assert.NoError(err)
-		assert.False(c.enabled.current)
-	})
-
-	t.Run("otel-env", func(t *testing.T) {
-		assert := assert.New(t)
-		t.Setenv("OTEL_TRACES_EXPORTER", "none")
-		c, err := newTestConfig()
-		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 
 	t.Run("dd-env", func(t *testing.T) {
@@ -1643,21 +1673,15 @@ func TestWithTraceEnabled(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 
-	t.Run("override-chain", func(t *testing.T) {
+	t.Run("option-overrides-env", func(t *testing.T) {
 		assert := assert.New(t)
-		// dd env overrides otel env
-		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		t.Setenv("DD_TRACE_ENABLED", "true")
-		c, err := newTestConfig()
+		c, err := newTestConfig(WithTraceEnabled(false))
 		assert.NoError(err)
-		assert.True(c.enabled.current)
-		// tracer option overrides dd env
-		c, err = newTestConfig(WithTraceEnabled(false))
-		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 }
 
