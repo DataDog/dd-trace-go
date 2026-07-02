@@ -52,7 +52,7 @@ func BuildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 		return nil
 	}
 
-	resource := buildMetricsResource(cfg, payload, otelMode)
+	resource := buildMetricsResource(payload, otelMode, cfg.ReportHostname(), cfg.Hostname())
 
 	scopeMetrics := []*otlpmetrics.ScopeMetrics{
 		{
@@ -82,7 +82,7 @@ func BuildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 // buildMetricsResource constructs the OTLP Resource for the metrics payload.
 // Includes SDK identification, service identity, optional host.name, and datadog.* process-tag
 // attributes (default mode only).
-func buildMetricsResource(cfg *internalconfig.Config, payload *pb.ClientStatsPayload, otelMode bool) *otlpresource.Resource {
+func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportHostname bool, hostname string) *otlpresource.Resource {
 	attrs := []*otlpcommon.KeyValue{
 		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
 		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
@@ -95,9 +95,9 @@ func buildMetricsResource(cfg *internalconfig.Config, payload *pb.ClientStatsPay
 	if payload.Env != "" {
 		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(payload.Env)))
 	}
-	if cfg.ReportHostname() {
-		if h := cfg.Hostname(); h != "" {
-			attrs = append(attrs, otlpKeyValue("host.name", otlpStringValue(h)))
+	if reportHostname {
+		if hostname != "" {
+			attrs = append(attrs, otlpKeyValue("host.name", otlpStringValue(hostname)))
 		}
 	}
 	if !otelMode {

@@ -217,8 +217,7 @@ func TestBuildOTLPMetricsRequestMultipleServices(t *testing.T) {
 // ---- Resource attributes ----
 
 func TestBuildMetricsResourceSDKAttributes(t *testing.T) {
-	cfg := internalconfig.CreateNew()
-	res := buildMetricsResource(cfg, makePayload("svc", "", "", nil), false)
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, false, "")
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "datadog", m["telemetry.sdk.name"])
 	assert.Equal(t, "go", m["telemetry.sdk.language"])
@@ -226,8 +225,7 @@ func TestBuildMetricsResourceSDKAttributes(t *testing.T) {
 }
 
 func TestBuildMetricsResourceServiceIdentity(t *testing.T) {
-	cfg := internalconfig.CreateNew()
-	res := buildMetricsResource(cfg, makePayload("my-svc", "prod", "2.1.0", nil), false)
+	res := buildMetricsResource(makePayload("my-svc", "prod", "2.1.0", nil), false, false, "")
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "my-svc", m["service.name"])
 	assert.Equal(t, "prod", m["deployment.environment.name"])
@@ -235,8 +233,7 @@ func TestBuildMetricsResourceServiceIdentity(t *testing.T) {
 }
 
 func TestBuildMetricsResourceServiceIdentityOmitsEmptyEnvVer(t *testing.T) {
-	cfg := internalconfig.CreateNew()
-	res := buildMetricsResource(cfg, makePayload("svc", "", "", nil), false)
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, false, "")
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "svc", m["service.name"])
 	assert.NotContains(t, m, "deployment.environment.name")
@@ -244,43 +241,37 @@ func TestBuildMetricsResourceServiceIdentityOmitsEmptyEnvVer(t *testing.T) {
 }
 
 func TestBuildMetricsResourceHostnameOmitted(t *testing.T) {
-	cfg := internalconfig.CreateNew()
-	// DD_TRACE_REPORT_HOSTNAME is unset → ReportHostname() returns false.
-	res := buildMetricsResource(cfg, makePayload("svc", "", "", nil), false)
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, false, "")
 	assert.NotContains(t, kvAttrsToMap(res.Attributes), "host.name")
 }
 
 func TestBuildMetricsResourceProcessTagsDefaultMode(t *testing.T) {
-	cfg := internalconfig.CreateNew()
 	payload := makePayload("svc", "", "", nil)
 	payload.ProcessTags = "entrypoint.name:myapp,entrypoint.type:binary"
-	res := buildMetricsResource(cfg, payload, false /* default mode */)
+	res := buildMetricsResource(payload, false /* otelMode */, false, "")
 	m := kvAttrsToMap(res.Attributes)
 	assert.Equal(t, "myapp", m["datadog.entrypoint.name"])
 	assert.Equal(t, "binary", m["datadog.entrypoint.type"])
 }
 
 func TestBuildMetricsResourceRuntimeIDDefaultMode(t *testing.T) {
-	cfg := internalconfig.CreateNew()
 	payload := makePayload("svc", "", "", nil)
 	payload.RuntimeID = "abc-123"
-	res := buildMetricsResource(cfg, payload, false /* default mode */)
+	res := buildMetricsResource(payload, false /* otelMode */, false, "")
 	assert.Equal(t, "abc-123", kvAttrsToMap(res.Attributes)["datadog.runtime_id"])
 }
 
 func TestBuildMetricsResourceNoRuntimeIDWhenEmpty(t *testing.T) {
-	cfg := internalconfig.CreateNew()
-	res := buildMetricsResource(cfg, makePayload("svc", "", "", nil), false)
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, false, "")
 	assert.NotContains(t, kvAttrsToMap(res.Attributes), "datadog.runtime_id")
 }
 
 func TestBuildMetricsResourceOtelModeSuppressesDatadogAttrs(t *testing.T) {
 	// OTel mode must not emit any datadog.* resource attributes (process tags, runtime ID, etc.).
-	cfg := internalconfig.CreateNew()
 	payload := makePayload("svc", "", "", nil)
 	payload.ProcessTags = "entrypoint.name:myapp"
 	payload.RuntimeID = "abc-123"
-	res := buildMetricsResource(cfg, payload, true /* otelMode */)
+	res := buildMetricsResource(payload, true /* otelMode */, false, "")
 	m := kvAttrsToMap(res.Attributes)
 	assert.NotContains(t, m, "datadog.entrypoint.name")
 	assert.NotContains(t, m, "datadog.runtime_id")
