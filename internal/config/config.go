@@ -297,8 +297,8 @@ func loadConfig() *Config {
 	}
 	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
-	if p.IsSet("OTEL_TRACES_SPAN_METRICS_ENABLED") {
-		v := p.GetBool("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
+	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
+	if origin != telemetry.OriginDefault {
 		cfg.otlpSpanMetricsEnabled = &v
 	}
 	cfg.otlpSemanticsMode = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
