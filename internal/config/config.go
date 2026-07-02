@@ -171,30 +171,22 @@ type Config struct {
 	// otlpExportMetricsMode indicates metrics should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMetricsMode bool
-	// otlpEndpoint is the resolved OTEL_EXPORTER_OTLP_ENDPOINT base URL (e.g. http://host:4318).
-	// It always has a value: when the env var is unset, the agent-derived default is used.
-	// Signal-specific paths (e.g. /v1/metrics) are appended by the relevant resolvers.
+	// otlpEndpoint is the resolved OTEL_EXPORTER_OTLP_ENDPOINT base URL; always non-empty.
 	otlpEndpoint string
 	// otlpTraceURL is the OTLP collector endpoint for traces
 	otlpTraceURL string
 	// otlpHeaders holds the resolved OTLP trace headers from
 	// OTEL_EXPORTER_OTLP_TRACES_HEADERS plus Content-Type: application/x-protobuf.
 	otlpHeaders map[string]string
-	// otlpSpanMetricsEnabled controls whether the SDK emits SDK-computed span metrics
-	// as an OTLP histogram (traces.span.sdk.metrics.duration) via the metrics endpoint.
-	// nil means "unset": auto-enabled when otlpExportMode && runtimeMetricsOtel
-	// (i.e. OTEL_TRACES_EXPORTER=otlp AND DD_METRICS_OTEL_ENABLED=true).
+	// otlpSpanMetricsEnabled controls OTLP span metrics export; nil auto-enables when otlpExportMode && runtimeMetricsOtel.
 	otlpSpanMetricsEnabled *bool
-	// otlpSemanticsMode controls whether only OTel semantic-convention attributes are
-	// emitted on span-metric data points (DD_TRACE_OTEL_SEMANTICS_ENABLED=true), or
-	// whether Datadog-specific dd.* attributes are added alongside them (the default).
+	// otlpSemanticsMode controls DD_TRACE_OTEL_SEMANTICS_ENABLED; true omits DD-specific span-metric attributes.
 	otlpSemanticsMode bool
 	// otlpMetricsURL is the resolved OTLP metrics endpoint (e.g. http://host:4318/v1/metrics).
 	otlpMetricsURL string
 	// otlpMetricsHeaders holds HTTP headers for OTLP metrics export.
 	otlpMetricsHeaders map[string]string
-	// otlpMetricsFlushInterval is the cadence at which span metrics are flushed and exported.
-	// Fixed at 10 s in production; overridable via _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (ms) in tests.
+	// otlpMetricsFlushInterval is the span metrics flush cadence (default 10s).
 	otlpMetricsFlushInterval time.Duration
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool

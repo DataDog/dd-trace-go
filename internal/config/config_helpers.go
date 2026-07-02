@@ -320,10 +320,7 @@ func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 	configtelemetry.Report("global_tag_"+key, value, origin)
 }
 
-// resolveOTLPEndpoint resolves the generic OTEL_EXPORTER_OTLP_ENDPOINT base URL.
-// When endpoint is non-empty and valid it is returned as-is (no signal path is appended
-// here — that is the caller's responsibility). Otherwise the agent-derived default
-// http://<agent-host>:4318 is returned, so the result is always non-empty.
+// resolveOTLPEndpoint returns the OTEL_EXPORTER_OTLP_ENDPOINT base URL, defaulting to http://<agent-host>:4318.
 func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 	if endpoint != "" {
 		u, err := url.Parse(endpoint)
@@ -344,12 +341,7 @@ func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 	return fmt.Sprintf("http://%s", net.JoinHostPort(host, otlpDefaultPort))
 }
 
-// resolveOTLPMetricsURL resolves the OTLP metrics endpoint from the two possible sources.
-//
-// Per the OTel spec, OTEL_EXPORTER_OTLP_METRICS_ENDPOINT (metricsEndpoint) is a full
-// signal URL and takes precedence; /v1/metrics is only appended when the path is absent.
-// OTEL_EXPORTER_OTLP_ENDPOINT (genericEndpoint) is a base URL; /v1/metrics is always
-// appended. genericEndpoint is always non-empty (resolveOTLPEndpoint provides a default).
+// resolveOTLPMetricsURL resolves the OTLP metrics endpoint; metricsEndpoint takes precedence over genericEndpoint.
 func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	if metricsEndpoint != "" {
 		u, err := url.Parse(metricsEndpoint)
@@ -364,17 +356,12 @@ func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 			return u.String()
 		}
 	}
-	// genericEndpoint is always non-empty; per OTel spec, always append /v1/metrics to it.
 	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
 	u.Path = strings.TrimRight(u.Path, "/") + otlpMetricsPath
 	return u.String()
 }
 
-// buildOTLPMetricsHeaders builds the headers map for OTLP metrics HTTP requests.
-// Per the OTel spec, generic headers (OTEL_EXPORTER_OTLP_HEADERS) are the base;
-// signal-specific headers (OTEL_EXPORTER_OTLP_METRICS_HEADERS) are merged on top
-// and take precedence. Content-Type is not added here — it depends on the protocol
-// (JSON vs protobuf) and is set by the exporter at send time.
+// buildOTLPMetricsHeaders merges generic and signal-specific OTLP headers; signal headers take precedence.
 func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
 	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
 		return nil
