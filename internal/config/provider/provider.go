@@ -30,13 +30,6 @@ type idAwareConfigSource interface {
 	getID() string
 }
 
-// telemetryBlocklist contains config keys whose values must not be reported to
-// telemetry because they are secrets (e.g. credentials).
-var telemetryBlocklist = map[string]bool{
-	"DD_API_KEY": true,
-	"DD_APP_KEY": true,
-}
-
 // Provider resolves configuration values from an ordered list of sources.
 // Sources are listed in descending priority order: the first source wins.
 type Provider struct {
@@ -76,9 +69,7 @@ func getWithOrigin[T any](p *Provider, key string, def T, parse func(string) (T,
 			if s, ok := source.(idAwareConfigSource); ok {
 				id = s.getID()
 			}
-			if !telemetryBlocklist[key] {
-				configtelemetry.ReportWithID(key, v, source.origin(), id)
-			}
+			configtelemetry.ReportWithID(key, v, source.origin(), id)
 			if parsed, ok := parse(v); ok {
 				final = &parsed
 				winningOrigin = source.origin()

@@ -491,7 +491,7 @@ apm_configuration_default:
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_ENV", "default-env")))
 	})
 
-	t.Run("blocklisted keys are not reported to telemetry", func(t *testing.T) {
+	t.Run("sensitive keys are not reported to telemetry", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 		telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
 		defer telemetry.MockClient(telemetryClient)()
