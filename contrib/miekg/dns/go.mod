@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/miekg/dns/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev
 	github.com/miekg/dns v1.1.62
 	github.com/stretchr/testify v1.11.1
 )
