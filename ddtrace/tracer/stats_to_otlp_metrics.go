@@ -29,7 +29,7 @@ const spanDurationMetricName = "traces.span.sdk.metrics.duration"
 
 // spanMetricBounds are the fixed histogram bucket boundaries in seconds (16 boundaries, 17 buckets).
 // These match the OTel Span Metrics Connector defaults, scaled from milliseconds to seconds.
-var spanMetricBounds = []float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1, 1.4, 2, 5, 10, 15}
+var spanMetricBounds = [16]float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1, 1.4, 2, 5, 10, 15}
 
 // BuildOTLPMetricsRequest converts a ClientStatsPayload into a slice of OTLP ResourceMetrics.
 // Service identity (service.name, service.version, deployment.environment.name) is placed on the
@@ -141,7 +141,7 @@ func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, defa
 }
 
 func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, exactCount uint64, defaultService string, otelMode bool) *otlpmetrics.HistogramDataPoint {
-	bucketCounts, sum, minSec, maxSec, sketchCount, err := sketchToHistogram(sketchBytes, spanMetricBounds)
+	bucketCounts, sum, minSec, maxSec, sketchCount, err := sketchToHistogram(sketchBytes, spanMetricBounds[:])
 	if err != nil {
 		log.Error("stats_to_otlp_metrics: failed to decode sketch: %v", err.Error())
 		return nil
@@ -161,7 +161,7 @@ func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, star
 		Sum:               &sum,
 		Min:               &minSec,
 		Max:               &maxSec,
-		ExplicitBounds:    spanMetricBounds,
+		ExplicitBounds:    spanMetricBounds[:],
 		BucketCounts:      bucketCounts,
 		Attributes:        buildDataPointAttributes(gs, isError, defaultService, otelMode),
 	}

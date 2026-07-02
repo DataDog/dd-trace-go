@@ -75,7 +75,7 @@ func TestSketchToHistogramEmpty(t *testing.T) {
 	require.NoError(t, err)
 	b, err := proto.Marshal(sk.ToProto())
 	require.NoError(t, err)
-	_, _, _, _, count, err := sketchToHistogram(b, spanMetricBounds)
+	_, _, _, _, count, err := sketchToHistogram(b, spanMetricBounds[:])
 	require.NoError(t, err)
 	assert.Equal(t, uint64(0), count)
 }
@@ -83,7 +83,7 @@ func TestSketchToHistogramEmpty(t *testing.T) {
 func TestSketchToHistogramBucketPlacement(t *testing.T) {
 	// 5 ms = 0.005 s → between bounds[1]=0.004 and bounds[2]=0.006 → bucket index 2
 	b := encodeSketch(t, 5e6) // 5ms in ns
-	buckets, sum, minSec, maxSec, count, err := sketchToHistogram(b, spanMetricBounds)
+	buckets, sum, minSec, maxSec, count, err := sketchToHistogram(b, spanMetricBounds[:])
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), count)
 	assert.InEpsilon(t, 0.005, sum, 0.01)
@@ -101,7 +101,7 @@ func TestSketchToHistogramBucketPlacement(t *testing.T) {
 func TestSketchToHistogramOverflowBucket(t *testing.T) {
 	// 20 s > bounds[15]=15 → last (overflow) bucket
 	b := encodeSketch(t, 20e9)
-	buckets, _, _, _, count, err := sketchToHistogram(b, spanMetricBounds)
+	buckets, _, _, _, count, err := sketchToHistogram(b, spanMetricBounds[:])
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), count)
 	assert.Equal(t, uint64(1), buckets[len(spanMetricBounds)])
@@ -110,7 +110,7 @@ func TestSketchToHistogramOverflowBucket(t *testing.T) {
 func TestSketchToHistogramMultipleValues(t *testing.T) {
 	// 1ms + 500ms + 3s → three separate buckets, sum ≈ 3.501 s
 	b := encodeSketch(t, 1e6, 500e6, 3e9)
-	buckets, sum, _, _, count, err := sketchToHistogram(b, spanMetricBounds)
+	buckets, sum, _, _, count, err := sketchToHistogram(b, spanMetricBounds[:])
 	require.NoError(t, err)
 	assert.Equal(t, uint64(3), count)
 	assert.InDelta(t, 3.501, sum, 0.05)
@@ -162,7 +162,7 @@ func TestBuildOTLPMetricsRequestStructure(t *testing.T) {
 
 	require.Len(t, hist.DataPoints, 1)
 	dp := hist.DataPoints[0]
-	assert.Equal(t, spanMetricBounds, dp.ExplicitBounds)
+	assert.Equal(t, spanMetricBounds[:], dp.ExplicitBounds)
 	assert.Equal(t, len(spanMetricBounds)+1, len(dp.BucketCounts))
 	require.NotNil(t, dp.Sum)
 	assert.Equal(t, uint64(1), dp.Count)
