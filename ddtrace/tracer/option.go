@@ -54,7 +54,6 @@ const (
 	envLLMObsMlApp            = "DD_LLMOBS_ML_APP"
 	envLLMObsAgentlessEnabled = "DD_LLMOBS_AGENTLESS_ENABLED"
 	envLLMObsProjectName      = "DD_LLMOBS_PROJECT_NAME"
-	envSpanPoolEnabled        = "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED"
 )
 
 var contribIntegrations = map[string]struct {
@@ -189,9 +188,6 @@ type config struct {
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
 
-	// spanPoolEnabled controls whether finished spans are recycled via sync.Pool.
-	spanPoolEnabled bool
-
 	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
 	// should be started instead of the DD statsd runtime metrics paths.
 	otelRuntimeMetricsShouldBeEnabled bool
@@ -225,7 +221,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
 		ProjectName:      env.Get(envLLMObsProjectName),
 	}
-	c.spanPoolEnabled = internal.BoolEnv(envSpanPoolEnabled, false)
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -240,8 +235,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Until the reclaim signal is decoupled from the pooled span, disable
 	// pooling when Orchestrion is active and warn once. Checked after the option
 	// loop so an explicit WithSpanPool(true) is gated too.
-	if shouldDisableSpanPool(c.spanPoolEnabled, orchestrion.Enabled()) {
-		c.spanPoolEnabled = false
+	if shouldDisableSpanPool(c.internalConfig.SpanPoolEnabled(), orchestrion.Enabled()) {
+		c.internalConfig.SetSpanPoolEnabled(false, telemetry.OriginCode, internalconfig.ProductTracer)
 		log.Warn("the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED / WithSpanPool) is incompatible with Orchestrion and has been disabled")
 	}
 	rawAgentURL := c.internalConfig.RawAgentURL()
@@ -362,7 +357,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 		Version:    c.internalConfig.Version(),
 		AgentURL:   c.internalConfig.AgentURL(),
 		APIKey:     c.internalConfig.APIKey(),
-		APPKey:     env.Get("DD_APP_KEY"),
+		APPKey:     c.internalConfig.AppKey(),
 		HTTPClient: c.httpClient,
 		Site:       env.Get("DD_SITE"),
 	}
@@ -1311,7 +1306,7 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 // This is equivalent to the DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED environment variable.
 func WithSpanPool(enabled bool) StartOption {
 	return func(c *config) {
-		c.spanPoolEnabled = enabled
+		c.internalConfig.SetSpanPoolEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 

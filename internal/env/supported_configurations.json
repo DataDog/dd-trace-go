@@ -71,7 +71,8 @@
         "default": null,
         "aliases": [
           "DD-API-KEY"
-        ]
+        ],
+        "sensitive": true
       }
     ],
     "DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE": [
@@ -235,7 +236,8 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
