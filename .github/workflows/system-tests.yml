@@ -325,9 +325,6 @@ jobs:
       - name: Build runner
         uses: ./.github/actions/install_runner
 
-      - name: Build agent
-        run: ./build.sh -i agent
-
       - name: Run
         shell: bash
         run: |
