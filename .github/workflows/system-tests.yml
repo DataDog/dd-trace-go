@@ -315,11 +315,11 @@ jobs:
           name: ${{ matrix.image_artifact }}
 
       - name: Load ${{ matrix.weblog-variant }} image
-        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' && matrix.weblog-variant == 'haproxy') }}
+        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy') }}
         run: docker load -i ${{ matrix.image_artifact }}.tar
       
       - name: Set ${{ matrix.image_name }} image name
-        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' && matrix.weblog-variant == 'haproxy') }}
+        if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy') }}
         run: echo "ghcr.io/datadog/dd-trace-go/${{ matrix.image_name }}:dev" > binaries/golang-${{ matrix.image_name }}-image
 
       - name: Build runner
