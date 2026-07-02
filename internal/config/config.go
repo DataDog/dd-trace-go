@@ -184,9 +184,8 @@ type Config struct {
 	traceSamplingRules *DynamicConfig[[]samplingrules.SamplingRule]
 	// spanSamplingRules holds the single-span sampling rules (DD_SPAN_SAMPLING_RULES).
 	spanSamplingRules []samplingrules.SamplingRule
-	// spanSamplingRulesOrigin is the origin of spanSamplingRules' current value; used to
-	// keep an explicit DD_SPAN_SAMPLING_RULES(_FILE) value from being overridden by
-	// WithSamplingRules, per the precedence documented in ddtrace/tracer/doc.go.
+	// spanSamplingRulesOrigin tracks origin separately because, unlike traceSamplingRules,
+	// this field isn't a DynamicConfig (no RC support yet).
 	spanSamplingRulesOrigin telemetry.Origin
 }
 
@@ -218,32 +217,6 @@ func (c *Config) checkProductConflict(field string, origin telemetry.Origin, val
 	}
 	c.overrides[field] = programmaticOverride{product: p, value: value}
 	return false
-}
-
-// samplingRulesFromSource resolves sampling rules for the given key (e.g.
-// "DD_TRACE_SAMPLING_RULES"), falling back to the file named by key+"_FILE" when the
-// inline value is empty. Doc.go documents that these environment sources take
-// precedence over WithSamplingRules, so file-derived rules are also reported as
-// telemetry.OriginEnvVar.
-func samplingRulesFromSource(p *provider.Provider, key string, spanType samplingrules.SamplingRuleType) ([]samplingrules.SamplingRule, telemetry.Origin) {
-	raw, origin := p.GetStringWithOrigin(key, "")
-	rulesFile := p.GetString(key+"_FILE", "")
-	if raw != "" && rulesFile != "" {
-		log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", key, key)
-	} else if raw == "" && rulesFile != "" {
-		b, err := os.ReadFile(rulesFile)
-		if err != nil {
-			log.Warn("DIAGNOSTICS Error(s): couldn't read file from %s_FILE: %s", key, err)
-		} else {
-			raw = string(b)
-			origin = telemetry.OriginEnvVar
-		}
-	}
-	rules, err := samplingrules.UnmarshalSamplingRules([]byte(raw), spanType)
-	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing %s: %s", key, err)
-	}
-	return rules, origin
 }
 
 // loadConfig initializes and returns a new config by reading from all configured sources.
@@ -1328,8 +1301,8 @@ func (c *Config) TraceSamplingRulesConfig() *DynamicConfig[[]samplingrules.Sampl
 func (c *Config) SetTraceSamplingRules(rules []samplingrules.SamplingRule, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, baselineOrigin := c.traceSamplingRules.Baseline(); origin == telemetry.OriginCode && baselineOrigin != telemetry.OriginDefault && baselineOrigin != telemetry.OriginCode {
-		log.Warn("config: DD_TRACE_SAMPLING_RULES is already set via %s; ignoring WithSamplingRules trace rules", baselineOrigin)
+	_, baselineOrigin := c.traceSamplingRules.Baseline()
+	if samplingRulesBlockedByPrecedence("DD_TRACE_SAMPLING_RULES", baselineOrigin, origin) {
 		return
 	}
 	if c.checkProductConflict("DD_TRACE_SAMPLING_RULES", origin, rules, product...) {
@@ -1348,8 +1321,7 @@ func (c *Config) SpanSamplingRules() []samplingrules.SamplingRule {
 func (c *Config) SetSpanSamplingRules(rules []samplingrules.SamplingRule, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if origin == telemetry.OriginCode && c.spanSamplingRulesOrigin != telemetry.OriginDefault && c.spanSamplingRulesOrigin != telemetry.OriginCode {
-		log.Warn("config: DD_SPAN_SAMPLING_RULES is already set via %s; ignoring WithSamplingRules span rules", c.spanSamplingRulesOrigin)
+	if samplingRulesBlockedByPrecedence("DD_SPAN_SAMPLING_RULES", c.spanSamplingRulesOrigin, origin) {
 		return
 	}
 	if c.checkProductConflict("DD_SPAN_SAMPLING_RULES", origin, rules, product...) {
