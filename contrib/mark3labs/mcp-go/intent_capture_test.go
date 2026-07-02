@@ -92,6 +92,51 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, "test intent description", toolSpan.Meta["intent"])
 }
 
+func TestIntentCaptureRawInputSchema(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
+
+	rawSchema := json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"insight_name": {"type": "string", "description": "The insight to retrieve"},
+			"app_id": {"type": "string", "description": "The application ID"}
+		},
+		"required": ["insight_name", "app_id"]
+	}`)
+
+	rawTool := mcp.NewToolWithRawSchema("raw_tool", "A tool with raw schema", rawSchema)
+	srv.AddTool(rawTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText(`{"ok":true}`), nil
+	})
+
+	ctx := context.Background()
+
+	listResp := srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	var listResult map[string]interface{}
+	err := json.Unmarshal(json.RawMessage(mustMarshal(listResp)), &listResult)
+	require.NoError(t, err)
+
+	result := listResult["result"].(map[string]interface{})
+	tools := result["tools"].([]interface{})
+	require.Len(t, tools, 1)
+
+	tool := tools[0].(map[string]interface{})
+	schema := tool["inputSchema"].(map[string]interface{})
+	props := schema["properties"].(map[string]interface{})
+
+	assert.Contains(t, props, "insight_name")
+	assert.Contains(t, props, "app_id")
+	assert.Contains(t, props, "telemetry")
+
+	required := schema["required"].([]interface{})
+	assert.Contains(t, required, "insight_name")
+	assert.Contains(t, required, "app_id")
+	assert.Contains(t, required, "telemetry")
+}
+
 func TestIntentCaptureConcurrentListTools(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
