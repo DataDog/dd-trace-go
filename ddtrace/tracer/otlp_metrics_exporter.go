@@ -6,10 +6,8 @@
 package tracer
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
@@ -29,18 +27,18 @@ const (
 
 // otlpMetricsExporter converts ClientStatsPayload to OTLP metrics and sends them over HTTP.
 type otlpMetricsExporter struct {
-	client   *http.Client
-	url      string
-	headers  map[string]string
-	protocol string // "http/json" or "http/protobuf"
-	cfg      *internalconfig.Config
+	transport *otlpTransport
+	protocol  string // "http/json" or "http/protobuf"
+	cfg       *internalconfig.Config
 }
 
 func newOTLPMetricsExporter(cfg *internalconfig.Config) *otlpMetricsExporter {
 	return &otlpMetricsExporter{
-		client:   &http.Client{Timeout: cfg.AgentTimeout()},
-		url:      cfg.OTLPMetricsURL(),
-		headers:  cfg.OTLPMetricsHeaders(),
+		transport: newOTLPTransport(
+			&http.Client{Timeout: cfg.AgentTimeout()},
+			cfg.OTLPMetricsURL(),
+			cfg.OTLPMetricsHeaders(),
+		),
 		protocol: cfg.OTLPMetricsProtocol(),
 		cfg:      cfg,
 	}
@@ -69,11 +67,11 @@ func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 		return fmt.Errorf("otlp_metrics_exporter: marshal failed: %w", err)
 	}
 
-	if sendErr := e.send(body, contentType); sendErr != nil {
-		log.Error("otlp_metrics_exporter: export to %s failed: %v", e.url, sendErr.Error())
+	if sendErr := e.transport.send(body, contentType); sendErr != nil {
+		log.Error("otlp_metrics_exporter: export to %s failed: %v", e.transport.endpoint, sendErr.Error())
 		return sendErr
 	}
-	log.Debug("otlp_metrics_exporter: exported %d bytes (%s) to %s", len(body), e.protocol, e.url)
+	log.Debug("otlp_metrics_exporter: exported %d bytes (%s) to %s", len(body), e.protocol, e.transport.endpoint)
 	return nil
 }
 
@@ -109,29 +107,4 @@ func marshalExportRequestJSON(rms []*otlpmetrics.ResourceMetrics) ([]byte, error
 		items = append(items, json.RawMessage(b))
 	}
 	return json.Marshal(exportReq{ResourceMetrics: items})
-}
-
-func (e *otlpMetricsExporter) send(data []byte, contentType string) error {
-	req, err := http.NewRequest(http.MethodPost, e.url, bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
-	}
-	req.Header.Set("Content-Type", contentType)
-	for k, v := range e.headers {
-		req.Header.Set(k, v)
-	}
-
-	resp, err := e.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
-	}
-	return nil
 }

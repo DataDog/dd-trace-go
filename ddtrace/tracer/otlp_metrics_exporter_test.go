@@ -46,11 +46,9 @@ func makeExporterWithServer(t *testing.T, srv *captureServer, protocol string) *
 	t.Helper()
 	cfg := internalconfig.CreateNew()
 	return &otlpMetricsExporter{
-		client:   srv.Server.Client(),
-		url:      srv.URL + "/v1/metrics",
-		headers:  nil,
-		protocol: protocol,
-		cfg:      cfg,
+		transport: newOTLPTransport(srv.Server.Client(), srv.URL+"/v1/metrics", nil),
+		protocol:  protocol,
+		cfg:       cfg,
 	}
 }
 
@@ -150,10 +148,9 @@ func TestOTLPMetricsExporterExportHTTPError(t *testing.T) {
 	}))
 	t.Cleanup(errSrv.Close)
 	exp := &otlpMetricsExporter{
-		client:   errSrv.Client(),
-		url:      errSrv.URL,
-		protocol: "http/json",
-		cfg:      internalconfig.CreateNew(),
+		transport: newOTLPTransport(errSrv.Client(), errSrv.URL, nil),
+		protocol:  "http/json",
+		cfg:       internalconfig.CreateNew(),
 	}
 	gs := &pb.ClientGroupedStats{Service: "svc", Resource: "op", OkSummary: encodeSketch(t, 50e6)}
 	err := exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}))
@@ -169,11 +166,9 @@ func TestOTLPMetricsExporterCustomHeaders(t *testing.T) {
 	}))
 	t.Cleanup(hdrSrv.Close)
 	exp := &otlpMetricsExporter{
-		client:   hdrSrv.Client(),
-		url:      hdrSrv.URL,
-		headers:  map[string]string{"X-Custom-Header": "my-value"},
-		protocol: "http/json",
-		cfg:      internalconfig.CreateNew(),
+		transport: newOTLPTransport(hdrSrv.Client(), hdrSrv.URL, map[string]string{"X-Custom-Header": "my-value"}),
+		protocol:  "http/json",
+		cfg:       internalconfig.CreateNew(),
 	}
 	gs := &pb.ClientGroupedStats{Service: "svc", Resource: "op", OkSummary: encodeSketch(t, 50e6)}
 	require.NoError(t, exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})))

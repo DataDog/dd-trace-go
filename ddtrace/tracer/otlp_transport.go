@@ -28,13 +28,13 @@ func newOTLPTransport(client *http.Client, endpoint string, customHeaders map[st
 	}
 }
 
-// send posts a protobuf-encoded payload to the configured OTLP endpoint.
-func (t *otlpTransport) send(data []byte) error {
+// send posts a payload to the configured OTLP endpoint with the given content type.
+func (t *otlpTransport) send(data []byte, contentType string) error {
 	req, err := http.NewRequest("POST", t.endpoint, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("cannot create http request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("Content-Type", contentType)
 	for header, value := range t.customHeaders {
 		req.Header.Set(header, value)
 	}

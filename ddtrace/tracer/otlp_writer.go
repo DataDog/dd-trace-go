@@ -131,7 +131,7 @@ func (w *otlpTraceWriter) flush() {
 		retryInterval := w.config.internalConfig.RetryInterval()
 		for attempt := 0; attempt <= sendRetries; attempt++ {
 			log.Debug("OTLP: attempt %d to send payload: %d bytes, %d spans", attempt+1, len(b), spanCount)
-			sendErr = w.transport.send(b)
+			sendErr = w.transport.send(b, "application/x-protobuf")
 			if sendErr == nil {
 				log.Debug("OTLP: sent traces after %d attempts", attempt+1)
 				return
