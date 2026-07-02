@@ -65,12 +65,10 @@ type concentrator struct {
 	cfg          *config               // tracer startup configuration
 	statsdClient internal.StatsdClient // statsd client for sending metrics.
 
-	// otlpExporter, when non-nil, routes flushed stats to the OTLP metrics
-	// endpoint instead of the agent's native /v0.6/stats path.
+	// otlpExporter, when non-nil, routes flushed stats to the OTLP metrics endpoint.
 	otlpExporter *otlpMetricsExporter
 
-	// otlpPeerTags, when non-nil, replaces agent-advertised peer tags with a
-	// fixed set of OTel semantic-convention dimensions for OTLP span metrics.
+	// otlpPeerTags, when non-nil, overrides agent-advertised peer tags for OTLP span metrics.
 	otlpPeerTags []string
 }
 
@@ -189,9 +187,7 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
 	if httpEndpoint == "" {
-		// OTel-instrumented spans set http.route directly; DD spans use http.endpoint.
-		// ClientGroupedStats.HTTPEndpoint is "Http route or quantized/simplified URL path"
-		// per the proto, so both map to the same first-class field.
+		// OTel spans set http.route; DD spans use http.endpoint — both map to HTTPEndpoint.
 		httpEndpoint, _ = s.meta.Get(ext.HTTPRoute)
 	}
 
@@ -199,12 +195,8 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
 	if c.otlpPeerTags != nil {
 		peerTags = c.otlpPeerTags
-		// The stats library's matchingPeerTags only extracts peer tags for spans with
-		// span.kind "client", "producer", or "consumer". DD spans (e.g. typestr="web") do
-		// not carry an OTel span kind, so the library returns nil and peer tags are lost.
-		// We inject span.kind="client" only when the span actually carries a peer-tag
-		// value, so non-top-level unmeasured spans without peer tags are not made
-		// eligible for stats via eligibleSpanKind.
+		// matchingPeerTags requires span.kind "client/producer/consumer"; DD spans lack it.
+		// Inject span.kind=client only when a peer-tag value is present to avoid unwanted stats eligibility.
 		if _, hasKind := spanMeta[ext.SpanKind]; !hasKind {
 			hasPeerTag := false
 			for _, k := range c.otlpPeerTags {
@@ -287,10 +279,8 @@ const (
 	withoutCurrentBucket = false
 )
 
-// flushAndSend flushes all the stats buckets with the given timestamp and sends them using the transport specified in
-// the concentrator config. The current bucket is only included if includeCurrent is true, such as during shutdown.
-// When an OTLP exporter is configured, stats are sent to the OTLP metrics endpoint; otherwise they are sent to the
-// agent's native /v0.6/stats path.
+// flushAndSend flushes all stats buckets and sends them; the current bucket is included only when includeCurrent is true.
+// Stats go to the OTLP metrics endpoint when an OTLP exporter is configured; otherwise to the agent's /v0.6/stats path.
 func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	// When flushing the current bucket (e.g. tracer.Flush()), drain any spans
 	// that have been sent to c.In but not yet processed by runIngester so they
@@ -359,20 +349,13 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(flushedBuckets))
 }
 
-// otlpDefaultPeerTags are span meta keys always collected as peer dimensions for
-// OTLP span metrics regardless of what the Datadog agent advertises. These cover
-// OTel semantic-convention attributes that have no dedicated field in
-// ClientGroupedStats (unlike HTTPMethod/HTTPEndpoint/HTTPStatusCode which are
-// first-class fields). http.route is intentionally absent: it is captured via
-// the HTTPEndpoint first-class field (with fallback from ext.HTTPRoute) and
-// emitted as the http.route data-point attribute by buildDataPointAttributes.
+// otlpDefaultPeerTags are always-collected peer dimensions for OTLP span metrics, covering OTel attributes
+// not in ClientGroupedStats first-class fields. http.route is absent: it flows through HTTPEndpoint.
 var otlpDefaultPeerTags = []string{
 	"grpc.method.name",
 }
 
-// newOTLPMetricsConcentrator creates a concentrator that exports flushed stats to
-// the OTLP metrics endpoint instead of the agent's native /v0.6/stats path.
-// The flush interval is taken from OTLPMetricsFlushInterval in cfg.
+// newOTLPMetricsConcentrator creates a concentrator that exports to the OTLP metrics endpoint.
 func newOTLPMetricsConcentrator(c *config, statsdClient internal.StatsdClient) *concentrator {
 	bucketSize := c.internalConfig.OTLPMetricsFlushInterval().Nanoseconds()
 	conc := newConcentrator(c, bucketSize, statsdClient)

@@ -67,10 +67,9 @@ func TestOTLPMetricsConcentratorRoutesToExporter(t *testing.T) {
 	bucketSize := int64(500_000)
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 	c.otlpExporter = &otlpMetricsExporter{
-		client:   otlpSrv.Server.Client(),
-		url:      otlpSrv.URL + "/v1/metrics",
-		protocol: "http/json",
-		cfg:      cfg.internalConfig,
+		transport: newOTLPTransport(otlpSrv.Server.Client(), otlpSrv.URL+"/v1/metrics", nil),
+		protocol:  "http/json",
+		cfg:       cfg.internalConfig,
 	}
 
 	s := &Span{
@@ -152,10 +151,9 @@ func TestOTLPConcentratorHTTPRouteAttribute(t *testing.T) {
 	bucketSize := int64(500_000)
 	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 	c.otlpExporter = &otlpMetricsExporter{
-		client:   otlpSrv.Server.Client(),
-		url:      otlpSrv.URL + "/v1/metrics",
-		protocol: "http/json",
-		cfg:      cfg.internalConfig,
+		transport: newOTLPTransport(otlpSrv.Server.Client(), otlpSrv.URL+"/v1/metrics", nil),
+		protocol:  "http/json",
+		cfg:       cfg.internalConfig,
 	}
 	c.otlpPeerTags = otlpDefaultPeerTags
 

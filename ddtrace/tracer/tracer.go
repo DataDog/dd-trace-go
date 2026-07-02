@@ -517,8 +517,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	}
 	var sc statsConcentrator
 	if c.internalConfig.OTLPSpanMetricsEnabled() {
-		// OTLP span metrics: SDK computes stats and exports them via OTLP.
-		// The concentrator never forwards to the agent's /v0.6/stats path.
+		// OTLP span metrics: SDK computes and exports stats; agent /v0.6/stats path unused.
 		sc = newOTLPMetricsConcentrator(c, statsd)
 	} else if c.internalConfig.OTLPExportMode() {
 		sc = &noopConcentrator{}
@@ -1240,8 +1239,7 @@ func (t *tracer) submit(s *Span) {
 	if !t.config.internalConfig.TracingEnabled() {
 		return
 	}
-	// Submit spans to the concentrator when either native stats computation is
-	// active (canDropP0s) or the OTLP span metrics path is enabled.
+	// Submit to the concentrator when native stats (canDropP0s) or OTLP span metrics are enabled.
 	if !t.config.canDropP0s() && !t.config.internalConfig.OTLPSpanMetricsEnabled() {
 		return
 	}
