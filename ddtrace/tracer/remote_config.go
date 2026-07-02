@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -510,7 +509,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingEnableLiveDebugging,
 	)
 
-	if internal.BoolEnv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false) {
+	if t.config.internalConfig.ExperimentalFlaggingProviderEnabled() {
 		if err := internalffe.SubscribeRC(); err != nil {
 			log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error())
 		}

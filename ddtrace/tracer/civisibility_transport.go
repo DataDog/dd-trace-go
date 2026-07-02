@@ -88,7 +88,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 		// Check for a custom agentless URL.
 		agentlessURL := ""
-		if v := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
+		if v := config.internalConfig.CIVisibilityAgentlessURL(); v != "" {
 			agentlessURL = v
 		}
 
