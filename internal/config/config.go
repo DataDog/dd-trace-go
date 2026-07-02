@@ -171,6 +171,10 @@ type Config struct {
 	// otlpExportMetricsMode indicates metrics should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMetricsMode bool
+	// otlpEndpoint is the resolved OTEL_EXPORTER_OTLP_ENDPOINT base URL (e.g. http://host:4318).
+	// It always has a value: when the env var is unset, the agent-derived default is used.
+	// Signal-specific paths (e.g. /v1/metrics) are appended by the relevant resolvers.
+	otlpEndpoint string
 	// otlpTraceURL is the OTLP collector endpoint for traces
 	otlpTraceURL string
 	// otlpHeaders holds the resolved OTLP trace headers from
@@ -302,12 +306,11 @@ func loadConfig() *Config {
 		cfg.otlpSpanMetricsEnabled = &v
 	}
 	cfg.otlpSemanticsMode = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
-	metricsEndpoint := p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "")
-	genericEndpoint := metricsEndpoint == ""
-	if genericEndpoint {
-		metricsEndpoint = p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-	}
-	cfg.otlpMetricsURL = resolveOTLPMetricsURL(cfg.agentURL, metricsEndpoint, genericEndpoint)
+	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
+	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
+		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
+		cfg.otlpEndpoint,
+	)
 	cfg.otlpMetricsHeaders = buildOTLPMetricsHeaders(
 		p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter),
 		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
@@ -1281,6 +1284,14 @@ func (c *Config) OTLPTraceURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpTraceURL
+}
+
+// OTLPEndpoint returns the resolved OTEL_EXPORTER_OTLP_ENDPOINT base URL (e.g. http://host:4318).
+// It is always non-empty: when the env var is unset, the agent-derived default is used.
+func (c *Config) OTLPEndpoint() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpEndpoint
 }
 
 func (c *Config) OTLPExportMode() bool {

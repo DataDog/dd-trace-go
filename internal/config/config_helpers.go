@@ -320,27 +320,19 @@ func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 	configtelemetry.Report("global_tag_"+key, value, origin)
 }
 
-// resolveOTLPMetricsURL resolves the OTLP metrics endpoint.
-//
-// Per the OTel spec, OTEL_EXPORTER_OTLP_ENDPOINT is a base URL: /v1/metrics is
-// always appended (genericEndpoint=true). OTEL_EXPORTER_OTLP_METRICS_ENDPOINT is a
-// full URL: /v1/metrics is only appended when the path is absent (genericEndpoint=false).
-// If no endpoint is provided, the default http://<agent-host>:4318/v1/metrics is returned.
-func resolveOTLPMetricsURL(rawAgentURL *url.URL, endpoint string, genericEndpoint bool) string {
+// resolveOTLPEndpoint resolves the generic OTEL_EXPORTER_OTLP_ENDPOINT base URL.
+// When endpoint is non-empty and valid it is returned as-is (no signal path is appended
+// here — that is the caller's responsibility). Otherwise the agent-derived default
+// http://<agent-host>:4318 is returned, so the result is always non-empty.
+func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 	if endpoint != "" {
 		u, err := url.Parse(endpoint)
 		if err != nil {
-			log.Warn("Failed to parse OTLP metrics endpoint %q: %s. Falling back to default.", endpoint, err.Error())
+			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_ENDPOINT %q: %s. Falling back to default.", endpoint, err.Error())
 		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
-			log.Warn("Unsupported scheme %q in OTLP metrics endpoint %q. Must be %s or %s. Falling back to default.", u.Scheme, endpoint, URLSchemeHTTP, URLSchemeHTTPS)
+			log.Warn("Unsupported scheme %q in OTEL_EXPORTER_OTLP_ENDPOINT %q. Must be %s or %s. Falling back to default.", u.Scheme, endpoint, URLSchemeHTTP, URLSchemeHTTPS)
 		} else {
-			if genericEndpoint {
-				// Base URL: always append /v1/metrics per OTel spec.
-				u.Path = strings.TrimRight(u.Path, "/") + otlpMetricsPath
-			} else if u.Path == "" || u.Path == "/" {
-				u.Path = otlpMetricsPath
-			}
-			return u.String()
+			return endpoint
 		}
 	}
 	host := internal.DefaultAgentHostname
@@ -349,7 +341,33 @@ func resolveOTLPMetricsURL(rawAgentURL *url.URL, endpoint string, genericEndpoin
 			host = h
 		}
 	}
-	return fmt.Sprintf("http://%s:%s%s", host, otlpDefaultPort, otlpMetricsPath)
+	return fmt.Sprintf("http://%s", net.JoinHostPort(host, otlpDefaultPort))
+}
+
+// resolveOTLPMetricsURL resolves the OTLP metrics endpoint from the two possible sources.
+//
+// Per the OTel spec, OTEL_EXPORTER_OTLP_METRICS_ENDPOINT (metricsEndpoint) is a full
+// signal URL and takes precedence; /v1/metrics is only appended when the path is absent.
+// OTEL_EXPORTER_OTLP_ENDPOINT (genericEndpoint) is a base URL; /v1/metrics is always
+// appended. genericEndpoint is always non-empty (resolveOTLPEndpoint provides a default).
+func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
+	if metricsEndpoint != "" {
+		u, err := url.Parse(metricsEndpoint)
+		if err != nil {
+			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_METRICS_ENDPOINT %q: %s. Falling back to default.", metricsEndpoint, err.Error())
+		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
+			log.Warn("Unsupported scheme %q in OTEL_EXPORTER_OTLP_METRICS_ENDPOINT %q. Must be %s or %s. Falling back to default.", u.Scheme, metricsEndpoint, URLSchemeHTTP, URLSchemeHTTPS)
+		} else {
+			if u.Path == "" || u.Path == "/" {
+				u.Path = otlpMetricsPath
+			}
+			return u.String()
+		}
+	}
+	// genericEndpoint is always non-empty; per OTel spec, always append /v1/metrics to it.
+	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
+	u.Path = strings.TrimRight(u.Path, "/") + otlpMetricsPath
+	return u.String()
 }
 
 // buildOTLPMetricsHeaders builds the headers map for OTLP metrics HTTP requests.

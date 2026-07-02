@@ -54,6 +54,75 @@ func TestResolveOTLPTraceURL(t *testing.T) {
 	})
 }
 
+func TestResolveOTLPEndpoint(t *testing.T) {
+	httpAgent := &url.URL{Scheme: "http", Host: "myhost:8126"}
+
+	t.Run("default uses agent host with OTLP port", func(t *testing.T) {
+		got := resolveOTLPEndpoint(httpAgent, "")
+		assert.Equal(t, "http://myhost:4318", got)
+	})
+
+	t.Run("default with nil agent URL uses localhost", func(t *testing.T) {
+		got := resolveOTLPEndpoint(nil, "")
+		assert.Equal(t, "http://localhost:4318", got)
+	})
+
+	t.Run("IPv6 agent host is bracketed in default URL", func(t *testing.T) {
+		ipv6Agent := &url.URL{Scheme: "http", Host: "[::1]:8126"}
+		got := resolveOTLPEndpoint(ipv6Agent, "")
+		assert.Equal(t, "http://[::1]:4318", got)
+	})
+
+	t.Run("custom endpoint returned as-is", func(t *testing.T) {
+		got := resolveOTLPEndpoint(httpAgent, "http://custom:4317")
+		assert.Equal(t, "http://custom:4317", got)
+	})
+
+	t.Run("unsupported scheme falls back to default", func(t *testing.T) {
+		got := resolveOTLPEndpoint(httpAgent, "grpc://custom:4317")
+		assert.Equal(t, "http://myhost:4318", got)
+	})
+}
+
+func TestResolveOTLPMetricsURL(t *testing.T) {
+	agentDefault := "http://myhost:4318"
+
+	t.Run("default appends /v1/metrics to generic endpoint", func(t *testing.T) {
+		got := resolveOTLPMetricsURL("", agentDefault)
+		assert.Equal(t, "http://myhost:4318/v1/metrics", got)
+	})
+
+	t.Run("localhost generic endpoint gets /v1/metrics appended", func(t *testing.T) {
+		got := resolveOTLPMetricsURL("", "http://localhost:4318")
+		assert.Equal(t, "http://localhost:4318/v1/metrics", got)
+	})
+
+	t.Run("IPv6 generic endpoint is bracketed in URL", func(t *testing.T) {
+		got := resolveOTLPMetricsURL("", "http://[::1]:4318")
+		assert.Equal(t, "http://[::1]:4318/v1/metrics", got)
+	})
+
+	t.Run("signal endpoint used as-is when path present", func(t *testing.T) {
+		got := resolveOTLPMetricsURL("http://collector:4318/v1/metrics", agentDefault)
+		assert.Equal(t, "http://collector:4318/v1/metrics", got)
+	})
+
+	t.Run("signal endpoint appends /v1/metrics when path absent", func(t *testing.T) {
+		got := resolveOTLPMetricsURL("http://collector:4318", agentDefault)
+		assert.Equal(t, "http://collector:4318/v1/metrics", got)
+	})
+
+	t.Run("generic endpoint with path prefix appends /v1/metrics", func(t *testing.T) {
+		got := resolveOTLPMetricsURL("", "http://collector:4318/prefix")
+		assert.Equal(t, "http://collector:4318/prefix/v1/metrics", got)
+	})
+
+	t.Run("signal endpoint takes precedence over generic", func(t *testing.T) {
+		got := resolveOTLPMetricsURL("http://metrics-specific:4318", "http://generic:4318")
+		assert.Equal(t, "http://metrics-specific:4318/v1/metrics", got)
+	})
+}
+
 func TestValidateSendRetries(t *testing.T) {
 	tests := []struct {
 		name    string
