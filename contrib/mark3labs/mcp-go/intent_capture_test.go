@@ -92,6 +92,61 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, "test intent description", toolSpan.Meta["intent"])
 }
 
+func TestIntentCaptureRawInputSchemaViaNewToolListsWithoutConflict(t *testing.T) {
+	// mcp.NewTool defaults InputSchema.Type to "object"; combined with
+	// WithRawInputSchema this leaves BOTH set, and Tool.MarshalJSON refuses
+	// to encode a tool with both. Intent capture must clear the structured
+	// schema when it keeps the raw one.
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
+	srv.AddTool(mcp.NewTool("raw_tool",
+		mcp.WithDescription("raw"),
+		mcp.WithRawInputSchema(json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}`)),
+	), func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("ok"), nil
+	})
+
+	listResp := srv.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	var listResult map[string]interface{}
+	require.NoError(t, json.Unmarshal(mustMarshal(listResp), &listResult))
+
+	require.NotNil(t, listResult["result"], "tools/list returned error: %v", listResult["error"])
+	tools := listResult["result"].(map[string]interface{})["tools"].([]interface{})
+	require.Len(t, tools, 1)
+	props := tools[0].(map[string]interface{})["inputSchema"].(map[string]interface{})["properties"].(map[string]interface{})
+	assert.Contains(t, props, "telemetry")
+}
+
+func TestIntentCaptureRawInputSchemaPreservesUnknownFields(t *testing.T) {
+	// mcp.ToolInputSchema doesn't model additionalProperties/oneOf/etc;
+	// intent capture must not silently strip those when injecting telemetry.
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
+	srv.AddTool(mcp.NewToolWithRawSchema("raw_tool", "raw", json.RawMessage(`{
+		"type": "object",
+		"properties": {"app_id": {"type": "string"}},
+		"required": ["app_id"],
+		"additionalProperties": false,
+		"oneOf": [{"required": ["app_id"]}]
+	}`)), func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("ok"), nil
+	})
+
+	listResp := srv.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	var listResult map[string]interface{}
+	require.NoError(t, json.Unmarshal(mustMarshal(listResp), &listResult))
+	schema := listResult["result"].(map[string]interface{})["tools"].([]interface{})[0].(map[string]interface{})["inputSchema"].(map[string]interface{})
+
+	assert.Contains(t, schema["properties"].(map[string]interface{}), "telemetry")
+	assert.Contains(t, schema["required"].([]interface{}), "telemetry")
+	assert.Equal(t, false, schema["additionalProperties"])
+	assert.NotNil(t, schema["oneOf"])
+}
+
 func TestIntentCaptureRawInputSchema(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
