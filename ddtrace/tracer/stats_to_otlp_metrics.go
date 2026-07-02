@@ -187,9 +187,11 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 			attrs = append(attrs, otlpKeyValue("rpc.response.status_code", otlpStringValue(gs.GRPCStatusCode)))
 		}
 	}
+	statusCode := "Ok"
 	if isError {
-		attrs = append(attrs, otlpKeyValue("status.code", otlpIntValue(2)))
+		statusCode = "Error"
 	}
+	attrs = append(attrs, otlpKeyValue("status.code", otlpStringValue(statusCode)))
 	// grpc.method.name arrives via PeerTags (no dedicated field in ClientGroupedStats) and maps to rpc.method.
 	for _, tag := range gs.PeerTags {
 		if k, v, ok := strings.Cut(tag, ":"); ok && k == "grpc.method.name" && v != "" {

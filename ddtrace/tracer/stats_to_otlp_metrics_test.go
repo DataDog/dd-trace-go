@@ -326,10 +326,14 @@ func TestDataPointAttributesTopLevelFalse(t *testing.T) {
 	})
 }
 
-func TestDataPointAttributesErrorStatusCode(t *testing.T) {
-	gs := &pb.ClientGroupedStats{Resource: "/err"}
-	m := kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */, "", true))
-	assert.Equal(t, "2", m["status.code"])
+func TestDataPointAttributesStatusCode(t *testing.T) {
+	gs := &pb.ClientGroupedStats{Resource: "/ok"}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false /* isError */, "", true))
+	assert.Equal(t, "Ok", m["status.code"])
+
+	gs = &pb.ClientGroupedStats{Resource: "/err"}
+	m = kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */, "", true))
+	assert.Equal(t, "Error", m["status.code"])
 }
 
 func TestDataPointAttributesHTTPRoute(t *testing.T) {
