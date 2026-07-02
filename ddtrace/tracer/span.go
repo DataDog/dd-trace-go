@@ -1110,7 +1110,7 @@ func (s *Span) finish(finishTime int64) {
 	keep := true
 	tracer, hasTracer := getGlobalTracer().(*tracer)
 	if hasTracer {
-		if !tracer.config.enabled.get() {
+		if !tracer.config.internalConfig.TracingEnabled() {
 			return
 		}
 		if tracer.config.canDropP0s() {
