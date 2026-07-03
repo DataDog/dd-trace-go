@@ -44,6 +44,18 @@ func injectTelemetryListToolsHook(ctx context.Context, id any, message *mcp.List
 	for i := range result.Tools {
 		t := &result.Tools[i]
 
+		// UI-only tools (_meta.ui.visibility without "model") are invoked by the
+		// app UI, not by the model. OpenAI's MCP client strictly validates tool
+		// arguments against the advertised schema, so injecting telemetry as
+		// required would break UI calls that legitimately omit it.
+		var toolMeta map[string]any
+		if t.Meta != nil {
+			toolMeta = t.Meta.AdditionalFields
+		}
+		if !instrmcp.IsModelCallable(toolMeta) {
+			continue
+		}
+
 		// mcp.ToolInputSchema only models type/properties/required/$defs;
 		// for tools defined with NewToolWithRawSchema we mutate the raw
 		// JSON via a generic map so keywords like additionalProperties,
