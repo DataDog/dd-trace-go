@@ -136,6 +136,9 @@ type Config struct {
 	globalTags *DynamicConfig[map[string]any]
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags *DynamicConfig[[]string]
+	// tracingEnabled controls whether tracing is active. RC can only disable it,
+	// never re-enable it once disabled by a local source.
+	tracingEnabled *DynamicConfig[bool]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled    bool
 	ciVisibilityAgentless  bool
@@ -181,6 +184,14 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
+	// appKey is the Datadog application key.
+	appKey string
+	// ciVisibilityAgentlessURL is a custom agentless endpoint for CI Visibility.
+	ciVisibilityAgentlessURL string
+	// experimentalFlaggingProviderEnabled enables the experimental OpenFeature RC provider.
+	experimentalFlaggingProviderEnabled bool
+	// spanPoolEnabled enables the experimental span pool.
+	spanPoolEnabled bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -270,7 +281,7 @@ func loadConfig() *Config {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
 	cfg.otlpExportMetricsMode = p.GetString("OTEL_METRICS_EXPORTER", "otlp") == "otlp"
-	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV04, validateTraceProtocolVersion))
+	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion))
 	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
 	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
@@ -280,9 +291,16 @@ func loadConfig() *Config {
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
+	cfg.appKey = p.GetString("DD_APP_KEY", "")
+	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
+	cfg.experimentalFlaggingProviderEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
+	cfg.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
+
+	tracingEnabled, tracingEnabledOrigin := p.GetBoolWithOrigin("DD_TRACE_ENABLED", true)
+	cfg.tracingEnabled = newDynamicConfig("tracing_enabled", tracingEnabled, tracingEnabledOrigin, equal[bool], nil)
 
 	enabled, origin := p.GetBoolWithOrigin("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, origin, equal[bool], nil)
@@ -351,7 +369,7 @@ func loadConfig() *Config {
 		cfg.reportHostname = true
 	}
 
-	cfg.apiKey = env.Get("DD_API_KEY")
+	cfg.apiKey = p.GetString("DD_API_KEY", "")
 
 	return cfg
 }
@@ -728,6 +746,29 @@ func (c *Config) SetHeaderAsTags(headerAsTags []string, origin telemetry.Origin,
 	}
 	c.headerAsTags.setBaseline(headerAsTags, origin)
 	configtelemetry.Report("DD_TRACE_HEADER_TAGS", strings.Join(headerAsTags, ","), origin)
+}
+
+func (c *Config) TracingEnabled() bool {
+	return c.tracingEnabled.Get()
+}
+
+// TracingEnabledConfig returns the DynamicConfig for the tracing-enabled flag.
+// Use this only for RC updates (HandleRC). For user-configured changes use SetTracingEnabled.
+func (c *Config) TracingEnabledConfig() *DynamicConfig[bool] {
+	return c.tracingEnabled
+}
+
+// SetTracingEnabled records a user-configured tracing-enabled value. Call this
+// only from user-facing paths (options, env vars). For agent/RC updates use
+// TracingEnabledConfig().HandleRC(...).
+func (c *Config) SetTracingEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.tracingEnabled.setBaseline(enabled, origin)
+	configtelemetry.Report("DD_TRACE_ENABLED", enabled, origin)
 }
 
 func (c *Config) TraceRateLimitPerSecond() float64 {
@@ -1309,4 +1350,38 @@ func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ..
 	}
 	c.sendRetries = retries
 	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
+func (c *Config) AppKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.appKey
+}
+
+func (c *Config) CIVisibilityAgentlessURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentlessURL
+}
+
+func (c *Config) ExperimentalFlaggingProviderEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.experimentalFlaggingProviderEnabled
+}
+
+func (c *Config) SpanPoolEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanPoolEnabled
+}
+
+func (c *Config) SetSpanPoolEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.spanPoolEnabled = enabled
+	configtelemetry.Report("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", enabled, origin)
 }
