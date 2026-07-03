@@ -66,7 +66,6 @@ func TestPayloadV04PreGrowWireIntegrity(t *testing.T) {
 	}
 }
 
-
 // TestPayloadV04HintConvergesAfterFlush verifies the key behavioral invariant
 // of Approach B: when flush() passes oldp.size() as the hint to the next
 // newPayloadV04, the replacement buffer must have enough pre-allocated capacity
