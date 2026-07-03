@@ -32,6 +32,13 @@ type TracingConfig struct {
 	// If both IntentCaptureEnabled and IntentCaptureEnabledFunc are set, the
 	// predicate wins. If both are unset, intent capture is disabled.
 	IntentCaptureEnabledFunc func(ctx context.Context) bool
+	// RedactToolOutput replaces the tool result body sent to LLMObs with a
+	// fixed "[REDACTED]" string. Use this when data access control policies
+	// forbid forwarding tool output to LLMObs traces.
+	//
+	// The result.IsError flag is still honored for span error status — only
+	// the output content is redacted.
+	RedactToolOutput bool
 }
 
 // intentCapturePredicate returns the runtime predicate for intent capture,
@@ -82,6 +89,12 @@ func WithMCPServerTracing(options *TracingConfig) server.ServerOption {
 		appendTracingHooks(hooks)
 
 		server.WithHooks(hooks)(s)
+
+		// Register the redaction middleware first (when enabled) so its ctx
+		// flag is set before toolHandlerMiddleware annotates the LLMObs span.
+		if options.RedactToolOutput {
+			server.WithToolHandlerMiddleware(redactToolOutputMiddleware)(s)
+		}
 
 		// Register toolHandlerMiddleware first so it runs first (creates the span)
 		// Note: mcp-go middleware runs in registration order (first registered runs first)
