@@ -69,7 +69,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 		prioritySampling: s,
 		statsd:           statsdClient,
 	}
-	tw.payload = tw.newPayload()
+	tw.payload = tw.newPayload(0)
 	return tw
 }
 
@@ -100,10 +100,16 @@ func (h *agentTraceWriter) stop() {
 	h.wg.Wait()
 }
 
-// newPayload returns a new payload based on the trace protocol.
-func (h *agentTraceWriter) newPayload() payload {
+// newPayload returns a new payload based on the trace protocol. hint, when
+// positive, pre-grows the v0.4 buffer to the previous flush cycle's encoded
+// size, eliminating the bytes.Buffer doubling ramp-up at the cost of one
+// upfront allocation. Pass 0 on cold start (no prior cycle data).
+func (h *agentTraceWriter) newPayload(hint int) payload {
 	payload := newPayload(h.config.internalConfig.TraceProtocol())
 	if payload.protocol() == traceProtocolV04 {
+		if hint > 0 {
+			payload.grow(hint)
+		}
 		return payload
 	}
 	// pre-allocate payloadV1 with field values
@@ -137,7 +143,7 @@ func (h *agentTraceWriter) flush() {
 		h.mu.Unlock()
 		return
 	}
-	h.payload = h.newPayload()
+	h.payload = h.newPayload(oldp.size())
 	h.mu.Unlock()
 
 	h.climit <- struct{}{}
