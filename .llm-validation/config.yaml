@@ -11,7 +11,7 @@ instruction_files:
 default_level: minimum
 presets:
   minimum:
-    cases: ["dd-trace-go-contrib-structure-001", "dd-trace-go-contrib-tags-002"]
+    cases: ["dd-trace-go-contrib-structure-001", "dd-trace-go-contrib-tags-002", "dd-trace-go-config-new-env-var-005"]
     runs: 4
   medium:
     max_cases: 4
