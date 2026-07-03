@@ -78,11 +78,22 @@ func TestExperimentCreation(t *testing.T) {
 	})
 	t.Run("missing-dd-app-key-agentless", func(t *testing.T) {
 		t.Setenv("DD_API_KEY", testAPIKey)
-		// DD_APP_KEY is mandatory for experiments in agentless mode
 		t.Setenv("DD_APP_KEY", "")
-
-		// Use agentless mode to trigger app key requirement
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(true)))
+		// Start tracer directly (without testTracer) so that DD_APP_KEY stays unset.
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsAgentlessEnabled(true),
+				tracer.WithLLMObsProjectName("test-project"),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
+			testtracer.WithMockResponses(createMockHandler()),
+		)
 		defer tt.Stop()
 
 		_, err := experiment.New(
@@ -97,28 +108,67 @@ func TestExperimentCreation(t *testing.T) {
 		assert.Contains(t, err.Error(), "an app key must be provided")
 	})
 	t.Run("missing-dd-app-key-agent-mode", func(t *testing.T) {
-		// DD_APP_KEY is not required in agent mode
+		// DD_APP_KEY is always required — agent mode no longer supported for experiments.
+		// Start tracer directly (without testTracer) to avoid default app key being set.
+		t.Setenv("DD_API_KEY", testAPIKey)
 		t.Setenv("DD_APP_KEY", "")
-
-		// Use agent mode - app key should not be required
-		tt := testTracer(t, testtracer.WithTracerStartOpts(tracer.WithLLMObsAgentlessEnabled(false)))
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithLLMObsProjectName("test-project"),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
+			testtracer.WithMockResponses(createMockHandler()),
+		)
 		defer tt.Stop()
 
-		ds := createTestDataset(t)
-		task := createTestTask()
-		evaluators := createTestEvaluators()
-
-		exp, err := experiment.New(
+		_, err := experiment.New(
 			"test-experiment",
-			task,
-			ds,
-			evaluators,
+			createTestTask(),
+			nil,
+			createTestEvaluators(),
 			experiment.WithDescription("Test experiment description"),
 			experiment.WithProjectName("test-project"),
 		)
-		require.NoError(t, err)
-		assert.NotNil(t, exp)
-		assert.Equal(t, "test-experiment", exp.Name)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "an app key must be provided")
+	})
+	t.Run("missing-dd-api-key-agent-mode", func(t *testing.T) {
+		// DD_API_KEY is always required because experiments go directly to the API.
+		t.Setenv("DD_API_KEY", "")
+		t.Setenv("DD_APP_KEY", testAppKey)
+		tt := testtracer.Start(t,
+			testtracer.WithTracerStartOpts(
+				tracer.WithLLMObsEnabled(true),
+				tracer.WithLLMObsMLApp("test-app"),
+				tracer.WithLLMObsAgentlessEnabled(false),
+				tracer.WithLLMObsProjectName("test-project"),
+				tracer.WithService("test-service"),
+				tracer.WithLogStartup(false),
+			),
+			testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
+				Endpoints: []string{"/evp_proxy/v2/"},
+			}),
+			testtracer.WithMockResponses(createMockHandler()),
+		)
+		defer tt.Stop()
+
+		_, err := experiment.New(
+			"test-experiment",
+			createTestTask(),
+			nil,
+			createTestEvaluators(),
+			experiment.WithDescription("Test experiment description"),
+			experiment.WithProjectName("test-project"),
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "an API key must be provided")
 	})
 	t.Run("project-name-from-env-variable", func(t *testing.T) {
 		t.Setenv("DD_LLMOBS_PROJECT_NAME", "env-project")
@@ -254,8 +304,10 @@ func TestDDAppKeyHeader(t *testing.T) {
 		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set in agentless mode")
 	})
 	t.Run("dd-app-key-header-agent-mode", func(t *testing.T) {
+		t.Setenv("DD_APP_KEY", testAppKey)
 
 		var capturedHeaders http.Header
+		var capturedPath string
 		h := func(r *http.Request) *http.Response {
 			// Normalize URL by trimming evp_proxy prefix if present
 			path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
@@ -263,12 +315,13 @@ func TestDDAppKeyHeader(t *testing.T) {
 			// Capture headers from experiment-related requests
 			if strings.Contains(path, "/api/unstable/llm-obs/v1/projects") {
 				capturedHeaders = r.Header.Clone()
+				capturedPath = r.URL.Path
 			}
 			// Let the default experiment mock handler handle the response
 			return createMockHandler()(r)
 		}
 
-		// Force agent mode explicitly
+		// Even in agent mode, DNE endpoints always go direct to the API with the app key header.
 		tt := testTracer(t,
 			testtracer.WithTracerStartOpts(
 				tracer.WithLLMObsAgentlessEnabled(false),
@@ -298,10 +351,11 @@ func TestDDAppKeyHeader(t *testing.T) {
 		_, err = exp.Run(context.Background())
 		require.NoError(t, err)
 
-		// Verify X-Datadog-NeedsAppKey header is set in agent mode (app key is ignored)
 		require.NotNil(t, capturedHeaders, "No headers were captured")
-		assert.Equal(t, "true", capturedHeaders.Get("X-Datadog-NeedsAppKey"), "X-Datadog-NeedsAppKey header should always be set in agent mode")
-		assert.Empty(t, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should not be set in agent mode")
+		assert.NotContains(t, capturedPath, "/evp_proxy/v2", "DNE endpoints should bypass the EVP proxy path")
+		assert.Empty(t, capturedHeaders.Get("X-Datadog-EVP-Subdomain"), "DNE endpoints should not set the EVP proxy header")
+		assert.Equal(t, testAPIKey, capturedHeaders.Get("DD-API-KEY"), "DD-API-KEY header should be set: DNE endpoints always use direct API regardless of agent mode")
+		assert.Equal(t, testAppKey, capturedHeaders.Get("DD-APPLICATION-KEY"), "DD-APPLICATION-KEY header should be set: DNE endpoints always use direct API regardless of agent mode")
 	})
 }
 
@@ -819,6 +873,8 @@ func TestExperimentMetricGeneration(t *testing.T) {
 // Helper functions
 
 func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
+	t.Setenv("DD_API_KEY", testAPIKey)
+	t.Setenv("DD_APP_KEY", testAppKey)
 	defaultOpts := []testtracer.Option{
 		testtracer.WithTracerStartOpts(
 			tracer.WithLLMObsEnabled(true),

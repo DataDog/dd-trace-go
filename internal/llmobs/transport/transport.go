@@ -74,6 +74,7 @@ type Transport struct {
 	site           string
 	agentURL       *url.URL
 	agentless      bool
+	apiKey         string
 	appKey         string
 }
 
@@ -104,6 +105,7 @@ func New(cfg *config.Config) *Transport {
 		site:           site,
 		agentURL:       cfg.TracerConfig.AgentURL,
 		agentless:      cfg.ResolvedAgentlessEnabled,
+		apiKey:         cfg.TracerConfig.APIKey,
 		appKey:         cfg.TracerConfig.APPKey,
 	}
 }
@@ -182,6 +184,11 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		timeout = defaultTimeout
 	}
 	urlStr := c.baseURL(subdomain) + path
+	// DNE endpoints (datasets/experiments) always go direct to the API — agent mode not supported.
+	isDNE := strings.HasPrefix(path, endpointPrefixDNE) || strings.HasPrefix(path, endpointPrefixDNEStable)
+	if isDNE {
+		urlStr = fmt.Sprintf("https://%s.%s", subdomain, c.site) + path
+	}
 	backoffStrat := defaultBackoffStrategy()
 
 	doRequest := func() (result requestResult, err error) {
@@ -210,18 +217,17 @@ func (c *Transport) request(ctx context.Context, method, path, subdomain string,
 		for key, val := range c.defaultHeaders {
 			req.Header.Set(key, val)
 		}
-		if !c.agentless {
+		if !c.agentless && !isDNE {
 			req.Header.Set(headerEVPSubdomain, subdomain)
 		}
 
-		// Set headers for datasets and experiments endpoints (both unstable and stable v2 paths)
-		if strings.HasPrefix(path, endpointPrefixDNE) || strings.HasPrefix(path, endpointPrefixDNEStable) {
-			if c.agentless && c.appKey != "" {
-				// In agentless mode, set the app key header if available
+		// DNE endpoints always go direct to the API; set auth headers regardless of agentless mode.
+		if isDNE {
+			if c.apiKey != "" {
+				req.Header.Set("DD-API-KEY", c.apiKey)
+			}
+			if c.appKey != "" {
 				req.Header.Set("DD-APPLICATION-KEY", c.appKey)
-			} else if !c.agentless {
-				// In agent mode, always set the NeedsAppKey header (app key is ignored)
-				req.Header.Set("X-Datadog-NeedsAppKey", "true")
 			}
 		}
 
