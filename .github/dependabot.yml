@@ -59,4 +59,7 @@ updates:
       # amazonlinux:2 is pinned to a specific AL2 (glibc 2.26) digest.
       # Allowing Dependabot to update this digest risks silently switching to
       # AL2023 if the :2 tag is ever redirected, which would remove AL2 coverage.
+      # versions: ["= 2"] scopes this ignore to the :2 tag only, so Dependabot
+      # still proposes digest refreshes for amazonlinux:2023.
       - dependency-name: "amazonlinux"
+        versions: ["= 2"]
