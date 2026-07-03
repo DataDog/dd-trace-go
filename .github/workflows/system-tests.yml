@@ -44,7 +44,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ac06a81207b97a6ff400f588842bf2e4d2548943 # DO NOT MERGE, real value should be ${{ inputs.ref }}
+          ref: ${{ inputs.ref }}
       - name: Pin exact commit SHA for system-tests
         id: pin
         run: |
@@ -259,7 +259,7 @@ jobs:
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ac06a81207b97a6ff400f588842bf2e4d2548943 # DO NOT MERGE, real value should be ${{ inputs.ref }}
+          ref: ${{ inputs.ref }}
 
       - name: Checkout dd-trace-go
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
