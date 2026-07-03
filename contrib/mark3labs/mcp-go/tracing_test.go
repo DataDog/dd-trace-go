@@ -178,6 +178,9 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	assert.Contains(t, initSpan.Tags, expectedTag)
 	assert.Contains(t, toolSpan.Tags, expectedTag)
 
+	// Tool span carries the session ID natively so LLMObs groups it under the session.
+	assert.Equal(t, sessionID, toolSpan.SessionID)
+
 	assert.Contains(t, toolSpan.Tags, "mcp_method:tools/call")
 	assert.Contains(t, toolSpan.Tags, "mcp_tool_kind:server")
 	assert.Contains(t, toolSpan.Tags, "mcp_tool:calculator")
