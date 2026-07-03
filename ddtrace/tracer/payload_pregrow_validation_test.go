@@ -74,7 +74,7 @@ func TestPayloadV04PreGrowWireIntegrity(t *testing.T) {
 // This is tested at the payload level (no writer/config machinery needed)
 // because newPayload(hint) for v04 calls p.grow(hint), which directly maps
 // to bytes.Buffer.Grow. The writer-level wiring is covered by the build
-// (newPayload signature change) and by TestPayloadV04HintEliminatesRampUpAllocs.
+// (newPayload signature change).
 func TestPayloadV04HintConvergesAfterFlush(t *testing.T) {
 	trace := mkTraceKB(2)
 	limit := int(payloadSizeLimit)
@@ -157,6 +157,142 @@ func benchFillCycle(kb int, mode pregrowMode) func(*testing.B) {
 			}
 		}
 	}
+}
+
+// mkRepeatedTrace returns a spanList with repeated small strings so the v1
+// string table actually compacts across pushes, producing sizes that represent
+// a realistic steady-state workload for the hint heuristic.
+func mkRepeatedTrace(numSpans int) spanList {
+	spans := make(spanList, numSpans)
+	for i := range numSpans {
+		s := newBasicSpan("http.request")
+		s.start = fixedTime
+		s.service = "my-service"
+		s.resource = "GET /api/v1/users"
+		s.meta.Set("env", "production")
+		s.meta.Set("version", "1.0.0")
+		s.meta.Set("span.kind", "server")
+		s.meta.Set("http.method", "GET")
+		s.meta.Set("http.status_code", "200")
+		_ = i
+		spans[i] = s
+	}
+	return spans
+}
+
+// TestPayloadV1PreGrowWireIntegrity verifies that setting sizeHint on a v1
+// payload does not change the encoded wire bytes. A cold payload and a
+// hint-pre-sized payload must produce byte-identical output for the same
+// sequence of pushed traces.
+//
+// Uses newPayloadV1() directly (not the pool) so both payloads start from
+// identical zero state — pool objects carry cached string tables and process
+// tag state across calls that would make byte comparison unreliable.
+//
+// Uses a single-tag trace so span.meta map iteration is deterministic
+// (Go randomises multi-entry map order, which would make byte comparison
+// unreliable even though the content is correct).
+func TestPayloadV1PreGrowWireIntegrity(t *testing.T) {
+	s := newBasicSpan("http.request")
+	s.start = fixedTime
+	s.service = "my-service"
+	s.meta.Set("env", "production") // single tag → deterministic map iteration
+	trace := spanList{s}
+
+	const pushCount = 10
+	cold := newPayloadV1()
+	warm := newPayloadV1()
+	warm.sizeHint = int(payloadSizeLimit)
+
+	for range pushCount {
+		_, err := cold.push(trace)
+		require.NoError(t, err)
+		_, err = warm.push(trace)
+		require.NoError(t, err)
+	}
+
+	coldBytes, err := io.ReadAll(cold)
+	require.NoError(t, err)
+	warmBytes, err := io.ReadAll(warm)
+	require.NoError(t, err)
+
+	assert.Equal(t, coldBytes, warmBytes, "sizeHint must not change encoded wire bytes")
+	assert.Equal(t, cold.itemCount(), warm.itemCount())
+}
+
+// TestPayloadV1ClearDiscardRetain documents the maxRetainedBufCap threshold:
+// buffers above 1 MB are discarded by clear() (the hot path at full payloads),
+// buffers below are retained. This confirms that the pre-grow + discard pattern
+// is always in play for payloads that approach payloadSizeLimit.
+func TestPayloadV1ClearDiscardRetain(t *testing.T) {
+	// Case 1: fill above maxRetainedBufCap — buffer must be discarded on clear.
+	large := getPayloadV1()
+	trace := mkRepeatedTrace(5)
+	for large.size() < maxRetainedBufCap+1 {
+		_, _ = large.push(trace)
+	}
+	assert.Greater(t, cap(large.buf), maxRetainedBufCap, "sanity: buf grew past cap threshold")
+	large.clear()
+	assert.Equal(t, 0, cap(large.buf), "buf must be discarded when cap > maxRetainedBufCap")
+	putPayloadV1(large)
+
+	// Case 2: fill below maxRetainedBufCap — buffer must be retained (len=0, cap>0).
+	small := getPayloadV1()
+	_, _ = small.push(mkRepeatedTrace(1))
+	capBefore := cap(small.buf)
+	assert.Greater(t, capBefore, 0, "sanity: buf must have grown after a push")
+	assert.LessOrEqual(t, capBefore, maxRetainedBufCap, "sanity: small payload stays under cap threshold")
+	small.clear()
+	assert.Equal(t, capBefore, cap(small.buf), "buf cap must be retained when cap <= maxRetainedBufCap")
+	assert.Equal(t, 0, len(small.buf), "buf len must be reset to 0 on clear")
+	putPayloadV1(small)
+}
+
+// BenchmarkPayloadV1FillCycle benchmarks one complete v1 fill cycle under two
+// strategies: cold-start (no hint, ramps via append doubling) and tightFit
+// (sizeHint = previous cycle's real compacted size). Unlike the v04 benchmark,
+// this exercises the sync.Pool path (getPayloadV1 / putPayloadV1 each iter) and
+// uses a repeated-string trace so the string table compaction is representative.
+//
+// Note: payloadSizeLimit > maxRetainedBufCap (4.75 MB > 1 MB), so clear() always
+// discards the buffer on the hot path. The hint eliminates the per-cycle
+// ramp-up that discard forces.
+func BenchmarkPayloadV1FillCycle(b *testing.B) {
+	trace := mkRepeatedTrace(5)
+	limit := int(payloadSizeLimit)
+
+	// Warm-up cycle to get the real compacted size as hint.
+	p0 := getPayloadV1()
+	for p0.size() < limit {
+		_, _ = p0.push(trace)
+	}
+	hint := p0.size()
+	putPayloadV1(p0)
+
+	b.Run("cold", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			p := getPayloadV1()
+			for p.size() < limit {
+				_, _ = p.push(trace)
+			}
+			putPayloadV1(p)
+		}
+	})
+
+	b.Run("tightFit", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			p := getPayloadV1()
+			p.sizeHint = hint
+			for p.size() < limit {
+				_, _ = p.push(trace)
+			}
+			putPayloadV1(p)
+		}
+	})
 }
 
 func itoaKB(kb int) string {
