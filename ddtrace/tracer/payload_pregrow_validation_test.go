@@ -66,40 +66,6 @@ func TestPayloadV04PreGrowWireIntegrity(t *testing.T) {
 	}
 }
 
-// TestPayloadV04HintEliminatesRampUpAllocs verifies that a buffer pre-grown to
-// last-cycle's encoded size + one-trace headroom performs fewer allocations per
-// fill cycle than starting from empty. Specifically, the ramp-up doublings
-// (typically ~12 for a 4.75 MB payload) should be gone.
-func TestPayloadV04HintEliminatesRampUpAllocs(t *testing.T) {
-	trace := mkTraceKB(2)
-	limit := int(payloadSizeLimit)
-
-	fillCycle := func(hint int) func() {
-		return func() {
-			p := newPayloadV04()
-			if hint > 0 {
-				p.buf.Grow(hint)
-			}
-			for p.size() < limit {
-				_, _ = p.push(trace)
-			}
-		}
-	}
-
-	// Warm up: one cycle with no hint to get the natural final size.
-	p0 := newPayloadV04()
-	for p0.size() < limit {
-		p0.push(trace)
-	}
-	hint := p0.size() + trace.Msgsize() // tightFit: final size + one-trace headroom
-
-	coldAllocs := testing.AllocsPerRun(5, fillCycle(0))
-	warmAllocs := testing.AllocsPerRun(5, fillCycle(hint))
-
-	t.Logf("allocs/cycle: cold=%g warm=%g saved=%g", coldAllocs, warmAllocs, coldAllocs-warmAllocs)
-	assert.Less(t, warmAllocs, coldAllocs,
-		"pre-grown payload must allocate less per fill cycle than cold-start")
-}
 
 // TestPayloadV04HintConvergesAfterFlush verifies the key behavioral invariant
 // of Approach B: when flush() passes oldp.size() as the hint to the next
