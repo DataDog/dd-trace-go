@@ -70,6 +70,10 @@ Our CI pipeline includes several automated checks:
 
 - **Code Generation**: Ensures all generated code is current and consistent
 
+#### Config Audit Workflow
+
+- **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
+
 ### CI Troubleshooting
 
 Sometimes a pull request's checks will show failures that aren't related to its changes. When this happens, you can try the following steps:

@@ -178,6 +178,9 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	assert.Contains(t, initSpan.Tags, expectedTag)
 	assert.Contains(t, toolSpan.Tags, expectedTag)
 
+	// Tool span carries the session ID natively so LLMObs groups it under the session.
+	assert.Equal(t, sessionID, toolSpan.SessionID)
+
 	assert.Contains(t, toolSpan.Tags, "mcp_method:tools/call")
 	assert.Contains(t, toolSpan.Tags, "mcp_tool_kind:server")
 	assert.Contains(t, toolSpan.Tags, "mcp_tool:calculator")
@@ -342,6 +345,71 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	require.NoError(t, err)
 	outputStr := string(outputJSON)
 	assert.Contains(t, outputStr, "Validation failed")
+}
+
+func TestRedactToolOutput(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0",
+		WithMCPServerTracing(&TracingConfig{RedactToolOutput: true}))
+
+	calcTool := mcp.NewTool("calculator", mcp.WithDescription("A simple calculator"))
+	srv.AddTool(calcTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText(`{"result":42,"secret":"hunter2"}`), nil
+	})
+
+	ctx := context.Background()
+	session := &mockSession{id: "redact-session"}
+	session.Initialize()
+	ctx = srv.WithContext(ctx, session)
+
+	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"calculator","arguments":{}}}`))
+
+	spans := tt.WaitForLLMObsSpans(t, 1)
+	require.Len(t, spans, 1)
+
+	toolSpan := spans[0]
+	outputMeta, ok := toolSpan.Meta["output"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "[REDACTED]", outputMeta["value"])
+	// Sensitive content from the actual result must not leak.
+	outputJSON, err := json.Marshal(outputMeta)
+	require.NoError(t, err)
+	assert.NotContains(t, string(outputJSON), "hunter2")
+	assert.NotContains(t, string(outputJSON), "42")
+}
+
+func TestRedactToolOutputStillReportsIsError(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0",
+		WithMCPServerTracing(&TracingConfig{RedactToolOutput: true}))
+
+	failTool := mcp.NewTool("failing", mcp.WithDescription("A failing tool"))
+	srv.AddTool(failTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultError("permission denied: secret-detail"), nil
+	})
+
+	ctx := context.Background()
+	session := &mockSession{id: "redact-err"}
+	session.Initialize()
+	ctx = srv.WithContext(ctx, session)
+
+	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"failing","arguments":{}}}`))
+
+	spans := tt.WaitForLLMObsSpans(t, 1)
+	require.Len(t, spans, 1)
+
+	toolSpan := spans[0]
+	assert.Contains(t, toolSpan.Meta, "error.message")
+	outputMeta, ok := toolSpan.Meta["output"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "[REDACTED]", outputMeta["value"])
+	outputJSON, err := json.Marshal(outputMeta)
+	require.NoError(t, err)
+	assert.NotContains(t, string(outputJSON), "secret-detail")
 }
 
 func TestWithMCPServerTracingWithCustomHooks(t *testing.T) {

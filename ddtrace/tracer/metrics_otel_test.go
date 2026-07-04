@@ -64,6 +64,26 @@ func TestTracerStartOtelRuntimeMetricsRequiresAllFlags(t *testing.T) {
 	assert.True(t, *started, "StartRuntimeMetrics hook should have been called")
 }
 
+func TestTracerLegacyRuntimeMetricsSuppressedWhenOtelActive(t *testing.T) {
+	t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	internalconfig.SetUseFreshConfig(true)
+	defer internalconfig.SetUseFreshConfig(false)
+
+	withTestHooks(t)
+
+	tp := new(log.RecordLogger)
+	tp.Ignore(commonLogIgnore...)
+	tr, err := newTracer(WithLogger(tp), WithDebugMode(true))
+	require.NoError(t, err)
+	defer tr.Stop()
+
+	assert.True(t, tr.config.otelRuntimeMetricsShouldBeEnabled, "otelRuntimeMetricsShouldBeEnabled must be true for this test to be meaningful")
+	for _, l := range tp.Logs() {
+		assert.NotContains(t, l, "Runtime metrics enabled.", "legacy runtime metrics goroutine must not start when OTel is active")
+	}
+}
+
 func TestTracerStartSkipsOtelRuntimeMetricsWhenExporterNone(t *testing.T) {
 	t.Setenv("OTEL_METRICS_EXPORTER", "none")
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "86400000")
