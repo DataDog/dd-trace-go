@@ -206,7 +206,7 @@ func StartMockServerWithOptions(opts ...MockServerOption) (*httptest.Server, *Pa
 // propagated to subprocesses. This is needed when the mock server runs in a
 // parent process but CI Visibility initializes in a child process.
 func ConfigureMockServerReadCacheFromEnv() func() {
-	cacheRoot := os.Getenv(mockServerReadCacheRootEnv)
+	cacheRoot := ddenv.Get(mockServerReadCacheRootEnv)
 	if cacheRoot == "" {
 		return func() {}
 	}
