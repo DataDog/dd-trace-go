@@ -141,7 +141,7 @@ func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, defa
 func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, defaultService string, otelMode bool) *otlpmetrics.HistogramDataPoint {
 	bucketCounts, sum, minSec, maxSec, count, err := sketchToHistogram(sketchBytes, spanMetricBounds[:])
 	if err != nil {
-		log.Warn("stats_to_otlp_metrics: failed to decode sketch: %v", err)
+		log.Warn("stats_to_otlp_metrics: failed to decode sketch: %v", err.Error())
 		return nil
 	}
 	if count == 0 {
