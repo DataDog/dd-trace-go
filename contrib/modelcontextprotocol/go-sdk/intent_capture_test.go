@@ -7,6 +7,7 @@ package gosdk
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -17,6 +18,54 @@ import (
 	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
+
+func TestIntentCapturePreservesUnknownSchemaKeywords(t *testing.T) {
+	// *jsonschema.Schema doesn't model additionalProperties/oneOf; the map-based
+	// injection must pass those through verbatim instead of dropping them.
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	ctx := context.Background()
+
+	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
+	AddTracing(server, WithIntentCapture())
+
+	server.AddTool(&mcp.Tool{
+		Name:        "raw_tool",
+		Description: "raw",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {"app_id": {"type": "string"}},
+			"required": ["app_id"],
+			"additionalProperties": false,
+			"oneOf": [{"required": ["app_id"]}]
+		}`),
+	}, func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil
+	})
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "1.0.0"}, nil)
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	require.NoError(t, err)
+	defer serverSession.Close()
+
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	require.NoError(t, err)
+	defer clientSession.Close()
+
+	listResult, err := clientSession.ListTools(ctx, &mcp.ListToolsParams{})
+	require.NoError(t, err)
+	require.Len(t, listResult.Tools, 1)
+
+	schema, ok := listResult.Tools[0].InputSchema.(map[string]any)
+	require.True(t, ok, "expected input schema to be map[string]any, got %T", listResult.Tools[0].InputSchema)
+	assert.Contains(t, schema["properties"].(map[string]any), "telemetry")
+	assert.Contains(t, schema["required"].([]any), "telemetry")
+	assert.Equal(t, false, schema["additionalProperties"])
+	assert.NotNil(t, schema["oneOf"])
+}
 
 func TestIntentCapture(t *testing.T) {
 	tt := testTracer(t)
