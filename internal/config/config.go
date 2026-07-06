@@ -296,6 +296,16 @@ func loadConfig() *Config {
 	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
 	if origin != telemetry.OriginDefault {
 		cfg.otlpSpanMetricsEnabled = &v
+		// When OTEL_TRACES_SPAN_METRICS_ENABLED is explicitly set to false and
+		// DD_TRACE_STATS_COMPUTATION_ENABLED was not explicitly configured,
+		// disable native stats too: the user has signalled they want no SDK-side
+		// span metrics, and the Datadog-Client-Computed-Stats header should
+		// therefore be absent (FR15).
+		if !v {
+			if _, statsOrigin := p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true); statsOrigin == telemetry.OriginDefault {
+				cfg.statsComputationEnabled = false
+			}
+		}
 	}
 	cfg.otlpSemanticsMode = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
