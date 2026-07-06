@@ -391,6 +391,9 @@ func (a *appsec) enableRASP() {
 		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPLFI); err != nil {
 			log.Debug("appsec: remote config: couldn't register RASP LFI: %s", err.Error())
 		}
+		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPCommandInjection); err != nil {
+			log.Debug("appsec: remote config: couldn't register RASP CMDi: %s", err.Error())
+		}
 	}
 }
 
