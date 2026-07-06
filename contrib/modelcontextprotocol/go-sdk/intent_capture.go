@@ -56,6 +56,11 @@ func intentCaptureReceivingMiddleware(next mcp.MethodHandler) mcp.MethodHandler 
 
 func injectToolsListResponse(res *mcp.ListToolsResult) {
 	for i := range res.Tools {
+		// UI-only tools cannot be invoked by the model, so injecting a
+		// required telemetry parameter would be useless noise.
+		if !instrmcp.IsModelCallable(res.Tools[i].Meta) {
+			continue
+		}
 		// Round-trip the input schema through map[string]any so unknown JSON
 		// Schema keywords (additionalProperties, oneOf, patternProperties, etc.)
 		// that *jsonschema.Schema does not model pass through verbatim.

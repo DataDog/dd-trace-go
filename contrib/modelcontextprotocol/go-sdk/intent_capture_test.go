@@ -67,6 +67,63 @@ func TestIntentCapturePreservesUnknownSchemaKeywords(t *testing.T) {
 	assert.NotNil(t, schema["oneOf"])
 }
 
+func TestIntentCaptureSkipsUIOnlyTools(t *testing.T) {
+	// Tools whose _meta.ui.visibility omits "model" cannot be model-invoked, so
+	// telemetry injection should be skipped for them.
+	tt := testTracer(t)
+	defer tt.Stop()
+	ctx := context.Background()
+
+	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
+	AddTracing(server, WithIntentCapture())
+
+	addTool := func(name string, visibility []any) {
+		tool := &mcp.Tool{
+			Name:        name,
+			Description: name,
+			InputSchema: &jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{"q": {Type: "string"}}},
+		}
+		if visibility != nil {
+			tool.Meta = mcp.Meta{"ui": map[string]any{"visibility": visibility}}
+		}
+		server.AddTool(tool, func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil
+		})
+	}
+	addTool("plain", nil)
+	addTool("ui_only", []any{"app"})
+	addTool("dual", []any{"model", "app"})
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "1.0.0"}, nil)
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	require.NoError(t, err)
+	defer serverSession.Close()
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	require.NoError(t, err)
+	defer clientSession.Close()
+
+	listResult, err := clientSession.ListTools(ctx, &mcp.ListToolsParams{})
+	require.NoError(t, err)
+	props := func(name string) map[string]any {
+		for _, tl := range listResult.Tools {
+			if tl.Name != name {
+				continue
+			}
+			schema, ok := tl.InputSchema.(map[string]any)
+			if !ok {
+				return nil
+			}
+			p, _ := schema["properties"].(map[string]any)
+			return p
+		}
+		return nil
+	}
+	assert.Contains(t, props("plain"), "telemetry")
+	assert.NotContains(t, props("ui_only"), "telemetry", "UI-only tool should not have telemetry injected")
+	assert.Contains(t, props("dual"), "telemetry")
+}
+
 func TestIntentCapture(t *testing.T) {
 	tt := testTracer(t)
 	defer tt.Stop()
