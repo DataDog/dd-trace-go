@@ -8,6 +8,7 @@ package gosdk
 import (
 	"context"
 	"encoding/json"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -18,6 +19,73 @@ import (
 	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
+
+func TestIntentCapturePredicate(t *testing.T) {
+	// The predicate must gate per-request: when it returns false, no schema
+	// injection and the telemetry argument reaches the handler.
+	tt := testTracer(t)
+	defer tt.Stop()
+	ctx := context.Background()
+
+	var enabled atomic.Bool
+	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
+	AddTracing(server, WithIntentCapturePredicate(func(context.Context) bool {
+		return enabled.Load()
+	}))
+
+	var receivedArgs map[string]any
+	server.AddTool(&mcp.Tool{
+		Name:        "tool",
+		Description: "tool",
+		InputSchema: &jsonschema.Schema{Type: "object", Properties: map[string]*jsonschema.Schema{"q": {Type: "string"}}},
+	}, func(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		_ = json.Unmarshal(req.Params.Arguments, &receivedArgs)
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "ok"}}}, nil
+	})
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "1.0.0"}, nil)
+	clientTransport, serverTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	require.NoError(t, err)
+	defer serverSession.Close()
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	require.NoError(t, err)
+	defer clientSession.Close()
+
+	// Predicate false: schema not injected, telemetry argument passed through.
+	enabled.Store(false)
+	listResult, err := clientSession.ListTools(ctx, &mcp.ListToolsParams{})
+	require.NoError(t, err)
+	require.Len(t, listResult.Tools, 1)
+	if schema, ok := listResult.Tools[0].InputSchema.(map[string]any); ok {
+		if props, _ := schema["properties"].(map[string]any); props != nil {
+			assert.NotContains(t, props, "telemetry")
+		}
+	}
+
+	_, err = clientSession.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "tool",
+		Arguments: map[string]any{"q": "x", "telemetry": map[string]any{"intent": "ignored"}},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, receivedArgs, "telemetry", "telemetry should pass through when predicate is false")
+
+	// Predicate true: schema injected, telemetry stripped.
+	enabled.Store(true)
+	listResult, err = clientSession.ListTools(ctx, &mcp.ListToolsParams{})
+	require.NoError(t, err)
+	schema, ok := listResult.Tools[0].InputSchema.(map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, schema["properties"].(map[string]any), "telemetry")
+
+	receivedArgs = nil
+	_, err = clientSession.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "tool",
+		Arguments: map[string]any{"q": "x", "telemetry": map[string]any{"intent": "captured"}},
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, receivedArgs, "telemetry")
+}
 
 func TestIntentCapturePreservesUnknownSchemaKeywords(t *testing.T) {
 	// *jsonschema.Schema doesn't model additionalProperties/oneOf; the map-based
