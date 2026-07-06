@@ -997,16 +997,21 @@ func WithDogstatsdAddr(addr string) StartOption {
 	}
 }
 
+// StatsdClient is the method set the tracer needs from an injected statsd
+// client. *statsd.ClientDirect from github.com/DataDog/datadog-go/v5 satisfies
+// this at compile time, so passing an incompatible type is a build error
+// rather than a silent no-op.
+type StatsdClient interface {
+	statsd.ClientInterface
+	statsd.ClientDirectInterface
+}
+
 // WithStatsdClient sets a custom statsd client to be used by the tracer for
 // internal metrics. When set, the tracer will not create its own statsd client,
 // allowing callers to share a single client across the tracer and application code.
-func WithStatsdClient(client statsd.ClientInterface) StartOption {
+func WithStatsdClient(client StatsdClient) StartOption {
 	return func(cfg *config) {
-		// The client must satisfy internal.StatsdClient; *statsd.ClientDirect from
-		// github.com/DataDog/datadog-go/v5 satisfies this requirement.
-		if c, ok := client.(internal.StatsdClient); ok {
-			cfg.statsdClient = c
-		}
+		cfg.statsdClient = client
 	}
 }
 
