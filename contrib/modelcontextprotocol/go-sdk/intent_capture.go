@@ -24,7 +24,8 @@ func telemetrySchema() map[string]any {
 				"description": instrmcp.IntentPrompt,
 			},
 		},
-		"required": []any{instrmcp.IntentKey},
+		"required":             []any{instrmcp.IntentKey},
+		"additionalProperties": false,
 	}
 }
 
