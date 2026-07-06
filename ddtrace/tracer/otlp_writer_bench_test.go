@@ -34,7 +34,6 @@ func newBenchOTLPWriter(b *testing.B) *otlpTraceWriter {
 		resource:  buildResource(cfg.internalConfig),
 		scope:     &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag},
 		spans:     make([]*otlptrace.Span, 0),
-		climit:    make(chan struct{}, concurrentConnectionLimit),
 	}
 }
 
@@ -78,7 +77,6 @@ func BenchmarkOTLPTraceWriterFlush(b *testing.B) {
 	for b.Loop() {
 		writer.add(trace)
 		writer.flush()
-		writer.wg.Wait()
 	}
 }
 
