@@ -175,6 +175,15 @@ func StartMockServerWithOptions(opts ...MockServerOption) (*httptest.Server, *Pa
 		}
 	}))
 
+	// httptest ports can be reused between scenario subprocesses, so keep mock
+	// CI Visibility responses out of the shared short-lived read cache.
+	cacheRoot, err := os.MkdirTemp("", "dd-trace-go-civisibility-read-cache-*")
+	if err != nil {
+		log.Printf("unable to isolate CI Visibility read cache for mock server: %s", err)
+	} else {
+		civisibilitynet.SetReadCacheHooksForTesting(cacheRoot, nil, nil, nil, nil)
+	}
+
 	restore := applyEnvUpdates(append([]envUpdate{
 		{key: "DD_CIVISIBILITY_ENABLED", value: "true"},
 		{key: "DD_CIVISIBILITY_AGENTLESS_ENABLED", value: "true"},
@@ -188,6 +197,10 @@ func StartMockServerWithOptions(opts ...MockServerOption) (*httptest.Server, *Pa
 	return server, payloads, func() {
 		restore()
 		server.Close()
+		if cacheRoot != "" {
+			civisibilitynet.ResetReadCacheHooksForTesting()
+			_ = os.RemoveAll(cacheRoot)
+		}
 	}
 }
 
