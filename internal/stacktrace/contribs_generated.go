@@ -763,7 +763,7 @@ func generatedThirdPartyLibraries() []string {
 		"go.uber.org/multierr",
 		"go.uber.org/zap",
 		"go.yaml.in/yaml/v2",
-		"go.yaml.in/yaml/v3",
+		"gopkg.in/yaml.v3",
 		"gonum.org/v1/gonum",
 		"google.golang.org/api",
 		"google.golang.org/appengine",
