@@ -27,6 +27,17 @@ import (
 
 const spanDurationMetricName = "traces.span.sdk.metrics.duration"
 
+// grpcStatusCodeByNumber maps the numeric gRPC status codes that the stats
+// concentrator stores in ClientGroupedStats.GRPCStatusCode back to their
+// canonical string names expected by the span metrics connector.
+var grpcStatusCodeByNumber = map[int64]string{
+	0: "OK", 1: "CANCELLED", 2: "UNKNOWN", 3: "INVALID_ARGUMENT",
+	4: "DEADLINE_EXCEEDED", 5: "NOT_FOUND", 6: "ALREADY_EXISTS",
+	7: "PERMISSION_DENIED", 8: "RESOURCE_EXHAUSTED", 9: "FAILED_PRECONDITION",
+	10: "ABORTED", 11: "OUT_OF_RANGE", 12: "UNIMPLEMENTED", 13: "INTERNAL",
+	14: "UNAVAILABLE", 15: "DATA_LOSS", 16: "UNAUTHENTICATED",
+}
+
 // spanMetricBounds are histogram bucket boundaries (seconds), matching OTel Span Metrics Connector defaults.
 var spanMetricBounds = [16]float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 0.2, 0.4, 0.8, 1, 1.4, 2, 5, 10, 15}
 
@@ -89,10 +100,8 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportH
 	if payload.Env != "" {
 		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(payload.Env)))
 	}
-	if reportHostname {
-		if hostname != "" {
-			attrs = append(attrs, otlpKeyValue("host.name", otlpStringValue(hostname)))
-		}
+	if reportHostname && hostname != "" {
+		attrs = append(attrs, otlpKeyValue("host.name", otlpStringValue(hostname)))
 	}
 	if !otelMode {
 		if payload.RuntimeID != "" {
@@ -101,7 +110,9 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportH
 		if payload.ProcessTags != "" {
 			for tag := range strings.SplitSeq(payload.ProcessTags, ",") {
 				parts := strings.SplitN(tag, ":", 2)
-				if len(parts) == 2 && parts[0] != "" {
+				// Skip keys emitted explicitly above (runtime_id) to avoid duplicate
+				// resource attributes, and skip tags with empty values.
+				if len(parts) == 2 && parts[0] != "" && parts[1] != "" && parts[0] != "runtime_id" {
 					attrs = append(attrs, otlpKeyValue("datadog."+parts[0], otlpStringValue(parts[1])))
 				}
 			}
@@ -114,38 +125,30 @@ func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportH
 // Non-default services carry service.name as a data-point attribute.
 func buildGroupDataPoints(gs *pb.ClientGroupedStats, startNs, endNs uint64, defaultService string, otelMode bool) []*otlpmetrics.HistogramDataPoint {
 	var pts []*otlpmetrics.HistogramDataPoint
-
-	okCount := uint64(0)
-	if gs.Hits >= gs.Errors {
-		okCount = gs.Hits - gs.Errors
-	}
 	if len(gs.OkSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, okCount, defaultService, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.OkSummary, startNs, endNs, false, defaultService, otelMode); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	if len(gs.ErrorSummary) > 0 {
-		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, gs.Errors, defaultService, otelMode); dp != nil {
+		if dp := decodeAndBuildDataPoint(gs, gs.ErrorSummary, startNs, endNs, true, defaultService, otelMode); dp != nil {
 			pts = append(pts, dp)
 		}
 	}
 	return pts
 }
 
-func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, exactCount uint64, defaultService string, otelMode bool) *otlpmetrics.HistogramDataPoint {
-	bucketCounts, sum, minSec, maxSec, sketchCount, err := sketchToHistogram(sketchBytes, spanMetricBounds[:])
+func decodeAndBuildDataPoint(gs *pb.ClientGroupedStats, sketchBytes []byte, startNs, endNs uint64, isError bool, defaultService string, otelMode bool) *otlpmetrics.HistogramDataPoint {
+	bucketCounts, sum, minSec, maxSec, count, err := sketchToHistogram(sketchBytes, spanMetricBounds[:])
 	if err != nil {
-		log.Error("stats_to_otlp_metrics: failed to decode sketch: %v", err.Error())
+		log.Warn("stats_to_otlp_metrics: failed to decode sketch: %v", err)
 		return nil
 	}
-	if sketchCount == 0 {
-		return nil
-	}
-	count := exactCount
 	if count == 0 {
-		count = sketchCount
+		return nil
 	}
-
+	// count comes from the sketch so sum(BucketCounts) == Count by construction,
+	// satisfying the OTLP histogram invariant.
 	dp := &otlpmetrics.HistogramDataPoint{
 		StartTimeUnixNano: startNs,
 		TimeUnixNano:      endNs,
@@ -165,6 +168,10 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 	var attrs []*otlpcommon.KeyValue
 
 	// OTel semantic-convention attributes.
+	// Resource (e.g. "GET /users/{id}") maps to span.name.
+	// gs.Name (the Datadog operation name, e.g. "web.request") is intentionally
+	// omitted in OTel mode — it has no OTel semconv equivalent and is only
+	// emitted as datadog.operation.name in default mode below.
 	if gs.Resource != "" {
 		attrs = append(attrs, otlpKeyValue("span.name", otlpStringValue(gs.Resource)))
 	}
@@ -182,16 +189,25 @@ func buildDataPointAttributes(gs *pb.ClientGroupedStats, isError bool, defaultSe
 	}
 	if gs.GRPCStatusCode != "" {
 		if code, err := strconv.ParseInt(gs.GRPCStatusCode, 10, 64); err == nil {
-			attrs = append(attrs, otlpKeyValue("rpc.response.status_code", otlpIntValue(code)))
-		} else {
-			attrs = append(attrs, otlpKeyValue("rpc.response.status_code", otlpStringValue(gs.GRPCStatusCode)))
+			if name, ok := grpcStatusCodeByNumber[code]; ok {
+				attrs = append(attrs, otlpKeyValue("rpc.response.status_code", otlpStringValue(name)))
+			} else {
+				// Unknown code outside 0-16: emit the numeric string to keep the attribute type
+				// stable (always stringValue) across all data points.
+				attrs = append(attrs, otlpKeyValue("rpc.response.status_code", otlpStringValue(gs.GRPCStatusCode)))
+			}
 		}
+		// Non-numeric values are malformed for gRPC and are silently dropped rather than
+		// emitting a value that would change the attribute's type.
 	}
-	statusCode := "Ok"
+	// status.code uses the OTel SpanStatus enum integers (UNSET=0, ERROR=2) as an intValue,
+	// per spec. It is emitted in both modes — in OTel-semantics mode it is the only signal
+	// for identifying error data points (datadog.* attributes are absent).
+	statusCode := int64(0) // STATUS_CODE_UNSET for non-error spans
 	if isError {
-		statusCode = "Error"
+		statusCode = 2 // STATUS_CODE_ERROR
 	}
-	attrs = append(attrs, otlpKeyValue("status.code", otlpStringValue(statusCode)))
+	attrs = append(attrs, otlpKeyValue("status.code", otlpIntValue(statusCode)))
 	// grpc.method.name arrives via PeerTags (no dedicated field in ClientGroupedStats) and maps to rpc.method.
 	for _, tag := range gs.PeerTags {
 		if k, v, ok := strings.Cut(tag, ":"); ok && k == "grpc.method.name" && v != "" {

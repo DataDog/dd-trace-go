@@ -254,6 +254,32 @@ func TestBuildMetricsResourceProcessTagsDefaultMode(t *testing.T) {
 	assert.Equal(t, "binary", m["datadog.entrypoint.type"])
 }
 
+func TestBuildMetricsResourceProcessTagsSkipsEmptyValue(t *testing.T) {
+	payload := makePayload("svc", "", "", nil)
+	payload.ProcessTags = "entrypoint.name:,entrypoint.type:binary"
+	res := buildMetricsResource(payload, false, false, "")
+	m := kvAttrsToMap(res.Attributes)
+	assert.NotContains(t, m, "datadog.entrypoint.name")
+	assert.Equal(t, "binary", m["datadog.entrypoint.type"])
+}
+
+func TestBuildMetricsResourceProcessTagsNoRuntimeIDDuplicate(t *testing.T) {
+	payload := makePayload("svc", "", "", nil)
+	payload.RuntimeID = "explicit-id"
+	payload.ProcessTags = "runtime_id:from-tags,entrypoint.name:myapp"
+	res := buildMetricsResource(payload, false, false, "")
+	m := kvAttrsToMap(res.Attributes)
+	// The explicit RuntimeID field wins; the ProcessTag must not create a second datadog.runtime_id.
+	assert.Equal(t, "explicit-id", m["datadog.runtime_id"])
+	var count int
+	for _, kv := range res.Attributes {
+		if kv.Key == "datadog.runtime_id" {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "datadog.runtime_id should appear exactly once")
+}
+
 func TestBuildMetricsResourceRuntimeIDDefaultMode(t *testing.T) {
 	payload := makePayload("svc", "", "", nil)
 	payload.RuntimeID = "abc-123"
@@ -327,13 +353,15 @@ func TestDataPointAttributesTopLevelFalse(t *testing.T) {
 }
 
 func TestDataPointAttributesStatusCode(t *testing.T) {
+	// Non-error: STATUS_CODE_UNSET (0) as intValue.
 	gs := &pb.ClientGroupedStats{Resource: "/ok"}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false /* isError */, "", true))
-	assert.Equal(t, "Ok", m["status.code"])
+	assert.Equal(t, "0", m["status.code"])
 
+	// Error: STATUS_CODE_ERROR (2) as intValue.
 	gs = &pb.ClientGroupedStats{Resource: "/err"}
 	m = kvAttrsToMap(buildDataPointAttributes(gs, true /* isError */, "", true))
-	assert.Equal(t, "Error", m["status.code"])
+	assert.Equal(t, "2", m["status.code"])
 }
 
 func TestDataPointAttributesHTTPRoute(t *testing.T) {
@@ -396,10 +424,20 @@ func TestDataPointAttributesPeerTagsNotEmitted(t *testing.T) {
 }
 
 func TestDataPointAttributesGRPCStatusCode(t *testing.T) {
-	// GRPCStatusCode is emitted as rpc.response.status_code (integer when parseable).
-	gs := &pb.ClientGroupedStats{Resource: "grpc.request", GRPCStatusCode: "0"}
+	// The concentrator stores numeric code strings; we reverse-map to canonical names.
+	for code, name := range map[string]string{
+		"0":  "OK",
+		"5":  "NOT_FOUND",
+		"14": "UNAVAILABLE",
+	} {
+		gs := &pb.ClientGroupedStats{Resource: "grpc.request", GRPCStatusCode: code}
+		m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
+		assert.Equal(t, name, m["rpc.response.status_code"], "code %s", code)
+	}
+	// Unknown numeric code: keep as integer (kvAttrsToMap renders it as a decimal string).
+	gs := &pb.ClientGroupedStats{Resource: "grpc.request", GRPCStatusCode: "99"}
 	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
-	assert.Equal(t, "0", m["rpc.response.status_code"])
+	assert.Equal(t, "99", m["rpc.response.status_code"])
 }
 
 func TestDataPointAttributesSyntheticsOrigin(t *testing.T) {
@@ -433,4 +471,65 @@ func TestDataPointAttributesServiceName(t *testing.T) {
 		m := kvAttrsToMap(buildDataPointAttributes(gs, false, "my-app", false))
 		assert.NotContains(t, m, "service.name")
 	})
+}
+
+func TestDataPointCountEqualsBucketCountSum(t *testing.T) {
+	// OTLP requires sum(BucketCounts) == Count. Because both come from the sketch,
+	// the invariant holds by construction — this test locks it in.
+	cfg := internalconfig.CreateNew()
+	gs := &pb.ClientGroupedStats{
+		Resource:     "/users",
+		Hits:         5,
+		Errors:       2,
+		OkSummary:    encodeSketch(t, 1e6, 5e6, 50e6),
+		ErrorSummary: encodeSketch(t, 100e6, 500e6),
+	}
+	rm := buildOTLPMetricsRequest(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}), cfg)
+	require.NotNil(t, rm)
+	for _, dp := range rm[0].ScopeMetrics[0].Metrics[0].GetHistogram().DataPoints {
+		var bucketSum uint64
+		for _, c := range dp.BucketCounts {
+			bucketSum += c
+		}
+		assert.Equal(t, dp.Count, bucketSum, "sum(BucketCounts) must equal Count")
+	}
+}
+
+func TestBuildMetricsResourceHostnamePresent(t *testing.T) {
+	res := buildMetricsResource(makePayload("svc", "", "", nil), false, true, "myhost")
+	assert.Equal(t, "myhost", kvAttrsToMap(res.Attributes)["host.name"])
+}
+
+func TestBuildOTLPMetricsRequestMultiBucket(t *testing.T) {
+	// Two stat buckets with distinct time windows must produce data points with distinct timestamps.
+	cfg := internalconfig.CreateNew()
+	newGroup := func() *pb.ClientGroupedStats {
+		return &pb.ClientGroupedStats{Resource: "/ping", Hits: 1, OkSummary: encodeSketch(t, 10e6)}
+	}
+	bucket1Start := uint64(1_000_000_000)
+	bucket2Start := uint64(2_000_000_000)
+	bucketDur := uint64(10_000_000_000)
+	payload := &pb.ClientStatsPayload{
+		Service: "svc",
+		Stats: []*pb.ClientStatsBucket{
+			{Start: bucket1Start, Duration: bucketDur, Stats: []*pb.ClientGroupedStats{newGroup()}},
+			{Start: bucket2Start, Duration: bucketDur, Stats: []*pb.ClientGroupedStats{newGroup()}},
+		},
+	}
+	rm := buildOTLPMetricsRequest(payload, cfg)
+	require.NotNil(t, rm)
+	dps := rm[0].ScopeMetrics[0].Metrics[0].GetHistogram().DataPoints
+	require.Len(t, dps, 2)
+	assert.Equal(t, bucket1Start, dps[0].StartTimeUnixNano)
+	assert.Equal(t, bucket1Start+bucketDur, dps[0].TimeUnixNano)
+	assert.Equal(t, bucket2Start, dps[1].StartTimeUnixNano)
+	assert.Equal(t, bucket2Start+bucketDur, dps[1].TimeUnixNano)
+}
+
+func TestDataPointAttributesGRPCStatusCodeStringFallback(t *testing.T) {
+	// Non-numeric GRPCStatusCode is malformed; it is dropped rather than emitting a
+	// value that would change rpc.response.status_code's type across data points.
+	gs := &pb.ClientGroupedStats{Resource: "grpc.request", GRPCStatusCode: "CUSTOM_STATUS"}
+	m := kvAttrsToMap(buildDataPointAttributes(gs, false, "", true))
+	assert.NotContains(t, m, "rpc.response.status_code")
 }
