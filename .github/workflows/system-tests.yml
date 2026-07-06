@@ -71,6 +71,7 @@ jobs:
           - graph-gophers
           - graphql-go
           - gqlgen
+          - net-http-orchestrion
     name: Build weblog (${{ matrix.weblog-variant }})
     env:
       TEST_LIBRARY: golang
@@ -219,6 +220,13 @@ jobs:
             scenario: TRACE_STATS_COMPUTATION
           - weblog-variant: net-http
             scenario: TRACE_STATS_COMPUTATION_CLIENT_DROP_P0S_FALSE
+          # RASP scenarios run on net-http-orchestrion because LFI and CMDi detection require orchestrion
+          - weblog-variant: net-http-orchestrion
+            scenario: APPSEC_RASP
+          - weblog-variant: net-http-orchestrion
+            scenario: APPSEC_RASP_NON_BLOCKING
+          - weblog-variant: net-http-orchestrion
+            scenario: REMOTE_CONFIG_MOCKED_BACKEND_ASM_DD
       fail-fast: false
     env:
       TEST_LIBRARY: golang
