@@ -291,6 +291,8 @@ var SupportedConfigurations = map[string]struct{}{
 // reported in configuration telemetry. It is seeded from entries marked "sensitive": true
 // in supported_configurations.json.
 var SensitiveConfigurations = map[string]struct{}{
+	"DD_API_KEY":                         {},
+	"DD_APP_KEY":                         {},
 	"OTEL_EXPORTER_OTLP_HEADERS":         {},
 	"OTEL_EXPORTER_OTLP_LOGS_HEADERS":    {},
 	"OTEL_EXPORTER_OTLP_METRICS_HEADERS": {},
