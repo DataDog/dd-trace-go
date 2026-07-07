@@ -58,8 +58,6 @@ func startTelemetry(c *config) telemetry.Client {
 		{Name: "trace_peer_service_defaults_enabled", Value: c.internalConfig.PeerServiceDefaultsEnabled()},
 		{Name: "orchestrion_enabled", Value: orchestrion.Enabled(), Origin: telemetry.OriginCode},
 		{Name: "trace_log_directory", Value: c.internalConfig.LogDirectory()},
-		c.traceSampleRules.toTelemetry(),
-		{Name: "span_sample_rules", Value: c.spanRules},
 	}
 	var peerServiceMapping []string
 	for key, value := range c.internalConfig.PeerServiceMappings() {
@@ -82,7 +80,7 @@ func startTelemetry(c *config) telemetry.Client {
 	for k, v := range c.internalConfig.ServiceMappings() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "service_mapping_" + k, Value: v})
 	}
-	rules := append(c.spanRules, c.traceRules...)
+	rules := append(c.internalConfig.SpanSamplingRules(), c.internalConfig.TraceSamplingRules()...)
 	for _, rule := range rules {
 		var service string
 		var name string
@@ -93,7 +91,7 @@ func startTelemetry(c *config) telemetry.Client {
 			name = rule.Name.String()
 		}
 		telemetryConfigs = append(telemetryConfigs,
-			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.ruleType.String(), service, name),
+			telemetry.Configuration{Name: fmt.Sprintf("sr_%s_(%s)_(%s)", rule.RuleType().String(), service, name),
 				Value: fmt.Sprintf("rate:%f_maxPerSecond:%f", rule.Rate, rule.MaxPerSecond)})
 	}
 	if orchestrion.Enabled() {
