@@ -266,14 +266,24 @@ func formatDogstatsdAddr(u *url.URL) string {
 // resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set, else agentURL host + default OTLP port 4318 + /v1/traces.
 // When the user-provided endpoint is set, it is validated: it must be a parseable URL with an http or https scheme.
 // If validation fails, the default endpoint is used instead.
+// parseAndValidateOTLPURL parses rawURL and validates that it uses http or https.
+// Logs a warning and returns (nil, false) on failure.
+func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		log.Warn("Failed to parse %s %q: %s. Falling back to default.", envVar, rawURL, err.Error())
+		return nil, false
+	}
+	if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
+		log.Warn("Unsupported scheme %q in %s %q. Must be %s or %s. Falling back to default.", u.Scheme, envVar, rawURL, URLSchemeHTTP, URLSchemeHTTPS)
+		return nil, false
+	}
+	return u, true
+}
+
 func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
 	if otlpTracesEndpoint != "" {
-		u, err := url.Parse(otlpTracesEndpoint)
-		if err != nil {
-			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_TRACES_ENDPOINT %q: %s. Falling back to default.", otlpTracesEndpoint, err.Error())
-		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
-			log.Warn("Unsupported scheme %q in OTEL_EXPORTER_OTLP_TRACES_ENDPOINT %q. Must be %s or %s. Falling back to default.", u.Scheme, otlpTracesEndpoint, URLSchemeHTTP, URLSchemeHTTPS)
-		} else {
+		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
 			return otlpTracesEndpoint
 		}
 	}
@@ -323,12 +333,7 @@ func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 // resolveOTLPEndpoint returns the OTEL_EXPORTER_OTLP_ENDPOINT base URL, defaulting to http://<agent-host>:4318.
 func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 	if endpoint != "" {
-		u, err := url.Parse(endpoint)
-		if err != nil {
-			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_ENDPOINT %q: %s. Falling back to default.", endpoint, err.Error())
-		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
-			log.Warn("Unsupported scheme %q in OTEL_EXPORTER_OTLP_ENDPOINT %q. Must be %s or %s. Falling back to default.", u.Scheme, endpoint, URLSchemeHTTP, URLSchemeHTTPS)
-		} else {
+		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint); ok {
 			return endpoint
 		}
 	}
@@ -344,12 +349,7 @@ func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 // resolveOTLPMetricsURL resolves the OTLP metrics endpoint; metricsEndpoint takes precedence over genericEndpoint.
 func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
 	if metricsEndpoint != "" {
-		u, err := url.Parse(metricsEndpoint)
-		if err != nil {
-			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_METRICS_ENDPOINT %q: %s. Falling back to default.", metricsEndpoint, err.Error())
-		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
-			log.Warn("Unsupported scheme %q in OTEL_EXPORTER_OTLP_METRICS_ENDPOINT %q. Must be %s or %s. Falling back to default.", u.Scheme, metricsEndpoint, URLSchemeHTTP, URLSchemeHTTPS)
-		} else {
+		if u, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", metricsEndpoint); ok {
 			if u.Path == "" || u.Path == "/" {
 				u.Path = otlpMetricsPath
 			}
