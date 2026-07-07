@@ -280,7 +280,7 @@ jobs:
       # Use the app key policy to obtain DD_APP_KEY
       - name: Get Datadog credentials
         id: dd-sts
-        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
+        uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
           policy: dd-trace-go-app-key
           
@@ -341,7 +341,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@5293aff628e580005cc32ea2c34a0894e12e4511
+        uses: DataDog/system-tests/.github/actions/push_to_test_optim@466b62a2439a444c6cc9673be9599dc0e8450a5d
 
       - name: Compress artifact
         if: ${{ always() }}
