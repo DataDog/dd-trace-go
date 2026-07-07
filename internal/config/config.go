@@ -349,7 +349,7 @@ func loadConfig() *Config {
 		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
 	)
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL"))
-	cfg.otlpMetricsProtocol = resolveOTLPMetricsProtocol(p.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", ""))
+	cfg.otlpMetricsProtocol = p.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", p.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"), validateOTLPProtocol)
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")

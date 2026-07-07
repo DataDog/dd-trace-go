@@ -964,6 +964,29 @@ func TestOTLPMetricsProtocol(t *testing.T) {
 		assert.Equal(t, "http/json", cfg.OTLPMetricsProtocol())
 	})
 
+	t.Run("falls back to OTEL_EXPORTER_OTLP_PROTOCOL when signal-specific not set", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/json", cfg.OTLPMetricsProtocol())
+	})
+
+	t.Run("signal-specific takes precedence over generic", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "http/protobuf")
+
+		cfg := Get()
+		require.NotNil(t, cfg)
+		assert.Equal(t, "http/protobuf", cfg.OTLPMetricsProtocol())
+	})
+
 	t.Run("unknown value falls back to http/protobuf", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()

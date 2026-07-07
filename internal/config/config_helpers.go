@@ -408,12 +408,13 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 	return merged
 }
 
-// resolveOTLPMetricsProtocol normalises OTEL_EXPORTER_OTLP_METRICS_PROTOCOL to "http/json" or "http/protobuf"; unknown values default to "http/protobuf".
-func resolveOTLPMetricsProtocol(v string) string {
-	if v == "http/json" {
-		return "http/json"
+// validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
+func validateOTLPProtocol(v string) bool {
+	if v == "http/json" || v == "http/protobuf" {
+		return true
 	}
-	return "http/protobuf"
+	log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_PROTOCOL %q; must be http/json or http/protobuf. Falling back to default.", v)
+	return false
 }
 
 // resolveOTLPMetricsFlushInterval parses _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (milliseconds).
