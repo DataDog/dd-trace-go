@@ -255,8 +255,8 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		// 300 is an arbitrary guess for the average span encoding size -- we should measure and update this value.
 		// sizeHint, when set by the writer from the previous cycle's real encoded size(), takes
 		// precedence: it is an accurate predictor at steady state and avoids the doubling ramp-up.
-		if cap(p.buf) == 0 {
-			p.buf = make([]byte, 0, max(len(t)*300, p.sizeHint))
+		if desired := max(len(t)*300, p.sizeHint); cap(p.buf) < desired {
+			p.buf = make([]byte, 0, desired)
 		}
 		p.buf = encodeStringField(p.buf, p.bm, 2, p.containerID, p.st)
 		p.buf = encodeStringField(p.buf, p.bm, 3, p.languageName, p.st)

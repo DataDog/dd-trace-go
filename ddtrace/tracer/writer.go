@@ -148,7 +148,7 @@ func (h *agentTraceWriter) flush() {
 		h.mu.Unlock()
 		return
 	}
-	h.payload = h.newPayload(oldp.size())
+	h.payload = h.newPayload(min(oldp.size(), int(payloadMaxLimit)))
 	h.mu.Unlock()
 
 	h.climit <- struct{}{}
