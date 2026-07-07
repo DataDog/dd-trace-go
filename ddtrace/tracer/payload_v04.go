@@ -57,6 +57,12 @@ type payloadV04 struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
+
+	// sizeHint, when positive, is applied as a pre-grow on the first push instead
+	// of allocating immediately. Set by grow() before any push; consumed and cleared
+	// on first push. This avoids pinning the previous flush cycle's allocation during
+	// idle periods where no traces arrive after the flush.
+	sizeHint int
 }
 
 var _ io.Reader = (*payloadV04)(nil)
@@ -72,7 +78,9 @@ func newPayloadV04() *payloadV04 {
 
 // push pushes a new item into the stream.
 func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
-	p.buf.Grow(t.Msgsize())
+	growTo := max(t.Msgsize(), p.sizeHint)
+	p.sizeHint = 0
+	p.buf.Grow(growTo)
 	if err := msgp.Encode(&p.buf, t); err != nil {
 		return payloadStats{}, err
 	}
@@ -107,10 +115,18 @@ func (p *payloadV04) clear() {
 	p.reader = nil
 	atomic.StoreUint32(&p.count, 0)
 	p.off = 8
+	p.sizeHint = 0
 }
 
-// grow grows the buffer to ensure it can accommodate n more bytes.
+// grow stores n as a deferred size hint if no items have been pushed yet,
+// deferring the allocation to the first push. This avoids pinning the previous
+// flush cycle's buffer during idle periods. After the first push, grow falls
+// through to immediate allocation.
 func (p *payloadV04) grow(n int) {
+	if p.itemCount() == 0 {
+		p.sizeHint = n
+		return
+	}
 	p.buf.Grow(n)
 }
 

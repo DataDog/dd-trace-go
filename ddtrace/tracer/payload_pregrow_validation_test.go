@@ -66,15 +66,10 @@ func TestPayloadV04PreGrowWireIntegrity(t *testing.T) {
 	}
 }
 
-// TestPayloadV04HintConvergesAfterFlush verifies the key behavioral invariant
-// of Approach B: when flush() passes oldp.size() as the hint to the next
-// newPayloadV04, the replacement buffer must have enough pre-allocated capacity
-// to absorb a full second fill cycle without any bytes.Buffer reallocation.
-//
-// This is tested at the payload level (no writer/config machinery needed)
-// because newPayload(hint) for v04 calls p.grow(hint), which directly maps
-// to bytes.Buffer.Grow. The writer-level wiring is covered by the build
-// (newPayload signature change).
+// TestPayloadV04HintConvergesAfterFlush verifies the lazy pre-grow behavior:
+// grow() must not allocate before the first push (avoiding idle memory pinning),
+// and the hint must be applied on first push so the fill cycle completes without
+// reallocation.
 func TestPayloadV04HintConvergesAfterFlush(t *testing.T) {
 	trace := mkTraceKB(2)
 	limit := int(payloadSizeLimit)
@@ -87,22 +82,27 @@ func TestPayloadV04HintConvergesAfterFlush(t *testing.T) {
 	}
 	hint := p1.size() // what flush() passes to newPayload()
 
-	// Cycle 2: apply the hint exactly as newPayload(hint) does for v04.
+	// Cycle 2: apply the hint via grow() as newPayload(hint) does for v04.
+	// grow() must NOT allocate eagerly — cap stays zero until first push.
 	p2 := newPayloadV04()
-	p2.buf.Grow(hint)
-	capAfterGrow := p2.buf.Cap()
+	p2.grow(hint)
+	assert.Equal(t, 0, p2.buf.Cap(),
+		"grow() must not allocate before first push (lazy hint)")
 
-	assert.GreaterOrEqual(t, capAfterGrow, hint,
-		"pre-grown buffer must have capacity >= previous cycle's encoded size")
+	// First push: hint is applied — capacity must jump to >= hint.
+	_, _ = p2.push(trace)
+	capAfterFirstPush := p2.buf.Cap()
+	assert.GreaterOrEqual(t, capAfterFirstPush, hint,
+		"first push must apply the hint: capacity must be >= previous cycle's encoded size")
 
 	// Fill cycle 2: the buffer must not reallocate — cap must stay constant.
 	for p2.size() < limit {
 		_, _ = p2.push(trace)
 	}
 
-	t.Logf("cycle1 encoded=%d hint=%d cycle2 cap before=%d after=%d",
-		p1.size(), hint, capAfterGrow, p2.buf.Cap())
-	assert.Equal(t, capAfterGrow, p2.buf.Cap(),
+	t.Logf("cycle1 encoded=%d hint=%d cycle2 cap after-first-push=%d after-fill=%d",
+		p1.size(), hint, capAfterFirstPush, p2.buf.Cap())
+	assert.Equal(t, capAfterFirstPush, p2.buf.Cap(),
 		"buffer cap must be stable throughout cycle 2: no reallocation expected")
 }
 
