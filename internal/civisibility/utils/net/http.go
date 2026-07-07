@@ -210,8 +210,8 @@ func (rh *RequestHandler) SendRequest(config RequestConfig) (*Response, error) {
 func (rh *RequestHandler) internalSendRequest(config *RequestConfig, attempt int) (stopRetries bool, response *Response, requestError error) {
 	var req *http.Request
 
-	// Check if it's a multipart form data request
 	if len(config.Files) > 0 {
+		// Check if it's a multipart form data request
 		// Create multipart form data body
 		body, contentType, err := createMultipartFormData(config.Files, config.Compressed)
 		if err != nil {

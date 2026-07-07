@@ -7,15 +7,65 @@ package kafkatrace
 
 import (
 	"context"
+	"hash/maphash"
 	"math"
 	"net"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 )
+
+const dsmEdgeTagCacheMax = 1000
+
+var dsmEdgeTagSeed = maphash.MakeSeed()
+
+// edgeFingerprint is a zero-alloc cache key for an edge-tag set
+func edgeFingerprint(direction, topic, group, cluster string) uint64 {
+	var h maphash.Hash
+	h.SetSeed(dsmEdgeTagSeed)
+	h.WriteString(direction)
+	h.WriteByte(0)
+	h.WriteString(topic)
+	h.WriteByte(0)
+	h.WriteString(group)
+	h.WriteByte(0)
+	h.WriteString(cluster)
+	return h.Sum64()
+}
+
+type dsmEdgeTagCache struct {
+	m    sync.Map
+	size atomic.Int32
+}
+
+func (c *dsmEdgeTagCache) get(key uint64) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	return nil
+}
+
+func (c *dsmEdgeTagCache) getOrStore(key uint64, tags []string) []string {
+	if v, ok := c.m.Load(key); ok {
+		return v.([]string)
+	}
+	sort.Strings(tags)
+	// Reserve a slot atomically; give it back if we'd exceed the bound or the key is already present.
+	if c.size.Add(1) > dsmEdgeTagCacheMax {
+		c.size.Add(-1)
+		return tags
+	}
+	actual, loaded := c.m.LoadOrStore(key, tags)
+	if loaded {
+		c.size.Add(-1)
+	}
+	return actual.([]string)
+}
 
 type Tracer struct {
 	PrevSpan            *tracer.Span
@@ -34,6 +84,7 @@ type Tracer struct {
 	dsmEnabled          bool
 	ckgoVersion         CKGoVersion
 	librdKafkaVersion   int
+	dsmTagCache         dsmEdgeTagCache
 }
 
 func (tr *Tracer) DSMEnabled() bool {

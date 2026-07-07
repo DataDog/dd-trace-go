@@ -9,10 +9,11 @@ import (
 	"slices"
 	"time"
 
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	emitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
@@ -54,7 +55,7 @@ func addDownwardRequestTag(th trace.TagSetter, value int) {
 }
 
 // AddWAFMonitoringTags adds the tags related to the monitoring of the WAF
-func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, rulesVersion string, truncations map[libddwaf.TruncationReason][]int, timerStats map[timer.Key]time.Duration) {
+func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, rulesVersion string, truncations libddwaf.Truncations, timerStats map[timer.Key]time.Duration) {
 	// Rules version is set for every request to help the backend associate Feature duration metrics with rule version
 	th.SetTag(eventRulesVersionTag, rulesVersion)
 
@@ -85,6 +86,7 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 
 	// Add metrics like `waf.duration` and `rasp.duration_ext`
 	for scope, value := range timerStats {
+		scope := addresses.Scope(scope)
 		th.SetTag(wafSpanTagPrefix+string(scope)+durationExtSuffix, float64(value.Nanoseconds())/float64(time.Microsecond.Nanoseconds()))
 		for component, atomicValue := range metrics.SumDurations[scope] {
 			if value := atomicValue.Load(); value > 0 {
@@ -106,11 +108,16 @@ func AddWAFMonitoringTags(th trace.TagSetter, metrics *emitter.ContextMetrics, r
 		th.SetTag(raspTimeoutTag, sumRASPTimeouts)
 	}
 
-	for reason, count := range truncations {
-		if len(count) > 0 {
-			th.SetTag(truncationTagPrefix+reason.String(), slices.Max(count))
-		}
+	addTruncationTag(th, libddwaf.StringTooLong, truncations.StringTooLong)
+	addTruncationTag(th, libddwaf.ContainerTooLarge, truncations.ContainerTooLarge)
+	addTruncationTag(th, libddwaf.ObjectTooDeep, truncations.ObjectTooDeep)
+}
+
+func addTruncationTag(th trace.TagSetter, reason libddwaf.TruncationReason, sizes []int) {
+	if len(sizes) == 0 {
+		return
 	}
+	th.SetTag(truncationTagPrefix+reason.String(), slices.Max(sizes))
 }
 
 // SetEventSpanTags sets the security event span tags related to an appsec event

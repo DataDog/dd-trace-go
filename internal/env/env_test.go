@@ -56,10 +56,14 @@ func TestVerifySupportedConfiguration(t *testing.T) {
 		require.True(t, IsSensitive("OTEL_EXPORTER_OTLP_METRICS_HEADERS"))
 		require.True(t, IsSensitive("OTEL_EXPORTER_OTLP_LOGS_HEADERS"))
 
+		// DD_API_KEY is seeded as sensitive, and its alias resolves to the same result.
+		require.True(t, IsSensitive("DD_API_KEY"))
+		require.True(t, IsSensitive("DD-API-KEY"))
+		require.True(t, IsSensitive("DD_APP_KEY"))
+
 		// Non-sensitive configurations are not flagged.
 		require.False(t, IsSensitive("DD_SERVICE"))
 		require.False(t, IsSensitive("OTEL_EXPORTER_OTLP_ENDPOINT"))
-		require.False(t, IsSensitive("DD_API_KEY"))
 	})
 
 	t.Run("unknown configuration", func(t *testing.T) {

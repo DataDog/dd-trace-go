@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -282,20 +281,30 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 
 	t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled)
 
-	if merged.Enabled != nil {
-		if t.config.enabled.get() && !*merged.Enabled {
-			log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
-			t.config.enabled.handleRC(merged.Enabled)
-			telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
-		} else if !t.config.enabled.get() && *merged.Enabled {
-			log.Debug("APM Tracing is disabled. Restart the service to enable it.")
-		}
-	}
+	t.handleTracingEnabledRC(merged.Enabled)
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
 		telemetry.RegisterAppConfigs(telemConfigs...)
 	}
 	return statuses
+}
+
+// handleTracingEnabledRC applies a tracing-enabled update from RC.
+// RC can only disable tracing; it cannot re-enable it once a local source has
+// set it to false.
+func (t *tracer) handleTracingEnabledRC(val *bool) {
+	if val == nil {
+		return
+	}
+	cfg := t.config.internalConfig.TracingEnabledConfig()
+	if !cfg.Get() && *val {
+		log.Debug("APM Tracing is disabled. Restart the service to enable it.")
+		return
+	}
+	if cfg.Get() && !*val {
+		log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
+		cfg.HandleRC(val)
+	}
 }
 
 // Handle enabling or disabling of Dynamic Instrumentation / Live Debugger.
@@ -500,7 +509,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingEnableLiveDebugging,
 	)
 
-	if internal.BoolEnv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false) {
+	if t.config.internalConfig.ExperimentalFlaggingProviderEnabled() {
 		if err := internalffe.SubscribeRC(); err != nil {
 			log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error())
 		}
