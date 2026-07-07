@@ -133,8 +133,13 @@ type Config struct {
 	dynamicInstrumentationEnabled *DynamicConfig[bool]
 	// globalSampleRate holds the sample rate for the tracer.
 	globalSampleRate *DynamicConfig[float64]
+	// globalTags holds a set of tags applied to all spans.
+	globalTags *DynamicConfig[map[string]any]
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags *DynamicConfig[[]string]
+	// tracingEnabled controls whether tracing is active. RC can only disable it,
+	// never re-enable it once disabled by a local source.
+	tracingEnabled *DynamicConfig[bool]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled    bool
 	ciVisibilityAgentless  bool
@@ -187,6 +192,14 @@ type Config struct {
 	// spanSamplingRulesOrigin tracks origin separately because, unlike traceSamplingRules,
 	// this field isn't a DynamicConfig (no RC support yet).
 	spanSamplingRulesOrigin telemetry.Origin
+	// appKey is the Datadog application key.
+	appKey string
+	// ciVisibilityAgentlessURL is a custom agentless endpoint for CI Visibility.
+	ciVisibilityAgentlessURL string
+	// experimentalFlaggingProviderEnabled enables the experimental OpenFeature RC provider.
+	experimentalFlaggingProviderEnabled bool
+	// spanPoolEnabled enables the experimental span pool.
+	spanPoolEnabled bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -276,7 +289,7 @@ func loadConfig() *Config {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
 	cfg.otlpExportMetricsMode = p.GetString("OTEL_METRICS_EXPORTER", "otlp") == "otlp"
-	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV04, validateTraceProtocolVersion))
+	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion))
 	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
 	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
@@ -286,15 +299,28 @@ func loadConfig() *Config {
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
+	cfg.appKey = p.GetString("DD_APP_KEY", "")
+	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
+	cfg.experimentalFlaggingProviderEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
+	cfg.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
+
+	tracingEnabled, tracingEnabledOrigin := p.GetBoolWithOrigin("DD_TRACE_ENABLED", true)
+	cfg.tracingEnabled = newDynamicConfig("tracing_enabled", tracingEnabled, tracingEnabledOrigin, equal[bool], nil)
 
 	enabled, origin := p.GetBoolWithOrigin("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, origin, equal[bool], nil)
 
 	headerTags, headerTagsOrigin := parseHeaderAsTagsFromEnv(p)
 	cfg.headerAsTags = newDynamicConfig("trace_header_tags", headerTags, headerTagsOrigin, equalSlice[string], propagateHeaderAsTagsToGlobalConfig)
+
+	rawTags, globalTagsOrigin := p.GetStringWithOrigin("DD_TAGS", "")
+	cfg.globalTags = newDynamicConfig("trace_tags", parseGlobalTags(rawTags), globalTagsOrigin, equalMap[string], nil)
+	for k, v := range cfg.globalTags.Get() {
+		reportGlobalTagTelemetry(k, v, globalTagsOrigin)
+	}
 
 	// Parse feature flags from DD_TRACE_FEATURES as a set
 	cfg.featureFlags = make(map[string]struct{})
@@ -351,7 +377,7 @@ func loadConfig() *Config {
 		cfg.reportHostname = true
 	}
 
-	cfg.apiKey = env.Get("DD_API_KEY")
+	cfg.apiKey = p.GetString("DD_API_KEY", "")
 
 	traceRules, traceOrigin := samplingRulesFromSource(p, "DD_TRACE_SAMPLING_RULES", samplingrules.SamplingRuleTrace)
 	cfg.traceSamplingRules = newDynamicConfig("trace_sample_rules", traceRules, traceOrigin, samplingrules.EqualsFalseNegative, nil)
@@ -666,6 +692,38 @@ func (c *Config) SetGlobalSampleRate(rate float64, origin telemetry.Origin, prod
 	configtelemetry.Report("DD_TRACE_SAMPLE_RATE", rate, origin)
 }
 
+// GlobalTags returns a copy of the global tags applied to all spans. If no
+// global tags are set, returns nil.
+func (c *Config) GlobalTags() map[string]any {
+	current := c.globalTags.Get()
+	if current == nil {
+		return nil
+	}
+	result := make(map[string]any, len(current))
+	maps.Copy(result, current)
+	return result
+}
+
+// GlobalTagsConfig returns the DynamicConfig for global tags, used by the
+// tracer's Remote Config handler to apply tracing_tags updates and resets.
+func (c *Config) GlobalTagsConfig() *DynamicConfig[map[string]any] {
+	return c.globalTags
+}
+
+// SetGlobalTag adds or overwrites a single global tag. Like SetServiceMapping it
+// is additive, so it carries no cross-product gate. The read-modify-write of the
+// startup baseline is guarded by c.mu.
+func (c *Config) SetGlobalTag(key string, value any, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	cur, curOrigin := c.globalTags.Baseline()
+	nm := make(map[string]any, len(cur)+1)
+	maps.Copy(nm, cur)
+	nm[key] = value
+	c.globalTags.setBaseline(nm, curOrigin)
+	c.mu.Unlock()
+	reportGlobalTagTelemetry(key, value, origin)
+}
+
 func (c *Config) DynamicInstrumentationEnabled() bool {
 	return c.dynamicInstrumentationEnabled.Get()
 }
@@ -705,6 +763,29 @@ func (c *Config) SetHeaderAsTags(headerAsTags []string, origin telemetry.Origin,
 	}
 	c.headerAsTags.setBaseline(headerAsTags, origin)
 	configtelemetry.Report("DD_TRACE_HEADER_TAGS", strings.Join(headerAsTags, ","), origin)
+}
+
+func (c *Config) TracingEnabled() bool {
+	return c.tracingEnabled.Get()
+}
+
+// TracingEnabledConfig returns the DynamicConfig for the tracing-enabled flag.
+// Use this only for RC updates (HandleRC). For user-configured changes use SetTracingEnabled.
+func (c *Config) TracingEnabledConfig() *DynamicConfig[bool] {
+	return c.tracingEnabled
+}
+
+// SetTracingEnabled records a user-configured tracing-enabled value. Call this
+// only from user-facing paths (options, env vars). For agent/RC updates use
+// TracingEnabledConfig().HandleRC(...).
+func (c *Config) SetTracingEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.tracingEnabled.setBaseline(enabled, origin)
+	configtelemetry.Report("DD_TRACE_ENABLED", enabled, origin)
 }
 
 func (c *Config) TraceRateLimitPerSecond() float64 {
@@ -1330,4 +1411,38 @@ func (c *Config) SetSpanSamplingRules(rules []samplingrules.SamplingRule, origin
 	c.spanSamplingRules = rules
 	c.spanSamplingRulesOrigin = origin
 	configtelemetry.Report("span_sample_rules", rules, origin)
+}
+
+func (c *Config) AppKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.appKey
+}
+
+func (c *Config) CIVisibilityAgentlessURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentlessURL
+}
+
+func (c *Config) ExperimentalFlaggingProviderEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.experimentalFlaggingProviderEnabled
+}
+
+func (c *Config) SpanPoolEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanPoolEnabled
+}
+
+func (c *Config) SetSpanPoolEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.spanPoolEnabled = enabled
+	configtelemetry.Report("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", enabled, origin)
 }

@@ -17,6 +17,7 @@ type Package string
 
 const (
 	Package99DesignsGQLGen      Package = "99designs/gqlgen"
+	PackageAerospikeClientGoV7  Package = "aerospike/aerospike-client-go.v7"
 	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
 	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
 	PackageAWSDatadogLambdaGo   Package = "aws/datadog-lambda-go"
@@ -62,6 +63,7 @@ const (
 	PackageOlivereElasticV5          Package = "olivere/elastic.v5"
 	PackageMiekgDNS                  Package = "miekg/dns"
 	PackageLabstackEchoV4            Package = "labstack/echo.v4"
+	PackageLabstackEchoV5            Package = "labstack/echo.v5"
 	PackageK8SClientGo               Package = "k8s.io/client-go"
 	PackageK8SGatewayAPI             Package = "k8s.io/gateway-api"
 	PackageJulienschmidtHTTPRouter   Package = "julienschmidt/httprouter"
@@ -184,6 +186,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("aws.lambda"),
 				buildOpNameV0:      staticName("aws.lambda"),
 				buildOpNameV1:      staticName("aws.lambda"),
+			},
+		},
+	},
+	PackageAerospikeClientGoV7: {
+		TracedPackage: "github.com/aerospike/aerospike-client-go/v7",
+		EnvVarPrefix:  "AEROSPIKE",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("aerospike"),
+				buildOpNameV0:      staticName("aerospike.command"),
+				buildOpNameV1:      staticName("aerospike.command"),
 			},
 		},
 	},
@@ -709,6 +723,18 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageLabstackEchoV4: {
 		TracedPackage: "github.com/labstack/echo/v4",
+		EnvVarPrefix:  "ECHO",
+		naming: map[Component]componentNames{
+			ComponentServer: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("echo"),
+				buildOpNameV0:      staticName("http.request"),
+				buildOpNameV1:      staticName("http.server.request"),
+			},
+		},
+	},
+	PackageLabstackEchoV5: {
+		TracedPackage: "github.com/labstack/echo/v5",
 		EnvVarPrefix:  "ECHO",
 		naming: map[Component]componentNames{
 			ComponentServer: {

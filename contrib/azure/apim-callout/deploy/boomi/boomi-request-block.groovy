@@ -5,9 +5,12 @@
 // Uses PolicyResult to short-circuit the request chain and return a custom
 // block response. Direct response property setters are not allowed by the
 // Groovy sandbox in Boomi's Gravitee build.
-if (context.getAttribute('dd-action') == 'block') {
+// Attribute names must match boomi-request-callout.json (dd-block / dd-block-status
+// / dd-block-headers / dd-block-content). dd-block is null/empty/'null' when no block.
+def block = context.getAttribute('dd-block')
+if (block != null && block != '' && block != 'null') {
     def statusCode = context.getAttribute('dd-block-status') as int
-    def body = context.getAttribute('dd-block-body')
+    def body = context.getAttribute('dd-block-content')
     def decodedBody = body != null ? new String(body.decodeBase64()) : ''
     def headersJson = context.getAttribute('dd-block-headers')
     def contentType = 'application/json'

@@ -491,6 +491,24 @@ apm_configuration_default:
 		telemetryClient.AssertCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchDefaultConfig("DD_ENV", "default-env")))
 	})
 
+	t.Run("sensitive keys are not reported to telemetry", func(t *testing.T) {
+		telemetryClient := new(telemetrytest.MockClient)
+		telemetryClient.On("RegisterAppConfigs", mock.Anything).Return().Maybe()
+		defer telemetry.MockClient(telemetryClient)()
+
+		source := newTestConfigSource(map[string]string{
+			"DD_APP_KEY": "secret-app-key",
+			"DD_API_KEY": "secret-api-key",
+		}, telemetry.OriginEnvVar)
+		p := newTestProvider(source)
+
+		_ = p.GetString("DD_APP_KEY", "")
+		_ = p.GetString("DD_API_KEY", "")
+
+		telemetryClient.AssertNotCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_APP_KEY", "secret-app-key", telemetry.OriginEnvVar, telemetry.EmptyID)))
+		telemetryClient.AssertNotCalled(t, "RegisterAppConfigs", mock.MatchedBy(matchConfig("DD_API_KEY", "secret-api-key", telemetry.OriginEnvVar, telemetry.EmptyID)))
+	})
+
 	t.Run("still reports defaults via telemetry when key missing or invalid", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.MockClient)
 

@@ -240,11 +240,13 @@ func Start(opts ...StartOption) error {
 	defer startStopMu.Unlock()
 
 	defer reportInitTime(time.Now())
+
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err
 	}
-	if !t.config.enabled.get() {
+	resetBaseHashCache()
+	if !t.config.internalConfig.TracingEnabled() {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -272,12 +274,7 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	otelRuntimeMetricsShouldBeEnabled := otelmetricsinstall.StartHook != nil &&
-		t.config.internalConfig.RuntimeMetricsOtelEnabled() &&
-		t.config.internalConfig.OTLPExportMetricsMode() &&
-		(t.config.internalConfig.RuntimeMetricsV2Enabled() || t.config.internalConfig.RuntimeMetricsEnabled())
-
-	if otelRuntimeMetricsShouldBeEnabled {
+	if t.config.otelRuntimeMetricsShouldBeEnabled {
 		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
 			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
 		} else {
@@ -576,12 +573,13 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	}
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
-	if c.internalConfig.RuntimeMetricsEnabled() {
+	if c.internalConfig.RuntimeMetricsEnabled() && !c.otelRuntimeMetricsShouldBeEnabled {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Go(func() {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		})
 	}
+
 	if c.internalConfig.DebugAbandonedSpans() {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
@@ -712,7 +710,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			if len(trace.spans) > 0 {
 				t.traceWriter.add(trace.spans)
 			}
-			releaseSpans(t.config.spanPoolEnabled, spansToRelease)
+			releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -741,7 +739,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 					if len(trace.spans) > 0 {
 						t.traceWriter.add(trace.spans)
 					}
-					releaseSpans(t.config.spanPoolEnabled, spansToRelease)
+					releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
 				default:
 					break loop
 				}
@@ -941,14 +939,13 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 // +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
-	span := spanStart(operationName, &t.sharedAttrs, t.config.spanPoolEnabled, options...)
-
 	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
 	cSnap := t.config.internalConfig.SpanStartSnapshot()
+	span := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
 
 	if span.service == "" {
 		span.service = cSnap.ServiceName
@@ -968,7 +965,7 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable
 
 	// add global tags
-	span.setTags(t.config.globalTags.get())
+	span.setTags(cSnap.GlobalTags)
 
 	if newSvc, ok := t.config.internalConfig.ServiceMapping(span.service); ok {
 		span.service = newSvc
@@ -1118,7 +1115,7 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx *SpanContext, carrier any) error {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
 
@@ -1165,7 +1162,7 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier any) (*SpanContext, error) {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return nil, nil
 	}
 	ctx, err := t.config.propagator.Extract(carrier)
@@ -1191,7 +1188,7 @@ func (t *tracer) TracerConf() TracerConf {
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
-		Disabled:             !t.config.enabled.get(),
+		Disabled:             !t.config.internalConfig.TracingEnabled(),
 		PartialFlush:         pfEnabled,
 		PartialFlushMinSpans: pfMin,
 		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
@@ -1205,7 +1202,7 @@ func (t *tracer) TracerConf() TracerConf {
 }
 
 func (t *tracer) submit(s *Span) {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return
 	}
 	// we have an active tracer

@@ -13,9 +13,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/limiter"
@@ -57,7 +58,7 @@ type (
 
 	// RunEvent is the type of event that should be emitted to child operations to run the WAF
 	RunEvent struct {
-		libddwaf.RunAddressData
+		addresses.RunAddressData
 		dyngo.Operation
 	}
 
@@ -75,6 +76,16 @@ func StartContextOperation(ctx context.Context, span trace.TagSetter) (*ContextO
 		ServiceEntrySpanOperation: entrySpanOp,
 	}
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ContextArgs{})
+}
+
+// ContextOperationFromParents walks upward from op to find the request-scoped WAF context operation.
+func ContextOperationFromParents(op dyngo.Operation) (*ContextOperation, bool) {
+	for current := op.Parent(); current != nil; current = current.Parent() {
+		if ctxOp, ok := current.(*ContextOperation); ok {
+			return ctxOp, true
+		}
+	}
+	return nil, false
 }
 
 func (op *ContextOperation) Finish() {
@@ -154,6 +165,14 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 	for k, v := range derivatives {
 		// If the request has been blocked, we don't want to report any derivatives representing the response schema.
 		if op.requestBlocked && strings.HasPrefix(k, "_dd.appsec.s.res.") {
+			continue
+		}
+
+		// First-write-wins, intentionally: ephemeral subcontexts (e.g. per-hop downstream
+		// evaluation of a redirect chain) don't share the WAF's in-context attribute dedup, so
+		// without this guard the last hop would overwrite the first. Keeping the first value makes
+		// appsec.api.redirection.move_target reflect the FIRST redirect hop, not the last.
+		if _, ok := op.derivatives[k]; ok {
 			continue
 		}
 

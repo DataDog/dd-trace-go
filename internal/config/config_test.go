@@ -271,6 +271,9 @@ var specialCaseSetters = map[string]func(*Config, telemetry.Origin){
 	"SetSpanSamplingRules": func(c *Config, origin telemetry.Origin) {
 		c.SetSpanSamplingRules([]samplingrules.SamplingRule{}, origin)
 	},
+	"SetGlobalTag": func(c *Config, origin telemetry.Origin) {
+		c.SetGlobalTag("tag-key", "tag-value", origin)
+	},
 }
 
 // TestAllSettersReportTelemetry verifies Set* methods report telemetry with seqID > defaultSeqID.

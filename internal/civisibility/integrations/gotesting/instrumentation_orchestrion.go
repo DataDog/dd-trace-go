@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -90,6 +92,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
 			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
+			uploadFinalCoverageReport(settings)
 			if !publishCoverage {
 				session.Close(exitCode)
 				coverage.CleanupRuntimeCoverageSnapshot()
@@ -115,6 +118,40 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 		// Finalize CI Visibility
 		integrations.ExitCiVisibility()
+	}
+}
+
+func uploadFinalCoverageReport(settings *civisibilitynet.SettingsResponseData) {
+	if settings == nil {
+		log.Debug("instrumentTestingM: coverage report upload skipped because settings are unavailable")
+		return
+	}
+	if !settings.CoverageReportUploadEnabled {
+		log.Debug("instrumentTestingM: coverage report upload disabled by settings")
+		return
+	}
+
+	var report bytes.Buffer
+	if err := coverage.WriteLCOVReport(&report); err != nil {
+		log.Debug("instrumentTestingM: failed to create LCOV coverage report: %s", err.Error())
+		return
+	}
+	if report.Len() == 0 {
+		log.Debug("instrumentTestingM: LCOV coverage report is empty; skipping upload")
+		return
+	}
+	log.Debug("instrumentTestingM: uploading LCOV coverage report [report_bytes:%d]", report.Len())
+
+	client := civisibilitynet.NewClientForCoverageReportUpload()
+	if client == nil {
+		log.Debug("instrumentTestingM: coverage report upload client is unavailable")
+		return
+	}
+	if closer, ok := client.(interface{ CloseIdleConnections() }); ok {
+		defer closer.CloseIdleConnections()
+	}
+	if err := client.SendCoverageReport(&report, civisibilitynet.FormatLCOV); err != nil {
+		log.Debug("instrumentTestingM: failed to upload coverage report: %s", err.Error())
 	}
 }
 

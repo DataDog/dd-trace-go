@@ -12,8 +12,6 @@ import (
 	"sync/atomic"
 
 	"github.com/tinylib/msgp/msgp"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 )
 
 // payloadV04 is a wrapper on top of the msgpack encoder which allows constructing an
@@ -74,28 +72,12 @@ func newPayloadV04() *payloadV04 {
 
 // push pushes a new item into the stream.
 func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
-	p.setTracerTags(t)
 	p.buf.Grow(t.Msgsize())
 	if err := msgp.Encode(&p.buf, t); err != nil {
 		return payloadStats{}, err
 	}
 	p.recordItem()
 	return p.stats(), nil
-}
-
-func (p *payloadV04) setTracerTags(t spanList) {
-	// set on first chunk
-	if atomic.LoadUint32(&p.count) != 0 {
-		return
-	}
-	if len(t) == 0 {
-		return
-	}
-	pTags := processtags.GlobalTags().String()
-	if pTags == "" {
-		return
-	}
-	t[0].setProcessTags(pTags)
 }
 
 // itemCount returns the number of items available in the stream.
