@@ -1,0 +1,32 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+
+create_tracer:
+  target: main
+  where:
+    func: main
+  do:
+    - inject_code:
+        raw: |
+          tracer.Start()
+          defer tracer.Stop()
+  imports:
+    tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+
+span_directive:
+  target: main
+  where:
+    directive: "otelc:span"
+  do:
+    - expand_directive:
+        template: |-
+          var __dd_span *tracer.Span
+          __dd_span_ctx := context.TODO()
+          __dd_span, __dd_span_ctx = tracer.StartSpanFromContext(__dd_span_ctx, "{{FuncName}}")
+          defer __dd_span.Finish()
+  imports:
+    tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer    
+    context: context
