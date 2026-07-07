@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       go-libddwaf-ref:
-        description: A git ref to update github.com/DataDog/go-libddwaf/v4 to. No-op if empty.
+        description: A git ref to update github.com/DataDog/go-libddwaf/v5 to. No-op if empty.
         required: false
         type: string
   push:
@@ -73,7 +73,7 @@ jobs:
             go mod tidy
             find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
             if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
-              go get -u -t "github.com/DataDog/go-libddwaf/v4@${GO_LIBDDWAF_REF}"
+              go get -u -t "github.com/DataDog/go-libddwaf/v5@${GO_LIBDDWAF_REF}"
               go mod tidy
             fi
             # shellcheck disable=SC2086

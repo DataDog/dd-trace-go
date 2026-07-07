@@ -100,6 +100,142 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, "test intent description", toolSpan.Meta["intent"])
 }
 
+type enabledKey struct{}
+
+func TestIntentCaptureEnabledFunc(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{
+		IntentCaptureEnabledFunc: func(ctx context.Context) bool {
+			v, _ := ctx.Value(enabledKey{}).(bool)
+			return v
+		},
+	}))
+
+	calcTool := mcp.NewTool("calculator",
+		mcp.WithDescription("A simple calculator"),
+		mcp.WithString("operation", mcp.Required()))
+
+	var seenArgs map[string]any
+	srv.AddTool(calcTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		seenArgs = request.Params.Arguments.(map[string]any)
+		return mcp.NewToolResultText(`{"ok":true}`), nil
+	})
+
+	// Disabled per ctx: schema has no telemetry; telemetry in arg passes through.
+	disabledCtx := context.WithValue(context.Background(), enabledKey{}, false)
+	listResp := srv.HandleMessage(disabledCtx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	var listResult map[string]interface{}
+	require.NoError(t, json.Unmarshal(mustMarshal(listResp), &listResult))
+	props := listResult["result"].(map[string]interface{})["tools"].([]interface{})[0].(map[string]interface{})["inputSchema"].(map[string]interface{})["properties"].(map[string]interface{})
+	assert.NotContains(t, props, "telemetry")
+
+	session := &mockSession{id: "s1"}
+	session.Initialize()
+	disabledCtx = srv.WithContext(disabledCtx, session)
+	srv.HandleMessage(disabledCtx, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"calculator","arguments":{"operation":"add","telemetry":{"intent":"x"}}}}`))
+	// Predicate false → middleware is a pass-through, so the telemetry argument is NOT stripped.
+	require.NotNil(t, seenArgs)
+	assert.Contains(t, seenArgs, "telemetry")
+
+	// Enabled per ctx: schema gets telemetry; tool argument is stripped before handler.
+	enabledCtx := context.WithValue(context.Background(), enabledKey{}, true)
+	listResp = srv.HandleMessage(enabledCtx, []byte(`{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{}}`))
+	require.NoError(t, json.Unmarshal(mustMarshal(listResp), &listResult))
+	props = listResult["result"].(map[string]interface{})["tools"].([]interface{})[0].(map[string]interface{})["inputSchema"].(map[string]interface{})["properties"].(map[string]interface{})
+	assert.Contains(t, props, "telemetry")
+
+	session2 := &mockSession{id: "s2"}
+	session2.Initialize()
+	enabledCtx = srv.WithContext(enabledCtx, session2)
+	seenArgs = nil
+	srv.HandleMessage(enabledCtx, []byte(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"calculator","arguments":{"operation":"add","telemetry":{"intent":"x"}}}}`))
+	require.NotNil(t, seenArgs)
+	assert.NotContains(t, seenArgs, "telemetry")
+}
+
+func TestIntentCaptureEnabledFuncOverridesBool(t *testing.T) {
+	// When both static bool and the predicate are set, the predicate wins.
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{
+		IntentCaptureEnabled:     true,
+		IntentCaptureEnabledFunc: func(context.Context) bool { return false },
+	}))
+
+	tool := mcp.NewTool("t", mcp.WithDescription("t"), mcp.WithString("q", mcp.Required()))
+	srv.AddTool(tool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("ok"), nil
+	})
+
+	listResp := srv.HandleMessage(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	var listResult map[string]interface{}
+	require.NoError(t, json.Unmarshal(mustMarshal(listResp), &listResult))
+	props := listResult["result"].(map[string]interface{})["tools"].([]interface{})[0].(map[string]interface{})["inputSchema"].(map[string]interface{})["properties"].(map[string]interface{})
+	assert.NotContains(t, props, "telemetry")
+}
+
+func TestIntentCaptureSkipsUIOnlyTools(t *testing.T) {
+	tt := testTracer(t)
+	defer tt.Stop()
+
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
+
+	modelTool := mcp.NewTool("model_tool",
+		mcp.WithDescription("model-callable"),
+		mcp.WithString("q", mcp.Required()))
+	srv.AddTool(modelTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("ok"), nil
+	})
+
+	uiTool := mcp.NewTool("ui_tool",
+		mcp.WithDescription("UI-only"),
+		mcp.WithString("q", mcp.Required()))
+	uiTool.Meta = &mcp.Meta{AdditionalFields: map[string]any{"ui": map[string]any{"visibility": []string{"app"}}}}
+	srv.AddTool(uiTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("ok"), nil
+	})
+
+	dualTool := mcp.NewTool("dual_tool",
+		mcp.WithDescription("Model and UI"),
+		mcp.WithString("q", mcp.Required()))
+	dualTool.Meta = &mcp.Meta{AdditionalFields: map[string]any{"ui": map[string]any{"visibility": []string{"app", "model"}}}}
+	srv.AddTool(dualTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultText("ok"), nil
+	})
+
+	ctx := context.Background()
+	listResp := srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+	var listResult map[string]interface{}
+	require.NoError(t, json.Unmarshal(mustMarshal(listResp), &listResult))
+
+	tools := listResult["result"].(map[string]interface{})["tools"].([]interface{})
+	require.Len(t, tools, 3)
+
+	byName := map[string]map[string]interface{}{}
+	for _, raw := range tools {
+		tool := raw.(map[string]interface{})
+		byName[tool["name"].(string)] = tool["inputSchema"].(map[string]interface{})
+	}
+
+	// Model-callable tools get telemetry injected.
+	for _, name := range []string{"model_tool", "dual_tool"} {
+		schema := byName[name]
+		require.NotNil(t, schema, name)
+		props := schema["properties"].(map[string]interface{})
+		assert.Contains(t, props, "telemetry", "%s should have telemetry", name)
+		assert.Contains(t, schema["required"].([]interface{}), "telemetry", "%s should require telemetry", name)
+	}
+
+	// UI-only tool does NOT.
+	uiSchema := byName["ui_tool"]
+	require.NotNil(t, uiSchema)
+	props := uiSchema["properties"].(map[string]interface{})
+	assert.NotContains(t, props, "telemetry")
+	if req, ok := uiSchema["required"].([]interface{}); ok {
+		assert.NotContains(t, req, "telemetry")
+	}
+}
+
 func TestIntentFromContext(t *testing.T) {
 	ctx := context.Background()
 
