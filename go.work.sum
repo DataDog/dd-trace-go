@@ -1042,6 +1042,7 @@ github.com/containerd/nri v0.8.0 h1:n1S753B9lX8RFrHYeSgwVvS1yaUcHjxbB+f+xzEncRI=
 github.com/containerd/nri v0.8.0/go.mod h1:uSkgBrCdEtAiEz4vnrq8gmAC4EnVAM5Klt0OuK5rZYQ=
 github.com/containerd/stargz-snapshotter/estargz v0.14.3 h1:OqlDCK3ZVUO6C3B/5FSkDwbkEETK84kQgEeFwDC+62k=
 github.com/containerd/stargz-snapshotter/estargz v0.14.3/go.mod h1:KY//uOCIkSuNAHhJogcZtrNHdKrA99/FCCRjE3HD36o=
+github.com/containerd/ttrpc v1.2.8/go.mod h1:wyZW2K79t4Hfcxl+GUvkZqRBzJlqFFvgEeeWXa42tyE=
 github.com/containerd/typeurl v1.0.2/go.mod h1:9trJWW2sRlGub4wZJRTW83VtbOLS6hwcDZXTn6oPz9s=
 github.com/containerd/zfs v1.1.0 h1:n7OZ7jZumLIqNJqXrEc/paBM840mORnmGdJDmAmJZHM=
 github.com/containerd/zfs v1.1.0/go.mod h1:oZF9wBnrnQjpWLaPKEinrx3TQ9a+W/RJO7Zb41d8YLE=
