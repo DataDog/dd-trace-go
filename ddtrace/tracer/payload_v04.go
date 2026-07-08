@@ -58,10 +58,8 @@ type payloadV04 struct {
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
 
-	// sizeHint, when positive, is applied as a pre-grow on the first push instead
-	// of allocating immediately. Set by grow() before any push; consumed and cleared
-	// on first push. This avoids pinning the previous flush cycle's allocation during
-	// idle periods where no traces arrive after the flush.
+	// sizeHint is a hint for how large buf should be to avoid slice growth
+	// overhead in a steady state.
 	sizeHint int
 }
 
@@ -78,6 +76,8 @@ func newPayloadV04() *payloadV04 {
 
 // push pushes a new item into the stream.
 func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
+	// sizeHint is only honored on the first push of a cycle; grow() defers the
+	// actual allocation until here so an idle payload never pins a buffer.
 	growTo := max(t.Msgsize(), p.sizeHint)
 	p.sizeHint = 0
 	p.buf.Grow(growTo)
@@ -118,10 +118,10 @@ func (p *payloadV04) clear() {
 	p.sizeHint = 0
 }
 
-// grow stores n as a deferred size hint if no items have been pushed yet,
-// deferring the allocation to the first push. This avoids pinning the previous
-// flush cycle's buffer during idle periods. After the first push, grow falls
-// through to immediate allocation.
+// grow ensures the buffer can accommodate n more bytes. Before the first push
+// of a cycle it defers to a size hint instead of allocating immediately, so an
+// idle payload never pins a buffer; ciVisibilityPayload calls this on every
+// push, after which it falls through to an immediate grow.
 func (p *payloadV04) grow(n int) {
 	if p.itemCount() == 0 {
 		p.sizeHint = n

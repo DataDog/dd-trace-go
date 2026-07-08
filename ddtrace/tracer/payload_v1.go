@@ -113,11 +113,10 @@ type payloadV1 struct {
 	// placeholder have been written to buf for this payload cycle.
 	staticEncoded bool
 
-	// sizeHint, when positive, overrides the per-chunk heuristic used to
-	// size p.buf on the first push of each cycle. Set by the writer from the
-	// previous cycle's actual encoded size() so the single fresh allocation
-	// targets the expected payload size, eliminating the doubling ramp-up.
-	// Reset to 0 by clear() so a pooled payload doesn't carry a stale hint.
+	// sizeHint is a hint for how large buf should be to avoid slice growth
+	// overhead in a steady state. Set by the writer from the previous cycle's
+	// actual encoded size(); used on the first push of each cycle if larger
+	// than the per-chunk heuristic. Reset to 0 by clear().
 	sizeHint int
 
 	// processTagsCached holds the cached anyValue for process tags,
@@ -253,8 +252,8 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		}
 		// Pre-size buffer based on estimated span encoding size.
 		// 300 is an arbitrary guess for the average span encoding size -- we should measure and update this value.
-		// sizeHint, when set by the writer from the previous cycle's real encoded size(), takes
-		// precedence: it is an accurate predictor at steady state and avoids the doubling ramp-up.
+		// sizeHint, set by the writer from the previous cycle's real encoded size(), is used
+		// instead whenever it's larger, since it's a more accurate predictor at steady state.
 		if desired := max(len(t)*300, p.sizeHint); cap(p.buf) < desired {
 			p.buf = make([]byte, 0, desired)
 		}
