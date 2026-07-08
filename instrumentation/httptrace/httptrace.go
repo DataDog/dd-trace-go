@@ -69,21 +69,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 		}
 
 		if !inferredProxySpanCreated {
-			var inferredStartSpanOpts []tracer.StartSpanOption
-
-			requestProxyContext, err := extractInferredProxyContext(r.Header)
-			if err != nil {
-				log.Debug("%s\n", err.Error())
-			} else {
-				// TODO: Baggage?
-				spanParentCtx, spanParentErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
-				if spanParentErr == nil {
-					if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
-						inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanParentCtx.SpanLinks()))
-					}
-				}
-				inferredProxySpan = startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
-			}
+			inferredProxySpan = startInferredSpanFromHeaders(r.Header)
 		}
 	}
 

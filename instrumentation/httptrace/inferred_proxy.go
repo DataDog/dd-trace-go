@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -55,6 +56,15 @@ const (
 	// AWS API Gateway, and provides the stage (e.g., dev, prod, etc.)
 	// in which the request is being processed.
 	ProxyHeaderStage = "X-Dd-Proxy-Stage"
+
+	// PubsubHeaderSubscriptionName is the header gcp Pub/Sub sets on push deliveries when
+	// write metadata is enabled. The value is the full subscription resource name
+	// (projects/{project_id}/subscriptions/{subscription_id}).
+	PubsubHeaderSubscriptionName = "X-Goog-Pubsub-Subscription-Name"
+
+	// PubsubHeaderMessageID is the header gcp Pub/Sub sets on push deliveries when write
+	// metadata is enabled. The value is the unique ID of the delivered message.
+	PubsubHeaderMessageID = "X-Goog-Pubsub-Message-Id"
 )
 
 type proxyDetails struct {
@@ -69,6 +79,13 @@ type proxyContext struct {
 	stage           string
 	domainName      string
 	proxySystemName string
+}
+
+type pubsubContext struct {
+	subscriptionName string
+	projectID        string
+	subscriptionID   string
+	messageID        string
 }
 
 var (
@@ -148,6 +165,103 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 	)
 
 	span := tracer.StartSpan(proxySpanInfo.spanName, optsLocal...)
+
+	return span
+}
+
+func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
+	var inferredStartSpanOpts []tracer.StartSpanOption
+	spanParentCtx, _ := tracer.Extract(tracer.HTTPHeadersCarrier(headers))
+	if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
+		inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanParentCtx.SpanLinks()))
+	}
+
+	requestProxyContext, err := extractInferredProxyContext(headers)
+	if err == nil {
+		return startInferredProxySpan(requestProxyContext, spanParentCtx, inferredStartSpanOpts...)
+	} else {
+		log.Debug("unable to start inferred proxy span: %s\n", err.Error())
+	}
+
+	pubsubCtx := extractInferredPubsubContext(headers)
+	if pubsubCtx != nil {
+		return startInferredPubsubPushSubscriptionSpan(pubsubCtx, spanParentCtx, inferredStartSpanOpts...)
+	} else {
+		log.Debug("Unable to create inferred pubsub span. Skipping")
+	}
+
+	return nil
+}
+
+// extractInferredPubsubContext reads Pub/Sub push metadata headers and returns a
+// fully populated pubsubContext, or an error if headers are missing or invalid.
+func extractInferredPubsubContext(headers http.Header) *pubsubContext {
+	subscriptionName := headers.Get(PubsubHeaderSubscriptionName)
+	if subscriptionName == "" {
+		return nil
+	}
+
+	parts := strings.Split(subscriptionName, "/")
+
+	// check that subscriptionName matches format projects/{project_id}/subscriptions/{subscription_id}.
+	if len(parts) != 4 || // must have 4 segments
+		parts[0] != "projects" || parts[2] != "subscriptions" || // must match 'projects' and 'subscriptions'
+		parts[1] == "" || parts[3] == "" { // project and subscription IDs can't be empty
+		return nil
+	}
+
+	projectID := parts[1]
+	subscriptionID := parts[3]
+
+	messageID := headers.Get(PubsubHeaderMessageID)
+	if messageID == "" {
+		return nil
+	}
+	return &pubsubContext{
+		subscriptionName: subscriptionName,
+		projectID:        projectID,
+		subscriptionID:   subscriptionID,
+		messageID:        messageID,
+	}
+}
+
+// startInferredPubsubPushSubscriptionSpan starts an inferred pubsub.receive consumer span
+// for HTTP handlers that process gcp Pub/Sub push deliveries. The span is tagged like
+// library-instrumented subscribe/receive paths so push-based workloads show the same
+// messaging layer in the trace as pull/subscribe flows.
+//
+// See: https://cloud.google.com/pubsub/docs/push
+func startInferredPubsubPushSubscriptionSpan(pubsubContex *pubsubContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
+	configService := globalconfig.ServiceName()
+	spanName := "pubsub.receive"
+	component := "net/http"
+	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+1)
+	copy(optsLocal, opts)
+
+	optsLocal = append(optsLocal,
+		func(cfg *tracer.StartSpanConfig) {
+			if cfg.Tags == nil {
+				cfg.Tags = make(map[string]any)
+			}
+
+			cfg.Parent = parent
+			cfg.Tags[ext.SpanType] = ext.SpanTypeMessageConsumer
+			cfg.Tags[ext.SpanName] = spanName
+			cfg.Tags[ext.ServiceName] = configService
+			cfg.Tags[ext.Component] = component
+			cfg.Tags[ext.ResourceName] = pubsubContex.subscriptionName
+			cfg.Tags[ext.SpanKind] = ext.SpanKindConsumer
+			cfg.Tags[ext.MessagingDestinationName] = pubsubContex.subscriptionID
+			cfg.Tags[ext.MessagingOperationName] = "receive"
+			cfg.Tags[ext.MessagingMessageID] = pubsubContex.messageID
+			cfg.Tags[ext.PubsubMessageID] = pubsubContex.messageID // duplicate to align with existing pubsub tags for pull subscriptions
+			cfg.Tags[ext.GCPProjectID] = pubsubContex.projectID
+			cfg.Tags[ext.MessagingSystem] = ext.MessagingSystemGCPPubsub
+			cfg.Tags["_dd.inferred_span"] = 1
+		},
+	)
+
+	span := tracer.StartSpan(spanName, optsLocal...)
 
 	return span
 }

@@ -245,12 +245,13 @@ func Start(opts ...StartOption) error {
 	defer startStopMu.Unlock()
 
 	defer reportInitTime(time.Now())
+
 	t, err := newTracer(opts...)
 	if err != nil {
 		return err
 	}
 	resetBaseHashCache()
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		// TODO: instrumentation telemetry client won't get started
 		// if tracing is disabled, but we still want to capture this
 		// telemetry information. Will be fixed when the tracer and profiler
@@ -278,12 +279,7 @@ func Start(opts ...StartOption) error {
 		return nil
 	}
 
-	otelRuntimeMetricsShouldBeEnabled := otelmetricsinstall.StartHook != nil &&
-		t.config.internalConfig.RuntimeMetricsOtelEnabled() &&
-		t.config.internalConfig.OTLPExportMetricsMode() &&
-		(t.config.internalConfig.RuntimeMetricsV2Enabled() || t.config.internalConfig.RuntimeMetricsEnabled())
-
-	if otelRuntimeMetricsShouldBeEnabled {
+	if t.config.otelRuntimeMetricsShouldBeEnabled {
 		if err := otelmetricsinstall.StartHook(gocontext.Background()); err != nil {
 			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
 		} else {
@@ -495,21 +491,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	} else {
 		writer = newAgentTraceWriter(c, ps, statsd)
 	}
-	traces, spans, err := samplingRulesFromEnv()
-	if err != nil {
-		log.Warn("DIAGNOSTICS Error(s) parsing sampling rules: found errors: %s", err.Error())
-		return nil, fmt.Errorf("found errors when parsing sampling rules: %w", err)
-	}
-	if traces != nil {
-		c.traceRules = traces
-	}
-	if spans != nil {
-		c.spanRules = spans
-	}
-
-	rulesSampler := newRulesSampler(c.traceRules, c.spanRules, c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
-	c.traceSampleRules = newDynamicConfig("trace_sample_rules", c.traceRules,
-		rulesSampler.traces.setTraceSampleRules, EqualsFalseNegative)
+	rulesSampler := newRulesSampler(c.internalConfig.TraceSamplingRules(), c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 	var dataStreamsProcessor *datastreams.Processor
 	if c.internalConfig.DataStreamsMonitoringEnabled() {
 		dataStreamsProcessor = datastreams.NewProcessor(statsd, c.internalConfig.Env(), c.internalConfig.ServiceName(), c.internalConfig.Version(), c.internalConfig.AgentURL(), c.httpClient)
@@ -601,12 +583,13 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 	}
 	c := t.config
 	t.statsd.Incr("datadog.tracer.started", nil, 1)
-	if c.internalConfig.RuntimeMetricsEnabled() {
+	if c.internalConfig.RuntimeMetricsEnabled() && !c.otelRuntimeMetricsShouldBeEnabled {
 		log.Debug("Runtime metrics enabled.")
 		t.wg.Go(func() {
 			t.reportRuntimeMetrics(defaultMetricsReportInterval)
 		})
 	}
+
 	if c.internalConfig.DebugAbandonedSpans() {
 		log.Info("Abandoned spans logs enabled.")
 		t.abandonedSpansDebugger = newAbandonedSpansDebugger()
@@ -737,7 +720,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			if len(trace.spans) > 0 {
 				t.traceWriter.add(trace.spans)
 			}
-			releaseSpans(t.config.spanPoolEnabled, spansToRelease)
+			releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -757,7 +740,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 					if len(trace.spans) > 0 {
 						t.traceWriter.add(trace.spans)
 					}
-					releaseSpans(t.config.spanPoolEnabled, spansToRelease)
+					releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
 				default:
 					break loop
 				}
@@ -972,14 +955,13 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 // StartSpan creates, starts, and returns a new Span with the given `operationName`.
 // +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Span {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
-	span := spanStart(operationName, &t.sharedAttrs, t.config.spanPoolEnabled, options...)
-
 	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
 	cSnap := t.config.internalConfig.SpanStartSnapshot()
+	span := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
 
 	if span.service == "" {
 		span.service = cSnap.ServiceName
@@ -1149,7 +1131,7 @@ func (t *tracer) Stop() {
 
 // Inject uses the configured or default TextMap Propagator.
 func (t *tracer) Inject(ctx *SpanContext, carrier any) error {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
 
@@ -1196,7 +1178,7 @@ func (t *tracer) updateSampling(ctx *SpanContext) {
 
 // Extract uses the configured or default TextMap Propagator.
 func (t *tracer) Extract(carrier any) (*SpanContext, error) {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return nil, nil
 	}
 	ctx, err := t.config.propagator.Extract(carrier)
@@ -1222,7 +1204,7 @@ func (t *tracer) TracerConf() TracerConf {
 		CanComputeStats:      t.config.canComputeStats(),
 		CanDropP0s:           t.config.canDropP0s(),
 		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
-		Disabled:             !t.config.enabled.get(),
+		Disabled:             !t.config.internalConfig.TracingEnabled(),
 		PartialFlush:         pfEnabled,
 		PartialFlushMinSpans: pfMin,
 		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
@@ -1236,7 +1218,7 @@ func (t *tracer) TracerConf() TracerConf {
 }
 
 func (t *tracer) submit(s *Span) {
-	if !t.config.enabled.get() {
+	if !t.config.internalConfig.TracingEnabled() {
 		return
 	}
 	// we have an active tracer
