@@ -1,4 +1,4 @@
-module github.com/DataDog/dd-trace-go/contrib/googleapis/go-genai/v2
+module github.com/DataDog/dd-trace-go/contrib/google.golang.org/genai/v2
 
 go 1.25.0
 

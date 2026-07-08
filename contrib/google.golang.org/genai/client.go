@@ -25,9 +25,17 @@ type Client struct {
 // WrapClient returns a tracing wrapper around the given *genai.Client.
 // The returned *Client exposes wrapper Models and Chats with the same
 // method signatures as the upstream SDK.
-func WrapClient(c *genai.Client) *Client {
+//
+// Options are reserved for future integration-level configuration; none
+// are currently exported, but the variadic form is kept so we can add
+// them without a breaking API change.
+func WrapClient(c *genai.Client, opts ...Option) *Client {
 	if c == nil {
 		return nil
+	}
+	cfg := defaults()
+	for _, opt := range opts {
+		opt(cfg)
 	}
 	provider := backendProvider(c)
 	tc := &Client{

@@ -9,7 +9,7 @@
 // Wrap a *genai.Client with [WrapClient] and use the returned *Client in
 // place of the original; calls on its Models and Chats fields produce
 // LLM Observability spans automatically.
-package genaitrace // import "github.com/DataDog/dd-trace-go/contrib/googleapis/go-genai/v2"
+package genaitrace // import "github.com/DataDog/dd-trace-go/contrib/google.golang.org/genai/v2"
 
 import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"

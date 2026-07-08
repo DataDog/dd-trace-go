@@ -79,7 +79,7 @@ const (
 	PackageUptraceBun                Package = "uptrace/bun"
 	PackageLogSlog                   Package = "log/slog"
 	PackageModelContextProtocolGoSDK Package = "modelcontextprotocol/go-sdk"
-	PackageGoogleAPIsGoGenAI         Package = "googleapis/go-genai"
+	PackageGoogleAPIsGoGenAI         Package = "google.golang.org/genai"
 
 	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
 	PackageAzureAPIMCallout               Package = "azure/apim-callout"
