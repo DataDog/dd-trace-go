@@ -113,6 +113,12 @@ type payloadV1 struct {
 	// placeholder have been written to buf for this payload cycle.
 	staticEncoded bool
 
+	// sizeHint is a hint for how large buf should be to avoid slice growth
+	// overhead in a steady state. Set by the writer from the previous cycle's
+	// actual encoded size(); used on the first push of each cycle if larger
+	// than the per-chunk heuristic. Reset to 0 by clear().
+	sizeHint int
+
 	// processTagsCached holds the cached anyValue for process tags,
 	// avoiding repeated boxing of the string into any.
 	processTagsCached anyValue
@@ -245,9 +251,11 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 			p.st.reset()
 		}
 		// Pre-size buffer based on estimated span encoding size.
-		// 300 is an arbitrary guess for the average span encoding size -- we should measure and update this value
-		if cap(p.buf) == 0 {
-			p.buf = make([]byte, 0, len(t)*300)
+		// 300 is an arbitrary guess for the average span encoding size -- we should measure and update this value.
+		// sizeHint, set by the writer from the previous cycle's real encoded size(), is used
+		// instead whenever it's larger, since it's a more accurate predictor at steady state.
+		if desired := max(len(t)*300, p.sizeHint); cap(p.buf) < desired {
+			p.buf = make([]byte, 0, desired)
 		}
 		p.buf = encodeStringField(p.buf, p.bm, 2, p.containerID, p.st)
 		p.buf = encodeStringField(p.buf, p.bm, 3, p.languageName, p.st)
@@ -346,6 +354,7 @@ func (p *payloadV1) clear() {
 	atomic.StoreUint32(&p.fields, 0)
 	atomic.StoreUint32(&p.count, 0)
 	p.poolState.Store(0)
+	p.sizeHint = 0
 }
 
 // recordItem records that a new chunk was added to the payload.
