@@ -70,7 +70,7 @@ func (c TextMapCarrier) ForeachKey(handler func(key, val string) error) error {
 }
 
 const (
-	// headerPropagationBehaviorExtract specifies how to handle incoming trace
+	// envPropagationBehaviorExtract specifies how to handle incoming trace
 	// context. Allowed values:
 	// - "continue" (default): Continue the trace from incoming headers.
 	//   Baggage is propagated.
@@ -79,16 +79,16 @@ const (
 	//   Baggage is propagated.
 	// - "ignore": Start a new trace with a new trace ID and sampling
 	//   decision. No span links are created. Baggage is dropped.
-	headerPropagationBehaviorExtract = "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT"
+	envPropagationBehaviorExtract = "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT"
 
 	propagationBehaviorExtractContinue = "continue"
 	propagationBehaviorExtractRestart  = "restart"
 	propagationBehaviorExtractIgnore   = "ignore"
 
-	headerPropagationExtractFirst = "DD_TRACE_PROPAGATION_EXTRACT_FIRST"
-	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
-	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
-	headerPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
+	envPropagationExtractFirst = "DD_TRACE_PROPAGATION_EXTRACT_FIRST"
+	envPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
+	envPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
+	envPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
 )
 
 const (
@@ -199,10 +199,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 	if cfg.ExtractFirst != nil {
 		cp.onlyExtractFirst = *cfg.ExtractFirst
 	} else {
-		cp.onlyExtractFirst = internal.BoolEnv(headerPropagationExtractFirst, false)
+		cp.onlyExtractFirst = internal.BoolEnv(envPropagationExtractFirst, false)
 	}
 	if cfg.BehaviorExtract == "" {
-		cfg.BehaviorExtract = env.Get(headerPropagationBehaviorExtract)
+		cfg.BehaviorExtract = env.Get(envPropagationBehaviorExtract)
 	}
 	switch cfg.BehaviorExtract {
 	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
@@ -220,10 +220,10 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		return cp
 	}
 	if cfg.InjectStyle == "" {
-		cfg.InjectStyle = env.Get(headerPropagationStyleInject)
+		cfg.InjectStyle = env.Get(envPropagationStyleInject)
 	}
 	if cfg.ExtractStyle == "" {
-		cfg.ExtractStyle = env.Get(headerPropagationStyleExtract)
+		cfg.ExtractStyle = env.Get(envPropagationStyleExtract)
 	}
 	cp.injectors, cp.injectorNames = getPropagators(cfg, cfg.InjectStyle)
 	cp.extractors, cp.extractorsNames = getPropagators(cfg, cfg.ExtractStyle)
