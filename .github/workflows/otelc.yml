@@ -207,10 +207,30 @@ jobs:
           echo "PATH: ${PATH}"
           echo "Working directory: ${PWD}"
           otelc version
-          PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
 
+          # Only run OTelc tests for integrations that have an otelc.yaml file.
+          # TODO: remove this once all integrations are supported.
+          CONTRIB_DIR="${{ github.workspace }}/dd-trace-go/contrib"
+          PACKAGE_NAMES=""
+          while IFS=$'\t' read -r pkg dir; do
+            rel="${dir#"$PWD"/}"
+            integration="${rel%%/*}"
+            contrib_path="${integration//_//}"
+            if [[ -d "${CONTRIB_DIR}/${contrib_path}" ]] && [[ -n "$(find "${CONTRIB_DIR}/${contrib_path}" -type f -name otelc.yaml -print -quit)" ]]; then
+              PACKAGE_NAMES="${PACKAGE_NAMES} ${pkg}"
+            fi
+          done < <(go list -f '{{.ImportPath}}'$'\t''{{.Dir}}' ./... | grep -v /civisibility)
+
+          if [[ -z "${PACKAGE_NAMES// /}" ]]; then
+            echo "No integrations with an otelc.yaml file found; skipping otelc test run."
+            exit 0
+          fi
+
+          echo "Running otelc tests for:${PACKAGE_NAMES}"
+          # shellcheck disable=SC2086
           gotestsum --junitfile "${XML_PATH}" --raw-command -- otelc go test -json -shuffle=on $PACKAGE_NAMES
-          otelc -rules=${{ github.workspace }}/dd-trace-go go test -json -shuffle=on ./...
+          # shellcheck disable=SC2086
+          otelc -rules=${{ github.workspace }}/dd-trace-go go test -json -shuffle=on $PACKAGE_NAMES
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
           MODE: ${{ matrix.mode }}
