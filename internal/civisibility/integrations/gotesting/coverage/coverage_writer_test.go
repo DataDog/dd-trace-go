@@ -93,6 +93,7 @@ func TestCoverageWriterConcurrentAddAndFlush(t *testing.T) {
 type MockClient struct {
 	SendCoveragePayloadFunc           func(ciTestCovPayload io.Reader) error
 	SendCoveragePayloadWithFormatFunc func(ciTestCovPayload io.Reader, format string) error
+	SendCoverageReportFunc            func(report io.Reader, format string) error
 	GetSettingsFunc                   func() (*net.SettingsResponseData, error)
 	GetKnownTestsFunc                 func() (*net.KnownTestsResponseData, error)
 	GetCommitsFunc                    func(localCommits []string) ([]string, error)
@@ -108,6 +109,13 @@ func (m *MockClient) SendCoveragePayload(ciTestCovPayload io.Reader) error {
 
 func (m *MockClient) SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error {
 	return m.SendCoveragePayloadWithFormatFunc(ciTestCovPayload, format)
+}
+
+func (m *MockClient) SendCoverageReport(report io.Reader, format string) error {
+	if m.SendCoverageReportFunc != nil {
+		return m.SendCoverageReportFunc(report, format)
+	}
+	return nil
 }
 
 func (m *MockClient) GetSettings() (*net.SettingsResponseData, error) {

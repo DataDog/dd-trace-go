@@ -23,6 +23,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilityutils "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -221,6 +222,32 @@ func TestClientAgentModeUDSCoverageEndpoint(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}, func(t *testing.T, cInterface Client, _ *client) {
 		err := cInterface.SendCoveragePayloadWithFormat(bytes.NewReader([]byte(`{"version":2,"metadata":{},"coverages":[]}`)), FormatJSON)
+		require.NoError(t, err)
+	})
+}
+
+func TestClientAgentModeUDSCoverageReportEndpoint(t *testing.T) {
+	const lcovReport = "SF:example.go\nDA:1,1\nLH:1\nLF:1\nend_of_record\n"
+
+	runUDSAgentClientEndpointTest(t, NewClientForCoverageReportUpload, func(t *testing.T, c *client, w http.ResponseWriter, r *http.Request) {
+		assertUDSAgentRequest(t, c, r, coverageReportSubDomain, coverageReportURLPath)
+
+		parts := readMultipartParts(t, r)
+		require.Equal(t, ContentTypeJSON, parts["event"].contentType)
+		require.Equal(t, "event.json", parts["event"].fileName)
+		var event map[string]string
+		require.NoError(t, json.Unmarshal(parts["event"].body, &event))
+		require.Equal(t, "coverage_report", event["type"])
+		require.Equal(t, FormatLCOV, event["format"])
+		require.Equal(t, "main", event[constants.GitBranch])
+		require.Equal(t, "1234567890abcdef1234567890abcdef12345678", event[constants.GitCommitSHA])
+		require.Equal(t, "https://github.com/DataDog/dd-trace-go.git", event[constants.GitRepositoryURL])
+		require.Equal(t, ContentTypeOctetStream, parts["coverage"].contentType)
+		require.Equal(t, "coverage.gz", parts["coverage"].fileName)
+		require.Equal(t, lcovReport, gunzipCoverageReportPart(t, parts["coverage"].body))
+		w.WriteHeader(http.StatusAccepted)
+	}, func(t *testing.T, cInterface Client, _ *client) {
+		err := cInterface.SendCoverageReport(bytes.NewReader([]byte(lcovReport)), FormatLCOV)
 		require.NoError(t, err)
 	})
 }

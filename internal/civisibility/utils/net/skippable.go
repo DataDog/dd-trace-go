@@ -129,6 +129,7 @@ func (c *client) GetSkippableTests() (*SkippableTestsResponse, error) {
 		body,
 		func() (readCacheLiveResult[cachedSkippableTests], error) {
 			request := c.getPostRequestConfig(skippableURLPath, body)
+			request.ExpectJSONResponse = true
 			if request.Compressed {
 				telemetry.ITRSkippableTestsRequest(telemetry.CompressedRequestCompressedType)
 			} else {

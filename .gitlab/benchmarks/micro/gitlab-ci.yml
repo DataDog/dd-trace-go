@@ -70,7 +70,7 @@ variables:
 microbenchmarks-1:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
+    BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkAgentTraceWriter|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-1"
@@ -78,7 +78,7 @@ microbenchmarks-1:
 microbenchmarks-2:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
+    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkSampleWAFSubContext"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-2"

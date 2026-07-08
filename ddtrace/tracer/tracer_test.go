@@ -972,7 +972,7 @@ func TestPropagationDefaults(t *testing.T) {
 	pctx := propagated
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, pctx.traceID)
+	assert.Equal(ctx.traceID.HexEncoded(), pctx.traceID.HexEncoded())
 	assert.Equal(ctx.spanID, pctx.spanID)
 	assert.Equal(ctx.baggage, pctx.baggage)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
@@ -1017,7 +1017,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 	assert.Nil(err)
 
 	// compare if there is a Context match
-	assert.Equal(ctx.traceID, propagated.traceID)
+	assert.Equal(ctx.traceID.HexEncoded(), propagated.traceID.HexEncoded())
 	assert.Equal(ctx.spanID, propagated.spanID)
 	assert.Equal(*ctx.trace.priority.Load(), -1.)
 	assert.Equal(ctx.baggage, propagated.baggage)
@@ -2443,24 +2443,26 @@ func BenchmarkConcurrentTracing(b *testing.B) {
 // BenchmarkPartialFlushing tests the performance of creating a lot of spans in a single thread
 // while partial flushing is enabled.
 func BenchmarkPartialFlushing(b *testing.B) {
+	addr := mockAgentEndpoint(b, "/v1.0/traces")
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
-		genBigTraces(b)
+		genBigTraces(b, WithAgentAddr(addr.Host))
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b)
+		genBigTraces(b, WithAgentAddr(addr.Host))
 	})
 }
 
 func BenchmarkPartialFlushingSpanPool(b *testing.B) {
+	addr := mockAgentEndpoint(b, "/v1.0/traces")
 	b.Run("Enabled", func(b *testing.B) {
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
 		b.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "500")
-		genBigTraces(b, WithSpanPool(true))
+		genBigTraces(b, WithAgentAddr(addr.Host), WithSpanPool(true))
 	})
 	b.Run("Disabled", func(b *testing.B) {
-		genBigTraces(b, WithSpanPool(true))
+		genBigTraces(b, WithAgentAddr(addr.Host), WithSpanPool(true))
 	})
 }
 
@@ -2472,7 +2474,8 @@ func BenchmarkBigTraces(b *testing.B) {
 }
 
 func genBigTraces(b *testing.B, opts ...StartOption) {
-	tracer, transport, flush, stop, err := startTestTracer(b, append(opts, WithLogger(log.DiscardLogger{}))...)
+	opts = append(opts, withTransport(discardTransport{}))
+	tracer, _, flush, stop, err := startTestTracer(b, append(opts, WithLogger(log.DiscardLogger{}))...)
 	assert.Nil(b, err)
 	defer stop()
 
@@ -2509,20 +2512,14 @@ func genBigTraces(b *testing.B, opts ...StartOption) {
 				sp.Finish()
 			}
 			parent.Finish()
-			// TODO(fg): This test has historically not waited for the two
-			// goroutines below to finish. This was causing test failures when
+			// TODO(fg): This test has historically not waited for the flush
+			// goroutine below to finish. This was causing test failures when
 			// goroutine leak checks were added to TestMain. However, looking at
 			// the code, perhaps these goroutines should be required to finish
 			// before b.StopTimer() is called?
-			wg.Add(2)
-			go func() {
+			wg.Go(func() {
 				flush(-1) // act like a ticker
-				wg.Done()
-			}()
-			go func() {
-				transport.Reset() // pretend we sent any payloads
-				wg.Done()
-			}()
+			})
 		}
 	}
 	b.StopTimer()
