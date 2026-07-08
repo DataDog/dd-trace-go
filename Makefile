@@ -75,6 +75,10 @@ lint/misc: tools-install ## Run miscellaneous linting checks (copyright, Makefil
 lint/action: tools-install ## Lint GitHub Actions workflows
 	$(BIN_PATH) ./scripts/lint.sh --action
 
+.PHONY: lint/errlog
+lint/errlog: ## Run constantlogmsg analyzer — enforces constant message args on log.Error/Warn/ReportError/ReportPanic
+	go run ./internal/telemetry/log/analyzer/cmd ./...
+
 .PHONY: format
 format: tools-install ## Format code
 	$(BIN_PATH) ./scripts/format.sh --all

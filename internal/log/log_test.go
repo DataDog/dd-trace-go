@@ -287,3 +287,137 @@ func BenchmarkLog(b *testing.B) {
 		Warn("test")
 	}
 }
+
+func TestSetErrorTelemetrySink(t *testing.T) {
+	// Remove any sink registered by init() in telemetry/log (not imported here).
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		}
+	}()
+
+	var sinkCalls []struct {
+		format string
+		args   []any
+	}
+
+	SetErrorTelemetrySink(func(format string, args []any) {
+		sinkCalls = append(sinkCalls, struct {
+			format string
+			args   []any
+		}{format, args})
+	})
+	defer func() { errTelemetrySink.Store(nil) }()
+
+	// Reset aggregator state so previous test runs don't interfere.
+	errmu.Lock()
+	for k := range erragg {
+		delete(erragg, k)
+	}
+	errmu.Unlock()
+
+	Error("template one: %s", "hello")
+	Error("template one: %s", "world") // same template: still forwarded (telemetry deduplicates)
+	Error("template two: %d", 42)
+
+	assert.Len(t, sinkCalls, 3)
+	assert.Equal(t, "template one: %s", sinkCalls[0].format)
+	assert.Equal(t, "template two: %d", sinkCalls[2].format)
+}
+
+func TestErrorSinkNotCalledAfterRateLimit(t *testing.T) {
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		}
+	}()
+
+	var count int
+	SetErrorTelemetrySink(func(_ string, _ []any) { count++ })
+	defer func() { errTelemetrySink.Store(nil) }()
+
+	// Reset aggregator.
+	errmu.Lock()
+	for k := range erragg {
+		delete(erragg, k)
+	}
+	errmu.Unlock()
+
+	// Exceed the defaultErrorLimit.
+	key := "rate-limit-test: %d"
+	errmu.Lock()
+	erragg[key] = &errorReport{count: defaultErrorLimit + 1}
+	errmu.Unlock()
+
+	Error(key, 1)
+	assert.Equal(t, 0, count, "sink must not be called when the key is over the rate limit")
+}
+
+func TestErrorSinkReceivesErrorArg(t *testing.T) {
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		}
+	}()
+
+	var gotArgs []any
+	SetErrorTelemetrySink(func(_ string, args []any) { gotArgs = args })
+	defer func() { errTelemetrySink.Store(nil) }()
+
+	errmu.Lock()
+	for k := range erragg {
+		delete(erragg, k)
+	}
+	errmu.Unlock()
+
+	sentinel := fmt.Errorf("sentinel error")
+	Error("some failure: %s", sentinel)
+
+	assert.Len(t, gotArgs, 1)
+	assert.Equal(t, sentinel, gotArgs[0])
+}
+
+func TestErrorLocalOutputUnchanged(t *testing.T) {
+	// Ensure installing a sink does not affect local log output.
+	defer func(old Logger) { UseLogger(old) }(logger)
+	tp := &testLogger{}
+	UseLogger(tp)
+
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		}
+	}()
+
+	SetErrorTelemetrySink(func(_ string, _ []any) {})
+	defer func() { errTelemetrySink.Store(nil) }()
+
+	// Reset aggregator.
+	errmu.Lock()
+	for k := range erragg {
+		delete(erragg, k)
+	}
+	erron = false
+	errmu.Unlock()
+
+	defer func(old time.Duration) { errrate = old }(errrate)
+	errrate = 0
+
+	Error("local output must still appear: %d", 7)
+	Flush()
+
+	lines := tp.Lines()
+	assert.True(t, len(lines) > 0, "local log must still receive error output")
+	found := false
+	for _, l := range lines {
+		if strings.Contains(l, "local output must still appear") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found)
+}
