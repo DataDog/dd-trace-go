@@ -81,5 +81,3 @@ require (
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..
-
-replace github.com/open-telemetry/opentelemetry-go-compile-instrumentation/pkg => ../../../../opentelemetry-go-compile-instrumentation/pkg
