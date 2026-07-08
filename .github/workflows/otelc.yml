@@ -137,16 +137,14 @@ jobs:
           path: ${{ github.workspace }}/dd-trace-go
           repository: ${{ inputs.otelc-version != '' && 'DataDog/dd-trace-go' || github.repository }}
           ref: ${{ inputs.otelc-version != '' && 'main' || github.sha }}
-      # If we're in workflow_dispatch/call, maybe we need to up/downgrade otelc
       - name: Check out otelc
-        if: inputs.otelc-version != ''
         id: checkout-otelc
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           path: ${{ github.workspace }}/otelc
           repository: open-telemetry/opentelemetry-go-compile-instrumentation
-          ref: ${{ inputs.otelc-version }}
+          ref: ${{ inputs.otelc-version || 'main' }}
 
       - name: Setup Go
         id: setup-go
@@ -161,31 +159,28 @@ jobs:
       - name: Install development tools
         run: make -C ${{ github.workspace }}/dd-trace-go tools-install
 
-      - name: Set up otelc
-        if: inputs.otelc-version != ''
-        run: |-
-          go mod edit -replace="github.com/open-telemetry/opentelemetry-go-compile-instrumentation=${{ github.workspace }}/otelc"
-          go mod tidy
-        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
-        env:
-          VERSION: ${{ inputs.otelc-version }}
-      # We install the binary to the GOBIN, so it's easy to use
+      # `make install`/`make build` both depend on the `package` target, which
+      # generates `tool/data/otelc-bundle.tgz` (a gitignored, go:embed'd
+      # archive of pkg/ and instrumentation/). A plain `go install`/`go get` of
+      # the otelc module can't produce a working binary because that file
+      # doesn't exist in the module source at any published version.
       - name: Install otelc binary
         if: '!inputs.collect-coverage'
-        run: go install "github.com/open-telemetry/opentelemetry-go-compile-instrumentation/tool/cmd/otelc"
-        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+        run: make install
+        working-directory: ${{ github.workspace }}/otelc
       - name: Build otelc binary
         if: inputs.collect-coverage
         shell: bash
         run: |-
+          make package
           bin=$(go env GOPATH)/bin/otelc
           if [[ '${{ matrix.runs-on }}' == 'windows' ]]; then
             bin="${bin}.exe"
           fi
           mkdir -p "$(dirname "${bin}")"
-          go build -cover -covermode=atomic -coverpkg="github.com/open-telemetry/opentelemetry-go-compile-instrumentation/..." "-o=${bin}" "github.com/open-telemetry/opentelemetry-go-compile-instrumentation/tool/cmd/otelc"
+          go build -cover -covermode=atomic -coverpkg="github.com/open-telemetry/opentelemetry-go-compile-instrumentation/..." "-o=${bin}" ./tool/cmd/otelc
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
-        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+        working-directory: ${{ github.workspace }}/otelc
 
       # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
       # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
