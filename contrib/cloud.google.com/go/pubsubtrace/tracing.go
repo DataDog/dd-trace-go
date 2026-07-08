@@ -142,6 +142,9 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 		if projectID := projectIDFromResourceName(s.String()); projectID != "" {
 			opts = append(opts, tracer.Tag(ext.GCPProjectID, projectID))
 		}
+		if projectID := projectIDFromResourceName(s.String()); projectID != "" {
+			opts = append(opts, tracer.Tag(ext.GCPProjectID, projectID))
+		}
 		if cfg.serviceName != "" {
 			opts = append(opts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 		}
