@@ -186,13 +186,17 @@ func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
 	pubsubCtx := extractInferredPubsubContext(headers)
 	if pubsubCtx != nil {
 		if cfg.pubsubPropagationAsSpanLinks && spanParentCtx != nil {
-			// Record the producer span as a span link, keeping producer and consumer traces separate.
-			link := tracer.SpanLink{
-				TraceID:     spanParentCtx.TraceIDLower(),
-				TraceIDHigh: spanParentCtx.TraceIDUpper(),
-				SpanID:      spanParentCtx.SpanID(),
+			// DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart zeroes IDs on the stub (links already appended above);
+			// only derive a link when real trace/span IDs are present.
+			if spanParentCtx.TraceIDLower() != 0 || spanParentCtx.TraceIDUpper() != 0 || spanParentCtx.SpanID() != 0 {
+				// Record the producer span as a span link, keeping producer and consumer traces separate.
+				link := tracer.SpanLink{
+					TraceID:     spanParentCtx.TraceIDLower(),
+					TraceIDHigh: spanParentCtx.TraceIDUpper(),
+					SpanID:      spanParentCtx.SpanID(),
+				}
+				inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
 			}
-			inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
 			return startInferredPubsubPushSubscriptionSpan(pubsubCtx, nil, inferredStartSpanOpts...)
 		}
 		return startInferredPubsubPushSubscriptionSpan(pubsubCtx, spanParentCtx, inferredStartSpanOpts...)

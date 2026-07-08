@@ -351,6 +351,56 @@ func TestPropagationAsSpanLinksEnvVar(t *testing.T) {
 	assert.Equal(publishSpan.SpanID(), links[0].SpanID, "span link should point to publish span")
 }
 
+func TestPropagationAsSpanLinksWithRestartBehaviorAndBaggage(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "restart")
+
+	assert := assert.New(t)
+	ctx, cancel, mt, pub, sub := setup(t)
+
+	// Publisher
+	span, pctx := tracer.StartSpanFromContext(ctx, "propagation-test")
+	span.SetBaggageItem("user.id", "123")
+	_, err := Publish(pctx, pub, &pubsub.Message{Data: []byte("hello")}).Get(pctx)
+	assert.NoError(err)
+	span.Finish()
+
+	// Subscriber with WithPropagationAsSpanLinks option, combined with the
+	// global DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart tracer setting.
+	var called bool
+	err = sub.Receive(ctx, WrapReceiveHandler(sub, func(ctx context.Context, msg *pubsub.Message) {
+		assert.False(called, "callback called twice")
+		msg.Ack()
+		called = true
+		cancel()
+	}, WithPropagationAsSpanLinks()))
+	assert.True(called, "callback not called")
+	assert.NoError(err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 3, "wrong number of spans")
+
+	publishSpan := spans[0]
+	receiveSpan := spans[2]
+	assert.Equal("pubsub.receive", receiveSpan.OperationName())
+	assert.NotEqual(publishSpan.TraceID(), receiveSpan.TraceID(), "receive span should start a new trace")
+	assert.Equal(uint64(0), receiveSpan.ParentID(), "receive span should have no parent")
+
+	// Exactly one valid (non-zero) span link back to the producer — no
+	// duplicate or zero-valued link derived from the restart-mode stub.
+	links := receiveSpan.Links()
+	require.Len(t, links, 1, "expected exactly one span link")
+	assert.NotZero(links[0].TraceID, "span link must carry the producer's real trace ID")
+	assert.Equal(publishSpan.SpanID(), links[0].SpanID, "span link should point to publish span")
+
+	// Baggage must still propagate even though the trace was restarted.
+	baggage := make(map[string]string)
+	receiveSpan.Context().ForeachBaggageItem(func(k, v string) bool {
+		baggage[k] = v
+		return true
+	})
+	assert.Equal("123", baggage["user.id"], "baggage should propagate to the receive span")
+}
+
 func filterTags(m map[string]any) map[string]any {
 	delete(m, "_dd.p.tid")
 	delete(m, "_dd.profiling.enabled")
