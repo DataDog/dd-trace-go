@@ -144,7 +144,7 @@ jobs:
           persist-credentials: false
           path: ${{ github.workspace }}/otelc
           repository: open-telemetry/opentelemetry-go-compile-instrumentation
-          ref: ${{ inputs.otelc-version || 'main' }}
+          ref: ${{ inputs.otelc-version || 'main' }} # TODO: replace with actual version once v1 is released
 
       - name: Setup Go
         id: setup-go
@@ -159,11 +159,6 @@ jobs:
       - name: Install development tools
         run: make -C ${{ github.workspace }}/dd-trace-go tools-install
 
-      # `make install`/`make build` both depend on the `package` target, which
-      # generates `tool/data/otelc-bundle.tgz` (a gitignored, go:embed'd
-      # archive of pkg/ and instrumentation/). A plain `go install`/`go get` of
-      # the otelc module can't produce a working binary because that file
-      # doesn't exist in the module source at any published version.
       - name: Install otelc binary
         if: '!inputs.collect-coverage'
         run: make install
@@ -182,9 +177,6 @@ jobs:
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/otelc
 
-      # Run a `go mod tidy` because GitHub will run this on a candidate merge commit, and if there
-      # have been dependecy updates on the `main` branch, the `go.mod` and `go.sum` files for the
-      # integration test suite may no longer be up-to-date.
       - name: Run 'go mod tidy'
         run: go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
@@ -204,16 +196,10 @@ jobs:
           # Vault service
           docker pull vault:1.7.3
 
-      # Enable VM overcommit memory, which is essential to ensure smooth operations of the Redis
-      # servers. This VM setting is not namespaced, so changing it on the host also affects all
-      # containerized workloads (which our Redis service is).
       - name: Enable memory overcommit
         if: runner.os == 'Linux'
         run: sudo sysctl vm.overcommit_memory=1
 
-      # Finally, we run the test suite!
-      # To avoid false negatives with failing tests, we do not run our CI Visibility `gotestsum`. Doing so would mark our
-      # failure tests as real failures in the backend.
       - name: Run Tests
         shell: bash
         run: |-
