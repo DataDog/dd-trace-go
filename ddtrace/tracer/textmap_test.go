@@ -2418,6 +2418,14 @@ func TestPropagationBehaviorExtract(t *testing.T) {
 	})
 }
 
+func TestPropagationBehaviorExtractDefault(t *testing.T) {
+	// Regression test: the config source's default must be "continue" itself,
+	// not rely on NewPropagator's fallback switch to paper over an empty value.
+	cfg, err := newTestConfig()
+	require.NoError(t, err)
+	assert.Equal(t, propagationBehaviorExtractContinue, cfg.internalConfig.PropagationBehaviorExtract())
+}
+
 func TestW3CExtractsBaggage(t *testing.T) {
 	tracer, err := newTracer()
 	defer tracer.Stop()
