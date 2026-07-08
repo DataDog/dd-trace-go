@@ -6,6 +6,7 @@
 package tracing
 
 import (
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 )
 
@@ -19,6 +20,10 @@ var _ interface {
 	tracer.TextMapWriter
 } = (*MessageCarrier)(nil)
 
+// Guard the DSM single-key fast path; if Get drifts, extraction silently falls
+// back to the slow ForeachKey path.
+var _ datastreams.TextMapReaderByKey = (*MessageCarrier)(nil)
+
 // ForeachKey conforms to the TextMapReader interface.
 func (c MessageCarrier) ForeachKey(handler func(key, val string) error) error {
 	for _, h := range c.msg.GetHeaders() {
@@ -28,6 +33,25 @@ func (c MessageCarrier) ForeachKey(handler func(key, val string) error) error {
 		}
 	}
 	return nil
+}
+
+// Get implements datastreams.TextMapReaderByKey, converting only the matched
+// header's value to a string (unlike ForeachKey, which converts them all). When
+// a key appears more than once it returns the last occurrence, matching
+// ForeachKey's last-wins behavior for duplicate headers.
+func (c MessageCarrier) Get(key string) (string, bool) {
+	var val []byte
+	found := false
+	for _, h := range c.msg.GetHeaders() {
+		if h.GetKey() == key {
+			val = h.GetValue()
+			found = true
+		}
+	}
+	if !found {
+		return "", false
+	}
+	return string(val), true
 }
 
 // Set implements TextMapWriter
