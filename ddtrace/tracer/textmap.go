@@ -390,7 +390,7 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	var ctx *SpanContext
 	var producer Propagator // propagator that produced ctx
 	var links []SpanLink
-	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
+	var pendingBaggage map[string]string // used to store baggage items temporarily, allocated lazily
 
 	for _, v := range p.extractors {
 		// If incomingCtx is nil, no extraction has run yet
@@ -400,6 +400,9 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 		// If this is the baggage propagator, just stash its items into pendingBaggage
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
 			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				if pendingBaggage == nil {
+					pendingBaggage = make(map[string]string, len(extractedCtx.baggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				}
 				maps.Copy(pendingBaggage, extractedCtx.baggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 			}
 			continue
@@ -480,6 +483,19 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	}
 	log.Debug("Extracted span context: %s", ctx.safeDebugString())
 	return ctx, producer, nil
+}
+
+// cutPrefixFold reports whether s starts with prefix, ignoring case, and if so
+// returns s with the prefix removed. Unlike strings.ToLower+CutPrefix, it never
+// allocates a lowercased copy of s.
+func cutPrefixFold(s, prefix string) (string, bool) {
+	if len(s) < len(prefix) {
+		return "", false
+	}
+	if !strings.EqualFold(s[:len(prefix)], prefix) {
+		return "", false
+	}
+	return s[len(prefix):], true
 }
 
 func getPropagatorName(p Propagator) string {
@@ -629,33 +645,32 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case p.cfg.TraceHeader:
+		switch {
+		case strings.EqualFold(k, p.cfg.TraceHeader):
 			var lowerTid uint64
 			lowerTid, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
 			ctx.traceID.SetLower(lowerTid)
-		case p.cfg.ParentHeader:
+		case strings.EqualFold(k, p.cfg.ParentHeader):
 			ctx.spanID, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case p.cfg.PriorityHeader:
+		case strings.EqualFold(k, p.cfg.PriorityHeader):
 			priority, err := strconv.Atoi(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
 			ctx.setSamplingPriority(priority, samplernames.Unknown)
-		case originHeader:
+		case strings.EqualFold(k, originHeader):
 			ctx.origin = v // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-		case traceTagsHeader:
+		case strings.EqualFold(k, traceTagsHeader):
 			unmarshalPropagatingTags(&ctx, v, p.cfg.MaxTagsHeaderLen)
 		default:
-			if after, ok := strings.CutPrefix(key, p.cfg.BaggagePrefix); ok {
-				ctx.setBaggageItem(after, v)
+			if after, ok := cutPrefixFold(k, p.cfg.BaggagePrefix); ok {
+				ctx.setBaggageItem(strings.ToLower(after), v)
 			}
 		}
 		return nil
@@ -819,18 +834,17 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case b3TraceIDHeader:
+		switch {
+		case strings.EqualFold(k, b3TraceIDHeader):
 			if err := extractTraceID128(&ctx, v); err != nil {
 				return nil
 			}
-		case b3SpanIDHeader:
+		case strings.EqualFold(k, b3SpanIDHeader):
 			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case b3SampledHeader:
+		case strings.EqualFold(k, b3SampledHeader):
 			priority, err := strconv.Atoi(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
@@ -905,9 +919,8 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (*SpanCont
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case b3SingleHeader:
+		switch {
+		case strings.EqualFold(k, b3SingleHeader):
 			b3Parts := strings.Split(v, "-")
 			if len(b3Parts) >= 2 {
 				if err = extractTraceID128(&ctx, b3Parts[0]); err != nil {
@@ -1270,18 +1283,17 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 	ctx.isRemote = true
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
-		key := strings.ToLower(k)
-		switch key {
-		case traceparentHeader:
+		switch {
+		case strings.EqualFold(k, traceparentHeader):
 			if parentHeader != "" {
 				return ErrSpanContextCorrupted
 			}
 			parentHeader = v
-		case tracestateHeader:
+		case strings.EqualFold(k, tracestateHeader):
 			stateHeader = v
 		default:
-			if after, ok := strings.CutPrefix(key, DefaultBaggageHeaderPrefix); ok {
-				ctx.setBaggageItem(after, v)
+			if after, ok := cutPrefixFold(k, DefaultBaggageHeaderPrefix); ok {
+				ctx.setBaggageItem(strings.ToLower(after), v)
 			}
 		}
 		return nil
@@ -1603,7 +1615,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 	var baggageHeader string
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
-		if strings.ToLower(k) == "baggage" {
+		if strings.EqualFold(k, "baggage") {
 			// Expect only one baggage header, return early
 			baggageHeader = v
 			return nil
