@@ -179,6 +179,11 @@ type tracer struct {
 	// State related to the Dynamic Instrumentation product.
 	dynInstSubscriptions dynInstSubscriptions
 
+	// flushHandler is called by the worker when an explicit flush is triggered
+	// (i.e. when Flush() is called). It defaults to defaultFlushHandler.
+	// Tests can override this to provide stronger flush semantics.
+	flushHandler func(done chan<- struct{})
+
 	// sharedAttrs holds the process-level promoted span attributes.
 	// When universalVersion=true it includes env+version; otherwise env only.
 	// All spans start by sharing this pointer; copy-on-write clones it
@@ -291,32 +296,10 @@ func Start(opts ...StartOption) error {
 		}
 	}
 
-	// Start AppSec with remote configuration
-	cfg := remoteconfig.DefaultClientConfig()
-	cfg.AgentURL = t.config.internalConfig.AgentURL().String()
-	cfg.AppVersion = t.config.internalConfig.Version()
-	cfg.Env = t.config.internalConfig.Env()
-	cfg.HTTP = t.config.httpClient
-	cfg.ServiceName = t.config.internalConfig.ServiceName()
-	if t.config.agent.load().hasRemoteConfig {
-		if err := t.startRemoteConfig(cfg); err != nil {
-			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
-				// RC is explicitly disabled via DD_REMOTE_CONFIGURATION_ENABLED=false; this is expected.
-				log.Debug("remoteconfig: client not started, remote configuration is disabled")
-			} else {
-				log.Warn("Remote config startup error: %s", err.Error())
-			}
-		}
-	}
-
 	// appsec.Start() may use the telemetry client to report activation, so it is
 	// important this happens _AFTER_ startTelemetry() has been called, so the
 	// client is appropriately configured.
-	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+1)
-	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
-	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
-
-	appsec.Start(appsecopts...)
+	t.startAppSec()
 
 	if t.config.llmobs.Enabled {
 		if err := llmobs.Start(t.config.llmobs, &llmobsTracerAdapter{}); err != nil {
@@ -338,6 +321,32 @@ func Start(opts ...StartOption) error {
 
 	globalinternal.SetTracerInitialized(true)
 	return nil
+}
+
+// startAppSec builds the remote-config client config and AppSec start options,
+// then starts remote config (if the agent supports it) and AppSec. Both the
+// production Start path and the inspectable-tracer bootstrap call this method so
+// that WithAppSecEnabled and friends activate identically in both environments.
+func (t *tracer) startAppSec() {
+	cfg := remoteconfig.DefaultClientConfig()
+	cfg.AgentURL = t.config.internalConfig.AgentURL().String()
+	cfg.AppVersion = t.config.internalConfig.Version()
+	cfg.Env = t.config.internalConfig.Env()
+	cfg.HTTP = t.config.httpClient
+	cfg.ServiceName = t.config.internalConfig.ServiceName()
+	if t.config.agent.load().hasRemoteConfig {
+		if err := t.startRemoteConfig(cfg); err != nil {
+			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
+				log.Debug("remoteconfig: client not started, remote configuration is disabled")
+			} else {
+				log.Warn("Remote config startup error: %s", err.Error())
+			}
+		}
+	}
+	appsecopts := make([]appsecConfig.StartOption, 0, len(t.config.appsecStartOptions)+2)
+	appsecopts = append(appsecopts, t.config.appsecStartOptions...)
+	appsecopts = append(appsecopts, appsecConfig.WithRCConfig(cfg), appsecConfig.WithMetaStructAvailable(t.config.agent.load().metaStructAvailable))
+	appsec.Start(appsecopts...)
 }
 
 // storeConfig stores the process level tracing context both in an in-memory file and
@@ -527,6 +536,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		dataStreams: dataStreamsProcessor,
 		logFile:     logFile,
 	}
+	t.flushHandler = t.defaultFlushHandler
 	buildSharedAttrs(c, &t.sharedAttrs, &t.sharedAttrsForMainSvc)
 	return t, nil
 }
@@ -716,16 +726,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			t.traceWriter.flush()
 
 		case done := <-t.flush:
-			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
-			t.traceWriter.flush()
-			t.statsd.Flush()
-			if !t.config.tracingAsTransport {
-				t.stats.flushAndSend(time.Now(), withCurrentBucket)
-			}
-			// TODO(x): In reality, the traceWriter.flush() call is not synchronous
-			// when using the agent traceWriter. However, this functionality is used
-			// in Lambda so for that purpose this mechanism should suffice.
-			done <- struct{}{}
+			t.flushHandler(done)
 
 		case <-t.stop:
 		loop:
@@ -747,6 +748,21 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			return
 		}
 	}
+}
+
+// defaultFlushHandler is the production flush handler. It flushes the trace
+// writer, statsd client, and stats concentrator.
+func (t *tracer) defaultFlushHandler(done chan<- struct{}) {
+	t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:invoked"}, 1)
+	t.traceWriter.flush()
+	t.statsd.Flush()
+	if !t.config.tracingAsTransport {
+		t.stats.flushAndSend(time.Now(), withCurrentBucket)
+	}
+	// TODO(x): In reality, the traceWriter.flush() call is not synchronous
+	// when using the agent traceWriter. However, this functionality is used
+	// in Lambda so for that purpose this mechanism should suffice.
+	done <- struct{}{}
 }
 
 // chunk holds information about a trace chunk to be flushed, including its spans.

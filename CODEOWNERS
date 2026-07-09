@@ -97,6 +97,8 @@ contrib/database/sql            @DataDog/database-monitoring @DataDog/apm-go @Da
 # team and can be reviewed by anybody with the appropriate permissions. This is
 # meant to avoid pinging all of @DataDog/dd-trace-go-guild for every PR that
 # changes one of these files.
+/internal/env/supported_configurations.gen.go
+/internal/env/supported_configurations.json
 **/go.mod
 **/go.sum
 go.work

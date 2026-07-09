@@ -20,12 +20,27 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 )
+
+// testTracer creates a tracer with LLMObs enabled for integration tests.
+// It uses Bootstrap so the global tracer is set, allowing tracer.Flush() to work.
+func testTracer(t *testing.T, tracerOpts ...tracer.StartOption) *llmobstest.Collector {
+	t.Helper()
+	coll := llmobstest.New(t)
+	_, _, err := tracertest.Bootstrap(t, append([]tracer.StartOption{
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-mcp-app"),
+		tracer.WithLogStartup(false),
+		coll.TracerOption(),
+	}, tracerOpts...)...)
+	require.NoError(t, err)
+	return coll
+}
 
 func TestIntegrationSessionInitialize(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	ctx := context.Background()
 
@@ -50,10 +65,8 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 	sessionID := clientSession.ID()
 	require.NotEmpty(t, sessionID, "session ID should be set with streamable transport")
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
-	require.Len(t, spans, 1)
-
-	taskSpan := spans[0]
+	tracer.Flush()
+	taskSpan := tt.RequireSpan(t, "mcp.initialize")
 	assert.Equal(t, "mcp.initialize", taskSpan.Name)
 	assert.Equal(t, "task", taskSpan.Meta["span.kind"])
 
@@ -88,7 +101,6 @@ func TestIntegrationSessionInitialize(t *testing.T) {
 
 func TestIntegrationToolCallSuccess(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	ctx := context.Background()
 
@@ -164,21 +176,9 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 
-	spans := tt.WaitForLLMObsSpans(t, 2)
-	require.Len(t, spans, 2)
-
-	var initSpan, toolSpan *testtracer.LLMObsSpan
-	for i := range spans {
-		switch spans[i].Name {
-		case "mcp.initialize":
-			initSpan = &spans[i]
-		case "calculator":
-			toolSpan = &spans[i]
-		}
-	}
-
-	require.NotNil(t, initSpan, "initialize span not found")
-	require.NotNil(t, toolSpan, "tool span not found")
+	tracer.Flush()
+	initSpan := tt.RequireSpan(t, "mcp.initialize")
+	toolSpan := tt.RequireSpan(t, "calculator")
 
 	assert.Contains(t, toolSpan.Tags, "mcp_method:tools/call")
 	assert.Contains(t, toolSpan.Tags, "mcp_tool_kind:server")
@@ -238,7 +238,6 @@ func TestIntegrationToolCallSuccess(t *testing.T) {
 
 func TestIntegrationToolCallError(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	ctx := context.Background()
 
@@ -279,17 +278,8 @@ func TestIntegrationToolCallError(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.True(t, result.IsError)
 
-	spans := tt.WaitForLLMObsSpans(t, 2)
-	require.Len(t, spans, 2)
-
-	var toolSpan *testtracer.LLMObsSpan
-	for i := range spans {
-		if spans[i].Name == "error_tool" {
-			toolSpan = &spans[i]
-		}
-	}
-
-	require.NotNil(t, toolSpan, "tool span not found")
+	tracer.Flush()
+	toolSpan := tt.RequireSpan(t, "error_tool")
 
 	assert.Equal(t, "error_tool", toolSpan.Name)
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
@@ -315,7 +305,6 @@ func TestIntegrationToolCallError(t *testing.T) {
 
 func TestIntegrationToolCallStructuredError(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	ctx := context.Background()
 
@@ -378,17 +367,8 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.True(t, result.IsError)
 
-	spans := tt.WaitForLLMObsSpans(t, 2)
-	require.Len(t, spans, 2)
-
-	var toolSpan *testtracer.LLMObsSpan
-	for i := range spans {
-		if spans[i].Name == "validation_tool" {
-			toolSpan = &spans[i]
-		}
-	}
-
-	require.NotNil(t, toolSpan, "tool span not found")
+	tracer.Flush()
+	toolSpan := tt.RequireSpan(t, "validation_tool")
 
 	assert.Equal(t, "validation_tool", toolSpan.Name)
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
@@ -424,21 +404,3 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 }
 
 // Shared helpers
-
-// testTracer creates a testtracer with LLMObs enabled for integration tests
-func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
-	defaultOpts := []testtracer.Option{
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("test-mcp-app"),
-			tracer.WithLogStartup(false),
-		),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
-	}
-	allOpts := append(defaultOpts, opts...)
-	tt := testtracer.Start(t, allOpts...)
-	t.Cleanup(tt.Stop)
-	return tt
-}
