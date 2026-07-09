@@ -490,7 +490,7 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 // allocates a lowercased copy of s.
 func cutPrefixFold(s, prefix string) (string, bool) {
 	if len(s) < len(prefix) {
-		return "", false
+		return "", false // required: keeps the s[:len(prefix)] slice below from panicking
 	}
 	if !strings.EqualFold(s[:len(prefix)], prefix) {
 		return "", false
