@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
@@ -437,4 +438,70 @@ func TestNewClient(t *testing.T) {
 		})
 	}
 
+}
+
+// startSpanLegacy reproduces the pre-WithTags/WithStartSpanConfig behavior of
+// client.startSpan (one tracer.Tag closure per static and dynamic tag,
+// rebuilt on every call), kept only to benchmark against the current
+// implementation.
+func startSpanLegacy(c *client, ctx context.Context, cmd command) (*tracer.Span, context.Context) {
+	opts := []tracer.StartSpanOption{
+		instrumentation.ServiceNameWithSource(c.cfg.serviceName, c.cfg.serviceSource),
+		tracer.ResourceName(cmd.statement),
+		tracer.SpanType(ext.SpanTypeValkey),
+		tracer.Tag(ext.Component, instrumentation.PackageValkeyIoValkeyGo),
+		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+		tracer.Tag(ext.DBSystem, ext.DBSystemValkey),
+		tracer.Tag(ext.TargetDB, c.dbIndex),
+	}
+	if c.cfg.rawCommand {
+		opts = append(opts, tracer.Tag(ext.ValkeyRawCommand, cmd.raw))
+	}
+	if c.host != "" {
+		opts = append(opts, tracer.Tag(ext.TargetHost, c.host))
+	}
+	if c.port != "" {
+		opts = append(opts, tracer.Tag(ext.TargetPort, c.port))
+	}
+	if c.user != "" {
+		opts = append(opts, tracer.Tag(ext.DBUser, c.user))
+	}
+	return tracer.StartSpanFromContext(ctx, "valkey.command", opts...)
+}
+
+// BenchmarkStartSpan compares startSpanLegacy against the current
+// client.startSpan, which merges static, build-once tags via
+// WithStartSpanConfig and per-call tags via a single WithTags map instead of
+// one tracer.Tag closure per tag.
+func BenchmarkStartSpan(b *testing.B) {
+	err := tracer.Start(tracer.WithTestDefaults(nil))
+	require.NoError(b, err)
+	defer tracer.Stop()
+
+	cfg := defaultConfig()
+	cfg.rawCommand = true
+	c := &client{
+		cfg:     cfg,
+		host:    "127.0.0.1",
+		port:    "6380",
+		dbIndex: "0",
+		user:    "default",
+	}
+	c.spanCfg = newSpanConfig(cfg, c.host, c.port, c.dbIndex, c.user)
+	cmd := command{statement: "SET", raw: "SET test_key test_value"}
+
+	b.Run("legacy_tag_per_call", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			span, _ := startSpanLegacy(c, context.Background(), cmd)
+			span.Finish()
+		}
+	})
+	b.Run("with_tags_and_static_base", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			span, _ := c.startSpan(context.Background(), cmd)
+			span.Finish()
+		}
+	})
 }

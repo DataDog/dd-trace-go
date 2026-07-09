@@ -1954,6 +1954,72 @@ func TestWithStartSpanConfig(t *testing.T) {
 	assert.Equal(tm.UnixNano(), s.start)
 }
 
+func TestWithTags(t *testing.T) {
+	var assert = assert.New(t)
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	s := tracer.StartSpan("test", WithTags(map[string]any{
+		"key1": "value1",
+		"key2": "value2",
+	}))
+	defer s.Finish()
+	v, _ := s.meta.Get("key1")
+	assert.Equal("value1", v)
+	v, _ = s.meta.Get("key2")
+	assert.Equal("value2", v)
+}
+
+func TestWithTagsMergesWithExistingTags(t *testing.T) {
+	var assert = assert.New(t)
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	s := tracer.StartSpan("test",
+		Tag("key1", "from_tag"),
+		WithTags(map[string]any{
+			"key1": "from_with_tags",
+			"key2": "value2",
+		}),
+	)
+	defer s.Finish()
+	v, _ := s.meta.Get("key1")
+	assert.Equal("from_with_tags", v)
+	v, _ = s.meta.Get("key2")
+	assert.Equal("value2", v)
+}
+
+func TestWithTagsBeforeWithStartSpanConfigDoesNotMutateBase(t *testing.T) {
+	var assert = assert.New(t)
+	base := NewStartSpanConfig(
+		Tag("static1", "s1"),
+		Tag("static2", "s2"),
+	)
+
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(err)
+
+	s := tracer.StartSpan("test",
+		WithTags(map[string]any{"dynamic": "d1"}),
+		WithStartSpanConfig(base),
+	)
+	defer s.Finish()
+	v, _ := s.meta.Get("dynamic")
+	assert.Equal("d1", v)
+	v, _ = s.meta.Get("static1")
+	assert.Equal("s1", v)
+	v, _ = s.meta.Get("static2")
+	assert.Equal("s2", v)
+
+	// base.Tags must remain untouched by the per-call dynamic tag.
+	assert.Len(base.Tags, 2)
+	_, ok := base.Tags["dynamic"]
+	assert.False(ok)
+}
+
 func TestNewFinishConfig(t *testing.T) {
 	var (
 		assert = assert.New(t)
@@ -2030,6 +2096,55 @@ func BenchmarkConfig(b *testing.B) {
 				WithStartSpanConfig(cfg),
 				Tag(ext.HTTPRoute, "/some/route/?"),
 			)
+		}
+	})
+}
+
+// BenchmarkTagsVsWithTags mimics a typical contrib call site (e.g. valkey,
+// mongo) that sets a handful of tags per span: some static across every call
+// on a given client (Component, SpanKind, DBSystem, TargetHost, TargetPort)
+// and one dynamic per-call value (ResourceName). It goes through a real
+// tracer.StartSpan call, like the contrib code does through
+// tracer.StartSpanFromContext, so option values escape to the heap the same
+// way they do in production instead of being optimized away by inlining.
+func BenchmarkTagsVsWithTags(b *testing.B) {
+	b.Run("scenario_Tag_per_call", func(b *testing.B) {
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(b, err)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			s := tracer.StartSpan("test",
+				Tag(ext.Component, "some-component"),
+				Tag(ext.SpanKind, ext.SpanKindClient),
+				Tag(ext.DBSystem, "some-db"),
+				Tag(ext.TargetHost, "localhost"),
+				Tag(ext.TargetPort, "1234"),
+				Tag(ext.ResourceName, "some-resource"),
+			)
+			s.Finish()
+		}
+	})
+	b.Run("scenario_WithTags_and_static_base", func(b *testing.B) {
+		tracer, err := newTracer()
+		defer tracer.Stop()
+		assert.NoError(b, err)
+		base := NewStartSpanConfig(
+			Tag(ext.Component, "some-component"),
+			Tag(ext.SpanKind, ext.SpanKindClient),
+			Tag(ext.DBSystem, "some-db"),
+			Tag(ext.TargetHost, "localhost"),
+			Tag(ext.TargetPort, "1234"),
+		)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			s := tracer.StartSpan("test",
+				WithTags(map[string]any{ext.ResourceName: "some-resource"}),
+				WithStartSpanConfig(base),
+			)
+			s.Finish()
 		}
 	})
 }

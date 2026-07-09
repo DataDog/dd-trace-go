@@ -1176,6 +1176,25 @@ func Tag(k string, v any) StartSpanOption {
 	}
 }
 
+// WithTags sets the given key/value pairs as tags on the started Span in a
+// single call. It is equivalent to calling Tag for every entry of tags, but
+// avoids allocating one closure per tag, which matters when a caller needs to
+// set several tags per span on a hot path (e.g. per-request contrib tags).
+//
+// When used together with WithStartSpanConfig, WithTags must appear first in
+// the option list so its map becomes the owned, per-call Tags map; calling it
+// after WithStartSpanConfig would instead merge into (and mutate) the shared
+// base config's Tags map.
+func WithTags(tags map[string]any) StartSpanOption {
+	return func(cfg *StartSpanConfig) {
+		if cfg.Tags == nil {
+			cfg.Tags = tags
+			return
+		}
+		maps.Copy(cfg.Tags, tags)
+	}
+}
+
 // ServiceName sets the given service name on the started span. For example "http.server".
 func ServiceName(name string) StartSpanOption {
 	return Tag(ext.ServiceName, name)
