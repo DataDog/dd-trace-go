@@ -36,6 +36,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	iof "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -293,7 +294,7 @@ func (s *Span) getAndRemoveMeta(key string) string {
 // It sets the applied rate metric, evaluates Knuth rate-based sampling,
 // applies rate limiting, and sets the appropriate sampling priority.
 // Returns false if span is already finished, true otherwise.
-func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.SamplerName, limiter *rateLimiter, now time.Time) bool {
+func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.SamplerName, limiter *samplingrules.RateLimiter, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -312,7 +313,7 @@ func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.Sampler
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
 		return true
 	}
-	sampled, limiterRate := limiter.allowOne(now)
+	sampled, limiterRate := limiter.AllowOne(now)
 	if sampled {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
 	} else {

@@ -379,8 +379,22 @@ Some benchmarks will run on any new PR commits, the results will be commented in
 
 #### Adding a new benchmark
 
-To add additional benchmarks that should run for every PR, go to `.gitlab-ci.yml`.
-Add the name of your benchmark to the `BENCHMARK_TARGETS` variable using pipe character separators.
+To add a benchmark that runs on every PR, edit [`.gitlab/benchmarks/micro/gitlab-ci.yml`](./.gitlab/benchmarks/micro/gitlab-ci.yml)
+and append your top-level benchmark function name (e.g. `BenchmarkMyThing`) to the `BENCHMARKS` variable of one of the
+`microbenchmarks-N` groups, using the pipe character (`|`) as the separator.
+
+A few things to keep in mind:
+
+- The value is a top-level benchmark function name (`func BenchmarkMyThing(b *testing.B)`), not a sub-benchmark. It is
+  matched with `go test -bench ^BenchmarkMyThing$`, so all of its `b.Run` sub-benchmarks run and are reported individually.
+- The benchmark must live in a package that isn't excluded by the runner (it skips `orchestrion`, `civisibility`,
+  `scripts`, and `tools`).
+- Keep at most `44 / CPUS_PER_BENCHMARK` entries per group (the groups run in parallel across the job's CPUs). Add your
+  entry to the smallest group, or create a new `microbenchmarks-N` group if they are full.
+- Only `microbenchmarks-1` and `microbenchmarks-2` feed the `pr-performance-gates` job, so a benchmark placed in another
+  group is measured and tracked but does not gate the PR.
+- A benchmark that is new relative to `main` has no baseline, so the runner skips its comparison on the introducing PR and
+  starts gating it from the next PR onward.
 
 ### Goroutine Leaks
 

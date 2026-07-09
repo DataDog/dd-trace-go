@@ -16,15 +16,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 )
 
 func TestIntentCapturePredicate(t *testing.T) {
 	// The predicate must gate per-request: when it returns false, no schema
 	// injection and the telemetry argument reaches the handler.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 	ctx := context.Background()
 
 	var enabled atomic.Bool
@@ -90,8 +89,7 @@ func TestIntentCapturePredicate(t *testing.T) {
 func TestIntentCapturePreservesUnknownSchemaKeywords(t *testing.T) {
 	// *jsonschema.Schema doesn't model additionalProperties/oneOf; the map-based
 	// injection must pass those through verbatim instead of dropping them.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ctx := context.Background()
 
@@ -138,8 +136,7 @@ func TestIntentCapturePreservesUnknownSchemaKeywords(t *testing.T) {
 func TestIntentCaptureSkipsUIOnlyTools(t *testing.T) {
 	// Tools whose _meta.ui.visibility omits "model" cannot be model-invoked, so
 	// telemetry injection should be skipped for them.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
@@ -194,7 +191,6 @@ func TestIntentCaptureSkipsUIOnlyTools(t *testing.T) {
 
 func TestIntentCapture(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	ctx := context.Background()
 
@@ -299,17 +295,8 @@ func TestIntentCapture(t *testing.T) {
 	// Received request also does not contain telemetry
 	assert.NotContains(t, receivedRequest.Params.Arguments, "telemetry")
 
-	spans := tt.WaitForLLMObsSpans(t, 2)
-	require.Len(t, spans, 2)
-
-	var toolSpan *testtracer.LLMObsSpan
-	for i := range spans {
-		if spans[i].Name == "calculator" {
-			toolSpan = &spans[i]
-		}
-	}
-
-	require.NotNil(t, toolSpan, "tool span not found")
+	tracer.Flush()
+	toolSpan := tt.RequireSpan(t, "calculator")
 
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 	assert.Equal(t, "calculator", toolSpan.Name)
