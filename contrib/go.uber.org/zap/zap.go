@@ -19,7 +19,7 @@
 //
 // When built with Orchestrion, call sites of (*zap.Logger) and (*zap.SugaredLogger)
 // log methods are automatically rewritten to inject trace fields whenever a
-// context.Context or any value with a Context() method (e.g. *http.Request) is in scope.
+// context.Context (or a value implementing it) or a *http.Request is in scope.
 package zap
 
 import (

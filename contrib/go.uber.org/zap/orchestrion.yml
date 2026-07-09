@@ -49,7 +49,10 @@ aspects:
             __ddzap: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
           template: |-
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
-            {{- $req := .Function.ArgumentThatImplements "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/internal/context.ContextProvider" -}}
+            {{- if eq $ctx "" -}}
+              {{- $ctx = .Function.ArgumentThatImplements "context.Context" -}}
+            {{- end -}}
+            {{- $req := .Function.ArgumentOfType "*net/http.Request" -}}
             {{- $ellipsis := .AST.Ellipsis -}}
             {{- if $ctx -}}
               {{ .AST.Fun.X }}.With(__ddzap.TraceFields({{ $ctx }})...).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
@@ -183,7 +186,10 @@ aspects:
             __ddzap: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
           template: |-
             {{- $ctx := .Function.ArgumentOfType "context.Context" -}}
-            {{- $req := .Function.ArgumentThatImplements "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/internal/context.ContextProvider" -}}
+            {{- if eq $ctx "" -}}
+              {{- $ctx = .Function.ArgumentThatImplements "context.Context" -}}
+            {{- end -}}
+            {{- $req := .Function.ArgumentOfType "*net/http.Request" -}}
             {{- $ellipsis := .AST.Ellipsis -}}
             {{- if $ctx -}}
               {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFields({{ $ctx }})...).Sugar().{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})

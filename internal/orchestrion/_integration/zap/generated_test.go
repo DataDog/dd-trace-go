@@ -17,10 +17,6 @@ func TestChildLogger(t *testing.T) {
 	harness.Run(t, new(TestCaseChildLogger))
 }
 
-func TestCustomContext(t *testing.T) {
-	harness.Run(t, new(TestCaseCustomContext))
-}
-
 func TestGlobalLogger(t *testing.T) {
 	harness.Run(t, new(TestCaseGlobalLogger))
 }
