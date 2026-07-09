@@ -84,6 +84,9 @@ func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
 	if trID := s.context.trace.propagatingTag(keyPropagatedLLMObsTraceID); trID != "" {
 		propagatedLLMObs.TraceID = trID
 	}
+	if sessionID := s.context.trace.propagatingTag(keyPropagatedLLMObsSessionID); sessionID != "" {
+		propagatedLLMObs.SessionID = sessionID
+	}
 	return propagatedLLMObs
 }
 
