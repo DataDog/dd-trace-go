@@ -833,6 +833,19 @@ func TestProductConflict(t *testing.T) {
 		assert.Equal(t, "my-svc", cfg.ServiceName(),
 			"same value from different products should be allowed")
 	})
+
+	t.Run("site first-in-wins", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+
+		cfg.SetSite("tracer.datadoghq.com", OriginCode, ProductTracer)
+		assert.Equal(t, "tracer.datadoghq.com", cfg.Site())
+
+		cfg.SetSite("profiler.datadoghq.com", OriginCode, ProductProfiler)
+		assert.Equal(t, "tracer.datadoghq.com", cfg.Site(), "first-in-wins: profiler should be rejected")
+	})
 }
 
 func TestAdditiveConfigs(t *testing.T) {
