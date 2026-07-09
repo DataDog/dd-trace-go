@@ -8,13 +8,17 @@ package otelc
 import (
 	"testing"
 
+	"github.com/DataDog/orchestrion/runtime/built"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
 // TestOtelcPresent proves the otelc build+weave+test pipeline works
 // end-to-end: it only passes when this test binary was actually compiled
-// through the otelc toolchain
 func TestOtelcPresent(t *testing.T) {
+	if built.WithOrchestrion {
+		t.Skip("this package is otelc-specific; built with orchestrion instead")
+	}
 	if !otelc.Enabled() {
 		t.Fatal("this test was not built with otelc enabled")
 	}
