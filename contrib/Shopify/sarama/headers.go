@@ -22,8 +22,6 @@ var _ interface {
 	tracer.TextMapWriter
 } = (*ProducerMessageCarrier)(nil)
 
-// Guard the DSM single-key fast path; if Get drifts, extraction silently falls
-// back to the slow ForeachKey path.
 var _ datastreams.TextMapReaderByKey = (*ProducerMessageCarrier)(nil)
 
 // ForeachKey iterates over every header.

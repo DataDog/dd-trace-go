@@ -20,8 +20,6 @@ var _ interface {
 	tracer.TextMapWriter
 } = (*MessageCarrier)(nil)
 
-// Guard the DSM single-key fast path; if Get drifts, extraction silently falls
-// back to the slow ForeachKey path.
 var _ datastreams.TextMapReaderByKey = (*MessageCarrier)(nil)
 
 // ForeachKey conforms to the TextMapReader interface.
