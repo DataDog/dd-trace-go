@@ -1160,6 +1160,8 @@ func sanitizeW3C(s string, lut *[128]uint8) string {
 }
 
 const (
+	asciiUpperA = 65
+	asciiUpperF = 70
 	asciiLowerA = 97
 	asciiLowerF = 102
 	asciiZero   = 48
@@ -1183,6 +1185,26 @@ func isValidID(id string) bool {
 		}
 	}
 
+	return true
+}
+
+// isValidIDCaseInsensitive is like isValidID but also accepts uppercase hex
+// digits (equivalent to the regexp ^[0-9a-fA-F]+$). It is used by the W3C
+// traceparent path, which no longer lowercases the header before validation;
+// isValidID stays strict (lowercase-only) for the Datadog propagator's
+// _dd.p.tid check, preserving that path's behavior.
+func isValidIDCaseInsensitive(id string) bool {
+	if len(id) == 0 {
+		return false
+	}
+	for _, c := range id {
+		ascii := int(c)
+		if (ascii < asciiZero || ascii > asciiNine) &&
+			(ascii < asciiUpperA || ascii > asciiUpperF) &&
+			(ascii < asciiLowerA || ascii > asciiLowerF) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -1310,7 +1332,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 // hex-encoded digits into a 64-bit number.
 func parseTraceparent(ctx *SpanContext, header string) error {
 	nonWordCutset := "_-\t \n"
-	header = strings.ToLower(strings.Trim(header, "\t -"))
+	header = strings.Trim(header, "\t -")
 	headerLen := len(header)
 	if headerLen == 0 {
 		return ErrSpanContextNotFound
@@ -1342,7 +1364,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 		return ErrSpanContextCorrupted
 	}
 	// checking that the entire TraceID is a valid hex string
-	if !isValidID(fullTraceID) {
+	if !isValidIDCaseInsensitive(fullTraceID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.trace != nil {
@@ -1357,7 +1379,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 	if len(spanID) != 16 {
 		return ErrSpanContextCorrupted
 	}
-	if !isValidID(spanID) {
+	if !isValidIDCaseInsensitive(spanID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
