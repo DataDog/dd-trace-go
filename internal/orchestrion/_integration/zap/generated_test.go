@@ -13,24 +13,24 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
-func TestNewLogger(t *testing.T) {
-	harness.Run(t, new(TestCaseNewLogger))
+func TestChildLogger(t *testing.T) {
+	harness.Run(t, new(TestCaseChildLogger))
+}
+
+func TestCustomContext(t *testing.T) {
+	harness.Run(t, new(TestCaseCustomContext))
 }
 
 func TestGlobalLogger(t *testing.T) {
 	harness.Run(t, new(TestCaseGlobalLogger))
 }
 
-func TestSugaredLogger(t *testing.T) {
-	harness.Run(t, new(TestCaseSugaredLogger))
-}
-
-func TestChildLogger(t *testing.T) {
-	harness.Run(t, new(TestCaseChildLogger))
-}
-
 func TestGoroutine(t *testing.T) {
 	harness.Run(t, new(TestCaseGoroutine))
+}
+
+func TestNewLogger(t *testing.T) {
+	harness.Run(t, new(TestCaseNewLogger))
 }
 
 func TestNoContext(t *testing.T) {
@@ -39,4 +39,16 @@ func TestNoContext(t *testing.T) {
 
 func TestRequestContext(t *testing.T) {
 	harness.Run(t, new(TestCaseRequestContext))
+}
+
+func TestSugaredLogger(t *testing.T) {
+	harness.Run(t, new(TestCaseSugaredLogger))
+}
+
+func TestValueReceiver(t *testing.T) {
+	harness.Run(t, new(TestCaseValueReceiver))
+}
+
+func TestVariadicForward(t *testing.T) {
+	harness.Run(t, new(TestCaseVariadicForward))
 }
