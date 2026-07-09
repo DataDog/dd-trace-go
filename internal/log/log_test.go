@@ -258,6 +258,28 @@ func BenchmarkError(b *testing.B) {
 	}
 }
 
+// BenchmarkErrorWithTelemetrySink measures the added cost of forwarding to a
+// telemetry sink on the Error hot path (mirrors what internal/telemetry/log's
+// init() installs). Compare against BenchmarkError to size the sink overhead.
+func BenchmarkErrorWithTelemetrySink(b *testing.B) {
+	orig := errTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			errTelemetrySink.Store(orig)
+		} else {
+			errTelemetrySink.Store(nil)
+		}
+	}()
+
+	SetErrorTelemetrySink(func(_ string, _ []any) {})
+
+	Error("k %s", "a") // warm up cache
+	b.ReportAllocs()
+	for b.Loop() {
+		Error("k %s", "a")
+	}
+}
+
 func hasMsg(lvl, m string, lines []string) bool {
 	for _, line := range lines {
 		if strings.HasPrefix(line, msg(lvl, m)) {
@@ -346,7 +368,7 @@ func TestErrorSinkNotCalledAfterRateLimit(t *testing.T) {
 	errmu.Unlock()
 
 	// Exceed the defaultErrorLimit.
-	key := "rate-limit-test: %d"
+	const key = "rate-limit-test: %d"
 	errmu.Lock()
 	erragg[key] = &errorReport{count: defaultErrorLimit + 1}
 	errmu.Unlock()
@@ -378,6 +400,55 @@ func TestErrorSinkReceivesErrorArg(t *testing.T) {
 
 	assert.Len(t, gotArgs, 1)
 	assert.Equal(t, sentinel, gotArgs[0])
+}
+
+func TestSetWarnTelemetrySink(t *testing.T) {
+	orig := warnTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			warnTelemetrySink.Store(orig)
+		} else {
+			warnTelemetrySink.Store(nil)
+		}
+	}()
+
+	var sinkCalls []string
+	SetWarnTelemetrySink(func(format string, _ []any) { sinkCalls = append(sinkCalls, format) })
+	defer func() { warnTelemetrySink.Store(nil) }()
+
+	Warn("template one: %s", "hello")
+	Warn("template two: %d", 42)
+
+	assert.Equal(t, []string{"template one: %s", "template two: %d"}, sinkCalls,
+		"every Warn call reaches the sink; the sink itself decides what to forward")
+}
+
+func TestWarnLocalOutputUnchangedWithSink(t *testing.T) {
+	defer func(old Logger) { UseLogger(old) }(logger)
+	tp := &testLogger{}
+	UseLogger(tp)
+
+	orig := warnTelemetrySink.Swap(nil)
+	defer func() {
+		if orig != nil {
+			warnTelemetrySink.Store(orig)
+		} else {
+			warnTelemetrySink.Store(nil)
+		}
+	}()
+	SetWarnTelemetrySink(func(_ string, _ []any) {})
+	defer func() { warnTelemetrySink.Store(nil) }()
+
+	Warn("local warn output must still appear: %d", 7)
+
+	found := false
+	for _, l := range tp.Lines() {
+		if strings.Contains(l, "local warn output must still appear") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "installing a warn sink must not affect local log output")
 }
 
 func TestErrorLocalOutputUnchanged(t *testing.T) {

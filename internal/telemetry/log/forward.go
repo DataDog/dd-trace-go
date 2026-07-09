@@ -14,6 +14,7 @@ import (
 
 func init() {
 	internallog.SetErrorTelemetrySink(forwardError)
+	internallog.SetWarnTelemetrySink(forwardWarn)
 }
 
 // forwardError is the telemetry sink installed on internal/log.Error.
@@ -31,12 +32,32 @@ func forwardError(format string, args []any) {
 	}
 
 	record := telemetry.NewRecord(level, format)
+	attachFirstError(&record, args)
+	sendLog(record, telemetry.WithStacktrace())
+}
+
+// forwardWarn is the telemetry sink installed on internal/log.Warn. Unlike
+// forwardError, forwarding is opt-in per template: only formats explicitly
+// marked policyReport in the policy table are forwarded — an absent or
+// excluded/downgraded entry means "stay local-only". It must not call
+// log.Warn or log.Error itself.
+func forwardWarn(format string, args []any) {
+	if !warnOptedIn(format) {
+		return
+	}
+
+	record := telemetry.NewRecord(telemetry.LogWarn, format)
+	attachFirstError(&record, args)
+	sendLog(record, telemetry.WithStacktrace())
+}
+
+// attachFirstError attaches the first error argument found in args, scrubbed
+// through NewSafeError. Other argument types are never attached (PII risk).
+func attachFirstError(record *telemetry.Record, args []any) {
 	for _, arg := range args {
 		if err, ok := arg.(error); ok {
 			record.AddAttrs(slog.Any("error", NewSafeError(err)))
-			break // only attach the first error argument
+			return // only attach the first error argument
 		}
 	}
-
-	sendLog(record, telemetry.WithStacktrace())
 }

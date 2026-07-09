@@ -88,6 +88,13 @@ log.Error("operation %s failed: %v", op, err)                 // ✅
 
 Replace ad-hoc panic logging with `telemetrylog.ReportPanic`.
 
+> **Double-report warning:** if the recovered value is an `error`, a bare
+> `log.Error("...: %v", r)` is *also* auto-forwarded by the sink (it
+> type-switches `r` to `error` like any other arg). Keeping both the local
+> log and `ReportPanic` sends two telemetry events for one panic. Add the
+> local log's format string to `policyExclude` in `policy.go` so telemetry
+> reporting happens exactly once, via `ReportPanic`.
+
 ```go
 // Before (common pattern)
 if r := recover(); r != nil {
@@ -101,6 +108,12 @@ if r := recover(); r != nil {
     log.Error("unexpected panic: %v", r)          // keep local log for visibility
     telemetrylog.ReportPanic(r, "unexpected panic in <subsystem>")
 }
+```
+
+```go
+// policy.go — required alongside the change above, so the auto-forward sink
+// does not also report the same panic from the local log.Error call:
+"unexpected panic: %v": policyExclude,
 ```
 
 `ReportPanic` rules:
@@ -153,6 +166,14 @@ The policy table lives in `internal/telemetry/log/policy.go`. Prompt 2 must upda
 
 Add new entries at the bottom of the appropriate section comment.
 
+**`log.Warn` templates are opt-in, not default-report.** Unlike `log.Error`, a
+`log.Warn` call is only forwarded to telemetry if its format string is
+explicitly present in `policyTable` mapped to `policyReport` — an absent
+entry means "stay local-only", the opposite default from Error. To promote
+a specific warning to Error Tracking visibility, add `"<template>": policyReport`
+to `policy.go`; do not do this broadly, since Warn is the deliberately noisy
+tier (propagation/parse warnings live here).
+
 ---
 
 ## 5. What Prompt 2 must NOT do
@@ -163,6 +184,7 @@ Add new entries at the bottom of the appropriate section comment.
 - Do not pass raw `error` values to `slog.Any` without `NewSafeError`.
 - Do not add `log.Error` calls inside the forwarding/helper code itself (re-entrancy).
 - Do not bypass the policy table — if a template should be silenced, add it to `policyTable`.
+- Do not leave a `log.Error` call and a `ReportError`/`ReportPanic` call covering the same occurrence both reporting to telemetry — pick one path, or exclude the `log.Error` template (see Case C).
 
 ---
 

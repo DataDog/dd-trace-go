@@ -86,9 +86,15 @@ var DefaultFuncs = []FuncSpec{
 //
 //	func Error(message string, ...) { defaultLogger.Load().Error(message, ...) }
 //
-// Flagging that would be a false positive; enforcement happens at call sites.
+// instrumentation is skipped for the same reason: instrumentation.Logger's
+// Debug/Info/Warn/Error methods are thin pass-throughs that forward whatever
+// message their caller supplies to log.Debug/Warn/Error — the constant-message
+// contract is enforced at the call sites of instrumentation.Logger, not here.
+//
+// Flagging either would be a false positive; enforcement happens at call sites.
 var DefaultSkipPkgs = []string{
 	telemetryLogPkg,
+	"github.com/DataDog/dd-trace-go/v2/instrumentation",
 }
 
 // FuncSpec identifies a function and which argument index holds the constant message.

@@ -31,15 +31,33 @@ const (
 var policyTable = map[string]policyAction{
 	// ── Agent / network connectivity ────────────────────────────────────────
 	// These reflect user environment issues, not SDK bugs.
-	"failure sending traces (attempt %d of %d): %v":          policyExclude,
-	"lost %d traces: %v":                                      policyExclude,
-	"Error sending stats payload: %s":                         policyExclude,
-	"OTLP: failure sending traces (attempt %d of %d): %v":    policyExclude,
-	"OTLP: lost %d spans: %v":                                 policyExclude,
-	"logsWriter: failure sending logs data data: %s":          policyExclude,
-	"coverageWriter: failure sending coverage data: %s":       policyExclude,
-	"remoteconfig: http request error: could not read the response body: %s":        policyExclude,
-	"remoteconfig: http request error: could not parse the json response body: %s":  policyExclude,
+	"failure sending traces (attempt %d of %d): %v":                                policyExclude,
+	"lost %d traces: %v":                                                           policyExclude,
+	"Error sending stats payload: %s":                                              policyExclude,
+	"OTLP: failure sending traces (attempt %d of %d): %v":                          policyExclude,
+	"OTLP: lost %d spans: %v":                                                      policyExclude,
+	"logsWriter: failure sending logs data data: %s":                               policyExclude,
+	"coverageWriter: failure sending coverage data: %s":                            policyExclude,
+	"remoteconfig: http request error: could not read the response body: %s":       policyExclude,
+	"remoteconfig: http request error: could not parse the json response body: %s": policyExclude,
+
+	// ── W3C traceparent / context-propagation parse failures ────────────────
+	// Malformed incoming headers are caused by upstream services, not this SDK.
+	"failed to parse trace source tag: %s":           policyExclude,
+	"failed to convert decision maker to uint32: %s": policyExclude,
+
+	// ── Sampler-rule errors ──────────────────────────────────────────────────
+	"Error marshalling SamplingRule to json: %s": policyExclude,
+
+	// ── Telemetry pipeline self-reference ────────────────────────────────────
+	// These originate from the telemetry writer's own payload-encoding path.
+	// Forwarding them back through the same telemetry pipeline that just
+	// failed to encode is circular and adds no signal: if the pipeline is
+	// broken, the report likely won't arrive anyway; local log output already
+	// captures it for debugging. Excluded to avoid a self-referential
+	// report-about-the-reporter loop.
+	"telemetry/writer: panic while encoding payload!":    policyExclude,
+	"telemetry/writer: panic while encoding payload: %v": policyExclude,
 
 	// ── User misconfiguration ────────────────────────────────────────────────
 	"config: usage of a unlisted environment variable: %s": policyDowngrade,
@@ -52,4 +70,12 @@ func lookupPolicy(format string) policyAction {
 		return action
 	}
 	return policyReport
+}
+
+// warnOptedIn reports whether a log.Warn format string has been explicitly
+// opted in to telemetry forwarding. Unlike lookupPolicy, absence from the
+// table means "not forwarded" — Warn is the noisy tier and defaults off.
+func warnOptedIn(format string) bool {
+	action, ok := policyTable[format]
+	return ok && action == policyReport
 }

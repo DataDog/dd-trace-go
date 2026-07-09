@@ -57,6 +57,7 @@ Our CI pipeline includes several automated checks:
 - **Generate Check**: Ensures generated code is up-to-date
 - **Module Check**: Validates Go module consistency using `make fix-modules`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
+- **Error-logging Lint**: Runs `make lint/errlog`, the `constantlogmsg` analyzer, which rejects non-constant message arguments on `log.Error`, `log.Warn`, and the `telemetrylog.ReportError`/`ReportPanic` helpers. Non-constant messages break telemetry deduplication and risk leaking PII to Error Tracking. Run locally with `make lint/errlog`.
 - **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
 
 #### Unit and Integration Tests

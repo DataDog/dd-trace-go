@@ -137,3 +137,30 @@ func TestReportPanic_ExcludedMessage(t *testing.T) {
 	ReportPanic(nil, "test-excluded-panic-msg")
 	assert.False(t, called)
 }
+
+// BenchmarkReportError measures the cost of the explicit ReportError helper,
+// used at swallowed-error call sites migrated by Prompt 2.
+func BenchmarkReportError(b *testing.B) {
+	orig := sendLog
+	defer func() { sendLog = orig }()
+	sendLog = func(telemetry.Record, ...telemetry.LogOption) {}
+
+	sentinel := errors.New("benchmark sentinel")
+	b.ReportAllocs()
+	for b.Loop() {
+		ReportError("benchmark: reported error", sentinel)
+	}
+}
+
+// BenchmarkReportPanic measures the cost of the recover()-site helper.
+func BenchmarkReportPanic(b *testing.B) {
+	orig := sendLog
+	defer func() { sendLog = orig }()
+	sendLog = func(telemetry.Record, ...telemetry.LogOption) {}
+
+	panicErr := errors.New("benchmark panic")
+	b.ReportAllocs()
+	for b.Loop() {
+		ReportPanic(panicErr, "benchmark: recovered panic")
+	}
+}

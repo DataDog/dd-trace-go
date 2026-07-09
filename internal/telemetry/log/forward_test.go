@@ -103,3 +103,61 @@ func TestForwardError_StacktraceOption(t *testing.T) {
 
 	assert.Len(t, capturedOpts, 1, "exactly one option (WithStacktrace) must be passed")
 }
+
+func TestForwardWarn_DefaultNotForwarded(t *testing.T) {
+	called := false
+
+	orig := sendLog
+	defer func() { sendLog = orig }()
+	sendLog = func(telemetry.Record, ...telemetry.LogOption) { called = true }
+
+	forwardWarn("some warning nobody opted in: %s", []any{"detail"})
+
+	assert.False(t, called, "Warn templates are not forwarded unless explicitly opted in")
+}
+
+func TestForwardWarn_ExplicitlyOptedIn(t *testing.T) {
+	var captured telemetry.Record
+
+	orig := sendLog
+	defer func() { sendLog = orig }()
+	sendLog = func(r telemetry.Record, _ ...telemetry.LogOption) { captured = r }
+
+	const template = "test-warn-opt-in: %s"
+	policyTable[template] = policyReport
+	defer delete(policyTable, template)
+
+	forwardWarn(template, []any{"detail"})
+
+	assert.Equal(t, template, captured.Message)
+	assert.Equal(t, slog.LevelWarn, captured.Level)
+}
+
+// BenchmarkForwardError measures the cost of the sink call installed on
+// internal/log.Error's hot path: policy lookup, error type-switch, and
+// building the telemetry record. sendLog is stubbed out so this isolates
+// forwardError's own overhead from the telemetry client/backend.
+func BenchmarkForwardError(b *testing.B) {
+	orig := sendLog
+	defer func() { sendLog = orig }()
+	sendLog = func(telemetry.Record, ...telemetry.LogOption) {}
+
+	sentinel := errors.New("benchmark sentinel")
+	b.ReportAllocs()
+	for b.Loop() {
+		forwardError("benchmark failure: %s", []any{sentinel})
+	}
+}
+
+// BenchmarkForwardError_Excluded measures the (cheap) early-return path for
+// templates classified as policyExclude.
+func BenchmarkForwardError_Excluded(b *testing.B) {
+	orig := sendLog
+	defer func() { sendLog = orig }()
+	sendLog = func(telemetry.Record, ...telemetry.LogOption) {}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		forwardError("failure sending traces (attempt %d of %d): %v", []any{1, 3, errors.New("timeout")})
+	}
+}
