@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
 // TestCasePreBootstrap is an optional interface for test cases that need to
@@ -58,7 +59,7 @@ type TestCase interface {
 
 func Run(t *testing.T, tc TestCase) {
 	t.Helper()
-	require.True(t, built.WithOrchestrion, "this test suite must be run with orchestrion enabled")
+	require.True(t, built.WithOrchestrion || otelc.Enabled(), "this test suite must be run with either orchestrion or otelc enabled")
 
 	ctx := context.Background()
 	if deadline, ok := t.Deadline(); ok {

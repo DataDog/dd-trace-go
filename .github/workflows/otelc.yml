@@ -223,7 +223,7 @@ jobs:
           # Only run OTelc tests for integrations that have an otelc.yaml file.
           # TODO: remove this once all integrations are supported.
           CONTRIB_DIR="${{ github.workspace }}/dd-trace-go/contrib"
-          PACKAGE_NAMES=""
+          PACKAGE_NAMES="github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/otelc"
           while IFS=$'\t' read -r pkg dir; do
             rel="${dir#"$PWD"/}"
             integration="${rel%%/*}"
