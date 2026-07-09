@@ -670,7 +670,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 			unmarshalPropagatingTags(&ctx, v, p.cfg.MaxTagsHeaderLen)
 		default:
 			if after, ok := cutPrefixFold(k, p.cfg.BaggagePrefix); ok {
-				ctx.setBaggageItem(strings.ToLower(after), v)
+				ctx.setOTBaggageItem(after, v)
 			}
 		}
 		return nil
@@ -1293,7 +1293,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 			stateHeader = v
 		default:
 			if after, ok := cutPrefixFold(k, DefaultBaggageHeaderPrefix); ok {
-				ctx.setBaggageItem(strings.ToLower(after), v)
+				ctx.setOTBaggageItem(after, v)
 			}
 		}
 		return nil

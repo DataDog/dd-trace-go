@@ -41,6 +41,13 @@ type inferredSpanCreatedCtxKey struct{}
 
 type FinishSpanFunc = func(status int, errorFn func(int) bool, opts ...tracer.FinishOption)
 
+// requestSpanTagsSizeHint pre-sizes the tag map built for every request span.
+// SpanType, HTTPMethod, HTTPURL, HTTPUserAgent, and "_dd.measured" are always
+// set (5), "http.host" is set when present (6), and AppSec header tags, IP
+// tags, and baggage tags add a variable amount on top — this only needs to
+// cover the common case to avoid the first few map growths, not be exact.
+const requestSpanTagsSizeHint = 8
+
 // StartRequestSpan starts a server-side HTTP request span with the standard list of HTTP request span tags
 // (http.method, http.url, http.useragent). Any further span start option can be added with opts.
 func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.Span, context.Context, FinishSpanFunc) {
@@ -87,7 +94,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 	nopts = append(nopts,
 		func(ssCfg *tracer.StartSpanConfig) {
 			if ssCfg.Tags == nil {
-				ssCfg.Tags = make(map[string]any, 8)
+				ssCfg.Tags = make(map[string]any, requestSpanTagsSizeHint)
 			}
 			ssCfg.Tags[ext.SpanType] = ext.SpanTypeWeb
 			ssCfg.Tags[ext.HTTPMethod] = r.Method
