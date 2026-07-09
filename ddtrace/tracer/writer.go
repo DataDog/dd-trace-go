@@ -36,6 +36,10 @@ type traceWriter interface {
 	stop()
 }
 
+// flushWaiter is implemented by trace writers whose flush() completes
+// asynchronously; wait() blocks until in-flight sends finish.
+type flushWaiter interface{ wait() }
+
 type agentTraceWriter struct {
 	// config holds the tracer configuration
 	config *config
@@ -99,6 +103,8 @@ func (h *agentTraceWriter) stop() {
 	h.flush()
 	h.wg.Wait()
 }
+
+func (h *agentTraceWriter) wait() { h.wg.Wait() }
 
 // newPayload returns a new payload based on the trace protocol. hint, when
 // positive, pre-sizes the buffer to the previous flush cycle's actual encoded

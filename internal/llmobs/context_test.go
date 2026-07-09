@@ -23,7 +23,7 @@ func TestContext(t *testing.T) {
 			assert.Nil(t, span)
 		})
 		t.Run("with-active-span", func(t *testing.T) {
-			_, ll := testTracer(t)
+			_, _, ll := testTracer(t)
 
 			// Create a span and get its context
 			originalSpan, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindLLM, "test-span", llmobs.StartSpanConfig{})
@@ -36,7 +36,7 @@ func TestContext(t *testing.T) {
 			assert.Equal(t, originalSpan, retrievedSpan)
 		})
 		t.Run("start-span-creates-context", func(t *testing.T) {
-			_, ll := testTracer(t)
+			_, _, ll := testTracer(t)
 
 			// StartSpan should automatically add the span to the returned context
 			span, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "agent-span", llmobs.StartSpanConfig{})
@@ -76,7 +76,7 @@ func TestContext(t *testing.T) {
 
 	})
 	t.Run("both-active-and-propagated-span-context", func(t *testing.T) {
-		_, ll := testTracer(t)
+		_, _, ll := testTracer(t)
 
 		// Create propagated span first
 		propagatedSpan := &llmobs.PropagatedLLMSpan{
