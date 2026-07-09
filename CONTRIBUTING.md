@@ -70,6 +70,10 @@ Our CI pipeline includes several automated checks:
 
 - **Code Generation**: Ensures all generated code is current and consistent
 
+#### Config Audit Workflow
+
+- **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
+
 ### CI Troubleshooting
 
 Sometimes a pull request's checks will show failures that aren't related to its changes. When this happens, you can try the following steps:
@@ -229,6 +233,10 @@ The script provides:
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
 It will help tremendously in avoiding comments and speeding up the PR process.
 
+### Comments
+
+Add comments only for non-obvious intent, trade-offs, or constraints the code can't carry. Don't narrate what the diff already shows.
+
 ### Local Development
 
 For local development, use make targets as the primary interface:
@@ -371,8 +379,22 @@ Some benchmarks will run on any new PR commits, the results will be commented in
 
 #### Adding a new benchmark
 
-To add additional benchmarks that should run for every PR, go to `.gitlab-ci.yml`.
-Add the name of your benchmark to the `BENCHMARK_TARGETS` variable using pipe character separators.
+To add a benchmark that runs on every PR, edit [`.gitlab/benchmarks/micro/gitlab-ci.yml`](./.gitlab/benchmarks/micro/gitlab-ci.yml)
+and append your top-level benchmark function name (e.g. `BenchmarkMyThing`) to the `BENCHMARKS` variable of one of the
+`microbenchmarks-N` groups, using the pipe character (`|`) as the separator.
+
+A few things to keep in mind:
+
+- The value is a top-level benchmark function name (`func BenchmarkMyThing(b *testing.B)`), not a sub-benchmark. It is
+  matched with `go test -bench ^BenchmarkMyThing$`, so all of its `b.Run` sub-benchmarks run and are reported individually.
+- The benchmark must live in a package that isn't excluded by the runner (it skips `orchestrion`, `civisibility`,
+  `scripts`, and `tools`).
+- Keep at most `44 / CPUS_PER_BENCHMARK` entries per group (the groups run in parallel across the job's CPUs). Add your
+  entry to the smallest group, or create a new `microbenchmarks-N` group if they are full.
+- Only `microbenchmarks-1` and `microbenchmarks-2` feed the `pr-performance-gates` job, so a benchmark placed in another
+  group is measured and tracked but does not gate the PR.
+- A benchmark that is new relative to `main` has no baseline, so the runner skips its comparison on the introducing PR and
+  starts gating it from the next PR onward.
 
 ### Goroutine Leaks
 

@@ -25,11 +25,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -78,7 +80,7 @@ func testStatsd(t *testing.T, cfg *config, addr string) {
 	client, err := newStatsdClient(cfg)
 	require.NoError(t, err)
 	defer client.Close()
-	require.Equal(t, addr, cfg.dogstatsdAddr)
+	require.Equal(t, addr, cfg.internalConfig.DogstatsdAddr())
 	_, err = net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
 
@@ -102,7 +104,7 @@ func TestStatsdUDPConnect(t *testing.T) {
 	client, err := newStatsdClient(cfg)
 	require.NoError(t, err)
 	defer client.Close()
-	require.Equal(t, addr, cfg.dogstatsdAddr)
+	require.Equal(t, addr, cfg.internalConfig.DogstatsdAddr())
 	udpaddr, err := net.ResolveUDPAddr("udp", addr)
 	require.NoError(t, err)
 	conn, err := net.ListenUDP("udp", udpaddr)
@@ -150,8 +152,8 @@ func TestAutoDetectStatsd(t *testing.T) {
 		}
 		addr := filepath.Join(dir, "dsd.socket")
 
-		defer func(old string) { defaultSocketDSD = old }(defaultSocketDSD)
-		defaultSocketDSD = addr
+		defer func(old string) { internalconfig.DefaultSocketDSDPath = old }(internalconfig.DefaultSocketDSDPath)
+		internalconfig.DefaultSocketDSDPath = addr
 
 		uaddr, err := net.ResolveUnixAddr("unixgram", addr)
 		if err != nil {
@@ -169,7 +171,7 @@ func TestAutoDetectStatsd(t *testing.T) {
 		statsd, err := newStatsdClient(cfg)
 		require.NoError(t, err)
 		defer statsd.Close()
-		require.Equal(t, cfg.dogstatsdAddr, "unix://"+addr)
+		require.Equal(t, cfg.internalConfig.DogstatsdAddr(), "unix://"+addr)
 		// Ensure globalconfig also gets the auto-detected UDS address
 		require.Equal(t, "unix://"+addr, globalconfig.DogstatsdAddr())
 		statsd.Count("name", 1, []string{"tag"}, 1)
@@ -216,6 +218,57 @@ func TestAutoDetectStatsd(t *testing.T) {
 			assert.NoError(t, err)
 			testStatsd(t, cfg, net.JoinHostPort(defaultHostname, "8999"))
 		})
+	})
+}
+
+func TestWithStatsdClient(t *testing.T) {
+	// Create a real *statsd.ClientDirect — it satisfies both statsd.ClientInterface
+	// and internal.StatsdClient, which is the contract WithStatsdClient documents.
+	client, err := statsd.NewDirect("localhost:8125", statsd.WithMaxMessagesPerPayload(40))
+	require.NoError(t, err)
+	defer client.Close()
+
+	cfg, err := newTestConfig(WithStatsdClient(client))
+	require.NoError(t, err)
+
+	// The injected client should be used directly instead of creating a new one.
+	got, err := newStatsdClient(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, client, got, "WithStatsdClient: tracer should use the provided client")
+}
+
+func TestInternalMetricsDisabled(t *testing.T) {
+	isNoop := func(c internal.StatsdClient) bool {
+		_, ok := c.(*statsd.NoOpClientDirect)
+		return ok
+	}
+
+	t.Run("default non-Lambda: real client", func(t *testing.T) {
+		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.False(t, isNoop(tr.statsd), "statsd should be real by default, got %T", tr.statsd)
+	})
+
+	t.Run("Lambda without explicit config: no-op client", func(t *testing.T) {
+		// In Lambda the core config layer defaults internal metrics to off so the
+		// tracer emits no statsd traffic by default.
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.True(t, isNoop(tr.statsd), "statsd should be a no-op in Lambda by default, got %T", tr.statsd)
+	})
+
+	t.Run("Lambda with explicit opt-in: real client", func(t *testing.T) {
+		// If the user explicitly enables internal metrics in Lambda, the real
+		// client is used and their setting is reported with origin env_var.
+		t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "my-function")
+		t.Setenv("DD_TRACE_INTERNAL_METRICS_ENABLED", "true")
+		tr, err := newUnstartedTracer(WithAgentTimeout(2))
+		require.NoError(t, err)
+		defer tr.statsd.Close()
+		require.False(t, isNoop(tr.statsd), "statsd should be real when user opts in, got %T", tr.statsd)
 	})
 }
 
@@ -335,7 +388,7 @@ func TestAgentIntegration(t *testing.T) {
 		defer clearIntegrationsForTests()
 
 		cfg.loadContribIntegrations(nil)
-		assert.Equal(t, 57, len(cfg.integrations))
+		assert.Equal(t, 58, len(cfg.integrations))
 		for integrationName, v := range cfg.integrations {
 			assert.False(t, v.Instrumented, "integrationName=%s", integrationName)
 		}
@@ -408,7 +461,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert.Equal(float64(1), c.sampler.Rate())
 		assert.Regexp(`tracer\.test(\.exe)?`, c.internalConfig.ServiceName())
 		assert.Equal(&url.URL{Scheme: "http", Host: "localhost:8126"}, c.internalConfig.RawAgentURL())
-		assert.Equal("localhost:8125", c.dogstatsdAddr)
+		assert.Equal("localhost:8125", c.internalConfig.DogstatsdAddr())
 		assert.Nil(nil, c.httpClient)
 		x := *c.httpClient
 		y := *internal.DefaultHTTPClient(defaultHTTPTimeout, false)
@@ -532,7 +585,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
@@ -542,7 +595,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
@@ -552,7 +605,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:8125", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:8125", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:8125", globalconfig.DogstatsdAddr())
 		})
 
@@ -562,8 +615,30 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("env-url", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_URL", "10.1.0.12:4002")
+			tracer, err := newTracer(opts...)
+			assert.NoError(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
+			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
+		})
+
+		t.Run("env-url overrides host+port", func(t *testing.T) {
+			t.Setenv("DD_DOGSTATSD_URL", "10.1.0.12:4002")
+			t.Setenv("DD_DOGSTATSD_HOST", "ignored")
+			t.Setenv("DD_DOGSTATSD_PORT", "9999")
+			tracer, err := newTracer(opts...)
+			assert.NoError(t, err)
+			defer tracer.Stop()
+			c := tracer.config
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
+			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
 		})
 
 		t.Run("env-port: agent not available", func(t *testing.T) {
@@ -573,7 +648,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 			fail = false
 		})
@@ -586,7 +661,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 		})
 
@@ -599,7 +674,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "localhost:123", c.dogstatsdAddr)
+			assert.Equal(t, "localhost:123", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "localhost:123", globalconfig.DogstatsdAddr())
 			fail = false
 		})
@@ -612,7 +687,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "10.1.0.12:4002", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
 		})
 
@@ -625,7 +700,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal(t, "10.1.0.12:4002", c.dogstatsdAddr)
+			assert.Equal(t, "10.1.0.12:4002", c.internalConfig.DogstatsdAddr())
 			assert.Equal(t, "10.1.0.12:4002", globalconfig.DogstatsdAddr())
 			fail = false
 		})
@@ -645,7 +720,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(err)
 			defer tracer.Stop()
 			c := tracer.config
-			assert.Equal("unix://"+addr, c.dogstatsdAddr)
+			assert.Equal("unix://"+addr, c.internalConfig.DogstatsdAddr())
 			assert.Equal("unix://"+addr, globalconfig.DogstatsdAddr())
 		})
 	})
@@ -753,8 +828,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.True(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginDefault)
+			val, origin := c.internalConfig.TracingEnabledConfig().Baseline()
+			assert.True(t, val)
+			assert.Equal(t, telemetry.OriginDefault, origin)
 		})
 
 		t.Run("override", func(t *testing.T) {
@@ -763,8 +839,9 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			defer tracer.Stop()
 			assert.NoError(t, err)
 			c := tracer.config
-			assert.False(t, c.enabled.current)
-			assert.Equal(t, c.enabled.cfgOrigin, telemetry.OriginEnvVar)
+			val, origin := c.internalConfig.TracingEnabledConfig().Baseline()
+			assert.False(t, val)
+			assert.Equal(t, telemetry.OriginEnvVar, origin)
 		})
 	})
 
@@ -782,8 +859,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		c := tracer.config
 		assert.Equal(float64(0.5), c.sampler.Rate())
 		assert.Equal(&url.URL{Scheme: "http", Host: "127.0.0.1:58126"}, c.internalConfig.RawAgentURL())
-		assert.NotNil(c.globalTags.get())
-		assert.Equal("v", c.globalTags.get()["k"])
+		assert.NotNil(c.internalConfig.GlobalTags())
+		assert.Equal("v", c.internalConfig.GlobalTags()["k"])
 		assert.Equal("testEnv", c.internalConfig.Env())
 		assert.True(c.internalConfig.Debug())
 	})
@@ -794,7 +871,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithAgentTimeout(2))
 		assert.NoError(err)
-		globalTags := c.globalTags.get()
+		globalTags := c.internalConfig.GlobalTags()
 		assert.Equal("test", globalTags["env"])
 		assert.Equal("aVal", globalTags["aKey"])
 		assert.Equal("bVal", globalTags["bKey"])
@@ -967,7 +1044,7 @@ func TestTracerOptionsDefaults(t *testing.T) {
 	t.Run("trace-retries", func(t *testing.T) {
 		c, err := newTestConfig()
 		assert.NoError(t, err)
-		assert.Equal(t, 0, c.sendRetries)
+		assert.Equal(t, 0, c.internalConfig.SendRetries())
 		assert.Equal(t, time.Millisecond, c.internalConfig.RetryInterval())
 	})
 }
@@ -976,7 +1053,7 @@ func TestTraceRetry(t *testing.T) {
 	t.Run("sendRetries", func(t *testing.T) {
 		c, err := newTestConfig(WithSendRetries(10))
 		assert.NoError(t, err)
-		assert.Equal(t, 10, c.sendRetries)
+		assert.Equal(t, 10, c.internalConfig.SendRetries())
 	})
 	t.Run("retryInterval", func(t *testing.T) {
 		c, err := newTestConfig(WithRetryInterval(10))
@@ -1021,149 +1098,6 @@ func TestDefaultHTTPClient(t *testing.T) {
 		assert.False(t, getFuncName(x.Transport.(*http.Transport).DialContext) == getFuncName(internal.DefaultDialer(30*time.Second).DialContext))
 
 	})
-}
-
-func TestResolveDogstatsdAddr(t *testing.T) {
-	socketFile, err := os.CreateTemp("", "dsd.socket")
-	require.NoError(t, err)
-	require.NoError(t, socketFile.Close())
-	t.Cleanup(func() { os.RemoveAll(socketFile.Name()) })
-	socketPath := socketFile.Name()
-
-	tests := []struct {
-		name       string
-		configAddr string
-		af         agentFeatures
-		env        map[string]string
-		socketPath string
-		expected   string
-	}{
-		{
-			name:     "defaults",
-			expected: "localhost:8125",
-		},
-		{
-			name:     "host-env",
-			env:      map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1", "DD_AGENT_HOST": "222.222.2.2"},
-			expected: "111.111.1.1:8125",
-		},
-		{
-			name:     "port-env",
-			env:      map[string]string{"DD_DOGSTATSD_PORT": "8111"},
-			expected: "localhost:8111",
-		},
-		{
-			name:     "port-env+agent-host-env",
-			env:      map[string]string{"DD_DOGSTATSD_PORT": "8111", "DD_AGENT_HOST": "222.222.2.2"},
-			expected: "222.222.2.2:8111",
-		},
-		{
-			name:     "host-env+port-env",
-			env:      map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1", "DD_DOGSTATSD_PORT": "8888", "DD_AGENT_HOST": "222.222.2.2"},
-			expected: "111.111.1.1:8888",
-		},
-		{
-			name:       "host-env+socket",
-			env:        map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1"},
-			socketPath: socketPath,
-			expected:   "111.111.1.1:8125",
-		},
-		{
-			name:       "port-env+socket",
-			env:        map[string]string{"DD_DOGSTATSD_PORT": "8111"},
-			socketPath: socketPath,
-			expected:   "localhost:8111",
-		},
-		{
-			name:       "socket",
-			socketPath: socketPath,
-			expected:   "unix://" + socketPath,
-		},
-		// DD_AGENT_HOST alone should not trigger the env var path;
-		// it falls through to auto-discovery.
-		{
-			name:       "agent-host-env-only+socket",
-			env:        map[string]string{"DD_AGENT_HOST": "222.222.2.2"},
-			socketPath: socketPath,
-			expected:   "unix://" + socketPath,
-		},
-		{
-			name:     "agent-host-env-only",
-			env:      map[string]string{"DD_AGENT_HOST": "222.222.2.2"},
-			expected: "222.222.2.2:8125",
-		},
-		{
-			name:     "agent-host-env-only+agent-port",
-			env:      map[string]string{"DD_AGENT_HOST": "222.222.2.2"},
-			af:       agentFeatures{StatsdPort: 9876},
-			expected: "222.222.2.2:9876",
-		},
-		// configAddr (priority 1) wins over everything.
-		{
-			name:       "config-addr",
-			configAddr: "custom:9999",
-			expected:   "custom:9999",
-		},
-		{
-			name:       "config-addr+env",
-			configAddr: "custom:9999",
-			env:        map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1", "DD_DOGSTATSD_PORT": "8111"},
-			expected:   "custom:9999",
-		},
-		{
-			name:       "config-addr+socket",
-			configAddr: "custom:9999",
-			socketPath: socketPath,
-			expected:   "custom:9999",
-		},
-		{
-			name:       "config-addr+agent-port",
-			configAddr: "custom:9999",
-			af:         agentFeatures{StatsdPort: 9876},
-			expected:   "custom:9999",
-		},
-		// Agent-reported port used as fallback when env host is set but no env port.
-		{
-			name:     "host-env+agent-port",
-			env:      map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1"},
-			af:       agentFeatures{StatsdPort: 9876},
-			expected: "111.111.1.1:9876",
-		},
-		// Env port wins over agent-reported port.
-		{
-			name:     "host-env+port-env+agent-port",
-			env:      map[string]string{"DD_DOGSTATSD_HOST": "111.111.1.1", "DD_DOGSTATSD_PORT": "8111"},
-			af:       agentFeatures{StatsdPort: 9876},
-			expected: "111.111.1.1:8111",
-		},
-		// Auto-discovery: agent-reported port when no env and no socket.
-		{
-			name:     "agent-port",
-			af:       agentFeatures{StatsdPort: 9876},
-			expected: "localhost:9876",
-		},
-		// Auto-discovery: socket wins over agent-reported port.
-		{
-			name:       "socket+agent-port",
-			af:         agentFeatures{StatsdPort: 9876},
-			socketPath: socketPath,
-			expected:   "unix://" + socketPath,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Clear all relevant env vars so that each subtest is isolated
-			// from the host environment and other subtests.
-			for _, key := range []string{"DD_DOGSTATSD_HOST", "DD_DOGSTATSD_PORT", "DD_AGENT_HOST"} {
-				t.Setenv(key, "")
-			}
-			for k, v := range tt.env {
-				t.Setenv(k, v)
-			}
-			assert.Equal(t, tt.expected, resolveDogstatsdAddr(tt.configAddr, tt.af, tt.socketPath))
-		})
-	}
 }
 
 func TestServiceName(t *testing.T) {
@@ -1385,7 +1319,7 @@ func TestOtelResourceAtttributes(t *testing.T) {
 		t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "tag1=val1,tag2=val2,tag3=val3,tag4=val4,tag5=val5,tag6=val6,tag7=val7,tag8=val8,tag9=val9,tag10=val10,tag11=val11,tag12=val12")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		globalTags := c.globalTags.get()
+		globalTags := c.internalConfig.GlobalTags()
 		// runtime-id tag is added automatically, so we expect runtime-id + our first 10 tags
 		assert.Len(globalTags, 11)
 	})
@@ -1478,7 +1412,7 @@ func TestTagSeparators(t *testing.T) {
 			t.Setenv("DD_TAGS", tag.in)
 			c, err := newTestConfig()
 			assert.NoError(err)
-			globalTags := c.globalTags.get()
+			globalTags := c.internalConfig.GlobalTags()
 			for key, expected := range tag.out {
 				got, ok := globalTags[key]
 				assert.True(ok, "tag not found")
@@ -1747,15 +1681,7 @@ func TestWithTraceEnabled(t *testing.T) {
 		assert := assert.New(t)
 		c, err := newTestConfig(WithTraceEnabled(false))
 		assert.NoError(err)
-		assert.False(c.enabled.current)
-	})
-
-	t.Run("otel-env", func(t *testing.T) {
-		assert := assert.New(t)
-		t.Setenv("OTEL_TRACES_EXPORTER", "none")
-		c, err := newTestConfig()
-		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 
 	t.Run("dd-env", func(t *testing.T) {
@@ -1763,21 +1689,15 @@ func TestWithTraceEnabled(t *testing.T) {
 		t.Setenv("DD_TRACE_ENABLED", "false")
 		c, err := newTestConfig()
 		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 
-	t.Run("override-chain", func(t *testing.T) {
+	t.Run("option-overrides-env", func(t *testing.T) {
 		assert := assert.New(t)
-		// dd env overrides otel env
-		t.Setenv("OTEL_TRACES_EXPORTER", "none")
 		t.Setenv("DD_TRACE_ENABLED", "true")
-		c, err := newTestConfig()
+		c, err := newTestConfig(WithTraceEnabled(false))
 		assert.NoError(err)
-		assert.True(c.enabled.current)
-		// tracer option overrides dd env
-		c, err = newTestConfig(WithTraceEnabled(false))
-		assert.NoError(err)
-		assert.False(c.enabled.current)
+		assert.False(c.internalConfig.TracingEnabled())
 	})
 }
 
@@ -1878,20 +1798,6 @@ func TestWithHeaderTags(t *testing.T) {
 	assert.Equal(t, 0, globalconfig.HeaderTagsLen())
 }
 
-func TestHostnameDisabled(t *testing.T) {
-	t.Run("Default", func(t *testing.T) {
-		c, err := newTestConfig()
-		assert.NoError(t, err)
-		assert.False(t, c.enableHostnameDetection)
-	})
-	t.Run("EnableViaEnv", func(t *testing.T) {
-		t.Setenv("DD_TRACE_CLIENT_HOSTNAME_COMPAT", "v1.66")
-		c, err := newTestConfig()
-		assert.NoError(t, err)
-		assert.True(t, c.enableHostnameDetection)
-	})
-}
-
 func TestPartialFlushing(t *testing.T) {
 	partialFlushMinSpansDefault := 1000
 	t.Run("None", func(t *testing.T) {
@@ -1989,6 +1895,7 @@ func TestWithStatsComputation(t *testing.T) {
 		c, err := newTestConfig(WithStatsComputation(false))
 		assert.NoError(err)
 		assert.False(c.internalConfig.StatsComputationEnabled())
+		assert.Equal(traceProtocolV04, c.internalConfig.TraceProtocol())
 	})
 	t.Run("enabled-via-env", func(t *testing.T) {
 		assert := assert.New(t)
@@ -2254,4 +2161,13 @@ func TestCanComputeStats(t *testing.T) {
 		assert.False(t, c.canComputeStats())
 		assert.False(t, c.canDropP0s())
 	})
+}
+
+// Regression: agentless flag set without CI Visibility enabled must not disable the agent.
+func TestAgentEnabledWithAgentlessEnvOnly(t *testing.T) {
+	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
+	c, err := newTestConfig()
+	require.NoError(t, err)
+	assert.True(t, c.agentEnabled(), "agent must remain enabled when CI Visibility is off")
+	assert.False(t, c.internalConfig.CIVisibilityAgentlessActive(), "agentless mode must not be active without CI Visibility")
 }

@@ -8,7 +8,6 @@ updates:
   - package-ecosystem: "github-actions"
     directories:
       - "/"
-      - "/.github/actions/codecov-upload"
       - "/.github/actions/dd-ci-upload"
       - "/.github/actions/pr-status-updater"
       - "/.github/actions/setup-go"
@@ -55,3 +54,12 @@ updates:
       - "dependencies"
     cooldown:
       default-days: 2
+    ignore:
+      # amazonlinux:2 is pinned to a specific AL2 (glibc 2.26) digest and must
+      # never be upgraded to AL2023 (glibc 2.34).  Omitting `versions` blocks
+      # ALL Dependabot updates for this image — both digest refreshes of :2 and
+      # any tag-change PR proposing :2023 — because a version-scoped rule like
+      # "= 2" would still permit a :2 → :2023 tag upgrade.  The :2023 stage in
+      # the same Dockerfile is unpinned and always pulls the current :2023 at
+      # build time, so losing automated digest updates there is acceptable.
+      - dependency-name: "amazonlinux"

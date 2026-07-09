@@ -71,7 +71,8 @@
         "default": null,
         "aliases": [
           "DD-API-KEY"
-        ]
+        ],
+        "sensitive": true
       }
     ],
     "DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE": [
@@ -235,7 +236,8 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
@@ -259,6 +261,13 @@
         "default": null
       }
     ],
+    "DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CIVISIBILITY_ENABLED": [
       {
         "implementation": "A",
@@ -274,6 +283,13 @@
       }
     ],
     "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
@@ -364,6 +380,13 @@
         "default": "8125"
       }
     ],
+    "DD_DOGSTATSD_URL": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "http://localhost:8125"
+      }
+    ],
     "DD_DYNAMIC_INSTRUMENTATION_ENABLED": [
       {
         "implementation": "A",
@@ -385,6 +408,13 @@
         "default": "false"
       }
     ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED": [
       {
         "implementation": "B",
@@ -397,6 +427,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_FLAGGING_EVALUATION_COUNTS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_GIT_BRANCH": [
@@ -966,6 +1003,13 @@
         "default": null
       }
     ],
+    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED": [
       {
         "implementation": "A",
@@ -987,6 +1031,13 @@
         "default": "10m"
       }
     ],
+    "DD_TRACE_AEROSPIKE_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_AGENT_PORT": [
       {
         "implementation": "A",
@@ -999,6 +1050,13 @@
         "implementation": "B",
         "type": "string",
         "default": "1.0"
+      }
+    ],
+    "DD_TRACE_AGENT_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "10"
       }
     ],
     "DD_TRACE_AGENT_URL": [
@@ -1041,13 +1099,6 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
-      }
-    ],
-    "DD_TRACE_CLIENT_HOSTNAME_COMPAT": [
-      {
-        "implementation": "A",
-        "type": "string",
-        "default": null
       }
     ],
     "DD_TRACE_CLIENT_IP_ENABLED": [
@@ -1323,6 +1374,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_INTERNAL_METRICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_TRACE_KAFKA_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -1426,6 +1484,13 @@
         "implementation": "A",
         "type": "map",
         "default": ""
+      }
+    ],
+    "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "continue"
       }
     ],
     "DD_TRACE_PROPAGATION_EXTRACT_FIRST": [
@@ -1554,6 +1619,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_SEND_RETRIES": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "0"
+      }
+    ],
     "DD_TRACE_SOURCE_HOSTNAME": [
       {
         "implementation": "A",
@@ -1597,6 +1669,13 @@
       }
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_TRACE_UNIVERSAL_VERSION_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
@@ -1691,7 +1770,8 @@
       {
         "implementation": "A",
         "type": "map",
-        "default": ""
+        "default": "",
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
@@ -1705,7 +1785,8 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
@@ -1733,7 +1814,8 @@
       {
         "implementation": "B",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [
@@ -1782,7 +1864,8 @@
       {
         "implementation": "B",
         "type": "map",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_LOGS_EXPORTER": [

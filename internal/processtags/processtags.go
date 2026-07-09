@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
 
@@ -35,8 +36,9 @@ const (
 )
 
 var (
-	enabled bool
-	pTags   *ProcessTags
+	enabled           bool
+	pTags             *ProcessTags
+	containerTagsHash atomic.Value
 )
 
 func init() {
@@ -47,10 +49,9 @@ type ProcessTags struct {
 	mu sync.RWMutex
 	// +checklocks:mu
 	tags map[string]string
-	// +checklocks:mu
-	str string
-	// +checklocks:mu
-	slice []string
+
+	sliceAtomic atomic.Pointer[[]string]
+	strAtomic   atomic.Pointer[string]
 }
 
 // String returns the string representation of the process tags.
@@ -58,9 +59,10 @@ func (p *ProcessTags) String() string {
 	if p == nil {
 		return ""
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.str
+	if s := p.strAtomic.Load(); s != nil {
+		return *s
+	}
+	return ""
 }
 
 // Slice returns the string slice representation of the process tags.
@@ -68,9 +70,10 @@ func (p *ProcessTags) Slice() []string {
 	if p == nil {
 		return nil
 	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.slice
+	if s := p.sliceAtomic.Load(); s != nil {
+		return *s
+	}
+	return nil
 }
 
 func (p *ProcessTags) merge(newTags map[string]string) {
@@ -111,8 +114,9 @@ func (p *ProcessTags) rebuild() {
 		b.WriteString(keyVal)
 		tagsSlice = append(tagsSlice, keyVal)
 	}
-	p.slice = tagsSlice
-	p.str = b.String()
+	str := b.String()
+	p.sliceAtomic.Store(&tagsSlice)
+	p.strAtomic.Store(&str)
 }
 
 // Reload initializes the configuration and process tags collection. This is useful for tests.
@@ -168,6 +172,17 @@ func GlobalTags() *ProcessTags {
 		return nil
 	}
 	return pTags
+}
+
+// SetContainerTagsHash stores the container tags hash returned by the agent.
+func SetContainerTagsHash(hash string) {
+	containerTagsHash.Store(hash)
+}
+
+// ContainerTagsHash returns the latest container tags hash returned by the agent.
+func ContainerTagsHash() string {
+	hash, _ := containerTagsHash.Load().(string)
+	return hash
 }
 
 func add(tags map[string]string) {

@@ -346,6 +346,63 @@ func TestSpanAnnotations(t *testing.T) {
 		assert.NotEmpty(t, spans[0].Tags)
 		assert.Equal(t, "session-123", spans[0].SessionID)
 	})
+	t.Run("llm-span-with-cost-tags", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-cost-tags")
+		span.Annotate(
+			llmobs.WithAnnotatedTags(map[string]string{"team": "ml", "feature": "chatbot"}),
+			llmobs.WithAnnotatedCostTagKeys([]string{"team", "feature"}),
+		)
+		span.Finish()
+
+		spans := tt.WaitForLLMObsSpans(t, 1)
+		metadata, ok := spans[0].Meta["metadata"].(map[string]any)
+		require.True(t, ok)
+		ddMetadata, ok := metadata["_dd"].(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, []any{"team", "feature"}, ddMetadata["cost_tags"])
+	})
+	t.Run("llm-span-with-cost-tags-and-session-id-option-order", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			opts []llmobs.AnnotateOption
+		}{
+			{
+				name: "cost-tags-before-session-id",
+				opts: []llmobs.AnnotateOption{
+					llmobs.WithAnnotatedCostTagKeys([]string{"session_id"}),
+					llmobs.WithAnnotatedSessionID("session-123"),
+				},
+			},
+			{
+				name: "session-id-before-cost-tags",
+				opts: []llmobs.AnnotateOption{
+					llmobs.WithAnnotatedSessionID("session-123"),
+					llmobs.WithAnnotatedCostTagKeys([]string{"session_id"}),
+				},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				tt := testTracer(t)
+				defer tt.Stop()
+
+				span, _ := llmobs.StartLLMSpan(ctx, "test-llm-cost-tags-session-id")
+				span.Annotate(tc.opts...)
+				span.Finish()
+
+				spans := tt.WaitForLLMObsSpans(t, 1)
+				metadata, ok := spans[0].Meta["metadata"].(map[string]any)
+				require.True(t, ok)
+				ddMetadata, ok := metadata["_dd"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, []any{"session_id"}, ddMetadata["cost_tags"])
+			})
+		}
+	})
 	t.Run("llm-span-with-tool-calls", func(t *testing.T) {
 		tt := testTracer(t)
 		defer tt.Stop()
@@ -549,7 +606,7 @@ func TestSpanAnnotations(t *testing.T) {
 		span, _ := llmobs.StartLLMSpan(ctx, "test-llm-tool-definitions")
 		span.AnnotateLLMIO(nil, nil,
 			llmobs.WithAnnotatedToolDefinitions([]llmobs.ToolDefinition{
-				{Name: "get_weather", Description: "Get the current weather for a location"},
+				{Name: "get_weather", Description: "Get the current weather for a location", ToolVersion: "1.0.0"},
 			}),
 		)
 		span.Finish()
@@ -557,6 +614,31 @@ func TestSpanAnnotations(t *testing.T) {
 		spans := tt.WaitForLLMObsSpans(t, 1)
 		require.Len(t, spans, 1)
 		assert.NotNil(t, spans[0].Meta["tool_definitions"])
+	})
+	t.Run("tool-version-propagated-to-child-tool-span", func(t *testing.T) {
+		tt := testTracer(t)
+		defer tt.Stop()
+
+		llmSpan, llmCtx := llmobs.StartLLMSpan(ctx, "test-llm")
+		llmSpan.AnnotateLLMIO(nil, nil,
+			llmobs.WithAnnotatedToolDefinitions([]llmobs.ToolDefinition{
+				{Name: "get_weather", Description: "Get the current weather", ToolVersion: "1.0.0"},
+			}),
+		)
+		toolSpan, _ := llmobs.StartToolSpan(llmCtx, "get_weather")
+		toolSpan.Finish()
+		llmSpan.Finish()
+
+		spans := tt.WaitForLLMObsSpans(t, 2)
+		require.Len(t, spans, 2)
+		var toolMeta map[string]any
+		for _, s := range spans {
+			if s.Meta["span.kind"] == "tool" {
+				toolMeta = s.Meta
+			}
+		}
+		require.NotNil(t, toolMeta)
+		assert.Equal(t, "1.0.0", toolMeta["tool.version"])
 	})
 }
 

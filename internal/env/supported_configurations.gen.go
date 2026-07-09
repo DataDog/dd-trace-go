@@ -45,9 +45,11 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_CIVISIBILITY_AGENTLESS_ENABLED":                               {},
 	"DD_CIVISIBILITY_AGENTLESS_URL":                                   {},
 	"DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER":                   {},
+	"DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED":             {},
 	"DD_CIVISIBILITY_ENABLED":                                         {},
 	"DD_CIVISIBILITY_FLAKY_RETRY_COUNT":                               {},
 	"DD_CIVISIBILITY_FLAKY_RETRY_ENABLED":                             {},
+	"DD_CIVISIBILITY_GIT_UPLOAD_ENABLED":                              {},
 	"DD_CIVISIBILITY_IMPACTED_TESTS_DETECTION_ENABLED":                {},
 	"DD_CIVISIBILITY_INTERNAL_PARALLEL_EARLY_FLAKE_DETECTION_ENABLED": {},
 	"DD_CIVISIBILITY_LOGS_ENABLED":                                    {},
@@ -60,11 +62,14 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_DBM_PROPAGATION_MODE":                                         {},
 	"DD_DOGSTATSD_HOST":                                               {},
 	"DD_DOGSTATSD_PORT":                                               {},
+	"DD_DOGSTATSD_URL":                                                {},
 	"DD_DYNAMIC_INSTRUMENTATION_ENABLED":                              {},
 	"DD_ENV":                                                          {},
 	"DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED":                       {},
+	"DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED":       {},
 	"DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED":                  {},
 	"DD_EXTERNAL_ENV":                                                 {},
+	"DD_FLAGGING_EVALUATION_COUNTS_ENABLED":                           {},
 	"DD_GIT_BRANCH":                                                   {},
 	"DD_GIT_COMMIT_AUTHOR_DATE":                                       {},
 	"DD_GIT_COMMIT_AUTHOR_EMAIL":                                      {},
@@ -146,18 +151,20 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TEST_OPTIMIZATION_MANIFEST_FILE":                              {},
 	"DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES":                          {},
 	"DD_TEST_SESSION_NAME":                                            {},
+	"DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED":                        {},
 	"DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED":                     {},
 	"DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED":                        {},
 	"DD_TRACE_ABANDONED_SPAN_TIMEOUT":                                 {},
+	"DD_TRACE_AEROSPIKE_ANALYTICS_ENABLED":                            {},
 	"DD_TRACE_AGENT_PORT":                                             {},
 	"DD_TRACE_AGENT_PROTOCOL_VERSION":                                 {},
+	"DD_TRACE_AGENT_TIMEOUT":                                          {},
 	"DD_TRACE_AGENT_URL":                                              {},
 	"DD_TRACE_ANALYTICS_ENABLED":                                      {},
 	"DD_TRACE_AWS_ANALYTICS_ENABLED":                                  {},
 	"DD_TRACE_BAGGAGE_TAG_KEYS":                                       {},
 	"DD_TRACE_BUNTDB_ANALYTICS_ENABLED":                               {},
 	"DD_TRACE_CHI_ANALYTICS_ENABLED":                                  {},
-	"DD_TRACE_CLIENT_HOSTNAME_COMPAT":                                 {},
 	"DD_TRACE_CLIENT_IP_ENABLED":                                      {},
 	"DD_TRACE_CLIENT_IP_HEADER":                                       {},
 	"DD_TRACE_CONSUL_ANALYTICS_ENABLED":                               {},
@@ -197,6 +204,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER":                 {},
 	"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED":                         {},
 	"DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED":                        {},
+	"DD_TRACE_INTERNAL_METRICS_ENABLED":                               {},
 	"DD_TRACE_KAFKA_ANALYTICS_ENABLED":                                {},
 	"DD_TRACE_LEVELDB_ANALYTICS_ENABLED":                              {},
 	"DD_TRACE_LOGRUS_ANALYTICS_ENABLED":                               {},
@@ -212,6 +220,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS":                                {},
 	"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED":                          {},
 	"DD_TRACE_PEER_SERVICE_MAPPING":                                   {},
+	"DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT":                           {},
 	"DD_TRACE_PROPAGATION_EXTRACT_FIRST":                              {},
 	"DD_TRACE_PROPAGATION_STYLE":                                      {},
 	"DD_TRACE_PROPAGATION_STYLE_EXTRACT":                              {},
@@ -230,6 +239,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_SAMPLING_RULES":                                         {},
 	"DD_TRACE_SAMPLING_RULES_FILE":                                    {},
 	"DD_TRACE_SARAMA_ANALYTICS_ENABLED":                               {},
+	"DD_TRACE_SEND_RETRIES":                                           {},
 	"DD_TRACE_SOURCE_HOSTNAME":                                        {},
 	"DD_TRACE_SPAN_ATTRIBUTE_SCHEMA":                                  {},
 	"DD_TRACE_SQL_ANALYTICS_ENABLED":                                  {},
@@ -237,6 +247,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_STARTUP_LOGS":                                           {},
 	"DD_TRACE_STATS_COMPUTATION_ENABLED":                              {},
 	"DD_TRACE_TWIRP_ANALYTICS_ENABLED":                                {},
+	"DD_TRACE_UNIVERSAL_VERSION_ENABLED":                              {},
 	"DD_TRACE_VALKEY_ANALYTICS_ENABLED":                               {},
 	"DD_TRACE_VALKEY_RAW_COMMAND":                                     {},
 	"DD_TRACE_VAULT_ANALYTICS_ENABLED":                                {},
@@ -276,8 +287,20 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_TRACES_SAMPLER_ARG":                                         {},
 }
 
-// keyAliases maps aliases to supported configuration keys.
-var keyAliases = map[string][]string{
+// SensitiveConfigurations is the set of configuration keys whose value must not be
+// reported in configuration telemetry. It is seeded from entries marked "sensitive": true
+// in supported_configurations.json.
+var SensitiveConfigurations = map[string]struct{}{
+	"DD_API_KEY":                         {},
+	"DD_APP_KEY":                         {},
+	"OTEL_EXPORTER_OTLP_HEADERS":         {},
+	"OTEL_EXPORTER_OTLP_LOGS_HEADERS":    {},
+	"OTEL_EXPORTER_OTLP_METRICS_HEADERS": {},
+	"OTEL_EXPORTER_OTLP_TRACES_HEADERS":  {},
+}
+
+// KeyAliases maps canonical configuration keys to their known aliases.
+var KeyAliases = map[string][]string{
 	"DD_API_KEY":                    {"DD-API-KEY"},
 	"DD_APPSEC_STACK_TRACE_ENABLED": {"DD_APPSEC_STACK_TRACE_ENABLE"},
 }

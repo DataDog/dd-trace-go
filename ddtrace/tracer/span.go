@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-//msgp:ignore inheritedData
+//msgp:ignore spanSnapshot
 //go:generate go run github.com/tinylib/msgp -unexported -marshal=false -o=span_msgp.go -tests=false
 //go:generate go run ../../scripts/msgp_span_meta_omitempty.go -file span_msgp.go
 //go:generate go run ../../scripts/msgp_checklocks_ignore.go -type Span -file span_msgp.go
@@ -34,8 +34,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
+	iof "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -182,6 +183,46 @@ type Span struct {
 	taskEnd func() // ends execution tracer (runtime/trace) task, if started
 }
 
+func (s *Span) clear() {
+	// Serialize after finish()'s deferred s.mu.Unlock(). The span may still
+	// be inside finish() when the worker receives the chunk, because the
+	// channel send happens before the deferred unlock. Acquiring the lock
+	// here guarantees finish() has fully completed before we zero the struct.
+	s.mu.Lock()
+	// s.context is intentionally not nilled: Context() may still be called
+	// after Finish(), and spanStart will reassign it on reuse.
+	// clear() is called after traceWriter.add() encodes the span, so in-place
+	// map clearing is safe — no concurrent encoder holds a reference.
+	// TODO: we should cap large maps here.
+	s.meta.Reset()
+	clear(s.metrics)
+	clear(s.metaStruct)
+	s.name = ""
+	s.service = ""
+	s.resource = ""
+	s.spanType = ""
+	s.start = 0
+	s.duration = 0
+	s.spanID = 0
+	s.traceID = 0
+	s.parentID = 0
+	s.error = 0
+	s.spanLinks = nil
+	s.spanEvents = nil
+	s.goExecTraced = false
+	s.noDebugStack = false
+	s.finished = false
+	s.integration = ""
+	s.supportsEvents = false
+	s.pprofCtxActive = nil
+	s.pprofCtxRestore = nil
+	s.taskEnd = nil
+	// Always keep this unlock as the last line. If we ever introduce
+	// code above that could panic, we should move it as deferred call
+	// under s.mu.Lock().
+	s.mu.Unlock()
+}
+
 // Context yields the SpanContext for this Span. Note that the return
 // value of Context() is still valid after a call to Finish(). This is
 // called the span context and it is different from Go's context.
@@ -189,21 +230,35 @@ func (s *Span) Context() *SpanContext {
 	if s == nil {
 		return nil
 	}
+	// Lock-free read: s.context is a single pointer word, only reassigned
+	// during construction in spanStart. Taking s.mu.RLock() here would
+	// self-deadlock when called transitively from Span.finish() via
+	// mocktracer.FinishSpan inside s.context.finish().
 	return s.context
 }
 
-type inheritedData struct {
+type spanSnapshot struct {
+	env           string
+	version       string
 	service       string
 	serviceSource string
+	peerService   string
 	pprofCtx      context.Context
 }
 
-func (s *Span) inheritedData() inheritedData {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return inheritedData{
+// +checklocksignore — Initialization time.
+func (s *Span) spanSnapshot() spanSnapshot {
+	var (
+		env, _         = s.meta.Env()
+		version, _     = s.meta.Version()
+		peerService, _ = s.meta.Get(ext.PeerService)
+	)
+	return spanSnapshot{
+		env:           env,
+		version:       version,
 		service:       s.service,
 		serviceSource: s.serviceSource,
+		peerService:   peerService,
 		pprofCtx:      s.pprofCtxActive,
 	}
 }
@@ -239,7 +294,7 @@ func (s *Span) getAndRemoveMeta(key string) string {
 // It sets the applied rate metric, evaluates Knuth rate-based sampling,
 // applies rate limiting, and sets the appropriate sampling priority.
 // Returns false if span is already finished, true otherwise.
-func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.SamplerName, limiter *rateLimiter, now time.Time) bool {
+func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.SamplerName, limiter *samplingrules.RateLimiter, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -258,7 +313,7 @@ func (s *Span) applyTraceRuleSampling(rate float64, sampler samplernames.Sampler
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
 		return true
 	}
-	sampled, limiterRate := limiter.allowOne(now)
+	sampled, limiterRate := limiter.AllowOne(now)
 	if sampled {
 		s.setSamplingPriorityLocked(ext.PriorityUserKeep, sampler)
 	} else {
@@ -421,6 +476,9 @@ func (s *Span) setTagLocked(key string, value any) {
 		if so, ok := value.(sharedinternal.ServiceOverride); ok {
 			s.service = so.Name
 			s.serviceSource = so.Source
+			if s.context != nil {
+				s.context.setSpanSnapshotService(so.Name, so.Source)
+			}
 			return
 		}
 	}
@@ -438,6 +496,9 @@ func (s *Span) setTagLocked(key string, value any) {
 			// of what we change at a lower level.
 			s.pprofCtxActive = pprof.WithLabels(s.pprofCtxActive, pprof.Labels(traceprof.TraceEndpoint, v))
 			pprof.SetGoroutineLabels(s.pprofCtxActive)
+			if s.context != nil {
+				s.context.setSpanSnapshotPPROFCtx(s.pprofCtxActive)
+			}
 		}
 		s.setMetaLocked(key, v)
 		return
@@ -510,22 +571,22 @@ func (s *Span) setSamplingPriority(priority int, sampler samplernames.SamplerNam
 	s.setSamplingPriorityLocked(priority, sampler)
 }
 
-func (s *Span) setProcessTags(pTags string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.setMetaLocked(keyProcessTags, pTags)
-}
-
 // root returns the root span of the span's trace. The return value shouldn't be
 // nil as long as the root span is valid and not finished.
 func (s *Span) Root() *Span {
-	if s == nil || s.context == nil {
+	if s == nil {
 		return nil
 	}
-	if s.context.trace == nil {
+	// Lock-free read for the same reason as Context(): avoids self-deadlock
+	// when called transitively from Span.finish() via mocktracer.FinishSpan.
+	ctx := s.context
+	if ctx == nil {
 		return nil
 	}
-	return s.context.trace.root
+	if ctx.trace == nil {
+		return nil
+	}
+	return ctx.trace.root
 }
 
 // SetUser associates user information to the current trace which the
@@ -653,7 +714,7 @@ func (s *Span) setErrorFlagLocked(yes bool) {
 }
 
 // setTagErrorLocked sets the error tag. It accounts for various valid scenarios.
-// s.mu must be held for writing.
+// This method assumes the span lock is already held.
 // +checklocks:s.mu
 func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 	assert.RWMutexLocked(&s.mu)
@@ -724,6 +785,9 @@ func (s *Span) setMeta(key, v string) {
 func (s *Span) setMetaLocked(key, v string) {
 	assert.RWMutexLocked(&s.mu)
 	s.setMetaInit(key, v)
+	if s.context != nil {
+		s.context.setSpanSnapshotMeta(key, v)
+	}
 }
 
 // setMetaInit sets a string tag without acquiring the lock and asserting the lock is held.
@@ -736,6 +800,9 @@ func (s *Span) setMetaInit(key, v string) {
 	case ext.ServiceName:
 		s.service = v
 		s.serviceSource = serviceSourceManual
+		if s.context != nil {
+			s.context.setSpanSnapshotService(v, serviceSourceManual)
+		}
 	case ext.ResourceName:
 		s.resource = v
 	case ext.SpanType:
@@ -811,6 +878,9 @@ func (s *Span) setMetricLocked(key string, v float64) {
 		s.metrics = make(map[string]float64, 1)
 	}
 	s.meta.Delete(key)
+	if s.context != nil {
+		s.context.setSpanSnapshotMeta(key, "")
+	}
 	switch key {
 	case ext.ManualKeep:
 		if v == float64(samplernames.AppSec) {
@@ -881,6 +951,47 @@ func (s *Span) serializeSpanEvents() {
 	s.meta.Set("events", string(b))
 }
 
+// recordFFEEvaluation records a feature flag evaluation for FFE span enrichment.
+// Used by github.com/DataDog/dd-trace-go/v2/openfeature via go:linkname.
+//
+// Feature flag evaluations are collected while a request is in progress and
+// copied onto the root span as tags when the span finishes. The temporary
+// storage lives in internal/openfeature, but access to it must be coordinated
+// with the span lifecycle here.
+//
+// The OpenFeature hook reaches this function instead of writing to the store
+// directly because it cannot safely inspect or synchronize with Span.finished.
+// Holding s.mu serializes recording an evaluation with Finish draining the
+// stored evaluations. The s.finished check prevents recording evaluations after
+// the span has already finished; Finish drains the stored evaluations exactly
+// once while holding the same lock.
+func recordFFEEvaluation(s *Span, eval *iof.FeatureFlagEvaluation) {
+	if s == nil || eval == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.finished {
+		return
+	}
+	iof.AddSpanEnrichment(s, eval)
+}
+
+// serializeFFEEvaluations writes the accumulated OpenFeature evaluation tags onto
+// the span and removes the pending FFE span enrichment from the temporary store.
+// +checklocks:s.mu
+func (s *Span) serializeFFEEvaluations() {
+	assert.RWMutexLocked(&s.mu)
+	enrichment := iof.DrainSpanEnrichment(s)
+	if enrichment == nil {
+		return
+	}
+	for tag, value := range enrichment.GetSpanTags() {
+		s.meta.Set(tag, value)
+	}
+}
+
 // Finish closes this Span (but not its children) providing the duration
 // of its part of the tracing session.
 func (s *Span) Finish(opts ...FinishOption) {
@@ -939,7 +1050,6 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	s.finish(t)
-	orchestrion.GLSPopValue(sharedinternal.ActiveSpanKey)
 }
 
 // SetOperationName sets or changes the operation name.
@@ -985,6 +1095,7 @@ func (s *Span) finish(finishTime int64) {
 
 	s.serializeSpanLinksInMeta()
 	s.serializeSpanEvents()
+	s.serializeFFEEvaluations()
 	s.enrichServiceSource()
 
 	if s.duration == 0 {
@@ -1000,7 +1111,7 @@ func (s *Span) finish(finishTime int64) {
 	keep := true
 	tracer, hasTracer := getGlobalTracer().(*tracer)
 	if hasTracer {
-		if !tracer.config.enabled.get() {
+		if !tracer.config.internalConfig.TracingEnabled() {
 			return
 		}
 		if tracer.config.canDropP0s() {
@@ -1025,7 +1136,7 @@ func (s *Span) finish(finishTime int64) {
 	// Call context.finish() which handles trace-level bookkeeping and may modify
 	// this span (to set trace-level tags).
 	// Lock ordering is span.mu -> trace.mu.
-	s.context.finish()
+	s.context.finish(s)
 
 	// compute stats after finishing the span. This ensures any normalization or tag propagation has been applied
 	if hasTracer {
@@ -1146,12 +1257,12 @@ func (s *Span) Format(f fmt.State, c rune) {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
-			} else if env := env.Get("DD_ENV"); env != "" {
+			} else if env := env.Get("DD_ENV"); env != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.env=%s ", env)
 			}
 			if tc.VersionTag != "" {
 				fmt.Fprintf(f, "dd.version=%s ", tc.VersionTag)
-			} else if v := env.Get("DD_VERSION"); v != "" {
+			} else if v := env.Get("DD_VERSION"); v != "" { //nolint:configaudit — intentional: read env directly when tracer has stopped and TracerConf is empty
 				fmt.Fprintf(f, "dd.version=%s ", v)
 			}
 		}

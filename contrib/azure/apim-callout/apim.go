@@ -80,6 +80,13 @@ type handler struct {
 	bodyParsingSizeLimit *int
 }
 
+func (h *handler) effectiveBodyParsingSizeLimit() int {
+	if h.bodyParsingSizeLimit != nil {
+		return *h.bodyParsingSizeLimit
+	}
+	return proxy.DefaultBodyParsingSizeLimit
+}
+
 // requestStateEntry wraps a RequestState with an atomic flag so the response
 // handler can claim exclusive ownership before the TTL eviction callback fires.
 // This prevents the race where both the eviction goroutine and the HTTP handler
@@ -131,6 +138,15 @@ func writeJSON(w http.ResponseWriter, statusCode int, v any) error {
 // handleCallout processes POST / from the gateway and dispatches based on
 // whether a request-id is present (two-tier dispatch).
 func (h *handler) handleCallout(w http.ResponseWriter, r *http.Request) {
+	// Cap the request body to prevent OOM from oversized payloads. The limit
+	// accounts for base64 encoding expansion (~4/3×) plus JSON envelope overhead.
+	maxReqSize := int64(h.effectiveBodyParsingSizeLimit()) * 2
+	const minRequestSize = 1 << 20 // 1MB floor for envelope-only requests
+	if maxReqSize < minRequestSize {
+		maxReqSize = minRequestSize
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxReqSize)
+
 	var msg calloutMessage
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
 		instr.Logger().Error("apim_callout: error decoding request: %s\n", err.Error())
@@ -190,7 +206,7 @@ func (h *handler) handleNewRequest(w http.ResponseWriter, r *http.Request, msg *
 
 	// If the processor wants the request body AND it was provided inline, process it now.
 	if reqState.State == proxy.MessageTypeRequestBody && hasRawBody(addrs.Body) {
-		bodyBytes, decErr := decodeRawBase64Body(addrs.Body)
+		bodyBytes, decErr := decodeRawBase64Body(addrs.Body, h.effectiveBodyParsingSizeLimit())
 		if decErr != nil {
 			instr.Logger().Error("apim_callout: error decoding request body base64: %s\n", decErr.Error())
 		} else if bodyBytes != nil {
@@ -307,7 +323,7 @@ func (h *handler) handleRequestBodyPhase(w http.ResponseWriter, msg *calloutMess
 		return
 	}
 
-	bodyBytes, decErr := decodeRawBase64Body(addrs.Body)
+	bodyBytes, decErr := decodeRawBase64Body(addrs.Body, h.effectiveBodyParsingSizeLimit())
 	if decErr != nil {
 		instr.Logger().Error("apim_callout: error decoding request body base64: %s\n", decErr.Error())
 		h.requestStateCache.Delete(msg.RequestID)
@@ -379,7 +395,7 @@ func (h *handler) processResponseHeaders(w http.ResponseWriter, msg *calloutMess
 
 	// If response body is needed and body was provided inline
 	if reqState.State == proxy.MessageTypeResponseBody && hasRawBody(addrs.Body) {
-		bodyBytes, decErr := decodeRawBase64Body(addrs.Body)
+		bodyBytes, decErr := decodeRawBase64Body(addrs.Body, h.effectiveBodyParsingSizeLimit())
 		if decErr != nil {
 			instr.Logger().Error("apim_callout: error decoding response body base64: %s\n", decErr.Error())
 		} else if bodyBytes != nil {
@@ -440,7 +456,7 @@ func (h *handler) handleResponseBodyPhase(w http.ResponseWriter, msg *calloutMes
 		return
 	}
 
-	bodyBytes, decErr := decodeRawBase64Body(addrs.Body)
+	bodyBytes, decErr := decodeRawBase64Body(addrs.Body, h.effectiveBodyParsingSizeLimit())
 	if decErr != nil {
 		instr.Logger().Error("apim_callout: error decoding response body base64: %s\n", decErr.Error())
 		h.requestStateCache.Delete(msg.RequestID)

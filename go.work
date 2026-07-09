@@ -4,6 +4,7 @@ use (
 	.
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
+	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
 	./contrib/azure/apim-callout
@@ -30,6 +31,7 @@ use (
 	./contrib/go-redis/redis.v8
 	./contrib/go.mongodb.org/mongo-driver
 	./contrib/go.mongodb.org/mongo-driver.v2
+	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
 	./contrib/gomodule/redigo
@@ -49,6 +51,7 @@ use (
 	./contrib/k8s.io/client-go
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
+	./contrib/labstack/echo.v5
 	./contrib/log/slog
 	./contrib/mark3labs/mcp-go
 	./contrib/miekg/dns

@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       go-libddwaf-ref:
-        description: A git ref to update github.com/DataDog/go-libddwaf/v4 to. No-op if empty.
+        description: A git ref to update github.com/DataDog/go-libddwaf/v5 to. No-op if empty.
         required: false
         type: string
   push:
@@ -42,7 +42,7 @@ jobs:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -73,7 +73,7 @@ jobs:
             go mod tidy
             find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
             if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
-              go get -u -t "github.com/DataDog/go-libddwaf/v4@${GO_LIBDDWAF_REF}"
+              go get -u -t "github.com/DataDog/go-libddwaf/v5@${GO_LIBDDWAF_REF}"
               go mod tidy
             fi
             # shellcheck disable=SC2086
@@ -100,7 +100,7 @@ jobs:
     env:
       TEST_RESULTS: ${{ github.workspace }}/test-results
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -161,7 +161,7 @@ jobs:
         # local action is invoked.
         id: recheckout
         if: always()
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ steps.trusted.outputs.sha }}
@@ -184,7 +184,7 @@ jobs:
         id: dd-sts
         if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
@@ -195,12 +195,23 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
-      - name: Upload Coverage
+
+      - name: Merge contrib coverage files
+        if: always() && steps.restore.outcome == 'success'
+        run: |
+          echo "mode: atomic" > coverage-contrib-merged.txt
+          find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
+            -name "coverage-*.txt" -print0 \
+            | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
+
+      - name: Upload Coverage to Datadog
         if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
-        uses: ./.github/actions/codecov-upload
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage-contrib-merged.txt
+          format: go-coverprofile
 
   smoke-test-tracer:
     name: Test dd-trace-go
@@ -208,7 +219,7 @@ jobs:
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -232,7 +243,7 @@ jobs:
         id: dd-sts
         if: always()
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
@@ -243,12 +254,6 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:1.25,arch:${{ runner.arch }},os:${{ runner.os }}
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
 
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.
@@ -262,7 +267,7 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -354,7 +359,7 @@ jobs:
             deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -363,9 +368,9 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: Build
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
           file: ./internal/setup-smoke-test/Dockerfile
@@ -397,7 +402,7 @@ jobs:
         run: echo "Success!"
       - name: Failure
         if: needs.setup-requirements-linux.result != 'success' || needs.smoke-test-tracer.result != 'success' || needs.go-get-u.result != 'success'
-        uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
           webhook-type: incoming-webhook
           payload: |

@@ -12,14 +12,17 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 type traceWriter interface {
@@ -66,7 +69,7 @@ func newAgentTraceWriter(c *config, s *prioritySampler, statsdClient globalinter
 		prioritySampling: s,
 		statsd:           statsdClient,
 	}
-	tw.payload = tw.newPayload()
+	tw.payload = tw.newPayload(0)
 	return tw
 }
 
@@ -97,9 +100,43 @@ func (h *agentTraceWriter) stop() {
 	h.wg.Wait()
 }
 
-// newPayload returns a new payload based on the trace protocol.
-func (h *agentTraceWriter) newPayload() payload {
-	return newPayload(h.config.internalConfig.TraceProtocol())
+// newPayload returns a new payload based on the trace protocol. hint, when
+// positive, pre-sizes the buffer to the previous flush cycle's actual encoded
+// size, eliminating the doubling ramp-up at the cost of one upfront allocation.
+// The hint is a lagging heuristic: under-prediction falls back to organic growth;
+// over-prediction wastes one cycle of transient memory and self-corrects. Pass 0
+// on cold start (no prior cycle data).
+func (h *agentTraceWriter) newPayload(hint int) payload {
+	payload := newPayload(h.config.internalConfig.TraceProtocol())
+	if payload.protocol() == traceProtocolV04 {
+		if hint > 0 {
+			payload.grow(hint)
+		}
+		return payload
+	}
+	// pre-allocate payloadV1 with field values
+	pv1 := payload.(*safePayload).p.(*payloadV1)
+	pv1.SetLanguageName("go")
+	pv1.SetLanguageVersion(runtime.Version())
+	pv1.SetTracerVersion(version.Tag)
+	pv1.SetRuntimeID(globalconfig.RuntimeID())
+	if v := h.config.internalConfig.Env(); v != "" {
+		pv1.SetEnv(v)
+	}
+	if v := h.config.internalConfig.Hostname(); v != "" {
+		pv1.SetHostname(v)
+	}
+	if v := h.config.internalConfig.Version(); v != "" {
+		pv1.SetAppVersion(v)
+	}
+	if cid := globalinternal.ContainerID(); cid != "" {
+		pv1.SetContainerID(cid)
+	}
+	if hint > 0 {
+		pv1.sizeHint = hint
+	}
+
+	return payload
 }
 
 // flush will push any currently buffered traces to the server.
@@ -111,7 +148,7 @@ func (h *agentTraceWriter) flush() {
 		h.mu.Unlock()
 		return
 	}
-	h.payload = h.newPayload()
+	h.payload = h.newPayload(min(oldp.size(), int(payloadMaxLimit)))
 	h.mu.Unlock()
 
 	h.climit <- struct{}{}
@@ -124,8 +161,7 @@ func (h *agentTraceWriter) flush() {
 			// standard library. See dd-trace-go#976
 			h.statsd.Count("datadog.tracer.queue.enqueued.traces", int64(atomic.SwapUint32(&h.tracesQueued, 0)), nil, 1)
 			if p.protocol() == traceProtocolV1 {
-				sp := p.(*safePayload)
-				putPayloadV1(sp.p.(*payloadV1))
+				p.(*safePayload).p.(*payloadV1).handoff(pv1StateFlushDone)
 			} else {
 				p.clear()
 			}
@@ -136,7 +172,9 @@ func (h *agentTraceWriter) flush() {
 
 		stats := p.stats()
 		var err error
-		for attempt := 0; attempt <= h.config.sendRetries; attempt++ {
+		sendRetries := h.config.internalConfig.SendRetries()
+		retryInterval := h.config.internalConfig.RetryInterval()
+		for attempt := 0; attempt <= sendRetries; attempt++ {
 			log.Debug("Attempt to send payload: size: %d traces: %d\n", stats.size, stats.itemCount)
 			var rc io.ReadCloser
 			rc, err = h.config.ddTransport.send(p)
@@ -150,11 +188,11 @@ func (h *agentTraceWriter) flush() {
 				return
 			}
 
-			if attempt+1%5 == 0 {
-				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, h.config.sendRetries+1, err.Error())
+			if (attempt+1)%5 == 0 {
+				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error())
 			}
 			p.reset()
-			time.Sleep(h.config.internalConfig.RetryInterval())
+			time.Sleep(retryInterval)
 		}
 		h.statsd.Count("datadog.tracer.traces_dropped", int64(stats.itemCount), []string{"reason:send_failed"}, 1)
 		log.Error("lost %d traces: %v", stats.itemCount, err.Error())

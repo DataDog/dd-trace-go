@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
@@ -73,8 +74,8 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 		defaultHeaders["Datadog-Entity-ID"] = eid
 	}
 
-	// Determine if agentless mode is enabled through an environment variable.
-	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
+	// Determine if agentless mode is enabled (sourced from internal/config).
+	agentlessEnabled := config.internalConfig.CIVisibilityAgentless()
 
 	testCycleURL := ""
 	if agentlessEnabled {
@@ -88,16 +89,13 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 		// Check for a custom agentless URL.
 		agentlessURL := ""
-		if v := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
+		if v := config.internalConfig.CIVisibilityAgentlessURL(); v != "" {
 			agentlessURL = v
 		}
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
-			site := "datadoghq.com"
-			if v := env.Get("DD_SITE"); v != "" {
-				site = v
-			}
+			site := internalconfig.Get().Site()
 
 			testCycleURL = fmt.Sprintf("https://%s.%s/%s", TestCycleSubdomain, site, TestCyclePath)
 		} else {
@@ -130,6 +128,7 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 //
 //	An io.ReadCloser for reading the response body, and an error if the operation fails.
 func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) {
+	defer p.Close()
 	ciVisibilityPayload := &ciVisibilityPayload{payload: p, serializationTime: 0}
 	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {
