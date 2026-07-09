@@ -18,22 +18,21 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 )
 
-func testTracer(t *testing.T) *testtracer.TestTracer {
-	tt := testtracer.Start(t,
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("test-genai-app"),
-			tracer.WithLogStartup(false),
-		),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
+func testTracer(t *testing.T) *llmobstest.Collector {
+	t.Helper()
+	coll := llmobstest.New(t)
+	_, _, err := tracertest.Bootstrap(t,
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-genai-app"),
+		tracer.WithLogStartup(false),
+		coll.TracerOption(),
 	)
-	t.Cleanup(tt.Stop)
-	return tt
+	require.NoError(t, err)
+	return coll
 }
 
 // mockServer serves any path with the same canned JSON payload and supports
@@ -109,7 +108,8 @@ func TestGenerateContent(t *testing.T) {
 	require.NotNil(t, resp)
 	assert.Equal(t, "Hello world!", resp.Text())
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
+	tracer.Flush()
+	spans := tt.Spans()
 	require.Len(t, spans, 1)
 
 	s := spans[0]
@@ -177,7 +177,8 @@ func TestGenerateContentStream(t *testing.T) {
 	}
 	assert.Equal(t, "Hello world!", collected.String())
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
+	tracer.Flush()
+	spans := tt.Spans()
 	require.Len(t, spans, 1)
 	s := spans[0]
 	assert.Equal(t, "genai.generate_content_stream", s.Name)
@@ -210,7 +211,8 @@ func TestEmbedContent(t *testing.T) {
 	require.Len(t, resp.Embeddings, 1)
 	assert.Len(t, resp.Embeddings[0].Values, 3)
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
+	tracer.Flush()
+	spans := tt.Spans()
 	require.Len(t, spans, 1)
 	s := spans[0]
 	assert.Equal(t, "genai.embed_content", s.Name)
@@ -263,7 +265,8 @@ func TestChatSendMessage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Hi back!", resp.Text())
 
-	spans := tt.WaitForLLMObsSpans(t, 2)
+	tracer.Flush()
+	spans := tt.Spans()
 	require.Len(t, spans, 2)
 
 	for _, s := range spans {
@@ -315,7 +318,8 @@ func TestGenerateContentError(t *testing.T) {
 	)
 	require.Error(t, err)
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
+	tracer.Flush()
+	spans := tt.Spans()
 	require.Len(t, spans, 1)
 	s := spans[0]
 	assert.Contains(t, s.Meta, "error.message")
