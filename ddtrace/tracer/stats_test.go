@@ -482,7 +482,7 @@ func TestStatsServiceSourceNotSetWhenEmpty(t *testing.T) {
 }
 
 // failingStatsTransport is a transport whose sendStats fails a configurable
-// number of times before succeeding, used to test retry behaviour.
+// number of times before succeeding, used to test the stats send path.
 type failingStatsTransport struct {
 	dummyTransport
 	failCount    int
@@ -500,7 +500,9 @@ func (t *failingStatsTransport) sendStats(_ *pb.ClientStatsPayload, _ int) error
 	return nil
 }
 
-func TestStatsFlushRetries(t *testing.T) {
+// TestStatsFlushNoRetries verifies that a failed /v0.6/stats flush is never
+// retried, regardless of the trace-send retry configuration (CSS §9).
+func TestStatsFlushNoRetries(t *testing.T) {
 	testcases := []struct {
 		configRetries int
 		retryInterval time.Duration
@@ -511,14 +513,8 @@ func TestStatsFlushRetries(t *testing.T) {
 		{configRetries: 0, retryInterval: time.Millisecond, failCount: 0, statsSent: true, expAttempts: 1},
 		{configRetries: 0, retryInterval: time.Millisecond, failCount: 1, statsSent: false, expAttempts: 1},
 
-		{configRetries: 1, retryInterval: time.Millisecond, failCount: 0, statsSent: true, expAttempts: 1},
-		{configRetries: 1, retryInterval: time.Millisecond, failCount: 1, statsSent: true, expAttempts: 2},
-		{configRetries: 1, retryInterval: time.Millisecond, failCount: 2, statsSent: false, expAttempts: 2},
-
 		{configRetries: 2, retryInterval: time.Millisecond, failCount: 0, statsSent: true, expAttempts: 1},
-		{configRetries: 2, retryInterval: time.Millisecond, failCount: 1, statsSent: true, expAttempts: 2},
-		{configRetries: 2, retryInterval: time.Millisecond, failCount: 2, statsSent: true, expAttempts: 3},
-		{configRetries: 2, retryInterval: time.Millisecond, failCount: 3, statsSent: false, expAttempts: 3},
+		{configRetries: 2, retryInterval: time.Millisecond, failCount: 1, statsSent: false, expAttempts: 1},
 	}
 
 	bucketSize := int64(500_000)

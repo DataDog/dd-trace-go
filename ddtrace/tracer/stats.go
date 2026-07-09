@@ -267,24 +267,14 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	flushedBuckets := 0
 	// Given we use a constant PayloadAggregationKey there should only ever be 1 of these, but to be forward
 	// compatible in case this ever changes we can just iterate through all of them.
-	sendRetries := c.cfg.internalConfig.SendRetries()
-	retryInterval := c.cfg.internalConfig.RetryInterval()
 	for _, csp := range csps {
 		csp.RuntimeID = globalconfig.RuntimeID()
 		csp.Service = c.cfg.internalConfig.ServiceName()
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
-		var err error
-		for attempt := 0; attempt <= sendRetries; attempt++ {
-			err = c.cfg.ddTransport.sendStats(csp, obfVersion)
-			if err == nil {
-				break
-			}
-			if attempt < sendRetries {
-				time.Sleep(retryInterval)
-			}
-		}
-		if err != nil {
+		// Per the Client Stats Spec, a failed /v0.6/stats flush must not be
+		// retried, regardless of the trace-send retry configuration.
+		if err := c.cfg.ddTransport.sendStats(csp, obfVersion); err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
 			log.Error("Error sending stats payload: %s", err.Error())
 		}

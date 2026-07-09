@@ -803,7 +803,8 @@ func WithLambdaMode(enabled bool) StartOption {
 
 // WithSendRetries enables re-sending payloads that are not successfully
 // submitted to the agent.  This will cause the tracer to retry the send at
-// most `retries` times.
+// most `retries` times. This applies to the trace-send path only; client-side
+// stats (/v0.6/stats) are never retried.
 func WithSendRetries(retries int) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetSendRetries(retries, telemetry.OriginCode)
@@ -811,6 +812,7 @@ func WithSendRetries(retries int) StartOption {
 }
 
 // WithRetryInterval sets the interval, in seconds, for retrying submitting payloads to the agent.
+// This applies to the trace-send path only; client-side stats (/v0.6/stats) are never retried.
 func WithRetryInterval(interval int) StartOption {
 	return func(c *config) {
 		c.internalConfig.SetRetryInterval(time.Duration(interval)*time.Second, telemetry.OriginCode)
