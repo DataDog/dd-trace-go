@@ -101,8 +101,7 @@ func TestIntentCapture(t *testing.T) {
 type enabledKey struct{}
 
 func TestIntentCaptureEnabledFunc(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{
 		IntentCaptureEnabledFunc: func(ctx context.Context) bool {
@@ -173,8 +172,7 @@ func TestIntentCaptureEnabledFuncOverridesBool(t *testing.T) {
 }
 
 func TestIntentCaptureSkipsUIOnlyTools(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
@@ -252,8 +250,7 @@ func TestIntentFromContext(t *testing.T) {
 }
 
 func TestIntentFromContext_AbsentWhenNoTelemetry(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
@@ -286,8 +283,7 @@ func TestIntentCaptureRawInputSchemaViaNewToolListsWithoutConflict(t *testing.T)
 	// WithRawInputSchema this leaves BOTH set, and Tool.MarshalJSON refuses
 	// to encode a tool with both. Intent capture must clear the structured
 	// schema when it keeps the raw one.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 	srv.AddTool(mcp.NewTool("raw_tool",
@@ -311,8 +307,7 @@ func TestIntentCaptureRawInputSchemaViaNewToolListsWithoutConflict(t *testing.T)
 func TestIntentCaptureRawInputSchemaPreservesUnknownFields(t *testing.T) {
 	// mcp.ToolInputSchema doesn't model additionalProperties/oneOf/etc;
 	// intent capture must not silently strip those when injecting telemetry.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 	srv.AddTool(mcp.NewToolWithRawSchema("raw_tool", "raw", json.RawMessage(`{
@@ -337,8 +332,7 @@ func TestIntentCaptureRawInputSchemaPreservesUnknownFields(t *testing.T) {
 }
 
 func TestIntentCaptureRawInputSchema(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
@@ -416,8 +410,7 @@ func TestIntentCaptureConcurrentListTools(t *testing.T) {
 }
 
 func TestIntentCaptureConcurrentListToolsRawInputSchema(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 

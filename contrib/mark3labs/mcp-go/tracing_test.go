@@ -328,7 +328,6 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 
 func TestRedactToolOutput(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
 		WithMCPServerTracing(&TracingConfig{RedactToolOutput: true}))
@@ -345,7 +344,8 @@ func TestRedactToolOutput(t *testing.T) {
 
 	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"calculator","arguments":{}}}`))
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
+	tracer.Flush()
+	spans := tt.Spans()
 	require.Len(t, spans, 1)
 
 	toolSpan := spans[0]
@@ -361,7 +361,6 @@ func TestRedactToolOutput(t *testing.T) {
 
 func TestRedactToolOutputStillReportsIsError(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0",
 		WithMCPServerTracing(&TracingConfig{RedactToolOutput: true}))
@@ -378,7 +377,8 @@ func TestRedactToolOutputStillReportsIsError(t *testing.T) {
 
 	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"failing","arguments":{}}}`))
 
-	spans := tt.WaitForLLMObsSpans(t, 1)
+	tracer.Flush()
+	spans := tt.Spans()
 	require.Len(t, spans, 1)
 
 	toolSpan := spans[0]

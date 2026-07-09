@@ -23,8 +23,7 @@ import (
 func TestIntentCapturePredicate(t *testing.T) {
 	// The predicate must gate per-request: when it returns false, no schema
 	// injection and the telemetry argument reaches the handler.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 	ctx := context.Background()
 
 	var enabled atomic.Bool
@@ -90,8 +89,7 @@ func TestIntentCapturePredicate(t *testing.T) {
 func TestIntentCapturePreservesUnknownSchemaKeywords(t *testing.T) {
 	// *jsonschema.Schema doesn't model additionalProperties/oneOf; the map-based
 	// injection must pass those through verbatim instead of dropping them.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	ctx := context.Background()
 
@@ -138,8 +136,7 @@ func TestIntentCapturePreservesUnknownSchemaKeywords(t *testing.T) {
 func TestIntentCaptureSkipsUIOnlyTools(t *testing.T) {
 	// Tools whose _meta.ui.visibility omits "model" cannot be model-invoked, so
 	// telemetry injection should be skipped for them.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 	ctx := context.Background()
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
