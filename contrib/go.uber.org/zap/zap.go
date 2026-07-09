@@ -30,7 +30,14 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
+
+var instr *instrumentation.Instrumentation
+
+func init() {
+	instr = instrumentation.Load(instrumentation.PackageGoUberOrgZap)
+}
 
 // TraceFields returns zap.Field values carrying the Datadog trace and span IDs
 // from the active span in ctx. Returns nil when no span is active.
