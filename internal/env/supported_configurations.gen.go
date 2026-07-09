@@ -198,6 +198,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_HTTP_CLIENT_RESOURCE_NAME_QUANTIZE":                     {},
 	"DD_TRACE_HTTP_CLIENT_TAG_QUERY_STRING":                           {},
 	"DD_TRACE_HTTP_HANDLER_RESOURCE_NAME_QUANTIZE":                    {},
+	"DD_TRACE_HTTP_ROUTER_ROOT_SPAN":                                  {},
 	"DD_TRACE_HTTP_SERVER_ERROR_STATUSES":                             {},
 	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST":                        {},
 	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT":                 {},

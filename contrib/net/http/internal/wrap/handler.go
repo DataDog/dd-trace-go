@@ -14,11 +14,20 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 // serviceSourceWrapHandler is the service source value used when the service
 // name is explicitly set via the service parameter of WrapHandler.
 const serviceSourceWrapHandler = "opt.wrap_handler"
+
+// envRouterRootSpan, when true, makes both the Orchestrion and manual net/http
+// server instrumentation skip handlers that already start their own server span
+// (traced routers registered via httptrace.RegisterRoutingHandlerType), so the
+// router span becomes the trace root instead of a redundant net/http one.
+// Opt-in; the default preserves the existing span layout.
+// See https://github.com/DataDog/dd-trace-go/issues/3369.
+const envRouterRootSpan = "DD_TRACE_HTTP_ROUTER_ROOT_SPAN"
 
 type WrappedHandler struct {
 	http.HandlerFunc
@@ -27,6 +36,9 @@ type WrappedHandler struct {
 // Handler wraps an [http.Handler] with tracing using the given service and resource.
 // If the WithResourceNamer option is provided as part of opts, it will take precedence over the resource argument.
 func Handler(h http.Handler, service, resource string, opts ...internal.Option) http.Handler {
+	if options.GetBoolEnv(envRouterRootSpan, false) && httptrace.IsRoutingHandler(h) {
+		return h
+	}
 	instr := internal.Instrumentation
 	cfg := internal.Default(instr)
 	cfg.ApplyOpts(opts...)
