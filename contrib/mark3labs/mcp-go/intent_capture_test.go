@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
 )
 
 func TestIntentCapture(t *testing.T) {
 	tt := testTracer(t)
-	defer tt.Stop()
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
@@ -90,10 +90,8 @@ func TestIntentCapture(t *testing.T) {
 	assert.Equal(t, "test intent description", receivedIntent)
 
 	// Verify intent was recorded on the LLMObs span
-	spans := tt.WaitForLLMObsSpans(t, 1)
-	require.Len(t, spans, 1)
-
-	toolSpan := spans[0]
+	tracer.Flush()
+	toolSpan := tt.RequireSpan(t, "calculator")
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 	assert.Equal(t, "calculator", toolSpan.Name)
 	assert.Contains(t, toolSpan.Meta, "intent")
@@ -103,8 +101,7 @@ func TestIntentCapture(t *testing.T) {
 type enabledKey struct{}
 
 func TestIntentCaptureEnabledFunc(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{
 		IntentCaptureEnabledFunc: func(ctx context.Context) bool {
@@ -175,8 +172,7 @@ func TestIntentCaptureEnabledFuncOverridesBool(t *testing.T) {
 }
 
 func TestIntentCaptureSkipsUIOnlyTools(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
@@ -254,8 +250,7 @@ func TestIntentFromContext(t *testing.T) {
 }
 
 func TestIntentFromContext_AbsentWhenNoTelemetry(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
@@ -288,8 +283,7 @@ func TestIntentCaptureRawInputSchemaViaNewToolListsWithoutConflict(t *testing.T)
 	// WithRawInputSchema this leaves BOTH set, and Tool.MarshalJSON refuses
 	// to encode a tool with both. Intent capture must clear the structured
 	// schema when it keeps the raw one.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 	srv.AddTool(mcp.NewTool("raw_tool",
@@ -313,8 +307,7 @@ func TestIntentCaptureRawInputSchemaViaNewToolListsWithoutConflict(t *testing.T)
 func TestIntentCaptureRawInputSchemaPreservesUnknownFields(t *testing.T) {
 	// mcp.ToolInputSchema doesn't model additionalProperties/oneOf/etc;
 	// intent capture must not silently strip those when injecting telemetry.
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 	srv.AddTool(mcp.NewToolWithRawSchema("raw_tool", "raw", json.RawMessage(`{
@@ -339,8 +332,7 @@ func TestIntentCaptureRawInputSchemaPreservesUnknownFields(t *testing.T) {
 }
 
 func TestIntentCaptureRawInputSchema(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
@@ -384,8 +376,7 @@ func TestIntentCaptureRawInputSchema(t *testing.T) {
 }
 
 func TestIntentCaptureConcurrentListTools(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
@@ -419,8 +410,7 @@ func TestIntentCaptureConcurrentListTools(t *testing.T) {
 }
 
 func TestIntentCaptureConcurrentListToolsRawInputSchema(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
 
