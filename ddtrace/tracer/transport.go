@@ -209,7 +209,7 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	if t := getGlobalTracer(); t != nil {
 		tc := t.TracerConf()
 		if tc.TracingAsTransport || tc.CanComputeStats || tc.OTLPSpanMetricsEnabled {
-			req.Header.Set("Datadog-Client-Computed-Stats", "t")
+			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
 		droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))
 		partialTraces := int(tracerstats.Count(tracerstats.PartialTraces))
