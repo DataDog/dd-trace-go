@@ -20,10 +20,14 @@ platforms=(
   windows/386 windows/amd64
 )
 
-mapfile -t pkgs < <(
-  go list -f '{{.ImportPath}}|{{if .GoFiles}}Y{{end}}|{{join .Deps " "}}' ./... |
-    awk -F'|' '$2 == "Y" && $3 !~ /go-libddwaf/ { print $1 }'
-)
+# go list runs in $(...) so a discovery failure trips set -e (process
+# substitution would swallow it and leave pkgs empty).
+pkgs_raw=$(go list -f '{{.ImportPath}}|{{if .GoFiles}}Y{{end}}|{{join .Deps " "}}' ./...)
+mapfile -t pkgs < <(awk -F'|' '$2 == "Y" && $3 !~ /go-libddwaf/ { print $1 }' <<< "$pkgs_raw")
+[[ ${#pkgs[@]} -gt 0 ]] || {
+  echo "no packages discovered" >&2
+  exit 1
+}
 echo "Cross-compiling ${#pkgs[@]} package(s) across ${#platforms[@]} port(s)"
 
 rc=0
