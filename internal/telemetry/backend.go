@@ -125,8 +125,9 @@ func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 
 func (logger *loggerBackend) Payload() transport.Payload {
 	logs := make([]transport.LogMessage, 0, logger.store.Size()+1)
-	logger.store.Range(func(key loggerKey, value *loggerValue) bool {
-		logger.store.Delete(key)
+	// DeleteMatching drains the store as it iterates: each visited entry is
+	// snapshotted into the payload and then deleted (delete=true, cancel=false).
+	logger.store.DeleteMatching(func(key loggerKey, value *loggerValue) (bool, bool) {
 		logger.distinctLogs.Add(-1)
 		msg := transport.LogMessage{
 			Message:    logger.formatMessage(value.record),
@@ -139,7 +140,7 @@ func (logger *loggerBackend) Payload() transport.Payload {
 			msg.StackTrace = stacktrace.Format(value.rawStack.SymbolicateWithRedaction())
 		}
 		logs = append(logs, msg)
-		return true
+		return true, false
 	})
 
 	if len(logs) == 0 {

@@ -45,12 +45,11 @@ func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []str
 
 func (d *distributions) Payload() transport.Payload {
 	series := make([]transport.DistributionSeries, 0, d.store.Size())
-	d.store.Range(func(_ metricKey, handle *distribution) bool {
+	for _, handle := range d.store.All() {
 		if payload := handle.payload(); payload.Namespace != "" {
 			series = append(series, payload)
 		}
-		return true
-	})
+	}
 
 	if len(series) == 0 {
 		return nil
