@@ -148,6 +148,12 @@ func (i *Instrumentation) TelemetryLog() *telemetrylog.Logger {
 	return i.telemetrylog
 }
 
+type TelemetryClient = telemetry.Client
+
+func (i *Instrumentation) TelemetryClient() TelemetryClient {
+	return telemetry.GlobalClient()
+}
+
 type TelemetryOrigin = telemetry.Origin
 
 const (
