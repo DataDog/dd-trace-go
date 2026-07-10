@@ -2736,6 +2736,23 @@ func BenchmarkExtractW3C(b *testing.B) {
 	}
 }
 
+// BenchmarkExtractW3CUppercase mirrors BenchmarkExtractW3C but with an
+// uppercase-hex traceparent, the only shape that exercises the allocation
+// path removed from parseTraceparent (see TestParseTraceparentCaseInsensitive).
+func BenchmarkExtractW3CUppercase(b *testing.B) {
+	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01",
+		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
+	})
+	b.ResetTimer()
+	log.SetLevel(log.LevelError)
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
 func FuzzMarshalPropagatingTags(f *testing.F) {
 	f.Add("testA", "testB", "testC", "testD", "testG", "testF")
 	f.Fuzz(func(t *testing.T, key1 string, val1 string,
@@ -2820,6 +2837,29 @@ func FuzzComposeTracestate(f *testing.F) {
 				traceState)
 		}
 	})
+}
+
+func TestParseTraceparentCaseInsensitive(t *testing.T) {
+	lower := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	upper := "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01"
+
+	lowerCtx := new(SpanContext)
+	lowerCtx.trace = newTrace()
+	assert.NoError(t, parseTraceparent(lowerCtx, lower))
+
+	upperCtx := new(SpanContext)
+	upperCtx.trace = newTrace()
+	assert.NoError(t, parseTraceparent(upperCtx, upper))
+
+	assert.Equal(t, lowerCtx.traceID.value, upperCtx.traceID.value)
+	assert.Equal(t, lowerCtx.spanID, upperCtx.spanID)
+	lowerPriority, ok := lowerCtx.SamplingPriority()
+	assert.True(t, ok)
+	upperPriority, ok := upperCtx.SamplingPriority()
+	assert.True(t, ok)
+	assert.Equal(t, lowerPriority, upperPriority)
+	assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", lowerCtx.TraceID())
+	assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", upperCtx.TraceID())
 }
 
 func FuzzParseTraceparent(f *testing.F) {

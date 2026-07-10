@@ -52,6 +52,7 @@ jobs:
         mode: [standard, orchestrion]
         sample:
           - 99designs.gqlgen
+          - aerospike.v7
           - aws.v1
           - aws.v2
           - chi.v5

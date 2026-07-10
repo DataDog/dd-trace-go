@@ -146,3 +146,5 @@ func (w *otlpTraceWriter) stop() {
 	w.flush()
 	w.wg.Wait()
 }
+
+func (w *otlpTraceWriter) wait() { w.wg.Wait() }

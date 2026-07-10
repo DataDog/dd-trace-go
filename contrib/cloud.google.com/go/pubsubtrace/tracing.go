@@ -14,6 +14,7 @@ package pubsubtrace
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,11 +60,16 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 	spanOpts := []tracer.StartSpanOption{
 		tracer.ResourceName(topic.String()),
 		tracer.SpanType(ext.SpanTypeMessageProducer),
-		tracer.Tag("message_size", len(msg.Data)),
-		tracer.Tag("ordering_key", msg.OrderingKey),
+		tracer.Tag(ext.PubsubMessageSize, len(msg.Data)),
+		tracer.Tag(ext.PubsubOrderingKey, msg.OrderingKey),
 		tracer.Tag(ext.Component, tr.component),
 		tracer.Tag(ext.SpanKind, ext.SpanKindProducer),
 		tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
+		tracer.Tag(ext.MessagingOperationName, "send"),
+		tracer.Tag(ext.MessagingDestinationName, topic.String()),
+	}
+	if projectID := projectIDFromResourceName(topic.String()); projectID != "" {
+		spanOpts = append(spanOpts, tracer.Tag(ext.GCPProjectID, projectID))
 	}
 	if cfg.serviceName != "" {
 		spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
@@ -82,12 +88,13 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
 		tr.instr.Logger().Debug("contrib/cloud.google.com/go/pubsubtrace: failed injecting tracing attributes: %s", err.Error())
 	}
-	span.SetTag("num_attributes", len(msg.Attributes))
+	span.SetTag(ext.PubsubNumAttributes, len(msg.Attributes))
 
 	var once sync.Once
 	closeSpan := func(serverID string, err error) {
 		once.Do(func() {
-			span.SetTag("server_id", serverID)
+			span.SetTag(ext.PubsubServerID, serverID)
+			span.SetTag(ext.MessagingMessageID, serverID)
 			span.Finish(tracer.WithError(err))
 		})
 	}
@@ -105,15 +112,21 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 		opts := []tracer.StartSpanOption{
 			tracer.ResourceName(s.String()),
 			tracer.SpanType(ext.SpanTypeMessageConsumer),
-			tracer.Tag("message_size", len(msg.Data)),
-			tracer.Tag("num_attributes", len(msg.Attributes)),
-			tracer.Tag("ordering_key", msg.OrderingKey),
-			tracer.Tag("message_id", msg.ID),
-			tracer.Tag("publish_time", msg.PublishTime.String()),
+			tracer.Tag(ext.PubsubMessageSize, len(msg.Data)),
+			tracer.Tag(ext.PubsubNumAttributes, len(msg.Attributes)),
+			tracer.Tag(ext.PubsubOrderingKey, msg.OrderingKey),
+			tracer.Tag(ext.PubsubMessageID, msg.ID),
+			tracer.Tag(ext.MessagingMessageID, msg.ID),
+			tracer.Tag(ext.PubsubPublishTime, msg.PublishTime.String()),
 			tracer.Tag(ext.Component, tr.component),
 			tracer.Tag(ext.SpanKind, ext.SpanKindConsumer),
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
+			tracer.Tag(ext.MessagingOperationName, "receive"),
+			tracer.Tag(ext.MessagingDestinationName, s.String()),
 			tracer.ChildOf(parentSpanCtx),
+		}
+		if projectID := projectIDFromResourceName(s.String()); projectID != "" {
+			opts = append(opts, tracer.Tag(ext.GCPProjectID, projectID))
 		}
 		if cfg.serviceName != "" {
 			opts = append(opts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
@@ -127,8 +140,20 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 		}
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		if msg.DeliveryAttempt != nil {
-			span.SetTag("delivery_attempt", *msg.DeliveryAttempt)
+			span.SetTag(ext.PubsubDeliveryAttempt, *msg.DeliveryAttempt)
 		}
 		return ctx, func() { span.Finish() }
 	}
+}
+
+// extracts the GCP project ID from a Pubsub resource name of the form
+// "projects/{project}/topics/{topic}" or "projects/{project}/subscriptions/{subscription}"
+func projectIDFromResourceName(name string) string {
+	const prefix = "projects/"
+	if !strings.HasPrefix(name, prefix) {
+		return ""
+	}
+	rest := name[len(prefix):]
+	project, _, _ := strings.Cut(rest, "/")
+	return project
 }

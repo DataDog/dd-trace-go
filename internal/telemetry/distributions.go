@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
@@ -18,7 +18,7 @@ import (
 )
 
 type distributions struct {
-	store         *xsync.MapOf[metricKey, *distribution]
+	store         *xsync.Map[metricKey, *distribution]
 	pool          *internal.SyncPool[[]float64]
 	queueSize     internal.Range[int]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
@@ -28,11 +28,11 @@ type distributions struct {
 func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []string) MetricHandle {
 	kind := transport.DistMetric
 	key := newMetricKey(namespace, kind, name, tags)
-	handle, loaded := d.store.LoadOrCompute(key, func() *distribution {
+	handle, loaded := d.store.LoadOrCompute(key, func() (*distribution, bool) {
 		return &distribution{
 			key:    key,
 			values: internal.NewRingQueueWithPool[float64](d.queueSize, d.pool),
-		}
+		}, false
 	})
 	if !loaded && !d.skipAllowlist { // The metric is new: validate and log issues about it
 		if err := validateMetricKey(namespace, kind, name, tags); err != nil {
@@ -45,12 +45,11 @@ func (d *distributions) LoadOrStore(namespace Namespace, name string, tags []str
 
 func (d *distributions) Payload() transport.Payload {
 	series := make([]transport.DistributionSeries, 0, d.store.Size())
-	d.store.Range(func(_ metricKey, handle *distribution) bool {
+	for _, handle := range d.store.All() {
 		if payload := handle.payload(); payload.Namespace != "" {
 			series = append(series, payload)
 		}
-		return true
-	})
+	}
 
 	if len(series) == 0 {
 		return nil
