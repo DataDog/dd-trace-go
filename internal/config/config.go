@@ -94,7 +94,9 @@ type Config struct {
 	universalVersion bool
 	// env contains the environment that this application will run under.
 	env string
-	// serviceMappings holds a set of service mappings to dynamically rename services
+	// site specifies the Datadog site to send data to
+	site string
+	// serviceMappings holds a set of service mappings to dynamically rename services.
 	serviceMappings map[string]string
 	// hostname is automatically assigned from the OS hostname, or from the DD_TRACE_SOURCE_HOSTNAME environment variable or WithHostname() option.
 	hostname string
@@ -261,6 +263,7 @@ func loadConfig() *Config {
 	cfg.version = p.GetString("DD_VERSION", "")
 	cfg.universalVersion = p.GetBool("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
 	cfg.env = p.GetString("DD_ENV", "")
+	cfg.site = p.GetString("DD_SITE", "datadoghq.com")
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
@@ -1000,6 +1003,22 @@ func (c *Config) SetEnv(env string, origin telemetry.Origin, product ...Product)
 	}
 	c.env = env
 	configtelemetry.Report("DD_ENV", env, origin)
+}
+
+func (c *Config) Site() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.site
+}
+
+func (c *Config) SetSite(site string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_SITE", origin, site, product...) {
+		return
+	}
+	c.site = site
+	configtelemetry.Report("DD_SITE", site, origin)
 }
 
 // SetFeatureFlags adds to the feature flag set. No cross-product gate because this is additive, not a replacement.
