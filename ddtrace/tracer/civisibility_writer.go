@@ -81,6 +81,8 @@ func (w *ciVisibilityTraceWriter) stop() {
 	w.wg.Wait()
 }
 
+func (w *ciVisibilityTraceWriter) wait() { w.wg.Wait() }
+
 // flush sends the current payload to the transport. It ensures that the payload is reset
 // and the resources are freed after the flush operation is completed.
 func (w *ciVisibilityTraceWriter) flush() {

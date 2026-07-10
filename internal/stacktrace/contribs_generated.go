@@ -595,7 +595,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/prometheus/common",
 		"github.com/prometheus/otlptranslator",
 		"github.com/prometheus/procfs",
-		"github.com/puzpuzpuz/xsync/v3",
+		"github.com/puzpuzpuz/xsync/v4",
 		"github.com/rcrowley/go-metrics",
 		"github.com/redis/go-redis/v9",
 		"github.com/redis/rueidis",
