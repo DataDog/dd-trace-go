@@ -80,11 +80,21 @@ func newPayloadV04() *payloadV04 {
 // exact walk across simple/spankind/detailed span shapes at 1-1000 spans:
 // consistently faster (roughly 7-25%, larger wins on tag-heavier spans, see
 // BenchmarkPayloadVersions), with allocation *count* unchanged either way --
-// the win is CPU avoided, not allocations avoided. A larger constant (tried
-// 450/500/600) tracks tag-heavy spans' real encoded size more closely, but
-// over-allocating for the common lighter-weight span erases the win there, so
-// this mirrors the constant payloadV1 already uses for the same purpose
-// (payload_v1.go) rather than a value tuned to any one span shape.
+// the win is CPU avoided, not allocations avoided.
+//
+// Note that t.Msgsize() is itself a conservative *upper bound*, not the real
+// encoded size: msgpack's variable-length integer encoding means Msgsize()'s
+// generated code assumes worst-case fixed-width ints, so it overestimates
+// real span size roughly 2x in this repo's test fixtures (measured directly:
+// "simple" spans encode to ~127 B/span, "detailed" -- spanLinks+spanEvents+1
+// tag -- to ~275 B/span, 4-tag "low cardinality" spans to ~311 B/span, all
+// well under what Msgsize() reports for the same spans). So 300 isn't
+// threading a needle between "accurate for heavy spans" and "wasteful for
+// light spans" -- larger constants (tried 450/500/600) already exceed every
+// real per-span size measured here and just add more waste with no
+// corresponding benefit, which is why they benchmarked worse across the
+// board rather than better for tag-heavy spans specifically. 300 mirrors the
+// constant payloadV1 already uses for the same purpose (payload_v1.go).
 // Under-estimating here is harmless: bytes.Buffer grows itself if exceeded,
 // and it doesn't feed the payloadSizeLimit flush check in writer.go, which
 // reads the buffer's actual post-encode length instead.
