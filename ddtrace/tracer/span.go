@@ -1394,7 +1394,7 @@ const (
 	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
-	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_session_id"
+	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"
