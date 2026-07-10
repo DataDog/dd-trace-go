@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/99designs/gqlgen v0.17.92
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2/otelc v0.0.0-00010101000000-000000000000
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev
@@ -297,6 +298,7 @@ require (
 	github.com/nats-io/nats.go v1.52.0 // indirect
 	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/open-telemetry/opentelemetry-go-compile-instrumentation/pkg v0.0.0-20260624035708-73e5988252df // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
@@ -492,3 +494,5 @@ replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2
 replace github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 => ../../../instrumentation/testutils/containers
 
 replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../../instrumentation/testutils/grpc
+
+replace github.com/DataDog/dd-trace-go/contrib/net/http/v2/otelc => ../../../contrib/net/http/otelc
