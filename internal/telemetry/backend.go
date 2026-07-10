@@ -13,7 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
@@ -44,7 +44,7 @@ type formatter struct {
 }
 
 type loggerBackend struct {
-	store *xsync.MapOf[loggerKey, *loggerValue]
+	store *xsync.Map[loggerKey, *loggerValue]
 
 	distinctLogs       atomic.Int32
 	maxDistinctLogs    int32
@@ -55,7 +55,7 @@ type loggerBackend struct {
 
 func newLoggerBackend(maxDistinctLogs int32) *loggerBackend {
 	return &loggerBackend{
-		store:           xsync.NewMapOf[loggerKey, *loggerValue](),
+		store:           xsync.NewMap[loggerKey, *loggerValue](),
 		maxDistinctLogs: maxDistinctLogs,
 
 		formatters: &sync.Pool{
@@ -105,7 +105,7 @@ func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 		opt(&key, nil)
 	}
 
-	value, _ := logger.store.LoadOrCompute(key, func() *loggerValue {
+	value, _ := logger.store.LoadOrCompute(key, func() (*loggerValue, bool) {
 		// Create the record at capture time, not send time
 		value := &loggerValue{
 			record: record,
@@ -117,7 +117,7 @@ func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 			value.rawStack = stacktrace.CaptureRaw(telemetryStackSkip)
 		}
 		logger.distinctLogs.Add(1)
-		return value
+		return value, false
 	})
 
 	value.count.Add(1)

@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
@@ -75,7 +75,7 @@ type metricHandle interface {
 }
 
 type metrics struct {
-	store         *xsync.MapOf[metricKey, metricHandle]
+	store         *xsync.Map[metricKey, metricHandle]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
 }
 
@@ -89,15 +89,19 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 	)
 	switch kind {
 	case transport.CountMetric:
-		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle { return &count{metric: metric{key: key}} })
+		handle, loaded = m.store.LoadOrCompute(key, func() (metricHandle, bool) {
+			return &count{metric: metric{key: key}}, false
+		})
 	case transport.GaugeMetric:
-		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle { return &gauge{metric: metric{key: key}} })
+		handle, loaded = m.store.LoadOrCompute(key, func() (metricHandle, bool) {
+			return &gauge{metric: metric{key: key}}, false
+		})
 	case transport.RateMetric:
-		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle {
+		handle, loaded = m.store.LoadOrCompute(key, func() (metricHandle, bool) {
 			rate := &rate{count: count{metric: metric{key: key}}}
 			now := time.Now()
 			rate.intervalStart.Store(&now)
-			return rate
+			return rate, false
 		})
 	default:
 		log.Warn("telemetry: unknown metric type %q", kind)

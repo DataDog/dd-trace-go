@@ -10,7 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -79,11 +79,11 @@ func (l *LockMap) Get(k string) string {
 // Implementation and related tests were taken/inspired by felixge/countermap
 // https://github.com/felixge/countermap/pull/2
 type XSyncMapCounterMap struct {
-	counts *xsync.MapOf[string, *xsync.Counter]
+	counts *xsync.Map[string, *xsync.Counter]
 }
 
 func NewXSyncMapCounterMap() *XSyncMapCounterMap {
-	return &XSyncMapCounterMap{counts: xsync.NewMapOf[string, *xsync.Counter]()}
+	return &XSyncMapCounterMap{counts: xsync.NewMap[string, *xsync.Counter]()}
 }
 
 func (cm *XSyncMapCounterMap) Inc(key string) {
