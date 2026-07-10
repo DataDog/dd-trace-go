@@ -1353,7 +1353,20 @@ func (p *propagatorW3c) Extract(carrier any) (*SpanContext, error) {
 	}
 }
 
-// extractTextMap parses the W3C headers into local variables during the
+// w3cExtractScratch holds the fields extracted from incoming W3C headers
+// before a *SpanContext is allocated. It exists so the ForeachKey closure
+// below captures a single value instead of three separate local variables:
+// capturing several individually-mutated locals in one closure makes each of
+// them escape (and heap-box) independently, which regresses allocation count
+// even though no single one of them is as large as a full SpanContext. A
+// single consolidated scratch value only needs one escape.
+type w3cExtractScratch struct {
+	parentHeader string
+	stateHeader  string
+	baggage      map[string]string
+}
+
+// extractTextMap parses the W3C headers into a scratch value during the
 // ForeachKey scan (rather than mutating a *SpanContext directly, which would
 // force it to heap-escape on every call) and only allocates a *SpanContext
 // once a traceparent header has actually been found. Requests with no
@@ -1368,32 +1381,30 @@ func (p *propagatorW3c) Extract(carrier any) (*SpanContext, error) {
 // on locals; malformed-but-present headers are far rarer than headers being
 // absent entirely, so this was left out of scope for now.
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error) {
-	var parentHeader string
-	var stateHeader string
-	var baggage map[string]string
+	var s w3cExtractScratch
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
 		switch {
 		case strings.EqualFold(k, traceparentHeader):
-			if parentHeader != "" {
+			if s.parentHeader != "" {
 				return ErrSpanContextCorrupted
 			}
-			parentHeader = v
+			s.parentHeader = v
 		case strings.EqualFold(k, tracestateHeader):
-			stateHeader = v
+			s.stateHeader = v
 		default:
 			if after, ok := cutPrefixFold(k, DefaultBaggageHeaderPrefix); ok {
-				if baggage == nil {
-					baggage = make(map[string]string, 1)
+				if s.baggage == nil {
+					s.baggage = make(map[string]string, 1)
 				}
-				baggage[strings.ToLower(after)] = v
+				s.baggage[strings.ToLower(after)] = v
 			}
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	if parentHeader == "" {
+	if s.parentHeader == "" {
 		// No traceparent header present. This is exactly the condition under
 		// which parseTraceparent would return ErrSpanContextNotFound below, so
 		// return early without allocating a SpanContext for the (common)
@@ -1402,12 +1413,12 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 	}
 	var ctx SpanContext
 	ctx.isRemote = true
-	if err := parseTraceparent(&ctx, parentHeader); err != nil {
+	if err := parseTraceparent(&ctx, s.parentHeader); err != nil {
 		return nil, err
 	}
-	parseTracestate(&ctx, stateHeader)
-	if len(baggage) > 0 {
-		ctx.baggage = baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+	parseTracestate(&ctx, s.stateHeader)
+	if len(s.baggage) > 0 {
+		ctx.baggage = s.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		atomic.StoreUint32(&ctx.hasBaggage, 1)
 	}
 	return &ctx, nil
