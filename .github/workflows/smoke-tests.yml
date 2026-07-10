@@ -68,16 +68,32 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             mkdir -p "$TEST_RESULTS"
-            # shellcheck disable=SC2086
-            go get -u -t $PACKAGES
-            go mod tidy
-            find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
-            if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
-              go get -u -t "github.com/DataDog/go-libddwaf/v5@${GO_LIBDDWAF_REF}"
+            compile() {
+              # shellcheck disable=SC2086
+              go get -u -t $PACKAGES
               go mod tidy
+              find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
+              if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
+                go get -u -t "github.com/DataDog/go-libddwaf/v5@${GO_LIBDDWAF_REF}"
+                go mod tidy
+              fi
+              # shellcheck disable=SC2086
+              go build $PACKAGES
+            }
+            log="$(mktemp)"
+            if ! compile 2>&1 | tee "$log"; then
+              # The restored GOCACHE/GOMODCACHE (actions/setup-go cache: true) can get
+              # transiently corrupted in transit to a given runner, surfacing as compiler
+              # ICEs or archive/zip checksum errors unrelated to any real code change.
+              # Clear both caches and retry once before failing the job for real.
+              if grep -qE 'internal compiler error|zip: checksum error|not the start of an archive file' "$log"; then
+                echo "::warning::Detected a Go build-cache corruption signature; clearing GOCACHE/GOMODCACHE and retrying once"
+                go clean -cache -modcache
+                compile
+              else
+                exit 1
+              fi
             fi
-            # shellcheck disable=SC2086
-            go build $PACKAGES
 
       - name: Compute Matrix
         id: matrix
@@ -134,7 +150,23 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
-            ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+            run_smoke() {
+              ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+            }
+            log="$(mktemp)"
+            if ! run_smoke 2>&1 | tee "$log"; then
+              # See "Compile dd-trace-go with updated dependencies (sandboxed)" above:
+              # transient GOCACHE/GOMODCACHE corruption in the restored cache can
+              # surface as a compiler ICE or archive/zip checksum error. Retry once
+              # after a full cache clear before failing the job for real.
+              if grep -qE 'internal compiler error|zip: checksum error|not the start of an archive file' "$log"; then
+                echo "::warning::Detected a Go build-cache corruption signature; clearing GOCACHE/GOMODCACHE and retrying once"
+                go clean -cache -modcache
+                run_smoke
+              else
+                exit 1
+              fi
+            fi
       - name: Stage sandbox artifacts outside workspace
         # Move the test results and coverage files to RUNNER_TEMP so the
         # next checkout (which wipes the workspace) does not delete them.
