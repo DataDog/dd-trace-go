@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // DatadogPropagator implements propagation.TextMapPropagator using the Datadog
@@ -71,8 +72,9 @@ func (DatadogPropagator) Inject(ctx context.Context, carrier propagation.TextMap
 	if !ok {
 		return
 	}
-	// Errors from Inject are silently ignored to match the OTel propagator contract.
-	tracer.Inject(span.Context(), otelCarrierAdapter{carrier}) //nolint:errcheck
+	if err := tracer.Inject(span.Context(), otelCarrierAdapter{carrier}); err != nil {
+		log.Error("DatadogPropagator: failed to inject span context: %v", err)
+	}
 }
 
 // otelCarrierAdapter wraps an OTel TextMapCarrier so it can be passed to the

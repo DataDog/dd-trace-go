@@ -163,3 +163,24 @@ func TestDatadogPropagatorRoundTrip(t *testing.T) {
 	// The child span should be in the same trace as the root.
 	assert.Equal(t, ddRoot.Context().TraceIDLower(), ddChild.Context().TraceIDLower(), "round-trip should preserve trace ID")
 }
+
+func TestNewTracerProviderRegistersPropagator(t *testing.T) {
+	// Set a pre-existing propagator to verify it is preserved, not overwritten.
+	sentinel := propagation.TraceContext{}
+	otel.SetTextMapPropagator(sentinel)
+
+	tp := NewTracerProvider()
+	defer tp.Shutdown()
+
+	prop := otel.GetTextMapPropagator()
+	fields := prop.Fields()
+
+	// DatadogPropagator fields must be present.
+	for _, f := range (DatadogPropagator{}).Fields() {
+		assert.Contains(t, fields, f, "DatadogPropagator field %q should be in the global propagator", f)
+	}
+	// The pre-existing TraceContext propagator fields must still be present.
+	for _, f := range sentinel.Fields() {
+		assert.Contains(t, fields, f, "pre-existing propagator field %q should be preserved", f)
+	}
+}
