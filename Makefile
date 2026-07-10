@@ -77,7 +77,10 @@ lint/action: tools-install ## Lint GitHub Actions workflows
 
 .PHONY: lint/errlog
 lint/errlog: ## Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
-	go run ./internal/telemetry/log/analyzer/cmd ./...
+	# Clear a possibly-stale GOROOT (e.g. setup-go's check-latest leaves the runner's
+	# preinstalled GOROOT pointing at an older patch than the go binary on PATH), so the
+	# compiler and go tool versions match. Version-agnostic: checks nothing, pins nothing.
+	env -u GOROOT go run ./internal/telemetry/log/analyzer/cmd ./...
 
 .PHONY: format
 format: tools-install ## Format code
