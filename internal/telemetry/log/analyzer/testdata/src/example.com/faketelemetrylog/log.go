@@ -3,6 +3,8 @@
 // can resolve function calls without hitting internal-package restrictions.
 package faketelemetrylog
 
+import "log/slog"
+
 // Logger mirrors internal/telemetry/log.Logger.
 type Logger struct{}
 
@@ -22,3 +24,13 @@ func (l *Logger) Error(message string, attrs ...any) {}
 // Helpers.
 func ReportError(msg string, err error, opts ...any) {}
 func ReportPanic(recovered any, msg string)           {}
+
+// SafeError mirrors internal/telemetry/log.SafeError: it implements
+// slog.LogValuer so telemetrysafety's slog.Any checks treat it as safe.
+type SafeError struct{ errType string }
+
+func NewSafeError(err error) SafeError { return SafeError{} }
+
+func (e SafeError) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("error_type", e.errType))
+}

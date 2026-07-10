@@ -76,7 +76,7 @@ lint/action: tools-install ## Lint GitHub Actions workflows
 	$(BIN_PATH) ./scripts/lint.sh --action
 
 .PHONY: lint/errlog
-lint/errlog: ## Run constantlogmsg analyzer — enforces constant message args on log.Error/Warn/ReportError/ReportPanic
+lint/errlog: ## Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
 	go run ./internal/telemetry/log/analyzer/cmd ./...
 
 .PHONY: format

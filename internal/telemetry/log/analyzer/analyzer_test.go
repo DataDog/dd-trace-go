@@ -51,3 +51,42 @@ func TestAnalyzerSkip(t *testing.T) {
 	testdata := analysistest.TestData()
 	analysistest.Run(t, testdata, a, "skippedpkg")
 }
+
+// TestTelemetrySafety verifies the analyzer that replaces the retired
+// rules/telemetry_rules.go ruleguard rules: raw errors and non-LogValuer
+// types passed to slog.Any, and slog.String(key, err.Error()).
+func TestTelemetrySafety(t *testing.T) {
+	a := analyzer.NewTelemetrySafety("example.com/faketelemetrylog", "example.com/faketelemetrylog")
+	testdata := analysistest.TestData()
+	analysistest.Run(t, testdata, a, "telemetrysafety")
+}
+
+// TestFormatVerbs verifies the analyzer that replaces the retired
+// rules/logging_rules.go ruleguard rules: unsafe %v/%+v/%#v usage in
+// internal/log calls.
+func TestFormatVerbs(t *testing.T) {
+	a := analyzer.NewFormatVerbs("example.com/fakelog")
+	testdata := analysistest.TestData()
+	analysistest.Run(t, testdata, a, "formatverbs")
+}
+
+// TestFormatVerbsNolint verifies that logformatverbs honors //nolint
+// directives (bare, gocritic-named, and analyzer-named) inherited from the
+// retired ruleguard rule — a standalone go vet pass has no nolint mechanism
+// of its own, so the analyzer implements a narrow one to avoid breaking
+// pre-existing exceptions.
+func TestFormatVerbsNolint(t *testing.T) {
+	a := analyzer.NewFormatVerbs("example.com/fakelog")
+	testdata := analysistest.TestData()
+	analysistest.Run(t, testdata, a, "formatverbsnolint")
+}
+
+// TestFormatVerbsStdLog verifies the standard-library "log" package variant,
+// scoped to the same file allow-list as .golangci.yml's depguard config
+// (here: any path containing "/scripts/"), and that a spread call
+// (f(format, args...)) is skipped rather than crashing.
+func TestFormatVerbsStdLog(t *testing.T) {
+	a := analyzer.NewFormatVerbs("example.com/fakelog")
+	testdata := analysistest.TestData()
+	analysistest.Run(t, testdata, a, "example.com/scripts/stdlogpkg")
+}
