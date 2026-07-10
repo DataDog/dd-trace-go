@@ -270,7 +270,7 @@ func loadConfig() *Config {
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
 	otelSemantics, otelSemanticsOrigin := p.GetBoolWithOrigin("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
-	cfg.SetOtelSemanticsEnabled(otelSemantics, otelSemanticsOrigin)
+	cfg.SetOTelSemanticsEnabled(otelSemantics, otelSemanticsOrigin)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
@@ -1205,15 +1205,15 @@ func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, produ
 	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
 }
 
-func (c *Config) OtelSemanticsEnabled() bool {
+func (c *Config) OTelSemanticsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otelSemanticsEnabled
 }
 
-// SetOtelSemanticsEnabled sets whether OTLP-exported spans should match the pure
+// SetOTelSemanticsEnabled sets whether OTLP-exported spans should match the pure
 // OpenTelemetry SDK, and reports the value to configuration telemetry.
-func (c *Config) SetOtelSemanticsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.checkProductConflict("DD_TRACE_OTEL_SEMANTICS_ENABLED", origin, enabled, product...) {

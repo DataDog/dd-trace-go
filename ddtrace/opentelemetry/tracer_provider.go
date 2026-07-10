@@ -65,7 +65,7 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	t := &oteltracer{
 		DD:                   internal.GetGlobalTracer[tracer.Tracer](),
 		provider:             p,
-		otelSemanticsEnabled: internalconfig.Get().OtelSemanticsEnabled(),
+		otelSemanticsEnabled: internalconfig.Get().OTelSemanticsEnabled(),
 	}
 	p.tracer = t
 	return p

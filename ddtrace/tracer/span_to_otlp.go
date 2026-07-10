@@ -185,7 +185,7 @@ var otelIntMetricKeys = map[string]struct{}{
 	"client.port":               {},
 }
 
-// ddOnlyMetaKeys are Datadog-specific span tags omitted under OtelSemanticsEnabled;
+// ddOnlyMetaKeys are Datadog-specific span tags omitted under OTelSemanticsEnabled;
 // they have no OTel equivalent. span.kind is already carried by the OTLP SpanKind field.
 var ddOnlyMetaKeys = map[string]struct{}{
 	ext.ErrorMsg:           {},
