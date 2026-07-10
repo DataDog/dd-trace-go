@@ -478,5 +478,4 @@ jobs:
       # Gate job completion on the backgrounded uploads above.
       - name: Wait for uploads
         if: always()
-        wait-all: true
-        run: echo "datadog uploads complete"
+        wait-all:

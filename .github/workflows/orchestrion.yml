@@ -232,13 +232,15 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo sysctl vm.overcommit_memory=1
 
+      # Wait for the backgrounded image pulls to finish before the tests. This
+      # is a no-op on non-Linux, where the pull step is skipped.
+      - name: Wait for image pulls
+        wait-all:
+
       # Finally, we run the test suite!
       # To avoid false negatives with failing tests, we do not run our CI Visibility `gotestsum`. Doing so would mark our
       # failure tests as real failures in the backend.
       - name: Run Tests
-        # Block until the backgrounded image pulls finish. No-op on non-Linux,
-        # where the pull step is skipped and no background steps ran.
-        wait-all: true
         shell: bash
         run: |-
           export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"

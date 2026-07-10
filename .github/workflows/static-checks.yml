@@ -164,10 +164,17 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
 
-      # The two golangci-lint runs, the token fetch, and shellcheck are
-      # independent, so run them concurrently as background steps and gate the
-      # job on all of them with wait-all below. shellcheck alone waits on the
-      # token. This roughly halves the job (two ~10m lint streams overlap).
+      # The two golangci-lint runs and shellcheck are independent and slow, so
+      # run them as background steps and gate the job on all of them with the
+      # wait-all step below. The token fetch stays in the foreground so its
+      # output is available before shellcheck (a background step) starts.
+      - name: Get GitHub Token via dd-octo-sts
+        id: generate-token
+        uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
+        with:
+          scope: DataDog/dd-trace-go
+          policy: self.static-checks-shellcheck
+
       - name: golangci-lint
         background: true
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
@@ -191,18 +198,7 @@ jobs:
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
 
-      - name: Get GitHub Token via dd-octo-sts
-        id: generate-token
-        background: true
-        uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
-        with:
-          scope: DataDog/dd-trace-go
-          policy: self.static-checks-shellcheck
-
       - name: shellcheck
-        # Needs the token from generate-token, but still overlaps the golangci
-        # streams: wait blocks only this step until the token step completes.
-        wait: generate-token
         background: true
         uses: reviewdog/action-shellcheck@4c07458293ac342d477251099501a718ae5ef86e # v1.32.0
         with:
@@ -213,11 +209,10 @@ jobs:
           pattern: "**/*.sh"
           filter_mode: nofilter
 
-      # Join point: block until every background step above finishes and fail
-      # the job if any of them failed.
+      # Join point: block until every background step above finishes. A failing
+      # background step fails the job here.
       - name: Wait for all lint streams
-        wait-all: true
-        run: echo "golangci-lint (x2) and shellcheck completed"
+        wait-all:
 
   check-supported-config:
     runs-on: ubuntu-latest

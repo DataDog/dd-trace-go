@@ -344,10 +344,11 @@ jobs:
       - name: Build runner
         uses: ./.github/actions/install_runner
 
+      # Wait for the backgrounded datadog-ci pre-install before the test run.
+      - name: Wait for datadog-ci
+        wait-all:
+
       - name: Run
-        # Block until the backgrounded datadog-ci pre-install finishes before the
-        # test run and the result upload that consumes it.
-        wait-all: true
         shell: bash
         run: |
           env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
