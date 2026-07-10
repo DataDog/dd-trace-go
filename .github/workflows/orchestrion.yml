@@ -1,3 +1,10 @@
+# The `integration-test` job backgrounds the container-image pulls (parallel-steps
+# syntax) so they overlap Go setup + tool build instead of blocking right before the
+# tests. actionlint (<= v1.7.12) does not recognize background/wait-all yet, so
+# scripts/lint.sh skips this file via the marker below. Remove the marker (and the
+# skip handling in scripts/lint.sh) once actionlint ships support:
+# https://github.com/rhysd/actionlint/pull/694 (and pull/695).
+# actionlint:skip-file parallel-steps
 name: Orchestrion
 on:
   workflow_call: # From github.com/DataDog/orchestrion
@@ -148,6 +155,24 @@ jobs:
           repository: DataDog/orchestrion
           ref: ${{ inputs.orchestrion-version }}
 
+      # Pull docker images ahead of time so the pulls of large images don't have to
+      # fit within the test timeout. Backgrounded so the pulls overlap the Go setup,
+      # tool build and `go mod tidy` below; Run Tests blocks on them via wait-all.
+      - name: Pull container images
+        id: pull-images
+        # Docker is only supported on Linux runners at the moment
+        if: runner.os == 'Linux'
+        background: true
+        run: |-
+          # AWS DynamoDB Local is used to have a pretend AWS API endpoint
+          docker pull amazon/dynamodb-local:latest
+
+          # PostgreSQL service
+          docker pull docker.io/postgres:16-alpine
+
+          # Vault service
+          docker pull vault:1.7.3
+
       - name: Setup Go
         id: setup-go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -200,21 +225,6 @@ jobs:
         run: go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
-      # Pull docker images ahead of time so the pulls of large images don't have to fit within the
-      # test timeout.
-      - name: Pull container images
-        # Docker is only supported on Linux runners at the moment
-        if: runner.os == 'Linux'
-        run: |-
-          # AWS DynamoDB Local is used to have a pretend AWS API endpoint
-          docker pull amazon/dynamodb-local:latest
-
-          # PostgreSQL service
-          docker pull docker.io/postgres:16-alpine
-
-          # Vault service
-          docker pull vault:1.7.3
-
       # Enable VM overcommit memory, which is essential to ensure smooth operations of the Redis
       # servers. This VM setting is not namespaced, so changing it on the host also affects all
       # containerized workloads (which our Redis service is).
@@ -226,6 +236,9 @@ jobs:
       # To avoid false negatives with failing tests, we do not run our CI Visibility `gotestsum`. Doing so would mark our
       # failure tests as real failures in the backend.
       - name: Run Tests
+        # Block until the backgrounded image pulls finish. No-op on non-Linux,
+        # where the pull step is skipped and no background steps ran.
+        wait-all: true
         shell: bash
         run: |-
           export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"

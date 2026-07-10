@@ -65,9 +65,37 @@ lint_misc_files() {
 
 lint_action_files() {
   message "Linting GitHub Actions workflows..."
+
+  # actionlint (through at least v1.7.12) does not yet understand the GitHub
+  # Actions parallel-steps syntax (background/wait/wait-all/cancel/parallel) and
+  # rejects any workflow that uses it. Skip files that opt out with the marker
+  # below until a supporting release lands, then drop the marker and this
+  # handling so the files are linted normally again.
+  # Upstream: https://github.com/rhysd/actionlint/pull/694 and pull/695
+  local marker="actionlint:skip-file parallel-steps"
+  local lint_files=() skipped_files=()
+  local file
+  for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+    [[ -e "${file}" ]] || continue # literal pattern when a glob matches nothing
+    if grep -q "${marker}" "${file}"; then
+      skipped_files+=("${file}")
+    else
+      lint_files+=("${file}")
+    fi
+  done
+
+  if [[ ${#skipped_files[@]} -gt 0 ]]; then
+    message "Skipping actionlint for parallel-steps files (unsupported upstream, see rhysd/actionlint#694): ${skipped_files[*]}"
+  fi
+
+  if [[ ${#lint_files[@]} -eq 0 ]]; then
+    message "No GitHub Actions workflows to lint."
+    return
+  fi
+
   # Ignore 'if: false' warnings - used intentionally for disabled jobs like checklocks.
   # The ignore is only available through the command line, not the configuration file.
-  run "actionlint -ignore 'condition .false. is always evaluated to false'"
+  run "actionlint -ignore 'condition .false. is always evaluated to false' ${lint_files[*]}"
 }
 
 # Parse command line arguments

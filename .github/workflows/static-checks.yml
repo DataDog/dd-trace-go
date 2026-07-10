@@ -1,3 +1,10 @@
+# This workflow's `lint` job uses the GitHub Actions parallel-steps syntax
+# (background/wait/wait-all) to overlap independent lint streams. actionlint
+# (<= v1.7.12) does not recognize these step keys yet, so scripts/lint.sh
+# excludes this file from `make lint/action` via the marker below. Remove the
+# marker (and the skip handling in scripts/lint.sh) once actionlint ships
+# support: https://github.com/rhysd/actionlint/pull/694 (and pull/695).
+# actionlint:skip-file parallel-steps
 name: Static Checks
 
 on:
@@ -157,7 +164,12 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
 
+      # The two golangci-lint runs, the token fetch, and shellcheck are
+      # independent, so run them concurrently as background steps and gate the
+      # job on all of them with wait-all below. shellcheck alone waits on the
+      # token. This roughly halves the job (two ~10m lint streams overlap).
       - name: golangci-lint
+        background: true
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
         with:
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
@@ -168,6 +180,7 @@ jobs:
           filter_mode: nofilter
 
       - name: golangci-lint (internal/orchestrion/_integration)
+        background: true
         uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
         with:
           golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
@@ -180,12 +193,17 @@ jobs:
 
       - name: Get GitHub Token via dd-octo-sts
         id: generate-token
+        background: true
         uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
         with:
           scope: DataDog/dd-trace-go
           policy: self.static-checks-shellcheck
 
       - name: shellcheck
+        # Needs the token from generate-token, but still overlaps the golangci
+        # streams: wait blocks only this step until the token step completes.
+        wait: generate-token
+        background: true
         uses: reviewdog/action-shellcheck@4c07458293ac342d477251099501a718ae5ef86e # v1.32.0
         with:
           github_token: ${{ steps.generate-token.outputs.token }}
@@ -194,6 +212,12 @@ jobs:
           path: ./scripts
           pattern: "**/*.sh"
           filter_mode: nofilter
+
+      # Join point: block until every background step above finishes and fail
+      # the job if any of them failed.
+      - name: Wait for all lint streams
+        wait-all: true
+        run: echo "golangci-lint (x2) and shellcheck completed"
 
   check-supported-config:
     runs-on: ubuntu-latest
