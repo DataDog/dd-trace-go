@@ -1,3 +1,10 @@
+# The `system-tests` job backgrounds the datadog-ci npm pre-install (parallel-steps
+# syntax) so it overlaps the weblog download/build instead of blocking the test run.
+# actionlint (<= v1.7.12) does not recognize background/wait-all yet, so
+# scripts/lint.sh skips this file via the marker below. Remove the marker (and the
+# skip handling in scripts/lint.sh) once actionlint ships support:
+# https://github.com/rhysd/actionlint/pull/694 (and pull/695).
+# actionlint:skip-file parallel-steps
 name: System Tests
 
 on:
@@ -298,8 +305,11 @@ jobs:
             npm-datadog-ci-${{ runner.os }}-
 
       # Pre-install datadog-ci early so the action's npm install is instant.
+      # Backgrounded so the (slow, on cache miss) npm install overlaps the weblog
+      # download/build below; it writes only global npm, not the git workspace.
       # continue-on-error: the action has its own retry; this is best-effort.
       - name: Pre-install datadog-ci
+        background: true
         continue-on-error: true
         run: npm install -g @datadog/datadog-ci
 
@@ -335,6 +345,9 @@ jobs:
         uses: ./.github/actions/install_runner
 
       - name: Run
+        # Block until the backgrounded datadog-ci pre-install finishes before the
+        # test run and the result upload that consumes it.
+        wait-all: true
         shell: bash
         run: |
           env ${{ matrix.env }} ./run.sh ${{ matrix.scenario }}
