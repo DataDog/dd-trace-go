@@ -73,7 +73,7 @@ func nolintMatches(commentText string, names []string) bool {
 	if strings.TrimSpace(m[1]) == "" {
 		return true // bare //nolint suppresses everything
 	}
-	for _, n := range strings.Split(m[1], ",") {
+	for n := range strings.SplitSeq(m[1], ",") {
 		n = strings.TrimSpace(n)
 		for _, want := range names {
 			if strings.EqualFold(n, want) {

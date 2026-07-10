@@ -76,7 +76,7 @@ Targets:
   lint/shell           Run shell script linting checks
   lint/misc            Run miscellaneous linting checks (copyright, Makefiles)
   lint/action          Lint GitHub Actions workflows
-  lint/errlog          Run constantlogmsg analyzer — enforces constant message args on log.Error/Warn/ReportError/ReportPanic
+  lint/errlog          Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
   format               Format code
   format/go            Format Go code
   format/shell         install shfmt
