@@ -74,11 +74,27 @@ func newPayloadV04() *payloadV04 {
 	return p
 }
 
+// pushSizeHintPerSpan is a rough per-span byte estimate used to pre-grow buf
+// instead of computing t.Msgsize() (an exact but comparatively expensive walk
+// of every span's meta/metrics/spanLinks/spanEvents). Benchmarked against the
+// exact walk across simple/spankind/detailed span shapes at 1-1000 spans:
+// consistently faster (roughly 7-25%, larger wins on tag-heavier spans, see
+// BenchmarkPayloadVersions), with allocation *count* unchanged either way --
+// the win is CPU avoided, not allocations avoided. A larger constant (tried
+// 450/500/600) tracks tag-heavy spans' real encoded size more closely, but
+// over-allocating for the common lighter-weight span erases the win there, so
+// this mirrors the constant payloadV1 already uses for the same purpose
+// (payload_v1.go) rather than a value tuned to any one span shape.
+// Under-estimating here is harmless: bytes.Buffer grows itself if exceeded,
+// and it doesn't feed the payloadSizeLimit flush check in writer.go, which
+// reads the buffer's actual post-encode length instead.
+const pushSizeHintPerSpan = 300
+
 // push pushes a new item into the stream.
 func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
 	// sizeHint is only honored on the first push of a cycle; grow() defers the
 	// actual allocation until here so an idle payload never pins a buffer.
-	growTo := max(t.Msgsize(), p.sizeHint)
+	growTo := max(len(t)*pushSizeHintPerSpan, p.sizeHint)
 	p.sizeHint = 0
 	p.buf.Grow(growTo)
 	if err := msgp.Encode(&p.buf, t); err != nil {
