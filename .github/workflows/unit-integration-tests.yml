@@ -1,3 +1,10 @@
+# The `test-core` job backgrounds its independent, IO-bound Datadog upload steps
+# (parallel-steps syntax) so they overlap instead of running serially. actionlint
+# (<= v1.7.12) does not recognize background/wait-all yet, so scripts/lint.sh skips
+# this file via the marker below. Remove the marker (and the skip handling in
+# scripts/lint.sh) once actionlint ships support:
+# https://github.com/rhysd/actionlint/pull/694 (and pull/695).
+# actionlint:skip-file parallel-steps
 name: Unit and Integration Tests
 
 on:
@@ -437,8 +444,13 @@ jobs:
         with:
           policy: dd-trace-go
 
+      # The two Datadog uploads are independent and IO-bound. Background them so
+      # they overlap each other and the config check below; wait-all gates the job
+      # on them. Both are continue-on-error, so backgrounding cannot change the
+      # job outcome.
       - name: Upload the results to Datadog CI App
         if: always()
+        background: true
         continue-on-error: true
         uses: ./.github/actions/dd-ci-upload
         with:
@@ -448,6 +460,7 @@ jobs:
 
       - name: Upload Coverage to Datadog
         if: always()
+        background: true
         continue-on-error: true
         uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
@@ -455,7 +468,15 @@ jobs:
           files: coverage.txt coverage-noshuffle.txt internal/exectracetest/coverage.txt
           format: go-coverprofile
 
-      # Check for changes in the supported_configurations.json file
+      # Check for changes in the supported_configurations.json file. Left in the
+      # foreground so it runs concurrently with the backgrounded uploads while
+      # keeping its normal pass/fail gate behavior.
       - name: Supported Configurations Diff Check
         if: always()
         uses: ./.github/actions/supported_configurations_validation
+
+      # Gate job completion on the backgrounded uploads above.
+      - name: Wait for uploads
+        if: always()
+        wait-all: true
+        run: echo "datadog uploads complete"
