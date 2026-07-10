@@ -97,7 +97,9 @@ func (cm *XSyncMapCounterMap) Inc(key string) {
 func (cm *XSyncMapCounterMap) GetAndReset() map[string]int64 {
 	ret := map[string]int64{}
 	// DeleteMatching drains the store as it iterates: each counter's value is
-	// snapshotted into the result and then deleted (delete=true, cancel=false).
+	// snapshotted into the result and then deleted (delete=true, stop=false).
+	// A concurrent-resize re-visit is idempotent here (re-assigning ret[key]
+	// with the same counter), so at-most-once visitation is not required.
 	cm.counts.DeleteMatching(func(key string, value *xsync.Counter) (bool, bool) {
 		ret[key] = value.Value()
 		return true, false

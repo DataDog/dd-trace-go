@@ -125,9 +125,12 @@ func (logger *loggerBackend) add(record Record, opts ...LogOption) {
 
 func (logger *loggerBackend) Payload() transport.Payload {
 	logs := make([]transport.LogMessage, 0, logger.store.Size()+1)
-	// DeleteMatching drains the store as it iterates: each visited entry is
-	// snapshotted into the payload and then deleted (delete=true, cancel=false).
-	logger.store.DeleteMatching(func(key loggerKey, value *loggerValue) (bool, bool) {
+	// NOTE: this uses Range (at-most-once visitation) rather than DeleteMatching
+	// on purpose. distinctLogs must be decremented exactly once per entry, and
+	// DeleteMatching may re-visit a key if the map resizes mid-iteration, which
+	// would double-decrement the counter and duplicate the log message.
+	logger.store.Range(func(key loggerKey, value *loggerValue) bool {
+		logger.store.Delete(key)
 		logger.distinctLogs.Add(-1)
 		msg := transport.LogMessage{
 			Message:    logger.formatMessage(value.record),
@@ -140,7 +143,7 @@ func (logger *loggerBackend) Payload() transport.Payload {
 			msg.StackTrace = stacktrace.Format(value.rawStack.SymbolicateWithRedaction())
 		}
 		logs = append(logs, msg)
-		return true, false
+		return true
 	})
 
 	if len(logs) == 0 {
