@@ -60,25 +60,6 @@ jobs:
           export PATH="${{ github.workspace }}/bin:${PATH}"
           make lint/misc
 
-  lint-errlog:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-          ref: ${{ inputs.ref || github.ref }}
-      - name: Setup Go and development tools
-        uses: ./.github/actions/setup-go
-        with:
-          go-version: ${{ inputs.go-version || 'stable' }}
-          tools-dir: ${{ github.workspace }}/_tools
-          tools-bin: ${{ github.workspace }}/bin
-      - name: constantlogmsg analyzer (make lint/errlog)
-        run: |
-          export PATH="${{ github.workspace }}/bin:${PATH}"
-          make lint/errlog
-
   check-github-actions:
     runs-on: ubuntu-latest
     steps:
@@ -196,6 +177,16 @@ jobs:
           reporter: github-pr-review
           workdir: internal/orchestrion/_integration
           filter_mode: nofilter
+
+      - name: Setup Go and development tools
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: ${{ inputs.go-version || 'stable' }}
+          tools-dir: ${{ github.workspace }}/_tools
+          tools-bin: ${{ github.workspace }}/bin
+
+      - name: constantlogmsg analyzer (make lint/errlog)
+        run: make lint/errlog
 
       - name: Get GitHub Token via dd-octo-sts
         id: generate-token
