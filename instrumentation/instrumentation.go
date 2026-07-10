@@ -25,6 +25,23 @@ import (
 // OperationContext holds metadata about an instrumentation operation.
 type OperationContext map[string]string
 
+// Register registers a new [Package] instrumentation. Panics if called multiple
+// times for the same [Package].
+func Register(pkg Package, info PackageInfo) {
+	if _, ok := packages[pkg]; ok {
+		panic("instrumentation package: " + pkg + " was already registered.")
+	}
+	packages[pkg] = info
+}
+
+// RegisterAndLoad registers a new [Package] instrumentation and immediately
+// loads it, returning the associated [Instrumentation] instance. Panics if the
+// package has already been registered previously.
+func RegisterAndLoad(pkg Package, info PackageInfo) *Instrumentation {
+	Register(pkg, info)
+	return Load(pkg)
+}
+
 // Load attempts to load the requested package instrumentation. It panics if the package has not been registered.
 func Load(pkg Package) *Instrumentation {
 	info, ok := packages[pkg]
