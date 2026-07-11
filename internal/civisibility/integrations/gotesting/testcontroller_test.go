@@ -71,7 +71,7 @@ func TestMain(m *testing.M) {
 	if coverageModeSupportsITRBackfill() {
 		scenarios = append(scenarios, "TestIntelligentTestRunnerWithCoverageBackfill")
 	}
-	if testing.CoverMode() == "" && processRetryContainmentAvailableForTesting() {
+	if testing.CoverMode() == "" && processRetryContainmentAvailableForTesting() && processRetryTestArgsAllowChildLaunch(os.Args[1:]) {
 		scenarios = append(scenarios, "TestProcessRetryExecutionMode")
 	}
 
@@ -193,6 +193,10 @@ func buildProcessRetryUnitRunFilter(tests []testing.InternalTest) string {
 		return "^$"
 	}
 	return "^(" + strings.Join(names, "|") + ")($|/)"
+}
+
+func processRetryTestArgsAllowChildLaunch(args []string) bool {
+	return captureProcessRetryArgsSnapshot(args).ok
 }
 
 func coverageModeSupportsITRBackfill() bool {

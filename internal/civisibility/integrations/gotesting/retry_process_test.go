@@ -1836,6 +1836,16 @@ func TestBuildProcessRetryFixtureArgsInsertsSelectorBeforeBoundary(t *testing.T)
 			args: []string{"-test.v=true", "user-arg", "-test.run=Ignored"},
 			want: []string{"-test.v=true", "-test.run=^TestProcessRetryChildResultFixture$", "-test.count=1", "-test.cpu=1", "-test.timeout=10m0s", "user-arg", "-test.run=Ignored"},
 		},
+		{
+			name: "disables inherited shuffle",
+			args: []string{"-test.shuffle=on", "-test.v=true"},
+			want: []string{"-test.shuffle=off", "-test.v=true", "-test.run=^TestProcessRetryChildResultFixture$", "-test.count=1", "-test.cpu=1", "-test.timeout=10m0s"},
+		},
+		{
+			name: "disables inherited shuffle with separate value",
+			args: []string{"-shuffle", "on", "-test.v=true"},
+			want: []string{"-shuffle", "off", "-test.v=true", "-test.run=^TestProcessRetryChildResultFixture$", "-test.count=1", "-test.cpu=1", "-test.timeout=10m0s"},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok, reason := buildProcessRetryFixtureArgs(tt.args, "TestProcessRetryChildResultFixture")
@@ -1843,6 +1853,12 @@ func TestBuildProcessRetryFixtureArgsInsertsSelectorBeforeBoundary(t *testing.T)
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestProcessRetryTestArgsAllowChildLaunch(t *testing.T) {
+	require.True(t, processRetryTestArgsAllowChildLaunch(nil))
+	require.True(t, processRetryTestArgsAllowChildLaunch([]string{"-test.shuffle=12345"}))
+	require.False(t, processRetryTestArgsAllowChildLaunch([]string{"-test.shuffle=on"}))
 }
 
 func TestBuildProcessRetryControllerArgsInsertsSelectorBeforeBoundary(t *testing.T) {
@@ -3020,8 +3036,8 @@ func TestProcessRetryOutputCaptureAbortIsIdempotent(t *testing.T) {
 	firstErr := capture.AbortAfterReapedChild(time.Second)
 	secondErr := capture.AbortAfterReapedChild(time.Nanosecond)
 
-	require.Equal(t, fmt.Sprint(firstErr), fmt.Sprint(secondErr))
-	require.NotContains(t, fmt.Sprint(secondErr), "abort timed out")
+	require.NoError(t, firstErr)
+	require.NoError(t, secondErr)
 }
 
 func TestFinalizeProcessRetryOutputCapturesKillsTreeWithinSingleDrainBudget(t *testing.T) {
@@ -3092,6 +3108,7 @@ func TestRunProcessRetryAttemptContainsOrdinaryDescendant(t *testing.T) {
 
 	baseline := captureProcessRetryLaunchBaseline()
 	require.NoError(t, baseline.err)
+	baseline.argsSnapshot = captureProcessRetryArgsSnapshot(disableProcessRetryFixtureShuffleArgs(baseline.args))
 	baseline.argsSnapshot.runSelector = ""
 	baseline.argsSnapshot.skipSelector = ""
 	attempt := runProcessRetryAttemptWithBaseline(context.Background(), processRetryChildConfig{
@@ -4737,8 +4754,12 @@ func TestRunProcessRetryAttemptFallsBackWhenLaunchesAreDisabled(t *testing.T) {
 }
 
 func TestRunTestWithRetryShutdownQueuedBeforeLimiterIsTerminal(t *testing.T) {
-	resetProcessRetryLimiterForTesting(t)
-	t.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
+	// executeTestIteration clones t and runs its cleanups. Restore this limiter with
+	// a defer so the first attempt cannot swap it out before the queued retry.
+	oldLimiter := globalProcessRetryLimiter.Swap(&processRetryLimiter{})
+	defer globalProcessRetryLimiter.Store(oldLimiter)
+	restoreConcurrency := setEnvForTesting(t, constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
+	defer restoreConcurrency()
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
 	restoreEnv := setEnvForTesting(t, constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
@@ -6210,10 +6231,47 @@ const processRetryOrdinaryDescendantScenario = "ordinary_descendant"
 const processRetryOrdinaryDescendantHelperScenario = "ordinary_descendant_helper"
 
 func buildProcessRetryFixtureArgs(originalArgs []string, testName string) ([]string, bool, string) {
-	snapshot := captureProcessRetryArgsSnapshot(originalArgs)
+	snapshot := captureProcessRetryArgsSnapshot(disableProcessRetryFixtureShuffleArgs(originalArgs))
 	snapshot.runSelector = ""
 	snapshot.skipSelector = ""
 	return buildProcessRetryArgsFromSnapshot(snapshot, testName, 1, processRetryDefaultTimeout)
+}
+
+func disableProcessRetryFixtureShuffleArgs(originalArgs []string) []string {
+	args := append([]string(nil), originalArgs...)
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" || !processRetryIsFlagToken(arg) {
+			break
+		}
+		name, _, hasValue := processRetrySplitFlag(arg)
+		if name == "-test.shuffle" || name == "-shuffle" {
+			if hasValue {
+				args[i] = name + "=off"
+			} else if i+1 < len(args) {
+				args[i+1] = "off"
+				i++
+			}
+			continue
+		}
+		if arity, stripped := processRetryStripFlags[name]; stripped {
+			if arity == processRetryFlagValue && !hasValue && i+1 < len(args) {
+				i++
+			}
+			continue
+		}
+		registered := flag.CommandLine.Lookup(strings.TrimPrefix(name, "-"))
+		if registered == nil {
+			if !hasValue {
+				break
+			}
+			continue
+		}
+		if boolFlag, ok := registered.Value.(processRetryBoolFlag); !hasValue && (!ok || !boolFlag.IsBoolFlag()) && i+1 < len(args) {
+			i++
+		}
+	}
+	return args
 }
 
 func runProcessRetryChildResultFixture(t testing.TB, scenario string) (processRetryResult, int, string) {

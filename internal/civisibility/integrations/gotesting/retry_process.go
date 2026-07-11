@@ -567,8 +567,19 @@ func (c *processRetryOutputCapture) StartCopy() {
 	c.mu.Unlock()
 	go func() {
 		_, copyErr := io.Copy(sink, readPipe)
-		c.complete(errors.Join(copyErr, sink.Close(), readPipe.Close()))
+		c.complete(errors.Join(
+			ignoreProcessRetryClosedError(copyErr),
+			ignoreProcessRetryClosedError(sink.Close()),
+			ignoreProcessRetryClosedError(readPipe.Close()),
+		))
 	}()
+}
+
+func ignoreProcessRetryClosedError(err error) error {
+	if errors.Is(err, os.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 func (c *processRetryOutputCapture) complete(err error) {
@@ -676,13 +687,13 @@ func (c *processRetryOutputCapture) abort(timeout time.Duration) error {
 
 	var closeErr error
 	if writePipe != nil {
-		closeErr = errors.Join(closeErr, writePipe.Close())
+		closeErr = errors.Join(closeErr, ignoreProcessRetryClosedError(writePipe.Close()))
 	}
 	if readPipe != nil {
-		closeErr = errors.Join(closeErr, readPipe.Close())
+		closeErr = errors.Join(closeErr, ignoreProcessRetryClosedError(readPipe.Close()))
 	}
 	if sink != nil {
-		closeErr = errors.Join(closeErr, sink.Close())
+		closeErr = errors.Join(closeErr, ignoreProcessRetryClosedError(sink.Close()))
 	}
 	if !copyStarted {
 		c.complete(closeErr)
