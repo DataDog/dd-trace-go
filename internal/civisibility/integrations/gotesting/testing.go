@@ -86,6 +86,7 @@ type (
 		suiteName  string
 		testName   string
 		identity   *testIdentity
+		sourceFunc *runtime.Func
 	}
 
 	// testingTInfo holds information specific to tests.
@@ -134,9 +135,21 @@ const (
 // Run initializes CI Visibility, instruments tests and benchmarks, and runs them.
 func (ddm *M) Run() int {
 	m := (*testing.M)(ddm)
+	if isProcessRetryChild() {
+		return runProcessRetryChild(m)
+	}
+
+	coverageEnabled := coverage.CanCollectPerTestCoverage()
+	manualWrapperOpts := additionalFeatureWrapperOptions{
+		processRetryAllowed: true,
+		coverageActive: func() bool {
+			return processRetryCoverageActive(coverageEnabled)
+		},
+		fuzzActive: processRetryFuzzActive,
+	}
 
 	// Instrument testing.M
-	exitFn := instrumentTestingM(m)
+	exitFn := instrumentTestingMWithOptions(m, manualWrapperOpts)
 
 	// Run the tests and benchmarks.
 	var exitCode = m.Run()
@@ -147,7 +160,7 @@ func (ddm *M) Run() int {
 }
 
 // instrumentInternalTests instruments the internal tests for CI visibility.
-func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
+func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest, wrapperOpts additionalFeatureWrapperOptions) {
 	if internalTests == nil {
 		return
 	}
@@ -204,15 +217,16 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 	for idx, testInfo := range testInfos {
 		newTestArray[idx] = testing.InternalTest{
 			Name: testInfo.testName,
-			F:    ddm.executeInternalTest(testInfo),
+			F:    ddm.executeInternalTest(testInfo, wrapperOpts),
 		}
 	}
 	*internalTests = newTestArray
 }
 
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
-func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
+func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additionalFeatureWrapperOptions) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
+	testInfo.commonInfo.sourceFunc = originalFunc
 
 	// Get the settings response for this session
 	settings := integrations.GetSettings()
@@ -280,6 +294,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			return
 		}
 		if itrDecision.forcedRun {
+			execMeta.isItrForcedRun = true
 			test.SetTag(constants.TestForcedToRun, "true")
 			telemetry.ITRForcedRun(telemetry.TestEventType)
 		}
@@ -309,7 +324,10 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		instrumentChattyPrinter(t)
 
 		startTime := time.Now()
+		bodyReturned := false
 		defer func() {
+			r := recover()
+			unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(t, bodyReturned)
 			duration := time.Since(startTime)
 
 			if tCoverage != nil {
@@ -333,7 +351,11 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			// Collect and write logs
 			collectAndWriteLogs(t, test)
 
-			if r := recover(); r != nil {
+			if unexpectedTermination {
+				r = unexpectedTestTerminationMessage
+				t.Fail()
+			}
+			if r != nil {
 				// Handle panic and set error information.
 				execMeta.panicData = r
 				execMeta.panicStacktrace = utils.GetStacktrace(1)
@@ -454,13 +476,14 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 
 		// Execute the original test function.
 		testInfo.originalFunc(t)
+		bodyReturned = true
 	}
 
 	// Register the instrumented func as an internal instrumented func (to avoid double instrumentation)
 	setInstrumentationMetadata(runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(instrumentedFunc)).Pointer()), &instrumentationMetadata{IsInternal: true})
 
 	// Get the additional feature wrapper
-	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo, nil)
+	return applyAdditionalFeaturesToTestFunc(instrumentedFunc, &testInfo.commonInfo, nil, wrapperOpts)
 }
 
 // instrumentInternalBenchmarks instruments the internal benchmarks for CI visibility.
@@ -750,6 +773,14 @@ func matchTestManagementData(identity *testIdentity, modules *net.TestManagement
 
 // setTestTagsFromExecutionMetadata sets the test tags from the execution metadata.
 func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExecutionMetadata) (cancelExecution bool) {
+	cancelExecution = setTestTagsFromExecutionMetadataNoClose(test, execMeta)
+	if cancelExecution {
+		test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.TestDisabledSkipReason))
+	}
+	return cancelExecution
+}
+
+func setTestTagsFromExecutionMetadataNoClose(test integrations.Test, execMeta *testExecutionMetadata) (cancelExecution bool) {
 	settings := integrations.GetSettings()
 
 	// Set the Test Optimization test to the execution metadata
@@ -804,7 +835,6 @@ func setTestTagsFromExecutionMetadata(test integrations.Test, execMeta *testExec
 		if !execMeta.isAttemptToFix {
 			// Disabled test without ATF is always a final execution, set the final status
 			test.SetTag(constants.TestFinalStatus, constants.TestStatusSkip)
-			test.Close(integrations.ResultStatusSkip, integrations.WithTestSkipReason(constants.TestDisabledSkipReason))
 			return true
 		}
 	}

@@ -6,6 +6,8 @@
 package gotesting
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -21,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/envconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -41,23 +44,29 @@ type (
 		panicData                    any                   // panic data recovered from an internal test execution when using an additional feature wrapper
 		panicStacktrace              string                // stacktrace from the panic recovered from an internal test
 		skipReason                   string                // skip reason captured from instrumentCloseAndSkip when hasAdditionalFeatureWrapper is true
-		isARetry                     bool                  // flag to tag if a current test execution is a retry
-		isANewTest                   bool                  // flag to tag if a current test a new test
-		isAModifiedTest              bool                  // flag to tag if a current test a modified test
-		isEarlyFlakeDetectionEnabled bool                  // flag to tag if Early Flake Detection is enabled for this execution
-		isFlakyTestRetriesEnabled    bool                  // flag to tag if Flaky Test Retries is enabled for this execution
-		isQuarantined                bool                  // flag to check if the test is quarantined
-		isDisabled                   bool                  // flag to check if the test is disabled
-		isAttemptToFix               bool                  // flag to check if the test is marked as attempt to fix
-		isLastRetry                  bool                  // flag to check if the current execution is the last retry
-		allAttemptsPassed            bool                  // flag to check if all attempts passed for a test marked as attempt to fix
-		allRetriesFailed             bool                  // flag to check if all retries failed for a test
-		hasAdditionalFeatureWrapper  bool                  // flag to check if the current execution is part of an additional feature wrapper
-		identity                     *testIdentity         // identity of the current execution (test or subtest)
-		hasExplicitQuarantined       bool                  // flag to mark if quarantine state comes from explicit configuration
-		hasExplicitDisabled          bool                  // flag to mark if disabled state comes from explicit configuration
-		hasExplicitAttemptToFix      bool                  // flag to mark if attempt-to-fix state comes from explicit configuration
-		suppressParentRetryMetadata  bool                  // prevents metadata-only subtest overrides from inheriting parent retry-wrapper control fields
+		processRetryError            atomic.Pointer[processRetryErrorInfo]
+		processRetrySkipReason       atomic.Pointer[string]
+		processRetryPanic            atomic.Pointer[processRetryErrorInfo]
+		processRetryOwner            *testExecutionMetadata
+		isARetry                     bool // flag to tag if a current test execution is a retry
+		isANewTest                   bool // flag to tag if a current test a new test
+		isAModifiedTest              bool // flag to tag if a current test a modified test
+		isEarlyFlakeDetectionEnabled bool // flag to tag if Early Flake Detection is enabled for this execution
+		isFlakyTestRetriesEnabled    bool // flag to tag if Flaky Test Retries is enabled for this execution
+		isItrForcedRun               bool // flag to preserve ITR forced-run state across parent-owned process retries
+		flakyRetryBudgetReservation  *flakyRetryBudgetReservation
+		isQuarantined                bool          // flag to check if the test is quarantined
+		isDisabled                   bool          // flag to check if the test is disabled
+		isAttemptToFix               bool          // flag to check if the test is marked as attempt to fix
+		isLastRetry                  bool          // flag to check if the current execution is the last retry
+		allAttemptsPassed            bool          // flag to check if all attempts passed for a test marked as attempt to fix
+		allRetriesFailed             bool          // flag to check if all retries failed for a test
+		hasAdditionalFeatureWrapper  bool          // flag to check if the current execution is part of an additional feature wrapper
+		identity                     *testIdentity // identity of the current execution (test or subtest)
+		hasExplicitQuarantined       bool          // flag to mark if quarantine state comes from explicit configuration
+		hasExplicitDisabled          bool          // flag to mark if disabled state comes from explicit configuration
+		hasExplicitAttemptToFix      bool          // flag to mark if attempt-to-fix state comes from explicit configuration
+		suppressParentRetryMetadata  bool          // prevents metadata-only subtest overrides from inheriting parent retry-wrapper control fields
 
 		// Fields for test.final_status computation
 		anyExecutionPassed            bool               // tracks if any prior execution passed (for final status calculation)
@@ -70,12 +79,28 @@ type (
 
 	// runTestWithRetryOptions contains the options for calling runTestWithRetry function
 	runTestWithRetryOptions struct {
-		targetFunc         func(t *testing.T) // target function to retry
-		t                  *testing.T         // test to be executed
-		parallelEFDAllowed bool               // allows the internal parallel EFD scheduler when the effective execution qualifies
+		targetFunc                    func(t *testing.T) // target function to retry
+		t                             *testing.T         // test to be executed
+		parallelEFDAllowed            bool               // allows the internal parallel EFD scheduler when the effective execution qualifies
+		testInfo                      *commonInfo
+		processRetryAllowed           bool
+		processRetryMode              retryExecutionMode
+		processRetryModeSet           bool
+		processRetryIdentity          *testIdentity
+		coverageActive                func() bool
+		fuzzActive                    func() bool
+		processRetryContext           func() context.Context
+		processRetryGuardsSnapshotted bool
+		processRetryCoverageGuardSet  bool
+		processRetryCoverageActive    bool
+		processRetryFuzzGuardSet      bool
+		processRetryFuzzActive        bool
 
 		// function to modify the execution metadata before each execution (first callback executed). It's also called before postOnRetryEnd to do a final sync
 		preExecMetaAdjust func(execMeta *testExecutionMetadata, executionIndex int)
+
+		// function to modify execution metadata for parent-owned process retry attempts.
+		preProcessRetryMetaAdjust func(execMeta *testExecutionMetadata, executionIndex int)
 
 		// function to decide whether we are in the last retry (second callback executed if we are in a retry execution)
 		preIsLastRetry func(execMeta *testExecutionMetadata, executionIndex int, remainingRetries int64) bool
@@ -93,20 +118,35 @@ type (
 		postOnRetryEnd func(t *testing.T, executionIndex int, lastPtrToLocalT *testing.T)
 	}
 
+	additionalFeatureWrapperOptions struct {
+		processRetryAllowed bool
+		coverageActive      func() bool
+		fuzzActive          func() bool
+	}
+
 	// executionOptions holds the execution options for the test
 	executionOptions struct {
-		mutex                      sync.Locker              // mutex for synchronizing test iterations
-		options                    *runTestWithRetryOptions // options for the test execution
-		parallelForwardState       *parallelForwardState    // shared t.Parallel forwarding state for all attempts in this retry group
-		executionIndex             int                      // current execution index
-		retryCount                 int64                    // remaining retry count
-		originalExecutionMetadata  *testExecutionMetadata   // original test execution metadata
-		panicExecutionMetadata     *testExecutionMetadata   // panicked execution metadata
-		ptrToLocalT                *testing.T               // pointer to the local test instance
-		executionMetadata          *testExecutionMetadata   // current test execution metadata
-		module                     integrations.TestModule  // module associated with the test
-		suite                      integrations.TestSuite   // suite associated with the test
-		effectiveParallelEFDActive bool                     // true only after runTestWithRetry selects the bounded parallel EFD branch
+		mutex                        sync.Locker              // mutex for synchronizing test iterations
+		options                      *runTestWithRetryOptions // options for the test execution
+		parallelForwardState         *parallelForwardState    // shared t.Parallel forwarding state for all attempts in this retry group
+		executionIndex               int                      // current execution index
+		retryCount                   int64                    // remaining retry count
+		originalExecutionMetadata    *testExecutionMetadata   // original test execution metadata
+		panicExecutionMetadata       *testExecutionMetadata   // panicked execution metadata
+		ptrToLocalT                  *testing.T               // pointer to the local test instance
+		executionMetadata            *testExecutionMetadata   // current test execution metadata
+		module                       integrations.TestModule  // module associated with the test
+		suite                        integrations.TestSuite   // suite associated with the test
+		effectiveParallelEFDActive   bool                     // true only after runTestWithRetry selects the bounded parallel EFD branch
+		processRetryConsumedAttempt  bool                     // true after this retry group emits a process retry attempt.
+		processRetryMetadataSnapshot *processRetryMetadataSnapshot
+		processRetryLaunchBaseline   *processRetryLaunchBaseline
+		processRetryShutdown         <-chan struct{}
+		flakyRetryBudgetReservation  *flakyRetryBudgetReservation
+	}
+
+	flakyRetryBudgetReservation struct {
+		state atomic.Int32
 	}
 
 	// testCleanupResult captures how testing cleanup execution completed for a retry attempt.
@@ -154,6 +194,8 @@ type (
 		duplicateMu sync.Mutex // serializes duplicate Parallel calls so the Go runtime produces the standard panic deterministically
 	}
 )
+
+const unexpectedTestTerminationMessage = "test executed panic(nil) or runtime.Goexit"
 
 var (
 	// ciVisibilityEnabledValue holds a value to check if ci visibility is enabled or not (1 = enabled / 0 = disabled)
@@ -518,7 +560,12 @@ func wrapWithAdditionalFeatureMetadata(f func(*testing.T), meta *additionalFeatu
 
 // applyAdditionalFeaturesToTestFunc applies all the additional features as wrapper of a func(*testing.T).
 // parentExecMeta is optional and allows subtests to inherit behaviour from their parent test when needed.
-func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo, parentExecMeta *testExecutionMetadata) func(*testing.T) {
+func applyAdditionalFeaturesToTestFunc(
+	f func(*testing.T),
+	testInfo *commonInfo,
+	parentExecMeta *testExecutionMetadata,
+	wrapperOpts additionalFeatureWrapperOptions,
+) func(*testing.T) {
 	// Apply additional features
 	settings := integrations.GetSettings()
 
@@ -640,9 +687,14 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 		var anyExecutionFailed atomic.Int32
 
 		runTestWithRetry(&runTestWithRetryOptions{
-			targetFunc:         f,
-			t:                  t,
-			parallelEFDAllowed: internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false),
+			targetFunc:           f,
+			t:                    t,
+			parallelEFDAllowed:   internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false),
+			testInfo:             testInfo,
+			processRetryAllowed:  wrapperOpts.processRetryAllowed,
+			processRetryIdentity: identity,
+			coverageActive:       wrapperOpts.coverageActive,
+			fuzzActive:           wrapperOpts.fuzzActive,
 			preExecMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
 				// Synchronize the test execution metadata with the original test execution metadata.
 
@@ -659,6 +711,13 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 
 				syncFeatureMetadataFromExecution(ptrMeta, execMeta)
 			},
+			preProcessRetryMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
+				execMeta.allAttemptsPassed = atomic.LoadInt32(&allAttemptsPassed) == 1
+				execMeta.allRetriesFailed = atomic.LoadInt32(&allRetriesFailed) == 1
+				execMeta.anyExecutionPassed = anyExecutionPassed.Load() == 1
+				execMeta.anyExecutionFailed = anyExecutionFailed.Load() == 1
+				syncFeatureMetadataFromExecution(ptrMeta, execMeta)
+			},
 			preIsLastRetry: func(execMeta *testExecutionMetadata, _ int, remainingRetries int64) bool {
 				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
 					// For attempt-to-fix tests and EFD, the last retry is when remaining retries == 1.
@@ -672,7 +731,7 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 
 				// FlakyTestRetries also considers the global remaining retry count.
 				if execMeta.isFlakyTestRetriesEnabled {
-					return remainingRetries == 1 || atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) == 1
+					return remainingRetries == 1 || atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) == 0
 				}
 
 				return false
@@ -766,9 +825,6 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 				}
 
 				if execMeta.isFlakyTestRetriesEnabled {
-					if executionIndex > 0 {
-						atomic.AddInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount, -1)
-					}
 					return
 				}
 			},
@@ -862,9 +918,6 @@ func applyAdditionalFeaturesToTestFunc(f func(*testing.T), testInfo *commonInfo,
 							status = "skipped"
 						}
 						fmt.Printf("    [ %v after %v retries by Datadog's auto test retries ]\n", status, executionIndex)
-						if atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) < 0 {
-							fmt.Println("    the maximum number of total retries was exceeded.")
-						}
 					}
 					return
 				}
@@ -893,14 +946,33 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	// Set this func as a helper func of t
 	options.t.Helper()
 
+	options.processRetryMode = retryExecutionModeFromEnv()
+	options.processRetryModeSet = true
+
 	// Initialize execution options variables
 	execOpts := &executionOptions{
-		mutex:                     &noopMutex{},
-		options:                   options,
-		parallelForwardState:      newParallelForwardState(),
-		executionIndex:            -1,
-		retryCount:                int64(0),
-		originalExecutionMetadata: getTestMetadata(options.t),
+		mutex:                       &noopMutex{},
+		options:                     options,
+		parallelForwardState:        newParallelForwardState(),
+		executionIndex:              -1,
+		retryCount:                  int64(0),
+		originalExecutionMetadata:   getTestMetadata(options.t),
+		flakyRetryBudgetReservation: &flakyRetryBudgetReservation{},
+	}
+	finishProcessRetryGroup := func() {}
+	defer func() { finishProcessRetryGroup() }()
+	defer refundFlakyRetryBudgetReservation(execOpts)
+	if options.processRetryMode == retryExecutionModeProcess && options.processRetryAllowed {
+		options.processRetryGuardsSnapshotted = true
+		options.processRetryCoverageGuardSet = options.coverageActive != nil
+		if options.processRetryCoverageGuardSet {
+			options.processRetryCoverageActive = options.coverageActive()
+		}
+		options.processRetryFuzzGuardSet = options.fuzzActive != nil
+		if options.processRetryFuzzGuardSet {
+			options.processRetryFuzzActive = options.fuzzActive()
+		}
+		execOpts.processRetryLaunchBaseline = captureProcessRetryLaunchBaseline()
 	}
 
 	// Execute the test function for the first time
@@ -909,23 +981,62 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		// In parallel, we use the retry count set in the first execution.
 		calculatedRetryCount := execOpts.retryCount
 		remainingAttempts := calculatedRetryCount + 1
-		if shouldUseParallelEFD(options, execOpts.executionMetadata, remainingAttempts, internalParallelEFDMaxConcurrency) {
-			log.Debug("runTestWithRetry: executing test in parallel EFD with retry count: %d and max concurrency: %d", calculatedRetryCount, internalParallelEFDMaxConcurrency)
-			execOpts.mutex = &sync.Mutex{}
-			execOpts.effectiveParallelEFDActive = true
-			runBoundedParallelEFDIterations(execOpts, remainingAttempts, internalParallelEFDMaxConcurrency)
-		} else {
-			// Execute retries sequentially
+		runSequentialRetries := func(stopOnProcessShutdown bool) {
 			for {
+				if stopOnProcessShutdown && processRetryShutdownRequested(execOpts.processRetryShutdown) {
+					execOpts.retryCount = 0
+					break
+				}
 				if !executeTestIteration(execOpts) {
 					break
 				}
 			}
 		}
+		if ok, reason := processRetryEligible(execOpts.executionMetadata, options); ok {
+			execOpts.processRetryMetadataSnapshot = snapshotProcessRetryExecutionMetadata(execOpts.executionMetadata)
+			if execOpts.processRetryMetadataSnapshot == nil {
+				log.Debug("runTestWithRetry: process retry backend ineligible: missing_metadata_snapshot")
+				runSequentialRetries(false)
+			} else {
+				shutdown, finish, beginErr := beginProcessRetryGroup()
+				switch {
+				case errors.Is(beginErr, errProcessRetryShutdown):
+					log.Debug("runTestWithRetry: process retry skipped because CI Visibility shutdown started")
+					execOpts.retryCount = 0
+				case beginErr != nil:
+					log.Debug("runTestWithRetry: process retry backend unavailable before admission: %v", beginErr.Error())
+					runSequentialRetries(false)
+				default:
+					execOpts.processRetryShutdown = shutdown
+					finishProcessRetryGroup = finish
+					log.Debug("runTestWithRetry: executing test with process retry backend")
+					if runProcessRetryBackend(execOpts) {
+						log.Debug("runTestWithRetry: process retry backend fallback to in_process")
+						runSequentialRetries(true)
+					}
+				}
+			}
+		} else if reason == "process_shutdown" {
+			log.Debug("runTestWithRetry: retries stopped because CI Visibility shutdown started")
+			execOpts.retryCount = 0
+		} else if shouldUseParallelEFD(options, execOpts.executionMetadata, remainingAttempts, internalParallelEFDMaxConcurrency) {
+			log.Debug("runTestWithRetry: process retry backend ineligible: %s", reason)
+			log.Debug("runTestWithRetry: executing test in parallel EFD with retry count: %d and max concurrency: %d", calculatedRetryCount, internalParallelEFDMaxConcurrency)
+			execOpts.mutex = newExecutionOptionsMutex()
+			execOpts.effectiveParallelEFDActive = true
+			runBoundedParallelEFDIterations(execOpts, remainingAttempts, internalParallelEFDMaxConcurrency)
+		} else {
+			// Execute retries sequentially
+			runSequentialRetries(false)
+		}
 	}
+	finishProcessRetryGroup()
+	finishProcessRetryGroup = func() {}
 
 	// Adjust execution metadata
-	if options.preExecMetaAdjust != nil {
+	if execOpts.processRetryConsumedAttempt && options.preProcessRetryMetaAdjust != nil {
+		options.preProcessRetryMetaAdjust(execOpts.executionMetadata, execOpts.executionIndex)
+	} else if options.preExecMetaAdjust != nil {
 		options.preExecMetaAdjust(execOpts.executionMetadata, execOpts.executionIndex)
 	}
 
@@ -944,6 +1055,25 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		// Ensure we flush all CI visibility data and close the session event
 		integrations.ExitCiVisibility()
 		panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", execOpts.executionIndex, execOpts.panicExecutionMetadata.panicData, execOpts.panicExecutionMetadata.panicStacktrace))
+	}
+}
+
+func runProcessRetryBackend(execOpts *executionOptions) bool {
+	firstAttempt := true
+	for {
+		if !firstAttempt && processRetryShutdownRequested(execOpts.processRetryShutdown) {
+			execOpts.retryCount = 0
+			return false
+		}
+		firstAttempt = false
+		switch executeProcessRetryIteration(execOpts) {
+		case processRetryIterationFallback:
+			return true
+		case processRetryIterationStop:
+			return false
+		case processRetryIterationContinue:
+			continue
+		}
 	}
 }
 
@@ -1007,6 +1137,9 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	// Increment execution index
 	execOpts.executionIndex++
 	currentIndex := execOpts.executionIndex
+	if currentIndex > 0 {
+		consumeFlakyRetryBudgetReservation(execOpts)
+	}
 
 	// Create a new local copy of `t` to isolate execution results
 	ptrToLocalT := createNewTest()
@@ -1035,6 +1168,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 
 	// Create an execution metadata instance
 	execMeta := createTestMetadata(ptrToLocalT, execOpts.options.t)
+	execMeta.flakyRetryBudgetReservation = execOpts.flakyRetryBudgetReservation
 	execMeta.parallelForwardState = execOpts.parallelForwardState
 	execMeta.hasAdditionalFeatureWrapper = true
 	execMeta.cleanupResult = &cleanupResult
@@ -1071,7 +1205,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 			*cn <- struct{}{}
 		}()
 		defer func() {
-			completeParallelSubtests(pLocalT, localTPrivateFields)
+			completeParallelSubtests(pLocalT, localTPrivateFields, false)
 		}()
 		defer func() {
 			duration = time.Since(startTime)
@@ -1081,9 +1215,21 @@ func executeTestIteration(execOpts *executionOptions) bool {
 				runTestCleanup(pLocalT, &cleanupResult)
 			}
 		}()
+		bodyReturned := false
+		defer func() {
+			if !processRetryUnexpectedTestTermination(pLocalT, bodyReturned) {
+				return
+			}
+			pLocalT.Fail()
+			if execMeta.panicData == nil {
+				execMeta.panicData = unexpectedTestTerminationMessage
+				execMeta.panicStacktrace = utils.GetStacktrace(1)
+			}
+		}()
 		pLocalT.Helper()
 		opts.t.Helper()
 		opts.targetFunc(pLocalT)
+		bodyReturned = true
 	}(ptrToLocalT, execOpts.options, &chn)
 	<-chn
 
@@ -1143,14 +1289,109 @@ func executeTestIteration(execOpts *executionOptions) bool {
 	execOpts.executionMetadata = execMeta
 
 	// Decide whether to continue
-	return execOpts.options.postShouldRetry(ptrToLocalT, execMeta, currentIndex, execOpts.retryCount)
+	return reserveRetryBudgetIfNeeded(execOpts, ptrToLocalT, execMeta, currentIndex)
+}
+
+func reserveRetryBudgetIfNeeded(execOpts *executionOptions, t *testing.T, execMeta *testExecutionMetadata, executionIndex int) bool {
+	if usesFlakyRetryBudget(execMeta) && execMeta.flakyRetryBudgetReservation != nil && execMeta.flakyRetryBudgetReservation.reserved() {
+		return true
+	}
+	if !execOpts.options.postShouldRetry(t, execMeta, executionIndex, execOpts.retryCount) {
+		return false
+	}
+	if !usesFlakyRetryBudget(execMeta) {
+		return true
+	}
+	if execOpts.flakyRetryBudgetReservation == nil {
+		execOpts.flakyRetryBudgetReservation = &flakyRetryBudgetReservation{}
+	}
+	if !execOpts.flakyRetryBudgetReservation.reserve() {
+		return false
+	}
+	return true
+}
+
+func usesFlakyRetryBudget(execMeta *testExecutionMetadata) bool {
+	return execMeta != nil && execMeta.isFlakyTestRetriesEnabled && !execMeta.isAttemptToFix && !isAnEfdExecution(execMeta)
+}
+
+func consumeFlakyRetryBudgetReservation(execOpts *executionOptions) {
+	if execOpts == nil {
+		return
+	}
+	if execOpts.flakyRetryBudgetReservation != nil {
+		execOpts.flakyRetryBudgetReservation.consume()
+	}
+	execOpts.flakyRetryBudgetReservation = &flakyRetryBudgetReservation{}
+}
+
+func refundFlakyRetryBudgetReservation(execOpts *executionOptions) {
+	if execOpts == nil || execOpts.flakyRetryBudgetReservation == nil {
+		return
+	}
+	execOpts.flakyRetryBudgetReservation.refund()
+}
+
+const (
+	flakyRetryBudgetIdle int32 = iota
+	flakyRetryBudgetReserving
+	flakyRetryBudgetReserved
+	flakyRetryBudgetConsumed
+	flakyRetryBudgetRefunded
+)
+
+func (r *flakyRetryBudgetReservation) reserve() bool {
+	if r == nil {
+		return false
+	}
+	for {
+		switch r.state.Load() {
+		case flakyRetryBudgetReserved:
+			return true
+		case flakyRetryBudgetConsumed, flakyRetryBudgetRefunded:
+			return false
+		case flakyRetryBudgetReserving:
+			runtime.Gosched()
+		case flakyRetryBudgetIdle:
+			if !r.state.CompareAndSwap(flakyRetryBudgetIdle, flakyRetryBudgetReserving) {
+				continue
+			}
+			if !tryReserveFlakyRetryBudget() {
+				r.state.Store(flakyRetryBudgetIdle)
+				return false
+			}
+			r.state.Store(flakyRetryBudgetReserved)
+			return true
+		}
+	}
+}
+
+func (r *flakyRetryBudgetReservation) reserved() bool {
+	return r != nil && r.state.Load() == flakyRetryBudgetReserved
+}
+
+func (r *flakyRetryBudgetReservation) consume() {
+	if r != nil {
+		r.state.CompareAndSwap(flakyRetryBudgetReserved, flakyRetryBudgetConsumed)
+	}
+}
+
+func (r *flakyRetryBudgetReservation) refund() {
+	if r == nil || !r.state.CompareAndSwap(flakyRetryBudgetReserved, flakyRetryBudgetRefunded) {
+		return
+	}
+	atomic.AddInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount, 1)
 }
 
 // runTestCleanup executes testing cleanups for a retry attempt. It isolates
 // cleanup Goexit in a helper goroutine so retry orchestration can treat cleanup
 // failures as attempt failures instead of letting them escape the retry loop.
 func runTestCleanup(t *testing.T, result *testCleanupResult) {
-	completeParallelSubtests(t, getTestPrivateFields(t))
+	runTestCleanupWithOptions(t, result, false)
+}
+
+func runTestCleanupWithOptions(t *testing.T, result *testCleanupResult, neutralizeNativeParallelRelease bool) {
+	completeParallelSubtests(t, getTestPrivateFields(t), neutralizeNativeParallelRelease)
 	result.ran = true
 	done := make(chan struct{})
 	go func() {
@@ -1174,12 +1415,13 @@ func runTestCleanup(t *testing.T, result *testCleanupResult) {
 // Datadog-managed clone. It mirrors testing.tRunner's scheduler accounting:
 // release the parent slot before unblocking children, then reacquire it for
 // sequential parents before running cleanup.
-func completeParallelSubtests(t *testing.T, localTPrivateFields *commonPrivateFields) {
+func completeParallelSubtests(t *testing.T, localTPrivateFields *commonPrivateFields, neutralizeNativeParallelRelease bool) {
 	if localTPrivateFields == nil || localTPrivateFields.sub == nil || len(*localTPrivateFields.sub) == 0 {
 		return
 	}
 
 	subtests := *localTPrivateFields.sub
+	parentIsParallel := isParallelTest(t, localTPrivateFields)
 	*localTPrivateFields.sub = nil
 	testState := getTestState(t)
 	if testState != nil {
@@ -1194,8 +1436,15 @@ func completeParallelSubtests(t *testing.T, localTPrivateFields *commonPrivateFi
 			<-*pvSub.signal
 		}
 	}
-	if testState != nil && !isParallelTest(t, localTPrivateFields) {
+	if testState != nil && !parentIsParallel {
 		testingTestStateWaitParallel(testState)
+	}
+	if neutralizeNativeParallelRelease && parentIsParallel && localTPrivateFields.isParallel != nil {
+		// A process-retry child drains native tRunner subtests before writing
+		// JSON. After we clear t.sub, Go's native tRunner would otherwise take
+		// its len(t.sub)==0 && t.isParallel release path and release the same
+		// scheduler slot twice.
+		*localTPrivateFields.isParallel = false
 	}
 }
 
@@ -1254,6 +1503,9 @@ func propagateTestExecutionMetadataFlags(execMeta *testExecutionMetadata, origin
 	execMeta.isAModifiedTest = execMeta.isAModifiedTest || originalExecMeta.isAModifiedTest
 	execMeta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled || originalExecMeta.isEarlyFlakeDetectionEnabled
 	execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || originalExecMeta.isFlakyTestRetriesEnabled
+	if execMeta.flakyRetryBudgetReservation == nil {
+		execMeta.flakyRetryBudgetReservation = originalExecMeta.flakyRetryBudgetReservation
+	}
 	execMeta.isQuarantined = execMeta.isQuarantined || originalExecMeta.isQuarantined
 	execMeta.isDisabled = execMeta.isDisabled || originalExecMeta.isDisabled
 	if !execMeta.suppressParentRetryMetadata {
@@ -1279,6 +1531,10 @@ type noopMutex struct{}
 func (m *noopMutex) Lock()         {}
 func (m *noopMutex) Unlock()       {}
 func (m *noopMutex) TryLock() bool { return true }
+
+func newExecutionOptionsMutex() sync.Locker {
+	return &locking.Mutex{}
+}
 
 //go:linkname testingTRunCleanup testing.(*common).runCleanup
 func testingTRunCleanup(c *testing.T, ph int) (panicVal any)

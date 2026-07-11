@@ -117,32 +117,40 @@ func isFinalExecution(failed, skipped bool, execMeta *testExecutionMetadata, dur
 	}
 
 	var remainingRetries int64
-	var remainingBudget int64
 
 	if execMeta.isARetry {
 		// For retries, use the captured remaining retries minus 1 (the decrement happens after span close).
 		remainingRetries = execMeta.remainingRetries - 1
 
-		// For flaky retries, also account for the global budget decrement.
-		if execMeta.isFlakyTestRetriesEnabled {
-			remainingBudget = atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount) - 1
-		} else {
-			remainingBudget = 0
-		}
 	} else {
 		// For the initial execution, compute the retry count that would be set.
 		// Subtract 1 because the decrement happens before postShouldRetry is called.
 		remainingRetries = computeAdjustedRetryCount(execMeta, duration) - 1
-		if execMeta.isFlakyTestRetriesEnabled {
-			// For the initial execution, the global budget isn't decremented in postPerExecution,
-			// but we need to check what postShouldRetry will see.
-			remainingBudget = atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount)
-		} else {
-			remainingBudget = 0
+	}
+	if usesFlakyRetryBudget(execMeta) {
+		if !failed || remainingRetries < 0 {
+			return true
 		}
+		if execMeta.flakyRetryBudgetReservation == nil || !execMeta.flakyRetryBudgetReservation.reserve() {
+			return true
+		}
+		return false
 	}
 
 	// Check if another retry would happen.
-	willRetry := willRetryAfterExecution(failed, skipped, execMeta, remainingRetries, remainingBudget)
+	willRetry := willRetryAfterExecution(failed, skipped, execMeta, remainingRetries, 0)
 	return !willRetry
+}
+
+func tryReserveFlakyRetryBudget() bool {
+	remaining := &integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount
+	for {
+		current := atomic.LoadInt64(remaining)
+		if current <= 0 {
+			return false
+		}
+		if atomic.CompareAndSwapInt64(remaining, current, current-1) {
+			return true
+		}
+	}
 }

@@ -324,6 +324,27 @@
         "default": "false"
       }
     ],
+    "DD_CIVISIBILITY_RETRY_EXECUTION_MODE": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "in_process"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_PROCESS_MAX_CONCURRENCY": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "1"
+      }
+    ],
+    "DD_CIVISIBILITY_RETRY_PROCESS_TIMEOUT": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": ""
+      }
+    ],
     "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED": [
       {
         "implementation": "A",

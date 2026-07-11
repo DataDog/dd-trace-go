@@ -28,6 +28,8 @@ func resetCIVisibilityStateForTesting() {
 	additionalFeaturesInitializationOnce = sync.Once{}
 
 	closeActions = nil
+	preCloseActions = nil
+	ciVisibilityShutdownDone = nil
 
 	ciVisibilityClient = nil
 	ciVisibilitySettings = net.SettingsResponseData{}

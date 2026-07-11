@@ -25,8 +25,27 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
+
+var testingMInstrumentationClaims = struct {
+	mu      locking.Mutex
+	claimed map[*testing.M]struct{}
+}{claimed: make(map[*testing.M]struct{})}
+
+func claimTestingMInstrumentation(m *testing.M) bool {
+	if m == nil {
+		return true
+	}
+	testingMInstrumentationClaims.mu.Lock()
+	defer testingMInstrumentationClaims.mu.Unlock()
+	if _, claimed := testingMInstrumentationClaims.claimed[m]; claimed {
+		return false
+	}
+	testingMInstrumentationClaims.claimed[m] = struct{}{}
+	return true
+}
 
 // ******************************************************************************************************************
 // WARNING: DO NOT CHANGE THE SIGNATURE OF THESE FUNCTIONS!
@@ -39,6 +58,27 @@ import (
 //
 //go:linkname instrumentTestingM
 func instrumentTestingM(m *testing.M) func(exitCode int) {
+	return instrumentTestingMWithOptions(m, additionalFeatureWrapperOptions{})
+}
+
+func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWrapperOptions) func(exitCode int) {
+	if isProcessRetryChild() {
+		cfg, err := bootstrapProcessRetryChild()
+		if err != nil {
+			reason := processRetryChildConfigErrorReason(err)
+			log.Debug("civisibility: process retry child config error: %s", reason)
+			writeInvalidProcessRetryChildConfigResult(cfg, reason)
+			if !disableProcessRetryChildExecution(m) {
+				hardStopInvalidProcessRetryChild("testing_m_reflection_drift")
+			}
+			return func(_ int) {}
+		}
+		return instrumentProcessRetryChild(m, cfg)
+	}
+	if !claimTestingMInstrumentation(m) {
+		return func(_ int) {}
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
 	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
 	if !isCiVisibilityEnabled() || !testing.Testing() {
@@ -52,6 +92,10 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+	if wrapperOpts.processRetryAllowed && !registerProcessRetryShutdownAction() {
+		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
+		wrapperOpts.processRetryAllowed = false
+	}
 
 	coverageInitialized := false
 	settings := integrations.GetSettings()
@@ -75,7 +119,7 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	ddm := (*M)(m)
 
 	// Instrument the internal tests for CI visibility.
-	ddm.instrumentInternalTests(getInternalTestArray(m))
+	ddm.instrumentInternalTests(getInternalTestArray(m), wrapperOpts)
 
 	// Instrument the internal benchmarks for CI visibility.
 	for _, v := range os.Args {
@@ -159,6 +203,10 @@ func uploadFinalCoverageReport(settings *civisibilitynet.SettingsResponseData) {
 //
 //go:linkname instrumentTestingTFunc
 func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
+	if isProcessRetryChild() {
+		return instrumentProcessRetryChildSubtest(f)
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
 	if !isCiVisibilityEnabled() || !testing.Testing() {
 		return f
@@ -281,12 +329,19 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				return
 			}
 
+			bodyReturned := false
 			defer func() {
+				r := recover()
+				unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(currentT, bodyReturned)
 				duration := time.Since(startTime)
 				runAndApplyTestCleanup(currentT, execMeta)
 				collectAndWriteLogs(currentT, test)
 
-				if r := recover(); r != nil {
+				if unexpectedTermination {
+					r = unexpectedTestTerminationMessage
+					currentT.Fail()
+				}
+				if r != nil {
 					stacktrace := utils.GetStacktrace(1)
 					// Compute whether this is the final execution.
 					finalExec := isFinalExecution(true, false, execMeta, duration)
@@ -402,9 +457,10 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			}()
 
 			f(currentT)
+			bodyReturned = true
 		}
 
-		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta)
+		wrappedFunc := applyAdditionalFeaturesToTestFunc(runSubtest, subtestInfo, parentExecMeta, additionalFeatureWrapperOptions{})
 		wrappedFunc(t)
 	}
 
@@ -416,6 +472,17 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 //
 //go:linkname instrumentSetErrorInfo
 func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, skip int) {
+	if isProcessRetryChild() {
+		if execMeta := processRetryChildOwnerMetadata(getTestMetadata(tb)); execMeta != nil {
+			execMeta.processRetryError.CompareAndSwap(nil, &processRetryErrorInfo{
+				Type:    truncateProcessRetryErrorType(errType),
+				Message: truncateProcessRetryStructuredErrorMessage(errMessage),
+				Stack:   truncateProcessRetryStructuredErrorStack(utils.GetStacktrace(2 + skip)),
+			})
+		}
+		return
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
 		return
@@ -439,6 +506,14 @@ func instrumentSetErrorInfo(tb testing.TB, errType string, errMessage string, sk
 //
 //go:linkname instrumentCloseAndSkip
 func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
+	if isProcessRetryChild() {
+		if execMeta := getTestMetadata(tb); execMeta != nil && processRetryChildOwnerMetadata(execMeta) == execMeta {
+			reason := truncateProcessRetrySkipReason(skipReason)
+			execMeta.processRetrySkipReason.CompareAndSwap(nil, &reason)
+		}
+		return
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
 		return
@@ -465,6 +540,10 @@ func instrumentCloseAndSkip(tb testing.TB, skipReason string) {
 //
 //go:linkname instrumentSkipNow
 func instrumentSkipNow(tb testing.TB) {
+	if isProcessRetryChild() {
+		return
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
 		return
@@ -490,6 +569,10 @@ func instrumentSkipNow(tb testing.TB) {
 //
 //go:linkname instrumentTestingBFunc
 func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (string, func(*testing.B)) {
+	if isProcessRetryChild() {
+		return name, f
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before instrumenting
 	if !isCiVisibilityEnabled() {
 		return name, f
@@ -655,6 +738,10 @@ func instrumentTestingBFunc(pb *testing.B, name string, f func(*testing.B)) (str
 //
 //go:linkname instrumentTestifySuiteRun
 func instrumentTestifySuiteRun(t *testing.T, suite any) {
+	if isProcessRetryChild() {
+		return
+	}
+
 	log.Debug("instrumentTestifySuiteRun: instrumenting testify suite run")
 	registerTestifySuite(t, suite)
 }
@@ -663,6 +750,10 @@ func instrumentTestifySuiteRun(t *testing.T, suite any) {
 //
 //go:linkname getTestOptimizationContext
 func getTestOptimizationContext(tb testing.TB) context.Context {
+	if isProcessRetryChild() {
+		return context.Background()
+	}
+
 	if iTest := getTestOptimizationTest(tb); iTest != nil {
 		log.Debug("getTestOptimizationContext: returning context from test")
 		return iTest.Context()
@@ -675,6 +766,14 @@ func getTestOptimizationContext(tb testing.TB) context.Context {
 //
 //go:linkname getTestOptimizationTest
 func getTestOptimizationTest(tb testing.TB) integrations.Test {
+	if isProcessRetryChild() {
+		ciTestItem := getTestMetadata(tb)
+		if ciTestItem != nil && ciTestItem.test != nil {
+			return ciTestItem.test
+		}
+		return nil
+	}
+
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil {
 		log.Debug("getTestOptimizationTest: returning test from metadata")
@@ -690,6 +789,10 @@ func getTestOptimizationTest(tb testing.TB) integrations.Test {
 //
 //go:linkname instrumentTestingParallel
 func instrumentTestingParallel(t *testing.T) bool {
+	if isProcessRetryChild() {
+		return false
+	}
+
 	// Check if CI Visibility was disabled using the kill switch before
 	if !isCiVisibilityEnabled() {
 		return false

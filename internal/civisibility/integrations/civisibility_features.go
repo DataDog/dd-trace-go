@@ -400,6 +400,9 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 
 // GetSettings gets the settings from the backend settings endpoint
 func GetSettings() *net.SettingsResponseData {
+	if isProcessRetryChild() {
+		return &net.SettingsResponseData{}
+	}
 	// call to ensure the settings features initialization is completed (service name can be null here)
 	ensureSettingsInitialization("")
 	return &ciVisibilitySettings
@@ -407,6 +410,9 @@ func GetSettings() *net.SettingsResponseData {
 
 // GetKnownTests gets the known tests data
 func GetKnownTests() *net.KnownTestsResponseData {
+	if isProcessRetryChild() {
+		return &net.KnownTestsResponseData{}
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityKnownTests
@@ -414,6 +420,9 @@ func GetKnownTests() *net.KnownTestsResponseData {
 
 // GetTestManagementTestsData gets the test management tests data
 func GetTestManagementTestsData() *net.TestManagementTestsResponseDataModules {
+	if isProcessRetryChild() {
+		return &net.TestManagementTestsResponseDataModules{}
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityTestManagementTests
@@ -421,6 +430,9 @@ func GetTestManagementTestsData() *net.TestManagementTestsResponseDataModules {
 
 // GetFlakyRetriesSettings gets the flaky retries settings
 func GetFlakyRetriesSettings() *FlakyRetriesSetting {
+	if isProcessRetryChild() {
+		return &FlakyRetriesSetting{}
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return &ciVisibilityFlakyRetriesSettings
@@ -428,6 +440,9 @@ func GetFlakyRetriesSettings() *FlakyRetriesSetting {
 
 // GetSkippableTests gets the skippable tests from the backend
 func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttributes {
+	if isProcessRetryChild() {
+		return nil
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return ciVisibilitySkippables
@@ -435,6 +450,9 @@ func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttrib
 
 // GetSkippableTestsResponse gets the full skippable-tests response from the backend.
 func GetSkippableTestsResponse() *net.SkippableTestsResponse {
+	if isProcessRetryChild() {
+		return nil
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return ciVisibilitySkippablesResponse
@@ -442,6 +460,9 @@ func GetSkippableTestsResponse() *net.SkippableTestsResponse {
 
 // GetImpactedTestsAnalyzer gets the impacted tests analyzer
 func GetImpactedTestsAnalyzer() *impactedtests.ImpactedTestAnalyzer {
+	if isProcessRetryChild() {
+		return nil
+	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
 	ensureAdditionalFeaturesInitialization("")
 	return ciVisibilityImpactedTestsAnalyzer
