@@ -100,19 +100,28 @@ func TestConcurrentSignalExitWaitsForPreCloseOwner(t *testing.T) {
 	}()
 	<-preCloseEntered
 
-	signalCallerStarted := make(chan struct{})
+	shutdownWaitEntered := make(chan struct{})
+	originalWaitForShutdown := waitForCIVisibilityShutdown
+	waitForCIVisibilityShutdown = func(done <-chan struct{}) {
+		close(shutdownWaitEntered)
+		originalWaitForShutdown(done)
+	}
+	t.Cleanup(func() { waitForCIVisibilityShutdown = originalWaitForShutdown })
 	signalExitCodes := make(chan int, 1)
 	go func() {
-		close(signalCallerStarted)
 		exitCiVisibility(false)
 		signalExitCodes <- 1
 	}()
-	<-signalCallerStarted
+	select {
+	case <-shutdownWaitEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("signal shutdown caller did not reach the owner wait")
+	}
 
 	select {
 	case code := <-signalExitCodes:
 		t.Fatalf("signal exit ran before the pre-close owner completed: %d", code)
-	case <-time.After(50 * time.Millisecond):
+	default:
 	}
 	select {
 	case <-closeActionRan:

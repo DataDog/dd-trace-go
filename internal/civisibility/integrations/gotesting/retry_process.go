@@ -1717,19 +1717,26 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		attempt.SetupFallbackAllowed = false
 		attempt.TimedOut = errors.Is(startErr, errProcessRetryLaunchDeadline)
 		attempt.Err = errors.Join(attempt.Err, startErr)
-		abortCtx, cancelAbort := context.WithCancel(context.Background())
-		cancelAbort()
-		waitErr = waitProcessRetryChildWithTeardown(
-			abortCtx,
-			shutdown,
-			hooks,
-			cmd,
-			waitCh,
-			attemptTimer,
-			&attempt,
-			teardownPhase,
-			markContainmentLost,
-		)
+		if hooks.startsSuspended {
+			// A suspended Windows child is not contained by its Job Object until
+			// attachTree succeeds. A post-start cancellation or deadline must kill
+			// that direct child rather than terminating the still-empty job.
+			waitErr = forceKillAndWait(hooks.killDirect)
+		} else {
+			abortCtx, cancelAbort := context.WithCancel(context.Background())
+			cancelAbort()
+			waitErr = waitProcessRetryChildWithTeardown(
+				abortCtx,
+				shutdown,
+				hooks,
+				cmd,
+				waitCh,
+				attemptTimer,
+				&attempt,
+				teardownPhase,
+				markContainmentLost,
+			)
+		}
 	} else if attachErr := hooks.attachTree(cmd); attachErr != nil {
 		attempt.SetupFailure = true
 		attempt.SetupFallbackAllowed = hooks.startsSuspended
