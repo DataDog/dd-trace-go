@@ -3129,6 +3129,8 @@ func TestProcessRetryUnitRunFilterIncludesSpecialCaseRegressions(t *testing.T) {
 		tests = append(tests, testing.InternalTest{Name: testName})
 	}
 	filter := buildProcessRetryUnitRunFilter(tests)
+	_, err := regexp.Compile(filter)
+	require.NoError(t, err)
 	for _, testName := range testNames {
 		matched, err := regexp.MatchString(filter, testName)
 		require.NoError(t, err)
@@ -3348,6 +3350,52 @@ func TestRunProcessRetryAttemptSuspendedAttachFailureFallsBackBeforeConsumption(
 	require.ErrorIs(t, attempt.Err, attachErr)
 	require.Equal(t, int32(1), startCalls.Load())
 	require.Equal(t, int32(1), killCalls.Load())
+	require.False(t, processRetryLaunchesDisabled())
+}
+
+func TestRunProcessRetryAttemptPostStartCancellationKillsSuspendedChildDirectly(t *testing.T) {
+	resetProcessRetryLimiterForTesting(t)
+	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
+	defer restoreLaunchGate()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	waitCh := make(chan error, 1)
+	directKillCalls := atomic.Int32{}
+	resetProcessRetryRunnerHooksForTesting(t, processRetryRunnerHooks{
+		executable:       func() (string, error) { return os.Args[0], nil },
+		workingDirectory: func() (string, error) { return ".", nil },
+		args:             func() []string { return nil },
+		environ:          os.Environ,
+		command:          exec.Command,
+		startAndWait: func(cmd *exec.Cmd) (<-chan error, error) {
+			closeProcessRetryCommandWriters(cmd)
+			cancel()
+			return waitCh, nil
+		},
+		killDirect: func(*exec.Cmd) error {
+			directKillCalls.Add(1)
+			waitCh <- nil
+			return nil
+		},
+		startsSuspended: true,
+	})
+
+	attempt := runProcessRetryAttempt(ctx, processRetryChildConfig{
+		TestName:    "TestSuspendedPostStartCancellation",
+		Attempt:     1,
+		RetryReason: constants.AutoTestRetriesRetryReason,
+	}, time.Time{}, false)
+	if attempt.Cleanup != nil {
+		defer attempt.Cleanup()
+	}
+
+	require.True(t, attempt.SetupFailure)
+	require.False(t, attempt.SetupFallbackAllowed)
+	require.False(t, attempt.Unreaped)
+	require.False(t, attempt.ContainmentLost)
+	require.ErrorIs(t, attempt.Err, errProcessRetryLaunchCanceled)
+	require.ErrorIs(t, attempt.Err, context.Canceled)
+	require.Equal(t, int32(1), directKillCalls.Load())
 	require.False(t, processRetryLaunchesDisabled())
 }
 

@@ -67,6 +67,9 @@ var (
 	preCloseActions []ciVisibilityCloseAction
 	// ciVisibilityShutdownDone closes after the current shutdown owner finishes.
 	ciVisibilityShutdownDone chan struct{}
+	// waitForCIVisibilityShutdown blocks shutdown callers that do not own the
+	// Initialized -> Exiting transition. It is a variable for deterministic tests.
+	waitForCIVisibilityShutdown = func(done <-chan struct{}) { <-done }
 
 	// closeActionsMutex synchronizes access to closeActions, preCloseActions, and
 	// ciVisibilityShutdownDone.
@@ -303,7 +306,7 @@ func exitCiVisibility(stopSignalHandler bool) {
 		closeActionsMutex.Unlock()
 		log.Debug("civisibility: already closed or not initialized")
 		if done != nil {
-			<-done
+			waitForCIVisibilityShutdown(done)
 		}
 		if stopSignalHandler {
 			stopCIVisibilitySignalHandler()

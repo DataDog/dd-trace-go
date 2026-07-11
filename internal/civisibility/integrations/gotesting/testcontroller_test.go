@@ -192,7 +192,7 @@ func buildProcessRetryUnitRunFilter(tests []testing.InternalTest) string {
 	if len(names) == 0 {
 		return "^$"
 	}
-	return "^(?:" + strings.Join(names, "|") + ")(?:$|/)"
+	return "^(" + strings.Join(names, "|") + ")($|/)"
 }
 
 func coverageModeSupportsITRBackfill() bool {
