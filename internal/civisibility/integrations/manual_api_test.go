@@ -7,17 +7,84 @@ package integrations
 
 import (
 	"context"
+	"os"
+	"os/exec"
 	"runtime"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 // Mocking the ddTslvEvent interface
 type MockDdTslvEvent struct {
 	mock.Mock
+}
+
+func TestTryPushCiVisibilityPreCloseActionRejectsShutdown(t *testing.T) {
+	oldState := civisibility.GetState()
+	closeActionsMutex.Lock()
+	oldPreCloseActions := preCloseActions
+	preCloseActions = nil
+	closeActionsMutex.Unlock()
+	t.Cleanup(func() {
+		civisibility.SetState(oldState)
+		closeActionsMutex.Lock()
+		preCloseActions = oldPreCloseActions
+		closeActionsMutex.Unlock()
+	})
+
+	civisibility.SetState(civisibility.StateInitialized)
+	require.True(t, TryPushCiVisibilityPreCloseAction(func() {}))
+	closeActionsMutex.Lock()
+	require.Len(t, preCloseActions, 1)
+	closeActionsMutex.Unlock()
+
+	civisibility.SetState(civisibility.StateExiting)
+	require.False(t, TryPushCiVisibilityPreCloseAction(func() {}))
+	closeActionsMutex.Lock()
+	require.Len(t, preCloseActions, 1)
+	closeActionsMutex.Unlock()
+}
+
+func TestCIVisibilityPreCloseActionsRunUnlockedBeforeCloseActions(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+
+	var order []string
+	require.True(t, TryPushCiVisibilityPreCloseAction(func() {
+		order = append(order, "pre-close")
+		registered := make(chan struct{})
+		go func() {
+			PushCiVisibilityCloseAction(func() {
+				order = append(order, "late close")
+			})
+			close(registered)
+		}()
+		select {
+		case <-registered:
+		case <-time.After(time.Second):
+			t.Fatal("pre-close action ran while closeActionsMutex was held")
+		}
+	}))
+	PushCiVisibilityCloseAction(func() {
+		order = append(order, "close")
+	})
+
+	civisibility.SetState(civisibility.StateInitialized)
+	ExitCiVisibility()
+
+	require.Equal(t, []string{"pre-close", "late close", "close"}, order)
 }
 
 func (m *MockDdTslvEvent) Context() context.Context {
@@ -178,6 +245,169 @@ func (m *MockDdTestSuite) Name() string {
 
 func (m *MockDdTestSuite) Close(options ...TestSuiteCloseOption) {
 	m.Called(options)
+}
+
+func TestProcessRetryChildManualAPIsAreNoop(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "child-sentinel")
+	t.Setenv("DD_TRACE_SAMPLE_RATE", "sample-sentinel")
+
+	var clientCalls atomic.Int32
+	var uploadCalls atomic.Int32
+	var searchCalls atomic.Int32
+	var tracerInitializationCalls atomic.Int32
+	newCIVisibilityClientWithServiceNameFunc = func(string) civisibilitynet.Client {
+		clientCalls.Add(1)
+		return nil
+	}
+	uploadRepositoryChangesFunc = func() (int64, error) {
+		uploadCalls.Add(1)
+		return 0, nil
+	}
+	getSearchCommitsFunc = func() (*searchCommitsResponse, error) {
+		searchCalls.Add(1)
+		return newSearchCommitsResponse(nil, nil, false), nil
+	}
+
+	internalCiVisibilityInitialization(func([]tracer.StartOption) {
+		tracerInitializationCalls.Add(1)
+	})
+	EnsureCiVisibilityInitialization()
+
+	session := CreateTestSession(WithTestSessionCommand("cmd"), WithTestSessionWorkingDirectory("wd"))
+	require.NotNil(t, session)
+	require.Zero(t, session.SessionID())
+	require.Equal(t, "cmd", session.Command())
+	require.Equal(t, "wd", session.WorkingDirectory())
+	require.Equal(t, context.Background(), session.Context())
+
+	module := session.GetOrCreateModule("module")
+	require.NotNil(t, module)
+	require.Zero(t, module.ModuleID())
+	require.Equal(t, "module", module.Name())
+	require.Equal(t, session, module.Session())
+	require.Equal(t, context.Background(), module.Context())
+
+	suite := module.GetOrCreateSuite("suite")
+	require.NotNil(t, suite)
+	require.Zero(t, suite.SuiteID())
+	require.Equal(t, "suite", suite.Name())
+	require.Equal(t, module, suite.Module())
+	require.Equal(t, context.Background(), suite.Context())
+
+	test := suite.CreateTest("test")
+	require.NotNil(t, test)
+	require.Zero(t, test.TestID())
+	require.Equal(t, "test", test.Name())
+	require.Equal(t, suite, test.Suite())
+	require.Equal(t, context.Background(), test.Context())
+
+	session.SetTag("tag", "value")
+	session.SetError(WithErrorInfo("type", "message", "stack"))
+	module.SetTag("tag", "value")
+	module.SetError(WithErrorInfo("type", "message", "stack"))
+	suite.SetTag("tag", "value")
+	suite.SetError(WithErrorInfo("type", "message", "stack"))
+	test.SetTag("tag", "value")
+	test.SetError(WithErrorInfo("type", "message", "stack"))
+	test.SetBenchmarkData("duration", map[string]any{"run": 1})
+	test.SetTestFunc(nil)
+	test.Log("message", "tag:value")
+	test.Close(ResultStatusPass)
+	suite.Close()
+	module.Close()
+	session.Close(0)
+	ExitCiVisibility()
+
+	require.NotNil(t, GetSettings())
+	require.NotNil(t, GetKnownTests())
+	require.NotNil(t, GetTestManagementTestsData())
+	require.NotNil(t, GetFlakyRetriesSettings())
+	require.Nil(t, GetSkippableTests())
+	require.Nil(t, GetSkippableTestsResponse())
+	require.Nil(t, GetImpactedTestsAnalyzer())
+	require.NotNil(t, InitializeCIVisibilityMock())
+
+	require.Zero(t, clientCalls.Load())
+	require.Zero(t, uploadCalls.Load())
+	require.Zero(t, searchCalls.Load())
+	require.Zero(t, tracerInitializationCalls.Load())
+	require.Equal(t, civisibility.StateUninitialized, civisibility.GetState())
+	require.Nil(t, ciVisibilityClient)
+	require.Nil(t, mTracer)
+	require.Empty(t, closeActions)
+	require.Nil(t, currentCIVisibilitySignalHandlerForTesting())
+	ciVisibilityEnabled, ok := internalenv.Lookup(constants.CIVisibilityEnabledEnvironmentVariable)
+	require.True(t, ok)
+	require.Equal(t, "child-sentinel", ciVisibilityEnabled)
+	sampleRate, ok := internalenv.Lookup("DD_TRACE_SAMPLE_RATE")
+	require.True(t, ok)
+	require.Equal(t, "sample-sentinel", sampleRate)
+}
+
+func TestProcessRetryChildStartupHasNoCloseActions(t *testing.T) {
+	if isProcessRetryChild() {
+		require.Empty(t, closeActions)
+		require.Equal(t, civisibility.StateUninitialized, civisibility.GetState())
+		require.Zero(t, CreateTestSession().SessionID())
+		require.Empty(t, closeActions)
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryChildStartupHasNoCloseActions$", "-test.count=1")
+	envWithoutChildMarker := make([]string, 0, len(os.Environ())+1)
+	markerPrefix := strings.ToUpper(constants.CIVisibilityInternalRetryProcessChild) + "="
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(strings.ToUpper(entry), markerPrefix) {
+			continue
+		}
+		envWithoutChildMarker = append(envWithoutChildMarker, entry)
+	}
+	cmd.Env = append(envWithoutChildMarker, constants.CIVisibilityInternalRetryProcessChild+"=true")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+}
+
+func TestProcessRetryChildFeatureDataAPIsAreDisabled(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
+
+	require.NotNil(t, GetSettings())
+	require.NotNil(t, GetKnownTests())
+	require.NotNil(t, GetTestManagementTestsData())
+	require.NotNil(t, GetFlakyRetriesSettings())
+	require.Nil(t, GetSkippableTests())
+	require.Nil(t, GetSkippableTestsResponse())
+	require.Nil(t, GetImpactedTestsAnalyzer())
+}
+
+func TestProcessRetryChildInitializeCIVisibilityMockIsNoop(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
+
+	mt := InitializeCIVisibilityMock()
+	require.NotNil(t, mt)
+	require.Nil(t, mt.StartSpan("child"))
+	require.NotPanics(t, func() {
+		var span *tracer.Span
+		span.Finish()
+	})
+	require.NotPanics(t, func() {
+		_, _ = mt.Extract(map[string]string{})
+		_ = mt.Inject(nil, map[string]string{})
+		_ = mt.TracerConf()
+		mt.Flush()
+		mt.Stop()
+		_ = mt.OpenSpans()
+		mt.FinishSpan(nil)
+		_ = mt.FinishedSpans()
+		_ = mt.SentDSMBacklogs()
+		mt.Reset()
+	})
 }
 
 func (m *MockDdTestSuite) CreateTest(name string, options ...TestStartOption) Test {

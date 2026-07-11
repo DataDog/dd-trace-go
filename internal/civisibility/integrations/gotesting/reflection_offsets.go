@@ -131,14 +131,15 @@ type testingInternalsLayout struct {
 	outputWriter   outputWriterLayout
 	benchmark      benchmarkFieldsLayout
 
-	testFieldsOK      bool
-	parentFieldsOK    bool
-	contextMatcherOK  bool
-	copyTestOK        bool
-	createTestOK      bool
-	outputWriterOK    bool
-	chattyOK          bool
-	benchmarkFieldsOK bool
+	testFieldsOK               bool
+	parentFieldsOK             bool
+	contextMatcherOK           bool
+	copyTestOK                 bool
+	createTestOK               bool
+	outputWriterOK             bool
+	chattyOK                   bool
+	benchmarkFieldsOK          bool
+	processRetryChildCleanupOK bool
 }
 
 var (
@@ -327,7 +328,7 @@ func (l *testingInternalsLayout) computeSectionFlags() {
 	l.copyTestOK = allAvailable(
 		l.common.mu, l.common.output, l.common.w, l.common.ran, l.common.failed,
 		l.common.skipped, l.common.done, l.common.helperPCs, l.common.helperNames,
-		l.common.cleanups, l.common.cleanupName, l.common.cleanupPc, l.common.finished,
+		l.common.cleanups, l.common.cleanupName, l.common.cleanupPc,
 		l.common.inFuzzFn, l.common.chatty.unsafeField, l.common.bench, l.common.hasSub,
 		l.common.cleanupStarted, l.common.runner, l.common.isParallel, l.common.level,
 		l.common.creator, l.common.name, l.common.start.unsafeField, l.common.duration,
@@ -338,6 +339,10 @@ func (l *testingInternalsLayout) computeSectionFlags() {
 		l.common.mu, l.common.level, l.common.name, l.common.failed,
 		l.common.skipped, l.common.parent.unsafeField,
 		l.benchmark.benchFunc, l.benchmark.result,
+	)
+	l.processRetryChildCleanupOK = allAvailable(
+		l.common.mu, l.common.sub, l.common.barrier, l.common.signal,
+		l.common.isParallel, l.common.finished, l.tstate.unsafeField,
 	)
 }
 

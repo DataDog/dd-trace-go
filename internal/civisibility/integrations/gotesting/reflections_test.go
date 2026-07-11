@@ -36,6 +36,13 @@ func TestGetFieldPointerFrom(t *testing.T) {
 	if ptr == nil {
 		t.Fatal("Expected a valid pointer, got nil")
 	}
+	if _, err := getFieldPointerFromWithType(&mockStruct, "privateField", reflect.TypeFor[int]()); err == nil {
+		t.Fatal("Expected an error for a field with an unexpected type")
+	}
+	typedPtr, err := getFieldPointerFromWithType(&mockStruct, "privateField", reflect.TypeFor[string]())
+	if err != nil || typedPtr == nil {
+		t.Fatalf("Expected a typed field pointer, got pointer=%v error=%v", typedPtr, err)
+	}
 
 	// Dereference the pointer to get the actual value
 	actualValue := (*string)(ptr)
@@ -182,6 +189,34 @@ func exerciseTestingInternalsOffsetLayout(t *testing.T) {
 	}
 	if !layout.testFieldsOK || !layout.parentFieldsOK || !layout.copyTestOK || !layout.createTestOK || !layout.benchmarkFieldsOK {
 		t.Fatalf("expected core layout sections to be enabled: %+v", layout)
+	}
+	if !layout.common.finished.available || !layout.processRetryChildCleanupOK {
+		t.Fatal("expected process retry child cleanup layout to include testing.common.finished")
+	}
+	finishedDrift := buildTestingInternalsLayout(reflect.TypeFor[testing.T](), reflect.TypeFor[testing.B]())
+	finishedDrift.common.finished.available = false
+	finishedDrift.computeSectionFlags()
+	if !finishedDrift.testFieldsOK || !finishedDrift.copyTestOK {
+		t.Fatal("testing.common.finished drift must not disable normal in-process fast paths")
+	}
+	if finishedDrift.processRetryChildCleanupOK {
+		t.Fatal("testing.common.finished drift must disable process retry child cleanup")
+	}
+	if fields := getTestPrivateFieldsFast(t, finishedDrift); fields == nil || fields.finished != nil {
+		t.Fatal("expected finished drift to keep ordinary fields available and omit finished")
+	}
+	muDrift := buildTestingInternalsLayout(reflect.TypeFor[testing.T](), reflect.TypeFor[testing.B]())
+	muDrift.common.mu.available = false
+	muDrift.computeSectionFlags()
+	if muDrift.processRetryChildCleanupOK {
+		t.Fatal("testing.common.mu drift must disable process retry child cleanup")
+	}
+	driftSource := createNewTestReflect()
+	driftTarget := &testing.T{}
+	*getTestPrivateFieldsReflect(driftSource).name = "finished-drift"
+	copyTestWithoutParentFast(driftSource, driftTarget, finishedDrift)
+	if got := getTestPrivateFieldsReflect(driftTarget); got == nil || got.name == nil || *got.name != "finished-drift" {
+		t.Fatal("expected copy fast path to remain valid when finished is unavailable")
 	}
 
 	invalid := buildTestingInternalsLayout(reflect.TypeFor[struct{}](), reflect.TypeFor[struct{}]())
