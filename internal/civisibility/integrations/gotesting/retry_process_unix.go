@@ -9,10 +9,13 @@ package gotesting
 
 import (
 	"errors"
-	"os"
 	"os/exec"
 	"syscall"
 )
+
+// ProcessRetryContainmentSupported reports whether this platform can contain
+// ordinary retry-child descendants.
+func ProcessRetryContainmentSupported() bool { return true }
 
 func processRetryChildStartsSuspended() bool { return false }
 
@@ -52,17 +55,6 @@ func signalProcessRetryGroup(cmd *exec.Cmd, signal syscall.Signal) error {
 	}
 	err := syscall.Kill(-cmd.Process.Pid, signal)
 	if errors.Is(err, syscall.ESRCH) {
-		return nil
-	}
-	return err
-}
-
-func killDirectChild(cmd *exec.Cmd) error {
-	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
-		return errProcessRetryProcessNotStarted
-	}
-	err := cmd.Process.Kill()
-	if errors.Is(err, os.ErrProcessDone) {
 		return nil
 	}
 	return err

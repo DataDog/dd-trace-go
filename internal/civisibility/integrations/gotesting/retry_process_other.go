@@ -8,10 +8,12 @@
 package gotesting
 
 import (
-	"errors"
-	"os"
 	"os/exec"
 )
+
+// ProcessRetryContainmentSupported reports whether this platform can contain
+// ordinary retry-child descendants.
+func ProcessRetryContainmentSupported() bool { return false }
 
 func processRetryChildStartsSuspended() bool { return false }
 
@@ -34,15 +36,4 @@ func terminateProcessTree(cmd *exec.Cmd) error {
 
 func killProcessTree(cmd *exec.Cmd) error {
 	return killDirectChild(cmd)
-}
-
-func killDirectChild(cmd *exec.Cmd) error {
-	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
-		return errProcessRetryProcessNotStarted
-	}
-	err := cmd.Process.Kill()
-	if errors.Is(err, os.ErrProcessDone) {
-		return nil
-	}
-	return err
 }

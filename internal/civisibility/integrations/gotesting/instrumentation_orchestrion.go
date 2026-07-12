@@ -766,14 +766,6 @@ func getTestOptimizationContext(tb testing.TB) context.Context {
 //
 //go:linkname getTestOptimizationTest
 func getTestOptimizationTest(tb testing.TB) integrations.Test {
-	if isProcessRetryChild() {
-		ciTestItem := getTestMetadata(tb)
-		if ciTestItem != nil && ciTestItem.test != nil {
-			return ciTestItem.test
-		}
-		return nil
-	}
-
 	ciTestItem := getTestMetadata(tb)
 	if ciTestItem != nil && ciTestItem.test != nil {
 		log.Debug("getTestOptimizationTest: returning test from metadata")

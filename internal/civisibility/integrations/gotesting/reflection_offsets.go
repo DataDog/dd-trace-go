@@ -131,15 +131,14 @@ type testingInternalsLayout struct {
 	outputWriter   outputWriterLayout
 	benchmark      benchmarkFieldsLayout
 
-	testFieldsOK               bool
-	parentFieldsOK             bool
-	contextMatcherOK           bool
-	copyTestOK                 bool
-	createTestOK               bool
-	outputWriterOK             bool
-	chattyOK                   bool
-	benchmarkFieldsOK          bool
-	processRetryChildCleanupOK bool
+	testFieldsOK      bool
+	parentFieldsOK    bool
+	contextMatcherOK  bool
+	copyTestOK        bool
+	createTestOK      bool
+	outputWriterOK    bool
+	chattyOK          bool
+	benchmarkFieldsOK bool
 }
 
 var (
@@ -339,10 +338,6 @@ func (l *testingInternalsLayout) computeSectionFlags() {
 		l.common.mu, l.common.level, l.common.name, l.common.failed,
 		l.common.skipped, l.common.parent.unsafeField,
 		l.benchmark.benchFunc, l.benchmark.result,
-	)
-	l.processRetryChildCleanupOK = allAvailable(
-		l.common.mu, l.common.sub, l.common.barrier, l.common.signal,
-		l.common.isParallel, l.common.finished, l.tstate.unsafeField,
 	)
 }
 

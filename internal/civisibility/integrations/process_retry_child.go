@@ -7,23 +7,40 @@ package integrations
 
 import (
 	"context"
+	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
+type processRetryChildTransportState struct {
+	active bool
+	values map[string]string
+	err    error
+}
+
+var processRetryChildTransportKeys = [...]string{
+	constants.CIVisibilityInternalRetryProcessChild,
+	constants.CIVisibilityInternalRetryProcessResultPath,
+	constants.CIVisibilityInternalRetryProcessTestName,
+	constants.CIVisibilityInternalRetryProcessAttempt,
+	constants.CIVisibilityInternalRetryProcessReason,
+}
+
+var processRetryChildTransport = initializeProcessRetryChildTransport()
+
 // IsProcessRetryChild reports whether this process is executing a retry child.
-// The private environment package snapshots and removes the transport marker
-// during its own initialization. Unrelated packages may initialize first, but
-// TestMain, test bodies, and descendants started from them observe a scrubbed
-// environment while these APIs continue to read the private snapshot.
+// The integrations package snapshots and removes the transport marker during
+// package initialization. Unrelated packages may initialize first, but TestMain,
+// test bodies, and descendants started from them observe a scrubbed environment
+// while these APIs continue to read the private snapshot.
 func IsProcessRetryChild() bool {
-	value, ok := env.LookupPrivate(constants.CIVisibilityInternalRetryProcessChild)
+	value, ok := LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessChild)
 	if !ok {
 		return false
 	}
@@ -33,6 +50,63 @@ func IsProcessRetryChild() bool {
 
 func isProcessRetryChild() bool {
 	return IsProcessRetryChild()
+}
+
+// LookupProcessRetryChildTransport returns a private retry-process transport
+// value. Child processes use the immutable startup snapshot; ordinary processes
+// read the live environment to support test-only child-mode injection.
+func LookupProcessRetryChildTransport(name string) (string, bool) {
+	key, ok := processRetryChildTransportKey(name)
+	if !ok {
+		return "", false
+	}
+	if processRetryChildTransport.active {
+		value, ok := processRetryChildTransport.values[key]
+		return value, ok
+	}
+	return os.LookupEnv(key)
+}
+
+// ProcessRetryChildTransportError returns the first error encountered while
+// removing private transport keys from the live child environment.
+func ProcessRetryChildTransportError() error {
+	return processRetryChildTransport.err
+}
+
+// IsProcessRetryChildTransportKey reports whether name is one of the private
+// parent-to-child retry transport keys.
+func IsProcessRetryChildTransportKey(name string) bool {
+	_, ok := processRetryChildTransportKey(name)
+	return ok
+}
+
+func processRetryChildTransportKey(name string) (string, bool) {
+	for _, key := range processRetryChildTransportKeys {
+		if strings.EqualFold(name, key) {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+func initializeProcessRetryChildTransport() *processRetryChildTransportState {
+	state := &processRetryChildTransportState{}
+	child, ok := os.LookupEnv(constants.CIVisibilityInternalRetryProcessChild)
+	enabled, err := strconv.ParseBool(child)
+	if !ok || err != nil || !enabled {
+		return state
+	}
+	state.active = true
+	state.values = make(map[string]string, len(processRetryChildTransportKeys))
+	for _, key := range processRetryChildTransportKeys {
+		if value, ok := os.LookupEnv(key); ok {
+			state.values[key] = value
+		}
+		if err := os.Unsetenv(key); err != nil && state.err == nil {
+			state.err = err
+		}
+	}
+	return state
 }
 
 var (
@@ -118,12 +192,13 @@ func (s *processRetryNoopSuite) CreateTest(name string, _ ...TestStartOption) Te
 }
 
 type processRetryNoopTest struct {
-	suite TestSuite
-	name  string
+	suite     TestSuite
+	name      string
+	startTime time.Time
 }
 
 func (t *processRetryNoopTest) Context() context.Context                   { return context.Background() }
-func (t *processRetryNoopTest) StartTime() time.Time                       { return time.Time{} }
+func (t *processRetryNoopTest) StartTime() time.Time                       { return t.startTime }
 func (t *processRetryNoopTest) SetError(...ErrorOption)                    {}
 func (t *processRetryNoopTest) SetTag(string, any)                         {}
 func (t *processRetryNoopTest) GetTag(string) (any, bool)                  { return nil, false }
@@ -134,6 +209,15 @@ func (t *processRetryNoopTest) Close(TestResultStatus, ...TestCloseOption) {}
 func (t *processRetryNoopTest) SetTestFunc(*runtime.Func)                  {}
 func (t *processRetryNoopTest) SetBenchmarkData(string, map[string]any)    {}
 func (t *processRetryNoopTest) Log(string, string)                         {}
+
+// NewProcessRetryNoopTest returns a non-recording test hierarchy for retry
+// children that need native helper behavior without CI Visibility ownership.
+func NewProcessRetryNoopTest(name string, startTime time.Time) Test {
+	session := &processRetryNoopSession{framework: "go"}
+	module := &processRetryNoopModule{session: session, framework: "go"}
+	suite := &processRetryNoopSuite{module: module}
+	return &processRetryNoopTest{suite: suite, name: name, startTime: startTime}
+}
 
 type processRetryNoopMockTracer struct{}
 

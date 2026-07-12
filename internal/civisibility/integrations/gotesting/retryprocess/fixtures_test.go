@@ -17,6 +17,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
@@ -41,6 +42,17 @@ const (
 	processRetryDescendantLogSentinel    = "process-retry-descendant-output-sentinel"
 	processRetryDescendantHelperLifetime = 30 * time.Second
 )
+
+func skipProcessRetryFixtureChildLaunchIneligible(t *testing.T, name string) {
+	t.Helper()
+	if !gotesting.ProcessRetryContainmentSupported() {
+		t.Skipf("process retry %s fixture requires process-tree containment", name)
+	}
+	if testing.CoverMode() != "" {
+		t.Skipf("process retry %s fixture is intentionally ineligible while Go coverage is active", name)
+	}
+}
+
 const (
 	processRetrySelectorFixtureEnv           = "PROCESS_RETRY_SELECTOR_FIXTURE"
 	processRetryProcessExitFixtureEnv        = "PROCESS_RETRY_PROCESS_EXIT_FIXTURE"
@@ -100,12 +112,7 @@ func TestProcessRetryFocusedMainAssertionsController(t *testing.T) {
 		"TestProcessRetryITRForcedRun",
 	} {
 		t.Run(testName, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=^"+testName+"$", "-test.v")
-			cmd.Env = processRetryScenarioEnvironment()
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("focused process retry fixture %s failed: %v\n%s", testName, err, output)
-			}
+			runProcessRetryFixtureSubprocess(t, testName, []string{"-test.run=^" + testName + "$", "-test.v"})
 		})
 	}
 }
@@ -173,90 +180,58 @@ func TestProcessRetryCoverageFallback(t *testing.T) {
 
 func TestProcessRetryRunSelectorController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "selector")
-	cmd := exec.Command(os.Args[0], "-test.run=^(TestProcessRetryRunSelectorParent|Other/Name)$/(OnlyThisSubtest)", "-test.v")
-	cmd.Env = processRetryScenarioEnvironment(processRetrySelectorFixtureEnv + "=true")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("run-selector subprocess failed: %v\n%s", err, output)
-	}
+	runProcessRetryFixtureSubprocess(t, "run-selector", []string{
+		"-test.run=^(TestProcessRetryRunSelectorParent|Other/Name)$/(OnlyThisSubtest)", "-test.v",
+	}, processRetrySelectorFixtureEnv+"=true")
 }
 
 func TestProcessRetrySkipSelectorController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "selector")
-	cmd := exec.Command(
-		os.Args[0],
+	runProcessRetryFixtureSubprocess(t, "skip-selector", []string{
 		"-test.run=^TestProcessRetrySkipSelectorParent$",
 		"-test.skip=^TestProcessRetrySkipSelectorParent/SkippedSubtest$",
 		"-test.v",
-	)
-	cmd.Env = processRetryScenarioEnvironment(processRetrySelectorFixtureEnv + "=true")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("skip-selector subprocess failed: %v\n%s", err, output)
-	}
+	}, processRetrySelectorFixtureEnv+"=true")
 }
 
 func TestProcessRetryProcessExitController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "process-exit")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryProcessExitParent$", "-test.v")
-	cmd.Env = processRetryScenarioEnvironment(processRetryProcessExitFixtureEnv + "=true")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("process-exit subprocess failed: %v\n%s", err, output)
-	}
+	runProcessRetryFixtureSubprocess(t, "process-exit", []string{"-test.run=^TestProcessRetryProcessExitParent$", "-test.v"}, processRetryProcessExitFixtureEnv+"=true")
 }
 
 func TestProcessRetryMalformedJSONController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "malformed-json")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryMalformedJSONParent$", "-test.v")
-	cmd.Env = processRetryScenarioEnvironment(processRetryMalformedJSONFixtureEnv + "=true")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("malformed-json subprocess failed: %v\n%s", err, output)
-	}
+	runProcessRetryFixtureSubprocess(t, "malformed-json", []string{"-test.run=^TestProcessRetryMalformedJSONParent$", "-test.v"}, processRetryMalformedJSONFixtureEnv+"=true")
 }
 
 func TestProcessRetryTimeoutController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "timeout")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryTimeoutParent$", "-test.v")
-	cmd.Env = processRetryScenarioEnvironment(
+	runProcessRetryFixtureSubprocess(t, "timeout", []string{"-test.run=^TestProcessRetryTimeoutParent$", "-test.v"},
 		processRetryTimeoutFixtureEnv+"=true",
 		constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable+"=1s",
 	)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("timeout subprocess failed: %v\n%s", err, output)
-	}
 }
 
 func TestProcessRetryOutputTimeoutController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "output-timeout")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryOutputTimeoutParent$", "-test.v")
-	cmd.Env = processRetryScenarioEnvironment(
+	runProcessRetryFixtureSubprocess(t, "output-timeout", []string{"-test.run=^TestProcessRetryOutputTimeoutParent$", "-test.v"},
 		processRetryOutputTimeoutFixtureEnv+"=true",
 		constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable+"=1s",
 	)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("output-timeout subprocess failed: %v\n%s", err, output)
-	}
 }
 
 func TestProcessRetryDescendantCleanupController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "descendant-cleanup")
 	livenessPath := filepath.Join(t.TempDir(), "descendant-liveness")
 	independentLivenessPath := filepath.Join(t.TempDir(), "descendant-independent-liveness")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryDescendantCleanupParent$", "-test.v")
-	cmd.Env = processRetryScenarioEnvironment(
-		processRetryDescendantCleanupFixtureEnv+"=true",
-		processRetryDescendantLivenessPathEnv+"="+livenessPath,
-		processRetryDescendantIndependentPathEnv+"="+independentLivenessPath,
-	)
-	started := time.Now()
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("descendant-cleanup subprocess failed: %v\n%s", err, output)
+	args := []string{"-test.run=^TestProcessRetryDescendantCleanupParent$", "-test.v"}
+	env := []string{
+		processRetryDescendantCleanupFixtureEnv + "=true",
+		processRetryDescendantLivenessPathEnv + "=" + livenessPath,
+		processRetryDescendantIndependentPathEnv + "=" + independentLivenessPath,
 	}
+	started := time.Now()
+	runProcessRetryFixtureSubprocess(t, "descendant-cleanup", args, env...)
 	if elapsed := time.Since(started); elapsed >= processRetryDescendantHelperLifetime {
 		t.Fatalf("process retry waited for descendant helpers to exit: %s", elapsed)
 	}
@@ -309,12 +284,18 @@ func waitForProcessRetryDescendantListenerClosed(t *testing.T, address string) {
 
 func TestProcessRetryTransportIsolationController(t *testing.T) {
 	skipProcessRetryFixtureChildLaunchIneligible(t, "transport-isolation")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryTransportIsolationParent$", "-test.v")
-	cmd.Env = processRetryScenarioEnvironment(processRetryTransportIsolationEnv + "=true")
+	runProcessRetryFixtureSubprocess(t, "transport-isolation", []string{"-test.run=^TestProcessRetryTransportIsolationParent$", "-test.v"}, processRetryTransportIsolationEnv+"=true")
+}
+
+func runProcessRetryFixtureSubprocess(t *testing.T, name string, args []string, environment ...string) []byte {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Env = processRetryScenarioEnvironment(environment...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("transport-isolation subprocess failed: %v\n%s", err, output)
+		t.Fatalf("%s process retry fixture failed: %v\n%s", name, err, output)
 	}
+	return output
 }
 
 func TestProcessRetryRunSelectorParent(t *testing.T) {

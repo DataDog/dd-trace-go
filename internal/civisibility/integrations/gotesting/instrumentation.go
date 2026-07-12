@@ -7,7 +7,6 @@ package gotesting
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -946,9 +945,6 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	// Set this func as a helper func of t
 	options.t.Helper()
 
-	options.processRetryMode = retryExecutionModeFromEnv()
-	options.processRetryModeSet = true
-
 	// Initialize execution options variables
 	execOpts := &executionOptions{
 		mutex:                       &noopMutex{},
@@ -959,21 +955,8 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		originalExecutionMetadata:   getTestMetadata(options.t),
 		flakyRetryBudgetReservation: &flakyRetryBudgetReservation{},
 	}
-	finishProcessRetryGroup := func() {}
-	defer func() { finishProcessRetryGroup() }()
 	defer refundFlakyRetryBudgetReservation(execOpts)
-	if options.processRetryMode == retryExecutionModeProcess && options.processRetryAllowed {
-		options.processRetryGuardsSnapshotted = true
-		options.processRetryCoverageGuardSet = options.coverageActive != nil
-		if options.processRetryCoverageGuardSet {
-			options.processRetryCoverageActive = options.coverageActive()
-		}
-		options.processRetryFuzzGuardSet = options.fuzzActive != nil
-		if options.processRetryFuzzGuardSet {
-			options.processRetryFuzzActive = options.fuzzActive()
-		}
-		execOpts.processRetryLaunchBaseline = captureProcessRetryLaunchBaseline()
-	}
+	prepareProcessRetryExecution(options, execOpts)
 
 	// Execute the test function for the first time
 	if executeTestIteration(execOpts) {
@@ -992,33 +975,9 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 				}
 			}
 		}
-		if ok, reason := processRetryEligible(execOpts.executionMetadata, options); ok {
-			execOpts.processRetryMetadataSnapshot = snapshotProcessRetryExecutionMetadata(execOpts.executionMetadata)
-			if execOpts.processRetryMetadataSnapshot == nil {
-				log.Debug("runTestWithRetry: process retry backend ineligible: missing_metadata_snapshot")
-				runSequentialRetries(false)
-			} else {
-				shutdown, finish, beginErr := beginProcessRetryGroup()
-				switch {
-				case errors.Is(beginErr, errProcessRetryShutdown):
-					log.Debug("runTestWithRetry: process retry skipped because CI Visibility shutdown started")
-					execOpts.retryCount = 0
-				case beginErr != nil:
-					log.Debug("runTestWithRetry: process retry backend unavailable before admission: %v", beginErr.Error())
-					runSequentialRetries(false)
-				default:
-					execOpts.processRetryShutdown = shutdown
-					finishProcessRetryGroup = finish
-					log.Debug("runTestWithRetry: executing test with process retry backend")
-					if runProcessRetryBackend(execOpts) {
-						log.Debug("runTestWithRetry: process retry backend fallback to in_process")
-						runSequentialRetries(true)
-					}
-				}
-			}
-		} else if reason == "process_shutdown" {
-			log.Debug("runTestWithRetry: retries stopped because CI Visibility shutdown started")
-			execOpts.retryCount = 0
+		processHandled, reason := runProcessRetriesIfEligible(execOpts, runSequentialRetries)
+		if processHandled {
+			// The process backend, its fallback, or shutdown owns the remaining retries.
 		} else if shouldUseParallelEFD(options, execOpts.executionMetadata, remainingAttempts, internalParallelEFDMaxConcurrency) {
 			log.Debug("runTestWithRetry: process retry backend ineligible: %s", reason)
 			log.Debug("runTestWithRetry: executing test in parallel EFD with retry count: %d and max concurrency: %d", calculatedRetryCount, internalParallelEFDMaxConcurrency)
@@ -1030,9 +989,6 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 			runSequentialRetries(false)
 		}
 	}
-	finishProcessRetryGroup()
-	finishProcessRetryGroup = func() {}
-
 	// Adjust execution metadata
 	if execOpts.processRetryConsumedAttempt && options.preProcessRetryMetaAdjust != nil {
 		options.preProcessRetryMetaAdjust(execOpts.executionMetadata, execOpts.executionIndex)
@@ -1055,25 +1011,6 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 		// Ensure we flush all CI visibility data and close the session event
 		integrations.ExitCiVisibility()
 		panic(fmt.Sprintf("test failed and panicked after %d retries.\n%v\n%v", execOpts.executionIndex, execOpts.panicExecutionMetadata.panicData, execOpts.panicExecutionMetadata.panicStacktrace))
-	}
-}
-
-func runProcessRetryBackend(execOpts *executionOptions) bool {
-	firstAttempt := true
-	for {
-		if !firstAttempt && processRetryShutdownRequested(execOpts.processRetryShutdown) {
-			execOpts.retryCount = 0
-			return false
-		}
-		firstAttempt = false
-		switch executeProcessRetryIteration(execOpts) {
-		case processRetryIterationFallback:
-			return true
-		case processRetryIterationStop:
-			return false
-		case processRetryIterationContinue:
-			continue
-		}
 	}
 }
 

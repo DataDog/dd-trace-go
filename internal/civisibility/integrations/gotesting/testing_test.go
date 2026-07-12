@@ -156,26 +156,6 @@ func TestRetryWithFail(t *testing.T) {
 	}
 }
 
-var processRetryExecutionModeFixtureRunNumber atomic.Int32
-
-func TestProcessRetryExecutionModeFixture(t *testing.T) {
-	if isProcessRetryChild() {
-		if processRetryExecutionModeFixtureRunNumber.Load() != 0 {
-			t.Fatalf("process retry child inherited parent run count: %d", processRetryExecutionModeFixtureRunNumber.Load())
-		}
-		return
-	}
-
-	if execMeta := getTestMetadata(t); execMeta == nil || !execMeta.hasAdditionalFeatureWrapper {
-		t.Skip("no CI Visibility retry wrapper active; skipping process retry fixture")
-	}
-
-	if processRetryExecutionModeFixtureRunNumber.Add(1) == 1 {
-		t.Fatal("first parent execution must fail to trigger process retry")
-	}
-	t.Fatalf("retry ran in the parent process with run count %d", processRetryExecutionModeFixtureRunNumber.Load())
-}
-
 //dd:test.unskippable
 func TestNormalPassingAfterRetryAlwaysFail(_ *testing.T) {}
 

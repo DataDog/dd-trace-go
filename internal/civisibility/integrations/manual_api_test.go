@@ -22,6 +22,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
 )
@@ -328,7 +329,9 @@ func TestProcessRetryChildManualAPIsAreNoop(t *testing.T) {
 	require.Nil(t, GetSkippableTests())
 	require.Nil(t, GetSkippableTestsResponse())
 	require.Nil(t, GetImpactedTestsAnalyzer())
-	require.NotNil(t, InitializeCIVisibilityMock())
+	mockTracer := InitializeCIVisibilityMock()
+	require.NotNil(t, mockTracer)
+	require.Nil(t, mockTracer.StartSpan("child"))
 
 	require.Zero(t, clientCalls.Load())
 	require.Zero(t, uploadCalls.Load())
@@ -345,6 +348,37 @@ func TestProcessRetryChildManualAPIsAreNoop(t *testing.T) {
 	sampleRate, ok := internalenv.Lookup("DD_TRACE_SAMPLE_RATE")
 	require.True(t, ok)
 	require.Equal(t, "sample-sentinel", sampleRate)
+}
+
+func TestProcessRetryChildTransportKeyAllowlist(t *testing.T) {
+	for _, key := range []string{
+		constants.CIVisibilityInternalRetryProcessChild,
+		constants.CIVisibilityInternalRetryProcessResultPath,
+		constants.CIVisibilityInternalRetryProcessTestName,
+		constants.CIVisibilityInternalRetryProcessAttempt,
+		constants.CIVisibilityInternalRetryProcessReason,
+	} {
+		require.True(t, IsProcessRetryChildTransportKey(key))
+	}
+	require.False(t, IsProcessRetryChildTransportKey("DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_UNKNOWN"))
+}
+
+func TestProcessRetryChildFeatureGettersHideCachedParentState(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	t.Cleanup(resetCIVisibilityBootstrapStateForTesting)
+
+	ciVisibilitySkippables = map[string]map[string][]civisibilitynet.SkippableResponseDataAttributes{"parent": {}}
+	ciVisibilitySkippablesResponse = &civisibilitynet.SkippableTestsResponse{}
+	ciVisibilityImpactedTestsAnalyzer = &impactedtests.ImpactedTestAnalyzer{}
+	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
+
+	require.NotSame(t, &ciVisibilitySettings, GetSettings())
+	require.NotSame(t, &ciVisibilityKnownTests, GetKnownTests())
+	require.NotSame(t, &ciVisibilityTestManagementTests, GetTestManagementTestsData())
+	require.NotSame(t, &ciVisibilityFlakyRetriesSettings, GetFlakyRetriesSettings())
+	require.Nil(t, GetSkippableTests())
+	require.Nil(t, GetSkippableTestsResponse())
+	require.Nil(t, GetImpactedTestsAnalyzer())
 }
 
 func TestProcessRetryChildStartupHasNoCloseActions(t *testing.T) {
@@ -368,46 +402,6 @@ func TestProcessRetryChildStartupHasNoCloseActions(t *testing.T) {
 	cmd.Env = append(envWithoutChildMarker, constants.CIVisibilityInternalRetryProcessChild+"=true")
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(output))
-}
-
-func TestProcessRetryChildFeatureDataAPIsAreDisabled(t *testing.T) {
-	resetCIVisibilityBootstrapStateForTesting()
-	t.Cleanup(restoreCIVisibilityMockModeForTesting)
-	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
-
-	require.NotNil(t, GetSettings())
-	require.NotNil(t, GetKnownTests())
-	require.NotNil(t, GetTestManagementTestsData())
-	require.NotNil(t, GetFlakyRetriesSettings())
-	require.Nil(t, GetSkippableTests())
-	require.Nil(t, GetSkippableTestsResponse())
-	require.Nil(t, GetImpactedTestsAnalyzer())
-}
-
-func TestProcessRetryChildInitializeCIVisibilityMockIsNoop(t *testing.T) {
-	resetCIVisibilityBootstrapStateForTesting()
-	t.Cleanup(restoreCIVisibilityMockModeForTesting)
-	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
-
-	mt := InitializeCIVisibilityMock()
-	require.NotNil(t, mt)
-	require.Nil(t, mt.StartSpan("child"))
-	require.NotPanics(t, func() {
-		var span *tracer.Span
-		span.Finish()
-	})
-	require.NotPanics(t, func() {
-		_, _ = mt.Extract(map[string]string{})
-		_ = mt.Inject(nil, map[string]string{})
-		_ = mt.TracerConf()
-		mt.Flush()
-		mt.Stop()
-		_ = mt.OpenSpans()
-		mt.FinishSpan(nil)
-		_ = mt.FinishedSpans()
-		_ = mt.SentDSMBacklogs()
-		mt.Reset()
-	})
 }
 
 func (m *MockDdTestSuite) CreateTest(name string, options ...TestStartOption) Test {

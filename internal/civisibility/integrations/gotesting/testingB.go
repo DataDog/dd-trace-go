@@ -51,10 +51,6 @@ func (ddb *B) Run(name string, f func(*testing.B)) bool {
 // This may be used to create test's children spans useful for
 // integration tests.
 func (ddb *B) Context() context.Context {
-	if isProcessRetryChild() {
-		return context.Background()
-	}
-
 	b := (*testing.B)(ddb)
 	ciTestItem := getTestMetadata(b)
 	if ciTestItem != nil && ciTestItem.test != nil {

@@ -107,6 +107,9 @@ var (
 
 // ensureSettingsInitialization performs the one-time settings bootstrap, including any git upload work required before a final settings read.
 func ensureSettingsInitialization(serviceName string) {
+	if isProcessRetryChild() {
+		return
+	}
 	settingsInitializationOnce.Do(func() {
 		log.Debug("civisibility: initializing settings")
 		defer log.Debug("civisibility: settings initialization complete")
@@ -281,6 +284,9 @@ func logSettingsFetchError(err error) {
 
 // ensureAdditionalFeaturesInitialization loads CI Visibility features that depend on the previously fetched settings.
 func ensureAdditionalFeaturesInitialization(_ string) {
+	if isProcessRetryChild() {
+		return
+	}
 	additionalFeaturesInitializationMu.Lock()
 	defer additionalFeaturesInitializationMu.Unlock()
 

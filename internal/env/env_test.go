@@ -6,16 +6,10 @@
 package env
 
 import (
-	"os"
-	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 )
-
-const privateRetryProcessSnapshotHelperEnv = "TEST_PRIVATE_RETRY_PROCESS_SNAPSHOT_HELPER"
 
 func TestVerifySupportedConfiguration(t *testing.T) {
 	// Known configuration - with alias
@@ -103,99 +97,4 @@ func TestVerifySupportedConfiguration(t *testing.T) {
 		err = writeSupportedConfigurations(getConfigFilePath(), cfg)
 		require.NoError(t, err)
 	})
-}
-
-func TestLookupPrivateOnlyAllowsRetryProcessTransportKeys(t *testing.T) {
-	const nonTransportKey = "DD_PROCESS_RETRY_PRIVATE_TEST"
-	const unknownTransportPrefixedKey = "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_UNKNOWN"
-	privateTransportKeys := []string{
-		constants.CIVisibilityInternalRetryProcessChild,
-		constants.CIVisibilityInternalRetryProcessResultPath,
-		constants.CIVisibilityInternalRetryProcessTestName,
-		constants.CIVisibilityInternalRetryProcessAttempt,
-		constants.CIVisibilityInternalRetryProcessReason,
-	}
-
-	for _, key := range privateTransportKeys {
-		t.Setenv(key, "private-value")
-
-		value, ok := LookupPrivate(key)
-		require.True(t, ok)
-		require.Equal(t, "private-value", value)
-	}
-	t.Setenv(nonTransportKey, "non-transport-value")
-
-	value, ok := LookupPrivate(nonTransportKey)
-	require.False(t, ok)
-	require.Empty(t, value)
-	t.Setenv(unknownTransportPrefixedKey, "unknown-value")
-	value, ok = LookupPrivate(unknownTransportPrefixedKey)
-	require.False(t, ok)
-	require.Empty(t, value)
-
-	value, ok = os.LookupEnv(unknownTransportPrefixedKey)
-	require.True(t, ok)
-	require.Equal(t, "unknown-value", value)
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	cfg, err := readSupportedConfigurations(getConfigFilePath())
-	require.NoError(t, err)
-	for _, key := range privateTransportKeys {
-		require.NotContains(t, cfg.SupportedConfigurations, key)
-		require.NotContains(t, SupportedConfigurations, key)
-	}
-	require.NotContains(t, cfg.SupportedConfigurations, nonTransportKey)
-	require.NotContains(t, cfg.SupportedConfigurations, unknownTransportPrefixedKey)
-}
-
-func TestPrivateRetryProcessStartupSnapshot(t *testing.T) {
-	mode, _ := os.LookupEnv(privateRetryProcessSnapshotHelperEnv)
-	privateValues := map[string]string{
-		constants.CIVisibilityInternalRetryProcessChild:      "true",
-		constants.CIVisibilityInternalRetryProcessResultPath: "result.json",
-		constants.CIVisibilityInternalRetryProcessTestName:   "TestSelected",
-		constants.CIVisibilityInternalRetryProcessAttempt:    "1",
-		constants.CIVisibilityInternalRetryProcessReason:     constants.AutoTestRetriesRetryReason,
-	}
-	switch mode {
-	case "snapshot":
-		require.NoError(t, PrivateRetryProcessTransportError())
-		for key, want := range privateValues {
-			got, ok := LookupPrivate(key)
-			require.True(t, ok)
-			require.Equal(t, want, got)
-			_, inherited := os.LookupEnv(key)
-			require.False(t, inherited)
-		}
-
-		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$")
-		cmd.Env = append(os.Environ(), privateRetryProcessSnapshotHelperEnv+"=descendant")
-		output, err := cmd.CombinedOutput()
-		require.NoError(t, err, string(output))
-
-		require.NoError(t, os.Setenv(constants.CIVisibilityInternalRetryProcessChild, "false"))
-		t.Cleanup(func() { _ = os.Unsetenv(constants.CIVisibilityInternalRetryProcessChild) })
-		got, ok := LookupPrivate(constants.CIVisibilityInternalRetryProcessChild)
-		require.True(t, ok)
-		require.Equal(t, "true", got)
-		return
-	case "descendant":
-		for key := range privateValues {
-			_, ok := LookupPrivate(key)
-			require.False(t, ok)
-			_, inherited := os.LookupEnv(key)
-			require.False(t, inherited)
-		}
-		return
-	}
-
-	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$")
-	cmd.Env = append(os.Environ(), privateRetryProcessSnapshotHelperEnv+"=snapshot")
-	for key, value := range privateValues {
-		cmd.Env = append(cmd.Env, key+"="+value)
-	}
-	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(output))
 }
