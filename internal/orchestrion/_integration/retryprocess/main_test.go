@@ -62,6 +62,14 @@ type retryProcessChildResult struct {
 	ResultError  string `json:"result_error"`
 }
 
+type orchestrionRetryProcessParentHarness struct {
+	server           *httptest.Server
+	tracer           mocktracer.Tracer
+	settingsRequests atomic.Int32
+	childRequests    atomic.Int32
+	unknownRequests  atomic.Int32
+}
+
 func TestMain(m *testing.M) {
 	if !built.WithOrchestrion {
 		panic("Orchestrion is not enabled, please run this test with orchestrion")
@@ -98,49 +106,15 @@ func TestOrchestrionRetryProcessPureParentFallsBackInProcessController(t *testin
 }
 
 func runOrchestrionRetryProcessPureParent(m *testing.M) int {
-	settingsRequests := atomic.Int32{}
-	unknownRequests := atomic.Int32{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v2/libraries/tests/services/setting":
-			settingsRequests.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			response := struct {
-				Data struct {
-					ID         string                               `json:"id"`
-					Type       string                               `json:"type"`
-					Attributes civisibilitynet.SettingsResponseData `json:"attributes"`
-				} `json:"data"`
-			}{}
-			response.Data.ID = "orchestrion-pure-parent"
-			response.Data.Type = "ci_app_libraries_settings"
-			response.Data.Attributes.FlakyTestRetriesEnabled = true
-			_ = json.NewEncoder(w).Encode(&response)
-		case "/api/v2/git/repository/search_commits":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte("{}"))
-		default:
-			unknownRequests.Add(1)
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	_ = os.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "1")
-	_ = os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
-	_ = os.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
-	_ = os.Setenv(constants.APIKeyEnvironmentVariable, "orchestrion-pure-parent-api-key")
-	_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "1")
-	_ = os.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
-
-	tracer := integrations.InitializeCIVisibilityMock()
+	harness := newOrchestrionRetryProcessParentHarness("orchestrion-pure-parent", "orchestrion-pure-parent-api-key")
+	defer harness.close()
 	exitCode := m.Run()
 	if exitCode == 0 {
 		const resourceName = "fixtures_test.go.TestOrchestrionRetryProcessPureParentFixture"
 		testSpans := 0
 		processRetrySpans := 0
 		unexpectedTerminationSpans := 0
-		for _, span := range tracer.FinishedSpans() {
+		for _, span := range harness.tracer.FinishedSpans() {
 			if span.Tag(ext.ResourceName) != resourceName {
 				continue
 			}
@@ -161,12 +135,7 @@ func runOrchestrionRetryProcessPureParent(m *testing.M) int {
 				unexpectedTerminationSpans,
 			))
 		}
-		if got := settingsRequests.Load(); got != 1 {
-			panic(fmt.Sprintf("expected one pure parent settings request, got %d", got))
-		}
-		if got := unknownRequests.Load(); got != 0 {
-			panic(fmt.Sprintf("unexpected pure parent request count: %d", got))
-		}
+		harness.assertRequests("pure parent")
 	}
 	return exitCode
 }
@@ -186,16 +155,25 @@ func TestOrchestrionRetryProcessHybridParentOwnershipController(t *testing.T) {
 }
 
 func runOrchestrionRetryProcessHybridParent(m *testing.M) int {
-	settingsRequests := atomic.Int32{}
-	childRequests := atomic.Int32{}
-	unknownRequests := atomic.Int32{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	harness := newOrchestrionRetryProcessParentHarness("orchestrion-hybrid-parent", "orchestrion-hybrid-parent-api-key")
+	defer harness.close()
+	exitCode := gotesting.RunM(m)
+	if exitCode == 0 {
+		assertOrchestrionRetryProcessHybridParentSpans(harness.tracer)
+		harness.assertRequests("hybrid parent")
+	}
+	return exitCode
+}
+
+func newOrchestrionRetryProcessParentHarness(settingsID, apiKey string) *orchestrionRetryProcessParentHarness {
+	harness := &orchestrionRetryProcessParentHarness{}
+	harness.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("dd-api-key") == orchestrionRetryProcessChildAPIKey {
-			childRequests.Add(1)
+			harness.childRequests.Add(1)
 		}
 		switch r.URL.Path {
 		case "/api/v2/libraries/tests/services/setting":
-			settingsRequests.Add(1)
+			harness.settingsRequests.Add(1)
 			w.Header().Set("Content-Type", "application/json")
 			response := struct {
 				Data struct {
@@ -204,7 +182,7 @@ func runOrchestrionRetryProcessHybridParent(m *testing.M) int {
 					Attributes civisibilitynet.SettingsResponseData `json:"attributes"`
 				} `json:"data"`
 			}{}
-			response.Data.ID = "orchestrion-hybrid-parent"
+			response.Data.ID = settingsID
 			response.Data.Type = "ci_app_libraries_settings"
 			response.Data.Attributes.FlakyTestRetriesEnabled = true
 			_ = json.NewEncoder(w).Encode(&response)
@@ -212,34 +190,35 @@ func runOrchestrionRetryProcessHybridParent(m *testing.M) int {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte("{}"))
 		default:
-			unknownRequests.Add(1)
+			harness.unknownRequests.Add(1)
 			http.NotFound(w, r)
 		}
 	}))
-	defer server.Close()
 
 	_ = os.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "1")
-	_ = os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, server.URL)
+	_ = os.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, harness.server.URL)
 	_ = os.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
-	_ = os.Setenv(constants.APIKeyEnvironmentVariable, "orchestrion-hybrid-parent-api-key")
+	_ = os.Setenv(constants.APIKeyEnvironmentVariable, apiKey)
 	_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "1")
 	_ = os.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+	harness.tracer = integrations.InitializeCIVisibilityMock()
+	return harness
+}
 
-	tracer := integrations.InitializeCIVisibilityMock()
-	exitCode := gotesting.RunM(m)
-	if exitCode == 0 {
-		assertOrchestrionRetryProcessHybridParentSpans(tracer)
-		if got := settingsRequests.Load(); got != 1 {
-			panic(fmt.Sprintf("expected one parent settings request, got %d", got))
-		}
-		if got := childRequests.Load(); got != 0 {
-			panic(fmt.Sprintf("expected zero child-owned CI Visibility requests, got %d", got))
-		}
-		if got := unknownRequests.Load(); got != 0 {
-			panic(fmt.Sprintf("unexpected hybrid parent request count: %d", got))
-		}
+func (h *orchestrionRetryProcessParentHarness) close() {
+	h.server.Close()
+}
+
+func (h *orchestrionRetryProcessParentHarness) assertRequests(name string) {
+	if got := h.settingsRequests.Load(); got != 1 {
+		panic(fmt.Sprintf("expected one %s settings request, got %d", name, got))
 	}
-	return exitCode
+	if got := h.childRequests.Load(); got != 0 {
+		panic(fmt.Sprintf("expected zero %s child-owned CI Visibility requests, got %d", name, got))
+	}
+	if got := h.unknownRequests.Load(); got != 0 {
+		panic(fmt.Sprintf("unexpected %s request count: %d", name, got))
+	}
 }
 
 func assertOrchestrionRetryProcessHybridParentSpans(tracer mocktracer.Tracer) {
