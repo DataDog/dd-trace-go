@@ -136,7 +136,11 @@ func TestMain(m *testing.M) {
 	_ = os.Setenv(processRetryFixtureTempPathEnv, filepath.Join(os.TempDir(), "process-retry-temp-path-sentinel"))
 	_ = os.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
 	_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "1")
-	_ = os.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+	retryExecutionMode := processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv)
+	if retryExecutionMode == "" {
+		retryExecutionMode = "process"
+	}
+	_ = os.Setenv(constants.CIVisibilityRetryExecutionModeEnvironmentVariable, retryExecutionMode)
 
 	fmt.Printf("process retry fixture runtime: go=%s goos=%s goarch=%s sha=%s\n",
 		runtime.Version(), runtime.GOOS, runtime.GOARCH, processRetryFixtureCommitSHA())
@@ -150,7 +154,7 @@ func TestMain(m *testing.M) {
 		resourceName := processRetryFixtureFailureScenarioResource()
 		assertProcessRetryFixtureFailureSpans(tracer, resourceName)
 		assertProcessRetryFixtureLogsForResource(resourceName, processRetryFixtureFailureScenarioLogSentinel())
-		assertProcessRetryFixtureRequests()
+		assertProcessRetryFixtureRequests(true)
 		os.Exit(0)
 	}
 	if exitCode == 0 && testing.CoverMode() == "" && processRetryFixtureMainAssertionsEnabled() {
@@ -164,7 +168,7 @@ func TestMain(m *testing.M) {
 			assertProcessRetryForcedRunSpans(tracer)
 		}
 	}
-	assertProcessRetryFixtureRequests()
+	assertProcessRetryFixtureRequests(processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) == "")
 	os.Exit(exitCode)
 }
 
@@ -365,7 +369,7 @@ func assertProcessRetryFixtureNoForbiddenSentinel(value string) {
 	}
 }
 
-func assertProcessRetryFixtureRequests() {
+func assertProcessRetryFixtureRequests(requireLogs bool) {
 	processRetryFixtureRequests.mu.Lock()
 	defer processRetryFixtureRequests.mu.Unlock()
 	for path, count := range processRetryFixtureRequests.childCounts {
@@ -382,13 +386,17 @@ func assertProcessRetryFixtureRequests() {
 	if got := processRetryFixtureRequests.counts["/api/v2/git/repository/packfile"]; got != 0 {
 		panic(fmt.Sprintf("expected no git packfile uploads while git upload is disabled, got %d requests", got))
 	}
-	if got := processRetryFixtureRequests.counts["/api/v2/logs"]; got < 1 {
+	if got := processRetryFixtureRequests.counts["/api/v2/logs"]; requireLogs && got < 1 {
 		panic(fmt.Sprintf("expected the parent process to upload test logs, got %d requests", got))
 	}
 	for path, count := range processRetryFixtureRequests.counts {
 		switch path {
-		case "/api/v2/libraries/tests/services/setting", "/api/v2/ci/tests/skippable", "/api/v2/logs":
+		case "/api/v2/libraries/tests/services/setting", "/api/v2/ci/tests/skippable":
 			if count < 1 {
+				panic(fmt.Sprintf("expected at least one request to %s", path))
+			}
+		case "/api/v2/logs":
+			if requireLogs && count < 1 {
 				panic(fmt.Sprintf("expected at least one request to %s", path))
 			}
 		default:
@@ -420,7 +428,7 @@ func TestProcessRetryFixtureRequestAssertionRejectsUnknownPath(t *testing.T) {
 			t.Fatal("strict request assertion accepted an unexpected child request")
 		}
 	}()
-	assertProcessRetryFixtureRequests()
+	assertProcessRetryFixtureRequests(true)
 }
 
 func TestProcessRetryFixtureRequestAssertionRejectsChildOwnedRequest(t *testing.T) {
@@ -445,7 +453,7 @@ func TestProcessRetryFixtureRequestAssertionRejectsChildOwnedRequest(t *testing.
 			t.Fatal("strict request assertion accepted a child-owned request")
 		}
 	}()
-	assertProcessRetryFixtureRequests()
+	assertProcessRetryFixtureRequests(true)
 }
 
 func assertProcessRetryFixtureSpans(tracer mocktracer.Tracer) {
