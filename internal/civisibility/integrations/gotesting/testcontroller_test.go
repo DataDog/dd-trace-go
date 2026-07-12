@@ -103,66 +103,45 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	} else {
 		legacyScenarioRunFilter := "^(TestGetFieldPointerFrom|TestGetInternalTestArray|TestGetInternalBenchmarkArray|TestCommonPrivateFields_AddLevel|TestGetBenchmarkPrivateFields|TestTestifyLikeTest|TestMyTest01|TestMyTest02|Test_Foo|TestSkip|TestParallelSubTests|TestRetryWithPanic|TestRetryWithFail|TestNormalPassingAfterRetryAlwaysFail|TestEarlyFlakeDetection)$"
-		runBypassSubprocess := func(name, runFilter string) {
-			cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(os.Args[1:], runFilter)...)
-			var b bytes.Buffer
-			if log.DebugEnabled() {
-				cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-			} else {
-				cmd.Stdout = &b
-				cmd.Stderr = &b
-			}
-			cmd.Env = append(cmd.Env, os.Environ()...)
-			cmd.Env = append(cmd.Env, "Bypass=true")
-			fmt.Printf("\n**** [RUNNING SCENARIO: %s]\n", name)
-			err := cmd.Run()
-			fmt.Printf("\n**** [SCENARIO %s IS DONE]\n\n", name)
-			if err != nil {
-				if exiterr, ok := err.(*exec.ExitError); ok {
-					fmt.Printf("\n===========================================\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", name, exiterr.ExitCode())
-					if !log.DebugEnabled() {
-						fmt.Printf("**** [SCENARIO %s OUTPUT]\n===========================================\n\n%s\n", name, b.String())
-					}
-					os.Exit(exiterr.ExitCode())
-				}
-				fmt.Printf("cmd.Run: %v\n", err)
-				os.Exit(1)
-			}
-		}
 		tests := getInternalTestArray(m)
 		if tests == nil {
 			panic("unable to enumerate process retry unit tests")
 		}
-		runBypassSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests))
+		runTestControllerSubprocess("ProcessRetryUnitTests", buildProcessRetryUnitRunFilter(*tests), "Bypass=true")
 		for _, v := range scenarios {
-			cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(os.Args[1:], legacyScenarioRunFilter)...)
-			var b bytes.Buffer
-			if log.DebugEnabled() {
-				cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-			} else {
-				cmd.Stdout = &b
-				cmd.Stderr = &b
-			}
-			cmd.Env = append(cmd.Env, os.Environ()...)
-			cmd.Env = append(cmd.Env, v+"=true")
-			fmt.Printf("\n**** [RUNNING SCENARIO: %s]\n", v)
-			err := cmd.Run()
-			fmt.Printf("\n**** [SCENARIO %s IS DONE]\n\n", v)
-			if err != nil {
-				if exiterr, ok := err.(*exec.ExitError); ok {
-					fmt.Printf("\n===========================================\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", v, exiterr.ExitCode())
-					if !log.DebugEnabled() {
-						fmt.Printf("**** [SCENARIO %s OUTPUT]\n===========================================\n\n%s\n", v, b.String())
-					}
-					os.Exit(exiterr.ExitCode())
-				}
-				fmt.Printf("cmd.Run: %v\n", err)
-				os.Exit(1)
-			}
+			runTestControllerSubprocess(v, legacyScenarioRunFilter, fmt.Sprintf("%s=true", v))
 		}
 	}
 
 	os.Exit(0)
+}
+
+func runTestControllerSubprocess(name, runFilter, environment string) {
+	cmd := exec.Command(os.Args[0], buildTestControllerSubprocessArgs(os.Args[1:], runFilter)...)
+	var output bytes.Buffer
+	if log.DebugEnabled() {
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	} else {
+		cmd.Stdout = &output
+		cmd.Stderr = &output
+	}
+	cmd.Env = append(cmd.Env, os.Environ()...)
+	cmd.Env = append(cmd.Env, environment)
+	fmt.Printf("\n**** [RUNNING SCENARIO: %s]\n", name)
+	err := cmd.Run()
+	fmt.Printf("\n**** [SCENARIO %s IS DONE]\n\n", name)
+	if err == nil {
+		return
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		fmt.Printf("\n===========================================\n**** [SCENARIO %s FAILED WITH EXIT CODE: %d]\n", name, exitErr.ExitCode())
+		if !log.DebugEnabled() {
+			fmt.Printf("**** [SCENARIO %s OUTPUT]\n===========================================\n\n%s\n", name, output.String())
+		}
+		os.Exit(exitErr.ExitCode())
+	}
+	fmt.Printf("cmd.Run: %v\n", err)
+	os.Exit(1)
 }
 
 func buildProcessRetryUnitRunFilter(tests []testing.InternalTest) string {
