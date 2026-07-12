@@ -2210,7 +2210,7 @@ func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterat
 
 	execOpts.mutex.Lock()
 	defer execOpts.mutex.Unlock()
-	if attempt.SetupFailure && !execOpts.processRetryConsumedAttempt && attempt.SetupFallbackAllowed {
+	if attempt.SetupFailure && !attempt.TimedOut && !execOpts.processRetryConsumedAttempt && attempt.SetupFallbackAllowed {
 		deleteTestMetadata(ptrToLocalT)
 		execOpts.executionIndex = previousIndex
 		return processRetryIterationFallback
@@ -2835,8 +2835,8 @@ func writeInvalidProcessRetryChildConfigResult(cfg processRetryChildConfig, reas
 }
 
 type processRetryResultWriter struct {
-	path    string
-	written atomic.Bool
+	path string
+	once sync.Once // Competing panic paths must wait for the winning write to finish.
 }
 
 func newProcessRetryResultWriter(path string) *processRetryResultWriter {
@@ -2844,15 +2844,17 @@ func newProcessRetryResultWriter(path string) *processRetryResultWriter {
 }
 
 func (w *processRetryResultWriter) Write(result processRetryResult) {
-	if w == nil || !w.written.CompareAndSwap(false, true) {
+	if w == nil {
 		return
 	}
-	if strings.TrimSpace(w.path) == "" {
-		return
-	}
-	if err := writeProcessRetryResultAtomically(w.path, result); err != nil {
-		log.Debug("civisibility: process retry child failed to write result")
-	}
+	w.once.Do(func() {
+		if strings.TrimSpace(w.path) == "" {
+			return
+		}
+		if err := writeProcessRetryResultAtomically(w.path, result); err != nil {
+			log.Debug("civisibility: process retry child failed to write result")
+		}
+	})
 }
 
 func processRetryNotRunResult(cfg processRetryChildConfig, resultError string) processRetryResult {
@@ -2878,7 +2880,7 @@ func wrapProcessRetryChildTest(original func(*testing.T), cfg processRetryChildC
 		}
 		execMeta := createTestMetadata(t, nil)
 		execMeta.identity = newTestIdentity("", "", cfg.TestName)
-		execMeta.test = newProcessRetryNoopTest(cfg, start)
+		execMeta.test = newProcessRetryNoopTest(cfg, start, writer)
 		var cleanupResult testCleanupResult
 		execMeta.cleanupResult = &cleanupResult
 		var bodyPanic any
@@ -2989,8 +2991,10 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 		bodyReturned := false
 		defer func() {
 			panicData := recover()
+			unexpectedTermination := false
 			if panicData == nil && processRetryUnexpectedTestTermination(t, bodyReturned) {
 				panicData = unexpectedTestTerminationMessage
+				unexpectedTermination = true
 			}
 			if panicData == nil {
 				return
@@ -3001,6 +3005,13 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 				Message: truncateProcessRetryErrorMessage(toString(panicData)),
 				Stack:   truncateProcessRetryErrorStack(utils.GetStacktrace(1)),
 			})
+			if unexpectedTermination {
+				return
+			}
+			if root, ok := owner.test.(*processRetryNoopTest); ok {
+				root.writePanicResult(owner.processRetryPanic.Load())
+			}
+			panic(panicData)
 		}()
 
 		original(t)
@@ -3223,10 +3234,33 @@ var _ integrations.Test = (*processRetryNoopTest)(nil)
 type processRetryNoopTest struct {
 	cfg       processRetryChildConfig
 	startTime time.Time
+	writer    *processRetryResultWriter
 }
 
-func newProcessRetryNoopTest(cfg processRetryChildConfig, startTime time.Time) integrations.Test {
-	return &processRetryNoopTest{cfg: cfg, startTime: startTime}
+func newProcessRetryNoopTest(cfg processRetryChildConfig, startTime time.Time, writer *processRetryResultWriter) integrations.Test {
+	return &processRetryNoopTest{cfg: cfg, startTime: startTime, writer: writer}
+}
+
+func (t *processRetryNoopTest) writePanicResult(info *processRetryErrorInfo) {
+	if t == nil || t.writer == nil || info == nil {
+		return
+	}
+	finish := time.Now()
+	t.writer.Write(processRetryResult{
+		Version:        1,
+		TestName:       t.cfg.TestName,
+		Attempt:        t.cfg.Attempt,
+		RetryReason:    t.cfg.RetryReason,
+		Status:         processRetryStatusFail,
+		Failed:         true,
+		Panic:          true,
+		ErrorType:      info.Type,
+		ErrorMessage:   info.Message,
+		ErrorStack:     info.Stack,
+		StartUnixNano:  t.startTime.UnixNano(),
+		FinishUnixNano: finish.UnixNano(),
+		DurationNanos:  finish.Sub(t.startTime).Nanoseconds(),
+	})
 }
 
 func (t *processRetryNoopTest) Context() context.Context             { return context.Background() }
@@ -3270,7 +3304,7 @@ func (s *processRetryNoopSuite) Close(...integrations.TestSuiteCloseOption) {}
 func (s *processRetryNoopSuite) CreateTest(name string, _ ...integrations.TestStartOption) integrations.Test {
 	nextCfg := s.cfg
 	nextCfg.TestName = name
-	return newProcessRetryNoopTest(nextCfg, time.Time{})
+	return newProcessRetryNoopTest(nextCfg, time.Time{}, nil)
 }
 
 var _ integrations.TestModule = (*processRetryNoopModule)(nil)

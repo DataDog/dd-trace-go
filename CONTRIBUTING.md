@@ -269,32 +269,6 @@ make format/go
 make test/contrib
 ```
 
-### Test Optimization Process Retries
-
-Go Test Optimization supports an opt-in process-isolated retry backend. Test Optimization and backend-provided Auto Test Retries must already be enabled; this variable only selects the backend for eligible retries:
-
-```shell
-DD_CIVISIBILITY_RETRY_EXECUTION_MODE=process go test ./path/to/package
-```
-
-This mode keeps the first attempt and all CI Visibility span ownership in the parent process, then runs supported top-level `gotesting.RunM` retry attempts in a fresh test-binary subprocess. The child subprocess writes only structured retry result data; the parent captures child stdout/stderr into bounded private files and owns any CI Visibility log forwarding. The child must not initialize CI Visibility, fetch feature data, upload logs, or emit test spans. Direct CI Visibility manual APIs are no-op in the child. `InitializeCIVisibilityMock` returns a non-nil no-op tracer in child mode, but its `StartSpan` method returns `nil`; child code must not expect a usable mock span. Child-side `gotesting.GetTest(t)` helpers suppress CI Visibility side effects and return a background context, while native Go test-control behavior such as error, skip, and parallel handling remains active.
-
-The default remains `in_process`. V1 falls back to in-process retries for Orchestrion parent-owned retries, EFD, Attempt-to-Fix, subtest retry identities, benchmarks, fuzzing, active coverage, `shuffle=on`, ambiguous argv cases, and pre-consumption subprocess setup failures. Private Go `testing.T` or `testing.M` layout drift makes process mode ineligible with `testing_t_layout_unsupported` or `testing_m_layout_unsupported`; timeout, missing or malformed child results, unreaped child state, and non-zero child exit are reported as failed process retry attempts. An unreaped child stops its retry group and disables further process launches in that test binary; retry groups with no consumed process attempt use in-process retries. Process mode follows the library's supported platforms without a separate GOOS/GOARCH allowlist or dedicated per-platform workflow.
-
-Process retries use `os.Executable()` re-exec, so package `init` functions and any user `TestMain` code before `m.Run()` run again in the child before the child-mode hook can take over. The private transport environment is snapshotted and scrubbed when `internal/env` initializes; test bodies and descendants started afterward see no transport keys, but unrelated packages may initialize earlier and observe that internal metadata. The still-running parent also keeps any external resources it opened, such as fixed ports, file locks, databases, or shared directories, so those conflicts can make the child fail before it writes valid JSON. Process cleanup terminates ordinary descendants that remain in the child containment unit, but deliberately detached or daemonized descendants are outside the V1 guarantee and must be cleaned up by the test. A child `status=pass` or `status=skip` result is not enough to pass the retry if the subprocess exits non-zero; that is classified as `process_exit` and reported as a failed process retry. A valid child `status=fail` or structured panic normally exits non-zero and remains a child test failure, not a process-exit failure; signal termination remains process-level evidence.
-
-Process retry children do not inherit stdin, do not write coverage/profile/trace/artifact outputs, and keep parent-owned temporary result/output files private until the parent has finished span/log bookkeeping. The default concurrency is `1`; increase `DD_CIVISIBILITY_RETRY_PROCESS_MAX_CONCURRENCY` only after validating package startup cost and external-resource contention. `DD_CIVISIBILITY_RETRY_PROCESS_TIMEOUT` starts after a concurrency slot is acquired and covers subprocess preparation, launch, and execution; slot waiting is outside that timeout but remains capped by the parent test deadline when present. The raw configuration default is `""`, meaning the variable is unset, and the effective runtime default is `10m`; a shorter positive parent `-test.timeout`/`-timeout` reduces that limit. The complete retry group can exceed one process-attempt timeout, and parent `-timeout=0` is not an unlimited child timeout.
-
-When changing this area, run the focused scenario plus the dedicated fixture packages:
-
-```shell
-Bypass=true go test ./internal/civisibility/integrations/gotesting -run 'TestProcessRetryChildCleanupSupported|TestProcessRetryTestingMReflectionDrift|TestProcessRetryEligible|TestProcessRetryChildResult(Fail|Skip)|TestRunTestWithRetryFallsBackBeforeConsumingProcessAttempt|TestRunTestWithRetryUnreapedChildStopsFurtherProcessRetries|TestRunProcessRetryAttemptHonorsParentDeadlineWhileWaitingForLimiter' -count=1
-go test ./internal/civisibility/integrations/gotesting/retryprocess -count=1 -v
-go test -cover ./internal/civisibility/integrations/gotesting/retryprocess -run '^TestProcessRetryCoverageFallback$' -count=1
-go test ./internal/civisibility/integrations/gotesting/retryprocess/manual/... -count=1
-(cd internal/orchestrion/_integration && go run -mod=readonly github.com/DataDog/orchestrion go test -mod=readonly ./retryprocess -count=1)
-```
-
 ### Docker Alternative
 
 If you prefer using Docker for linting:
