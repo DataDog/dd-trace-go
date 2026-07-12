@@ -9,7 +9,6 @@ package gotesting
 
 import (
 	"errors"
-	"os"
 	"os/exec"
 	"syscall"
 	"unsafe"
@@ -18,6 +17,10 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
+
+// ProcessRetryContainmentSupported reports whether this platform can contain
+// ordinary retry-child descendants.
+func ProcessRetryContainmentSupported() bool { return true }
 
 var processRetryWindowsJobs = struct {
 	mu   locking.Mutex
@@ -152,15 +155,4 @@ func terminateProcessRetryWindowsJob(cmd *exec.Cmd) error {
 		return killDirectChild(cmd)
 	}
 	return windows.TerminateJobObject(job, 1)
-}
-
-func killDirectChild(cmd *exec.Cmd) error {
-	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
-		return errProcessRetryProcessNotStarted
-	}
-	err := cmd.Process.Kill()
-	if errors.Is(err, os.ErrProcessDone) {
-		return nil
-	}
-	return err
 }

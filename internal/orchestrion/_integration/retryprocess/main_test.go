@@ -39,6 +39,13 @@ const orchestrionRetryProcessChildRunFilter = "^TestOrchestrionRetryProcess(Sele
 const orchestrionRetryProcessMetadataRunFilter = "^TestOrchestrionRetryProcess(Error|Skip|SubtestError|SubtestPanic|ParallelSubtestPanic|SubtestThenTopLevelSkip|Unselected)Child$"
 const orchestrionRetryProcessHybridRunFilter = "^TestOrchestrionRetryProcessHybrid(Panic|Unselected)Child$"
 
+func requireOrchestrionProcessRetryContainmentForTesting(t testing.TB) {
+	t.Helper()
+	if !gotesting.ProcessRetryContainmentSupported() {
+		t.Skip("process retry fixture requires process-tree containment")
+	}
+}
+
 type retryProcessChildResult struct {
 	Version      int    `json:"version"`
 	TestName     string `json:"test_name"`
@@ -332,24 +339,17 @@ func TestOrchestrionRetryProcessChildModeController(t *testing.T) {
 		t.Skip("controller runs only in the parent process")
 	}
 
-	tempDir := t.TempDir()
-	resultPath := filepath.Join(tempDir, "result.json")
-	server, requests := newOrchestrionRetryProcessChildActivityServer(t)
-	cmd := exec.Command(os.Args[0], "-test.run="+orchestrionRetryProcessChildRunFilter, "-test.v")
-	cmd.Env = append(os.Environ(),
-		constants.CIVisibilityInternalRetryProcessChild+"=true",
-		constants.CIVisibilityInternalRetryProcessResultPath+"="+resultPath,
-		constants.CIVisibilityInternalRetryProcessTestName+"=TestOrchestrionRetryProcessSelectedChild",
-		constants.CIVisibilityInternalRetryProcessAttempt+"=1",
-		constants.CIVisibilityInternalRetryProcessReason+"="+constants.AutoTestRetriesRetryReason,
+	result, output, err, _ := runOrchestrionRetryProcessChild(
+		t,
+		orchestrionRetryProcessChildRunFilter,
+		"TestOrchestrionRetryProcessSelectedChild",
+		true,
+		nil,
 	)
-	cmd.Env = append(cmd.Env, orchestrionRetryProcessChildActivityEnv(server.URL)...)
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("orchestrion child process failed: %v\n%s", err, output)
 	}
 
-	result := decodeOrchestrionRetryProcessResult(t, resultPath, output)
 	if result.Version != 1 ||
 		result.TestName != "TestOrchestrionRetryProcessSelectedChild" ||
 		result.Attempt != 1 ||
@@ -358,9 +358,6 @@ func TestOrchestrionRetryProcessChildModeController(t *testing.T) {
 		result.Failed ||
 		result.Skipped {
 		t.Fatalf("unexpected child result: %+v\n%s", result, output)
-	}
-	if got := requests.Load(); got != 0 {
-		t.Fatalf("expected zero pure Orchestrion child CI Visibility requests, got %d", got)
 	}
 }
 
@@ -440,37 +437,26 @@ func TestOrchestrionRetryProcessChildMetadataController(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tempDir := t.TempDir()
-			resultPath := filepath.Join(tempDir, "result.json")
-			server, requests := newOrchestrionRetryProcessChildActivityServer(t)
-			cmd := exec.Command(os.Args[0], "-test.run="+orchestrionRetryProcessMetadataRunFilter, "-test.v")
-			cmd.Env = append(os.Environ(),
-				constants.CIVisibilityInternalRetryProcessChild+"=true",
-				constants.CIVisibilityInternalRetryProcessResultPath+"="+resultPath,
-				constants.CIVisibilityInternalRetryProcessTestName+"="+tt.testName,
-				constants.CIVisibilityInternalRetryProcessAttempt+"=1",
-				constants.CIVisibilityInternalRetryProcessReason+"="+constants.AutoTestRetriesRetryReason,
-			)
-			continuedPath := ""
+			extraEnv := func(tempDir string) []string { return nil }
 			if tt.testName == "TestOrchestrionRetryProcessSubtestPanicChild" {
-				continuedPath = filepath.Join(tempDir, "subtest-panic-continued")
-				cmd.Env = append(cmd.Env, orchestrionRetryProcessSubtestPanicContinuedPathEnv+"="+continuedPath)
+				extraEnv = func(tempDir string) []string {
+					return []string{orchestrionRetryProcessSubtestPanicContinuedPathEnv + "=" + filepath.Join(tempDir, "subtest-panic-continued")}
+				}
 			}
-			cmd.Env = append(cmd.Env, orchestrionRetryProcessChildActivityEnv(server.URL)...)
-			output, err := cmd.CombinedOutput()
+			result, output, err, tempDir := runOrchestrionRetryProcessChild(
+				t, orchestrionRetryProcessMetadataRunFilter, tt.testName, true, extraEnv,
+			)
 			if tt.wantExitErr == (err == nil) {
 				t.Fatalf("unexpected orchestrion child exit: %v\n%s", err, output)
 			}
-			tt.assert(t, decodeOrchestrionRetryProcessResult(t, resultPath, output), output)
-			if continuedPath != "" {
+			tt.assert(t, result, output)
+			if tt.testName == "TestOrchestrionRetryProcessSubtestPanicChild" {
+				continuedPath := filepath.Join(tempDir, "subtest-panic-continued")
 				if _, err := os.Stat(continuedPath); err == nil {
 					t.Fatalf("subtest panic returned to the top-level test; continuation marker was written at %s", continuedPath)
 				} else if !os.IsNotExist(err) {
 					t.Fatalf("checking subtest panic continuation marker: %v", err)
 				}
-			}
-			if got := requests.Load(); got != 0 {
-				t.Fatalf("expected zero pure Orchestrion child CI Visibility requests, got %d", got)
 			}
 		})
 	}
@@ -481,24 +467,17 @@ func TestOrchestrionRetryProcessNoMatchingChildModeController(t *testing.T) {
 		t.Skip("controller runs only in the parent process")
 	}
 
-	tempDir := t.TempDir()
-	resultPath := filepath.Join(tempDir, "result.json")
-	server, requests := newOrchestrionRetryProcessChildActivityServer(t)
-	cmd := exec.Command(os.Args[0], "-test.run="+orchestrionRetryProcessChildRunFilter, "-test.v")
-	cmd.Env = append(os.Environ(),
-		constants.CIVisibilityInternalRetryProcessChild+"=true",
-		constants.CIVisibilityInternalRetryProcessResultPath+"="+resultPath,
-		constants.CIVisibilityInternalRetryProcessTestName+"=TestOrchestrionRetryProcessMissingChild",
-		constants.CIVisibilityInternalRetryProcessAttempt+"=1",
-		constants.CIVisibilityInternalRetryProcessReason+"="+constants.AutoTestRetriesRetryReason,
+	result, output, err, _ := runOrchestrionRetryProcessChild(
+		t,
+		orchestrionRetryProcessChildRunFilter,
+		"TestOrchestrionRetryProcessMissingChild",
+		true,
+		nil,
 	)
-	cmd.Env = append(cmd.Env, orchestrionRetryProcessChildActivityEnv(server.URL)...)
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("orchestrion no-matching child process failed: %v\n%s", err, output)
 	}
 
-	result := decodeOrchestrionRetryProcessResult(t, resultPath, output)
 	if result.Version != 1 ||
 		result.TestName != "TestOrchestrionRetryProcessMissingChild" ||
 		result.Attempt != 1 ||
@@ -508,9 +487,6 @@ func TestOrchestrionRetryProcessNoMatchingChildModeController(t *testing.T) {
 		result.Skipped {
 		t.Fatalf("unexpected no-matching child result: %+v\n%s", result, output)
 	}
-	if got := requests.Load(); got != 0 {
-		t.Fatalf("expected zero pure Orchestrion child CI Visibility requests, got %d", got)
-	}
 }
 
 func TestOrchestrionRetryProcessInvalidConfigController(t *testing.T) {
@@ -518,23 +494,17 @@ func TestOrchestrionRetryProcessInvalidConfigController(t *testing.T) {
 		t.Skip("controller runs only in the parent process")
 	}
 
-	tempDir := t.TempDir()
-	resultPath := filepath.Join(tempDir, "result.json")
-	server, requests := newOrchestrionRetryProcessChildActivityServer(t)
-	cmd := exec.Command(os.Args[0], "-test.run=^TestOrchestrionRetryProcessSelectedChild$", "-test.v")
-	cmd.Env = append(os.Environ(),
-		constants.CIVisibilityInternalRetryProcessChild+"=true",
-		constants.CIVisibilityInternalRetryProcessResultPath+"="+resultPath,
-		constants.CIVisibilityInternalRetryProcessTestName+"=TestOrchestrionRetryProcessSelectedChild",
-		orchestrionRetryProcessInvalidConfigEnv+"=true",
+	result, output, err, _ := runOrchestrionRetryProcessChild(
+		t,
+		"^TestOrchestrionRetryProcessSelectedChild$",
+		"TestOrchestrionRetryProcessSelectedChild",
+		false,
+		func(string) []string { return []string{orchestrionRetryProcessInvalidConfigEnv + "=true"} },
 	)
-	cmd.Env = append(cmd.Env, orchestrionRetryProcessChildActivityEnv(server.URL)...)
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("orchestrion invalid-config child process failed: %v\n%s", err, output)
 	}
 
-	result := decodeOrchestrionRetryProcessResult(t, resultPath, output)
 	if result.Version != 1 ||
 		result.Status != "not_run" ||
 		result.ResultError != "missing_attempt" ||
@@ -542,9 +512,41 @@ func TestOrchestrionRetryProcessInvalidConfigController(t *testing.T) {
 		result.Skipped {
 		t.Fatalf("unexpected invalid-config child result: %+v\n%s", result, output)
 	}
-	if got := requests.Load(); got != 0 {
-		t.Fatalf("expected zero invalid-config Orchestrion child CI Visibility requests, got %d", got)
+}
+
+func runOrchestrionRetryProcessChild(
+	t *testing.T,
+	runFilter string,
+	testName string,
+	completeConfig bool,
+	extraEnv func(tempDir string) []string,
+) (retryProcessChildResult, []byte, error, string) {
+	t.Helper()
+	tempDir := t.TempDir()
+	resultPath := filepath.Join(tempDir, "result.json")
+	server, requests := newOrchestrionRetryProcessChildActivityServer(t)
+	cmd := exec.Command(os.Args[0], "-test.run="+runFilter, "-test.v")
+	cmd.Env = append(os.Environ(),
+		constants.CIVisibilityInternalRetryProcessChild+"=true",
+		constants.CIVisibilityInternalRetryProcessResultPath+"="+resultPath,
+		constants.CIVisibilityInternalRetryProcessTestName+"="+testName,
+	)
+	if completeConfig {
+		cmd.Env = append(cmd.Env,
+			constants.CIVisibilityInternalRetryProcessAttempt+"=1",
+			constants.CIVisibilityInternalRetryProcessReason+"="+constants.AutoTestRetriesRetryReason,
+		)
 	}
+	if extraEnv != nil {
+		cmd.Env = append(cmd.Env, extraEnv(tempDir)...)
+	}
+	cmd.Env = append(cmd.Env, orchestrionRetryProcessChildActivityEnv(server.URL)...)
+	output, err := cmd.CombinedOutput()
+	result := decodeOrchestrionRetryProcessResult(t, resultPath, output)
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("expected zero Orchestrion child CI Visibility requests, got %d", got)
+	}
+	return result, output, err, tempDir
 }
 
 func newOrchestrionRetryProcessChildActivityServer(t *testing.T) (*httptest.Server, *atomic.Int32) {

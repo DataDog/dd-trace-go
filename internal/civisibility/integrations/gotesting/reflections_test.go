@@ -190,7 +190,7 @@ func exerciseTestingInternalsOffsetLayout(t *testing.T) {
 	if !layout.testFieldsOK || !layout.parentFieldsOK || !layout.copyTestOK || !layout.createTestOK || !layout.benchmarkFieldsOK {
 		t.Fatalf("expected core layout sections to be enabled: %+v", layout)
 	}
-	if !layout.common.finished.available || !layout.processRetryChildCleanupOK {
+	if !layout.common.finished.available || !processRetryChildCleanupLayoutSupported(layout) {
 		t.Fatal("expected process retry child cleanup layout to include testing.common.finished")
 	}
 	finishedDrift := buildTestingInternalsLayout(reflect.TypeFor[testing.T](), reflect.TypeFor[testing.B]())
@@ -199,7 +199,7 @@ func exerciseTestingInternalsOffsetLayout(t *testing.T) {
 	if !finishedDrift.testFieldsOK || !finishedDrift.copyTestOK {
 		t.Fatal("testing.common.finished drift must not disable normal in-process fast paths")
 	}
-	if finishedDrift.processRetryChildCleanupOK {
+	if processRetryChildCleanupLayoutSupported(finishedDrift) {
 		t.Fatal("testing.common.finished drift must disable process retry child cleanup")
 	}
 	if fields := getTestPrivateFieldsFast(t, finishedDrift); fields == nil || fields.finished != nil {
@@ -208,7 +208,7 @@ func exerciseTestingInternalsOffsetLayout(t *testing.T) {
 	muDrift := buildTestingInternalsLayout(reflect.TypeFor[testing.T](), reflect.TypeFor[testing.B]())
 	muDrift.common.mu.available = false
 	muDrift.computeSectionFlags()
-	if muDrift.processRetryChildCleanupOK {
+	if processRetryChildCleanupLayoutSupported(muDrift) {
 		t.Fatal("testing.common.mu drift must disable process retry child cleanup")
 	}
 	driftSource := createNewTestReflect()

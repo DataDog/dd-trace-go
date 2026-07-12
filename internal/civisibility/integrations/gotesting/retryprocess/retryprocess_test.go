@@ -26,7 +26,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
-	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
@@ -105,7 +104,7 @@ func TestMain(m *testing.M) {
 		_ = os.Setenv(constants.APIKeyEnvironmentVariable, processRetryFixtureChildAPIKeySentinel)
 		if processRetryFixtureEnv(processRetryMalformedJSONFixtureEnv) == "true" {
 			fmt.Println(processRetryMalformedJSONLogSentinel)
-			resultPath, ok := env.LookupPrivate(constants.CIVisibilityInternalRetryProcessResultPath)
+			resultPath, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
 			if !ok || strings.TrimSpace(resultPath) == "" {
 				panic("process retry malformed JSON fixture is missing the private result path")
 			}

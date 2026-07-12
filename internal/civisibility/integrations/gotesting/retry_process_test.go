@@ -39,6 +39,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
+func requireProcessRetryContainmentForTesting(t testing.TB) {
+	t.Helper()
+	if !ProcessRetryContainmentSupported() {
+		t.Skip("process retry fixture requires process-tree containment")
+	}
+}
+
 func TestRetryExecutionModeFromEnv(t *testing.T) {
 	tests := []struct {
 		name string
@@ -631,18 +638,6 @@ func TestProcessRetryChildCapturesMetadataWithoutSpanOwnership(t *testing.T) {
 	require.Equal(t, "skip reason", *skipReason)
 	require.Equal(t, context.Background(), getTestOptimizationContext(t))
 	require.Same(t, spy, getTestOptimizationTest(t))
-}
-
-func TestProcessRetryChildBenchmarkContextBypassesMetadata(t *testing.T) {
-	enableProcessRetryChildForTesting(t)
-
-	bench := &testing.B{}
-	spy := &processRetrySpyTest{name: "BenchmarkProcessRetryChild", ctx: context.WithValue(context.Background(), processRetrySpyContextKey{}, "metadata")}
-	meta := createTestMetadata(bench, nil)
-	meta.test = spy
-	defer deleteTestMetadata(bench)
-
-	require.Equal(t, context.Background(), (*B)(bench).Context())
 }
 
 func TestProcessRetryChildInvalidConfig(t *testing.T) {
@@ -1853,12 +1848,6 @@ func TestBuildProcessRetryFixtureArgsInsertsSelectorBeforeBoundary(t *testing.T)
 			require.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func TestProcessRetryTestArgsAllowChildLaunch(t *testing.T) {
-	require.True(t, processRetryTestArgsAllowChildLaunch(nil))
-	require.True(t, processRetryTestArgsAllowChildLaunch([]string{"-test.shuffle=12345"}))
-	require.False(t, processRetryTestArgsAllowChildLaunch([]string{"-test.shuffle=on"}))
 }
 
 func TestBuildProcessRetryControllerArgsInsertsSelectorBeforeBoundary(t *testing.T) {
@@ -6104,7 +6093,7 @@ func TestProcessRetryChildResultFixture(t *testing.T) {
 			time.Sleep(time.Hour)
 		}
 	}
-	resultPath, _ := env.LookupPrivate(constants.CIVisibilityInternalRetryProcessResultPath)
+	resultPath, _ := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
 	cfg := processRetryChildConfig{
 		ResultPath:  resultPath,
 		TestName:    t.Name(),
@@ -6248,7 +6237,7 @@ func setEnvForTesting(t testing.TB, pairs ...string) func() {
 
 func lookupEnvForTesting(key string) (string, bool) {
 	if strings.HasPrefix(key, "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_") {
-		return env.LookupPrivate(key)
+		return integrations.LookupProcessRetryChildTransport(key)
 	}
 	return env.Lookup(key)
 }

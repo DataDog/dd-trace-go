@@ -169,24 +169,16 @@ func isProcessRetryChild() bool {
 	return integrations.IsProcessRetryChild()
 }
 
-var processRetryPrivateEnvKeys = [...]string{
-	constants.CIVisibilityInternalRetryProcessChild,
-	constants.CIVisibilityInternalRetryProcessResultPath,
-	constants.CIVisibilityInternalRetryProcessTestName,
-	constants.CIVisibilityInternalRetryProcessAttempt,
-	constants.CIVisibilityInternalRetryProcessReason,
-}
-
 func processRetryChildConfigFromEnv() (processRetryChildConfig, error) {
-	resultPath, ok := env.LookupPrivate(constants.CIVisibilityInternalRetryProcessResultPath)
+	resultPath, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
 	if !ok || strings.TrimSpace(resultPath) == "" {
 		return processRetryChildConfig{}, errProcessRetryMissingResultPath
 	}
-	testName, ok := env.LookupPrivate(constants.CIVisibilityInternalRetryProcessTestName)
+	testName, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessTestName)
 	if !ok || strings.TrimSpace(testName) == "" {
 		return processRetryChildConfig{}, errProcessRetryMissingTestName
 	}
-	attemptRaw, ok := env.LookupPrivate(constants.CIVisibilityInternalRetryProcessAttempt)
+	attemptRaw, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessAttempt)
 	if !ok || strings.TrimSpace(attemptRaw) == "" {
 		return processRetryChildConfig{}, errProcessRetryMissingAttempt
 	}
@@ -194,7 +186,7 @@ func processRetryChildConfigFromEnv() (processRetryChildConfig, error) {
 	if err != nil || attempt < 1 {
 		return processRetryChildConfig{}, errProcessRetryInvalidAttempt
 	}
-	reason, ok := env.LookupPrivate(constants.CIVisibilityInternalRetryProcessReason)
+	reason, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessReason)
 	if !ok || strings.TrimSpace(reason) == "" {
 		return processRetryChildConfig{}, errProcessRetryMissingRetryReason
 	}
@@ -211,7 +203,7 @@ func bootstrapProcessRetryChild() (processRetryChildConfig, error) {
 	if err != nil {
 		return processRetryChildConfig{}, err
 	}
-	if env.PrivateRetryProcessTransportError() != nil {
+	if integrations.ProcessRetryChildTransportError() != nil {
 		return cfg, errors.New("retry child transport cleanup failed")
 	}
 	return cfg, nil
@@ -309,8 +301,14 @@ func processRetryChildCleanupSupported() bool {
 }
 
 func processRetryChildCleanupSupportedDefault() bool {
-	layout := getTestingInternalsLayout()
-	return layout != nil && !layout.disabled && layout.processRetryChildCleanupOK
+	return processRetryChildCleanupLayoutSupported(getTestingInternalsLayout())
+}
+
+func processRetryChildCleanupLayoutSupported(layout *testingInternalsLayout) bool {
+	return layout != nil && !layout.disabled && allAvailable(
+		layout.common.mu, layout.common.sub, layout.common.barrier, layout.common.signal,
+		layout.common.isParallel, layout.common.finished, layout.tstate.unsafeField,
+	)
 }
 
 func processRetryTestingMWorkloadsSupported() bool {
@@ -349,12 +347,7 @@ func buildProcessRetryEnv(base []string, cfg processRetryChildConfig) []string {
 }
 
 func isProcessRetryInternalEnvKey(key string) bool {
-	for _, internalKey := range processRetryPrivateEnvKeys {
-		if strings.EqualFold(key, internalKey) {
-			return true
-		}
-	}
-	return false
+	return integrations.IsProcessRetryChildTransportKey(key)
 }
 
 type processRetryFlagArity int
@@ -1016,6 +1009,17 @@ func resolveProcessRetryRunnerHooks(resolved processRetryRunnerHooks) processRet
 }
 
 func noopProcessRetryTree(*exec.Cmd) error { return nil }
+
+func killDirectChild(cmd *exec.Cmd) error {
+	if cmd == nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
+		return errProcessRetryProcessNotStarted
+	}
+	err := cmd.Process.Kill()
+	if errors.Is(err, os.ErrProcessDone) {
+		return nil
+	}
+	return err
+}
 
 func captureProcessRetryLaunchBaseline() *processRetryLaunchBaseline {
 	hooks := currentProcessRetryRunnerHooks()
@@ -2133,6 +2137,82 @@ func applyProcessRetryMetadataSnapshot(execMeta *testExecutionMetadata, snapshot
 	return true
 }
 
+func prepareProcessRetryExecution(options *runTestWithRetryOptions, execOpts *executionOptions) {
+	options.processRetryMode = retryExecutionModeFromEnv()
+	options.processRetryModeSet = true
+	if options.processRetryMode != retryExecutionModeProcess || !options.processRetryAllowed {
+		return
+	}
+	options.processRetryGuardsSnapshotted = true
+	options.processRetryCoverageGuardSet = options.coverageActive != nil
+	if options.processRetryCoverageGuardSet {
+		options.processRetryCoverageActive = options.coverageActive()
+	}
+	options.processRetryFuzzGuardSet = options.fuzzActive != nil
+	if options.processRetryFuzzGuardSet {
+		options.processRetryFuzzActive = options.fuzzActive()
+	}
+	execOpts.processRetryLaunchBaseline = captureProcessRetryLaunchBaseline()
+}
+
+func runProcessRetriesIfEligible(
+	execOpts *executionOptions,
+	runSequentialRetries func(stopOnProcessShutdown bool),
+) (handled bool, reason string) {
+	ok, reason := processRetryEligible(execOpts.executionMetadata, execOpts.options)
+	if !ok {
+		if reason == "process_shutdown" {
+			log.Debug("runTestWithRetry: retries stopped because CI Visibility shutdown started")
+			execOpts.retryCount = 0
+			return true, reason
+		}
+		return false, reason
+	}
+	execOpts.processRetryMetadataSnapshot = snapshotProcessRetryExecutionMetadata(execOpts.executionMetadata)
+	if execOpts.processRetryMetadataSnapshot == nil {
+		log.Debug("runTestWithRetry: process retry backend ineligible: missing_metadata_snapshot")
+		runSequentialRetries(false)
+		return true, "missing_metadata_snapshot"
+	}
+	shutdown, finishGroup, beginErr := beginProcessRetryGroup()
+	switch {
+	case errors.Is(beginErr, errProcessRetryShutdown):
+		log.Debug("runTestWithRetry: process retry skipped because CI Visibility shutdown started")
+		execOpts.retryCount = 0
+	case beginErr != nil:
+		log.Debug("runTestWithRetry: process retry backend unavailable before admission: %v", beginErr.Error())
+		runSequentialRetries(false)
+	default:
+		execOpts.processRetryShutdown = shutdown
+		defer finishGroup()
+		log.Debug("runTestWithRetry: executing test with process retry backend")
+		if runProcessRetryBackend(execOpts) {
+			log.Debug("runTestWithRetry: process retry backend fallback to in_process")
+			runSequentialRetries(true)
+		}
+	}
+	return true, ""
+}
+
+func runProcessRetryBackend(execOpts *executionOptions) bool {
+	firstAttempt := true
+	for {
+		if !firstAttempt && processRetryShutdownRequested(execOpts.processRetryShutdown) {
+			execOpts.retryCount = 0
+			return false
+		}
+		firstAttempt = false
+		switch executeProcessRetryIteration(execOpts) {
+		case processRetryIterationFallback:
+			return true
+		case processRetryIterationStop:
+			return false
+		case processRetryIterationContinue:
+			continue
+		}
+	}
+}
+
 func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterationOutcome {
 	execOpts.mutex.Lock()
 	if execOpts.executionIndex < 0 || execOpts.options == nil ||
@@ -2816,7 +2896,7 @@ func writeInvalidProcessRetryChildConfigResult(cfg processRetryChildConfig, reas
 	resultPath := cfg.ResultPath
 	if strings.TrimSpace(resultPath) == "" {
 		var ok bool
-		resultPath, ok = env.LookupPrivate(constants.CIVisibilityInternalRetryProcessResultPath)
+		resultPath, ok = integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
 		if !ok || strings.TrimSpace(resultPath) == "" {
 			return
 		}
@@ -3232,13 +3312,19 @@ func validProcessRetryResultError(reason string) bool {
 var _ integrations.Test = (*processRetryNoopTest)(nil)
 
 type processRetryNoopTest struct {
+	integrations.Test
 	cfg       processRetryChildConfig
 	startTime time.Time
 	writer    *processRetryResultWriter
 }
 
 func newProcessRetryNoopTest(cfg processRetryChildConfig, startTime time.Time, writer *processRetryResultWriter) integrations.Test {
-	return &processRetryNoopTest{cfg: cfg, startTime: startTime, writer: writer}
+	return &processRetryNoopTest{
+		Test:      integrations.NewProcessRetryNoopTest(cfg.TestName, startTime),
+		cfg:       cfg,
+		startTime: startTime,
+		writer:    writer,
+	}
 }
 
 func (t *processRetryNoopTest) writePanicResult(info *processRetryErrorInfo) {
@@ -3261,99 +3347,4 @@ func (t *processRetryNoopTest) writePanicResult(info *processRetryErrorInfo) {
 		FinishUnixNano: finish.UnixNano(),
 		DurationNanos:  finish.Sub(t.startTime).Nanoseconds(),
 	})
-}
-
-func (t *processRetryNoopTest) Context() context.Context             { return context.Background() }
-func (t *processRetryNoopTest) StartTime() time.Time                 { return t.startTime }
-func (t *processRetryNoopTest) SetError(...integrations.ErrorOption) {}
-func (t *processRetryNoopTest) SetTag(string, any)                   {}
-func (t *processRetryNoopTest) GetTag(string) (any, bool)            { return nil, false }
-func (t *processRetryNoopTest) TestID() uint64                       { return 0 }
-func (t *processRetryNoopTest) Name() string                         { return t.cfg.TestName }
-func (t *processRetryNoopTest) Suite() integrations.TestSuite {
-	return newProcessRetryNoopSuite(t.cfg, "")
-}
-func (t *processRetryNoopTest) Close(integrations.TestResultStatus, ...integrations.TestCloseOption) {
-}
-func (t *processRetryNoopTest) SetTestFunc(*runtime.Func)               {}
-func (t *processRetryNoopTest) SetBenchmarkData(string, map[string]any) {}
-func (t *processRetryNoopTest) Log(string, string)                      {}
-
-var _ integrations.TestSuite = (*processRetryNoopSuite)(nil)
-
-type processRetryNoopSuite struct {
-	cfg  processRetryChildConfig
-	name string
-}
-
-func newProcessRetryNoopSuite(cfg processRetryChildConfig, name string) integrations.TestSuite {
-	return &processRetryNoopSuite{cfg: cfg, name: name}
-}
-
-func (s *processRetryNoopSuite) Context() context.Context             { return context.Background() }
-func (s *processRetryNoopSuite) StartTime() time.Time                 { return time.Time{} }
-func (s *processRetryNoopSuite) SetError(...integrations.ErrorOption) {}
-func (s *processRetryNoopSuite) SetTag(string, any)                   {}
-func (s *processRetryNoopSuite) GetTag(string) (any, bool)            { return nil, false }
-func (s *processRetryNoopSuite) SuiteID() uint64                      { return 0 }
-func (s *processRetryNoopSuite) Module() integrations.TestModule {
-	return newProcessRetryNoopModule(s.cfg, "")
-}
-func (s *processRetryNoopSuite) Name() string                               { return s.name }
-func (s *processRetryNoopSuite) Close(...integrations.TestSuiteCloseOption) {}
-func (s *processRetryNoopSuite) CreateTest(name string, _ ...integrations.TestStartOption) integrations.Test {
-	nextCfg := s.cfg
-	nextCfg.TestName = name
-	return newProcessRetryNoopTest(nextCfg, time.Time{}, nil)
-}
-
-var _ integrations.TestModule = (*processRetryNoopModule)(nil)
-
-type processRetryNoopModule struct {
-	cfg  processRetryChildConfig
-	name string
-}
-
-func newProcessRetryNoopModule(cfg processRetryChildConfig, name string) integrations.TestModule {
-	return &processRetryNoopModule{cfg: cfg, name: name}
-}
-
-func (m *processRetryNoopModule) Context() context.Context             { return context.Background() }
-func (m *processRetryNoopModule) StartTime() time.Time                 { return time.Time{} }
-func (m *processRetryNoopModule) SetError(...integrations.ErrorOption) {}
-func (m *processRetryNoopModule) SetTag(string, any)                   {}
-func (m *processRetryNoopModule) GetTag(string) (any, bool)            { return nil, false }
-func (m *processRetryNoopModule) ModuleID() uint64                     { return 0 }
-func (m *processRetryNoopModule) Session() integrations.TestSession {
-	return newProcessRetryNoopSession(m.cfg)
-}
-func (m *processRetryNoopModule) Framework() string                           { return "go" }
-func (m *processRetryNoopModule) Name() string                                { return m.name }
-func (m *processRetryNoopModule) Close(...integrations.TestModuleCloseOption) {}
-func (m *processRetryNoopModule) GetOrCreateSuite(name string, _ ...integrations.TestSuiteStartOption) integrations.TestSuite {
-	return newProcessRetryNoopSuite(m.cfg, name)
-}
-
-var _ integrations.TestSession = (*processRetryNoopSession)(nil)
-
-type processRetryNoopSession struct {
-	cfg processRetryChildConfig
-}
-
-func newProcessRetryNoopSession(cfg processRetryChildConfig) integrations.TestSession {
-	return &processRetryNoopSession{cfg: cfg}
-}
-
-func (s *processRetryNoopSession) Context() context.Context                          { return context.Background() }
-func (s *processRetryNoopSession) StartTime() time.Time                              { return time.Time{} }
-func (s *processRetryNoopSession) SetError(...integrations.ErrorOption)              {}
-func (s *processRetryNoopSession) SetTag(string, any)                                {}
-func (s *processRetryNoopSession) GetTag(string) (any, bool)                         { return nil, false }
-func (s *processRetryNoopSession) SessionID() uint64                                 { return 0 }
-func (s *processRetryNoopSession) Command() string                                   { return "" }
-func (s *processRetryNoopSession) Framework() string                                 { return "go" }
-func (s *processRetryNoopSession) WorkingDirectory() string                          { return "" }
-func (s *processRetryNoopSession) Close(int, ...integrations.TestSessionCloseOption) {}
-func (s *processRetryNoopSession) GetOrCreateModule(name string, _ ...integrations.TestModuleStartOption) integrations.TestModule {
-	return newProcessRetryNoopModule(s.cfg, name)
 }

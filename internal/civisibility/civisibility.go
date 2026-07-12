@@ -32,12 +32,6 @@ func SetState(state State) {
 	status.Store(int32(state))
 }
 
-// CompareAndSwapState atomically changes the CI Visibility lifecycle state when
-// it still matches old.
-func CompareAndSwapState(old, new State) bool {
-	return status.CompareAndSwap(int32(old), int32(new))
-}
-
 func SetTestMode() {
 	isTestMode.Store(true)
 }

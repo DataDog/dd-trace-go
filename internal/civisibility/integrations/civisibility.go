@@ -81,9 +81,6 @@ var (
 
 // EnsureCiVisibilityInitialization initializes the CI visibility tracer if it hasn't been initialized already.
 func EnsureCiVisibilityInitialization() {
-	if isProcessRetryChild() {
-		return
-	}
 	internalCiVisibilityInitialization(func(opts []tracer.StartOption) {
 		// Initialize the tracer.
 		tracer.Start(opts...)
@@ -301,7 +298,7 @@ func ExitCiVisibility() {
 // signal handler. Signal-triggered shutdown skips that wait to avoid self-deadlock.
 func exitCiVisibility(stopSignalHandler bool) {
 	closeActionsMutex.Lock()
-	if !civisibility.CompareAndSwapState(civisibility.StateInitialized, civisibility.StateExiting) {
+	if civisibility.GetState() != civisibility.StateInitialized {
 		done := ciVisibilityShutdownDone
 		closeActionsMutex.Unlock()
 		log.Debug("civisibility: already closed or not initialized")
@@ -313,6 +310,7 @@ func exitCiVisibility(stopSignalHandler bool) {
 		}
 		return
 	}
+	civisibility.SetState(civisibility.StateExiting)
 
 	done := make(chan struct{})
 	ciVisibilityShutdownDone = done
