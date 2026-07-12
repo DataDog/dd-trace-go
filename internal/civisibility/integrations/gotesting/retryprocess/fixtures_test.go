@@ -32,6 +32,7 @@ var timeoutRuns atomic.Int32
 var outputTimeoutRuns atomic.Int32
 var descendantCleanupRuns atomic.Int32
 var transportIsolationRuns atomic.Int32
+var processRetryBenchmarkRuns atomic.Int32
 
 const (
 	processRetryChildLogSentinel         = "process-retry-child-output-sentinel"
@@ -68,7 +69,59 @@ const (
 	processRetryScenarioEnv                  = "PROCESS_RETRY_FIXTURE_SCENARIO"
 	processRetryControllerProbeEnv           = "PROCESS_RETRY_CONTROLLER_PROBE"
 	processRetryControllerProbePathEnv       = "PROCESS_RETRY_CONTROLLER_PROBE_PATH"
+	processRetryBenchmarkExecutionModeEnv    = "PROCESS_RETRY_BENCHMARK_EXECUTION_MODE"
 )
+
+func BenchmarkProcessRetryExecutionMode(b *testing.B) {
+	for _, mode := range []string{"in_process", "process"} {
+		b.Run(mode, func(b *testing.B) {
+			if mode == "process" && !gotesting.ProcessRetryContainmentSupported() {
+				b.Skip("process retry benchmark requires process-tree containment")
+			}
+			b.ResetTimer()
+			for range b.N {
+				cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryBenchmarkFixture$", "-test.count=1")
+				cmd.Env = processRetryScenarioEnvironment(processRetryBenchmarkExecutionModeEnv + "=" + mode)
+				output, err := cmd.CombinedOutput()
+				if err != nil {
+					b.Fatalf("%s retry benchmark subprocess failed: %v\n%s", mode, err, output)
+				}
+			}
+			b.StopTimer()
+			b.ReportMetric(1, "retries/op")
+			if mode == "process" {
+				b.ReportMetric(1, "retry-child-processes/op")
+			} else {
+				b.ReportMetric(0, "retry-child-processes/op")
+			}
+		})
+	}
+}
+
+func TestProcessRetryBenchmarkFixture(t *testing.T) {
+	mode := processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv)
+	if mode == "" {
+		t.Skip("benchmark fixture runs only from its benchmark subprocess")
+	}
+	if processRetryFixtureChild() {
+		if mode != "process" {
+			t.Fatalf("%s retry unexpectedly launched a child process", mode)
+		}
+		return
+	}
+
+	run := processRetryBenchmarkRuns.Add(1)
+	if run == 1 {
+		t.Fail()
+		return
+	}
+	if mode == "process" {
+		t.Fatal("process retry ran in the parent process")
+	}
+	if mode != "in_process" {
+		t.Fatalf("unknown retry execution mode %q", mode)
+	}
+}
 
 func TestProcessRetryControllersAreNotRetried(t *testing.T) {
 	if processRetryFixtureEnv(processRetryControllerProbeEnv) == "true" {
