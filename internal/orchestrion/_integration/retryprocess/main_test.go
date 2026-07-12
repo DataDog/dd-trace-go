@@ -33,9 +33,10 @@ const orchestrionRetryProcessHybridEnv = "ORCHESTRION_RETRY_PROCESS_HYBRID"
 const orchestrionRetryProcessHybridParentEnv = "ORCHESTRION_RETRY_PROCESS_HYBRID_PARENT"
 const orchestrionRetryProcessPureParentEnv = "ORCHESTRION_RETRY_PROCESS_PURE_PARENT"
 const orchestrionRetryProcessCleanupPathEnv = "ORCHESTRION_RETRY_PROCESS_CLEANUP_PATH"
+const orchestrionRetryProcessSubtestPanicContinuedPathEnv = "ORCHESTRION_RETRY_PROCESS_SUBTEST_PANIC_CONTINUED_PATH"
 const orchestrionRetryProcessChildAPIKey = "orchestrion-process-retry-child-api-key"
 const orchestrionRetryProcessChildRunFilter = "^TestOrchestrionRetryProcess(Selected|Unselected)Child$"
-const orchestrionRetryProcessMetadataRunFilter = "^TestOrchestrionRetryProcess(Error|Skip|SubtestError|SubtestPanic|SubtestThenTopLevelSkip|Unselected)Child$"
+const orchestrionRetryProcessMetadataRunFilter = "^TestOrchestrionRetryProcess(Error|Skip|SubtestError|SubtestPanic|ParallelSubtestPanic|SubtestThenTopLevelSkip|Unselected)Child$"
 const orchestrionRetryProcessHybridRunFilter = "^TestOrchestrionRetryProcessHybrid(Panic|Unselected)Child$"
 
 type retryProcessChildResult struct {
@@ -425,10 +426,22 @@ func TestOrchestrionRetryProcessChildMetadataController(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:        "parallel subtest panic",
+			testName:    "TestOrchestrionRetryProcessParallelSubtestPanicChild",
+			wantExitErr: true,
+			assert: func(t *testing.T, result retryProcessChildResult, output []byte) {
+				if result.Status != "fail" || !result.Failed || !result.Panic || result.ErrorType != "panic" ||
+					result.ErrorMessage != "orchestrion parallel subtest panic sentinel" || result.ErrorStack == "" {
+					t.Fatalf("unexpected orchestrion parallel subtest panic result: %+v\n%s", result, output)
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resultPath := filepath.Join(t.TempDir(), "result.json")
+			tempDir := t.TempDir()
+			resultPath := filepath.Join(tempDir, "result.json")
 			server, requests := newOrchestrionRetryProcessChildActivityServer(t)
 			cmd := exec.Command(os.Args[0], "-test.run="+orchestrionRetryProcessMetadataRunFilter, "-test.v")
 			cmd.Env = append(os.Environ(),
@@ -438,12 +451,24 @@ func TestOrchestrionRetryProcessChildMetadataController(t *testing.T) {
 				constants.CIVisibilityInternalRetryProcessAttempt+"=1",
 				constants.CIVisibilityInternalRetryProcessReason+"="+constants.AutoTestRetriesRetryReason,
 			)
+			continuedPath := ""
+			if tt.testName == "TestOrchestrionRetryProcessSubtestPanicChild" {
+				continuedPath = filepath.Join(tempDir, "subtest-panic-continued")
+				cmd.Env = append(cmd.Env, orchestrionRetryProcessSubtestPanicContinuedPathEnv+"="+continuedPath)
+			}
 			cmd.Env = append(cmd.Env, orchestrionRetryProcessChildActivityEnv(server.URL)...)
 			output, err := cmd.CombinedOutput()
 			if tt.wantExitErr == (err == nil) {
 				t.Fatalf("unexpected orchestrion child exit: %v\n%s", err, output)
 			}
 			tt.assert(t, decodeOrchestrionRetryProcessResult(t, resultPath, output), output)
+			if continuedPath != "" {
+				if _, err := os.Stat(continuedPath); err == nil {
+					t.Fatalf("subtest panic returned to the top-level test; continuation marker was written at %s", continuedPath)
+				} else if !os.IsNotExist(err) {
+					t.Fatalf("checking subtest panic continuation marker: %v", err)
+				}
+			}
 			if got := requests.Load(); got != 0 {
 				t.Fatalf("expected zero pure Orchestrion child CI Visibility requests, got %d", got)
 			}

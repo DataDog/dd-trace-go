@@ -6,6 +6,7 @@
 package retryprocess
 
 import (
+	"os"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -68,6 +69,23 @@ func TestOrchestrionRetryProcessSubtestPanicChild(t *testing.T) {
 	}
 	t.Run("subtest", func(*testing.T) {
 		panic("orchestrion subtest panic sentinel")
+	})
+	markerPath := orchestrionRetryProcessEnv(orchestrionRetryProcessSubtestPanicContinuedPathEnv)
+	if markerPath == "" {
+		t.Fatal("missing subtest panic continuation marker path")
+	}
+	if err := os.WriteFile(markerPath, []byte("continued after subtest panic"), 0o600); err != nil {
+		t.Fatalf("writing subtest panic continuation marker: %v", err)
+	}
+}
+
+func TestOrchestrionRetryProcessParallelSubtestPanicChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("parallel subtest panic child fixture runs only in process retry child mode")
+	}
+	t.Run("subtest", func(t *testing.T) {
+		t.Parallel()
+		panic("orchestrion parallel subtest panic sentinel")
 	})
 }
 
