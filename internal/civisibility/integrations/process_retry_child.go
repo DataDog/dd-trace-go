@@ -49,18 +49,14 @@ func IsProcessRetryChild() bool {
 }
 
 // LookupProcessRetryChildTransport returns a private retry-process transport
-// value. Child processes use the immutable startup snapshot; ordinary processes
-// read the live environment to support test-only child-mode injection.
+// value from the immutable startup snapshot.
 func LookupProcessRetryChildTransport(name string) (string, bool) {
 	key, ok := processRetryChildTransportKey(name)
-	if !ok {
+	if !ok || !processRetryChildTransport.active {
 		return "", false
 	}
-	if processRetryChildTransport.active {
-		value, ok := processRetryChildTransport.values[key]
-		return value, ok
-	}
-	return os.LookupEnv(key)
+	value, ok := processRetryChildTransport.values[key]
+	return value, ok
 }
 
 // ProcessRetryChildTransportError returns the first error encountered while

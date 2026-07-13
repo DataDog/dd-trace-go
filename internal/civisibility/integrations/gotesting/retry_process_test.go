@@ -148,11 +148,14 @@ func TestProcessRetrySelectedTimeoutUsesDefaultUnlessShortened(t *testing.T) {
 
 func TestProcessRetryChildConfigFromEnv(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
-		t.Setenv(constants.CIVisibilityInternalRetryProcessResultPath, "/tmp/result.json")
-		t.Setenv(constants.CIVisibilityInternalRetryProcessTestName, "TestProcess")
-		t.Setenv(constants.CIVisibilityInternalRetryProcessAttempt, "1")
-		t.Setenv(constants.CIVisibilityInternalRetryProcessReason, constants.AutoTestRetriesRetryReason)
+		restore := setProcessRetryChildTransportForTesting(t,
+			constants.CIVisibilityInternalRetryProcessChild, "true",
+			constants.CIVisibilityInternalRetryProcessResultPath, "/tmp/result.json",
+			constants.CIVisibilityInternalRetryProcessTestName, "TestProcess",
+			constants.CIVisibilityInternalRetryProcessAttempt, "1",
+			constants.CIVisibilityInternalRetryProcessReason, constants.AutoTestRetriesRetryReason,
+		)
+		defer restore()
 
 		require.True(t, isProcessRetryChild())
 		cfg, err := processRetryChildConfigFromEnv()
@@ -164,14 +167,18 @@ func TestProcessRetryChildConfigFromEnv(t *testing.T) {
 	})
 
 	t.Run("invalid bool disables child mode", func(t *testing.T) {
-		t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "not-bool")
+		restore := setProcessRetryChildTransportForTesting(t, constants.CIVisibilityInternalRetryProcessChild, "not-bool")
+		defer restore()
 		require.False(t, isProcessRetryChild())
 	})
 
 	t.Run("missing attempt", func(t *testing.T) {
-		t.Setenv(constants.CIVisibilityInternalRetryProcessResultPath, "/tmp/result.json")
-		t.Setenv(constants.CIVisibilityInternalRetryProcessTestName, "TestProcess")
-		t.Setenv(constants.CIVisibilityInternalRetryProcessReason, constants.AutoTestRetriesRetryReason)
+		restore := setProcessRetryChildTransportForTesting(t,
+			constants.CIVisibilityInternalRetryProcessResultPath, "/tmp/result.json",
+			constants.CIVisibilityInternalRetryProcessTestName, "TestProcess",
+			constants.CIVisibilityInternalRetryProcessReason, constants.AutoTestRetriesRetryReason,
+		)
+		defer restore()
 
 		_, err := processRetryChildConfigFromEnv()
 		require.ErrorIs(t, err, errProcessRetryMissingAttempt)
@@ -179,10 +186,13 @@ func TestProcessRetryChildConfigFromEnv(t *testing.T) {
 	})
 
 	t.Run("attempt zero", func(t *testing.T) {
-		t.Setenv(constants.CIVisibilityInternalRetryProcessResultPath, "/tmp/result.json")
-		t.Setenv(constants.CIVisibilityInternalRetryProcessTestName, "TestProcess")
-		t.Setenv(constants.CIVisibilityInternalRetryProcessAttempt, "0")
-		t.Setenv(constants.CIVisibilityInternalRetryProcessReason, constants.AutoTestRetriesRetryReason)
+		restore := setProcessRetryChildTransportForTesting(t,
+			constants.CIVisibilityInternalRetryProcessResultPath, "/tmp/result.json",
+			constants.CIVisibilityInternalRetryProcessTestName, "TestProcess",
+			constants.CIVisibilityInternalRetryProcessAttempt, "0",
+			constants.CIVisibilityInternalRetryProcessReason, constants.AutoTestRetriesRetryReason,
+		)
+		defer restore()
 
 		_, err := processRetryChildConfigFromEnv()
 		require.ErrorIs(t, err, errProcessRetryInvalidAttempt)
@@ -643,7 +653,7 @@ func TestProcessRetryChildCapturesMetadataWithoutSpanOwnership(t *testing.T) {
 func TestProcessRetryChildInvalidConfig(t *testing.T) {
 	enableProcessRetryChildForTesting(t)
 	resultPath := filepath.Join(t.TempDir(), "result.json")
-	restore := setEnvForTesting(t,
+	restore := setProcessRetryChildTransportForTesting(t,
 		constants.CIVisibilityInternalRetryProcessResultPath, resultPath,
 		constants.CIVisibilityInternalRetryProcessAttempt, "1",
 		constants.CIVisibilityInternalRetryProcessReason, constants.AutoTestRetriesRetryReason,
@@ -919,33 +929,74 @@ func TestProcessRetryNoopTestContextAndSessionChain(t *testing.T) {
 	require.Equal(t, "module", session.GetOrCreateModule("module").Name())
 }
 
-func TestProcessRetryChildResultPass(t *testing.T) {
-	result, exitCode, output := runProcessRetryChildResultFixture(t, "pass")
-	require.Equal(t, 0, exitCode, output)
-	require.Equal(t, processRetryStatusPass, result.Status)
-	require.False(t, result.Failed)
-	require.False(t, result.Skipped)
-}
-
-func TestProcessRetryChildResultFail(t *testing.T) {
-	result, exitCode, _ := runProcessRetryChildResultFixture(t, "fail")
-	require.NotEqual(t, 0, exitCode)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Failed)
-	require.False(t, result.Skipped)
-	require.False(t, result.Panic)
-	require.Equal(t, "Error", result.ErrorType)
-	require.Equal(t, "fixture failure", result.ErrorMessage)
-	require.NotEmpty(t, result.ErrorStack)
-}
-
-func TestProcessRetryChildResultSkip(t *testing.T) {
-	result, exitCode, output := runProcessRetryChildResultFixture(t, "skip")
-	require.Equal(t, 0, exitCode, output)
-	require.Equal(t, processRetryStatusSkip, result.Status)
-	require.False(t, result.Failed)
-	require.True(t, result.Skipped)
-	require.Equal(t, "fixture skip", result.SkipReason)
+func TestProcessRetryChildResultStatuses(t *testing.T) {
+	tests := []struct {
+		name             string
+		scenario         string
+		exitOK           bool
+		status           processRetryStatus
+		failed           bool
+		checkSkipped     bool
+		skipped          bool
+		checkPanic       bool
+		panicked         bool
+		errorType        string
+		errorMessage     string
+		errorContains    string
+		errorNotContains string
+		skipReason       string
+		requireStack     bool
+	}{
+		{name: "pass", scenario: "pass", exitOK: true, status: processRetryStatusPass, checkSkipped: true},
+		{name: "fail", scenario: "fail", status: processRetryStatusFail, failed: true, checkSkipped: true, checkPanic: true, errorType: "Error", errorMessage: "fixture failure", requireStack: true},
+		{name: "skip", scenario: "skip", exitOK: true, status: processRetryStatusSkip, checkSkipped: true, skipped: true, skipReason: "fixture skip"},
+		{name: "panic", scenario: "panic", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "body panic sentinel", requireStack: true},
+		{name: "runtime Goexit", scenario: "goexit", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
+		{name: "failed runtime Goexit", scenario: "failed_goexit", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
+		{name: "cleanup panic", scenario: "cleanup_panic", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "cleanup panic sentinel", requireStack: true},
+		{name: "cleanup skip", scenario: "cleanup_skip", exitOK: true, status: processRetryStatusSkip, checkSkipped: true, skipped: true},
+		{name: "cleanup FailNow", scenario: "cleanup_failnow", status: processRetryStatusFail, failed: true},
+		{name: "body panic precedes cleanup panic", scenario: "body_and_cleanup_panic", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorContains: "body panic sentinel", errorNotContains: "cleanup panic sentinel"},
+		{name: "parallel subtest failure", scenario: "parallel_subtest_fail", status: processRetryStatusFail, failed: true},
+		{name: "top-level parallel subtest failure", scenario: "parallel_top_level_subtest_fail", status: processRetryStatusFail, failed: true},
+		{name: "top-level parallel", scenario: "parallel_top_level", exitOK: true, status: processRetryStatusPass, checkSkipped: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, exitCode, output := runProcessRetryChildResultFixture(t, tt.scenario)
+			if tt.exitOK {
+				require.Equal(t, 0, exitCode, output)
+			} else {
+				require.NotEqual(t, 0, exitCode, output)
+			}
+			require.Equal(t, tt.status, result.Status)
+			require.Equal(t, tt.failed, result.Failed)
+			if tt.checkSkipped {
+				require.Equal(t, tt.skipped, result.Skipped)
+			}
+			if tt.checkPanic {
+				require.Equal(t, tt.panicked, result.Panic)
+			}
+			if tt.errorType != "" {
+				require.Equal(t, tt.errorType, result.ErrorType)
+			}
+			if tt.errorMessage != "" {
+				require.Equal(t, tt.errorMessage, result.ErrorMessage)
+			}
+			if tt.errorContains != "" {
+				require.Contains(t, result.ErrorMessage, tt.errorContains)
+			}
+			if tt.errorNotContains != "" {
+				require.NotContains(t, result.ErrorMessage, tt.errorNotContains)
+			}
+			if tt.skipReason != "" {
+				require.Equal(t, tt.skipReason, result.SkipReason)
+			}
+			if tt.requireStack {
+				require.NotEmpty(t, result.ErrorStack)
+			}
+		})
+	}
 }
 
 func TestProcessRetryChildPublicHelpersPreserveNativeState(t *testing.T) {
@@ -987,17 +1038,6 @@ func TestProcessRetryChildPublicHelpersPreserveNativeState(t *testing.T) {
 	}
 }
 
-func TestProcessRetryChildResultPanic(t *testing.T) {
-	result, exitCode, _ := runProcessRetryChildResultFixture(t, "panic")
-	require.NotEqual(t, 0, exitCode)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Failed)
-	require.True(t, result.Panic)
-	require.Equal(t, "panic", result.ErrorType)
-	require.Contains(t, result.ErrorMessage, "body panic sentinel")
-	require.NotEmpty(t, result.ErrorStack)
-}
-
 func TestRecordProcessRetryPanicPreservesFirstPanic(t *testing.T) {
 	first := &testExecutionMetadata{panicData: "first panic", panicStacktrace: "first stack"}
 	execOpts := &executionOptions{panicExecutionMetadata: first}
@@ -1021,63 +1061,6 @@ func TestRecordProcessRetryPanicPreservesFirstPanic(t *testing.T) {
 	require.Equal(t, "second stack", second.panicStacktrace)
 }
 
-func TestProcessRetryChildResultRuntimeGoexit(t *testing.T) {
-	result, exitCode, _ := runProcessRetryChildResultFixture(t, "goexit")
-	require.NotEqual(t, 0, exitCode)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Failed)
-	require.True(t, result.Panic)
-	require.Equal(t, "panic", result.ErrorType)
-	require.Contains(t, result.ErrorMessage, "runtime.Goexit")
-	require.NotEmpty(t, result.ErrorStack)
-}
-
-func TestProcessRetryChildResultFailedRuntimeGoexit(t *testing.T) {
-	result, exitCode, _ := runProcessRetryChildResultFixture(t, "failed_goexit")
-	require.NotEqual(t, 0, exitCode)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Failed)
-	require.True(t, result.Panic)
-	require.Equal(t, "panic", result.ErrorType)
-	require.Contains(t, result.ErrorMessage, "runtime.Goexit")
-	require.NotEmpty(t, result.ErrorStack)
-}
-
-func TestProcessRetryChildResultCleanupPanic(t *testing.T) {
-	result, exitCode, _ := runProcessRetryChildResultFixture(t, "cleanup_panic")
-	require.NotEqual(t, 0, exitCode)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Failed)
-	require.True(t, result.Panic)
-	require.Equal(t, "panic", result.ErrorType)
-	require.Contains(t, result.ErrorMessage, "cleanup panic sentinel")
-	require.NotEmpty(t, result.ErrorStack)
-}
-
-func TestProcessRetryChildResultCleanupSkip(t *testing.T) {
-	result, exitCode, output := runProcessRetryChildResultFixture(t, "cleanup_skip")
-	require.Equal(t, 0, exitCode, output)
-	require.Equal(t, processRetryStatusSkip, result.Status)
-	require.False(t, result.Failed)
-	require.True(t, result.Skipped)
-}
-
-func TestProcessRetryChildResultCleanupFailNow(t *testing.T) {
-	result, exitCode, _ := runProcessRetryChildResultFixture(t, "cleanup_failnow")
-	require.NotEqual(t, 0, exitCode)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Failed)
-}
-
-func TestProcessRetryChildResultBodyPanicTakesPrecedenceOverCleanupPanic(t *testing.T) {
-	result, exitCode, _ := runProcessRetryChildResultFixture(t, "body_and_cleanup_panic")
-	require.NotEqual(t, 0, exitCode)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Panic)
-	require.Contains(t, result.ErrorMessage, "body panic sentinel")
-	require.NotContains(t, result.ErrorMessage, "cleanup panic sentinel")
-}
-
 func TestProcessRetryChildCleanupRunsExactlyOnce(t *testing.T) {
 	counterPath := filepath.Join(t.TempDir(), "cleanup-count")
 	result, exitCode, output := runProcessRetryChildResultFixtureWithEnv(t, "cleanup_once", []string{
@@ -1088,28 +1071,6 @@ func TestProcessRetryChildCleanupRunsExactlyOnce(t *testing.T) {
 	count, err := os.ReadFile(counterPath)
 	require.NoError(t, err)
 	require.Equal(t, "x", string(count))
-}
-
-func TestProcessRetryChildResultParallelSubtestFailure(t *testing.T) {
-	result, exitCode, _ := runProcessRetryChildResultFixture(t, "parallel_subtest_fail")
-	require.NotEqual(t, 0, exitCode)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Failed)
-}
-
-func TestProcessRetryChildResultTopLevelParallelSubtestFailure(t *testing.T) {
-	result, exitCode, _ := runProcessRetryChildResultFixture(t, "parallel_top_level_subtest_fail")
-	require.NotEqual(t, 0, exitCode)
-	require.Equal(t, processRetryStatusFail, result.Status)
-	require.True(t, result.Failed)
-}
-
-func TestProcessRetryChildResultTopLevelParallel(t *testing.T) {
-	result, exitCode, output := runProcessRetryChildResultFixture(t, "parallel_top_level")
-	require.Equal(t, 0, exitCode, output)
-	require.Equal(t, processRetryStatusPass, result.Status)
-	require.False(t, result.Failed)
-	require.False(t, result.Skipped)
 }
 
 func TestProcessRetryChildResultPanicMessageIsTruncated(t *testing.T) {
@@ -3026,46 +2987,20 @@ func TestRunProcessRetryAttemptHonorsConcurrencyCap(t *testing.T) {
 }
 
 func TestProcessRetryBoundedOutput(t *testing.T) {
-	sink, err := newProcessRetryBoundedOutput(t.TempDir(), "stdout", 4)
-	require.NoError(t, err)
+	sink := newProcessRetryBoundedOutput(4)
 	n, err := sink.Write([]byte("abcdef"))
 	require.NoError(t, err)
 	require.Equal(t, 6, n)
-	require.NoError(t, sink.Close())
 
-	tail, truncated, err := sink.Tail()
-	require.NoError(t, err)
+	tail, truncated := sink.Tail()
 	require.True(t, truncated)
 	require.Equal(t, "cdef", tail)
-	info, err := os.Stat(sink.path)
-	require.NoError(t, err)
-	require.LessOrEqual(t, info.Size(), int64(4))
-}
-
-func TestProcessRetryBoundedOutputWriteAfterClose(t *testing.T) {
-	sink, err := newProcessRetryBoundedOutput(t.TempDir(), "stdout", 16)
-	require.NoError(t, err)
-	_, err = sink.Write([]byte("before"))
-	require.NoError(t, err)
-	require.NoError(t, sink.Close())
-
-	beforeTail, beforeTruncated, beforeErr := sink.Tail()
-	n, err := sink.Write([]byte("after"))
-	require.NoError(t, err)
-	require.Equal(t, len("after"), n)
-	afterTail, afterTruncated, afterErr := sink.Tail()
-
-	require.Equal(t, beforeTail, afterTail)
-	require.Equal(t, beforeTruncated, afterTruncated)
-	require.Equal(t, beforeErr, afterErr)
 }
 
 func TestCombineProcessRetryOutputTailsMarksPerStreamTruncation(t *testing.T) {
-	sink, err := newProcessRetryBoundedOutput(t.TempDir(), "stdout", 4)
+	sink := newProcessRetryBoundedOutput(4)
+	_, err := sink.Write([]byte("prefix-tail"))
 	require.NoError(t, err)
-	_, err = sink.Write([]byte("prefix-tail"))
-	require.NoError(t, err)
-	require.NoError(t, sink.Close())
 
 	combined, truncated, err := combineProcessRetryOutputTails(&processRetryOutputCapture{sink: sink}, nil, 16)
 	require.NoError(t, err)
@@ -3075,7 +3010,7 @@ func TestCombineProcessRetryOutputTailsMarksPerStreamTruncation(t *testing.T) {
 }
 
 func TestProcessRetryOutputCaptureAbortIsIdempotent(t *testing.T) {
-	capture, err := newProcessRetryOutputCapture(t.TempDir(), "stdout", processRetryStreamFileMaxBytes)
+	capture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	require.NoError(t, err)
 	capture.StartCopy()
 
@@ -3089,10 +3024,9 @@ func TestProcessRetryOutputCaptureAbortIsIdempotent(t *testing.T) {
 func TestFinalizeProcessRetryOutputCapturesKillsTreeWithinSingleDrainBudget(t *testing.T) {
 	restoreLaunchGate := resetProcessRetryLaunchGateForTesting(t)
 	defer restoreLaunchGate()
-	tempDir := t.TempDir()
-	stdoutCapture, err := newProcessRetryOutputCapture(tempDir, "stdout", processRetryStreamFileMaxBytes)
+	stdoutCapture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	require.NoError(t, err)
-	stderrCapture, err := newProcessRetryOutputCapture(tempDir, "stderr", processRetryStreamFileMaxBytes)
+	stderrCapture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	require.NoError(t, err)
 	stdoutCapture.StartCopy()
 	stderrCapture.StartCopy()
@@ -3230,12 +3164,8 @@ func TestRunProcessRetryAttemptSetsCommandEnv(t *testing.T) {
 	require.Equal(t, cfg.RetryReason, attempt.Result.RetryReason)
 	require.NotEmpty(t, attempt.TempDir)
 	require.FileExists(t, filepath.Join(attempt.TempDir, "result.json"))
-	require.FileExists(t, attempt.StdoutPath)
-	require.FileExists(t, attempt.StderrPath)
 	requireProcessRetryFileMode(t, attempt.TempDir, 0o700)
 	requireProcessRetryFileMode(t, filepath.Join(attempt.TempDir, "result.json"), 0o600)
-	requireProcessRetryFileMode(t, attempt.StdoutPath, 0o600)
-	requireProcessRetryFileMode(t, attempt.StderrPath, 0o600)
 }
 
 func TestRunProcessRetryAttemptDoesNotInheritStdin(t *testing.T) {
@@ -3701,8 +3631,6 @@ func TestRunProcessRetryAttemptHonorsParentDeadlineWhileWaitingForLimiter(t *tes
 	require.True(t, attempt.SetupFallbackAllowed)
 	require.True(t, attempt.TimedOut)
 	require.Empty(t, attempt.TempDir)
-	require.Empty(t, attempt.StdoutPath)
-	require.Empty(t, attempt.StderrPath)
 	require.Equal(t, int32(0), startCalls.Load())
 }
 
@@ -3832,8 +3760,6 @@ func TestRunProcessRetryAttemptChecksCancellationImmediatelyBeforeStart(t *testi
 	require.ErrorIs(t, attempt.Err, context.Canceled)
 	require.Equal(t, int32(0), startCalls.Load())
 	require.NotEmpty(t, attempt.TempDir)
-	require.NotEmpty(t, attempt.StdoutPath)
-	require.NotEmpty(t, attempt.StderrPath)
 }
 
 func TestRunTestWithRetryUsesProcessBackendForRetries(t *testing.T) {
@@ -6199,14 +6125,34 @@ func enableProcessRetryChildForTesting(t testing.TB) {
 	t.Helper()
 	restoreEnv := setEnvForTesting(t,
 		constants.CIVisibilityEnabledEnvironmentVariable, "true",
-		constants.CIVisibilityInternalRetryProcessChild, "true",
 	)
+	restoreTransport := setProcessRetryChildTransportForTesting(t, constants.CIVisibilityInternalRetryProcessChild, "true")
 	oldEnabled := atomic.LoadInt32(&ciVisibilityEnabledValue)
 	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
 	t.Cleanup(func() {
 		atomic.StoreInt32(&ciVisibilityEnabledValue, oldEnabled)
+		restoreTransport()
 		restoreEnv()
 	})
+}
+
+func setProcessRetryChildTransportForTesting(t testing.TB, pairs ...string) func() {
+	t.Helper()
+	require.Equal(t, 0, len(pairs)%2)
+	values := make(map[string]string, len(pairs)/2)
+	for i := 0; i < len(pairs); i += 2 {
+		values[pairs[i]] = pairs[i+1]
+	}
+	previous := lookupProcessRetryChildTransport
+	lookupProcessRetryChildTransport = func(name string) (string, bool) {
+		if value, ok := values[name]; ok {
+			return value, true
+		}
+		return previous(name)
+	}
+	return func() {
+		lookupProcessRetryChildTransport = previous
+	}
 }
 
 func setEnvForTesting(t testing.TB, pairs ...string) func() {
@@ -6220,7 +6166,7 @@ func setEnvForTesting(t testing.TB, pairs ...string) func() {
 	previous := make([]previousEnv, 0, len(pairs)/2)
 	for i := 0; i < len(pairs); i += 2 {
 		key, value := pairs[i], pairs[i+1]
-		old, ok := lookupEnvForTesting(key)
+		old, ok := env.Lookup(key)
 		previous = append(previous, previousEnv{key: key, value: old, ok: ok})
 		require.NoError(t, os.Setenv(key, value))
 	}
@@ -6233,13 +6179,6 @@ func setEnvForTesting(t testing.TB, pairs ...string) func() {
 			}
 		}
 	}
-}
-
-func lookupEnvForTesting(key string) (string, bool) {
-	if strings.HasPrefix(key, "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_") {
-		return integrations.LookupProcessRetryChildTransport(key)
-	}
-	return env.Lookup(key)
 }
 
 func functionPointer[T any](fn T) uintptr {

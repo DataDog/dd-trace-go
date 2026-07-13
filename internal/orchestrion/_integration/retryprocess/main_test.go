@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -38,6 +39,9 @@ const orchestrionRetryProcessChildAPIKey = "orchestrion-process-retry-child-api-
 const orchestrionRetryProcessChildRunFilter = "^TestOrchestrionRetryProcess(Selected|Unselected)Child$"
 const orchestrionRetryProcessMetadataRunFilter = "^TestOrchestrionRetryProcess(Error|Skip|SubtestError|SubtestPanic|ParallelSubtestPanic|SubtestThenTopLevelSkip|Unselected)Child$"
 const orchestrionRetryProcessHybridRunFilter = "^TestOrchestrionRetryProcessHybrid(Panic|Unselected)Child$"
+
+var orchestrionRetryProcessHybridParentRuns atomic.Int32
+var orchestrionRetryProcessPureParentRuns atomic.Int32
 
 func requireOrchestrionProcessRetryContainmentForTesting(t testing.TB) {
 	t.Helper()
@@ -110,7 +114,7 @@ func runOrchestrionRetryProcessPureParent(m *testing.M) int {
 	defer harness.close()
 	exitCode := m.Run()
 	if exitCode == 0 {
-		const resourceName = "fixtures_test.go.TestOrchestrionRetryProcessPureParentFixture"
+		const resourceName = "main_test.go.TestOrchestrionRetryProcessPureParentFixture"
 		testSpans := 0
 		processRetrySpans := 0
 		unexpectedTerminationSpans := 0
@@ -222,7 +226,7 @@ func (h *orchestrionRetryProcessParentHarness) assertRequests(name string) {
 }
 
 func assertOrchestrionRetryProcessHybridParentSpans(tracer mocktracer.Tracer) {
-	const resourceName = "fixtures_test.go.TestOrchestrionRetryProcessHybridParentFixture"
+	const resourceName = "main_test.go.TestOrchestrionRetryProcessHybridParentFixture"
 	counts := map[string]int{}
 	processRetrySpans := 0
 	testSpans := 0
@@ -570,4 +574,107 @@ func decodeOrchestrionRetryProcessResult(t *testing.T, resultPath string, output
 		t.Fatalf("decoding child result: %v\n%s", err, output)
 	}
 	return result
+}
+
+func TestOrchestrionRetryProcessSelectedChild(t *testing.T) {
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessInvalidConfigEnv) == "true" {
+		t.Fatal("selected test ran despite invalid process retry child config")
+	}
+	if !orchestrionRetryProcessChild() {
+		t.Skip("selected child fixture runs only in process retry child mode")
+	}
+}
+
+func TestOrchestrionRetryProcessUnselectedChild(t *testing.T) {
+	if orchestrionRetryProcessChild() {
+		t.Fatal("unselected test ran in process retry child mode")
+	}
+}
+
+func TestOrchestrionRetryProcessErrorChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("error child fixture runs only in process retry child mode")
+	}
+	t.Error("orchestrion error sentinel")
+}
+
+func TestOrchestrionRetryProcessSkipChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("skip child fixture runs only in process retry child mode")
+	}
+	t.Skip("orchestrion skip sentinel")
+}
+
+func TestOrchestrionRetryProcessSubtestThenTopLevelSkipChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("subtest/top-level skip child fixture runs only in process retry child mode")
+	}
+	t.Run("subtest", func(t *testing.T) {
+		t.Skip("orchestrion subtest skip sentinel")
+	})
+	t.Skip("orchestrion top-level skip sentinel")
+}
+
+func TestOrchestrionRetryProcessSubtestErrorChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("subtest error child fixture runs only in process retry child mode")
+	}
+	t.Run("subtest", func(t *testing.T) {
+		t.Error("orchestrion subtest error sentinel")
+	})
+}
+
+func TestOrchestrionRetryProcessSubtestPanicChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("subtest panic child fixture runs only in process retry child mode")
+	}
+	t.Run("subtest", func(*testing.T) {
+		panic("orchestrion subtest panic sentinel")
+	})
+	markerPath := orchestrionRetryProcessEnv(orchestrionRetryProcessSubtestPanicContinuedPathEnv)
+	if markerPath == "" {
+		t.Fatal("missing subtest panic continuation marker path")
+	}
+	if err := os.WriteFile(markerPath, []byte("continued after subtest panic"), 0o600); err != nil {
+		t.Fatalf("writing subtest panic continuation marker: %v", err)
+	}
+}
+
+func TestOrchestrionRetryProcessParallelSubtestPanicChild(t *testing.T) {
+	if !orchestrionRetryProcessChild() {
+		t.Skip("parallel subtest panic child fixture runs only in process retry child mode")
+	}
+	t.Run("subtest", func(t *testing.T) {
+		t.Parallel()
+		panic("orchestrion parallel subtest panic sentinel")
+	})
+}
+
+func TestOrchestrionRetryProcessHybridParentFixture(t *testing.T) {
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessHybridParentEnv) != "true" && !orchestrionRetryProcessChild() {
+		t.Skip("hybrid parent fixture runs only from its controller subprocess")
+	}
+	if orchestrionRetryProcessChild() {
+		if orchestrionRetryProcessHybridParentRuns.Load() != 0 {
+			t.Fatalf("hybrid child inherited parent run count: %d", orchestrionRetryProcessHybridParentRuns.Load())
+		}
+		return
+	}
+	if orchestrionRetryProcessHybridParentRuns.Add(1) == 1 {
+		t.Fatal("first hybrid parent execution must fail to trigger process retry")
+	}
+	t.Fatalf("hybrid retry ran in the parent process with run count %d", orchestrionRetryProcessHybridParentRuns.Load())
+}
+
+func TestOrchestrionRetryProcessPureParentFixture(t *testing.T) {
+	if orchestrionRetryProcessEnv(orchestrionRetryProcessPureParentEnv) != "true" {
+		t.Skip("pure parent fixture runs only from its controller subprocess")
+	}
+	if orchestrionRetryProcessChild() {
+		t.Fatal("pure Orchestrion parent unexpectedly launched a process retry child")
+	}
+	if orchestrionRetryProcessPureParentRuns.Add(1) == 1 {
+		t.Fail()
+		runtime.Goexit()
+	}
 }

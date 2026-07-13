@@ -251,7 +251,7 @@ func (m *MockDdTestSuite) Close(options ...TestSuiteCloseOption) {
 func TestProcessRetryChildManualAPIsAreNoop(t *testing.T) {
 	resetCIVisibilityBootstrapStateForTesting()
 	t.Cleanup(restoreCIVisibilityMockModeForTesting)
-	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
+	enableProcessRetryChildTransportForTesting(t)
 	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "child-sentinel")
 	t.Setenv("DD_TRACE_SAMPLE_RATE", "sample-sentinel")
 
@@ -363,6 +363,17 @@ func TestProcessRetryChildTransportKeyAllowlist(t *testing.T) {
 	require.False(t, IsProcessRetryChildTransportKey("DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_UNKNOWN"))
 }
 
+func TestProcessRetryChildTransportIgnoresLiveEnvironment(t *testing.T) {
+	if processRetryChildTransport.active {
+		t.Skip("startup transport snapshot is active")
+	}
+	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
+
+	require.False(t, IsProcessRetryChild())
+	_, ok := LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessChild)
+	require.False(t, ok)
+}
+
 func TestProcessRetryChildFeatureGettersHideCachedParentState(t *testing.T) {
 	resetCIVisibilityBootstrapStateForTesting()
 	t.Cleanup(resetCIVisibilityBootstrapStateForTesting)
@@ -370,7 +381,7 @@ func TestProcessRetryChildFeatureGettersHideCachedParentState(t *testing.T) {
 	ciVisibilitySkippables = map[string]map[string][]civisibilitynet.SkippableResponseDataAttributes{"parent": {}}
 	ciVisibilitySkippablesResponse = &civisibilitynet.SkippableTestsResponse{}
 	ciVisibilityImpactedTestsAnalyzer = &impactedtests.ImpactedTestAnalyzer{}
-	t.Setenv(constants.CIVisibilityInternalRetryProcessChild, "true")
+	enableProcessRetryChildTransportForTesting(t)
 
 	require.NotSame(t, &ciVisibilitySettings, GetSettings())
 	require.NotSame(t, &ciVisibilityKnownTests, GetKnownTests())
@@ -379,6 +390,18 @@ func TestProcessRetryChildFeatureGettersHideCachedParentState(t *testing.T) {
 	require.Nil(t, GetSkippableTests())
 	require.Nil(t, GetSkippableTestsResponse())
 	require.Nil(t, GetImpactedTestsAnalyzer())
+}
+
+func enableProcessRetryChildTransportForTesting(t *testing.T) {
+	t.Helper()
+	previous := processRetryChildTransport
+	processRetryChildTransport = &processRetryChildTransportState{
+		active: true,
+		values: map[string]string{constants.CIVisibilityInternalRetryProcessChild: "true"},
+	}
+	t.Cleanup(func() {
+		processRetryChildTransport = previous
+	})
 }
 
 func TestProcessRetryChildStartupHasNoCloseActions(t *testing.T) {

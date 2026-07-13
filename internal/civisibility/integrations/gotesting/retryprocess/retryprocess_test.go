@@ -158,13 +158,9 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	if exitCode == 0 && testing.CoverMode() == "" && processRetryFixtureMainAssertionsEnabled() {
-		positiveFixtureRan := positiveChildLaunchRuns.Load() > 0
-		forcedRunFixtureRan := forcedRunChildLaunchRuns.Load() > 0
-		if positiveFixtureRan {
+		if forcedRunChildLaunchRuns.Load() > 0 {
 			assertProcessRetryFixtureSpans(tracer)
 			assertProcessRetryFixtureLogs()
-		}
-		if forcedRunFixtureRan {
 			assertProcessRetryForcedRunSpans(tracer)
 		}
 	}
@@ -323,7 +319,7 @@ func assertProcessRetryFixtureLogs() {
 	for _, entry := range processRetryFixtureLogs.entries {
 		assertProcessRetryFixtureNoForbiddenSentinel(entry.Message)
 		assertProcessRetryFixtureNoForbiddenSentinel(entry.TestName)
-		if entry.TestName == "TestProcessRetryPositiveChildLaunchRequired" &&
+		if entry.TestName == "TestProcessRetryITRForcedRun" &&
 			strings.Contains(entry.Message, processRetryChildLogSentinel) {
 			assertProcessRetryFixturePayloads()
 			return
@@ -460,7 +456,7 @@ func assertProcessRetryFixtureSpans(tracer mocktracer.Tracer) {
 	spans := tracer.FinishedSpans()
 	var fixtureSpans []*mocktracer.Span
 	for _, span := range spans {
-		if span.Tag(ext.ResourceName) == "fixtures_test.go.TestProcessRetryPositiveChildLaunchRequired" {
+		if span.Tag(ext.ResourceName) == "fixtures_test.go.TestProcessRetryITRForcedRun" {
 			fixtureSpans = append(fixtureSpans, span)
 		}
 	}

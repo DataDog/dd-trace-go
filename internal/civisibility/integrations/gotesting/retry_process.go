@@ -110,7 +110,7 @@ const (
 	processRetryMetadataTruncationMarker   = "[dd-trace-go: process retry metadata truncated]"
 	processRetryOutputTruncationMarker     = "\n[dd-trace-go: process retry output truncated]\n"
 	processRetryOutputMaxBytes             = 32 * 1024
-	processRetryStreamFileMaxBytes         = 32 * 1024
+	processRetryStreamMaxBytes             = 32 * 1024
 	processRetryExitCodeUnset              = -1
 	processRetryOutputDrainWait            = 1 * time.Second
 	processRetryOutputDrainBudget          = processRetryOutputDrainWait
@@ -165,20 +165,27 @@ var (
 	errProcessRetryContainmentLost     = errors.New("process retry process-tree containment lost")
 )
 
+var lookupProcessRetryChildTransport = integrations.LookupProcessRetryChildTransport
+
 func isProcessRetryChild() bool {
-	return integrations.IsProcessRetryChild()
+	value, ok := lookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessChild)
+	if !ok {
+		return false
+	}
+	enabled, err := strconv.ParseBool(value)
+	return err == nil && enabled
 }
 
 func processRetryChildConfigFromEnv() (processRetryChildConfig, error) {
-	resultPath, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
+	resultPath, ok := lookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
 	if !ok || strings.TrimSpace(resultPath) == "" {
 		return processRetryChildConfig{}, errProcessRetryMissingResultPath
 	}
-	testName, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessTestName)
+	testName, ok := lookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessTestName)
 	if !ok || strings.TrimSpace(testName) == "" {
 		return processRetryChildConfig{}, errProcessRetryMissingTestName
 	}
-	attemptRaw, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessAttempt)
+	attemptRaw, ok := lookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessAttempt)
 	if !ok || strings.TrimSpace(attemptRaw) == "" {
 		return processRetryChildConfig{}, errProcessRetryMissingAttempt
 	}
@@ -186,7 +193,7 @@ func processRetryChildConfigFromEnv() (processRetryChildConfig, error) {
 	if err != nil || attempt < 1 {
 		return processRetryChildConfig{}, errProcessRetryInvalidAttempt
 	}
-	reason, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessReason)
+	reason, ok := lookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessReason)
 	if !ok || strings.TrimSpace(reason) == "" {
 		return processRetryChildConfig{}, errProcessRetryMissingRetryReason
 	}
@@ -396,32 +403,20 @@ type processRetryBoolFlag interface {
 
 type processRetryBoundedOutput struct {
 	mu        locking.Mutex
-	file      *os.File
-	path      string
 	maxBytes  int64
 	total     int64
-	fileBytes int64
 	tail      []byte
 	truncated bool
-	closed    bool
-	err       error
 }
 
-func newProcessRetryBoundedOutput(tempDir, name string, maxBytes int64) (*processRetryBoundedOutput, error) {
+func newProcessRetryBoundedOutput(maxBytes int64) *processRetryBoundedOutput {
 	if maxBytes < 0 {
 		maxBytes = 0
 	}
-	path := filepath.Join(tempDir, name+".log")
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, err
-	}
 	return &processRetryBoundedOutput{
-		file:     file,
-		path:     path,
 		maxBytes: maxBytes,
 		tail:     make([]byte, 0, int(maxBytes)),
-	}, nil
+	}
 }
 
 func (w *processRetryBoundedOutput) Write(p []byte) (int, error) {
@@ -430,12 +425,8 @@ func (w *processRetryBoundedOutput) Write(p []byte) (int, error) {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.closed {
-		return len(p), nil
-	}
 	w.total += int64(len(p))
 	w.appendTailLocked(p)
-	w.writeFileLocked(p)
 	return len(p), nil
 }
 
@@ -446,64 +437,27 @@ func (w *processRetryBoundedOutput) appendTailLocked(p []byte) {
 		}
 		return
 	}
+	if int64(len(p)) >= w.maxBytes {
+		w.tail = append(w.tail[:0], p[len(p)-int(w.maxBytes):]...)
+		w.truncated = true
+		return
+	}
 	w.tail = append(w.tail, p...)
 	if int64(len(w.tail)) > w.maxBytes {
-		drop := int64(len(w.tail)) - w.maxBytes
-		w.tail = append([]byte(nil), w.tail[drop:]...)
+		drop := len(w.tail) - int(w.maxBytes)
+		copy(w.tail, w.tail[drop:])
+		w.tail = w.tail[:int(w.maxBytes)]
 		w.truncated = true
 	}
 }
 
-func (w *processRetryBoundedOutput) writeFileLocked(p []byte) {
-	if w.file == nil || w.err != nil || w.maxBytes <= 0 || w.fileBytes >= w.maxBytes {
-		if len(p) > 0 && w.fileBytes >= w.maxBytes {
-			w.truncated = true
-		}
-		return
-	}
-	remaining := w.maxBytes - w.fileBytes
-	toWrite := p
-	if int64(len(toWrite)) > remaining {
-		toWrite = toWrite[:int(remaining)]
-		w.truncated = true
-	}
-	n, err := w.file.Write(toWrite)
-	w.fileBytes += int64(n)
-	if err != nil {
-		w.err = err
-		return
-	}
-	if n < len(toWrite) {
-		w.truncated = true
-	}
-}
-
-func (w *processRetryBoundedOutput) Close() error {
+func (w *processRetryBoundedOutput) Tail() (string, bool) {
 	if w == nil {
-		return nil
+		return "", false
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.closed {
-		return w.err
-	}
-	w.closed = true
-	if w.file != nil {
-		if err := w.file.Close(); err != nil && w.err == nil {
-			w.err = err
-		}
-		w.file = nil
-	}
-	return w.err
-}
-
-func (w *processRetryBoundedOutput) Tail() (string, bool, error) {
-	if w == nil {
-		return "", false, nil
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return string(w.tail), w.truncated || w.total > int64(len(w.tail)), w.err
+	return string(w.tail), w.truncated || w.total > int64(len(w.tail))
 }
 
 type processRetryOutputCapture struct {
@@ -518,18 +472,13 @@ type processRetryOutputCapture struct {
 	aborted     bool
 }
 
-func newProcessRetryOutputCapture(tempDir, name string, maxBytes int64) (*processRetryOutputCapture, error) {
-	sink, err := newProcessRetryBoundedOutput(tempDir, name, maxBytes)
-	if err != nil {
-		return nil, err
-	}
+func newProcessRetryOutputCapture(maxBytes int64) (*processRetryOutputCapture, error) {
 	readPipe, writePipe, err := os.Pipe()
 	if err != nil {
-		_ = sink.Close()
 		return nil, err
 	}
 	return &processRetryOutputCapture{
-		sink:      sink,
+		sink:      newProcessRetryBoundedOutput(maxBytes),
 		readPipe:  readPipe,
 		writePipe: writePipe,
 		copyDone:  make(chan struct{}),
@@ -562,7 +511,6 @@ func (c *processRetryOutputCapture) StartCopy() {
 		_, copyErr := io.Copy(sink, readPipe)
 		c.complete(errors.Join(
 			ignoreProcessRetryClosedError(copyErr),
-			ignoreProcessRetryClosedError(sink.Close()),
 			ignoreProcessRetryClosedError(readPipe.Close()),
 		))
 	}()
@@ -668,11 +616,9 @@ func (c *processRetryOutputCapture) abort(timeout time.Duration) error {
 	copyStarted := c.copyStarted
 	copyDone := c.copyDone
 	var writePipe, readPipe *os.File
-	var sink *processRetryBoundedOutput
 	if !alreadyAborted {
 		writePipe = c.writePipe
 		readPipe = c.readPipe
-		sink = c.sink
 		c.writePipe = nil
 		c.readPipe = nil
 	}
@@ -684,9 +630,6 @@ func (c *processRetryOutputCapture) abort(timeout time.Duration) error {
 	}
 	if readPipe != nil {
 		closeErr = errors.Join(closeErr, ignoreProcessRetryClosedError(readPipe.Close()))
-	}
-	if sink != nil {
-		closeErr = errors.Join(closeErr, ignoreProcessRetryClosedError(sink.Close()))
 	}
 	if !copyStarted {
 		c.complete(closeErr)
@@ -723,8 +666,8 @@ func (c *processRetryOutputCapture) Tail() (string, bool, error) {
 	if sink == nil {
 		return "", aborted, nil
 	}
-	tail, truncated, err := sink.Tail()
-	return tail, truncated || aborted, err
+	tail, truncated := sink.Tail()
+	return tail, truncated || aborted, nil
 }
 
 func combineProcessRetryOutputTails(stdout, stderr *processRetryOutputCapture, maxBytes int64) (string, bool, error) {
@@ -751,8 +694,6 @@ func combineProcessRetryOutputTails(stdout, stderr *processRetryOutputCapture, m
 type processRetryAttemptResult struct {
 	Result               processRetryResult
 	TempDir              string
-	StdoutPath           string
-	StderrPath           string
 	OutputTail           string
 	OutputTruncated      bool
 	ExitCode             int
@@ -1618,17 +1559,15 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	resultPath := filepath.Join(tempDir, "result.json")
 	childCfg := cfg
 	childCfg.ResultPath = resultPath
-	stdoutCapture, err := newProcessRetryOutputCapture(tempDir, "stdout", processRetryStreamFileMaxBytes)
+	stdoutCapture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	if err != nil {
 		return finishSetupFailure(err, true, false)
 	}
-	stderrCapture, err := newProcessRetryOutputCapture(tempDir, "stderr", processRetryStreamFileMaxBytes)
+	stderrCapture, err := newProcessRetryOutputCapture(processRetryStreamMaxBytes)
 	if err != nil {
 		_ = stdoutCapture.CloseSetupFailure()
 		return finishSetupFailure(err, true, false)
 	}
-	attempt.StdoutPath = stdoutCapture.sink.path
-	attempt.StderrPath = stderrCapture.sink.path
 	closeCapturesForSetupFailure := func() {
 		_ = stdoutCapture.CloseSetupFailure()
 		_ = stderrCapture.CloseSetupFailure()
@@ -2896,7 +2835,7 @@ func writeInvalidProcessRetryChildConfigResult(cfg processRetryChildConfig, reas
 	resultPath := cfg.ResultPath
 	if strings.TrimSpace(resultPath) == "" {
 		var ok bool
-		resultPath, ok = integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
+		resultPath, ok = lookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessResultPath)
 		if !ok || strings.TrimSpace(resultPath) == "" {
 			return
 		}
