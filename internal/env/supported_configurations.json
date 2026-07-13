@@ -338,11 +338,18 @@
         "default": "false"
       }
     ],
-    "DD_CODE_COVERAGE_FLAGS": [
+    "DD_CRASHTRACKING_ENABLED": [
       {
-        "implementation": "A",
-        "type": "string",
-        "default": null
+        "implementation": "C",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
+    "DD_CRASHTRACKING_IS_MONITOR_PROCESS": [
+      {
+        "implementation": "C",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_CUSTOM_PARENT_ID": [
