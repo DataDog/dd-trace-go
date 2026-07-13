@@ -1633,6 +1633,109 @@ func TestOTLPExportModeProcessTags(t *testing.T) {
 	})
 }
 
+func TestOTLPExportModeSpanEvents(t *testing.T) {
+	// OTLP mode must mark spans supportsEvents so serializeSpanEvents doesn't
+	// string-tag events into a "events" meta tag (which convertEvents can't read).
+	assert := assert.New(t)
+	tr, err := newUnstartedTracer(func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) })
+	assert.NoError(err)
+	defer tr.Stop()
+
+	s := tr.StartSpan("op")
+	assert.True(s.supportsEvents, "spans must support native events in OTLP export mode")
+	s.AddEvent("exception", WithSpanEventAttributes(map[string]any{
+		"exception.type":    "*errors.errorString",
+		"exception.message": "boom",
+	}))
+	s.Finish()
+
+	// Events are preserved on the span (not string-tagged away).
+	assert.NotEmpty(s.spanEvents, "span events should be preserved for native OTLP export")
+	_, hasEventsTag := s.meta.Get("events")
+	assert.False(hasEventsTag, "span events must not be string-tagged in OTLP export mode")
+
+	// convertSpan emits a native OTLP event carrying its attributes.
+	otlp := convertSpan(s, "svc", false)
+	assert.Len(otlp.Events, 1)
+	assert.Equal("exception", otlp.Events[0].Name)
+	assert.NotEmpty(otlp.Events[0].Attributes)
+}
+
+// TestOTLPExportModeSpanEventsWriterGating verifies supportsEvents follows the actual
+// selected writer, not OTEL_TRACES_EXPORTER. LogToStdout is selected before the OTLP
+// writer, and the log writer doesn't serialize spanEvents, so events must stay
+// string-tagged (supportsEvents=false) there to avoid being silently dropped.
+func TestOTLPExportModeSpanEventsWriterGating(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		configure  func(*config)
+		wantNative bool
+	}{
+		{
+			name:       "otlp writer enables native events",
+			configure:  func(c *config) { c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode) },
+			wantNative: true,
+		},
+		{
+			name: "log-to-stdout keeps events string-tagged",
+			configure: func(c *config) {
+				c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+				c.internalConfig.SetLogToStdout(true, internalconfig.OriginCode)
+			},
+			wantNative: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr, err := newUnstartedTracer(tc.configure)
+			require.NoError(t, err)
+			defer tr.Stop()
+			assert.Equal(t, tc.wantNative, tr.StartSpan("op").supportsEvents)
+		})
+	}
+}
+
+// TestOTLPExportModeSpanEventsRoundTrip verifies a span event survives the full OTLP
+// encode → send → unmarshal cycle as a native event, not a string "events" meta tag.
+func TestOTLPExportModeSpanEventsRoundTrip(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+
+	trc, err := newTracer(func(c *config) {
+		c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+		c.ddTransport = newDummyTransport()
+	})
+	require.NoError(t, err)
+	w := trc.traceWriter.(*otlpTraceWriter)
+	w.transport = newOTLPTransport(srv.Client(), srv.URL, map[string]string{"Content-Type": "application/x-protobuf"})
+	setGlobalTracer(trc)
+	t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+
+	s := trc.newRootSpan("op", "test-svc", "/")
+	s.AddEvent("exception", WithSpanEventAttributes(map[string]any{
+		"exception.type":    "*errors.errorString",
+		"exception.message": "boom",
+	}))
+	s.Finish()
+	trc.Stop()
+
+	var spans []*otlptrace.Span
+	for _, p := range srv.getPayloads() {
+		var td otlptrace.TracesData
+		require.NoError(t, proto.Unmarshal(p, &td))
+		for _, rs := range td.ResourceSpans {
+			for _, ss := range rs.ScopeSpans {
+				spans = append(spans, ss.Spans...)
+			}
+		}
+	}
+	require.Len(t, spans, 1)
+	require.Len(t, spans[0].Events, 1, "exception event must survive as a native OTLP event")
+	assert.Equal(t, "exception", spans[0].Events[0].Name)
+	for _, kv := range spans[0].Attributes {
+		assert.NotEqual(t, "events", kv.Key, "events must not be string-tagged into a meta attribute")
+	}
+}
+
 func TestTracerConcurrent(t *testing.T) {
 	assert := assert.New(t)
 	tracer, transport, flush, stop, err := startTestTracer(t)
