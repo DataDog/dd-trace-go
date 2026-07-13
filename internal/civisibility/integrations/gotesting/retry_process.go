@@ -2107,6 +2107,14 @@ func runProcessRetriesIfEligible(
 		}
 		return false, reason
 	}
+	if shouldUseParallelEFD(
+		execOpts.options,
+		execOpts.executionMetadata,
+		execOpts.retryCount+1,
+		internalParallelEFDMaxConcurrency,
+	) {
+		return false, "parallel_efd"
+	}
 	execOpts.processRetryMetadataSnapshot = snapshotProcessRetryExecutionMetadata(execOpts.executionMetadata)
 	if execOpts.processRetryMetadataSnapshot == nil {
 		log.Debug("runTestWithRetry: process retry backend ineligible: missing_metadata_snapshot")
@@ -2200,12 +2208,19 @@ func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterat
 	execMeta.identity = execOpts.options.processRetryIdentity
 	execMeta.isARetry = true
 	execMeta.hasAdditionalFeatureWrapper = true
+	retryReason, hasRetryReason := processRetryReasonForExecution(execMeta)
+	if !hasRetryReason {
+		deleteTestMetadata(ptrToLocalT)
+		execOpts.executionIndex = previousIndex
+		execOpts.mutex.Unlock()
+		return processRetryIterationFallback
+	}
 
 	parentDeadline, parentDeadlineOK := execOpts.options.t.Deadline()
 	childCfg := processRetryChildConfig{
 		TestName:    execOpts.options.processRetryIdentity.FullName,
 		Attempt:     currentIndex,
-		RetryReason: constants.AutoTestRetriesRetryReason,
+		RetryReason: retryReason,
 	}
 	ctx := context.Background()
 	if execOpts.options.processRetryContext != nil {
@@ -2595,6 +2610,22 @@ func processRetryCurrentCPU() int {
 	return current
 }
 
+func processRetryReasonForExecution(execMeta *testExecutionMetadata) (string, bool) {
+	if execMeta == nil {
+		return "", false
+	}
+	if execMeta.isAttemptToFix {
+		return constants.AttemptToFixRetryReason, true
+	}
+	if isAnEfdExecution(execMeta) {
+		return constants.EarlyFlakeDetectionRetryReason, true
+	}
+	if execMeta.isFlakyTestRetriesEnabled {
+		return constants.AutoTestRetriesRetryReason, true
+	}
+	return "", false
+}
+
 func processRetryEligible(execMeta *testExecutionMetadata, options *runTestWithRetryOptions) (bool, string) {
 	mode := retryExecutionModeFromEnv()
 	if options != nil && options.processRetryModeSet {
@@ -2651,19 +2682,17 @@ func processRetryEligible(execMeta *testExecutionMetadata, options *runTestWithR
 	if options.preProcessRetryMetaAdjust == nil {
 		return false, "missing_process_metadata_callback"
 	}
-	if !execMeta.isFlakyTestRetriesEnabled {
+	retryReason, hasRetryReason := processRetryReasonForExecution(execMeta)
+	if !hasRetryReason {
 		return false, "flaky_retry_disabled"
 	}
-	if isAnEfdExecution(execMeta) {
-		return false, "efd"
+	if retryReason == constants.AttemptToFixRetryReason && !execMeta.shouldOrchestrateAttemptToFix {
+		return false, "attempt_to_fix_not_owned"
 	}
-	if execMeta.isAttemptToFix {
-		return false, "attempt_to_fix"
-	}
-	if execMeta.isQuarantined {
+	if retryReason != constants.AttemptToFixRetryReason && execMeta.isQuarantined {
 		return false, "quarantined"
 	}
-	if execMeta.isDisabled {
+	if retryReason != constants.AttemptToFixRetryReason && execMeta.isDisabled {
 		return false, "disabled"
 	}
 	coverageGuardSet := options.coverageActive != nil
@@ -2695,7 +2724,7 @@ func processRetryEligible(execMeta *testExecutionMetadata, options *runTestWithR
 	if fuzzActive {
 		return false, "fuzz_active"
 	}
-	if execMeta.isEfdInParallel {
+	if retryReason == constants.EarlyFlakeDetectionRetryReason && execMeta.isEfdInParallel {
 		return false, "parallel_efd"
 	}
 	return true, ""

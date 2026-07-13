@@ -301,13 +301,14 @@ func TestProcessRetryEligible(t *testing.T) {
 			wantCause: "subtest",
 		},
 		{
-			name: "actual EFD execution is ineligible",
+			name: "sequential EFD execution is eligible",
 			mode: "process",
 			editMeta: func(meta *testExecutionMetadata) {
+				meta.isFlakyTestRetriesEnabled = false
 				meta.isEarlyFlakeDetectionEnabled = true
 				meta.isANewTest = true
 			},
-			wantCause: "efd",
+			wantOK: true,
 		},
 		{
 			name: "coverage is ineligible",
@@ -394,12 +395,57 @@ func TestProcessRetryEligible(t *testing.T) {
 			wantCause: "flaky_retry_disabled",
 		},
 		{
-			name: "attempt to fix is ineligible",
+			name: "owned attempt to fix is eligible",
+			mode: "process",
+			editMeta: func(meta *testExecutionMetadata) {
+				meta.isFlakyTestRetriesEnabled = false
+				meta.isAttemptToFix = true
+				meta.shouldOrchestrateAttemptToFix = true
+			},
+			wantOK: true,
+		},
+		{
+			name: "unowned attempt to fix is ineligible",
+			mode: "process",
+			editMeta: func(meta *testExecutionMetadata) {
+				meta.isFlakyTestRetriesEnabled = false
+				meta.isAttemptToFix = true
+			},
+			wantCause: "attempt_to_fix_not_owned",
+		},
+		{
+			name: "quarantined attempt to fix is eligible",
+			mode: "process",
+			editMeta: func(meta *testExecutionMetadata) {
+				meta.isFlakyTestRetriesEnabled = false
+				meta.isAttemptToFix = true
+				meta.shouldOrchestrateAttemptToFix = true
+				meta.isQuarantined = true
+			},
+			wantOK: true,
+		},
+		{
+			name: "disabled attempt to fix is eligible",
+			mode: "process",
+			editMeta: func(meta *testExecutionMetadata) {
+				meta.isFlakyTestRetriesEnabled = false
+				meta.isAttemptToFix = true
+				meta.shouldOrchestrateAttemptToFix = true
+				meta.isDisabled = true
+			},
+			wantOK: true,
+		},
+		{
+			name: "attempt to fix takes precedence over parallel EFD",
 			mode: "process",
 			editMeta: func(meta *testExecutionMetadata) {
 				meta.isAttemptToFix = true
+				meta.shouldOrchestrateAttemptToFix = true
+				meta.isEarlyFlakeDetectionEnabled = true
+				meta.isANewTest = true
+				meta.isEfdInParallel = true
 			},
-			wantCause: "attempt_to_fix",
+			wantOK: true,
 		},
 		{
 			name: "quarantined test is ineligible",
@@ -437,6 +483,9 @@ func TestProcessRetryEligible(t *testing.T) {
 			name: "parallel EFD is ineligible",
 			mode: "process",
 			editMeta: func(meta *testExecutionMetadata) {
+				meta.isFlakyTestRetriesEnabled = false
+				meta.isEarlyFlakeDetectionEnabled = true
+				meta.isANewTest = true
 				meta.isEfdInParallel = true
 			},
 			wantCause: "parallel_efd",
@@ -481,6 +530,53 @@ func TestProcessRetryEligible(t *testing.T) {
 			ok, reason := processRetryEligible(execMeta, options)
 			require.Equal(t, tt.wantOK, ok)
 			require.Equal(t, tt.wantCause, reason)
+		})
+	}
+}
+
+func TestProcessRetryReasonForExecution(t *testing.T) {
+	tests := []struct {
+		name       string
+		meta       *testExecutionMetadata
+		wantReason string
+		wantOK     bool
+	}{
+		{name: "missing metadata"},
+		{name: "unsupported execution", meta: &testExecutionMetadata{}},
+		{
+			name:       "auto test retry",
+			meta:       &testExecutionMetadata{isFlakyTestRetriesEnabled: true},
+			wantReason: constants.AutoTestRetriesRetryReason,
+			wantOK:     true,
+		},
+		{
+			name: "early flake detection takes precedence over auto test retry",
+			meta: &testExecutionMetadata{
+				isFlakyTestRetriesEnabled:    true,
+				isEarlyFlakeDetectionEnabled: true,
+				isANewTest:                   true,
+			},
+			wantReason: constants.EarlyFlakeDetectionRetryReason,
+			wantOK:     true,
+		},
+		{
+			name: "attempt to fix takes precedence over other retry families",
+			meta: &testExecutionMetadata{
+				isFlakyTestRetriesEnabled:    true,
+				isEarlyFlakeDetectionEnabled: true,
+				isANewTest:                   true,
+				isAttemptToFix:               true,
+			},
+			wantReason: constants.AttemptToFixRetryReason,
+			wantOK:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotReason, gotOK := processRetryReasonForExecution(tt.meta)
+			require.Equal(t, tt.wantReason, gotReason)
+			require.Equal(t, tt.wantOK, gotOK)
 		})
 	}
 }
@@ -3859,6 +3955,202 @@ func TestRunTestWithRetryUsesProcessBackendForRetries(t *testing.T) {
 	require.Equal(t, 1, module.closeCount)
 	require.Zero(t, suitesCounters[identity.SuiteName])
 	require.Zero(t, modulesCounters[identity.ModuleName])
+}
+
+func TestRunTestWithRetryUsesProcessBackendForEFDAndAttemptToFix(t *testing.T) {
+	tests := []struct {
+		name            string
+		retryReason     string
+		retryCount      int64
+		childStatuses   []processRetryStatus
+		isNewEFD        bool
+		isModifiedEFD   bool
+		wantFinalStatus string
+	}{
+		{
+			name:            "early flake detection stops after clean skip",
+			retryReason:     constants.EarlyFlakeDetectionRetryReason,
+			retryCount:      2,
+			childStatuses:   []processRetryStatus{processRetryStatusSkip},
+			isNewEFD:        true,
+			wantFinalStatus: constants.TestStatusFail,
+		},
+		{
+			name:            "early flake detection runs every configured retry after pass",
+			retryReason:     constants.EarlyFlakeDetectionRetryReason,
+			retryCount:      2,
+			childStatuses:   []processRetryStatus{processRetryStatusPass, processRetryStatusPass},
+			isModifiedEFD:   true,
+			wantFinalStatus: constants.TestStatusPass,
+		},
+		{
+			name:            "attempt to fix runs every configured retry",
+			retryReason:     constants.AttemptToFixRetryReason,
+			retryCount:      3,
+			childStatuses:   []processRetryStatus{processRetryStatusPass, processRetryStatusPass},
+			wantFinalStatus: constants.TestStatusFail,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restoreEnv := setEnvForTesting(t, constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+			defer restoreEnv()
+			oldLimiter := globalProcessRetryLimiter.Swap(&processRetryLimiter{})
+			defer globalProcessRetryLimiter.Store(oldLimiter)
+			restoreSupport := setProcessRetrySupportHooksForTesting(t, processRetrySupportHooks{
+				childCleanupSupported:      func() bool { return true },
+				testingMWorkloadsSupported: func() bool { return true },
+			})
+			defer restoreSupport()
+			restoreBudget := setProcessRetryBudgetForTesting(5, 7)
+			defer restoreBudget()
+
+			recorder, restoreSession := setProcessRetryRecordingSessionForTesting(t)
+			defer restoreSession()
+			var childCalls atomic.Int32
+			var childConfigs []processRetryChildConfig
+			hooks := processRetrySuccessfulAttemptHooks(t, func(*exec.Cmd) error { return nil })
+			hooks.startAndWait = func(cmd *exec.Cmd) (<-chan error, error) {
+				cfg := processRetryChildConfigFromCommandEnv(t, cmd.Env)
+				call := int(childCalls.Add(1))
+				require.LessOrEqual(t, call, len(tt.childStatuses))
+				childConfigs = append(childConfigs, cfg)
+				status := tt.childStatuses[call-1]
+				now := time.Now()
+				writeProcessRetryResultForTesting(t, cfg.ResultPath, processRetryResult{
+					Version:        1,
+					TestName:       cfg.TestName,
+					Attempt:        cfg.Attempt,
+					RetryReason:    cfg.RetryReason,
+					Status:         status,
+					Skipped:        status == processRetryStatusSkip,
+					StartUnixNano:  now.UnixNano(),
+					FinishUnixNano: now.Add(time.Millisecond).UnixNano(),
+					DurationNanos:  int64(time.Millisecond),
+				})
+				closeProcessRetryCommandWriters(cmd)
+				waitCh := make(chan error, 1)
+				waitCh <- nil
+				return waitCh, nil
+			}
+			resetProcessRetryRunnerHooksForTesting(t, hooks)
+
+			identity := newTestIdentity("module", "suite", "TestProcessRetry"+strings.ReplaceAll(tt.name, " ", ""))
+			createTestMetadata(t, nil)
+			defer deleteTestMetadata(t)
+			var bodyCalls atomic.Int32
+			var anyExecutionPassed atomic.Bool
+			var anyExecutionFailed atomic.Bool
+			var allRetriesFailed atomic.Bool
+			allRetriesFailed.Store(true)
+			options := processRetryRunOptionsForTesting(t, identity, func(localT *testing.T) {
+				bodyCalls.Add(1)
+				localT.Fail()
+			})
+			adjust := func(meta *testExecutionMetadata, _ int) {
+				meta.identity = identity
+				meta.anyExecutionPassed = anyExecutionPassed.Load()
+				meta.anyExecutionFailed = anyExecutionFailed.Load()
+				meta.allRetriesFailed = allRetriesFailed.Load()
+				switch tt.retryReason {
+				case constants.AttemptToFixRetryReason:
+					meta.isAttemptToFix = true
+					meta.hasExplicitAttemptToFix = true
+					meta.shouldOrchestrateAttemptToFix = true
+				case constants.EarlyFlakeDetectionRetryReason:
+					meta.isEarlyFlakeDetectionEnabled = true
+					meta.isANewTest = tt.isNewEFD
+					meta.isAModifiedTest = tt.isModifiedEFD
+				}
+			}
+			options.preExecMetaAdjust = adjust
+			options.preProcessRetryMetaAdjust = adjust
+			options.preIsLastRetry = func(_ *testExecutionMetadata, _ int, remainingRetries int64) bool {
+				return remainingRetries == 1
+			}
+			options.postAdjustRetryCount = func(*testExecutionMetadata, time.Duration) int64 {
+				return tt.retryCount
+			}
+			options.postPerExecution = func(localT *testing.T, _ *testExecutionMetadata, executionIndex int, _ time.Duration) {
+				if localT.Failed() {
+					anyExecutionFailed.Store(true)
+				}
+				if !localT.Failed() && !localT.Skipped() {
+					anyExecutionPassed.Store(true)
+				}
+				if executionIndex > 0 && !localT.Failed() {
+					allRetriesFailed.Store(false)
+				}
+			}
+			options.postShouldRetry = func(localT *testing.T, _ *testExecutionMetadata, _ int, remainingRetries int64) bool {
+				if tt.retryReason == constants.AttemptToFixRetryReason {
+					return remainingRetries > 0
+				}
+				return !(localT.Skipped() && !localT.Failed()) && remainingRetries >= 0
+			}
+
+			runTestWithRetry(options)
+
+			require.Equal(t, int32(1), bodyCalls.Load())
+			require.Equal(t, int32(len(tt.childStatuses)), childCalls.Load())
+			require.Len(t, childConfigs, len(tt.childStatuses))
+			require.Len(t, recorder.tests, len(tt.childStatuses))
+			require.Equal(t, int64(7), atomic.LoadInt64(&integrations.GetFlakyRetriesSettings().RemainingTotalRetryCount))
+			for i, cfg := range childConfigs {
+				require.Equal(t, tt.retryReason, cfg.RetryReason)
+				require.Equal(t, i+1, cfg.Attempt)
+				require.Equal(t, tt.retryReason, recorder.tests[i].tags[constants.TestRetryReason])
+				require.Equal(t, "process", recorder.tests[i].tags[constants.TestRetryExecutionMode])
+			}
+			require.Equal(t, tt.wantFinalStatus, recorder.tests[len(recorder.tests)-1].tags[constants.TestFinalStatus])
+		})
+	}
+}
+
+func TestRunTestWithRetryProcessModePreservesParallelEFD(t *testing.T) {
+	restoreEnv := setEnvForTesting(t, constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
+	defer restoreEnv()
+	oldLimiter := globalProcessRetryLimiter.Swap(&processRetryLimiter{})
+	defer globalProcessRetryLimiter.Store(oldLimiter)
+	restoreSupport := setProcessRetrySupportHooksForTesting(t, processRetrySupportHooks{
+		childCleanupSupported:      func() bool { return true },
+		testingMWorkloadsSupported: func() bool { return true },
+	})
+	defer restoreSupport()
+
+	var startCalls atomic.Int32
+	hooks := processRetrySuccessfulAttemptHooks(t, func(*exec.Cmd) error { return nil })
+	hooks.startAndWait = func(*exec.Cmd) (<-chan error, error) {
+		startCalls.Add(1)
+		return nil, errors.New("parallel EFD must stay in-process")
+	}
+	resetProcessRetryRunnerHooksForTesting(t, hooks)
+
+	identity := newTestIdentity("module", "suite", "TestProcessRetryParallelEFD")
+	createTestMetadata(t, nil)
+	defer deleteTestMetadata(t)
+	var bodyCalls atomic.Int32
+	options := processRetryRunOptionsForTesting(t, identity, func(localT *testing.T) {
+		if bodyCalls.Add(1) == 1 {
+			localT.Fail()
+		}
+	})
+	adjust := func(meta *testExecutionMetadata, _ int) {
+		meta.identity = identity
+		meta.isFlakyTestRetriesEnabled = false
+		meta.isEarlyFlakeDetectionEnabled = true
+		meta.isANewTest = true
+	}
+	options.preExecMetaAdjust = adjust
+	options.preProcessRetryMetaAdjust = adjust
+	options.parallelEFDAllowed = true
+	options.postAdjustRetryCount = func(*testExecutionMetadata, time.Duration) int64 { return 2 }
+
+	runTestWithRetry(options)
+
+	require.Equal(t, int32(3), bodyCalls.Load())
+	require.Zero(t, startCalls.Load())
 }
 
 func TestRunTestWithRetryRuntimeGoexitRetriesInProcess(t *testing.T) {
