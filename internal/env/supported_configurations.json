@@ -340,7 +340,7 @@
     ],
     "DD_CRASHTRACKING_ENABLED": [
       {
-        "implementation": "C",
+        "implementation": "A",
         "type": "boolean",
         "default": "true"
       }
