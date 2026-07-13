@@ -362,7 +362,9 @@ func firstThread(threads []Thread) *Thread {
 // decimal. Unparseable input yields 0.
 func parseIntFlexible(s string) int {
 	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		v, _ := strconv.ParseInt(s[2:], 16, 64)
+		// Use bitSize 0 so ParseInt bounds the result to the native int width,
+		// making the int(v) conversion safe on both 32- and 64-bit platforms.
+		v, _ := strconv.ParseInt(s[2:], 16, 0)
 		return int(v)
 	}
 	v, _ := strconv.Atoi(s)
