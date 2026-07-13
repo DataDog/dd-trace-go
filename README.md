@@ -19,6 +19,8 @@ The package [`github.com/DataDog/dd-trace-go/v2/profiler`](https://pkg.go.dev/gi
 
 - [Datadog Application Security Management (ASM)](https://docs.datadoghq.com/security_platform/application_security/) provides in-app monitoring and protection against application-level attacks that aim to exploit code-level vulnerabilities, such as a Server-Side-Request-Forgery (SSRF), a SQL injection (SQLi), or Reflected Cross-Site-Scripting (XSS). ASM identifies services exposed to application attacks and leverages in-app security rules to detect and protect against threats in your application environment. ASM is not a standalone Go package and is transparently integrated into the APM tracer. You can simply enable it with [`DD_APPSEC_ENABLED=true`](https://docs.datadoghq.com/security/application_security/enabling/go).
 
+- [Datadog Go Crashtracker](https://docs.datadoghq.com/error_tracking/): Capture and report Go application crashes — unhandled panics, runtime fatals, and signal-triggered crashes — to Datadog Error Tracking. The package [`github.com/DataDog/dd-trace-go/v2/crashtracker`](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/crashtracker) uses a monitor-process pattern via `runtime/debug.SetCrashOutput` (Go 1.23+) to capture crash output and upload structured reports. Enable with `DD_CRASHTRACKING_ENABLED=true` or call `crashtracker.Start()` as the first line of `main()`.
+
 ### Installing
 
 This module contains many packages, but most users should probably install the two packages below:

@@ -5,9 +5,25 @@
 
 package crashtracker
 
-import "sync"
+import (
+	"os"
+	"runtime/debug"
+	"sync"
+	"sync/atomic"
 
-var startOnce sync.Once
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
+)
+
+var (
+	startOnce sync.Once
+
+	// activePipe holds the write end of the crash pipe registered with
+	// runtime/debug.SetCrashOutput. It is set when the monitor is spawned and
+	// released by Stop.
+	activePipe atomic.Pointer[os.File]
+)
 
 // Start initialises the crashtracker. It must be called as early as possible in main().
 //
@@ -30,7 +46,12 @@ func Start(opts ...Option) error {
 // Stop disables crash output capture. It is a best-effort call and may be deferred
 // from main() to ensure the monitor is released on clean exit.
 func Stop() {
-	// WS-A implements this
+	// Best-effort cleanup: unregister the crash output. Any error here is not
+	// actionable because the process is on its way down.
+	_ = debug.SetCrashOutput(nil, debug.CrashOptions{}) //nolint:errcheck
+	if f := activePipe.Swap(nil); f != nil {
+		_ = f.Close()
+	}
 }
 
 func start(opts ...Option) error {
@@ -51,6 +72,13 @@ func start(opts ...Option) error {
 }
 
 func defaultConfig() *config {
-	// WS-A fills this in properly; placeholder to compile
-	return &config{enabled: true}
+	enabled, _, _ := stableconfig.Bool("DD_CRASHTRACKING_ENABLED", true)
+	return &config{
+		enabled: enabled,
+		service: globalconfig.ServiceName(),
+		env:     env.Get("DD_ENV"),
+		version: env.Get("DD_VERSION"),
+		site:    env.Get("DD_SITE"),
+		apiKey:  env.Get("DD_API_KEY"),
+	}
 }

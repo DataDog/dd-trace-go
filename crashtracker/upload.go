@@ -5,7 +5,95 @@
 
 package crashtracker
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	internal "github.com/DataDog/dd-trace-go/v2/internal"
+)
+
+const (
+	// TODO(crashtracker): confirm exact EVP proxy path with Error Tracking team.
+	// Using the pattern established by LLMObs (internal/llmobs/transport/transport.go).
+	agentEVPPath      = "/evp_proxy/v2/api/v2/errors"
+	agentEVPSubdomain = "errorsintake.agent"
+
+	// TODO(crashtracker): confirm agentless intake URL with Error Tracking team.
+	agentlessURLTemplate = "https://errorsintake.agent.%s/api/v2/errors"
+	defaultSite          = "datadoghq.com"
+
+	uploadTimeout = 10 * time.Second
+)
+
 // uploadReport sends a crash report to the Error Tracking intake.
 func uploadReport(cfg *config, r *Report) error {
-	panic("not implemented") // WS-C implements this
+	body, err := json.Marshal(r)
+	if err != nil {
+		return fmt.Errorf("crashtracker: marshal report: %w", err)
+	}
+
+	req, err := buildRequest(cfg, body)
+	if err != nil {
+		return fmt.Errorf("crashtracker: build request: %w", err)
+	}
+
+	client := cfg.httpClient
+	if client == nil {
+		client = internal.DefaultHTTPClient(uploadTimeout, false)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("crashtracker: send report: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("crashtracker: intake returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func buildRequest(cfg *config, body []byte) (*http.Request, error) {
+	var (
+		targetURL string
+		useKey    bool
+	)
+
+	if cfg.apiKey != "" {
+		// Agentless path.
+		// cfg.agentURL acts as a base URL override for testing; in production it is empty.
+		base := cfg.agentURL
+		if base == "" {
+			site := cfg.site
+			if site == "" {
+				site = defaultSite
+			}
+			base = fmt.Sprintf(agentlessURLTemplate, site)
+		}
+		targetURL = base
+		useKey = true
+	} else {
+		// Agent EVP proxy path.
+		base := cfg.agentURL
+		if base == "" {
+			base = internal.AgentURLFromEnv().String()
+		}
+		targetURL = base + agentEVPPath
+	}
+
+	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build HTTP request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if useKey {
+		req.Header.Set("DD-API-KEY", cfg.apiKey)
+	} else {
+		req.Header.Set("X-Datadog-EVP-Subdomain", agentEVPSubdomain)
+	}
+	return req, nil
 }
