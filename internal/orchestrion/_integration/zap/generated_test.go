@@ -25,6 +25,10 @@ func TestGoroutine(t *testing.T) {
 	harness.Run(t, new(TestCaseGoroutine))
 }
 
+func TestLogMethod(t *testing.T) {
+	harness.Run(t, new(TestCaseLogMethod))
+}
+
 func TestNewLogger(t *testing.T) {
 	harness.Run(t, new(TestCaseNewLogger))
 }
@@ -39,6 +43,10 @@ func TestNoContext(t *testing.T) {
 
 func TestRequestContext(t *testing.T) {
 	harness.Run(t, new(TestCaseRequestContext))
+}
+
+func TestSugaredLogMethod(t *testing.T) {
+	harness.Run(t, new(TestCaseSugaredLogMethod))
 }
 
 func TestSugaredLogger(t *testing.T) {

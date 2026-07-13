@@ -9,7 +9,7 @@ meta:
   description: Structured, leveled logging for Go.
 
 aspects:
-  - id: Logger.Debug|Info|Warn|Error|DPanic|Panic|Fatal
+  - id: Logger.Debug|Info|Warn|Error|DPanic|Panic|Fatal|Log
     join-point:
       all-of:
         - not:
@@ -43,6 +43,10 @@ aspects:
                 receiver: "go.uber.org/zap.Logger"
                 name: Fatal
 
+            - method-call:
+                receiver: "go.uber.org/zap.Logger"
+                name: Log
+
     advice:
       - wrap-expression:
           imports:
@@ -62,7 +66,7 @@ aspects:
               {{ . }}
             {{- end -}}
 
-  - id: SugaredLogger.Debug|Info|Warn|Error|DPanic|Panic|Fatal
+  - id: SugaredLogger.Debug|Info|Warn|Error|DPanic|Panic|Fatal|Log|Logf|Logw|Logln
     join-point:
       all-of:
         - not:
@@ -179,6 +183,22 @@ aspects:
             - method-call:
                 receiver: "go.uber.org/zap.SugaredLogger"
                 name: Fatalln
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Log
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Logf
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Logw
+
+            - method-call:
+                receiver: "go.uber.org/zap.SugaredLogger"
+                name: Logln
 
     advice:
       - wrap-expression:
