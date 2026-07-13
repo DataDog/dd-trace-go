@@ -13,58 +13,21 @@
 // the crash dump to that pipe and the monitor child parses and uploads a structured
 // report to the Error Tracking intake.
 //
-// Requires runtime/debug.SetCrashOutput, added in Go 1.23; see this repository's
-// go.mod for the minimum Go version this module actually builds with.
+// Requires Go 1.23 or later (SetCrashOutput was added in Go 1.23).
 //
 // # Lifecycle
 //
-// Call Start as early as possible in main, before any goroutines are created:
+// Call Start as early as possible in main, before any goroutines are created, and
+// defer Stop to ensure the monitor is released on clean exit:
 //
 //	func main() {
 //	    if err := crashtracker.Start(); err != nil {
 //	        log.Printf("crashtracker.Start: %v", err)
 //	    }
+//	    defer crashtracker.Stop()
 //
 //	    // ... application code
 //	}
 //
-// There is no corresponding Stop. Process exit alone closes the crash pipe,
-// which is all the cleanup the monitor needs: it reads EOF and exits without
-// filing a report. Do not add a deferred unregister step — deferred functions
-// run during panic unwinding, before the runtime writes the crash dump, so a
-// defer here would disable reporting for the most common crash: an
-// unrecovered panic.
-//
-// Start is idempotent: subsequent calls after the first are no-ops. With
-// orchestrion enabled, the crashtracker aspect injects Start as the first
-// statement of main using DD_* environment configuration. A later programmatic
-// Start call with options in main is therefore a no-op; build without the
-// crashtracker aspect when programmatic options must control startup.
-//
-// # Configuration
-//
-// The monitor process inherits all environment variables except GOMEMLIMIT and
-// GOGC (the monitor sets its own memory ceiling instead of inheriting the
-// application's). Options passed to Start (WithService, WithEnv, WithVersion,
-// WithAPIKey, WithAgentURL, WithSite) are resolved in the application process
-// and then forwarded to the monitor child across the process boundary, so they
-// take effect end to end. WithHTTPClient is the one exception: an *http.Client
-// cannot cross a process boundary, so it only affects direct calls to the
-// package's internal upload path and has no effect via Start.
-//
-// # Goroutine stack completeness
-//
-// By default Go uses GOTRACEBACK=single, which records only the crashing
-// goroutine in the crash dump. Set GOTRACEBACK=all in the process environment
-// to include all goroutines in the crash report's error.threads field.
-//
-// # Init order note
-//
-// The monitor child is intercepted from package init, which is the earliest hook
-// available to a pure Go implementation, but Go does not guarantee crashtracker's
-// init runs before every other imported package init. Some init side effects in
-// packages imported by main can still execute in the monitor child before the
-// monitor role exits. Keep expensive or externally visible init work out of
-// packages imported by main when crashtracking is enabled, and call Start as the
-// first statement of main for manual integrations.
+// Start is idempotent: subsequent calls after the first are no-ops.
 package crashtracker
