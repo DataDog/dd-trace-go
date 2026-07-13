@@ -9,7 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -25,7 +25,7 @@ var (
 	globalClientRecorder = internal.NewRecorder[Client]()
 
 	// metricsHandleSwappablePointers contains all the swappableMetricHandle, used to replay actions done before the actual MetricHandle is set
-	metricsHandleSwappablePointers = xsync.NewMapOf[metricKey, *swappableMetricHandle](xsync.WithPresize(knownmetrics.Size()))
+	metricsHandleSwappablePointers = xsync.NewMap[metricKey, *swappableMetricHandle](xsync.WithPresize(knownmetrics.Size()))
 
 	// startAppFlushWg tracks the goroutine launched by StartApp so StopApp can
 	// wait for it to finish before proceeding with the shutdown flush.
@@ -278,7 +278,7 @@ func globalClientNewMetric(namespace Namespace, kind transport.MetricType, name 
 	}
 
 	key := newMetricKey(namespace, kind, name, tags)
-	hotPtr, _ := metricsHandleSwappablePointers.LoadOrCompute(key, func() *swappableMetricHandle {
+	hotPtr, _ := metricsHandleSwappablePointers.LoadOrCompute(key, func() (*swappableMetricHandle, bool) {
 		maker := func(client Client) MetricHandle {
 			switch kind {
 			case transport.CountMetric:
@@ -300,7 +300,7 @@ func globalClientNewMetric(namespace Namespace, kind transport.MetricType, name 
 		globalClientCall(func(client Client) {
 			wrapper.swap(maker(client))
 		})
-		return wrapper
+		return wrapper, false
 	})
 	return hotPtr
 }
