@@ -28,9 +28,13 @@ type OperationContext map[string]string
 // Register registers a new [Package] instrumentation. Panics if called multiple
 // times for the same [Package].
 func Register(pkg Package, info PackageInfo) {
+	packagesMu.Lock()
+	defer packagesMu.Unlock()
+
 	if _, ok := packages[pkg]; ok {
 		panic("instrumentation package: " + pkg + " was already registered.")
 	}
+	info.external = true // Marker for external packages
 	packages[pkg] = info
 }
 
@@ -44,6 +48,9 @@ func RegisterAndLoad(pkg Package, info PackageInfo) *Instrumentation {
 
 // Load attempts to load the requested package instrumentation. It panics if the package has not been registered.
 func Load(pkg Package) *Instrumentation {
+	packagesMu.RLock()
+	defer packagesMu.RUnlock()
+
 	info, ok := packages[pkg]
 	if !ok {
 		panic("instrumentation package: " + pkg + " was not found. If this is an external package, you must " +
