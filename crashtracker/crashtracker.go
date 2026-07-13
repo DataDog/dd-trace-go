@@ -25,6 +25,17 @@ var (
 	activePipe atomic.Pointer[os.File]
 )
 
+// init intercepts the monitor child process as early as possible — before any
+// user package init() functions execute. This prevents app-level side-effects
+// (DB connections, gRPC dials, signal handlers) from running in the lightweight
+// monitor. When the crashtracker package is imported (e.g. via orchestrion's
+// injected import), this init fires before the user's package inits.
+func init() {
+	if isMonitorProcess() {
+		runMonitor(defaultConfig()) // never returns; calls os.Exit
+	}
+}
+
 // Start initialises the crashtracker. It must be called as early as possible in main().
 //
 // In the monitor child process (identified by the DD_CRASHTRACKING_IS_MONITOR_PROCESS

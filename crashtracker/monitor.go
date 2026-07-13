@@ -41,7 +41,11 @@ func runMonitor(cfg *config) {
 	}
 
 	report := parseCrashDump(data)
-	_ = uploadReport(cfg, report) // best-effort; the monitor exits regardless
+	if err := uploadReport(cfg, report); err != nil {
+		// Emit one line to stderr so operators know a crash report was attempted
+		// but failed — without this, the failure is invisible.
+		fmt.Fprintf(os.Stderr, "datadog/crashtracker: upload failed: %v\n", err)
+	}
 	os.Exit(0)
 }
 
@@ -99,6 +103,10 @@ func spawnMonitor(cfg *config) error {
 		_ = pipeFile.Close()
 		return fmt.Errorf("crashtracker: start monitor process: %w", err)
 	}
+
+	// Reap the child when it exits to release OS resources (fds, zombie on Linux).
+	// The result is discarded: the monitor exits 0 on both clean and crash paths.
+	go func() { _ = cmd.Wait() }()
 
 	// SetCrashOutput duplicated the fd internally, so this write end can be
 	// released. Retain a reference for Stop to close it.
