@@ -894,8 +894,8 @@ func TestTracerBaggagePropagation(t *testing.T) {
 }
 
 func TestStartSpanOrigin(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
-	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer, err := newTracer()
@@ -928,8 +928,8 @@ func TestStartSpanOrigin(t *testing.T) {
 }
 
 func TestPropagationDefaults(t *testing.T) {
-	t.Setenv(headerPropagationStyleExtract, "datadog")
-	t.Setenv(headerPropagationStyleInject, "datadog")
+	t.Setenv(envPropagationStyleExtract, "datadog")
+	t.Setenv(envPropagationStyleInject, "datadog")
 	assert := assert.New(t)
 
 	tracer, err := newTracer()
@@ -1021,7 +1021,7 @@ func TestPropagationDefaultIncludesBaggage(t *testing.T) {
 }
 
 func TestPropagationStyleOnlyBaggage(t *testing.T) {
-	t.Setenv(headerPropagationStyle, "baggage")
+	t.Setenv(envPropagationStyle, "baggage")
 	assert := assert.New(t)
 
 	tracer, err := newTracer()

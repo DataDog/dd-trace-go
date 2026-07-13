@@ -70,7 +70,7 @@ func (c TextMapCarrier) ForeachKey(handler func(key, val string) error) error {
 }
 
 const (
-	// headerPropagationBehaviorExtract specifies how to handle incoming trace
+	// envPropagationBehaviorExtract specifies how to handle incoming trace
 	// context. Allowed values:
 	// - "continue" (default): Continue the trace from incoming headers.
 	//   Baggage is propagated.
@@ -79,16 +79,16 @@ const (
 	//   Baggage is propagated.
 	// - "ignore": Start a new trace with a new trace ID and sampling
 	//   decision. No span links are created. Baggage is dropped.
-	headerPropagationBehaviorExtract = "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT"
+	envPropagationBehaviorExtract = "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT"
 
 	propagationBehaviorExtractContinue = "continue"
 	propagationBehaviorExtractRestart  = "restart"
 	propagationBehaviorExtractIgnore   = "ignore"
 
-	headerPropagationExtractFirst = "DD_TRACE_PROPAGATION_EXTRACT_FIRST"
-	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
-	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
-	headerPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
+	envPropagationExtractFirst = "DD_TRACE_PROPAGATION_EXTRACT_FIRST"
+	envPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
+	envPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
+	envPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
 )
 
 const (
@@ -149,17 +149,28 @@ type PropagatorConfig struct {
 	// BaggageHeader specifies the map key that will be used to store the baggage key-value pairs.
 	// It defaults to DefaultBaggageHeader.
 	BaggageHeader string
+
+	// InjectStyle specifies the propagation style(s) used for injection,
+	// as a comma-separated list (e.g. "datadog,tracecontext").
+	InjectStyle string
+
+	// ExtractStyle specifies the propagation style(s) used for extraction,
+	// as a comma-separated list (e.g. "datadog,tracecontext").
+	ExtractStyle string
+
+	// BehaviorExtract controls what happens when an incoming trace context is
+	// found: "continue" (default), "restart", or "ignore".
+	BehaviorExtract string
+
+	// ExtractFirst, when true, stops extraction after the first successful
+	// extractor rather than trying all of them.
+	// A nil pointer means the value is unset.
+	ExtractFirst *bool
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
 // To use the defaults, nil may be provided in place of the config.
-//
-// The inject and extract propagators are determined using environment variables
-// with the following order of precedence:
-//  1. DD_TRACE_PROPAGATION_STYLE_INJECT
-//  2. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
-//  3. If none of the above, use default values
 func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
@@ -180,26 +191,42 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cfg.BaggageHeader = DefaultBaggageHeader
 	}
 	cp := new(chainedPropagator)
-	cp.onlyExtractFirst = internal.BoolEnv(headerPropagationExtractFirst, false)
-	cp.propagationBehaviorExtract = env.Get(headerPropagationBehaviorExtract)
-	switch cp.propagationBehaviorExtract {
+	// For each propagation setting, the PropagatorConfig field takes precedence
+	// over its corresponding DD_TRACE_PROPAGATION_* environment variable.
+	// When NewPropagator is called directly (not via tracer.Start), these fields
+	// are typically zero and the environment variable is used. When called by the
+	// tracer, they are pre-populated from the tracer's configuration.
+	if cfg.ExtractFirst != nil {
+		cp.onlyExtractFirst = *cfg.ExtractFirst
+	} else {
+		cp.onlyExtractFirst = internal.BoolEnv(envPropagationExtractFirst, false)
+	}
+	if cfg.BehaviorExtract == "" {
+		cfg.BehaviorExtract = env.Get(envPropagationBehaviorExtract)
+	}
+	switch cfg.BehaviorExtract {
 	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
 		// valid
 	default:
-		if cp.propagationBehaviorExtract != "" {
-			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cp.propagationBehaviorExtract)
+		if cfg.BehaviorExtract != "" {
+			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cfg.BehaviorExtract)
 		}
-		cp.propagationBehaviorExtract = propagationBehaviorExtractContinue
+		cfg.BehaviorExtract = propagationBehaviorExtractContinue
 	}
+	cp.propagationBehaviorExtract = cfg.BehaviorExtract
 	if len(propagators) > 0 {
 		cp.injectors = propagators
 		cp.extractors = propagators
 		return cp
 	}
-	injectorsPs := env.Get(headerPropagationStyleInject)
-	extractorsPs := env.Get(headerPropagationStyleExtract)
-	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
-	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
+	if cfg.InjectStyle == "" {
+		cfg.InjectStyle = env.Get(envPropagationStyleInject)
+	}
+	if cfg.ExtractStyle == "" {
+		cfg.ExtractStyle = env.Get(envPropagationStyleExtract)
+	}
+	cp.injectors, cp.injectorNames = getPropagators(cfg, cfg.InjectStyle)
+	cp.extractors, cp.extractorsNames = getPropagators(cfg, cfg.ExtractStyle)
 	return cp
 }
 

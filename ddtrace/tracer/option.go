@@ -312,8 +312,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
 	}
 	if c.propagator == nil {
+		extractFirst := c.internalConfig.PropagationExtractFirst()
 		c.propagator = NewPropagator(&PropagatorConfig{
 			MaxTagsHeaderLen: c.internalConfig.MaxTagsHeaderLen(),
+			InjectStyle:      c.internalConfig.PropagationStyleInject(),
+			ExtractStyle:     c.internalConfig.PropagationStyleExtract(),
+			BehaviorExtract:  c.internalConfig.PropagationBehaviorExtract(),
+			ExtractFirst:     &extractFirst,
 		})
 	}
 	if c.logger != nil {
