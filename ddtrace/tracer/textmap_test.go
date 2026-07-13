@@ -2748,7 +2748,7 @@ func BenchmarkExtractW3C(b *testing.B) {
 // uppercase-hex traceparent, the only shape that exercises the allocation
 // path removed from parseTraceparent (see TestParseTraceparentCaseInsensitive).
 func BenchmarkExtractW3CUppercase(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	b.Setenv(envPropagationStyleExtract, "tracecontext")
 	propagator := NewPropagator(nil)
 	carrier := TextMapCarrier(map[string]string{
 		traceparentHeader: "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01",
