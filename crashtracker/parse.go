@@ -22,9 +22,12 @@ const stackFormat = "Datadog Crashtracker 1.0"
 const ddSource = "crashtracker"
 
 var (
-	// goroutineHeaderRe matches a goroutine block header, e.g.
-	// "goroutine 1 [running]:" capturing the id and the state.
-	goroutineHeaderRe = regexp.MustCompile(`^goroutine (\d+) \[([^\]]+)\]:$`)
+	// goroutineHeaderRe matches a goroutine block header in both standard and
+	// GOTRACEBACK=system format:
+	//   standard: "goroutine 1 [running]:"
+	//   system:   "goroutine 1 gp=0xc000... m=0 [running]:"
+	// The [^[]* skips any extra runtime fields between the id and the state bracket.
+	goroutineHeaderRe = regexp.MustCompile(`^goroutine (\d+)[^[]*\[([^\]]+)\]:$`)
 
 	// The following expressions extract fields from the runtime signal line,
 	// e.g. "[signal SIGSEGV: segmentation violation code=0x2 addr=0x0 pc=0x1000a79b4]".
@@ -38,6 +41,7 @@ var (
 // are included; unknown signals fall back to 0.
 var signalNumbers = map[string]int{
 	"SIGILL":  4,
+	"SIGTRAP": 5,
 	"SIGABRT": 6,
 	"SIGBUS":  7,
 	"SIGFPE":  8,
@@ -189,12 +193,12 @@ func isLocationLine(line string) bool {
 }
 
 // funcName extracts the function name from a stack function line by stripping
-// the argument list, e.g. "main.deref(...)" -> "main.deref",
-// "panic({0x1, 0x2})" -> "panic".
+// the argument list. Uses the LAST '(' to correctly handle pointer-receiver
+// methods, e.g. "main.(*Server).Serve(0x...)" -> "main.(*Server).Serve".
 func funcName(line string) string {
 	line = strings.TrimSpace(line)
-	if before, _, ok := strings.Cut(line, "("); ok {
-		return before
+	if i := strings.LastIndexByte(line, '('); i > 0 {
+		return line[:i]
 	}
 	return line
 }

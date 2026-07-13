@@ -18,6 +18,7 @@ import (
 
 var (
 	startOnce sync.Once
+	startErr  error // preserved from the first Start call; returned on subsequent calls
 
 	// activePipe holds the write end of the crash pipe registered with
 	// runtime/debug.SetCrashOutput. It is set when the monitor is spawned and
@@ -47,11 +48,8 @@ func init() {
 //
 // Start is idempotent: subsequent calls after the first are no-ops.
 func Start(opts ...Option) error {
-	var err error
-	startOnce.Do(func() {
-		err = start(opts...)
-	})
-	return err
+	startOnce.Do(func() { startErr = start(opts...) })
+	return startErr
 }
 
 // Stop disables crash output capture. It is a best-effort call and may be deferred

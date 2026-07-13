@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	internal "github.com/DataDog/dd-trace-go/v2/internal"
@@ -35,14 +36,9 @@ func uploadReport(cfg *config, r *Report) error {
 		return fmt.Errorf("crashtracker: marshal report: %w", err)
 	}
 
-	req, err := buildRequest(cfg, body)
+	req, client, err := buildRequestAndClient(cfg, body)
 	if err != nil {
 		return fmt.Errorf("crashtracker: build request: %w", err)
-	}
-
-	client := cfg.httpClient
-	if client == nil {
-		client = internal.DefaultHTTPClient(uploadTimeout, false)
 	}
 
 	resp, err := client.Do(req)
@@ -57,10 +53,14 @@ func uploadReport(cfg *config, r *Report) error {
 	return nil
 }
 
-func buildRequest(cfg *config, body []byte) (*http.Request, error) {
+// buildRequestAndClient builds an HTTP request and the matching client.
+// For Unix socket agent URLs it returns a UDS-aware client and rewrites the
+// request URL to http://localhost so net/http can POST through the socket.
+func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Client, error) {
 	var (
-		targetURL string
-		useKey    bool
+		targetURL  string
+		useKey     bool
+		socketPath string
 	)
 
 	if cfg.apiKey != "" {
@@ -82,12 +82,19 @@ func buildRequest(cfg *config, body []byte) (*http.Request, error) {
 		if base == "" {
 			base = internal.AgentURLFromEnv().String()
 		}
-		targetURL = base + agentEVPPath
+		// Detect Unix socket agent URLs: use http://localhost for the request
+		// and dial the socket directly via UDSClient.
+		if u, err := url.Parse(base); err == nil && u.Scheme == "unix" {
+			socketPath = u.Path
+			targetURL = "http://localhost" + agentEVPPath
+		} else {
+			targetURL = base + agentEVPPath
+		}
 	}
 
 	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("build HTTP request: %w", err)
+		return nil, nil, fmt.Errorf("build HTTP request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if useKey {
@@ -95,5 +102,15 @@ func buildRequest(cfg *config, body []byte) (*http.Request, error) {
 	} else {
 		req.Header.Set("X-Datadog-EVP-Subdomain", agentEVPSubdomain)
 	}
-	return req, nil
+
+	var client *http.Client
+	switch {
+	case cfg.httpClient != nil:
+		client = cfg.httpClient
+	case socketPath != "":
+		client = internal.UDSClient(socketPath, uploadTimeout)
+	default:
+		client = internal.DefaultHTTPClient(uploadTimeout, false)
+	}
+	return req, client, nil
 }
