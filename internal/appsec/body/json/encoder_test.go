@@ -15,8 +15,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +38,7 @@ func verifyTestCases(t *testing.T, pinner *runtime.Pinner, tc testCase, initiall
 	} {
 
 		t.Run(name, func(t *testing.T) {
-			encoder := encodableFunc([]byte(tc.jsonInput), initiallyTruncated)
+			encodable := encodableFunc([]byte(tc.jsonInput), initiallyTruncated)
 			config := newTestMaxJSONEncoderConfig(pinner)
 
 			if tc.encoderSetup != nil {
@@ -46,7 +46,9 @@ func verifyTestCases(t *testing.T, pinner *runtime.Pinner, tc testCase, initiall
 			}
 
 			wafObj := &libddwaf.WAFObject{}
-			truncations, err := encoder.Encode(config, wafObj, config.MaxObjectDepth)
+			enc := &libddwaf.Encoder{Config: config}
+			err := encodable.Encode(enc, wafObj, int(config.MaxObjectDepth))
+			truncations := enc.Truncations.AsMap()
 
 			// Check truncations
 			if len(tc.truncations) == 0 {
@@ -502,9 +504,11 @@ func TestJSONEncode_MalformedInput(t *testing.T) {
 			},
 			truncatedTestCase: testCase{
 				expectEncodingError: true,
+				truncations:         map[libddwaf.TruncationReason][]int{libddwaf.ObjectTooDeep: {1}},
 			},
 			notTruncatedTestCase: testCase{
 				expectEncodingError: true,
+				truncations:         map[libddwaf.TruncationReason][]int{libddwaf.ObjectTooDeep: {1}},
 			},
 		},
 		{
@@ -515,9 +519,11 @@ func TestJSONEncode_MalformedInput(t *testing.T) {
 			},
 			truncatedTestCase: testCase{
 				expectEncodingError: true,
+				truncations:         map[libddwaf.TruncationReason][]int{libddwaf.ObjectTooDeep: {1}},
 			},
 			notTruncatedTestCase: testCase{
 				expectEncodingError: true,
+				truncations:         map[libddwaf.TruncationReason][]int{libddwaf.ObjectTooDeep: {1}},
 			},
 		},
 	}
@@ -640,9 +646,9 @@ func newTestMaxJSONEncoderConfig(pinner *runtime.Pinner) libddwaf.EncoderConfig 
 	return libddwaf.EncoderConfig{
 		Pinner:           pinner,
 		Timer:            tm,
-		MaxObjectDepth:   math.MaxInt,
-		MaxContainerSize: math.MaxInt,
-		MaxStringSize:    math.MaxInt,
+		MaxObjectDepth:   math.MaxUint16,
+		MaxContainerSize: math.MaxUint16,
+		MaxStringSize:    math.MaxUint16,
 	}
 }
 
@@ -670,7 +676,7 @@ func BenchmarkEncoder(b *testing.B) {
 		config := libddwaf.EncoderConfig{
 			Pinner:           &pinner,
 			MaxObjectDepth:   10,
-			MaxStringSize:    1 * 1024 * 1024,
+			MaxStringSize:    math.MaxUint16,
 			MaxContainerSize: 100,
 			Timer:            encodeTimer,
 		}
@@ -710,14 +716,15 @@ func BenchmarkEncoder(b *testing.B) {
 				for b.Loop() {
 					encodable := encodableFunc(bytes)
 					var wafObj libddwaf.WAFObject
-					truncations, err := encodable.Encode(config, &wafObj, config.MaxObjectDepth)
+					enc := &libddwaf.Encoder{Config: config}
+					err := encodable.Encode(enc, &wafObj, int(config.MaxObjectDepth))
 					if err != nil {
 						b.Fatalf("Error encoding: %v", err)
 					}
 
 					runtime.KeepAlive(encodable)
 					runtime.KeepAlive(wafObj)
-					runtime.KeepAlive(truncations)
+					runtime.KeepAlive(enc.Truncations)
 				}
 			})
 		}

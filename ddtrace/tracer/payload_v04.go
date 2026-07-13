@@ -57,6 +57,10 @@ type payloadV04 struct {
 
 	// reader is used for reading the contents of buf.
 	reader *bytes.Reader
+
+	// sizeHint is a hint for how large buf should be to avoid slice growth
+	// overhead in a steady state.
+	sizeHint int
 }
 
 var _ io.Reader = (*payloadV04)(nil)
@@ -72,7 +76,11 @@ func newPayloadV04() *payloadV04 {
 
 // push pushes a new item into the stream.
 func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
-	p.buf.Grow(t.Msgsize())
+	// sizeHint is only honored on the first push of a cycle; grow() defers the
+	// actual allocation until here so an idle payload never pins a buffer.
+	growTo := max(t.Msgsize(), p.sizeHint)
+	p.sizeHint = 0
+	p.buf.Grow(growTo)
 	if err := msgp.Encode(&p.buf, t); err != nil {
 		return payloadStats{}, err
 	}
@@ -107,10 +115,18 @@ func (p *payloadV04) clear() {
 	p.reader = nil
 	atomic.StoreUint32(&p.count, 0)
 	p.off = 8
+	p.sizeHint = 0
 }
 
-// grow grows the buffer to ensure it can accommodate n more bytes.
+// grow ensures the buffer can accommodate n more bytes. Before the first push
+// of a cycle it defers to a size hint instead of allocating immediately, so an
+// idle payload never pins a buffer; ciVisibilityPayload calls this on every
+// push, after which it falls through to an immediate grow.
 func (p *payloadV04) grow(n int) {
+	if p.itemCount() == 0 {
+		p.sizeHint = n
+		return
+	}
 	p.buf.Grow(n)
 }
 

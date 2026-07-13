@@ -33,7 +33,8 @@ var (
 
 const (
 	// ffeProductEnvVar is the environment variable to enable the experimental flagging provider
-	ffeProductEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
+	ffeProductEnvVar     = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED"
+	spanEnrichmentEnvVar = "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED"
 	// flagEvalCountsEnabledEnvVar is the operator killswitch for the EVP flagevaluation emission path.
 	// Default: true (EVP path is ON by default). Set to "false" to disable only the EVP path
 	// while leaving the OTel feature_flag.evaluations path unaffected.
@@ -65,9 +66,10 @@ type DatadogProvider struct {
 
 	configChange sync.Cond
 
+	hooks []openfeature.Hook
+
 	// Exposure tracking
 	exposureWriter *exposureWriter
-	exposureHook   *exposureHook
 
 	// Flag evaluation metrics hook (OTel counter via Finally hook)
 	flagEvalMetricsHook *flagEvalMetricsHook
@@ -124,17 +126,40 @@ func newDatadogProvider(config ProviderConfig) *DatadogProvider {
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	}
 
+	var spanEnrichmentHook *spanEnrichmentHook
+	if internal.BoolEnv(spanEnrichmentEnvVar, false) {
+		spanEnrichmentHook = newSpanEnrichmentHook()
+		log.Debug("openfeature: span enrichment is enabled")
+	} else {
+		log.Debug("openfeature: span enrichment is disabled")
+	}
+
+	hooks := make([]openfeature.Hook, 0, 4)
+	if exposureLoggingHook != nil {
+		hooks = append(hooks, exposureLoggingHook)
+	}
+	if evalMetricsHook != nil {
+		hooks = append(hooks, evalMetricsHook)
+	}
+	if evalLoggingHook != nil {
+		hooks = append(hooks, evalLoggingHook)
+	}
+	if spanEnrichmentHook != nil {
+		hooks = append(hooks, spanEnrichmentHook)
+	}
+
 	p := &DatadogProvider{
 		metadata: openfeature.Metadata{
 			Name: "Datadog Remote Config Provider",
 		},
+		hooks:                 hooks,
 		exposureWriter:        writer,
-		exposureHook:          exposureLoggingHook,
 		flagEvalMetricsHook:   evalMetricsHook,
 		flagEvalLoggingWriter: evalWriter,
 		flagEvalLoggingHook:   evalLoggingHook,
 	}
 	p.configChange.L = &p.mu
+
 	return p
 }
 
@@ -447,23 +472,10 @@ func (p *DatadogProvider) ObjectEvaluation(
 	}
 }
 
-// Hooks returns the hooks for this provider.
-// This includes the exposure tracking hook, the OTel flag evaluation metrics hook (always),
-// and the EVP flagevaluation hook (only when DD_FLAGGING_EVALUATION_COUNTS_ENABLED is true).
+// Hooks returns the provider's hooks, built once during Init.
+// Returns p.hooks directly to avoid per-evaluation allocations.
 func (p *DatadogProvider) Hooks() []openfeature.Hook {
-	var hooks []openfeature.Hook
-	if p.exposureHook != nil {
-		hooks = append(hooks, p.exposureHook)
-	}
-	// OTel hook is always registered — untouched by the EVP killswitch.
-	if p.flagEvalMetricsHook != nil {
-		hooks = append(hooks, p.flagEvalMetricsHook)
-	}
-	// EVP hook is nil when the killswitch disabled it.
-	if p.flagEvalLoggingHook != nil {
-		hooks = append(hooks, p.flagEvalLoggingHook)
-	}
-	return hooks
+	return p.hooks
 }
 
 // evaluate is the core evaluation method that all type-specific methods use.

@@ -37,6 +37,10 @@ const (
 	// This environment variable should be set to "0" or "false" to skip uploading git metadata while keeping CI Visibility enabled.
 	CIVisibilityGitUploadEnabledEnvironmentVariable = "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED"
 
+	// CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable kill-switch that allows explicitly disabling code coverage report upload.
+	// This environment variable should be set to "0" or "false" to skip uploading code coverage reports while keeping CI Visibility enabled.
+	CIVisibilityCodeCoverageReportUploadEnabledEnvironmentVariable = "DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED"
+
 	// CIVisibilityFlakyRetryCountEnvironmentVariable indicates the maximum number of retry attempts for a single test case.
 	CIVisibilityFlakyRetryCountEnvironmentVariable = "DD_CIVISIBILITY_FLAKY_RETRY_COUNT"
 

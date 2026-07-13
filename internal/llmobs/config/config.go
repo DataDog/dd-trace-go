@@ -37,6 +37,9 @@ type Config struct {
 	ProjectName              string
 	TracerConfig             TracerConfig
 	AgentFeatures            AgentFeatures
+	// TestBaseURL, when non-empty, overrides the transport base URL and bypasses
+	// agent-mode/agentless-mode selection. For use in tests only.
+	TestBaseURL string
 }
 
 // We copy the transport to avoid using the default one, as it might be

@@ -7,6 +7,7 @@ package app
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -25,13 +26,15 @@ func TestMain(m *testing.M) {
 
 	scenario := os.Getenv("DD_ITR_BACKFILL_SCENARIO")
 	settings := net.SettingsResponseData{
-		ItrEnabled:              true,
-		TestsSkipping:           true,
-		CodeCoverage:            os.Getenv("DD_ITR_BACKFILL_CODE_COVERAGE") != "false",
-		RequireGit:              false,
-		FlakyTestRetriesEnabled: os.Getenv("DD_ITR_BACKFILL_FLAKY_RETRY") == "true",
+		ItrEnabled:                  true,
+		TestsSkipping:               true,
+		CodeCoverage:                os.Getenv("DD_ITR_BACKFILL_CODE_COVERAGE") != "false",
+		CoverageReportUploadEnabled: true,
+		RequireGit:                  false,
+		FlakyTestRetriesEnabled:     os.Getenv("DD_ITR_BACKFILL_FLAKY_RETRY") == "true",
 	}
 	expectCoverageRequests := os.Getenv("DD_ITR_BACKFILL_CODE_COVERAGE") != "false"
+	expectCoverageReportRequests := os.Getenv("DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED") != "false"
 	expectSkipped := true
 	expectSkippingEnabled := "true"
 	expectPositiveCoverage := true
@@ -72,6 +75,20 @@ func TestMain(m *testing.M) {
 	}
 	if !expectCoverageRequests && server.CoverageRequests() > 0 {
 		panic("unexpected coverage upload request count")
+	}
+	if expectCoverageReportRequests {
+		if server.CoverageReportRequests() == 0 {
+			panic("expected coverage report upload request")
+		}
+		reports := server.CoverageReports()
+		if len(reports) == 0 || reports[0].Event["type"] != "coverage_report" || reports[0].Event["format"] != "lcov" {
+			panic("unexpected coverage report event")
+		}
+		if !strings.Contains(reports[0].Report, "SF:"+manualLibPath+"\n") || strings.Contains(reports[0].Report, "SF:github.com/") {
+			panic("unexpected coverage report contents")
+		}
+	} else if server.CoverageReportRequests() > 0 {
+		panic("unexpected coverage report upload request")
 	}
 	if scenario == "manual-producer-bitmap-upload" {
 		if server.CoverageRequests() == 0 {

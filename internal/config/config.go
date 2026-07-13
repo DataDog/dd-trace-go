@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
@@ -93,7 +94,9 @@ type Config struct {
 	universalVersion bool
 	// env contains the environment that this application will run under.
 	env string
-	// serviceMappings holds a set of service mappings to dynamically rename services
+	// site specifies the Datadog site to send data to
+	site string
+	// serviceMappings holds a set of service mappings to dynamically rename services.
 	serviceMappings map[string]string
 	// hostname is automatically assigned from the OS hostname, or from the DD_TRACE_SOURCE_HOSTNAME environment variable or WithHostname() option.
 	hostname string
@@ -136,6 +139,9 @@ type Config struct {
 	globalTags *DynamicConfig[map[string]any]
 	// headerAsTags holds the header as tags configuration.
 	headerAsTags *DynamicConfig[[]string]
+	// tracingEnabled controls whether tracing is active. RC can only disable it,
+	// never re-enable it once disabled by a local source.
+	tracingEnabled *DynamicConfig[bool]
 	// ciVisibilityEnabled controls if the tracer is loaded with CI Visibility mode. default false
 	ciVisibilityEnabled    bool
 	ciVisibilityAgentless  bool
@@ -168,6 +174,9 @@ type Config struct {
 	// otlpExportMetricsMode indicates metrics should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMetricsMode bool
+	// otelSemanticsEnabled makes OTLP-exported spans match the pure OTel SDK
+	// by omitting Datadog-specific attributes. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
+	otelSemanticsEnabled bool
 	// otlpTraceURL is the OTLP collector endpoint for traces
 	otlpTraceURL string
 	// otlpHeaders holds the resolved OTLP trace headers from
@@ -181,6 +190,21 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
+	// traceSamplingRules holds the RC-aware trace sampling rules (DD_TRACE_SAMPLING_RULES).
+	traceSamplingRules *DynamicConfig[[]samplingrules.SamplingRule]
+	// spanSamplingRules holds the single-span sampling rules (DD_SPAN_SAMPLING_RULES).
+	spanSamplingRules []samplingrules.SamplingRule
+	// spanSamplingRulesOrigin tracks origin separately because, unlike traceSamplingRules,
+	// this field isn't a DynamicConfig (no RC support yet).
+	spanSamplingRulesOrigin telemetry.Origin
+	// appKey is the Datadog application key.
+	appKey string
+	// ciVisibilityAgentlessURL is a custom agentless endpoint for CI Visibility.
+	ciVisibilityAgentlessURL string
+	// experimentalFlaggingProviderEnabled enables the experimental OpenFeature RC provider.
+	experimentalFlaggingProviderEnabled bool
+	// spanPoolEnabled enables the experimental span pool.
+	spanPoolEnabled bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -242,6 +266,7 @@ func loadConfig() *Config {
 	cfg.version = p.GetString("DD_VERSION", "")
 	cfg.universalVersion = p.GetBool("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
 	cfg.env = p.GetString("DD_ENV", "")
+	cfg.site = p.GetString("DD_SITE", "datadoghq.com")
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
@@ -266,11 +291,13 @@ func loadConfig() *Config {
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	otelSemantics, otelSemanticsOrigin := p.GetBoolWithOrigin("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
+	cfg.SetOTelSemanticsEnabled(otelSemantics, otelSemanticsOrigin)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
 	cfg.otlpExportMetricsMode = p.GetString("OTEL_METRICS_EXPORTER", "otlp") == "otlp"
-	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV04, validateTraceProtocolVersion))
+	cfg.traceProtocol = resolveTraceProtocol(p.GetStringWithValidator("DD_TRACE_AGENT_PROTOCOL_VERSION", TraceProtocolVersionStringV1, validateTraceProtocolVersion))
 	cfg.otlpExportMode = p.GetString("OTEL_TRACES_EXPORTER", "") == "otlp"
 	// DD_TRACE_AGENT_PROTOCOL_VERSION overrides OTEL_TRACES_EXPORTER
 	if p.IsSet("DD_TRACE_AGENT_PROTOCOL_VERSION") {
@@ -280,9 +307,16 @@ func loadConfig() *Config {
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
+	cfg.appKey = p.GetString("DD_APP_KEY", "")
+	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
+	cfg.experimentalFlaggingProviderEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
+	cfg.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
+
+	tracingEnabled, tracingEnabledOrigin := p.GetBoolWithOrigin("DD_TRACE_ENABLED", true)
+	cfg.tracingEnabled = newDynamicConfig("tracing_enabled", tracingEnabled, tracingEnabledOrigin, equal[bool], nil)
 
 	enabled, origin := p.GetBoolWithOrigin("DD_DYNAMIC_INSTRUMENTATION_ENABLED", false)
 	cfg.dynamicInstrumentationEnabled = newDynamicConfig("dynamic_instrumentation_enabled", enabled, origin, equal[bool], nil)
@@ -351,7 +385,16 @@ func loadConfig() *Config {
 		cfg.reportHostname = true
 	}
 
-	cfg.apiKey = env.Get("DD_API_KEY")
+	cfg.apiKey = p.GetString("DD_API_KEY", "")
+
+	traceRules, traceOrigin := samplingRulesFromSource(p, "DD_TRACE_SAMPLING_RULES", samplingrules.SamplingRuleTrace)
+	cfg.traceSamplingRules = newDynamicConfig("trace_sample_rules", traceRules, traceOrigin, samplingrules.EqualsFalseNegative, nil)
+	configtelemetry.ReportDefault("trace_sample_rules", traceRules)
+
+	spanRules, spanOrigin := samplingRulesFromSource(p, "DD_SPAN_SAMPLING_RULES", samplingrules.SamplingRuleSpan)
+	cfg.spanSamplingRules = spanRules
+	cfg.spanSamplingRulesOrigin = spanOrigin
+	configtelemetry.ReportDefault("span_sample_rules", spanRules)
 
 	return cfg
 }
@@ -730,6 +773,29 @@ func (c *Config) SetHeaderAsTags(headerAsTags []string, origin telemetry.Origin,
 	configtelemetry.Report("DD_TRACE_HEADER_TAGS", strings.Join(headerAsTags, ","), origin)
 }
 
+func (c *Config) TracingEnabled() bool {
+	return c.tracingEnabled.Get()
+}
+
+// TracingEnabledConfig returns the DynamicConfig for the tracing-enabled flag.
+// Use this only for RC updates (HandleRC). For user-configured changes use SetTracingEnabled.
+func (c *Config) TracingEnabledConfig() *DynamicConfig[bool] {
+	return c.tracingEnabled
+}
+
+// SetTracingEnabled records a user-configured tracing-enabled value. Call this
+// only from user-facing paths (options, env vars). For agent/RC updates use
+// TracingEnabledConfig().HandleRC(...).
+func (c *Config) SetTracingEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.tracingEnabled.setBaseline(enabled, origin)
+	configtelemetry.Report("DD_TRACE_ENABLED", enabled, origin)
+}
+
 func (c *Config) TraceRateLimitPerSecond() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -942,6 +1008,22 @@ func (c *Config) SetEnv(env string, origin telemetry.Origin, product ...Product)
 	}
 	c.env = env
 	configtelemetry.Report("DD_ENV", env, origin)
+}
+
+func (c *Config) Site() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.site
+}
+
+func (c *Config) SetSite(site string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_SITE", origin, site, product...) {
+		return
+	}
+	c.site = site
+	configtelemetry.Report("DD_SITE", site, origin)
 }
 
 // SetFeatureFlags adds to the feature flag set. No cross-product gate because this is additive, not a replacement.
@@ -1200,6 +1282,24 @@ func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, produ
 	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
 }
 
+func (c *Config) OTelSemanticsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelSemanticsEnabled
+}
+
+// SetOTelSemanticsEnabled sets whether OTLP-exported spans should match the pure
+// OpenTelemetry SDK, and reports the value to configuration telemetry.
+func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_OTEL_SEMANTICS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.otelSemanticsEnabled = enabled
+	configtelemetry.Report("DD_TRACE_OTEL_SEMANTICS_ENABLED", enabled, origin)
+}
+
 func (c *Config) TraceProtocol() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1309,4 +1409,82 @@ func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ..
 	}
 	c.sendRetries = retries
 	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
+func (c *Config) TraceSamplingRules() []samplingrules.SamplingRule {
+	return c.traceSamplingRules.Get()
+}
+
+// TraceSamplingRulesConfig returns the DynamicConfig for trace sampling rules.
+// Used by the tracer's RC handler to apply remote-config updates.
+func (c *Config) TraceSamplingRulesConfig() *DynamicConfig[[]samplingrules.SamplingRule] {
+	return c.traceSamplingRules
+}
+
+func (c *Config) SetTraceSamplingRules(rules []samplingrules.SamplingRule, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, baselineOrigin := c.traceSamplingRules.Baseline()
+	if samplingRulesBlockedByPrecedence("DD_TRACE_SAMPLING_RULES", baselineOrigin, origin) {
+		return
+	}
+	if c.checkProductConflict("DD_TRACE_SAMPLING_RULES", origin, rules, product...) {
+		return
+	}
+	c.traceSamplingRules.setBaseline(rules, origin)
+	configtelemetry.Report("trace_sample_rules", rules, origin)
+}
+
+func (c *Config) SpanSamplingRules() []samplingrules.SamplingRule {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanSamplingRules
+}
+
+func (c *Config) SetSpanSamplingRules(rules []samplingrules.SamplingRule, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if samplingRulesBlockedByPrecedence("DD_SPAN_SAMPLING_RULES", c.spanSamplingRulesOrigin, origin) {
+		return
+	}
+	if c.checkProductConflict("DD_SPAN_SAMPLING_RULES", origin, rules, product...) {
+		return
+	}
+	c.spanSamplingRules = rules
+	c.spanSamplingRulesOrigin = origin
+	configtelemetry.Report("span_sample_rules", rules, origin)
+}
+
+func (c *Config) AppKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.appKey
+}
+
+func (c *Config) CIVisibilityAgentlessURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentlessURL
+}
+
+func (c *Config) ExperimentalFlaggingProviderEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.experimentalFlaggingProviderEnabled
+}
+
+func (c *Config) SpanPoolEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanPoolEnabled
+}
+
+func (c *Config) SetSpanPoolEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.spanPoolEnabled = enabled
+	configtelemetry.Report("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", enabled, origin)
 }
