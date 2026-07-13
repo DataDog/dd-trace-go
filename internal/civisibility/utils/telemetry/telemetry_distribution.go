@@ -115,6 +115,21 @@ func KnownTestsResponseTests(value float64) {
 	telemetry.Distribution(telemetry.NamespaceCIVisibility, "known_tests.response_tests", nil).Submit(value)
 }
 
+// KnownTestsPagesFetched records the number of pages fetched during known tests pagination by CI Visibility.
+func KnownTestsPagesFetched(value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "known_tests.pages_fetched", nil).Submit(value)
+}
+
+// KnownTestsTotalFetchMs records the wall-clock time from start of first page to end of last page in ms by CI Visibility.
+func KnownTestsTotalFetchMs(value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "known_tests.total_fetch_ms", nil).Submit(value)
+}
+
+// KnownTestsTotalRequestMs records the sum of individual per-page request_ms values in ms by CI Visibility.
+func KnownTestsTotalRequestMs(value float64) {
+	telemetry.Distribution(telemetry.NamespaceCIVisibility, "known_tests.total_request_ms", nil).Submit(value)
+}
+
 // TestManagementTestsRequestMs records the time it takes to get the response of the test management tests endpoint request in ms by CI Visibility.
 func TestManagementTestsRequestMs(value float64) {
 	telemetry.Distribution(telemetry.NamespaceCIVisibility, "test_management_tests.request_ms", nil).Submit(value)
