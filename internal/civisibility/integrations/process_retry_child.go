@@ -48,10 +48,6 @@ func IsProcessRetryChild() bool {
 	return err == nil && enabled
 }
 
-func isProcessRetryChild() bool {
-	return IsProcessRetryChild()
-}
-
 // LookupProcessRetryChildTransport returns a private retry-process transport
 // value. Child processes use the immutable startup snapshot; ordinary processes
 // read the live environment to support test-only child-mode injection.

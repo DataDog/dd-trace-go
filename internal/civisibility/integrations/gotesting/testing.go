@@ -7,7 +7,9 @@ package gotesting
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"os"
 	"reflect"
 	"runtime"
 	"slices"
@@ -19,6 +21,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/coverage"
@@ -26,6 +29,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
@@ -64,6 +68,11 @@ var (
 
 	// chatty is the global chatty printer used for debugging and verbose output.
 	chatty *chattyPrinter
+
+	testingMInstrumentationClaims = struct {
+		mu      locking.Mutex
+		claimed map[*testing.M]struct{}
+	}{claimed: make(map[*testing.M]struct{})}
 )
 
 type (
@@ -131,6 +140,157 @@ const (
 	testManagementMatchExact
 	testManagementMatchAncestor
 )
+
+func claimTestingMInstrumentation(m *testing.M) bool {
+	if m == nil {
+		return true
+	}
+	testingMInstrumentationClaims.mu.Lock()
+	defer testingMInstrumentationClaims.mu.Unlock()
+	if _, claimed := testingMInstrumentationClaims.claimed[m]; claimed {
+		return false
+	}
+	testingMInstrumentationClaims.claimed[m] = struct{}{}
+	return true
+}
+
+func instrumentTestingMWithOptions(m *testing.M, wrapperOpts additionalFeatureWrapperOptions) func(exitCode int) {
+	if isProcessRetryChild() {
+		cfg, err := bootstrapProcessRetryChild()
+		if err != nil {
+			reason := processRetryChildConfigErrorReason(err)
+			log.Debug("civisibility: process retry child config error: %s", reason)
+			writeInvalidProcessRetryChildConfigResult(cfg, reason)
+			if !disableProcessRetryChildExecution(m) {
+				hardStopInvalidProcessRetryChild("testing_m_reflection_drift")
+			}
+			return func(_ int) {}
+		}
+		return instrumentProcessRetryChild(m, cfg)
+	}
+	if !claimTestingMInstrumentation(m) {
+		return func(_ int) {}
+	}
+
+	// Check if CI Visibility was disabled using the kill switch before trying to initialize it
+	atomic.StoreInt32(&ciVisibilityEnabledValue, -1)
+	if !isCiVisibilityEnabled() || !testing.Testing() {
+		return func(_ int) {}
+	}
+
+	log.Debug("instrumentTestingM: initializing CI Visibility for testing.M")
+
+	// Initialize CI Visibility
+	integrations.EnsureCiVisibilityInitialization()
+
+	// Create a new test session for CI visibility.
+	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
+	if wrapperOpts.processRetryAllowed && !registerProcessRetryShutdownAction() {
+		log.Debug("instrumentTestingM: process retry shutdown action registration failed; falling back to in-process retries")
+		wrapperOpts.processRetryAllowed = false
+	}
+
+	coverageInitialized := false
+	settings := integrations.GetSettings()
+	if settings != nil {
+		if settings.CodeCoverage {
+			// Initialize the runtime coverage if enabled.
+			coverage.InitializeCoverage(m, true)
+			coverageInitialized = true
+		}
+		if settings.TestManagement.Enabled && internal.BoolEnv(constants.CIVisibilityTestManagementEnabledEnvironmentVariable, true) {
+			// Set the test management tag if enabled.
+			session.SetTag(constants.TestManagementEnabled, "true")
+		}
+	}
+
+	// Check if the coverage was enabled by not initialized
+	if !coverageInitialized && testing.CoverMode() != "" {
+		coverage.InitializeCoverage(m, false)
+	}
+
+	ddm := (*M)(m)
+
+	// Instrument the internal tests for CI visibility.
+	ddm.instrumentInternalTests(getInternalTestArray(m), wrapperOpts)
+
+	// Instrument the internal benchmarks for CI visibility.
+	for _, v := range os.Args {
+		// check if benchmarking is enabled to instrument
+		if strings.Contains(v, "-bench") || strings.Contains(v, "test.bench") {
+			ddm.instrumentInternalBenchmarks(getInternalBenchmarkArray(m))
+			break
+		}
+	}
+
+	return func(exitCode int) {
+		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
+
+		// Check for code coverage if enabled.
+		if testing.CoverMode() != "" {
+			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
+			uploadFinalCoverageReport(settings)
+			if !publishCoverage {
+				session.Close(exitCode)
+				coverage.CleanupRuntimeCoverageSnapshot()
+				integrations.ExitCiVisibility()
+				return
+			}
+			if !corrected {
+				// let's try first with our coverage package
+				cov = coverage.GetCoverage()
+			}
+			if cov == 0 {
+				// if not we try we the default testing package
+				cov = testing.Coverage()
+			}
+
+			coveragePercentage := cov * 100
+			session.SetTag(constants.CodeCoveragePercentageOfTotalLines, coveragePercentage)
+		}
+
+		// Close the session and return the exit code.
+		session.Close(exitCode)
+		coverage.CleanupRuntimeCoverageSnapshot()
+
+		// Finalize CI Visibility
+		integrations.ExitCiVisibility()
+	}
+}
+
+func uploadFinalCoverageReport(settings *net.SettingsResponseData) {
+	if settings == nil {
+		log.Debug("instrumentTestingM: coverage report upload skipped because settings are unavailable")
+		return
+	}
+	if !settings.CoverageReportUploadEnabled {
+		log.Debug("instrumentTestingM: coverage report upload disabled by settings")
+		return
+	}
+
+	var report bytes.Buffer
+	if err := coverage.WriteLCOVReport(&report); err != nil {
+		log.Debug("instrumentTestingM: failed to create LCOV coverage report: %s", err.Error())
+		return
+	}
+	if report.Len() == 0 {
+		log.Debug("instrumentTestingM: LCOV coverage report is empty; skipping upload")
+		return
+	}
+	log.Debug("instrumentTestingM: uploading LCOV coverage report [report_bytes:%d]", report.Len())
+
+	client := net.NewClientForCoverageReportUpload()
+	if client == nil {
+		log.Debug("instrumentTestingM: coverage report upload client is unavailable")
+		return
+	}
+	if closer, ok := client.(interface{ CloseIdleConnections() }); ok {
+		defer closer.CloseIdleConnections()
+	}
+	if err := client.SendCoverageReport(&report, net.FormatLCOV); err != nil {
+		log.Debug("instrumentTestingM: failed to upload coverage report: %s", err.Error())
+	}
+}
 
 // Run initializes CI Visibility, instruments tests and benchmarks, and runs them.
 func (ddm *M) Run() int {

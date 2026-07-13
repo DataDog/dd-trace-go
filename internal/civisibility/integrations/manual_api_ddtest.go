@@ -369,7 +369,7 @@ func SetGlobalEventFinishHook(hook func([]any)) {
 }
 
 func init() {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return
 	}
 	PushCiVisibilityCloseAction(func() {
