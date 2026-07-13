@@ -5,10 +5,7 @@
 
 package crashtracker
 
-import (
-	"net/http"
-	"os"
-)
+import "net/http"
 
 // Option is a functional option for configuring the crashtracker.
 type Option func(*config)
@@ -22,11 +19,6 @@ type config struct {
 	apiKey     string
 	site       string
 	enabled    bool
-
-	// pipeWriteEnd is the write end of the crash pipe registered with
-	// runtime/debug.SetCrashOutput. It is stored so Stop can close it; it is
-	// nil until the monitor child has been spawned.
-	pipeWriteEnd *os.File
 }
 
 // WithService sets the service name tag on crash reports.
@@ -62,11 +54,4 @@ func WithAPIKey(apiKey string) Option {
 // WithSite sets the Datadog site for agentless intake (e.g. "datadoghq.com").
 func WithSite(site string) Option {
 	return func(c *config) { c.site = site }
-}
-
-// WithEnabled explicitly enables or disables the crashtracker, overriding the
-// DD_CRASHTRACKING_ENABLED environment gate. When disabled, Start does not spawn
-// the monitor process and returns nil.
-func WithEnabled(enabled bool) Option {
-	return func(c *config) { c.enabled = enabled }
 }
