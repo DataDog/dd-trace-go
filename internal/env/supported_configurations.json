@@ -71,7 +71,8 @@
         "default": null,
         "aliases": [
           "DD-API-KEY"
-        ]
+        ],
+        "sensitive": true
       }
     ],
     "DD_API_SECURITY_DOWNSTREAM_BODY_ANALYSIS_SAMPLE_RATE": [
@@ -235,7 +236,8 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "DD_CIVISIBILITY_AGENTLESS_ENABLED": [
@@ -257,6 +259,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_CIVISIBILITY_ENABLED": [
@@ -399,6 +408,13 @@
         "default": "false"
       }
     ],
+    "DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED": [
       {
         "implementation": "B",
@@ -411,6 +427,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_FLAGGING_EVALUATION_COUNTS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_GIT_BRANCH": [
@@ -502,6 +525,13 @@
         "implementation": "A",
         "type": "string",
         "default": null
+      }
+    ],
+    "DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_HAPROXY_SPOA_HEALTHCHECK_PORT": [
@@ -980,6 +1010,13 @@
         "default": null
       }
     ],
+    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED": [
       {
         "implementation": "A",
@@ -999,6 +1036,13 @@
         "implementation": "A",
         "type": "string",
         "default": "10m"
+      }
+    ],
+    "DD_TRACE_AEROSPIKE_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
       }
     ],
     "DD_TRACE_AGENT_PORT": [
@@ -1428,6 +1472,13 @@
         "default": "(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|(?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)(?:(?:\\\\s|%20)*(?:=|%3D)[^&]+|(?:\\\"|%22)(?:\\\\s|%20)*(?::|%3A)(?:\\\\s|%20)*(?:\\\"|%22)(?:%2[^2]|%[^2]|[^\\\"%])+(?:\\\"|%22))|bearer(?:\\\\s|%20)+[a-z0-9\\\\._\\\\-]|token(?::|%3A)[a-z0-9]{13}|gh[opsu]_[0-9a-zA-Z]{36}|ey[I-L](?:[\\\\w=-]|%3D)+\\\\.ey[I-L](?:[\\\\w=-]|%3D)+(?:\\\\.(?:[\\\\w.+\\\\/=-]|%3D|%2F|%2B)+)?|[\\\\-]{5}BEGIN(?:[a-z\\\\s]|%20)+PRIVATE(?:\\\\s|%20)KEY[\\\\-]{5}[^\\\\-]+[\\\\-]{5}END(?:[a-z\\\\s]|%20)+PRIVATE(?:\\\\s|%20)KEY|ssh-rsa(?:\\\\s|%20)*(?:[a-z0-9\\\\/\\\\.+]|%2F|%5C|%2B){100,}"
       }
     ],
+    "DD_TRACE_OTEL_SEMANTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_PARTIAL_FLUSH_ENABLED": [
       {
         "implementation": "A",
@@ -1610,13 +1661,6 @@
         "default": "v0"
       }
     ],
-    "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED": [
-      {
-        "implementation": "A",
-        "type": "boolean",
-        "default": "false"
-      }
-    ],
     "DD_TRACE_SQL_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -1796,7 +1840,8 @@
       {
         "implementation": "A",
         "type": "map",
-        "default": ""
+        "default": "",
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
@@ -1810,7 +1855,8 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": [
@@ -1838,7 +1884,8 @@
       {
         "implementation": "B",
         "type": "string",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL": [
@@ -1887,7 +1934,8 @@
       {
         "implementation": "B",
         "type": "map",
-        "default": null
+        "default": null,
+        "sensitive": true
       }
     ],
     "OTEL_LOGS_EXPORTER": [

@@ -5,7 +5,7 @@ go 1.25.0
 godebug x509negativeserial=1
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/lib/pq v1.11.1
 	github.com/microsoft/go-mssqldb v0.21.0
@@ -26,7 +26,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.81.0-rc.1 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.81.0-rc.1 // indirect
 	github.com/DataDog/datadog-go/v5 v5.8.3 // indirect
-	github.com/DataDog/go-libddwaf/v4 v4.9.0 // indirect
+	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.2 // indirect
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
@@ -62,7 +62,7 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
-	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
+	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.5 // indirect

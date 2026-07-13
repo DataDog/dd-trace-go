@@ -40,7 +40,8 @@ type (
 		SendPackFiles(commitSha string, packFiles []string) (bytes int64, err error)
 		SendCoveragePayload(ciTestCovPayload io.Reader) error
 		SendCoveragePayloadWithFormat(ciTestCovPayload io.Reader, format string) error
-		GetSkippableTests() (correlationID string, skippables map[string]map[string][]SkippableResponseDataAttributes, err error)
+		SendCoverageReport(report io.Reader, format string) error
+		GetSkippableTests() (*SkippableTestsResponse, error)
 		GetTestManagementTests() (*TestManagementTestsResponseDataModules, error)
 		SendLogs(logsPayload io.Reader) error
 	}
@@ -153,7 +154,6 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			if v := env.Get("DD_SITE"); v != "" {
 				site = v
 			}
-
 			baseURL = fmt.Sprintf("https://%s.%s", subdomain, site)
 		} else {
 			// Use the custom agentless URL.

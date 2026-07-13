@@ -103,6 +103,39 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
+func TestDefaultConfigAgentlessURL(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		site     string
+		config   ClientConfig
+		expected string
+	}{
+		{
+			name:     "default-site",
+			expected: "https://instrumentation-telemetry-intake.datadoghq.com/api/v2/apmtelemetry",
+		},
+		{
+			name:     "eu-site",
+			site:     "datadoghq.eu",
+			expected: "https://instrumentation-telemetry-intake.datadoghq.eu/api/v2/apmtelemetry",
+		},
+		{
+			name:     "explicit-url-takes-precedence",
+			site:     "datadoghq.eu",
+			config:   ClientConfig{AgentlessURL: "https://custom.example.com/api/v2/apmtelemetry"},
+			expected: "https://custom.example.com/api/v2/apmtelemetry",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.site != "" {
+				t.Setenv("DD_SITE", test.site)
+			}
+			config := defaultConfig(test.config)
+			assert.Equal(t, test.expected, config.AgentlessURL)
+		})
+	}
+}
+
 func TestNewClient_FileSinkModeWithoutEndpoints(t *testing.T) {
 	t.Setenv(bazel.PayloadsInFilesEnv, "true")
 	t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())

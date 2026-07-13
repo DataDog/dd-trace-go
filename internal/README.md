@@ -18,6 +18,10 @@ Each configuration value comes with a `ConfigName()` and a sometimes a `SetConfi
 
 The config package also supports reporting telemetry. This functionality is built upon the internal telemetry package. For more information about the telemetry package, see [Telemetry](#telemetry).
 
+### CI Visibility
+
+Contains Test Optimization internals, including Go `testing` instrumentation, CI metadata collection, backend feature negotiation, ITR skippable-test handling, code coverage payloads, and subprocess fixtures. The [overview](./civisibility/CIVISIBILITY_OVERVIEW.md) documents the ITR coverage backfill safety model and its manual and Orchestrion validation fixtures.
+
 ### Env
 
 Contains important functions for getting and looking up environment variables. Whenever needed, use `env.Lookup` or `env.Get` instead of built in `os.Getenv` functions. This is also available at [instrumentation/env](../instrumentation/env/) for those packages that cannot import internal modules.
@@ -33,6 +37,10 @@ Locking functionality that serves as a replacement for `sync.mutex` and similar 
 ### Orchestrion
 
 Contains internal Orchestrion implementations for all supported contribs in [./orchestrion/_integration](./orchestrion/_integration/). This includes GLS (Global Local Storage), work for generating changes to `go.mod` files, and tests for expected automatic traces. For more information, read the [README.md](./orchestrion/_integration/README.md).
+
+### Sampling Rules
+
+Defines the types and parsing logic for trace and span sampling rules (`DD_TRACE_SAMPLING_RULES`, `DD_SPAN_SAMPLING_RULES`, and their `WithSamplingRules` code equivalents), including glob/regex matching, rate limiting, and Remote Config provenance. It is shared between `internal/config` (configuration ownership) and `ddtrace/tracer` (runtime sampling decisions).
 
 ### Telemetry
 
