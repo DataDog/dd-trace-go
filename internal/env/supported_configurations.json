@@ -345,13 +345,6 @@
         "default": "true"
       }
     ],
-    "DD_CRASHTRACKING_IS_MONITOR_PROCESS": [
-      {
-        "implementation": "C",
-        "type": "boolean",
-        "default": "false"
-      }
-    ],
     "DD_CUSTOM_PARENT_ID": [
       {
         "implementation": "A",
