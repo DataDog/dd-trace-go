@@ -430,4 +430,46 @@ fmt.Printf("Leak start at stack=%s\n", string(debug.Stack()))
 
 In practice, leaks often go through `http.(*Client).Do`, so that can be a good place to instrument as well.
 
+## Crashtracker
+
+The [`crashtracker`](./crashtracker) package captures Go application crashes — unhandled panics, runtime fatals (concurrent map writes, stack exhaustion), and signal-triggered crashes — and uploads structured reports to Datadog Error Tracking.
+
+It uses `runtime/debug.SetCrashOutput` (Go 1.23+) and the monitor-process pattern: `Start()` re-execs the current binary as a lightweight monitor child that reads the crash pipe, parses the dump, and uploads a report. The application process continues unmodified.
+
+### Usage
+
+```go
+func main() {
+    crashtracker.Start()
+    defer crashtracker.Stop()
+    // application code
+}
+```
+
+Or with options:
+
+```go
+crashtracker.Start(
+    crashtracker.WithService("my-service"),
+    crashtracker.WithEnv("production"),
+    crashtracker.WithVersion("1.0.0"),
+)
+```
+
+### Configuration
+
+| Environment variable | Default | Description |
+|---|---|---|
+| `DD_CRASHTRACKING_ENABLED` | `true` | Enable or disable crash report upload |
+| `DD_SITE` | `datadoghq.com` | Datadog site for agentless upload |
+| `DD_API_KEY` | — | API key for agentless upload (agent-based upload when unset) |
+
+### Orchestrion (automatic injection)
+
+When building with [Orchestrion](https://github.com/DataDog/orchestrion), `crashtracker.Start()` is automatically prepended to `main()` — no source change required. Control the feature with `DD_CRASHTRACKING_ENABLED`.
+
+### Monitor process
+
+The monitor child inherits `DD_*` environment variables but strips `GOMEMLIMIT` and `GOGC` to avoid applying the application's runtime tuning to the lightweight monitor process.
+
 Following the advice above, most goroutine leaks should be easy to debug and fix.
