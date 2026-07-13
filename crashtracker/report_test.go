@@ -35,7 +35,7 @@ func TestBuildDDTags(t *testing.T) {
 
 	// Every element must be a well-formed "key:value" pair: a non-empty key
 	// with no embedded colon, and a value.
-	for _, pair := range strings.Split(tags, ",") {
+	for pair := range strings.SplitSeq(tags, ",") {
 		key, value, ok := strings.Cut(pair, ":")
 		if !ok {
 			t.Errorf("tag %q is not a key:value pair", pair)
@@ -64,7 +64,7 @@ func TestBuildDDTagsOmitsUnsetConfig(t *testing.T) {
 	}
 
 	keys := make(map[string]bool)
-	for _, pair := range strings.Split(tags, ",") {
+	for pair := range strings.SplitSeq(tags, ",") {
 		if key, _, ok := strings.Cut(pair, ":"); ok {
 			keys[key] = true
 		}

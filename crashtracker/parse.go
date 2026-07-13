@@ -193,8 +193,8 @@ func isLocationLine(line string) bool {
 // "panic({0x1, 0x2})" -> "panic".
 func funcName(line string) string {
 	line = strings.TrimSpace(line)
-	if i := strings.IndexByte(line, '('); i >= 0 {
-		return line[:i]
+	if before, _, ok := strings.Cut(line, "("); ok {
+		return before
 	}
 	return line
 }
@@ -269,8 +269,8 @@ func errorType(preamble []string, threads []Thread, sigInfo *SigInfo) string {
 		return "UnixSignal"
 	}
 	for _, line := range preamble {
-		if strings.HasPrefix(line, "fatal error:") {
-			return fatalErrorType(strings.TrimSpace(strings.TrimPrefix(line, "fatal error:")))
+		if rest, ok := strings.CutPrefix(line, "fatal error:"); ok {
+			return fatalErrorType(strings.TrimSpace(rest))
 		}
 		if strings.HasPrefix(line, "panic:") || strings.HasPrefix(line, "panic(") {
 			return "panic"
@@ -309,11 +309,11 @@ func errorMessage(preamble []string, sigInfo *SigInfo) string {
 		}
 	}
 	for _, line := range preamble {
-		if strings.HasPrefix(line, "fatal error:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "fatal error:"))
+		if rest, ok := strings.CutPrefix(line, "fatal error:"); ok {
+			return strings.TrimSpace(rest)
 		}
-		if strings.HasPrefix(line, "panic:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "panic:"))
+		if rest, ok := strings.CutPrefix(line, "panic:"); ok {
+			return strings.TrimSpace(rest)
 		}
 		if strings.HasPrefix(line, "panic(") {
 			return panicValue(line)
