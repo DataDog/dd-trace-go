@@ -34,6 +34,9 @@ func isMonitorProcess() bool {
 // parses it, and uploads a report. It never returns.
 func runMonitor(cfg *config) {
 	data, err := io.ReadAll(io.LimitReader(os.Stdin, maxCrashDumpSize))
+	// Drain any remaining crash-dump bytes after the cap so the crashing
+	// application is not blocked writing into the pipe while we upload.
+	go io.Copy(io.Discard, os.Stdin) //nolint:errcheck
 	if err != nil || len(data) == 0 {
 		// A read error or an empty buffer means the application exited cleanly
 		// without writing a crash dump; there is nothing to report.
@@ -41,6 +44,7 @@ func runMonitor(cfg *config) {
 	}
 
 	report := parseCrashDump(data)
+	report.DDTags = buildDDTags(cfg)
 	if err := uploadReport(cfg, report); err != nil {
 		// Emit one line to stderr so operators know a crash report was attempted
 		// but failed — without this, the failure is invisible.

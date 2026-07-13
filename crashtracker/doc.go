@@ -30,4 +30,29 @@
 //	}
 //
 // Start is idempotent: subsequent calls after the first are no-ops.
+//
+// # Configuration
+//
+// The monitor process inherits all environment variables except GOMEMLIMIT and
+// GOGC. Programmatic options passed to Start (e.g. WithAPIKey, WithAgentURL)
+// are applied in the application process and are NOT forwarded to the monitor
+// child because they cannot cross process boundaries. Use the corresponding
+// DD_* environment variables (DD_API_KEY, DD_TRACE_AGENT_URL, DD_SITE) to
+// configure the monitor's upload destination when env-var-free programmatic
+// options are required.
+//
+// # Goroutine stack completeness
+//
+// By default Go uses GOTRACEBACK=single, which records only the crashing
+// goroutine in the crash dump. Set GOTRACEBACK=all in the process environment
+// to include all goroutines in the crash report's error.threads field.
+//
+// # Init order note
+//
+// The package init() intercepts the monitor role before most user package
+// init()s, but Go's initialization order across packages at the same import
+// level is deterministic by import path, not guaranteed to place crashtracker
+// first. In practice the monitor is intercepted before user code runs in
+// orchestrion-injected binaries; manual callers should ensure Start is the
+// first statement of main() to minimise exposure.
 package crashtracker
