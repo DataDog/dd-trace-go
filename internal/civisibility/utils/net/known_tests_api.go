@@ -110,7 +110,13 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 			}
 			cacheable := true
 
+			// Track pagination metrics
+			pageCount := 0
+			var totalRequestMs float64
+			startPaginationTime := time.Now()
+
 			for {
+				pageCount++
 				request := c.getPostRequestConfig(knownTestsURLPath, body)
 				request.ExpectJSONResponse = true
 				if request.Compressed {
@@ -121,7 +127,9 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 
 				startTime := time.Now()
 				response, err := c.handler.SendRequest(*request)
-				telemetry.KnownTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
+				requestMs := float64(time.Since(startTime).Milliseconds())
+				totalRequestMs += requestMs
+				telemetry.KnownTestsRequestMs(requestMs)
 
 				if err != nil {
 					telemetry.KnownTestsRequestErrors(telemetry.NetworkErrorType)
@@ -162,6 +170,12 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 				}
 				body.Data.Attributes.PageInfo.PageState = responseObject.Data.Attributes.PageInfo.Cursor
 			}
+
+			// Emit pagination metrics on successful completion
+			totalFetchMs := float64(time.Since(startPaginationTime).Milliseconds())
+			telemetry.KnownTestsPagesFetched(float64(pageCount))
+			telemetry.KnownTestsTotalFetchMs(totalFetchMs)
+			telemetry.KnownTestsTotalRequestMs(totalRequestMs)
 
 			telemetry.KnownTestsResponseTests(float64(knownTestsResponseTestCount(&accumulated)))
 			return readCacheLiveResult[*KnownTestsResponseData]{
