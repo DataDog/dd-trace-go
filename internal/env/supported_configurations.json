@@ -335,21 +335,21 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_RESULT_PATH": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_TEST_NAME": [
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_LOGS_ENABLED": [
@@ -377,7 +377,7 @@
       {
         "implementation": "A",
         "type": "string",
-        "default": ""
+        "default": null
       }
     ],
     "DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED": [

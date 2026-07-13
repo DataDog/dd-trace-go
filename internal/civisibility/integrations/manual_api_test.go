@@ -376,7 +376,7 @@ func TestProcessRetryChildTransportIgnoresLiveEnvironment(t *testing.T) {
 
 func TestProcessRetryChildFeatureGettersHideCachedParentState(t *testing.T) {
 	resetCIVisibilityBootstrapStateForTesting()
-	t.Cleanup(resetCIVisibilityBootstrapStateForTesting)
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
 
 	ciVisibilitySkippables = map[string]map[string][]civisibilitynet.SkippableResponseDataAttributes{"parent": {}}
 	ciVisibilitySkippablesResponse = &civisibilitynet.SkippableTestsResponse{}
