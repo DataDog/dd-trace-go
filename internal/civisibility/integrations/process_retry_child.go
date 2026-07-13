@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	internalenv "github.com/DataDog/dd-trace-go/v2/internal/env"
 )
 
 type processRetryChildTransportState struct {
@@ -83,7 +84,7 @@ func processRetryChildTransportKey(name string) (string, bool) {
 
 func initializeProcessRetryChildTransport() *processRetryChildTransportState {
 	state := &processRetryChildTransportState{}
-	child, ok := os.LookupEnv(constants.CIVisibilityInternalRetryProcessChild)
+	child, ok := internalenv.Lookup(constants.CIVisibilityInternalRetryProcessChild)
 	enabled, err := strconv.ParseBool(child)
 	if !ok || err != nil || !enabled {
 		return state
@@ -91,7 +92,7 @@ func initializeProcessRetryChildTransport() *processRetryChildTransportState {
 	state.active = true
 	state.values = make(map[string]string, len(processRetryChildTransportKeys))
 	for _, key := range processRetryChildTransportKeys {
-		if value, ok := os.LookupEnv(key); ok {
+		if value, ok := internalenv.Lookup(key); ok {
 			state.values[key] = value
 		}
 		if err := os.Unsetenv(key); err != nil && state.err == nil {

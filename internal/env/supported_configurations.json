@@ -317,6 +317,41 @@
         "default": "false"
       }
     ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_ATTEMPT": [
+      {
+        "implementation": "A",
+        "type": "int",
+        "default": "0"
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_CHILD": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_REASON": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": ""
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_RESULT_PATH": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": ""
+      }
+    ],
+    "DD_CIVISIBILITY_INTERNAL_RETRY_PROCESS_TEST_NAME": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": ""
+      }
+    ],
     "DD_CIVISIBILITY_LOGS_ENABLED": [
       {
         "implementation": "A",
