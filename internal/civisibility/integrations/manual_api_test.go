@@ -382,7 +382,7 @@ func TestProcessRetryChildFeatureGettersHideCachedParentState(t *testing.T) {
 }
 
 func TestProcessRetryChildStartupHasNoCloseActions(t *testing.T) {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		require.Empty(t, closeActions)
 		require.Equal(t, civisibility.StateUninitialized, civisibility.GetState())
 		require.Zero(t, CreateTestSession().SessionID())

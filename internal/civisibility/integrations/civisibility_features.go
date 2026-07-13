@@ -400,7 +400,7 @@ func ensureAdditionalFeaturesInitialization(_ string) {
 
 // GetSettings gets the settings from the backend settings endpoint
 func GetSettings() *net.SettingsResponseData {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return &net.SettingsResponseData{}
 	}
 	// call to ensure the settings features initialization is completed (service name can be null here)
@@ -410,7 +410,7 @@ func GetSettings() *net.SettingsResponseData {
 
 // GetKnownTests gets the known tests data
 func GetKnownTests() *net.KnownTestsResponseData {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return &net.KnownTestsResponseData{}
 	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
@@ -420,7 +420,7 @@ func GetKnownTests() *net.KnownTestsResponseData {
 
 // GetTestManagementTestsData gets the test management tests data
 func GetTestManagementTestsData() *net.TestManagementTestsResponseDataModules {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return &net.TestManagementTestsResponseDataModules{}
 	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
@@ -430,7 +430,7 @@ func GetTestManagementTestsData() *net.TestManagementTestsResponseDataModules {
 
 // GetFlakyRetriesSettings gets the flaky retries settings
 func GetFlakyRetriesSettings() *FlakyRetriesSetting {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return &FlakyRetriesSetting{}
 	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
@@ -440,7 +440,7 @@ func GetFlakyRetriesSettings() *FlakyRetriesSetting {
 
 // GetSkippableTests gets the skippable tests from the backend
 func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttributes {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return nil
 	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
@@ -450,7 +450,7 @@ func GetSkippableTests() map[string]map[string][]net.SkippableResponseDataAttrib
 
 // GetSkippableTestsResponse gets the full skippable-tests response from the backend.
 func GetSkippableTestsResponse() *net.SkippableTestsResponse {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return nil
 	}
 	// call to ensure the additional features initialization is completed (service name can be null here)
@@ -460,7 +460,7 @@ func GetSkippableTestsResponse() *net.SkippableTestsResponse {
 
 // GetImpactedTestsAnalyzer gets the impacted tests analyzer
 func GetImpactedTestsAnalyzer() *impactedtests.ImpactedTestAnalyzer {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return nil
 	}
 	// call to ensure the additional features initialization is completed (service name can be null here)

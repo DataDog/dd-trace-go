@@ -89,7 +89,7 @@ func EnsureCiVisibilityInitialization() {
 
 // InitializeCIVisibilityMock initialize the mocktracer for CI Visibility usage
 func InitializeCIVisibilityMock() mocktracer.Tracer {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return &processRetryNoopMockTracer{}
 	}
 	internalCiVisibilityInitialization(func([]tracer.StartOption) {
@@ -103,7 +103,7 @@ func InitializeCIVisibilityMock() mocktracer.Tracer {
 
 // internalCiVisibilityInitialization runs the one-time CI Visibility bootstrap and wires the selected tracer initializer into it.
 func internalCiVisibilityInitialization(tracerInitializer func([]tracer.StartOption)) {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return
 	}
 	ciVisibilityInitializationOnce.Do(func() {
@@ -287,7 +287,7 @@ func TryPushCiVisibilityPreCloseAction(action ciVisibilityCloseAction) bool {
 
 // ExitCiVisibility executes all registered close actions and stops the tracer.
 func ExitCiVisibility() {
-	if isProcessRetryChild() {
+	if IsProcessRetryChild() {
 		return
 	}
 	markCIVisibilitySignalHandlerStopping()
