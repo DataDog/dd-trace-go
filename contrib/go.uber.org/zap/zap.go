@@ -31,12 +31,25 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
 var instr *instrumentation.Instrumentation
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageGoUberOrgZap)
+}
+
+type config struct {
+	log128bits bool
+}
+
+var cfg = newConfig()
+
+func newConfig() *config {
+	return &config{
+		log128bits: options.GetBoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true),
+	}
 }
 
 // TraceFields returns zap.Field values carrying the Datadog trace and span IDs
@@ -46,8 +59,14 @@ func TraceFields(ctx context.Context) []zap.Field {
 	if !ok {
 		return nil
 	}
+	var traceID string
+	if cfg.log128bits && span.Context().TraceID() != tracer.TraceIDZero {
+		traceID = span.Context().TraceID()
+	} else {
+		traceID = strconv.FormatUint(span.Context().TraceIDLower(), 10)
+	}
 	return []zap.Field{
-		zap.String(ext.LogKeyTraceID, span.Context().TraceID()),
+		zap.String(ext.LogKeyTraceID, traceID),
 		zap.String(ext.LogKeySpanID, strconv.FormatUint(span.Context().SpanID(), 10)),
 	}
 }
