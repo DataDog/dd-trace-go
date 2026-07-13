@@ -143,8 +143,8 @@ jobs:
         with:
           persist-credentials: false
           path: ${{ github.workspace }}/otelc
-          repository: open-telemetry/opentelemetry-go-compile-instrumentation
-          ref: ${{ inputs.otelc-version || 'main' }} # TODO: replace with actual version once v1 is released
+          repository: hannahkm/opentelemetry-go-compile-instrumentation
+          ref: 'main' # TODO: replace with actual version once v1 is released
 
       - name: Setup Go
         id: setup-go
