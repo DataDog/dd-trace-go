@@ -71,10 +71,11 @@ func (w *otlpTraceWriter) reset() []*otlptrace.Span {
 
 func (w *otlpTraceWriter) add(spanList []*Span) {
 	defaultServiceName := w.config.internalConfig.ServiceName()
+	otelSemantics := w.config.internalConfig.OTelSemanticsEnabled()
 	w.mu.Lock()
 	w.spans = slices.Grow(w.spans, len(spanList))
 	for _, span := range spanList {
-		if otlpSpan := convertSpan(span, defaultServiceName); otlpSpan != nil {
+		if otlpSpan := convertSpan(span, defaultServiceName, otelSemantics); otlpSpan != nil {
 			w.spans = append(w.spans, otlpSpan)
 			w.buffSize += proto.Size(otlpSpan)
 		}
