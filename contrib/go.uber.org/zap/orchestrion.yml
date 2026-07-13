@@ -57,7 +57,7 @@ aspects:
             {{- if $ctx -}}
               {{ .AST.Fun.X }}.With(__ddzap.TraceFields({{ $ctx }})...).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- else if $req -}}
-              {{ .AST.Fun.X }}.With(__ddzap.TraceFields({{ $req }}.Context())...).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
+              {{ .AST.Fun.X }}.With(__ddzap.TraceFieldsFromRequest({{ $req }})...).{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- else -}}
               {{ . }}
             {{- end -}}
@@ -194,7 +194,7 @@ aspects:
             {{- if $ctx -}}
               {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFields({{ $ctx }})...).Sugar().{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- else if $req -}}
-              {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFields({{ $req }}.Context())...).Sugar().{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
+              {{ .AST.Fun.X }}.Desugar().With(__ddzap.TraceFieldsFromRequest({{ $req }})...).Sugar().{{ .AST.Fun.Name }}({{ range $i, $a := .AST.Args }}{{ if $i }}, {{ end }}{{ $a }}{{ end }}{{ if $ellipsis }}...{{ end }})
             {{- else -}}
               {{ . }}
             {{- end -}}

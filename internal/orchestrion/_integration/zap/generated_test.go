@@ -29,6 +29,10 @@ func TestNewLogger(t *testing.T) {
 	harness.Run(t, new(TestCaseNewLogger))
 }
 
+func TestNilRequest(t *testing.T) {
+	harness.Run(t, new(TestCaseNilRequest))
+}
+
 func TestNoContext(t *testing.T) {
 	harness.Run(t, new(TestCaseNoContext))
 }

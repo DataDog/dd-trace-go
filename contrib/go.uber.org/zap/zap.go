@@ -24,6 +24,7 @@ package zap
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 
 	"go.uber.org/zap"
@@ -69,4 +70,16 @@ func TraceFields(ctx context.Context) []zap.Field {
 		zap.String(ext.LogKeyTraceID, traceID),
 		zap.String(ext.LogKeySpanID, strconv.FormatUint(span.Context().SpanID(), 10)),
 	}
+}
+
+// TraceFieldsFromRequest returns TraceFields for req's context, or nil when req
+// is nil. Orchestrion uses this as a fallback trace source when a *http.Request
+// is in scope but no context.Context is: a nil req would otherwise panic on
+// req.Context() in an instrumented build where the original, uninstrumented log
+// call would have logged normally.
+func TraceFieldsFromRequest(req *http.Request) []zap.Field {
+	if req == nil {
+		return nil
+	}
+	return TraceFields(req.Context())
 }
