@@ -15,15 +15,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-const (
-	// Metadata keys for exposure tracking
-	metadataAllocationKey = "dd.allocation.key"
-	metadataDoLogKey      = "dd.doLog"
-	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
-	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time.
-	metadataEvalTimeKey = "dd.eval.timestamp_ms"
-)
-
 // exposureHook implements the OpenFeature Hook interface to track feature flag exposures.
 // It captures evaluation details and sends them to the exposure writer for reporting
 // to Datadog's event platform intake.

@@ -186,13 +186,17 @@ func startInferredSpanFromHeaders(headers http.Header) *tracer.Span {
 	pubsubCtx := extractInferredPubsubContext(headers)
 	if pubsubCtx != nil {
 		if cfg.pubsubPropagationAsSpanLinks && spanParentCtx != nil {
-			// Record the producer span as a span link, keeping producer and consumer traces separate.
-			link := tracer.SpanLink{
-				TraceID:     spanParentCtx.TraceIDLower(),
-				TraceIDHigh: spanParentCtx.TraceIDUpper(),
-				SpanID:      spanParentCtx.SpanID(),
+			// DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart zeroes IDs on the stub (links already appended above);
+			// only derive a link when real trace/span IDs are present.
+			if spanParentCtx.TraceIDLower() != 0 || spanParentCtx.TraceIDUpper() != 0 || spanParentCtx.SpanID() != 0 {
+				// Record the producer span as a span link, keeping producer and consumer traces separate.
+				link := tracer.SpanLink{
+					TraceID:     spanParentCtx.TraceIDLower(),
+					TraceIDHigh: spanParentCtx.TraceIDUpper(),
+					SpanID:      spanParentCtx.SpanID(),
+				}
+				inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
 			}
-			inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
 			return startInferredPubsubPushSubscriptionSpan(pubsubCtx, nil, inferredStartSpanOpts...)
 		}
 		return startInferredPubsubPushSubscriptionSpan(pubsubCtx, spanParentCtx, inferredStartSpanOpts...)
@@ -222,10 +226,6 @@ func extractInferredPubsubContext(headers http.Header) *pubsubContext {
 
 	projectID := parts[1]
 	subscriptionID := parts[3]
-
-	if projectID == "" || subscriptionID == "" {
-		return nil
-	}
 
 	messageID := headers.Get(PubsubHeaderMessageID)
 	if messageID == "" {
@@ -268,9 +268,9 @@ func startInferredPubsubPushSubscriptionSpan(pubsubContex *pubsubContext, parent
 			cfg.Tags[ext.MessagingDestinationName] = pubsubContex.subscriptionID
 			cfg.Tags[ext.MessagingOperationName] = "receive"
 			cfg.Tags[ext.MessagingMessageID] = pubsubContex.messageID
-			cfg.Tags["message_id"] = pubsubContex.messageID // duplicate to align with existing pubsub tags for pull subscriptions
-			cfg.Tags["gcloud.project_id"] = pubsubContex.projectID
-			cfg.Tags[ext.MessagingSystem] = "googlepubsub"
+			cfg.Tags[ext.PubsubMessageID] = pubsubContex.messageID // duplicate to align with existing pubsub tags for pull subscriptions
+			cfg.Tags[ext.GCPProjectID] = pubsubContex.projectID
+			cfg.Tags[ext.MessagingSystem] = ext.MessagingSystemGCPPubsub
 			cfg.Tags["_dd.inferred_span"] = 1
 		},
 	)

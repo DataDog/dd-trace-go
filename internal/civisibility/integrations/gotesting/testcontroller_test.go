@@ -1300,6 +1300,9 @@ func checkCapabilitiesTags(finishedSpans []*mocktracer.Span) {
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesAutoTestRetries)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesAutoTestRetries))
 	}
+	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesCoverageReportUpload)) != numOfTests {
+		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesCoverageReportUpload))
+	}
 	if len(getSpansWithTagName(tests, constants.LibraryCapabilitiesTestManagementQuarantine)) != numOfTests {
 		panic(fmt.Sprintf("expected all test spans to have the %s tag", constants.LibraryCapabilitiesTestManagementQuarantine))
 	}
@@ -1372,6 +1375,8 @@ func setUpHTTPServer(
 	testManagementData *net.TestManagementTestsResponseDataModules,
 	impactedTests bool,
 	itrCoverage map[string][]byte) *httptest.Server {
+	isolateReadCacheForMockServer()
+
 	// Reset the collected logs for the new server instance.
 	logsEntries = nil
 	enableKnownTests := knownTestsEnabled || earlyFlakyDetectionEnabled
@@ -1504,6 +1509,21 @@ func setUpHTTPServer(
 	os.Setenv(constants.APIKeyEnvironmentVariable, "12345")
 
 	return server
+}
+
+func isolateReadCacheForMockServer() {
+	// httptest ports can be reused between scenario subprocesses, so keep mock
+	// CI Visibility responses out of the shared short-lived read cache.
+	cacheRoot, err := os.MkdirTemp("", "dd-trace-go-civisibility-read-cache-*")
+	if err != nil {
+		log.Debug("unable to isolate CI Visibility read cache for mock server: %s", err.Error())
+		return
+	}
+	net.SetReadCacheHooksForTesting(cacheRoot, nil, nil, nil, nil)
+	integrations.PushCiVisibilityCloseAction(func() {
+		net.ResetReadCacheHooksForTesting()
+		_ = os.RemoveAll(cacheRoot)
+	})
 }
 
 func getSpansWithType(spans []*mocktracer.Span, spanType string) []*mocktracer.Span {

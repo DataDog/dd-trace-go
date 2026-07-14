@@ -50,8 +50,9 @@ type (
 	}
 
 	SettingsResponseData struct {
-		CodeCoverage        bool `json:"code_coverage"`
-		EarlyFlakeDetection struct {
+		CodeCoverage                bool `json:"code_coverage"`
+		CoverageReportUploadEnabled bool `json:"coverage_report_upload_enabled"`
+		EarlyFlakeDetection         struct {
 			Enabled         bool `json:"enabled"`
 			SlowTestRetries struct {
 				TenS    int `json:"10s"`
@@ -191,8 +192,9 @@ func logSettingsFeatures(settings *SettingsResponseData) {
 	if settings == nil {
 		return
 	}
-	log.Debug("civisibility.settings: enabled features [code_coverage:%t itr:%t tests_skipping:%t known_tests:%t impacted_tests:%t early_flake_detection:%t flaky_test_retries:%t test_management:%t require_git:%t attempt_to_fix_retries:%d]",
+	log.Debug("civisibility.settings: enabled features [code_coverage:%t coverage_report_upload:%t itr:%t tests_skipping:%t known_tests:%t impacted_tests:%t early_flake_detection:%t flaky_test_retries:%t test_management:%t require_git:%t attempt_to_fix_retries:%d]",
 		settings.CodeCoverage,
+		settings.CoverageReportUploadEnabled,
 		settings.ItrEnabled,
 		settings.TestsSkipping,
 		settings.KnownTestsEnabled,

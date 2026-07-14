@@ -28,6 +28,7 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 		{name: "manual-count"},
 		{name: "manual-codecoverage-disabled", extraEnv: []string{"DD_ITR_BACKFILL_CODE_COVERAGE=false"}},
 		{name: "manual-flaky-retry", extraEnv: []string{"DD_ITR_BACKFILL_FLAKY_RETRY=true"}},
+		{name: "manual-coverage-report-disabled", extraEnv: []string{"DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED=false"}},
 		{name: "manual-partial-coverage", extraEnv: []string{"DD_ITR_BACKFILL_PARTIAL_COVERAGE=true"}, skipProfileAssert: true},
 		{name: "manual-producer-bitmap-upload", skipProfileAssert: true},
 	} {
@@ -73,7 +74,7 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 		}},
 		{name: "producer-bitmap-upload", coverMode: "count", withProfile: true, skipProfileAssert: true},
 		{name: "repo-wide-backend-coverage", coverMode: "count", withProfile: true},
-		{name: "backfill-disabled-when-response-includes-out-of-process-test", coverMode: "count", withProfile: true, skipProfileAssert: true},
+		{name: "backfill-ignores-out-of-process-test", coverMode: "count", withProfile: true},
 		{name: "backfill-disabled-when-response-has-parameters", coverMode: "count", withProfile: true},
 		{name: "backfill-disabled-without-backend-coverage", coverMode: "count", withProfile: true, skipProfileAssert: true},
 		{name: "backfill-disabled-when-backend-coverage-does-not-match-profile", coverMode: "count", withProfile: true, skipProfileAssert: true},

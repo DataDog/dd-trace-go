@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/dataset"
 	"github.com/DataDog/dd-trace-go/v2/llmobs/experiment"
@@ -28,10 +27,10 @@ import (
 // body sent to /api/unstable/llm-obs/v1/experiments/<id>/events into the
 // transport struct, appends every recorded metric to events, and
 // delegates everything else to the default mock handler.
-func captureExperimentEvents(events *[]llmobstransport.ExperimentEvalMetricEvent, mu *sync.Mutex) testtracer.MockResponseFunc {
+func captureExperimentEvents(events *[]llmobstransport.ExperimentEvalMetricEvent, mu *sync.Mutex) http.HandlerFunc {
 	base := createMockHandler()
-	return func(r *http.Request) *http.Response {
-		path := strings.TrimPrefix(r.URL.Path, "/evp_proxy/v2")
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
 		if strings.HasPrefix(path, "/api/unstable/llm-obs/v1/experiments/") &&
 			strings.HasSuffix(path, "/events") && r.Method == http.MethodPost {
 			var body llmobstransport.PushExperimentEventsRequest
@@ -43,9 +42,8 @@ func captureExperimentEvents(events *[]llmobstransport.ExperimentEvalMetricEvent
 			mu.Lock()
 			*events = append(*events, body.Data.Attributes.Metrics...)
 			mu.Unlock()
-			return handleMockExperimentEvents(r)
 		}
-		return base(r)
+		base(w, r)
 	}
 }
 
@@ -59,8 +57,7 @@ func TestEvaluatorResult_BareValueStillWorks(t *testing.T) {
 		events []llmobstransport.ExperimentEvalMetricEvent
 		mu     sync.Mutex
 	)
-	tt := testTracer(t, testtracer.WithMockResponses(captureExperimentEvents(&events, &mu)))
-	defer tt.Stop()
+	testTracerWithHandler(t, captureExperimentEvents(&events, &mu))
 
 	evs := []experiment.Evaluator{
 		experiment.NewEvaluator("bare-score", func(_ context.Context, _ dataset.Record, _ any) (any, error) {
@@ -121,8 +118,7 @@ func TestEvaluatorResult_RichReturnPopulatesAllFields(t *testing.T) {
 		events []llmobstransport.ExperimentEvalMetricEvent
 		mu     sync.Mutex
 	)
-	tt := testTracer(t, testtracer.WithMockResponses(captureExperimentEvents(&events, &mu)))
-	defer tt.Stop()
+	testTracerWithHandler(t, captureExperimentEvents(&events, &mu))
 
 	evs := []experiment.Evaluator{
 		experiment.NewEvaluator("rich-judge", func(_ context.Context, _ dataset.Record, _ any) (any, error) {
@@ -185,8 +181,7 @@ func TestEvaluatorResult_RichReturnPopulatesAllFields(t *testing.T) {
 // natural behavior when an evaluator typed as returning *EvaluatorResult
 // has a nil shortcut on error.
 func TestEvaluatorResult_NilRichResultFallsThrough(t *testing.T) {
-	tt := testTracer(t)
-	defer tt.Stop()
+	testTracer(t)
 
 	evs := []experiment.Evaluator{
 		experiment.NewEvaluator("nil-rich", func(_ context.Context, _ dataset.Record, _ any) (any, error) {
@@ -219,8 +214,7 @@ func TestEvaluatorResult_MixedLegacyAndRich(t *testing.T) {
 		events []llmobstransport.ExperimentEvalMetricEvent
 		mu     sync.Mutex
 	)
-	tt := testTracer(t, testtracer.WithMockResponses(captureExperimentEvents(&events, &mu)))
-	defer tt.Stop()
+	testTracerWithHandler(t, captureExperimentEvents(&events, &mu))
 
 	evs := []experiment.Evaluator{
 		experiment.NewEvaluator("legacy", func(_ context.Context, _ dataset.Record, _ any) (any, error) {

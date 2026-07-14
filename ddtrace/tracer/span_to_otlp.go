@@ -53,7 +53,7 @@ func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 // -----------------------------------------------------------------------------
 
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
-func convertSpan(s *Span, defaultServiceName string) *otlptrace.Span {
+func convertSpan(s *Span, defaultServiceName string, otelSemantics bool) *otlptrace.Span {
 	if p, ok := s.context.SamplingPriority(); ok && p < ext.PriorityAutoKeep {
 		return nil
 	}
@@ -65,7 +65,7 @@ func convertSpan(s *Span, defaultServiceName string) *otlptrace.Span {
 		Kind:              convertSpanKind(getSpanKind(s)),
 		StartTimeUnixNano: uint64(s.start),
 		EndTimeUnixNano:   uint64(s.start + s.duration),
-		Attributes:        convertSpanAttributes(s, defaultServiceName),
+		Attributes:        convertSpanAttributes(s, defaultServiceName, otelSemantics),
 		Events:            convertEvents(s),
 		Links:             convertSpanLinks(s.spanLinks),
 		Status:            convertSpanStatus(s),
@@ -172,22 +172,47 @@ func addAttribute(attrs *[]*otlpcommon.KeyValue, key string, val *otlpcommon.Any
 	return len(*attrs) < maxAttributesCount
 }
 
+// otelIntMetricKeys are attributes the OTel semantic conventions define as integers.
+// Datadog stores numeric tags as float64, so these are re-encoded as OTLP intValue
+// rather than doubleValue to conform to the data model.
+var otelIntMetricKeys = map[string]struct{}{
+	"http.response.status_code": {},
+	"http.response.body.size":   {},
+	"http.request.body.size":    {},
+	"server.port":               {},
+	"network.peer.port":         {},
+	"network.destination.port":  {},
+	"client.port":               {},
+}
+
+// ddOnlyMetaKeys are Datadog-specific span tags omitted under OTelSemanticsEnabled;
+// they have no OTel equivalent. span.kind is already carried by the OTLP SpanKind field.
+var ddOnlyMetaKeys = map[string]struct{}{
+	ext.ErrorMsg:           {},
+	ext.ErrorType:          {},
+	ext.ErrorStack:         {},
+	ext.ErrorHandlingStack: {},
+	ext.SpanKind:           {},
+}
+
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
-func convertSpanAttributes(s *Span, defaultServiceName string) []*otlpcommon.KeyValue {
+func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics bool) []*otlpcommon.KeyValue {
 	n := s.meta.Count() + len(s.metrics) + len(s.metaStruct) + 3
 	if s.service != defaultServiceName {
 		n++
 	}
 	attrs := make([]*otlpcommon.KeyValue, 0, min(n, maxAttributesCount))
 
-	if !addAttribute(&attrs, "operation.name", otlpStringValue(s.name)) {
-		return attrs
-	}
-	if !addAttribute(&attrs, "resource.name", otlpStringValue(s.resource)) {
-		return attrs
-	}
-	if !addAttribute(&attrs, "span.type", otlpStringValue(s.spanType)) {
-		return attrs
+	if !otelSemantics {
+		if !addAttribute(&attrs, "operation.name", otlpStringValue(s.name)) {
+			return attrs
+		}
+		if !addAttribute(&attrs, "resource.name", otlpStringValue(s.resource)) {
+			return attrs
+		}
+		if !addAttribute(&attrs, "span.type", otlpStringValue(s.spanType)) {
+			return attrs
+		}
 	}
 	if s.service != defaultServiceName {
 		if !addAttribute(&attrs, "service.name", otlpStringValue(s.service)) {
@@ -195,12 +220,23 @@ func convertSpanAttributes(s *Span, defaultServiceName string) []*otlpcommon.Key
 		}
 	}
 	for key, value := range s.meta.All() {
+		if otelSemantics {
+			if _, skip := ddOnlyMetaKeys[key]; skip {
+				continue
+			}
+		}
 		if !addAttribute(&attrs, key, otlpStringValue(value)) {
 			return attrs
 		}
 	}
 	for key, value := range s.metrics {
-		if !addAttribute(&attrs, key, otlpDoubleValue(value)) {
+		var av *otlpcommon.AnyValue
+		if _, isInt := otelIntMetricKeys[key]; isInt {
+			av = otlpIntValue(int64(value))
+		} else {
+			av = otlpDoubleValue(value)
+		}
+		if !addAttribute(&attrs, key, av) {
 			return attrs
 		}
 	}
