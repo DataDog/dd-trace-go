@@ -50,7 +50,7 @@ func runMonitor(cfg *config) {
 	if err := uploadReport(cfg, report); err != nil {
 		// Emit one line to stderr so operators know a crash report was attempted
 		// but failed — without this, the failure is invisible.
-		fmt.Fprintf(os.Stderr, "datadog/crashtracker: upload failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "crashtracker: upload failed: %v\n", err)
 	}
 	os.Exit(0)
 }
