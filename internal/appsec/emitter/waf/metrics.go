@@ -18,7 +18,7 @@ import (
 	"github.com/DataDog/go-libddwaf/v5"
 	"github.com/DataDog/go-libddwaf/v5/timer"
 	"github.com/DataDog/go-libddwaf/v5/waferrors"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -64,7 +64,7 @@ type HandleMetrics struct {
 	internalTimerDistributions map[addresses.Scope]telemetry.MetricHandle
 
 	// wafRequestsCounts holds the telemetry metrics for the `waf.requests` metric, lazily filled
-	wafRequestsCounts *xsync.MapOf[RequestMilestones, telemetry.MetricHandle]
+	wafRequestsCounts *xsync.Map[RequestMilestones, telemetry.MetricHandle]
 
 	// Uncommon metric types
 
@@ -73,26 +73,26 @@ type HandleMetrics struct {
 	// raspRuleEval holds the telemetry metrics for the `rasp.rule_eval` metric by rule type
 	raspRuleEval [len(addresses.RASPRuleTypes)]telemetry.MetricHandle
 	// raspRuleSkipped holds the `rasp.rule.skipped` count metric, lazily filled by rule_type+reason
-	raspRuleSkipped *xsync.MapOf[raspMetricKey[string], telemetry.MetricHandle]
+	raspRuleSkipped *xsync.Map[raspMetricKey[string], telemetry.MetricHandle]
 
 	// Rare metric types
 
 	// truncationCounts holds the telemetry metrics for the `waf.input_truncated` metric, lazily filled
-	truncationCounts *xsync.MapOf[libddwaf.TruncationReason, telemetry.MetricHandle]
+	truncationCounts *xsync.Map[libddwaf.TruncationReason, telemetry.MetricHandle]
 	// truncationDistributions holds the telemetry metrics for the `waf.truncated_value_size` metric, lazily filled
-	truncationDistributions *xsync.MapOf[libddwaf.TruncationReason, telemetry.MetricHandle]
+	truncationDistributions *xsync.Map[libddwaf.TruncationReason, telemetry.MetricHandle]
 
 	// Epic metric types
 
 	// wafErrorCount holds the telemetry metrics for the `waf.error` metric, lazily filled
-	wafErrorCount *xsync.MapOf[int, telemetry.MetricHandle]
+	wafErrorCount *xsync.Map[int, telemetry.MetricHandle]
 	// raspErrorCount holds the telemetry metrics for the `rasp.error` metric, lazily filled
-	raspErrorCount *xsync.MapOf[raspMetricKey[int], telemetry.MetricHandle]
+	raspErrorCount *xsync.Map[raspMetricKey[int], telemetry.MetricHandle]
 
 	// Legendary metric types
 
 	// raspRuleMatch holds the telemetry metrics for the `rasp.rule.match` metric, lazily filled
-	raspRuleMatch *xsync.MapOf[raspMetricKey[string], telemetry.MetricHandle]
+	raspRuleMatch *xsync.Map[raspMetricKey[string], telemetry.MetricHandle]
 }
 
 var baseRASPTags = [len(addresses.RASPRuleTypes)][]string{
@@ -130,13 +130,13 @@ func NewMetricsInstance(newHandle *libddwaf.Handle, eventRulesVersion string) Ha
 			addresses.RASPScope: telemetry.Distribution(telemetry.NamespaceAppSec, "rasp.duration", baseTags),
 			addresses.WAFScope:  telemetry.Distribution(telemetry.NamespaceAppSec, "waf.duration", baseTags),
 		},
-		wafRequestsCounts:       xsync.NewMapOf[RequestMilestones, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<6)),
-		truncationCounts:        xsync.NewMapOf[libddwaf.TruncationReason, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
-		truncationDistributions: xsync.NewMapOf[libddwaf.TruncationReason, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<2)),
-		wafErrorCount:           xsync.NewMapOf[int, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
-		raspErrorCount:          xsync.NewMapOf[raspMetricKey[int], telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
-		raspRuleMatch:           xsync.NewMapOf[raspMetricKey[string], telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
-		raspRuleSkipped:         xsync.NewMapOf[raspMetricKey[string], telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
+		wafRequestsCounts:       xsync.NewMap[RequestMilestones, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<6)),
+		truncationCounts:        xsync.NewMap[libddwaf.TruncationReason, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
+		truncationDistributions: xsync.NewMap[libddwaf.TruncationReason, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<2)),
+		wafErrorCount:           xsync.NewMap[int, telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
+		raspErrorCount:          xsync.NewMap[raspMetricKey[int], telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
+		raspRuleMatch:           xsync.NewMap[raspMetricKey[string], telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
+		raspRuleSkipped:         xsync.NewMap[raspMetricKey[string], telemetry.MetricHandle](xsync.WithGrowOnly(), xsync.WithPresize(1<<3)),
 	}
 
 	for ruleType := range metrics.baseRASPTags {
@@ -255,8 +255,8 @@ func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map
 	var truncationTypes libddwaf.TruncationReason
 	for reason, sizes := range truncations.AsMap() {
 		truncationTypes |= reason
-		handle, _ := m.truncationDistributions.LoadOrCompute(reason, func() telemetry.MetricHandle {
-			return telemetry.Distribution(telemetry.NamespaceAppSec, "waf.truncated_value_size", []string{"truncation_reason:" + strconv.Itoa(int(reason))})
+		handle, _ := m.truncationDistributions.LoadOrCompute(reason, func() (telemetry.MetricHandle, bool) {
+			return telemetry.Distribution(telemetry.NamespaceAppSec, "waf.truncated_value_size", []string{"truncation_reason:" + strconv.Itoa(int(reason))}), false
 		})
 		for _, size := range sizes {
 			handle.Submit(float64(size))
@@ -264,8 +264,8 @@ func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map
 	}
 
 	if truncationTypes != 0 {
-		handle, _ := m.truncationCounts.LoadOrCompute(truncationTypes, func() telemetry.MetricHandle {
-			return telemetry.Count(telemetry.NamespaceAppSec, "waf.input_truncated", []string{"truncation_reason:" + strconv.Itoa(int(truncationTypes))})
+		handle, _ := m.truncationCounts.LoadOrCompute(truncationTypes, func() (telemetry.MetricHandle, bool) {
+			return telemetry.Count(telemetry.NamespaceAppSec, "waf.input_truncated", []string{"truncation_reason:" + strconv.Itoa(int(truncationTypes))}), false
 		})
 		handle.Submit(1)
 	}
@@ -279,7 +279,7 @@ func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map
 
 // incWafRequestsCounts increments the `waf.requests` metric with the current milestones and creates a new metric handle if it does not exist
 func (m *ContextMetrics) incWafRequestsCounts() {
-	handle, _ := m.wafRequestsCounts.LoadOrCompute(m.Milestones, func() telemetry.MetricHandle {
+	handle, _ := m.wafRequestsCounts.LoadOrCompute(m.Milestones, func() (telemetry.MetricHandle, bool) {
 		return telemetry.Count(telemetry.NamespaceAppSec, "waf.requests", append([]string{
 			"request_blocked:" + strconv.FormatBool(m.Milestones.requestBlocked),
 			"rule_triggered:" + strconv.FormatBool(m.Milestones.ruleTriggered),
@@ -287,7 +287,7 @@ func (m *ContextMetrics) incWafRequestsCounts() {
 			"rate_limited:" + strconv.FormatBool(m.Milestones.rateLimited),
 			"waf_error:" + strconv.FormatBool(m.Milestones.wafError),
 			"input_truncated:" + strconv.FormatBool(m.Milestones.inputTruncated),
-		}, m.baseTags...))
+		}, m.baseTags...)), false
 	})
 
 	handle.Submit(1)
@@ -323,10 +323,10 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 				blockTag = "block:success"
 			}
 
-			handle, _ := m.raspRuleMatch.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: blockTag}, func() telemetry.MetricHandle {
+			handle, _ := m.raspRuleMatch.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: blockTag}, func() (telemetry.MetricHandle, bool) {
 				return telemetry.Count(telemetry.NamespaceAppSec, "rasp.rule.match", append([]string{
 					blockTag,
-				}, m.baseRASPTags[ruleType]...))
+				}, m.baseRASPTags[ruleType]...)), false
 			})
 
 			handle.Submit(1)
@@ -458,10 +458,10 @@ func (m *ContextMetrics) wafError(in error) {
 	}
 	updateClosestToZero(&m.WAFErrorCode, int32(errCode))
 
-	handle, _ := m.wafErrorCount.LoadOrCompute(errCode, func() telemetry.MetricHandle {
+	handle, _ := m.wafErrorCount.LoadOrCompute(errCode, func() (telemetry.MetricHandle, bool) {
 		return telemetry.Count(telemetry.NamespaceAppSec, "waf.error", append([]string{
 			"waf_error:" + strconv.Itoa(errCode),
-		}, m.baseTags...))
+		}, m.baseTags...)), false
 	})
 
 	handle.Submit(1)
@@ -470,10 +470,10 @@ func (m *ContextMetrics) wafError(in error) {
 // SkipRASPRule records a skipped RASP rule evaluation for the given rule type and reason.
 // Valid reasons per RFC-1012: "app-startup", "before-request", "after-request", "out-of-request".
 func (m *ContextMetrics) SkipRASPRule(ruleType addresses.RASPRuleType, reason string) {
-	handle, _ := m.raspRuleSkipped.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: reason}, func() telemetry.MetricHandle {
+	handle, _ := m.raspRuleSkipped.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: reason}, func() (telemetry.MetricHandle, bool) {
 		return telemetry.Count(telemetry.NamespaceAppSec, "rasp.rule.skipped", append([]string{
 			"reason:" + reason,
-		}, m.baseRASPTags[ruleType]...))
+		}, m.baseRASPTags[ruleType]...)), false
 	})
 	handle.Submit(1)
 }
@@ -485,10 +485,10 @@ func (m *ContextMetrics) raspError(in error, ruleType addresses.RASPRuleType) {
 	}
 	updateClosestToZero(&m.RASPErrorCodes[ruleType], int32(errCode))
 
-	handle, _ := m.raspErrorCount.LoadOrCompute(raspMetricKey[int]{typ: ruleType, additionalTag: errCode}, func() telemetry.MetricHandle {
+	handle, _ := m.raspErrorCount.LoadOrCompute(raspMetricKey[int]{typ: ruleType, additionalTag: errCode}, func() (telemetry.MetricHandle, bool) {
 		return telemetry.Count(telemetry.NamespaceAppSec, "rasp.error", append([]string{
 			"waf_error:" + strconv.Itoa(errCode),
-		}, m.baseRASPTags[ruleType]...))
+		}, m.baseRASPTags[ruleType]...)), false
 	})
 
 	handle.Submit(1)

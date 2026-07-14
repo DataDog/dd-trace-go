@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 )
@@ -93,7 +94,9 @@ type Config struct {
 	universalVersion bool
 	// env contains the environment that this application will run under.
 	env string
-	// serviceMappings holds a set of service mappings to dynamically rename services
+	// site specifies the Datadog site to send data to
+	site string
+	// serviceMappings holds a set of service mappings to dynamically rename services.
 	serviceMappings map[string]string
 	// hostname is automatically assigned from the OS hostname, or from the DD_TRACE_SOURCE_HOSTNAME environment variable or WithHostname() option.
 	hostname string
@@ -173,6 +176,9 @@ type Config struct {
 	otlpExportMetricsMode bool
 	// otlpEndpoint is the resolved OTEL_EXPORTER_OTLP_ENDPOINT base URL; always non-empty.
 	otlpEndpoint string
+	// otelSemanticsEnabled makes OTLP-exported spans match the pure OTel SDK
+	// by omitting Datadog-specific attributes. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
+	otelSemanticsEnabled bool
 	// otlpTraceURL is the OTLP collector endpoint for traces
 	otlpTraceURL string
 	// otlpHeaders holds the resolved OTLP trace headers from
@@ -180,8 +186,6 @@ type Config struct {
 	otlpHeaders map[string]string
 	// otlpSpanMetricsEnabled controls OTLP span metrics export; nil auto-enables when otlpExportMode && runtimeMetricsOtel.
 	otlpSpanMetricsEnabled *bool
-	// otlpSemanticsMode controls DD_TRACE_OTEL_SEMANTICS_ENABLED; true omits DD-specific span-metric attributes.
-	otlpSemanticsMode bool
 	// otlpMetricsURL is the resolved OTLP metrics endpoint (e.g. http://host:4318/v1/metrics).
 	otlpMetricsURL string
 	// otlpMetricsHeaders holds HTTP headers for OTLP metrics export.
@@ -196,6 +200,29 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
+	// propagationStyleInject specifies the propagation style for injection.
+	propagationStyleInject string
+	// propagationStyleExtract specifies the propagation style for extraction.
+	propagationStyleExtract string
+	// propagationBehaviorExtract controls what happens when an incoming trace context is found.
+	propagationBehaviorExtract string
+	// propagationExtractFirst, when true, stops extraction after the first successful extractor.
+	propagationExtractFirst bool
+	// traceSamplingRules holds the RC-aware trace sampling rules (DD_TRACE_SAMPLING_RULES).
+	traceSamplingRules *DynamicConfig[[]samplingrules.SamplingRule]
+	// spanSamplingRules holds the single-span sampling rules (DD_SPAN_SAMPLING_RULES).
+	spanSamplingRules []samplingrules.SamplingRule
+	// spanSamplingRulesOrigin tracks origin separately because, unlike traceSamplingRules,
+	// this field isn't a DynamicConfig (no RC support yet).
+	spanSamplingRulesOrigin telemetry.Origin
+	// appKey is the Datadog application key.
+	appKey string
+	// ciVisibilityAgentlessURL is a custom agentless endpoint for CI Visibility.
+	ciVisibilityAgentlessURL string
+	// experimentalFlaggingProviderEnabled enables the experimental OpenFeature RC provider.
+	experimentalFlaggingProviderEnabled bool
+	// spanPoolEnabled enables the experimental span pool.
+	spanPoolEnabled bool
 }
 
 // checkProductConflict enforces the cross-product gate for programmatic API calls.
@@ -257,6 +284,7 @@ func loadConfig() *Config {
 	cfg.version = p.GetString("DD_VERSION", "")
 	cfg.universalVersion = p.GetBool("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
 	cfg.env = p.GetString("DD_ENV", "")
+	cfg.site = p.GetString("DD_SITE", "datadoghq.com")
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, internal.DDTagsDelimiter)
 	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
 	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
@@ -281,6 +309,8 @@ func loadConfig() *Config {
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	otelSemantics, otelSemanticsOrigin := p.GetBoolWithOrigin("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
+	cfg.SetOTelSemanticsEnabled(otelSemantics, otelSemanticsOrigin)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
@@ -307,7 +337,6 @@ func loadConfig() *Config {
 			}
 		}
 	}
-	cfg.otlpSemanticsMode = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
 	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
 	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
 		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
@@ -320,6 +349,14 @@ func loadConfig() *Config {
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL"))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
+	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
+	cfg.propagationStyleExtract = p.GetString("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "")
+	cfg.propagationBehaviorExtract = p.GetString("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "continue")
+	cfg.propagationExtractFirst = p.GetBool("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
+	cfg.appKey = p.GetString("DD_APP_KEY", "")
+	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
+	cfg.experimentalFlaggingProviderEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
+	cfg.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
 
 	sampleRate, sampleRateOrigin := p.GetFloatWithValidatorOrigin("DD_TRACE_SAMPLE_RATE", math.NaN(), validateSampleRate)
 	cfg.globalSampleRate = newDynamicConfig("trace_sample_rate", sampleRate, sampleRateOrigin, equalFloat, nil)
@@ -394,7 +431,16 @@ func loadConfig() *Config {
 		cfg.reportHostname = true
 	}
 
-	cfg.apiKey = env.Get("DD_API_KEY")
+	cfg.apiKey = p.GetString("DD_API_KEY", "")
+
+	traceRules, traceOrigin := samplingRulesFromSource(p, "DD_TRACE_SAMPLING_RULES", samplingrules.SamplingRuleTrace)
+	cfg.traceSamplingRules = newDynamicConfig("trace_sample_rules", traceRules, traceOrigin, samplingrules.EqualsFalseNegative, nil)
+	configtelemetry.ReportDefault("trace_sample_rules", traceRules)
+
+	spanRules, spanOrigin := samplingRulesFromSource(p, "DD_SPAN_SAMPLING_RULES", samplingrules.SamplingRuleSpan)
+	cfg.spanSamplingRules = spanRules
+	cfg.spanSamplingRulesOrigin = spanOrigin
+	configtelemetry.ReportDefault("span_sample_rules", spanRules)
 
 	return cfg
 }
@@ -1010,6 +1056,22 @@ func (c *Config) SetEnv(env string, origin telemetry.Origin, product ...Product)
 	configtelemetry.Report("DD_ENV", env, origin)
 }
 
+func (c *Config) Site() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.site
+}
+
+func (c *Config) SetSite(site string, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_SITE", origin, site, product...) {
+		return
+	}
+	c.site = site
+	configtelemetry.Report("DD_SITE", site, origin)
+}
+
 // SetFeatureFlags adds to the feature flag set. No cross-product gate because this is additive, not a replacement.
 func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
@@ -1266,6 +1328,24 @@ func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, produ
 	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
 }
 
+func (c *Config) OTelSemanticsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelSemanticsEnabled
+}
+
+// SetOTelSemanticsEnabled sets whether OTLP-exported spans should match the pure
+// OpenTelemetry SDK, and reports the value to configuration telemetry.
+func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_OTEL_SEMANTICS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.otelSemanticsEnabled = enabled
+	configtelemetry.Report("DD_TRACE_OTEL_SEMANTICS_ENABLED", enabled, origin)
+}
+
 func (c *Config) TraceProtocol() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1344,12 +1424,6 @@ func (c *Config) OTLPSpanMetricsEnabled() bool {
 	return c.otlpExportMode && c.runtimeMetricsOtel
 }
 
-func (c *Config) OTLPSemanticsMode() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.otlpSemanticsMode
-}
-
 func (c *Config) OTLPMetricsURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1416,4 +1490,106 @@ func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ..
 	}
 	c.sendRetries = retries
 	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
+func (c *Config) PropagationStyleInject() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationStyleInject
+}
+
+func (c *Config) PropagationStyleExtract() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationStyleExtract
+}
+
+func (c *Config) PropagationBehaviorExtract() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationBehaviorExtract
+}
+
+func (c *Config) PropagationExtractFirst() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationExtractFirst
+}
+
+func (c *Config) TraceSamplingRules() []samplingrules.SamplingRule {
+	return c.traceSamplingRules.Get()
+}
+
+// TraceSamplingRulesConfig returns the DynamicConfig for trace sampling rules.
+// Used by the tracer's RC handler to apply remote-config updates.
+func (c *Config) TraceSamplingRulesConfig() *DynamicConfig[[]samplingrules.SamplingRule] {
+	return c.traceSamplingRules
+}
+
+func (c *Config) SetTraceSamplingRules(rules []samplingrules.SamplingRule, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, baselineOrigin := c.traceSamplingRules.Baseline()
+	if samplingRulesBlockedByPrecedence("DD_TRACE_SAMPLING_RULES", baselineOrigin, origin) {
+		return
+	}
+	if c.checkProductConflict("DD_TRACE_SAMPLING_RULES", origin, rules, product...) {
+		return
+	}
+	c.traceSamplingRules.setBaseline(rules, origin)
+	configtelemetry.Report("trace_sample_rules", rules, origin)
+}
+
+func (c *Config) SpanSamplingRules() []samplingrules.SamplingRule {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanSamplingRules
+}
+
+func (c *Config) SetSpanSamplingRules(rules []samplingrules.SamplingRule, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if samplingRulesBlockedByPrecedence("DD_SPAN_SAMPLING_RULES", c.spanSamplingRulesOrigin, origin) {
+		return
+	}
+	if c.checkProductConflict("DD_SPAN_SAMPLING_RULES", origin, rules, product...) {
+		return
+	}
+	c.spanSamplingRules = rules
+	c.spanSamplingRulesOrigin = origin
+	configtelemetry.Report("span_sample_rules", rules, origin)
+}
+
+func (c *Config) AppKey() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.appKey
+}
+
+func (c *Config) CIVisibilityAgentlessURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ciVisibilityAgentlessURL
+}
+
+func (c *Config) ExperimentalFlaggingProviderEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.experimentalFlaggingProviderEnabled
+}
+
+func (c *Config) SpanPoolEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.spanPoolEnabled
+}
+
+func (c *Config) SetSpanPoolEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.spanPoolEnabled = enabled
+	configtelemetry.Report("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", enabled, origin)
 }

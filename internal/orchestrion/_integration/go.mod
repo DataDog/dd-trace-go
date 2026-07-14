@@ -6,11 +6,10 @@ require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/99designs/gqlgen v0.17.92
-	github.com/DataDog/datadog-agent/pkg/proto v0.79.0
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.11.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev
-	github.com/DataDog/go-libddwaf/v5 v5.0.0-rc.2
+	github.com/DataDog/go-libddwaf/v5 v5.0.0
 	github.com/DataDog/orchestrion v1.11.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
@@ -40,7 +39,7 @@ require (
 	github.com/graphql-go/graphql v0.8.1
 	github.com/graphql-go/handler v0.2.4
 	github.com/hashicorp/vault/api v1.15.0
-	github.com/jackc/pgx/v5 v5.9.0
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/labstack/echo/v5 v5.1.0
@@ -89,6 +88,7 @@ require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.79.0 // indirect
+	github.com/DataDog/datadog-agent/pkg/proto v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/log v0.79.0 // indirect
@@ -161,7 +161,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.10.17 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.21 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.21 // indirect
-	github.com/aws/aws-sdk-go-v2/service/kinesis v1.35.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/kinesis v1.43.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.97.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.35.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sns v1.34.7 // indirect
@@ -309,7 +309,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/polyfloyd/go-errorlint v1.8.1-0.20250906200200-9b25878c4dea // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
-	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
+	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

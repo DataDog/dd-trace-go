@@ -54,7 +54,6 @@ const (
 	envLLMObsMlApp            = "DD_LLMOBS_ML_APP"
 	envLLMObsAgentlessEnabled = "DD_LLMOBS_AGENTLESS_ENABLED"
 	envLLMObsProjectName      = "DD_LLMOBS_PROJECT_NAME"
-	envSpanPoolEnabled        = "DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED"
 )
 
 var contribIntegrations = map[string]struct {
@@ -160,6 +159,20 @@ type config struct {
 	// httpClient specifies the HTTP client to be used by the agent's transport.
 	httpClient *http.Client
 
+	// agentTransport, if set, is applied as the HTTP client's round-tripper
+	// unconditionally after newConfig builds c.httpClient — including after
+	// the orchestrion override that discards any WithHTTPClient value. This
+	// escape hatch exists specifically because orchestrion replaces c.httpClient
+	// to avoid self-tracing, which would cause test helpers to dial the real
+	// network even when an in-process agent is provided. Only test helpers
+	// (e.g. tracertest) should set this field.
+	agentTransport http.RoundTripper
+
+	// llmobsHTTPClient overrides c.llmobs.TracerConfig.HTTPClient after newConfig
+	// builds it (so it is not clobbered by the agentTransport-based c.httpClient).
+	// For test use only (via ddtrace/x/llmobstest).
+	llmobsHTTPClient *http.Client
+
 	// logger specifies the logger to use when printing errors. If not specified, the "log" package
 	// will be used.
 	logger Logger
@@ -168,29 +181,15 @@ type config struct {
 	// associated with the runtime and the tracer.
 	statsdClient internal.StatsdClient
 
-	// spanRules contains user-defined rules to determine the sampling rate to apply
-	// to a single span without affecting the entire trace
-	spanRules []SamplingRule
-
-	// traceRules contains user-defined rules to determine the sampling rate to apply
-	// to the entire trace if any spans satisfy the criteria
-	traceRules []SamplingRule
-
 	// tickChan specifies a channel which will receive the time every time the tracer must flush.
 	// It defaults to time.Ticker; replaced in tests.
 	tickChan <-chan time.Time
-
-	// traceSampleRules holds the trace sampling rules
-	traceSampleRules dynamicConfig[[]SamplingRule]
 
 	// tracingAsTransport specifies whether the tracer is running in transport-only mode, where traces are only sent when other products request it.
 	tracingAsTransport bool
 
 	// llmobs contains the LLM Observability config
 	llmobs llmobsconfig.Config
-
-	// spanPoolEnabled controls whether finished spans are recycled via sync.Pool.
-	spanPoolEnabled bool
 
 	// otelRuntimeMetricsShouldBeEnabled reports whether OTel runtime metrics
 	// should be started instead of the DD statsd runtime metrics paths.
@@ -225,7 +224,6 @@ func newConfig(opts ...StartOption) (*config, error) {
 		AgentlessEnabled: llmobsAgentlessEnabledFromEnv(),
 		ProjectName:      env.Get(envLLMObsProjectName),
 	}
-	c.spanPoolEnabled = internal.BoolEnv(envSpanPoolEnabled, false)
 	for _, fn := range opts {
 		if fn == nil {
 			continue
@@ -240,8 +238,8 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// Until the reclaim signal is decoupled from the pooled span, disable
 	// pooling when Orchestrion is active and warn once. Checked after the option
 	// loop so an explicit WithSpanPool(true) is gated too.
-	if shouldDisableSpanPool(c.spanPoolEnabled, orchestrion.Enabled()) {
-		c.spanPoolEnabled = false
+	if shouldDisableSpanPool(c.internalConfig.SpanPoolEnabled(), orchestrion.Enabled()) {
+		c.internalConfig.SetSpanPoolEnabled(false, telemetry.OriginCode, internalconfig.ProductTracer)
 		log.Warn("the experimental span pool (DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED / WithSpanPool) is incompatible with Orchestrion and has been disabled")
 	}
 	rawAgentURL := c.internalConfig.RawAgentURL()
@@ -258,6 +256,15 @@ func newConfig(opts ...StartOption) (*config, error) {
 		} else {
 			c.httpClient = internal.DefaultHTTPClient(c.internalConfig.AgentTimeout(), false)
 		}
+	}
+	// Allow test helpers to inject an in-process transport so that tracer
+	// bootstrap (e.g. /info discovery) never touches the real network even
+	// when orchestrion would otherwise override the HTTP client above.
+	// We cannot use WithHTTPClient for this because orchestrion unconditionally
+	// replaces c.httpClient to avoid self-tracing. agentTransport is applied
+	// last so it always wins. For testing only — see config.agentTransport.
+	if c.agentTransport != nil {
+		c.httpClient = &http.Client{Transport: c.agentTransport}
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	// TODO: env/version/service fall back to global tags when unset. This runs
@@ -305,8 +312,13 @@ func newConfig(opts ...StartOption) (*config, error) {
 		c.ddTransport = newHTTPTransport(traceURL, agentURL+statsAPIPath, c.httpClient, headers)
 	}
 	if c.propagator == nil {
+		extractFirst := c.internalConfig.PropagationExtractFirst()
 		c.propagator = NewPropagator(&PropagatorConfig{
 			MaxTagsHeaderLen: c.internalConfig.MaxTagsHeaderLen(),
+			InjectStyle:      c.internalConfig.PropagationStyleInject(),
+			ExtractStyle:     c.internalConfig.PropagationStyleExtract(),
+			BehaviorExtract:  c.internalConfig.PropagationBehaviorExtract(),
+			ExtractFirst:     &extractFirst,
 		})
 	}
 	if c.logger != nil {
@@ -362,12 +374,15 @@ func newConfig(opts ...StartOption) (*config, error) {
 		Version:    c.internalConfig.Version(),
 		AgentURL:   c.internalConfig.AgentURL(),
 		APIKey:     c.internalConfig.APIKey(),
-		APPKey:     env.Get("DD_APP_KEY"),
+		APPKey:     c.internalConfig.AppKey(),
 		HTTPClient: c.httpClient,
-		Site:       env.Get("DD_SITE"),
+		Site:       c.internalConfig.Site(),
 	}
 	c.llmobs.AgentFeatures = llmobsconfig.AgentFeatures{
 		EVPProxyV2: af.evpProxyV2,
+	}
+	if c.llmobsHTTPClient != nil {
+		c.llmobs.TracerConfig.HTTPClient = c.llmobsHTTPClient
 	}
 	// Set global 128-bits trace ID generation variable
 	traceID128BitEnabled.Store(c.internalConfig.TraceID128BitEnabled())
@@ -1002,16 +1017,41 @@ func WithDogstatsdAddr(addr string) StartOption {
 	}
 }
 
+// StatsdClient is the method set the tracer needs from an injected statsd
+// client. *statsd.ClientDirect from github.com/DataDog/datadog-go/v5 satisfies
+// this at compile time, so passing an incompatible type is a build error
+// rather than a silent no-op.
+type StatsdClient interface {
+	statsd.ClientInterface
+	statsd.ClientDirectInterface
+}
+
+// WithStatsdClient sets a custom statsd client to be used by the tracer for
+// internal metrics. When set, the tracer will not create its own statsd client,
+// allowing callers to share a single client across the tracer and application code.
+func WithStatsdClient(client StatsdClient) StartOption {
+	return func(cfg *config) {
+		cfg.statsdClient = client
+	}
+}
+
 // WithSamplingRules specifies the sampling rates to apply to spans based on the
 // provided rules.
 func WithSamplingRules(rules []SamplingRule) StartOption {
 	return func(cfg *config) {
+		var traceRules, spanRules []SamplingRule
 		for _, rule := range rules {
-			if rule.ruleType == SamplingRuleSpan {
-				cfg.spanRules = append(cfg.spanRules, rule)
+			if rule.RuleType() == SamplingRuleSpan {
+				spanRules = append(spanRules, rule)
 			} else {
-				cfg.traceRules = append(cfg.traceRules, rule)
+				traceRules = append(traceRules, rule)
 			}
+		}
+		if len(traceRules) > 0 {
+			cfg.internalConfig.SetTraceSamplingRules(traceRules, telemetry.OriginCode, internalconfig.ProductTracer)
+		}
+		if len(spanRules) > 0 {
+			cfg.internalConfig.SetSpanSamplingRules(spanRules, telemetry.OriginCode, internalconfig.ProductTracer)
 		}
 	}
 }
@@ -1306,12 +1346,47 @@ func WithLLMObsAgentlessEnabled(agentlessEnabled bool) StartOption {
 	}
 }
 
+// withLLMObsInProcessTransport sets the LLMObs test base URL and injects an
+// in-process RoundTripper so that no real network activity occurs during LLMObs
+// test requests. testBaseURL is used only for URL path construction.
+// Linked with go:linkname from ddtrace/x/llmobstest.
+func withLLMObsInProcessTransport(testBaseURL string, rt http.RoundTripper) StartOption {
+	return func(c *config) {
+		c.llmobs.TestBaseURL = testBaseURL
+		c.llmobsHTTPClient = &http.Client{Transport: rt}
+	}
+}
+
+// withAgentTransport injects an in-process HTTP round-tripper for the agent
+// transport. It exists because WithHTTPClient cannot be used in tests that run
+// under orchestrion: orchestrion unconditionally replaces c.httpClient to
+// prevent self-tracing, which would cause the in-process agent transport to be
+// discarded and leave the tracer dialing the real network. agentTransport is
+// applied after that override in newConfig so it always takes precedence.
+// For use in test helpers only.
+func withAgentTransport(rt http.RoundTripper) StartOption {
+	return func(c *config) {
+		c.agentTransport = rt
+	}
+}
+
+// withForceAgentWriter ensures the tracer uses agentTraceWriter regardless of
+// OTEL_TRACES_EXPORTER. Without this, a developer whose shell has
+// OTEL_TRACES_EXPORTER=otlp set (e.g. for Claude Code telemetry) would see
+// all test spans routed to the remote OTLP endpoint instead of the in-process
+// test agent, causing every span-assertion to fail. For use in test helpers only.
+func withForceAgentWriter() StartOption {
+	return func(c *config) {
+		c.internalConfig.SetOTLPExportMode(false, internalconfig.OriginCode)
+	}
+}
+
 // WithSpanPool controls whether finished spans are recycled via sync.Pool.
 // When enabled, spans are pooled for reduced allocation overhead.
 // This is equivalent to the DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED environment variable.
 func WithSpanPool(enabled bool) StartOption {
 	return func(c *config) {
-		c.spanPoolEnabled = enabled
+		c.internalConfig.SetSpanPoolEnabled(enabled, telemetry.OriginCode, internalconfig.ProductTracer)
 	}
 }
 

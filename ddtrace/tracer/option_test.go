@@ -221,6 +221,22 @@ func TestAutoDetectStatsd(t *testing.T) {
 	})
 }
 
+func TestWithStatsdClient(t *testing.T) {
+	// Create a real *statsd.ClientDirect — it satisfies both statsd.ClientInterface
+	// and internal.StatsdClient, which is the contract WithStatsdClient documents.
+	client, err := statsd.NewDirect("localhost:8125", statsd.WithMaxMessagesPerPayload(40))
+	require.NoError(t, err)
+	defer client.Close()
+
+	cfg, err := newTestConfig(WithStatsdClient(client))
+	require.NoError(t, err)
+
+	// The injected client should be used directly instead of creating a new one.
+	got, err := newStatsdClient(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, client, got, "WithStatsdClient: tracer should use the provided client")
+}
+
 func TestInternalMetricsDisabled(t *testing.T) {
 	isNoop := func(c internal.StatsdClient) bool {
 		_, ok := c.(*statsd.NoOpClientDirect)

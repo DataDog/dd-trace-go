@@ -17,7 +17,9 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -304,6 +306,40 @@ func buildOTLPHeaders(headers map[string]string) map[string]string {
 	}
 	headers["Content-Type"] = OTLPContentTypeHeader
 	return headers
+}
+
+// samplingRulesFromSource resolves rules for key, falling back to the key+"_FILE" path
+// when the inline value is empty; file-derived rules are still reported as OriginEnvVar.
+func samplingRulesFromSource(p *provider.Provider, key string, spanType samplingrules.SamplingRuleType) ([]samplingrules.SamplingRule, telemetry.Origin) {
+	raw, origin := p.GetStringWithOrigin(key, "")
+	rulesFile := p.GetString(key+"_FILE", "")
+	if raw != "" && rulesFile != "" {
+		log.Warn("DIAGNOSTICS Error(s): %s is available and will take precedence over %s_FILE", key, key)
+	} else if raw == "" && rulesFile != "" {
+		b, err := os.ReadFile(rulesFile)
+		if err != nil {
+			log.Warn("DIAGNOSTICS Error(s): couldn't read file from %s_FILE: %s", key, err)
+		} else {
+			raw = string(b)
+			origin = telemetry.OriginEnvVar
+		}
+	}
+	rules, err := samplingrules.UnmarshalSamplingRules([]byte(raw), spanType)
+	if err != nil {
+		log.Warn("DIAGNOSTICS Error(s) parsing %s: %s", key, err)
+	}
+	return rules, origin
+}
+
+// samplingRulesBlockedByPrecedence reports whether a WithSamplingRules call (origin
+// OriginCode) should be dropped because current already came from a non-default,
+// non-code source — env/declarative config takes precedence per ddtrace/tracer/doc.go.
+func samplingRulesBlockedByPrecedence(field string, current, incoming telemetry.Origin) bool {
+	if incoming != telemetry.OriginCode || current == telemetry.OriginDefault || current == telemetry.OriginCode {
+		return false
+	}
+	log.Warn("config: %s is already set via %s; ignoring WithSamplingRules", field, current)
+	return true
 }
 
 // parseGlobalTags parses a DD_TAGS-style string into a tag map, dropping

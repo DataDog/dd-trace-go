@@ -11,7 +11,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.79.0
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.79.0
 	github.com/DataDog/datadog-go/v5 v5.8.3
-	github.com/DataDog/go-libddwaf/v5 v5.0.0-rc.2
+	github.com/DataDog/go-libddwaf/v5 v5.0.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d
 	github.com/DataDog/sketches-go v1.4.8
 	github.com/cenkalti/backoff/v5 v5.0.3
@@ -23,7 +23,7 @@ require (
 	github.com/linkdata/deadlock v0.5.5
 	github.com/minio/simdjson-go v0.4.5
 	github.com/open-feature/go-sdk v1.17.0
-	github.com/puzpuzpuz/xsync/v3 v3.5.1
+	github.com/puzpuzpuz/xsync/v4 v4.5.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3
 	github.com/spaolacci/murmur3 v1.1.0

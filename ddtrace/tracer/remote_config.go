@@ -10,19 +10,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -133,56 +132,12 @@ type rcTag struct {
 
 // Sampling rules provided by the remote config define tags differently other than using a map.
 type rcSamplingRule struct {
-	Service    string     `json:"service"`
-	Provenance provenance `json:"provenance"`
-	Name       string     `json:"name,omitempty"`
-	Resource   string     `json:"resource"`
-	Tags       []rcTag    `json:"tags,omitempty"`
-	SampleRate float64    `json:"sample_rate"`
-}
-
-func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
-	if rules == nil {
-		return nil
-	}
-	var convertedRules []SamplingRule
-	for _, rule := range *rules {
-		if rule.Tags != nil {
-			tags := make(map[string]*regexp.Regexp, len(rule.Tags))
-			tagsStrs := make(map[string]string, len(rule.Tags))
-			for _, tag := range rule.Tags {
-				tags[tag.Key] = globMatch(tag.ValueGlob)
-				tagsStrs[tag.Key] = tag.ValueGlob
-			}
-			x := SamplingRule{
-				Service:    globMatch(rule.Service),
-				Name:       globMatch(rule.Name),
-				Resource:   globMatch(rule.Resource),
-				Rate:       rule.SampleRate,
-				Tags:       tags,
-				Provenance: rule.Provenance,
-				globRule: &jsonRule{
-					Name:     rule.Name,
-					Service:  rule.Service,
-					Resource: rule.Resource,
-					Tags:     tagsStrs,
-				},
-			}
-
-			convertedRules = append(convertedRules, x)
-		} else {
-			x := SamplingRule{
-				Service:    globMatch(rule.Service),
-				Name:       globMatch(rule.Name),
-				Resource:   globMatch(rule.Resource),
-				Rate:       rule.SampleRate,
-				Provenance: rule.Provenance,
-				globRule:   &jsonRule{Name: rule.Name, Service: rule.Service, Resource: rule.Resource},
-			}
-			convertedRules = append(convertedRules, x)
-		}
-	}
-	return &convertedRules
+	Service    string                   `json:"service"`
+	Provenance samplingrules.Provenance `json:"provenance"`
+	Name       string                   `json:"name,omitempty"`
+	Resource   string                   `json:"resource"`
+	Tags       []rcTag                  `json:"tags,omitempty"`
+	SampleRate float64                  `json:"sample_rate"`
 }
 
 type headerTags []headerTag
@@ -273,9 +228,10 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	if updated {
 		t.rulesSampling.traces.setGlobalSampleRate(sampleRateCfg.Get())
 	}
-	updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(merged.TraceSamplingRules))
+	traceSampleRulesCfg := t.config.internalConfig.TraceSamplingRulesConfig()
+	updated = traceSampleRulesCfg.HandleRC(convertRemoteSamplingRules(merged.TraceSamplingRules))
 	if updated {
-		telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
+		t.rulesSampling.traces.setTraceSampleRules(traceSampleRulesCfg.Get())
 	}
 	t.config.internalConfig.HeaderAsTagsConfig().HandleRC(merged.HeaderTags.toSlice())
 	t.config.internalConfig.GlobalTagsConfig().HandleRC(newRCTagsMap(merged.Tags))
@@ -510,7 +466,7 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingEnableLiveDebugging,
 	)
 
-	if internal.BoolEnv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false) {
+	if t.config.internalConfig.ExperimentalFlaggingProviderEnabled() {
 		if err := internalffe.SubscribeRC(); err != nil {
 			log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error())
 		}

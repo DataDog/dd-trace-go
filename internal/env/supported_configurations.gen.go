@@ -83,6 +83,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA":                             {},
 	"DD_GIT_REPOSITORY_URL":                                           {},
 	"DD_GIT_TAG":                                                      {},
+	"DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS":                {},
 	"DD_HAPROXY_SPOA_HEALTHCHECK_PORT":                                {},
 	"DD_HAPROXY_SPOA_HOST":                                            {},
 	"DD_HAPROXY_SPOA_PORT":                                            {},
@@ -293,6 +294,8 @@ var SupportedConfigurations = map[string]struct{}{
 // reported in configuration telemetry. It is seeded from entries marked "sensitive": true
 // in supported_configurations.json.
 var SensitiveConfigurations = map[string]struct{}{
+	"DD_API_KEY":                         {},
+	"DD_APP_KEY":                         {},
 	"OTEL_EXPORTER_OTLP_HEADERS":         {},
 	"OTEL_EXPORTER_OTLP_LOGS_HEADERS":    {},
 	"OTEL_EXPORTER_OTLP_METRICS_HEADERS": {},
