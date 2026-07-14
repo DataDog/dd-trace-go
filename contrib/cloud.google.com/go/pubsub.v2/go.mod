@@ -5,7 +5,6 @@ go 1.25.0
 require (
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/DataDog/dd-trace-go/v2 v2.10.0-dev
-	github.com/googleapis/gax-go/v2 v2.20.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.273.1
 	google.golang.org/grpc v1.80.0
@@ -17,6 +16,7 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.5.3 // indirect
+	cloud.google.com/go/pubsub v1.50.1 // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.79.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/opentelemetry-mapping-go/otlp/attributes v0.79.0 // indirect
@@ -47,6 +47,7 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
+	github.com/googleapis/gax-go/v2 v2.20.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect

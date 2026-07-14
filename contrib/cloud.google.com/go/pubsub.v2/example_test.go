@@ -10,7 +10,6 @@ import (
 	"log"
 
 	"cloud.google.com/go/pubsub/v2"
-	"cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
 
 	pubsubtrace "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2"
 )
@@ -38,23 +37,6 @@ func ExampleSubscriber_Receive() {
 	err = sub.Receive(context.Background(), pubsubtrace.WrapReceiveHandler(sub, func(_ context.Context, _ *pubsub.Message) {
 		// TODO: Handle message.
 	}))
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func ExampleWrapTopicAdminClient() {
-	client, err := pubsub.NewClient(context.Background(), "project-id")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Wrap the admin client to trace topic, subscription, snapshot and schema
-	// management operations as gcp.pubsub.request spans.
-	topicAdmin := pubsubtrace.WrapTopicAdminClient(client.TopicAdminClient)
-	_, err = topicAdmin.CreateTopic(context.Background(), &pubsubpb.Topic{
-		Name: "projects/project-id/topics/topic",
-	})
 	if err != nil {
 		log.Fatal(err)
 	}

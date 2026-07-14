@@ -21,13 +21,14 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 )
 
 const adminProjectID = "project"
 
-func setupAdmin(t *testing.T) (context.Context, mocktracer.Tracer, *TopicAdminClient, *SubscriptionAdminClient) {
+func setupAdmin(t *testing.T) (context.Context, mocktracer.Tracer, *vkit.TopicAdminClient, *vkit.SubscriptionAdminClient) {
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
 
@@ -37,7 +38,12 @@ func setupAdmin(t *testing.T) (context.Context, mocktracer.Tracer, *TopicAdminCl
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 
-	conn, err := grpc.NewClient(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// The admin GAPIC clients issue their RPCs over this connection, so
+	// installing the interceptor here traces their admin operations.
+	conn, err := grpc.NewClient(srv.Addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(pubsubtrace.UnaryAdminInterceptorV2()),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, conn.Close()) })
 
@@ -46,7 +52,7 @@ func setupAdmin(t *testing.T) (context.Context, mocktracer.Tracer, *TopicAdminCl
 	sac, err := vkit.NewSubscriptionAdminClient(ctx, option.WithGRPCConn(conn))
 	require.NoError(t, err)
 
-	return ctx, mt, WrapTopicAdminClient(tac), WrapSubscriptionAdminClient(sac)
+	return ctx, mt, tac, sac
 }
 
 func topicName(id string) string {
@@ -137,15 +143,17 @@ func TestTraceAdminWithService(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, err := grpc.NewClient(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(srv.Addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(pubsubtrace.UnaryAdminInterceptorV2(WithService("my-admin-service"))),
+	)
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, conn.Close()) }()
 
 	tac, err := vkit.NewTopicAdminClient(ctx, option.WithGRPCConn(conn))
 	require.NoError(t, err)
 
-	wrapped := WrapTopicAdminClient(tac, WithService("my-admin-service"))
-	_, err = wrapped.CreateTopic(ctx, &pubsubpb.Topic{Name: topicName("topic")})
+	_, err = tac.CreateTopic(ctx, &pubsubpb.Topic{Name: topicName("topic")})
 	require.NoError(t, err)
 
 	spans := mt.FinishedSpans()
