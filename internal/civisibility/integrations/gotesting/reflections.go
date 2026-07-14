@@ -315,6 +315,26 @@ func getTestPrivateFieldsReflect(t *testing.T) *commonPrivateFields {
 	return testFields
 }
 
+// getCommonParentPrivateFields returns the synchronization, completion, and
+// parent fields needed to classify runtime.Goexit consistently with testing.tRunner.
+func getCommonParentPrivateFields(fields *commonPrivateFields) *commonPrivateFields {
+	if fields == nil || fields.parent == nil || *fields.parent == nil {
+		return nil
+	}
+	layout := getTestingInternalsLayout()
+	if layout == nil || layout.disabled || !allAvailable(
+		layout.common.mu, layout.common.finished, layout.common.parent.unsafeField,
+	) {
+		return nil
+	}
+	parentBase := *fields.parent
+	return &commonPrivateFields{
+		mu:       fieldPtr[sync.RWMutex](parentBase, layout.common.mu),
+		finished: fieldPtr[bool](parentBase, layout.common.finished),
+		parent:   (*unsafe.Pointer)(fieldRawPtr(parentBase, layout.common.parent.unsafeField)),
+	}
+}
+
 // testingTestState is an opaque handle for testing.testState. The real type is
 // private to the standard library; callers must only pass values obtained from
 // a *testing.T's private tstate field.

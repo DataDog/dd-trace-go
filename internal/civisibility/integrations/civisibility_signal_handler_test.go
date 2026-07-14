@@ -171,6 +171,47 @@ func TestCIVisibilitySignalHandlerDoesNotExitAfterNormalShutdownStarts(t *testin
 	require.Nil(t, currentCIVisibilitySignalHandlerForTesting())
 }
 
+func TestCIVisibilitySignalHandlerDoesNotExitWhenNormalShutdownStartsDuringSignalShutdown(t *testing.T) {
+	resetCIVisibilityBootstrapStateForTesting()
+	disableAdditionalFeaturesForBootstrapTest()
+	t.Cleanup(restoreCIVisibilityMockModeForTesting)
+
+	exitCodes := make(chan int, 1)
+	originalExitFunc := ciVisibilitySignalExitFunc
+	ciVisibilitySignalExitFunc = func(code int) {
+		exitCodes <- code
+	}
+	t.Cleanup(func() {
+		ciVisibilitySignalExitFunc = originalExitFunc
+	})
+
+	InitializeCIVisibilityMock()
+	handler := currentCIVisibilitySignalHandlerForTesting()
+	require.NotNil(t, handler)
+
+	preCloseEntered := make(chan struct{})
+	releasePreClose := make(chan struct{})
+	require.True(t, TryPushCiVisibilityPreCloseAction(func() {
+		close(preCloseEntered)
+		<-releasePreClose
+	}))
+
+	handler.signals <- syscall.SIGTERM
+	select {
+	case <-preCloseEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("signal shutdown did not reach the pre-close barrier")
+	}
+
+	markCIVisibilitySignalHandlerStopping()
+	close(releasePreClose)
+	assertSignalHandlerDone(t, handler)
+	assertNoSignalHandlerExitCode(t, exitCodes)
+	stopCIVisibilitySignalHandler()
+	require.Nil(t, currentCIVisibilitySignalHandlerForTesting())
+	require.Equal(t, civisibility.StateExited, civisibility.GetState())
+}
+
 // currentCIVisibilitySignalHandlerForTesting returns the active handler under
 // the same mutex used by production code.
 func currentCIVisibilitySignalHandlerForTesting() *ciVisibilitySignalHandler {
