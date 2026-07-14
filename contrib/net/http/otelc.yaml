@@ -25,3 +25,19 @@ net-server:
         before: BeforeServeHTTP
         after: AfterServeHTTP
         path: github.com/DataDog/dd-trace-go/contrib/net/http/v2/otelc
+
+# Doesn't work, I think
+get-head-post-postform:
+  target: net/http
+  where:
+    one-of:
+      - function_call: Get
+      - function_call: Head
+      - function_call: Post
+      - function_call: PostForm
+    signature_contains:
+      args: [context.Context, *net/http.Request]
+  do:
+    - wrap_call:
+        replace: "{{ FuncName }}({{ . }})" # Issue
+        path: github.com/DataDog/dd-trace-go/contrib/net/http/v2/client
