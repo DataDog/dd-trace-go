@@ -89,9 +89,23 @@ func splitDump(dump []byte) (preamble []string, threads []Thread) {
 	sc := bufio.NewScanner(bytes.NewReader(dump))
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
-	var lines []string
+	// Preallocate: rough estimate of 80 bytes per line for typical Go stack frames.
+	lines := make([]string, 0, len(dump)/80)
 	for sc.Scan() {
 		lines = append(lines, sc.Text())
+	}
+	if err := sc.Err(); err != nil {
+		// Scanner errors mean the dump was truncated mid-stream. Mark the output
+		// incomplete so callers know the parse is partial rather than silently
+		// returning what looks like a complete result.
+		preamble = lines
+		threads = []Thread{{
+			Crashed: true,
+			Name:    "goroutine unknown",
+			State:   "unknown",
+			Stack:   StackTrace{Format: stackFormat, Incomplete: true},
+		}}
+		return preamble, threads
 	}
 
 	// Find the first goroutine header; everything before it is the preamble.

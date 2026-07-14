@@ -14,7 +14,7 @@ import (
 // loadFixture reads a testdata fixture file and panics if it cannot be read,
 // so benchmark failures are obvious rather than silent.
 func loadFixture(tb testing.TB, name string) []byte {
-	tb.Helper()
+	tb.Helper() // surfaces failures at the call site, not inside this helper
 	data, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
 		tb.Fatalf("loadFixture %q: %v", name, err)

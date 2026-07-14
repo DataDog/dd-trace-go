@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"runtime/debug"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // monitorEnvVar is the environment variable set on the monitor child process.
@@ -53,6 +55,24 @@ func runMonitor(cfg *config) {
 	os.Exit(0)
 }
 
+// buildChildEnv builds the environment for the monitor child process. It copies
+// the parent env, drops runtime-tuning variables that would misconfigure the
+// lightweight monitor (see golang/go#73490), and sets the monitor marker.
+func buildChildEnv() []string {
+	parentEnv := os.Environ()
+	childEnv := make([]string, 0, len(parentEnv)+1)
+	for _, kv := range parentEnv {
+		// GOMEMLIMIT and GOGC are tuned for the application's workload; applying
+		// them to the monitor can starve it or trigger GC pathologies.
+		if strings.HasPrefix(kv, "GOMEMLIMIT=") || strings.HasPrefix(kv, "GOGC=") {
+			continue
+		}
+		childEnv = append(childEnv, kv)
+	}
+	childEnv = append(childEnv, monitorEnvVar+"=1")
+	return childEnv
+}
+
 // spawnMonitor re-execs the current binary as a monitor child, sets up a pipe,
 // and registers the pipe write end with runtime/debug.SetCrashOutput.
 func spawnMonitor(cfg *config) error {
@@ -66,22 +86,7 @@ func spawnMonitor(cfg *config) error {
 	// diagnostics from the monitor are not swallowed.
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
-
-	// Build the child env: copy the parent env, drop runtime-tuning variables
-	// that would misconfigure the lightweight monitor, and set the marker.
-	parentEnv := os.Environ()
-	childEnv := make([]string, 0, len(parentEnv)+1)
-	for _, kv := range parentEnv {
-		// GOMEMLIMIT and GOGC are tuned for the application's workload; applying
-		// them to the monitor can starve it or trigger GC pathologies
-		// (see golang/go#73490).
-		if strings.HasPrefix(kv, "GOMEMLIMIT=") || strings.HasPrefix(kv, "GOGC=") {
-			continue
-		}
-		childEnv = append(childEnv, kv)
-	}
-	childEnv = append(childEnv, monitorEnvVar+"=1")
-	cmd.Env = childEnv
+	cmd.Env = buildChildEnv()
 
 	// StdinPipe wires the child's stdin; do not set cmd.Stdin separately.
 	pipe, err := cmd.StdinPipe()
@@ -109,8 +114,13 @@ func spawnMonitor(cfg *config) error {
 	}
 
 	// Reap the child when it exits to release OS resources (fds, zombie on Linux).
-	// The result is discarded: the monitor exits 0 on both clean and crash paths.
-	go func() { _ = cmd.Wait() }()
+	// Log non-zero exits: the monitor always calls os.Exit(0), so a non-zero
+	// status indicates the monitor itself panicked during parse or upload.
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			log.Warn("crashtracker: monitor process exited unexpectedly: %v", err)
+		}
+	}()
 
 	// SetCrashOutput duplicated the fd internally, so this write end can be
 	// released. Retain a reference for Stop to close it.
