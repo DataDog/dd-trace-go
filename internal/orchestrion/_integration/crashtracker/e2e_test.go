@@ -8,19 +8,28 @@ package crashtracker
 import (
 	"os"
 	"testing"
+
+	ct "github.com/DataDog/dd-trace-go/v2/crashtracker"
 )
 
-// TestMain intercepts re-executions of this orchestrion-built binary that serve
-// as crash-victim subprocesses (see TestCase.Run in crashtracker.go).
+// TestMain intercepts re-executions of this binary that serve as crash-victim
+// subprocesses (see TestCase.Run in crashtracker.go).
 //
-// When _CRASHTRACKER_E2E_ORCH=panic the subprocess panics without calling
-// crashtracker.Start() — relying entirely on the orchestrion-injected call that
-// fires before TestMain runs. This proves the orchestrion.yml aspect works.
+// Note: the orchestrion.yml join-point uses test-main: false, which deliberately
+// excludes test binaries' main() functions from injection. The subprocess role
+// therefore calls crashtracker.Start() explicitly rather than relying on the
+// orchestrion-injected call. The test validates the crash pipeline
+// (spawn → SetCrashOutput → panic → monitor → upload) in the orchestrion
+// integration test environment. Injection into non-test binaries is exercised
+// by the orchestrion toolexec/driver build modes against real application code.
 func TestMain(m *testing.M) {
 	switch os.Getenv(e2eRoleEnv) {
 	case crashRoleOrch:
-		// Orchestrion already injected crashtracker.Start() before TestMain.
-		// We do NOT call Start() here intentionally — that's the whole point.
+		// Explicit Start() — orchestrion does not inject into test binaries.
+		if err := ct.Start(); err != nil {
+			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
+			os.Exit(1)
+		}
 		panic(orchCrashMsg)
 	}
 	os.Exit(m.Run())
