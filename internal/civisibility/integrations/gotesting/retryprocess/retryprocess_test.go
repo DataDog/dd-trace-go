@@ -164,7 +164,15 @@ func TestMain(m *testing.M) {
 			assertProcessRetryForcedRunSpans(tracer)
 		}
 	}
-	assertProcessRetryFixtureRequests(processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) == "")
+	if exitCode == 0 && processRetryFixtureEnv(processRetryParallelEFDEnv) == "true" {
+		assertProcessRetryParallelEFDSpans(tracer)
+	}
+	if exitCode == 0 && processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" {
+		assertProcessRetryAttemptToFixSpans(tracer)
+	}
+	requireLogs := processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) == "" &&
+		processRetryFixtureEnv(processRetryParallelEFDEnv) != "true"
+	assertProcessRetryFixtureRequests(requireLogs)
 	os.Exit(exitCode)
 }
 
@@ -253,6 +261,63 @@ func newProcessRetryFixtureServer() *httptest.Server {
 			response.Data.Attributes.FlakyTestRetriesEnabled = true
 			response.Data.Attributes.ItrEnabled = true
 			response.Data.Attributes.TestsSkipping = true
+			if processRetryFixtureEnv(processRetryParallelEFDEnv) == "true" {
+				response.Data.Attributes.KnownTestsEnabled = true
+				response.Data.Attributes.EarlyFlakeDetection.Enabled = true
+				response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 2
+			}
+			if processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" {
+				response.Data.Attributes.TestManagement.Enabled = true
+				response.Data.Attributes.TestManagement.AttemptToFixRetries = 3
+			}
+			_ = json.NewEncoder(w).Encode(&response)
+		case "/api/v2/ci/libraries/tests":
+			if processRetryFixtureEnv(processRetryParallelEFDEnv) != "true" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			response := struct {
+				Data struct {
+					ID         string                                 `json:"id"`
+					Type       string                                 `json:"type"`
+					Attributes civisibilitynet.KnownTestsResponseData `json:"attributes"`
+				} `json:"data"`
+			}{}
+			response.Data.ID = "process-retry-fixture"
+			response.Data.Type = "ci_app_libraries_tests"
+			response.Data.Attributes.Tests = civisibilitynet.KnownTestsResponseDataModules{
+				"known-module": civisibilitynet.KnownTestsResponseDataSuites{},
+			}
+			_ = json.NewEncoder(w).Encode(&response)
+		case "/api/v2/test/libraries/test-management/tests":
+			if processRetryFixtureEnv(processRetryAttemptToFixEnv) != "true" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			response := struct {
+				Data struct {
+					ID         string                                                 `json:"id"`
+					Type       string                                                 `json:"type"`
+					Attributes civisibilitynet.TestManagementTestsResponseDataModules `json:"attributes"`
+				} `json:"data"`
+			}{}
+			response.Data.ID = "process-retry-fixture"
+			response.Data.Type = "ci_app_libraries_tests"
+			response.Data.Attributes.Modules = map[string]civisibilitynet.TestManagementTestsResponseDataSuites{
+				"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/retryprocess": {
+					Suites: map[string]civisibilitynet.TestManagementTestsResponseDataTests{
+						"fixtures_test.go": {
+							Tests: map[string]civisibilitynet.TestManagementTestsResponseDataTestProperties{
+								"TestProcessRetryAttemptToFixParent": {
+									Properties: civisibilitynet.TestManagementTestsResponseDataTestPropertiesAttributes{AttemptToFix: true},
+								},
+							},
+						},
+					},
+				},
+			}
 			_ = json.NewEncoder(w).Encode(&response)
 		case "/api/v2/ci/tests/skippable":
 			w.Header().Set("Content-Type", "application/json")
@@ -379,6 +444,20 @@ func assertProcessRetryFixtureRequests(requireLogs bool) {
 	if got := processRetryFixtureRequests.counts["/api/v2/ci/tests/skippable"]; got != 1 {
 		panic(fmt.Sprintf("expected only the parent process to request skippable tests once, got %d requests", got))
 	}
+	wantKnownTestsRequests := 0
+	if processRetryFixtureEnv(processRetryParallelEFDEnv) == "true" {
+		wantKnownTestsRequests = 1
+	}
+	if got := processRetryFixtureRequests.counts["/api/v2/ci/libraries/tests"]; got != wantKnownTestsRequests {
+		panic(fmt.Sprintf("expected %d parent known-tests requests, got %d", wantKnownTestsRequests, got))
+	}
+	wantTestManagementRequests := 0
+	if processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" {
+		wantTestManagementRequests = 1
+	}
+	if got := processRetryFixtureRequests.counts["/api/v2/test/libraries/test-management/tests"]; got != wantTestManagementRequests {
+		panic(fmt.Sprintf("expected %d parent test-management requests, got %d", wantTestManagementRequests, got))
+	}
 	if got := processRetryFixtureRequests.counts["/api/v2/git/repository/packfile"]; got != 0 {
 		panic(fmt.Sprintf("expected no git packfile uploads while git upload is disabled, got %d requests", got))
 	}
@@ -390,6 +469,14 @@ func assertProcessRetryFixtureRequests(requireLogs bool) {
 		case "/api/v2/libraries/tests/services/setting", "/api/v2/ci/tests/skippable":
 			if count < 1 {
 				panic(fmt.Sprintf("expected at least one request to %s", path))
+			}
+		case "/api/v2/ci/libraries/tests":
+			if count != wantKnownTestsRequests {
+				panic(fmt.Sprintf("expected %d requests to %s, got %d", wantKnownTestsRequests, path, count))
+			}
+		case "/api/v2/test/libraries/test-management/tests":
+			if count != wantTestManagementRequests {
+				panic(fmt.Sprintf("expected %d requests to %s, got %d", wantTestManagementRequests, path, count))
 			}
 		case "/api/v2/logs":
 			if requireLogs && count < 1 {
@@ -502,6 +589,77 @@ func assertProcessRetryForcedRunSpans(tracer mocktracer.Tracer) {
 	}
 	if processRetrySpans != 1 {
 		panic(fmt.Sprintf("expected exactly 1 forced-run process retry span, got %d", processRetrySpans))
+	}
+}
+
+func assertProcessRetryParallelEFDSpans(tracer mocktracer.Tracer) {
+	const resourceName = "fixtures_test.go.TestProcessRetryParallelEFDParent"
+	var fixtureSpans []*mocktracer.Span
+	for _, span := range tracer.FinishedSpans() {
+		if span.Tag(ext.ResourceName) == resourceName {
+			fixtureSpans = append(fixtureSpans, span)
+		}
+	}
+	if len(fixtureSpans) != 3 {
+		panic(fmt.Sprintf("expected one parent and two parallel EFD retry spans, got %d", len(fixtureSpans)))
+	}
+	processRetrySpans := 0
+	for _, span := range fixtureSpans {
+		if span.Tag(constants.TestRetryExecutionMode) != "process" {
+			continue
+		}
+		processRetrySpans++
+		if span.Tag(constants.TestIsRetry) != "true" {
+			panic(fmt.Sprintf("expected parallel EFD process retry span to have %s=true", constants.TestIsRetry))
+		}
+		if span.Tag(constants.TestRetryReason) != constants.EarlyFlakeDetectionRetryReason {
+			panic(fmt.Sprintf("expected parallel EFD process retry reason %s", constants.EarlyFlakeDetectionRetryReason))
+		}
+		if span.Tag(constants.TestFinalStatus) != nil {
+			panic("parallel EFD retry span unexpectedly has test.final_status")
+		}
+	}
+	if processRetrySpans != 2 {
+		panic(fmt.Sprintf("expected exactly 2 parallel EFD process retry spans, got %d", processRetrySpans))
+	}
+}
+
+func assertProcessRetryAttemptToFixSpans(tracer mocktracer.Tracer) {
+	const resourceName = "fixtures_test.go.TestProcessRetryAttemptToFixParent"
+	var fixtureSpans []*mocktracer.Span
+	for _, span := range tracer.FinishedSpans() {
+		if span.Tag(ext.ResourceName) == resourceName {
+			fixtureSpans = append(fixtureSpans, span)
+		}
+	}
+	if len(fixtureSpans) != 3 {
+		panic(fmt.Sprintf("expected one parent and two attempt-to-fix retry spans, got %d", len(fixtureSpans)))
+	}
+	processRetrySpans := 0
+	passedTags := 0
+	for _, span := range fixtureSpans {
+		if span.Tag(constants.TestIsAttempToFix) != "true" {
+			panic(fmt.Sprintf("expected attempt-to-fix span to have %s=true", constants.TestIsAttempToFix))
+		}
+		if span.Tag(constants.TestAttemptToFixPassed) == "true" {
+			passedTags++
+		}
+		if span.Tag(constants.TestRetryExecutionMode) != "process" {
+			continue
+		}
+		processRetrySpans++
+		if span.Tag(constants.TestIsRetry) != "true" {
+			panic(fmt.Sprintf("expected attempt-to-fix process retry span to have %s=true", constants.TestIsRetry))
+		}
+		if span.Tag(constants.TestRetryReason) != constants.AttemptToFixRetryReason {
+			panic(fmt.Sprintf("expected attempt-to-fix retry reason %s", constants.AttemptToFixRetryReason))
+		}
+	}
+	if processRetrySpans != 2 {
+		panic(fmt.Sprintf("expected exactly 2 attempt-to-fix process retry spans, got %d", processRetrySpans))
+	}
+	if passedTags != 1 {
+		panic(fmt.Sprintf("expected exactly one %s=true tag, got %d", constants.TestAttemptToFixPassed, passedTags))
 	}
 }
 

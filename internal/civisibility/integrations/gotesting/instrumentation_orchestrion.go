@@ -32,7 +32,7 @@ import (
 //
 //go:linkname instrumentTestingM
 func instrumentTestingM(m *testing.M) func(exitCode int) {
-	return instrumentTestingMWithOptions(m, additionalFeatureWrapperOptions{})
+	return instrumentTestingMWithOptions(m, processRetryWrapperOptions())
 }
 
 // instrumentTestingTFunc helper function to instrument a testing function func(*testing.T)

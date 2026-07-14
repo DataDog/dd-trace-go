@@ -86,12 +86,9 @@ type (
 		processRetryMode              retryExecutionMode
 		processRetryModeSet           bool
 		processRetryIdentity          *testIdentity
-		coverageActive                func() bool
 		fuzzActive                    func() bool
 		processRetryContext           func() context.Context
 		processRetryGuardsSnapshotted bool
-		processRetryCoverageGuardSet  bool
-		processRetryCoverageActive    bool
 		processRetryFuzzGuardSet      bool
 		processRetryFuzzActive        bool
 
@@ -119,7 +116,6 @@ type (
 
 	additionalFeatureWrapperOptions struct {
 		processRetryAllowed bool
-		coverageActive      func() bool
 		fuzzActive          func() bool
 	}
 
@@ -692,7 +688,6 @@ func applyAdditionalFeaturesToTestFunc(
 			testInfo:             testInfo,
 			processRetryAllowed:  wrapperOpts.processRetryAllowed,
 			processRetryIdentity: identity,
-			coverageActive:       wrapperOpts.coverageActive,
 			fuzzActive:           wrapperOpts.fuzzActive,
 			preExecMetaAdjust: func(execMeta *testExecutionMetadata, _ int) {
 				// Synchronize the test execution metadata with the original test execution metadata.
@@ -1033,13 +1028,19 @@ func shouldUseParallelEFD(options *runTestWithRetryOptions, execMeta *testExecut
 
 // runBoundedParallelEFDIterations schedules remaining EFD attempts while limiting concurrent retry executions.
 func runBoundedParallelEFDIterations(execOpts *executionOptions, attempts, maxConcurrency int64) {
+	runBoundedParallelIterations(attempts, maxConcurrency, func() {
+		executeTestIteration(execOpts)
+	})
+}
+
+func runBoundedParallelIterations(attempts, maxConcurrency int64, execute func()) {
 	if attempts <= 0 {
 		return
 	}
 	parallelism := min(maxConcurrency, attempts)
 	if parallelism <= 1 {
 		for range attempts {
-			executeTestIteration(execOpts)
+			execute()
 		}
 		return
 	}
@@ -1052,7 +1053,7 @@ func runBoundedParallelEFDIterations(execOpts *executionOptions, attempts, maxCo
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			executeTestIteration(execOpts)
+			execute()
 		}()
 	}
 	wg.Wait()

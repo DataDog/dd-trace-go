@@ -13,8 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -88,6 +86,9 @@ func TestMain(m *testing.M) {
 		os.Exit(runOrchestrionRetryProcessHybridParent(m))
 	}
 	if orchestrionRetryProcessEnv(orchestrionRetryProcessPureParentEnv) == "true" {
+		if orchestrionRetryProcessChild() {
+			os.Exit(m.Run())
+		}
 		os.Exit(runOrchestrionRetryProcessPureParent(m))
 	}
 	if orchestrionRetryProcessEnv(orchestrionRetryProcessHybridEnv) == "true" {
@@ -96,7 +97,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestOrchestrionRetryProcessPureParentFallsBackInProcessController(t *testing.T) {
+func TestOrchestrionRetryProcessPureParentUsesProcessRetryController(t *testing.T) {
+	requireOrchestrionProcessRetryContainmentForTesting(t)
 	if orchestrionRetryProcessChild() {
 		t.Skip("controller runs only in the parent process")
 	}
@@ -117,7 +119,6 @@ func runOrchestrionRetryProcessPureParent(m *testing.M) int {
 		const resourceName = "main_test.go.TestOrchestrionRetryProcessPureParentFixture"
 		testSpans := 0
 		processRetrySpans := 0
-		unexpectedTerminationSpans := 0
 		for _, span := range harness.tracer.FinishedSpans() {
 			if span.Tag(ext.ResourceName) != resourceName {
 				continue
@@ -126,17 +127,12 @@ func runOrchestrionRetryProcessPureParent(m *testing.M) int {
 			if span.Tag(constants.TestRetryExecutionMode) == "process" {
 				processRetrySpans++
 			}
-			errorMessage, _ := span.Tag(ext.ErrorMsg).(string)
-			if span.Tag(ext.ErrorType) == "panic" && strings.Contains(errorMessage, "runtime.Goexit") {
-				unexpectedTerminationSpans++
-			}
 		}
-		if testSpans != 2 || processRetrySpans != 0 || unexpectedTerminationSpans != 1 {
+		if testSpans != 2 || processRetrySpans != 1 {
 			panic(fmt.Sprintf(
-				"unexpected pure Orchestrion parent spans: tests=%d process_retries=%d unexpected_terminations=%d",
+				"unexpected pure Orchestrion parent spans: tests=%d process_retries=%d",
 				testSpans,
 				processRetrySpans,
-				unexpectedTerminationSpans,
 			))
 		}
 		harness.assertRequests("pure parent")
@@ -671,10 +667,13 @@ func TestOrchestrionRetryProcessPureParentFixture(t *testing.T) {
 		t.Skip("pure parent fixture runs only from its controller subprocess")
 	}
 	if orchestrionRetryProcessChild() {
-		t.Fatal("pure Orchestrion parent unexpectedly launched a process retry child")
+		if orchestrionRetryProcessPureParentRuns.Load() != 0 {
+			t.Fatalf("pure Orchestrion child inherited parent run count: %d", orchestrionRetryProcessPureParentRuns.Load())
+		}
+		return
 	}
 	if orchestrionRetryProcessPureParentRuns.Add(1) == 1 {
-		t.Fail()
-		runtime.Goexit()
+		t.Fatal("first pure Orchestrion parent execution must fail to trigger process retry")
 	}
+	t.Fatal("pure Orchestrion retry ran in the parent process")
 }

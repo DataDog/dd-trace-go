@@ -7,6 +7,7 @@ package gotesting
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -233,21 +235,6 @@ func processRetryChildConfigErrorReason(err error) string {
 	}
 }
 
-func processRetryCoverageActive(perTestCoverageEnabled bool) bool {
-	if perTestCoverageEnabled {
-		return true
-	}
-	if testing.CoverMode() != "" {
-		return true
-	}
-	for _, name := range []string{"test.coverprofile", "test.gocoverdir"} {
-		if f := flag.Lookup(name); f != nil && strings.TrimSpace(f.Value.String()) != "" {
-			return true
-		}
-	}
-	return false
-}
-
 func processRetryFuzzActive() bool {
 	for _, name := range []string{"test.fuzz", "fuzz", "test.fuzzcachedir"} {
 		if f := flag.Lookup(name); f != nil && strings.TrimSpace(f.Value.String()) != "" {
@@ -330,6 +317,9 @@ func processRetryTestingMWorkloadsSupportedDefault() bool {
 		getInternalExampleArray(m) != nil
 }
 
+// Go propagates GOCOVERDIR to subprocesses; retry children must not merge their counters into the parent's profile.
+const processRetryCoverageDirectoryEnvironmentVariable = "GOCOVERDIR"
+
 func buildProcessRetryEnv(base []string, cfg processRetryChildConfig) []string {
 	result := make([]string, 0, len(base)+5)
 	for _, entry := range base {
@@ -338,7 +328,7 @@ func buildProcessRetryEnv(base []string, cfg processRetryChildConfig) []string {
 			result = append(result, entry)
 			continue
 		}
-		if isProcessRetryInternalEnvKey(key) {
+		if isProcessRetryInternalEnvKey(key) || strings.EqualFold(key, processRetryCoverageDirectoryEnvironmentVariable) {
 			continue
 		}
 		result = append(result, entry)
@@ -768,6 +758,14 @@ const (
 	processRetryIterationStop
 	processRetryIterationContinue
 )
+
+type processRetryPendingIteration struct {
+	previousIndex int
+	currentIndex  int
+	ptrToLocalT   *testing.T
+	execMeta      *testExecutionMetadata
+	attempt       processRetryAttemptResult
+}
 
 type processRetryTimer interface {
 	C() <-chan time.Time
@@ -2083,10 +2081,6 @@ func prepareProcessRetryExecution(options *runTestWithRetryOptions, execOpts *ex
 		return
 	}
 	options.processRetryGuardsSnapshotted = true
-	options.processRetryCoverageGuardSet = options.coverageActive != nil
-	if options.processRetryCoverageGuardSet {
-		options.processRetryCoverageActive = options.coverageActive()
-	}
 	options.processRetryFuzzGuardSet = options.fuzzActive != nil
 	if options.processRetryFuzzGuardSet {
 		options.processRetryFuzzActive = options.fuzzActive()
@@ -2107,19 +2101,22 @@ func runProcessRetriesIfEligible(
 		}
 		return false, reason
 	}
-	if shouldUseParallelEFD(
+	parallelEFD := shouldUseParallelEFD(
 		execOpts.options,
 		execOpts.executionMetadata,
 		execOpts.retryCount+1,
 		internalParallelEFDMaxConcurrency,
-	) {
-		return false, "parallel_efd"
-	}
+	)
 	execOpts.processRetryMetadataSnapshot = snapshotProcessRetryExecutionMetadata(execOpts.executionMetadata)
 	if execOpts.processRetryMetadataSnapshot == nil {
 		log.Debug("runTestWithRetry: process retry backend ineligible: missing_metadata_snapshot")
-		runSequentialRetries(false)
-		return true, "missing_metadata_snapshot"
+		return false, "missing_metadata_snapshot"
+	}
+	if parallelEFD {
+		if ok, baselineReason := processRetryParallelBaselineReady(execOpts.processRetryLaunchBaseline); !ok {
+			log.Debug("runTestWithRetry: parallel process retry backend unavailable before admission: %s", baselineReason)
+			return false, baselineReason
+		}
 	}
 	shutdown, finishGroup, beginErr := beginProcessRetryGroup()
 	switch {
@@ -2128,15 +2125,46 @@ func runProcessRetriesIfEligible(
 		execOpts.retryCount = 0
 	case beginErr != nil:
 		log.Debug("runTestWithRetry: process retry backend unavailable before admission: %v", beginErr.Error())
-		runSequentialRetries(false)
+		return false, beginErr.Error()
 	default:
 		execOpts.processRetryShutdown = shutdown
 		defer finishGroup()
-		log.Debug("runTestWithRetry: executing test with process retry backend")
-		if runProcessRetryBackend(execOpts) {
+		if parallelEFD {
+			attempts := execOpts.retryCount + 1
+			log.Debug("runTestWithRetry: executing test with parallel process retry backend, attempts: %d, max concurrency: %d", attempts, internalParallelEFDMaxConcurrency)
+			execOpts.mutex = newExecutionOptionsMutex()
+			execOpts.effectiveParallelEFDActive = true
+			if runBoundedParallelProcessRetryIterations(execOpts, attempts, internalParallelEFDMaxConcurrency) {
+				log.Debug("runTestWithRetry: parallel process retry backend unavailable before batch admission")
+				return false, "parallel_setup_failure"
+			}
+		} else if runProcessRetryBackend(execOpts) {
 			log.Debug("runTestWithRetry: process retry backend fallback to in_process")
 			runSequentialRetries(true)
 		}
+	}
+	return true, ""
+}
+
+func processRetryParallelBaselineReady(baseline *processRetryLaunchBaseline) (bool, string) {
+	if !ProcessRetryContainmentSupported() {
+		return false, errProcessRetryTreeUnsupported.Error()
+	}
+	if baseline == nil {
+		return false, "missing_launch_baseline"
+	}
+	if baseline.err != nil {
+		return false, baseline.err.Error()
+	}
+	argsSnapshot := baseline.argsSnapshot
+	if !argsSnapshot.captured {
+		argsSnapshot = captureProcessRetryArgsSnapshot(baseline.args)
+	}
+	if !argsSnapshot.ok {
+		if argsSnapshot.reason == "" {
+			return false, "invalid_args_snapshot"
+		}
+		return false, argsSnapshot.reason
 	}
 	return true, ""
 }
@@ -2161,6 +2189,15 @@ func runProcessRetryBackend(execOpts *executionOptions) bool {
 }
 
 func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterationOutcome {
+	pending, outcome := prepareProcessRetryIteration(execOpts)
+	if pending == nil {
+		return outcome
+	}
+	defer pending.cleanup()
+	return finalizeProcessRetryIteration(execOpts, pending, true)
+}
+
+func prepareProcessRetryIteration(execOpts *executionOptions) (*processRetryPendingIteration, processRetryIterationOutcome) {
 	execOpts.mutex.Lock()
 	if execOpts.executionIndex < 0 || execOpts.options == nil ||
 		execOpts.options.processRetryIdentity == nil ||
@@ -2169,11 +2206,11 @@ func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterat
 		execOpts.options.preProcessRetryMetaAdjust == nil ||
 		execOpts.processRetryMetadataSnapshot == nil {
 		execOpts.mutex.Unlock()
-		return processRetryIterationFallback
+		return nil, processRetryIterationFallback
 	}
 	if execOpts.retryCount < 0 {
 		execOpts.mutex.Unlock()
-		return processRetryIterationStop
+		return nil, processRetryIterationStop
 	}
 	previousIndex := execOpts.executionIndex
 	execOpts.executionIndex++
@@ -2188,7 +2225,7 @@ func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterat
 	if localTPrivateFields == nil || localTPrivateFields.parent == nil {
 		execOpts.executionIndex = previousIndex
 		execOpts.mutex.Unlock()
-		return processRetryIterationFallback
+		return nil, processRetryIterationFallback
 	}
 	dummyParent := &testing.T{}
 	copyTestWithoutParent(execOpts.options.t, dummyParent)
@@ -2203,7 +2240,7 @@ func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterat
 		deleteTestMetadata(ptrToLocalT)
 		execOpts.executionIndex = previousIndex
 		execOpts.mutex.Unlock()
-		return processRetryIterationFallback
+		return nil, processRetryIterationFallback
 	}
 	execMeta.identity = execOpts.options.processRetryIdentity
 	execMeta.isARetry = true
@@ -2213,7 +2250,7 @@ func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterat
 		deleteTestMetadata(ptrToLocalT)
 		execOpts.executionIndex = previousIndex
 		execOpts.mutex.Unlock()
-		return processRetryIterationFallback
+		return nil, processRetryIterationFallback
 	}
 
 	parentDeadline, parentDeadlineOK := execOpts.options.t.Deadline()
@@ -2238,15 +2275,36 @@ func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterat
 		execOpts.processRetryLaunchBaseline,
 		execOpts.processRetryShutdown,
 	)
-	if attempt.Cleanup != nil {
-		defer attempt.Cleanup()
+	return &processRetryPendingIteration{
+		previousIndex: previousIndex,
+		currentIndex:  currentIndex,
+		ptrToLocalT:   ptrToLocalT,
+		execMeta:      execMeta,
+		attempt:       attempt,
+	}, processRetryIterationContinue
+}
+
+func (p *processRetryPendingIteration) cleanup() {
+	if p != nil && p.attempt.Cleanup != nil {
+		p.attempt.Cleanup()
 	}
+}
+
+func (p *processRetryPendingIteration) setupFallbackEligible() bool {
+	return p != nil && p.attempt.SetupFailure && !p.attempt.TimedOut && p.attempt.SetupFallbackAllowed
+}
+
+func finalizeProcessRetryIteration(execOpts *executionOptions, pending *processRetryPendingIteration, setupFallbackAllowed bool) processRetryIterationOutcome {
+	ptrToLocalT := pending.ptrToLocalT
+	execMeta := pending.execMeta
+	attempt := pending.attempt
+	currentIndex := pending.currentIndex
 
 	execOpts.mutex.Lock()
 	defer execOpts.mutex.Unlock()
-	if attempt.SetupFailure && !attempt.TimedOut && !execOpts.processRetryConsumedAttempt && attempt.SetupFallbackAllowed {
+	if setupFallbackAllowed && attempt.SetupFailure && !attempt.TimedOut && !execOpts.processRetryConsumedAttempt && attempt.SetupFallbackAllowed {
 		deleteTestMetadata(ptrToLocalT)
-		execOpts.executionIndex = previousIndex
+		execOpts.executionIndex = pending.previousIndex
 		return processRetryIterationFallback
 	}
 	if attempt.SetupFailure {
@@ -2257,6 +2315,7 @@ func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterat
 	execOpts.options.preProcessRetryMetaAdjust(execMeta, currentIndex)
 	execMeta.isLastRetry = execOpts.options.preIsLastRetry(execMeta, currentIndex, execOpts.retryCount)
 	execMeta.remainingRetries = execOpts.retryCount
+	execMeta.isEfdInParallel = execOpts.effectiveParallelEFDActive && isAnEfdExecution(execMeta)
 	terminalCancellation := errors.Is(attempt.Err, context.Canceled) || errors.Is(attempt.Err, context.DeadlineExceeded)
 	terminalUnreaped := attempt.Unreaped || errors.Is(attempt.Err, errProcessRetryChildUnreaped)
 	terminalContainmentLost := attempt.ContainmentLost || errors.Is(attempt.Err, errProcessRetryContainmentLost)
@@ -2304,6 +2363,71 @@ func executeProcessRetryIteration(execOpts *executionOptions) processRetryIterat
 	return processRetryIterationStop
 }
 
+func runBoundedParallelProcessRetryIterations(execOpts *executionOptions, attempts, maxConcurrency int64) bool {
+	execOpts.mutex.Lock()
+	batchStartIndex := execOpts.executionIndex
+	execOpts.mutex.Unlock()
+
+	type preparedIteration struct {
+		pending *processRetryPendingIteration
+		outcome processRetryIterationOutcome
+	}
+	prepared := make(chan preparedIteration, attempts)
+	runBoundedParallelIterations(attempts, maxConcurrency, func() {
+		pending, outcome := prepareProcessRetryIteration(execOpts)
+		prepared <- preparedIteration{pending: pending, outcome: outcome}
+	})
+	close(prepared)
+
+	iterations := make([]preparedIteration, 0, attempts)
+	fallback := true
+	for iteration := range prepared {
+		iterations = append(iterations, iteration)
+		if iteration.pending != nil {
+			fallback = fallback && iteration.pending.setupFallbackEligible()
+		} else {
+			fallback = fallback && iteration.outcome == processRetryIterationFallback
+		}
+	}
+	defer func() {
+		for _, iteration := range iterations {
+			iteration.pending.cleanup()
+		}
+	}()
+
+	if fallback {
+		execOpts.mutex.Lock()
+		for _, iteration := range iterations {
+			if iteration.pending != nil {
+				deleteTestMetadata(iteration.pending.ptrToLocalT)
+			}
+		}
+		execOpts.executionIndex = batchStartIndex
+		execOpts.mutex.Unlock()
+		return true
+	}
+
+	slices.SortFunc(iterations, func(a, b preparedIteration) int {
+		switch {
+		case a.pending == nil && b.pending == nil:
+			return 0
+		case a.pending == nil:
+			return 1
+		case b.pending == nil:
+			return -1
+		default:
+			return cmp.Compare(a.pending.currentIndex, b.pending.currentIndex)
+		}
+	})
+	for _, iteration := range iterations {
+		if iteration.pending == nil {
+			continue
+		}
+		finalizeProcessRetryIteration(execOpts, iteration.pending, false)
+	}
+	return false
+}
+
 func recordProcessRetryPanic(execOpts *executionOptions, execMeta *testExecutionMetadata, attempt processRetryAttemptResult, effective processRetryEffectiveStatus) {
 	if execOpts == nil || execMeta == nil || execOpts.panicExecutionMetadata != nil ||
 		effective.FailureKind != "test_panic" || !attempt.Result.Panic {
@@ -2347,6 +2471,10 @@ func closeProcessRetryTestEvent(testInfo *commonInfo, execMeta *testExecutionMet
 				execMeta.isAttemptToFix,
 			)
 			test.SetTag(constants.TestFinalStatus, finalStatus)
+		}
+		if execMeta.isAttemptToFix && execMeta.isARetry {
+			attemptToFixPassed := effective.Status == processRetryStatusPass && execMeta.allAttemptsPassed
+			test.SetTag(constants.TestAttemptToFixPassed, strconv.FormatBool(attemptToFixPassed))
 		}
 	}
 	if effective.Failed {
@@ -2695,37 +2823,21 @@ func processRetryEligible(execMeta *testExecutionMetadata, options *runTestWithR
 	if retryReason != constants.AttemptToFixRetryReason && execMeta.isDisabled {
 		return false, "disabled"
 	}
-	coverageGuardSet := options.coverageActive != nil
-	coverageActive := false
 	fuzzGuardSet := options.fuzzActive != nil
 	fuzzActive := false
 	if options.processRetryGuardsSnapshotted {
-		coverageGuardSet = options.processRetryCoverageGuardSet
-		coverageActive = options.processRetryCoverageActive
 		fuzzGuardSet = options.processRetryFuzzGuardSet
 		fuzzActive = options.processRetryFuzzActive
 	} else {
-		if coverageGuardSet {
-			coverageActive = options.coverageActive()
-		}
 		if fuzzGuardSet {
 			fuzzActive = options.fuzzActive()
 		}
-	}
-	if !coverageGuardSet {
-		return false, "missing_coverage_guard"
-	}
-	if coverageActive {
-		return false, "coverage_active"
 	}
 	if !fuzzGuardSet {
 		return false, "missing_fuzz_guard"
 	}
 	if fuzzActive {
 		return false, "fuzz_active"
-	}
-	if retryReason == constants.EarlyFlakeDetectionRetryReason && execMeta.isEfdInParallel {
-		return false, "parallel_efd"
 	}
 	return true, ""
 }

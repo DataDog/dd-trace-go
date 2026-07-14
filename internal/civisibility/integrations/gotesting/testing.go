@@ -299,17 +299,8 @@ func (ddm *M) Run() int {
 		return runProcessRetryChild(m)
 	}
 
-	coverageEnabled := coverage.CanCollectPerTestCoverage()
-	manualWrapperOpts := additionalFeatureWrapperOptions{
-		processRetryAllowed: true,
-		coverageActive: func() bool {
-			return processRetryCoverageActive(coverageEnabled)
-		},
-		fuzzActive: processRetryFuzzActive,
-	}
-
 	// Instrument testing.M
-	exitFn := instrumentTestingMWithOptions(m, manualWrapperOpts)
+	exitFn := instrumentTestingMWithOptions(m, processRetryWrapperOptions())
 
 	// Run the tests and benchmarks.
 	var exitCode = m.Run()
@@ -317,6 +308,13 @@ func (ddm *M) Run() int {
 	// Finalize instrumentation
 	exitFn(exitCode)
 	return exitCode
+}
+
+func processRetryWrapperOptions() additionalFeatureWrapperOptions {
+	return additionalFeatureWrapperOptions{
+		processRetryAllowed: true,
+		fuzzActive:          processRetryFuzzActive,
+	}
 }
 
 // instrumentInternalTests instruments the internal tests for CI visibility.
