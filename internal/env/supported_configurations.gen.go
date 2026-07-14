@@ -66,6 +66,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_DYNAMIC_INSTRUMENTATION_ENABLED":                              {},
 	"DD_ENV":                                                          {},
 	"DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED":                       {},
+	"DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED":       {},
 	"DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED":                  {},
 	"DD_EXTERNAL_ENV":                                                 {},
 	"DD_FLAGGING_EVALUATION_COUNTS_ENABLED":                           {},
@@ -82,6 +83,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA":                             {},
 	"DD_GIT_REPOSITORY_URL":                                           {},
 	"DD_GIT_TAG":                                                      {},
+	"DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS":                {},
 	"DD_HAPROXY_SPOA_HEALTHCHECK_PORT":                                {},
 	"DD_HAPROXY_SPOA_HOST":                                            {},
 	"DD_HAPROXY_SPOA_PORT":                                            {},
@@ -154,6 +156,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED":                     {},
 	"DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED":                        {},
 	"DD_TRACE_ABANDONED_SPAN_TIMEOUT":                                 {},
+	"DD_TRACE_AEROSPIKE_ANALYTICS_ENABLED":                            {},
 	"DD_TRACE_AGENT_PORT":                                             {},
 	"DD_TRACE_AGENT_PROTOCOL_VERSION":                                 {},
 	"DD_TRACE_AGENT_TIMEOUT":                                          {},
@@ -214,6 +217,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_MUX_ANALYTICS_ENABLED":                                  {},
 	"DD_TRACE_NEGRONI_ANALYTICS_ENABLED":                              {},
 	"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP":                        {},
+	"DD_TRACE_OTEL_SEMANTICS_ENABLED":                                 {},
 	"DD_TRACE_PARTIAL_FLUSH_ENABLED":                                  {},
 	"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS":                                {},
 	"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED":                          {},
@@ -289,6 +293,8 @@ var SupportedConfigurations = map[string]struct{}{
 // reported in configuration telemetry. It is seeded from entries marked "sensitive": true
 // in supported_configurations.json.
 var SensitiveConfigurations = map[string]struct{}{
+	"DD_API_KEY":                         {},
+	"DD_APP_KEY":                         {},
 	"OTEL_EXPORTER_OTLP_HEADERS":         {},
 	"OTEL_EXPORTER_OTLP_LOGS_HEADERS":    {},
 	"OTEL_EXPORTER_OTLP_METRICS_HEADERS": {},

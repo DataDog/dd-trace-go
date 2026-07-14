@@ -1,6 +1,10 @@
 services:
+  aerospike:
+    image: aerospike:ce-7.2.0.6@sha256:79c30951edab8878b14b650f32db416106a21d458be994344e488756fe8b651f
+    ports:
+      - "3000:3000"
   cassandra:
-    image: cassandra:5
+    image: cassandra:5@sha256:5d5f627eb21e20bce6606c808808a123f3296aaea9ebe70d8d703be771880c5c
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -9,7 +13,7 @@ services:
     ports:
       - "9042:9042"
   mysql:
-    image: mysql:8
+    image: mysql:8@sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_PASSWORD: test
@@ -18,7 +22,7 @@ services:
     ports:
       - "3306:3306"
   postgres:
-    image: postgres:16
+    image: postgres:16@sha256:4b7183ac05f8ef417db21fd72d71047a4238340c261d3cc3ddb6d579ab5071ae
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -26,28 +30,28 @@ services:
     ports:
       - "5432:5432"
   mssql:
-    image: mcr.microsoft.com/mssql/server:2019-latest
+    image: mcr.microsoft.com/mssql/server:2019-latest@sha256:c39c9406e9bbab626076e742cbfcde8c6c7daedb27d79c1fa119bf57cf034e5c
     environment:
       SA_PASSWORD: myPassw0rd
       ACCEPT_EULA: Y
     ports:
       - "1433:1433"
   consul:
-    image: consul:1.15
+    image: consul:1.15@sha256:10084bbbed746968b0b9f8edab2f8552e44f117e35b88153a5e0a3ad1e15aa1a
     ports:
       - "8500:8500"
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     ports:
       - "6379:6379"
   valkey:
-    image: valkey/valkey:8
+    image: valkey/valkey:8@sha256:c6d4637d757379a2ff040148b95c85936d85a06c129eafa5fbe582f9e720e12f
     environment:
       VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
     ports:
       - "6380:6380"
   elasticsearch2:
-    image: elasticsearch:2
+    image: elasticsearch:2@sha256:41ed3a1a16b63de740767944d5405843db00e55058626c22838f23b413aa4a39
     environment:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
     ports:
@@ -57,7 +61,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch5:
-    image: elasticsearch:5
+    image: elasticsearch:5@sha256:d0e119779df7ddf9d476102691d9d0b8783c13434e00d77f01327019c1297839
     environment:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
     ports:
@@ -67,7 +71,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:6.8.23
+    image: elasticsearch:6.8.23@sha256:deda76957c8cacc5dbf0d535fd14fe365f37d839813099bc32f26390a5e232dc
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -79,7 +83,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:7.17.28
+    image: elasticsearch:7.17.28@sha256:a06b03a2db8db2be43d3c3851e7bcebdd4fff79f4db08c7da6bad7a8776d3e15
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -91,7 +95,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:8.18.1
+    image: elasticsearch:8.18.1@sha256:5823091e62c231e68301ff68d9643e023e82e749d343737c1fc26457505dca1c
     environment:
       http.port: 9204-9300
       discovery.type: single-node
@@ -124,19 +128,19 @@ services:
     ports:
       - "127.0.0.1:9126:9126"
   mongodb3:
-    image: mongo:3
+    image: mongo:3@sha256:146c1fd999a660e697aac40bc6da842b005c7868232eb0b7d8996c8f3545b05d
     ports:
       - "27018:27017"
   mongodb:
-    image: mongo:8
+    image: mongo:8@sha256:a706cb4e493bcd0262f345b3b0c78732ca0e54301f0d7bbe2b66f26313ce7ccb
     ports:
       - "27017:27017"
   memcached:
-    image: memcached:1.6-alpine
+    image: memcached:1.6-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
     ports:
       - "11211:11211"
   kafka:
-    image: confluentinc/confluent-local:7.5.0
+    image: confluentinc/confluent-local:7.5.0@sha256:8e391de42cfcd3498e7317dcf159790f1f1cc3f3ffce900b30d7da23888687fd
     container_name: kafka
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
@@ -158,6 +162,6 @@ services:
       - "9092:9092"
       - "9093:9093"
   localstack:
-    image: localstack/localstack:4.14.0
+    image: localstack/localstack:4.14.0@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a
     ports:
       - "4566:4566"

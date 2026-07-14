@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
@@ -17,6 +18,7 @@ type Package string
 
 const (
 	Package99DesignsGQLGen      Package = "99designs/gqlgen"
+	PackageAerospikeClientGoV7  Package = "aerospike/aerospike-client-go.v7"
 	PackageAWSSDKGo             Package = "aws/aws-sdk-go"
 	PackageAWSSDKGoV2           Package = "aws/aws-sdk-go-v2"
 	PackageAWSDatadogLambdaGo   Package = "aws/datadog-lambda-go"
@@ -124,6 +126,7 @@ type PackageInfo struct {
 	naming map[Component]componentNames
 }
 
+var packagesMu sync.RWMutex
 var packages = map[Package]PackageInfo{
 	Package99DesignsGQLGen: {
 		TracedPackage: "github.com/99designs/gqlgen",
@@ -185,6 +188,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("aws.lambda"),
 				buildOpNameV0:      staticName("aws.lambda"),
 				buildOpNameV1:      staticName("aws.lambda"),
+			},
+		},
+	},
+	PackageAerospikeClientGoV7: {
+		TracedPackage: "github.com/aerospike/aerospike-client-go/v7",
+		EnvVarPrefix:  "AEROSPIKE",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("aerospike"),
+				buildOpNameV0:      staticName("aerospike.command"),
+				buildOpNameV1:      staticName("aerospike.command"),
 			},
 		},
 	},
@@ -1005,6 +1020,9 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 
 // GetPackages returns a map of Package to the corresponding instrumented module.
 func GetPackages() map[Package]PackageInfo {
+	packagesMu.RLock()
+	defer packagesMu.RUnlock()
+
 	cp := make(map[Package]PackageInfo)
 	maps.Copy(cp, packages)
 	return cp

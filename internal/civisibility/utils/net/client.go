@@ -154,7 +154,6 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 			if v := env.Get("DD_SITE"); v != "" {
 				site = v
 			}
-
 			baseURL = fmt.Sprintf("https://%s.%s", subdomain, site)
 		} else {
 			// Use the custom agentless URL.

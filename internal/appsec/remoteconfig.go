@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
@@ -390,6 +390,9 @@ func (a *appsec) enableRASP() {
 	if orchestrion.Enabled() {
 		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPLFI); err != nil {
 			log.Debug("appsec: remote config: couldn't register RASP LFI: %s", err.Error())
+		}
+		if err := remoteconfig.RegisterCapability(remoteconfig.ASMRASPCommandInjection); err != nil {
+			log.Debug("appsec: remote config: couldn't register RASP CMDi: %s", err.Error())
 		}
 	}
 }

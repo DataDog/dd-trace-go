@@ -28,6 +28,12 @@ const (
 	NewConnsCount           = tracerPrefix + "pgx.pool.connections.new_conns"
 	MaxLifetimeDestroyCount = tracerPrefix + "pgx.pool.connections.max_lifetime_destroy"
 	MaxIdleDestroyCount     = tracerPrefix + "pgx.pool.connections.max_idle_destroy"
+	MaxConnLifetime         = tracerPrefix + "pgx.pool.connections.max_lifetime"
+	MaxConnIdleTime         = tracerPrefix + "pgx.pool.connections.max_idle_time"
+	MinConns                = tracerPrefix + "pgx.pool.connections.min_conns"
+	MinIdleConns            = tracerPrefix + "pgx.pool.connections.min_idle_conns"
+	HealthCheckPeriod       = tracerPrefix + "pgx.pool.connections.health_check_period"
+	EmptyAcquireWaitTime    = tracerPrefix + "pgx.pool.connections.empty_acquire_wait_time"
 )
 
 var interval = 10 * time.Second
@@ -36,6 +42,7 @@ var interval = 10 * time.Second
 func pollPoolStats(statsd instrumentation.StatsdClient, pool *pgxpool.Pool, tags []string) {
 	// TODO: Create stop condition for pgx on db.Close
 	instr.Logger().Debug("contrib/jackc/pgx.v5: Traced pool connection found: Pool stats will be gathered and sent every %v.", interval)
+	cfg := pool.Config()
 	for range time.NewTicker(interval).C {
 		instr.Logger().Debug("contrib/jackc/pgx.v5: Reporting pgxpool.Stat metrics...")
 		stat := pool.Stat()
@@ -51,6 +58,12 @@ func pollPoolStats(statsd instrumentation.StatsdClient, pool *pgxpool.Pool, tags
 		statsd.Gauge(NewConnsCount, float64(stat.NewConnsCount()), tags, 1)
 		statsd.Gauge(MaxLifetimeDestroyCount, float64(stat.MaxLifetimeDestroyCount()), tags, 1)
 		statsd.Gauge(MaxIdleDestroyCount, float64(stat.MaxIdleDestroyCount()), tags, 1)
+		statsd.Timing(EmptyAcquireWaitTime, stat.EmptyAcquireWaitTime(), tags, 1)
+		statsd.Gauge(MaxConnLifetime, float64(cfg.MaxConnLifetime.Seconds()), tags, 1)
+		statsd.Gauge(MaxConnIdleTime, float64(cfg.MaxConnIdleTime.Seconds()), tags, 1)
+		statsd.Gauge(MinConns, float64(cfg.MinConns), tags, 1)
+		statsd.Gauge(MinIdleConns, float64(cfg.MinIdleConns), tags, 1)
+		statsd.Gauge(HealthCheckPeriod, float64(cfg.HealthCheckPeriod.Seconds()), tags, 1)
 	}
 }
 

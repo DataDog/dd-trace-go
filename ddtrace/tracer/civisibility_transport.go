@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/urlsanitizer"
@@ -88,16 +89,13 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 
 		// Check for a custom agentless URL.
 		agentlessURL := ""
-		if v := env.Get(constants.CIVisibilityAgentlessURLEnvironmentVariable); v != "" {
+		if v := config.internalConfig.CIVisibilityAgentlessURL(); v != "" {
 			agentlessURL = v
 		}
 
 		if agentlessURL == "" {
 			// Use the standard agentless URL format.
-			site := "datadoghq.com"
-			if v := env.Get("DD_SITE"); v != "" {
-				site = v
-			}
+			site := internalconfig.Get().Site()
 
 			testCycleURL = fmt.Sprintf("https://%s.%s/%s", TestCycleSubdomain, site, TestCyclePath)
 		} else {

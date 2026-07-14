@@ -97,7 +97,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			Rate:         0.1,
 		})[0]
 
-		for _, prov := range provenances {
+		for _, prov := range []Provenance{Local, Customer, Dynamic} {
 			if prov == Local {
 				continue
 			}
