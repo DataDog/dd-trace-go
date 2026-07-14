@@ -118,7 +118,7 @@ func spawnMonitor(cfg *config) error {
 	// status indicates the monitor itself panicked during parse or upload.
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			log.Warn("crashtracker: monitor process exited unexpectedly: %v", err)
+			log.Warn("crashtracker: monitor process exited unexpectedly: %v", err.Error())
 		}
 	}()
 

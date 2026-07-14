@@ -57,11 +57,11 @@ func Start(opts ...Option) error {
 // from main() to ensure the monitor is released on clean exit.
 func Stop() {
 	if err := debug.SetCrashOutput(nil, debug.CrashOptions{}); err != nil {
-		log.Warn("crashtracker: failed to unregister crash output: %v", err)
+		log.Warn("crashtracker: failed to unregister crash output: %v", err.Error())
 	}
 	if f := activePipe.Swap(nil); f != nil {
 		if err := f.Close(); err != nil {
-			log.Warn("crashtracker: failed to close crash pipe: %v", err)
+			log.Warn("crashtracker: failed to close crash pipe: %v", err.Error())
 		}
 	}
 }
