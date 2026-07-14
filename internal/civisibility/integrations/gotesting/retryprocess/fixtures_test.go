@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -23,7 +25,7 @@ import (
 )
 
 var forcedRunChildLaunchRuns atomic.Int32
-var coverageFallbackRuns atomic.Int32
+var coverageFirstAttemptRuns atomic.Int32
 var runSelectorSubtestRuns atomic.Int32
 var skipSelectorSubtestRuns atomic.Int32
 var processExitRuns atomic.Int32
@@ -33,6 +35,10 @@ var outputTimeoutRuns atomic.Int32
 var descendantCleanupRuns atomic.Int32
 var transportIsolationRuns atomic.Int32
 var processRetryBenchmarkRuns atomic.Int32
+var parallelEFDRuns atomic.Int32
+var attemptToFixRuns atomic.Int32
+
+var processRetryCoverageProfileBlock = regexp.MustCompile(`^(.+):(\d+)\.\d+,(\d+)\.\d+\s+\d+\s+(\d+)$`)
 
 const (
 	processRetryChildLogSentinel         = "process-retry-child-output-sentinel"
@@ -49,31 +55,31 @@ func skipProcessRetryFixtureChildLaunchIneligible(t *testing.T, name string) {
 	if !gotesting.ProcessRetryContainmentSupported() {
 		t.Skipf("process retry %s fixture requires process-tree containment", name)
 	}
-	if testing.CoverMode() != "" {
-		t.Skipf("process retry %s fixture is intentionally ineligible while Go coverage is active", name)
-	}
 }
 
 const (
-	processRetrySelectorFixtureEnv           = "PROCESS_RETRY_SELECTOR_FIXTURE"
-	processRetryProcessExitFixtureEnv        = "PROCESS_RETRY_PROCESS_EXIT_FIXTURE"
-	processRetryMalformedJSONFixtureEnv      = "PROCESS_RETRY_MALFORMED_JSON_FIXTURE"
-	processRetryTimeoutFixtureEnv            = "PROCESS_RETRY_TIMEOUT_FIXTURE"
-	processRetryOutputTimeoutFixtureEnv      = "PROCESS_RETRY_OUTPUT_TIMEOUT_FIXTURE"
-	processRetryDescendantCleanupFixtureEnv  = "PROCESS_RETRY_DESCENDANT_CLEANUP_FIXTURE"
-	processRetryDescendantHelperEnv          = "PROCESS_RETRY_DESCENDANT_HELPER"
-	processRetryDescendantLivenessPathEnv    = "PROCESS_RETRY_DESCENDANT_LIVENESS_PATH"
-	processRetryDescendantIndependentPathEnv = "PROCESS_RETRY_DESCENDANT_INDEPENDENT_LIVENESS_PATH"
-	processRetryTransportIsolationEnv        = "PROCESS_RETRY_TRANSPORT_ISOLATION_FIXTURE"
-	processRetryTransportProbeEnv            = "PROCESS_RETRY_TRANSPORT_PROBE"
-	processRetryScenarioEnv                  = "PROCESS_RETRY_FIXTURE_SCENARIO"
-	processRetryControllerProbeEnv           = "PROCESS_RETRY_CONTROLLER_PROBE"
-	processRetryControllerProbePathEnv       = "PROCESS_RETRY_CONTROLLER_PROBE_PATH"
-	processRetryBenchmarkExecutionModeEnv    = "PROCESS_RETRY_BENCHMARK_EXECUTION_MODE"
-	processRetryStartupFixtureEnv            = "PROCESS_RETRY_STARTUP_FIXTURE"
-	processRetryStartupRerunFileEnv          = "PROCESS_RETRY_STARTUP_RERUN_FILE"
-	processRetryStartupConflictFileEnv       = "PROCESS_RETRY_STARTUP_CONFLICT_FILE"
-	processRetryStartupConflictMarkerEnv     = "PROCESS_RETRY_STARTUP_CONFLICT_MARKER_FILE"
+	processRetrySelectorFixtureEnv            = "PROCESS_RETRY_SELECTOR_FIXTURE"
+	processRetryProcessExitFixtureEnv         = "PROCESS_RETRY_PROCESS_EXIT_FIXTURE"
+	processRetryMalformedJSONFixtureEnv       = "PROCESS_RETRY_MALFORMED_JSON_FIXTURE"
+	processRetryTimeoutFixtureEnv             = "PROCESS_RETRY_TIMEOUT_FIXTURE"
+	processRetryOutputTimeoutFixtureEnv       = "PROCESS_RETRY_OUTPUT_TIMEOUT_FIXTURE"
+	processRetryDescendantCleanupFixtureEnv   = "PROCESS_RETRY_DESCENDANT_CLEANUP_FIXTURE"
+	processRetryDescendantHelperEnv           = "PROCESS_RETRY_DESCENDANT_HELPER"
+	processRetryDescendantLivenessPathEnv     = "PROCESS_RETRY_DESCENDANT_LIVENESS_PATH"
+	processRetryDescendantIndependentPathEnv  = "PROCESS_RETRY_DESCENDANT_INDEPENDENT_LIVENESS_PATH"
+	processRetryTransportIsolationEnv         = "PROCESS_RETRY_TRANSPORT_ISOLATION_FIXTURE"
+	processRetryTransportProbeEnv             = "PROCESS_RETRY_TRANSPORT_PROBE"
+	processRetryParallelEFDEnv                = "PROCESS_RETRY_PARALLEL_EFD_FIXTURE"
+	processRetryParallelEFDCoordinationDirEnv = "PROCESS_RETRY_PARALLEL_EFD_COORDINATION_DIR"
+	processRetryAttemptToFixEnv               = "PROCESS_RETRY_ATTEMPT_TO_FIX_FIXTURE"
+	processRetryScenarioEnv                   = "PROCESS_RETRY_FIXTURE_SCENARIO"
+	processRetryControllerProbeEnv            = "PROCESS_RETRY_CONTROLLER_PROBE"
+	processRetryControllerProbePathEnv        = "PROCESS_RETRY_CONTROLLER_PROBE_PATH"
+	processRetryBenchmarkExecutionModeEnv     = "PROCESS_RETRY_BENCHMARK_EXECUTION_MODE"
+	processRetryStartupFixtureEnv             = "PROCESS_RETRY_STARTUP_FIXTURE"
+	processRetryStartupRerunFileEnv           = "PROCESS_RETRY_STARTUP_RERUN_FILE"
+	processRetryStartupConflictFileEnv        = "PROCESS_RETRY_STARTUP_CONFLICT_FILE"
+	processRetryStartupConflictMarkerEnv      = "PROCESS_RETRY_STARTUP_CONFLICT_MARKER_FILE"
 )
 
 var (
@@ -204,34 +210,168 @@ func TestProcessRetryITRForcedRun(t *testing.T) {
 		fmt.Println(processRetryChildLogSentinel)
 		return
 	}
-	if testing.CoverMode() != "" {
-		t.Skip("process retry is intentionally ineligible while Go coverage is active")
-	}
 	if forcedRunChildLaunchRuns.Add(1) == 1 {
 		t.Fatal("first forced-run parent execution must fail to trigger process retry")
 	}
 	t.Fatalf("forced-run retry ran in the parent process with run count %d", forcedRunChildLaunchRuns.Load())
 }
 
-func TestProcessRetryCoverageFallback(t *testing.T) {
+func TestProcessRetryAttemptToFixController(t *testing.T) {
+	skipProcessRetryFixtureChildLaunchIneligible(t, "attempt to fix")
+	runProcessRetryFixtureSubprocess(t, "attempt-to-fix", []string{
+		"-test.run=^TestProcessRetryAttemptToFixParent$",
+		"-test.v",
+	},
+		processRetryAttemptToFixEnv+"=true",
+		constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable+"=3",
+	)
+}
+
+func TestProcessRetryAttemptToFixParent(t *testing.T) {
+	if processRetryFixtureEnv(processRetryAttemptToFixEnv) != "true" && !processRetryFixtureChild() {
+		t.Skip("attempt-to-fix fixture runs only from its controller subprocess")
+	}
+	if processRetryFixtureChild() {
+		reason, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessReason)
+		if !ok || reason != constants.AttemptToFixRetryReason {
+			t.Fatalf("attempt-to-fix child retry reason = %q, want %q", reason, constants.AttemptToFixRetryReason)
+		}
+		fmt.Println(processRetryChildLogSentinel)
+		return
+	}
+	if run := attemptToFixRuns.Add(1); run != 1 {
+		t.Fatalf("attempt-to-fix retry ran in the parent process with run count %d", run)
+	}
+}
+
+func TestProcessRetryCoverageUsesFirstParentAttempt(t *testing.T) {
 	if !processRetryFixtureScenarioEnabled() && !processRetryFixtureChild() {
 		if testing.CoverMode() == "" {
-			t.Skip("coverage fallback fixture runs only with Go coverage enabled")
+			t.Skip("coverage process-retry fixture runs only with Go coverage enabled")
 		}
-		cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryCoverageFallback$", "-test.v")
+		coveragePath := filepath.Join(t.TempDir(), "first-attempt.out")
+		cmd := exec.Command(
+			os.Args[0],
+			"-test.run=^TestProcessRetryCoverageUsesFirstParentAttempt$",
+			"-test.coverprofile="+coveragePath,
+			"-test.v",
+		)
 		cmd.Env = processRetryScenarioEnvironment()
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			t.Fatalf("coverage fallback subprocess failed: %v\n%s", err, output)
+			t.Fatalf("coverage process-retry subprocess failed: %v\n%s", err, output)
+		}
+		coverage, err := os.ReadFile(coveragePath)
+		if err != nil {
+			t.Fatalf("read first-attempt coverage profile: %v", err)
+		}
+		parentFile, parentLine := processRetryCoverageParentMarker()
+		childFile, childLine := processRetryCoverageChildMarker()
+		if count, ok := processRetryCoverageCountForLine(coverage, parentFile, parentLine); !ok || count == 0 {
+			t.Fatalf("parent-only coverage block count = %d, found = %t; want a positive count", count, ok)
+		}
+		if count, ok := processRetryCoverageCountForLine(coverage, childFile, childLine); !ok || count != 0 {
+			t.Fatalf("child-only coverage block count = %d, found = %t; want zero", count, ok)
 		}
 		return
 	}
 	if processRetryFixtureChild() {
-		t.Fatal("process retry child launched while Go coverage was active")
+		for _, arg := range os.Args[1:] {
+			if strings.HasPrefix(arg, "-test.coverprofile") || strings.HasPrefix(arg, "-test.gocoverdir") {
+				t.Fatalf("coverage output flag leaked into retry child argv: %q", arg)
+			}
+		}
+		if value, inherited := os.LookupEnv("GOCOVERDIR"); inherited {
+			t.Fatalf("coverage output environment leaked into retry child: GOCOVERDIR=%q", value)
+		}
+		if coverageFirstAttemptRuns.Load() != 0 {
+			t.Fatalf("coverage retry child inherited parent run count: %d", coverageFirstAttemptRuns.Load())
+		}
+		processRetryCoverageChildMarker()
+		return
 	}
-	if coverageFallbackRuns.Add(1) == 1 {
-		t.Fatal("first coverage execution must fail and retry in-process")
+	processRetryCoverageParentMarker()
+	if coverageFirstAttemptRuns.Add(1) == 1 {
+		t.Fatal("first coverage execution must fail and retry in a child process")
 	}
+	t.Fatal("coverage retry ran in the parent process")
+}
+
+func processRetryCoverageCountForLine(profile []byte, sourceFile string, sourceLine int) (int64, bool) {
+	var total int64
+	found := false
+	for _, line := range strings.Split(string(profile), "\n") {
+		matches := processRetryCoverageProfileBlock.FindStringSubmatch(line)
+		if len(matches) != 5 || filepath.Base(matches[1]) != filepath.Base(sourceFile) {
+			continue
+		}
+		startLine, startErr := strconv.Atoi(matches[2])
+		endLine, endErr := strconv.Atoi(matches[3])
+		count, countErr := strconv.ParseInt(matches[4], 10, 64)
+		if startErr != nil || endErr != nil || countErr != nil || sourceLine < startLine || sourceLine > endLine {
+			continue
+		}
+		found = true
+		total += count
+	}
+	return total, found
+}
+
+func TestProcessRetryParallelEFDController(t *testing.T) {
+	skipProcessRetryFixtureChildLaunchIneligible(t, "parallel EFD")
+	coordinationDir := t.TempDir()
+	runProcessRetryFixtureSubprocess(t, "parallel-efd", []string{
+		"-test.run=^TestProcessRetryParallelEFDParent$",
+		"-test.v",
+	},
+		processRetryParallelEFDEnv+"=true",
+		processRetryParallelEFDCoordinationDirEnv+"="+coordinationDir,
+		constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled+"=true",
+		constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable+"=2",
+	)
+}
+
+func TestProcessRetryParallelEFDParent(t *testing.T) {
+	if processRetryFixtureEnv(processRetryParallelEFDEnv) != "true" && !processRetryFixtureChild() {
+		t.Skip("parallel EFD fixture runs only from its controller subprocess")
+	}
+	if processRetryFixtureChild() {
+		attempt, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessAttempt)
+		if !ok || attempt == "" {
+			t.Fatal("parallel EFD child is missing its retry attempt")
+		}
+		coordinationDir := processRetryFixtureEnv(processRetryParallelEFDCoordinationDirEnv)
+		if coordinationDir == "" {
+			t.Fatal("parallel EFD child is missing its coordination directory")
+		}
+		if err := os.WriteFile(filepath.Join(coordinationDir, "ready-"+attempt), []byte(attempt), 0o600); err != nil {
+			t.Fatalf("publish parallel EFD child readiness: %v", err)
+		}
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			entries, err := os.ReadDir(coordinationDir)
+			if err != nil {
+				t.Fatalf("read parallel EFD coordination directory: %v", err)
+			}
+			ready := 0
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), "ready-") {
+					ready++
+				}
+			}
+			if ready >= 2 {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("parallel EFD child %s did not overlap another retry child", attempt)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	if parallelEFDRuns.Add(1) == 1 {
+		t.Fatal("first parallel EFD execution must fail to trigger process retries")
+	}
+	t.Fatal("parallel EFD retry ran in the parent process")
 }
 
 func TestProcessRetryRunSelectorController(t *testing.T) {
