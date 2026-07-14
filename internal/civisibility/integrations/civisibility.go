@@ -177,6 +177,9 @@ func (handler *ciVisibilitySignalHandler) run() {
 			return
 		}
 		exitCiVisibility(false)
+		if handler.stopping.Load() {
+			return
+		}
 		ciVisibilitySignalExitFunc(1)
 	case <-handler.stop:
 		return

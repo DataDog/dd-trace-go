@@ -1007,6 +1007,9 @@ func TestProcessRetryChildResultStatuses(t *testing.T) {
 		{name: "panic", scenario: "panic", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "body panic sentinel", requireStack: true},
 		{name: "runtime Goexit", scenario: "goexit", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
 		{name: "failed runtime Goexit", scenario: "failed_goexit", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
+		{name: "subtest runtime Goexit", scenario: "subtest_goexit", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
+		{name: "parallel subtest runtime Goexit", scenario: "parallel_subtest_goexit", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "runtime.Goexit", requireStack: true},
+		{name: "subtest parent FailNow", scenario: "subtest_parent_failnow", status: processRetryStatusFail, failed: true, checkPanic: true},
 		{name: "cleanup panic", scenario: "cleanup_panic", status: processRetryStatusFail, failed: true, checkPanic: true, panicked: true, errorType: "panic", errorContains: "cleanup panic sentinel", requireStack: true},
 		{name: "cleanup skip", scenario: "cleanup_skip", exitOK: true, status: processRetryStatusSkip, checkSkipped: true, skipped: true},
 		{name: "cleanup FailNow", scenario: "cleanup_failnow", status: processRetryStatusFail, failed: true},
@@ -6543,6 +6546,20 @@ func TestProcessRetryChildResultFixture(t *testing.T) {
 		case "failed_goexit":
 			t.Fail()
 			runtime.Goexit()
+		case "subtest_goexit":
+			t.Run("child", instrumentProcessRetryChildSubtest(func(*testing.T) {
+				runtime.Goexit()
+			}))
+		case "parallel_subtest_goexit":
+			t.Run("child", instrumentProcessRetryChildSubtest(func(t *testing.T) {
+				t.Parallel()
+				runtime.Goexit()
+			}))
+		case "subtest_parent_failnow":
+			parent := t
+			t.Run("child", instrumentProcessRetryChildSubtest(func(*testing.T) {
+				parent.FailNow()
+			}))
 		case "cleanup_panic":
 			t.Cleanup(func() { panic("cleanup panic sentinel") })
 		case "cleanup_skip":

@@ -3165,11 +3165,11 @@ func instrumentProcessRetryChildSubtest(original func(*testing.T)) func(*testing
 				Message: truncateProcessRetryErrorMessage(toString(panicData)),
 				Stack:   truncateProcessRetryErrorStack(utils.GetStacktrace(1)),
 			})
-			if unexpectedTermination {
-				return
-			}
 			if root, ok := owner.test.(*processRetryNoopTest); ok {
 				root.writePanicResult(owner.processRetryPanic.Load())
+			}
+			if unexpectedTermination {
+				return
 			}
 			panic(panicData)
 		}()
@@ -3185,7 +3185,19 @@ func processRetryUnexpectedTestTermination(t *testing.T, bodyReturned bool) bool
 	}
 	fields := getTestPrivateFields(t)
 	if fields != nil && fields.finished != nil {
-		return !fields.GetFinished()
+		if fields.GetFinished() {
+			return false
+		}
+		// testing.tRunner treats a non-parallel subtest's Goexit as FailNow
+		// propagation when an ancestor already finished.
+		if !isParallelTest(t, fields) {
+			for parent := getCommonParentPrivateFields(fields); parent != nil; parent = getCommonParentPrivateFields(parent) {
+				if parent.GetFinished() {
+					return false
+				}
+			}
+		}
+		return true
 	}
 	return !t.Failed() && !t.Skipped()
 }
