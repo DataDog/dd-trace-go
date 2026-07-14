@@ -1321,10 +1321,12 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
-	// session_id is optional; only propagate it when set to avoid spending
-	// x-datadog-tags budget on an empty value.
+	// session_id is optional. Propagating tags are trace-scoped, so unset the key when the active
+	// span has no session; otherwise a predecessor's value lingers and propagates downstream.
 	if sessionID := llmSpan.SessionID(); sessionID != "" {
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, sessionID)
+	} else {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
 }
 
