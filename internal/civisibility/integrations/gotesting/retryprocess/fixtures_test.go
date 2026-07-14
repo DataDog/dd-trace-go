@@ -300,7 +300,7 @@ func TestProcessRetryCoverageUsesFirstParentAttempt(t *testing.T) {
 func processRetryCoverageCountForLine(profile []byte, sourceFile string, sourceLine int) (int64, bool) {
 	var total int64
 	found := false
-	for _, line := range strings.Split(string(profile), "\n") {
+	for line := range strings.SplitSeq(string(profile), "\n") {
 		matches := processRetryCoverageProfileBlock.FindStringSubmatch(line)
 		if len(matches) != 5 || filepath.Base(matches[1]) != filepath.Base(sourceFile) {
 			continue
