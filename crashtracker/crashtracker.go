@@ -13,6 +13,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 )
 
@@ -55,11 +56,13 @@ func Start(opts ...Option) error {
 // Stop disables crash output capture. It is a best-effort call and may be deferred
 // from main() to ensure the monitor is released on clean exit.
 func Stop() {
-	// Best-effort cleanup: unregister the crash output. Any error here is not
-	// actionable because the process is on its way down.
-	_ = debug.SetCrashOutput(nil, debug.CrashOptions{}) //nolint:errcheck
+	if err := debug.SetCrashOutput(nil, debug.CrashOptions{}); err != nil {
+		log.Warn("crashtracker: failed to unregister crash output: %v", err)
+	}
 	if f := activePipe.Swap(nil); f != nil {
-		_ = f.Close()
+		if err := f.Close(); err != nil {
+			log.Warn("crashtracker: failed to close crash pipe: %v", err)
+		}
 	}
 }
 
