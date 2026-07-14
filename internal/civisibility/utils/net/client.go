@@ -137,9 +137,12 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	agentlessEnabled := internal.BoolEnv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	if agentlessEnabled {
 		// Agentless mode is enabled.
-		apiKeyValue = env.Get(constants.APIKeyEnvironmentVariable)
+		apiKeyValue = env.Get(constants.CIVisibilityAPIKeyEnvironmentVariable)
 		if apiKeyValue == "" {
-			log.Error("An API key is required for agentless mode. Use the DD_API_KEY env variable to set it")
+			apiKeyValue = env.Get(constants.APIKeyEnvironmentVariable)
+		}
+		if apiKeyValue == "" {
+			log.Error("An API key is required for agentless mode. Use the DD_API_KEY or DD_CIVISIBILITY_API_KEY env variable to set it")
 			return nil
 		}
 
