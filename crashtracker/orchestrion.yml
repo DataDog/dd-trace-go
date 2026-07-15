@@ -8,15 +8,9 @@ meta:
   name: github.com/DataDog/dd-trace-go/v2/crashtracker
   description: |-
     Starts the Datadog crashtracker as the first statement of main(), so the
-    monitor process is established before any goroutine can crash.
-
-    Ordering with respect to the tracer and profiler: the tracer and profiler
-    aspects use inject-declarations to emit func init() calls, which run before
-    main() starts. This aspect uses prepend-statements inside main(), so the
-    tracer is always started before crashtracker.Start() executes.
-
-    Note: crashes that occur during init() functions (before main() is reached)
-    are not captured because SetCrashOutput is wired inside crashtracker.Start().
+    monitor process is established before any goroutine can crash. The injected
+    start uses DD_* environment configuration; a later programmatic Start call
+    in main is a no-op because crashtracker keeps the first successful start.
 
 aspects:
   - id: func main()
@@ -32,5 +26,8 @@ aspects:
       - prepend-statements:
           imports:
             crashtracker: github.com/DataDog/dd-trace-go/v2/crashtracker
+            log: log
           template: |-
-            crashtracker.Start()
+            if err := crashtracker.Start(); err != nil {
+              log.Printf("failed to start crashtracker: %s", err.Error())
+            }
