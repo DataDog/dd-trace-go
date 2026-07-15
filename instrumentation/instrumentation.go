@@ -148,8 +148,18 @@ func (i *Instrumentation) TelemetryLog() *telemetrylog.Logger {
 	return i.telemetrylog
 }
 
+// TelemetryClient is the interface used to submit instrumentation telemetry
+// metrics data.
+//
+// IMPORTANT: If you are not sure what this is for, you probably should be using
+// [StatsdClient] instead.
 type TelemetryClient = telemetry.Client
 
+// TelemetryClient returns the [TelemetryClient] that instrumentation should use
+// to submit internal telemetry metrics data.
+//
+// IMPORTANT: If you are not sure what this is for, you should probably be using
+// [*Instrumentation.StatsdClient] instead.
 func (i *Instrumentation) TelemetryClient() TelemetryClient {
 	return telemetry.GlobalClient()
 }
