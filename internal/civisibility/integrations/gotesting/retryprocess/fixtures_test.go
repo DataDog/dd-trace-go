@@ -323,6 +323,9 @@ func TestProcessRetryAttemptToFixParent(t *testing.T) {
 		t.Skip("attempt-to-fix fixture runs only from its controller subprocess")
 	}
 	if processRetryFixtureChild() {
+		if run := attemptToFixRuns.Add(1); run != 1 {
+			t.Fatalf("attempt-to-fix child executed the selected attempt %d times", run)
+		}
 		reason, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessReason)
 		if !ok || reason != constants.AttemptToFixRetryReason {
 			t.Fatalf("attempt-to-fix child retry reason = %q, want %q", reason, constants.AttemptToFixRetryReason)
@@ -427,6 +430,9 @@ func TestProcessRetryParallelEFDParent(t *testing.T) {
 		t.Skip("parallel EFD fixture runs only from its controller subprocess")
 	}
 	if processRetryFixtureChild() {
+		if run := parallelEFDRuns.Add(1); run != 1 {
+			t.Fatalf("parallel EFD child executed the selected attempt %d times", run)
+		}
 		attempt, ok := integrations.LookupProcessRetryChildTransport(constants.CIVisibilityInternalRetryProcessAttempt)
 		if !ok || attempt == "" {
 			t.Fatal("parallel EFD child is missing its retry attempt")

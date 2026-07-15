@@ -937,8 +937,10 @@ func runTestWithRetry(options *runTestWithRetryOptions) {
 	defer refundFlakyRetryBudgetReservation(execOpts)
 	prepareProcessRetryExecution(options, execOpts)
 
-	// Execute the test function for the first time
-	if executeTestIteration(execOpts) {
+	// Execute the test function for the first time. A process retry child owns one
+	// attempt selected by its parent and must never schedule retries of its own.
+	shouldRetry := executeTestIteration(execOpts)
+	if shouldRetry && !isProcessRetryChild() {
 		// retry is required
 		// In parallel, we use the retry count set in the first execution.
 		calculatedRetryCount := execOpts.retryCount
