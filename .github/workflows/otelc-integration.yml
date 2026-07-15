@@ -253,7 +253,6 @@ jobs:
           EOF
 
           gotestsum --junitfile "${XML_PATH}" --raw-command -- bash "${RUN_SCRIPT}"
-          bash "${RUN_SCRIPT}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
           MODE: ${{ matrix.mode }}
