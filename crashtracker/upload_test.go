@@ -6,7 +6,6 @@
 package crashtracker
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,14 +14,28 @@ import (
 )
 
 func newTestReport() *Report {
+	stack := StackTrace{
+		Format: "Datadog Crashtracker 1.0",
+		Frames: []Frame{{
+			Function: "main.main",
+			File:     "main.go",
+			Line:     10,
+		}},
+	}
 	return &Report{
 		Timestamp: 1700000000000,
 		DDSource:  "crashtracker",
+		DDTags:    "language:go",
 		Error: Error{
-			Type:    "SIGSEGV",
-			Message: "segmentation fault",
-			IsCrash: true,
+			Type:       "SIGSEGV",
+			Message:    "segmentation fault",
+			Stack:      &stack,
+			Threads:    []Thread{{Crashed: true, Name: "goroutine 1", Stack: stack}},
+			ThreadName: "goroutine 1",
+			IsCrash:    true,
+			SourceType: "Crashtracking",
 		},
+		OSInfo: OSInfo{Architecture: "amd64", Bitness: "64-bit"},
 	}
 }
 
@@ -54,19 +67,11 @@ func TestUploadReportAgentPath(t *testing.T) {
 		t.Fatal("no request captured by test server")
 	}
 
-	// Path must end with the EVP proxy path.
-	if !strings.HasSuffix(capturedReq.URL.Path, "/evp_proxy/v2/api/v2/errors") {
-		t.Errorf("unexpected path: %q, want suffix /evp_proxy/v2/api/v2/errors", capturedReq.URL.Path)
-	}
+	assertCanonicalAgentRequest(t, capturedReq)
 
 	// Content-Type header.
 	if ct := capturedReq.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", ct)
-	}
-
-	// EVP subdomain header.
-	if sub := capturedReq.Header.Get("X-Datadog-EVP-Subdomain"); sub != "errorsintake.agent" {
-		t.Errorf("X-Datadog-EVP-Subdomain = %q, want errorsintake.agent", sub)
 	}
 
 	// API key must NOT be set on the agent path.
@@ -74,21 +79,7 @@ func TestUploadReportAgentPath(t *testing.T) {
 		t.Errorf("DD-API-KEY should be absent on agent path, got %q", key)
 	}
 
-	// Body must be valid JSON with expected fields.
-	var got map[string]any
-	if err := json.Unmarshal(capturedBody, &got); err != nil {
-		t.Fatalf("body is not valid JSON: %v", err)
-	}
-	if got["ddsource"] != "crashtracker" {
-		t.Errorf("ddsource = %v, want crashtracker", got["ddsource"])
-	}
-	errObj, ok := got["error"].(map[string]any)
-	if !ok {
-		t.Fatalf("error field missing or wrong type: %T", got["error"])
-	}
-	if errObj["is_crash"] != true {
-		t.Errorf("error.is_crash = %v, want true", errObj["is_crash"])
-	}
+	assertRFC0013Body(t, capturedBody)
 }
 
 func TestUploadReportAgentlessPath(t *testing.T) {
@@ -131,14 +122,7 @@ func TestUploadReportAgentlessPath(t *testing.T) {
 		t.Errorf("X-Datadog-EVP-Subdomain should be absent on agentless path, got %q", sub)
 	}
 
-	// Body must be valid JSON.
-	var got map[string]any
-	if err := json.Unmarshal(capturedBody, &got); err != nil {
-		t.Fatalf("body is not valid JSON: %v", err)
-	}
-	if got["ddsource"] != "crashtracker" {
-		t.Errorf("ddsource = %v, want crashtracker", got["ddsource"])
-	}
+	assertRFC0013Body(t, capturedBody)
 }
 
 func TestUploadReportServerError(t *testing.T) {

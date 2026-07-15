@@ -9,18 +9,23 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
 func TestParseCrashDump(t *testing.T) {
 	tests := []struct {
-		name        string
-		fixture     string
-		wantType    string
-		wantThreads int
-		wantSignal  bool
-		wantSigName string
-		wantSigNo   int
+		name              string
+		fixture           string
+		wantType          string
+		wantMessageSubstr string
+		wantThreads       int
+		wantMinThreads    int
+		wantTopFunction   string
+		wantTopFileSuffix string
+		wantSignal        bool
+		wantSigName       string
+		wantSigNo         int
 	}{
 		{
 			name:        "panic",
@@ -42,6 +47,42 @@ func TestParseCrashDump(t *testing.T) {
 			wantSignal:  true,
 			wantSigName: "SIGSEGV",
 			wantSigNo:   11,
+		},
+		{
+			name:              "deadlock",
+			fixture:           "deadlock.txt",
+			wantType:          "runtime.plainError",
+			wantMessageSubstr: "all goroutines are asleep - deadlock!",
+			wantThreads:       1,
+			wantTopFunction:   "main.main",
+			wantTopFileSuffix: "deadlock.go",
+		},
+		{
+			name:              "stack exhaustion",
+			fixture:           "stack_exhaustion.txt",
+			wantType:          "runtime.plainError",
+			wantMessageSubstr: "stack overflow",
+			wantMinThreads:    1,
+			wantTopFunction:   "main.recurse",
+			wantTopFileSuffix: "stack_exhaustion.go",
+		},
+		{
+			name:              "panic traceback all",
+			fixture:           "panic_traceback_all.txt",
+			wantType:          "panic",
+			wantMessageSubstr: "traceback all fixture",
+			wantMinThreads:    2,
+			wantTopFunction:   "main.main",
+			wantTopFileSuffix: "panic_traceback_all.go",
+		},
+		{
+			name:              "close closed channel",
+			fixture:           "close_closed_channel.txt",
+			wantType:          "panic",
+			wantMessageSubstr: "close of closed channel",
+			wantThreads:       1,
+			wantTopFunction:   "main.main",
+			wantTopFileSuffix: "close_closed_channel.go",
 		},
 	}
 
@@ -70,6 +111,9 @@ func TestParseCrashDump(t *testing.T) {
 			if r.Error.Message == "" {
 				t.Error("Error.Message is empty, want non-empty")
 			}
+			if tt.wantMessageSubstr != "" && !strings.Contains(r.Error.Message, tt.wantMessageSubstr) {
+				t.Errorf("Error.Message = %q, want substring %q", r.Error.Message, tt.wantMessageSubstr)
+			}
 
 			if r.Error.Stack == nil {
 				t.Fatal("Error.Stack is nil, want non-nil")
@@ -77,12 +121,34 @@ func TestParseCrashDump(t *testing.T) {
 			if len(r.Error.Stack.Frames) == 0 {
 				t.Error("Error.Stack.Frames is empty, want frames")
 			}
+			if r.Error.Stack.Incomplete {
+				t.Error("Error.Stack.Incomplete = true, want false")
+			}
 			if r.Error.Stack.Format != "Datadog Crashtracker 1.0" {
 				t.Errorf("Error.Stack.Format = %q, want %q", r.Error.Stack.Format, "Datadog Crashtracker 1.0")
 			}
+			if tt.wantTopFunction != "" && len(r.Error.Stack.Frames) > 0 {
+				top := r.Error.Stack.Frames[0]
+				if top.Function != tt.wantTopFunction {
+					t.Errorf("top frame Function = %q, want %q", top.Function, tt.wantTopFunction)
+				}
+				if !strings.HasSuffix(top.File, tt.wantTopFileSuffix) {
+					t.Errorf("top frame File = %q, want suffix %q", top.File, tt.wantTopFileSuffix)
+				}
+				if top.Line <= 0 {
+					t.Errorf("top frame Line = %d, want > 0", top.Line)
+				}
+			}
 
-			if got := len(r.Error.Threads); got != tt.wantThreads {
-				t.Errorf("len(Error.Threads) = %d, want %d", got, tt.wantThreads)
+			if tt.wantThreads > 0 {
+				if got := len(r.Error.Threads); got != tt.wantThreads {
+					t.Errorf("len(Error.Threads) = %d, want %d", got, tt.wantThreads)
+				}
+			}
+			if tt.wantMinThreads > 0 {
+				if got := len(r.Error.Threads); got < tt.wantMinThreads {
+					t.Errorf("len(Error.Threads) = %d, want >= %d", got, tt.wantMinThreads)
+				}
 			}
 
 			crashedCount := 0

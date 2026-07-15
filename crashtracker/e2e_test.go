@@ -68,12 +68,13 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 	// Mock Error Tracking intake: capture the first POST body.
 	received := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertCanonicalAgentRequest(t, r)
 		body, _ := io.ReadAll(r.Body)
 		select {
 		case received <- body:
 		default:
 		}
-		w.WriteHeader(202)
+		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer srv.Close()
 
@@ -109,10 +110,13 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 func TestE2ECrashReport_CleanExit(t *testing.T) {
 	t.Parallel()
 
-	posted := false
+	posted := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		posted = true
-		w.WriteHeader(202)
+		select {
+		case posted <- struct{}{}:
+		default:
+		}
+		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer srv.Close()
 
@@ -130,9 +134,20 @@ func TestE2ECrashReport_CleanExit(t *testing.T) {
 	}
 
 	// Give the monitor a short window to (incorrectly) post a report.
-	time.Sleep(500 * time.Millisecond)
-	if posted {
+	select {
+	case <-posted:
 		t.Error("crash report was posted on clean exit; want none")
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+func assertCanonicalAgentRequest(t *testing.T, r *http.Request) {
+	t.Helper()
+	if r.URL.Path != "/evp_proxy/v4/api/v2/errorsintake" {
+		t.Errorf("path = %q, want /evp_proxy/v4/api/v2/errorsintake", r.URL.Path)
+	}
+	if got := r.Header.Get("X-Datadog-EVP-Subdomain"); got != "error-tracking-intake" {
+		t.Errorf("EVP subdomain = %q, want error-tracking-intake", got)
 	}
 }
 
@@ -145,27 +160,8 @@ func assertCrashReport(t *testing.T, body []byte, wantType, wantMsgSubstr string
 		t.Fatal("received empty report body")
 	}
 
-	var report map[string]any
-	if err := json.Unmarshal(body, &report); err != nil {
-		t.Fatalf("unmarshal report: %v\nbody: %s", err, body)
-	}
-
-	if got := report["ddsource"]; got != "crashtracker" {
-		t.Errorf("ddsource = %q, want \"crashtracker\"", got)
-	}
-
-	errObj, ok := report["error"].(map[string]any)
-	if !ok {
-		t.Fatalf("error field missing or not an object; report: %v", report)
-	}
-
-	if errObj["is_crash"] != true {
-		t.Errorf("error.is_crash = %v, want true", errObj["is_crash"])
-	}
-
-	if errObj["source_type"] != "Crashtracking" {
-		t.Errorf("error.source_type = %q, want \"Crashtracking\"", errObj["source_type"])
-	}
+	report := assertRFC0013Body(t, body)
+	errObj := report["error"].(map[string]any)
 
 	if got, _ := errObj["type"].(string); got != wantType {
 		t.Errorf("error.type = %q, want %q", got, wantType)
@@ -176,10 +172,50 @@ func assertCrashReport(t *testing.T, body []byte, wantType, wantMsgSubstr string
 		t.Errorf("error.message = %q, want it to contain %q", msg, wantMsgSubstr)
 	}
 
-	stack, hasStack := errObj["stack"].(map[string]any)
-	if !hasStack {
+	ddtags, _ := report["ddtags"].(string)
+	if !strings.Contains(ddtags, "language:go") {
+		t.Errorf("ddtags = %q, want it to contain \"language:go\"", ddtags)
+	}
+}
+
+func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+
+	var report map[string]any
+	if err := json.Unmarshal(body, &report); err != nil {
+		t.Fatalf("unmarshal report: %v\nbody: %s", err, body)
+	}
+	if got := report["ddsource"]; got != "crashtracker" {
+		t.Errorf("ddsource = %q, want \"crashtracker\"", got)
+	}
+	if _, ok := report["timestamp"].(float64); !ok {
+		t.Errorf("timestamp type = %T, want number", report["timestamp"])
+	}
+	if ddtags, _ := report["ddtags"].(string); ddtags == "" {
+		t.Error("ddtags is empty")
+	}
+
+	errObj, ok := report["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("error field missing or not an object; report: %v", report)
+	}
+	if errObj["is_crash"] != true {
+		t.Errorf("error.is_crash = %v, want true", errObj["is_crash"])
+	}
+	if errObj["source_type"] != "Crashtracking" {
+		t.Errorf("error.source_type = %q, want \"Crashtracking\"", errObj["source_type"])
+	}
+	if _, ok := errObj["type"]; !ok {
+		t.Error("error.type missing")
+	}
+
+	stack, ok := errObj["stack"].(map[string]any)
+	if !ok {
 		t.Error("error.stack missing or not an object")
 	} else {
+		if stack["format"] != "Datadog Crashtracker 1.0" {
+			t.Errorf("error.stack.format = %q, want Datadog Crashtracker 1.0", stack["format"])
+		}
 		frames, _ := stack["frames"].([]any)
 		if len(frames) == 0 {
 			t.Error("error.stack.frames is empty; want at least one frame")
@@ -190,8 +226,6 @@ func assertCrashReport(t *testing.T, body []byte, wantType, wantMsgSubstr string
 	if len(threads) == 0 {
 		t.Error("error.threads is empty; want at least one goroutine")
 	}
-
-	// Verify exactly one thread is marked as the crashing goroutine.
 	crashedCount := 0
 	for _, th := range threads {
 		thMap, _ := th.(map[string]any)
@@ -206,14 +240,10 @@ func assertCrashReport(t *testing.T, body []byte, wantType, wantMsgSubstr string
 	osInfo, ok := report["os_info"].(map[string]any)
 	if !ok {
 		t.Error("os_info missing")
-	} else if osInfo["architecture"] == "" {
+	} else if architecture, _ := osInfo["architecture"].(string); architecture == "" {
 		t.Error("os_info.architecture is empty")
 	}
-
-	ddtags, _ := report["ddtags"].(string)
-	if !strings.Contains(ddtags, "language:go") {
-		t.Errorf("ddtags = %q, want it to contain \"language:go\"", ddtags)
-	}
+	return report
 }
 
 // filterE2EEnv strips variables that must not pollute the subprocess environment.
@@ -222,7 +252,10 @@ func filterE2EEnv(env []string) []string {
 	for _, kv := range env {
 		if strings.HasPrefix(kv, e2eRoleEnv+"=") ||
 			strings.HasPrefix(kv, "DD_TRACE_AGENT_URL=") ||
-			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") {
+			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
+			strings.HasPrefix(kv, "DD_TRACE_ENABLED=") ||
+			strings.HasPrefix(kv, "DD_INSTRUMENTATION_TELEMETRY_ENABLED=") ||
+			strings.HasPrefix(kv, "DD_REMOTE_CONFIGURATION_ENABLED=") {
 			continue
 		}
 		filtered = append(filtered, kv)
