@@ -201,6 +201,12 @@ func ensureSettingsInitialization(serviceName string) {
 			ciSettings.EarlyFlakeDetection.Enabled = false
 		}
 
+		// check if early flake detection is disabled by env-vars
+		if ciSettings.EarlyFlakeDetection.Enabled && !internal.BoolEnv(constants.CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable, true) {
+			log.Warn("civisibility: early flake detection was disabled by the environment variable")
+			ciSettings.EarlyFlakeDetection.Enabled = false
+		}
+
 		// check if flaky test retries is disabled by env-vars
 		if ciSettings.FlakyTestRetriesEnabled && !internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true) {
 			log.Warn("civisibility: flaky test retries was disabled by the environment variable")

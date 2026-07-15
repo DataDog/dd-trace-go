@@ -275,6 +275,13 @@
         "default": "true"
       }
     ],
+    "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true"
+      }
+    ],
     "DD_CIVISIBILITY_ENABLED": [
       {
         "implementation": "A",
