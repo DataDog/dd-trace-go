@@ -2881,13 +2881,11 @@ func TestProcessRetryUnreapedChildRetainsShutdownOwnershipUntilWaitCompletes(t *
 		t.Fatal("unreaped process retry cleanup did not run after Wait completed")
 	}
 	require.Equal(t, int32(1), removeCalls.Load())
-	require.Eventually(t, func() bool {
-		processRetryActiveChildren.mu.Lock()
-		defer processRetryActiveChildren.mu.Unlock()
-		_, ok := processRetryActiveChildren.children[startedCmd]
-		return !ok
-	}, time.Second, time.Millisecond)
 	require.True(t, waitForProcessRetryShutdownQuiescence(time.Second))
+	processRetryActiveChildren.mu.Lock()
+	_, registered = processRetryActiveChildren.children[startedCmd]
+	processRetryActiveChildren.mu.Unlock()
+	require.False(t, registered)
 }
 
 func TestRunProcessRetryAttemptRechecksCancellationAfterLaunchGateWait(t *testing.T) {
@@ -3831,6 +3829,9 @@ func TestRunProcessRetryAttemptHonorsParentDeadlineWhileWaitingForLimiter(t *tes
 	require.NotNil(t, held.Release)
 	defer held.Release()
 
+	now := time.Unix(1_700_000_000, 0)
+	deadline := make(chan time.Time, 1)
+	timerDurations := make(chan time.Duration, 1)
 	startCalls := atomic.Int32{}
 	resetProcessRetryRunnerHooksForTesting(t, processRetryRunnerHooks{
 		executable: func() (string, error) { return os.Args[0], nil },
@@ -3846,9 +3847,10 @@ func TestRunProcessRetryAttemptHonorsParentDeadlineWhileWaitingForLimiter(t *tes
 			ch <- nil
 			return ch, nil
 		},
-		after: time.After,
+		now: func() time.Time { return now },
 		newTimer: func(d time.Duration) processRetryTimer {
-			return &processRetryRealTimer{timer: time.NewTimer(d)}
+			timerDurations <- d
+			return &processRetryStaticTimer{ch: deadline}
 		},
 	})
 
@@ -3857,8 +3859,23 @@ func TestRunProcessRetryAttemptHonorsParentDeadlineWhileWaitingForLimiter(t *tes
 		Attempt:     1,
 		RetryReason: constants.AutoTestRetriesRetryReason,
 	}
-	parentDeadline := time.Now().Add(processRetryParentDeadlineReserve() + 10*time.Millisecond)
-	attempt := runProcessRetryAttempt(context.Background(), cfg, parentDeadline, true)
+	waitingContext := &processRetryObservedDoneContext{
+		Context: context.Background(),
+		entered: make(chan struct{}),
+	}
+	attemptResult := make(chan processRetryAttemptResult, 1)
+	go func() {
+		attemptResult <- runProcessRetryAttempt(
+			waitingContext,
+			cfg,
+			now.Add(processRetryParentDeadlineReserve()+10*time.Millisecond),
+			true,
+		)
+	}()
+	<-waitingContext.entered
+	require.Equal(t, 10*time.Millisecond, <-timerDurations)
+	deadline <- now
+	attempt := <-attemptResult
 	require.True(t, attempt.SetupFailure)
 	require.True(t, attempt.SetupFallbackAllowed)
 	require.True(t, attempt.TimedOut)
@@ -3875,6 +3892,7 @@ func TestRunProcessRetryAttemptStartsProcessTimeoutAfterLimiterAcquire(t *testin
 	require.NotNil(t, held.Release)
 	defer held.Release()
 
+	now := time.Unix(1_700_000_000, 0)
 	startCalls := atomic.Int32{}
 	timerDurations := make(chan time.Duration, 1)
 	timerCh := make(chan time.Time)
@@ -3890,7 +3908,6 @@ func TestRunProcessRetryAttemptStartsProcessTimeoutAfterLimiterAcquire(t *testin
 			if err != nil {
 				return nil, err
 			}
-			now := time.Now()
 			data, err := json.Marshal(processRetryResult{
 				Version:        1,
 				TestName:       cfg.TestName,
@@ -3918,6 +3935,7 @@ func TestRunProcessRetryAttemptStartsProcessTimeoutAfterLimiterAcquire(t *testin
 			return waitCh, nil
 		},
 		after: time.After,
+		now:   func() time.Time { return now },
 		newTimer: func(d time.Duration) processRetryTimer {
 			timerDurations <- d
 			return &processRetryStaticTimer{ch: timerCh}
@@ -7085,6 +7103,7 @@ func (c *processRetryBlockingDoneContext) Done() <-chan struct{} {
 
 func processRetrySuccessfulAttemptHooks(t testing.TB, killTree func(*exec.Cmd) error) processRetryRunnerHooks {
 	t.Helper()
+	now := time.Now()
 	return processRetryRunnerHooks{
 		executable:       func() (string, error) { return os.Args[0], nil },
 		workingDirectory: func() (string, error) { return ".", nil },
@@ -7093,9 +7112,11 @@ func processRetrySuccessfulAttemptHooks(t testing.TB, killTree func(*exec.Cmd) e
 		command:          exec.Command,
 		prepareTree:      func(*exec.Cmd) error { return nil },
 		startAndWait: func(cmd *exec.Cmd) (<-chan error, error) {
-			cfg := processRetryChildConfigFromCommandEnv(t, cmd.Env)
-			now := time.Now()
-			writeProcessRetryResultForTesting(t, cfg.ResultPath, processRetryResult{
+			cfg, err := parseProcessRetryChildConfigFromCommandEnv(cmd.Env)
+			if err != nil {
+				return nil, err
+			}
+			if err := writeProcessRetryResultAtomically(cfg.ResultPath, processRetryResult{
 				Version:        1,
 				TestName:       cfg.TestName,
 				Attempt:        cfg.Attempt,
@@ -7104,7 +7125,9 @@ func processRetrySuccessfulAttemptHooks(t testing.TB, killTree func(*exec.Cmd) e
 				StartUnixNano:  now.UnixNano(),
 				FinishUnixNano: now.Add(time.Millisecond).UnixNano(),
 				DurationNanos:  int64(time.Millisecond),
-			})
+			}); err != nil {
+				return nil, err
+			}
 			closeProcessRetryCommandWriters(cmd)
 			waitCh := make(chan error, 1)
 			waitCh <- nil
@@ -7116,7 +7139,7 @@ func processRetrySuccessfulAttemptHooks(t testing.TB, killTree func(*exec.Cmd) e
 		killTree:      killTree,
 		killDirect:    func(*exec.Cmd) error { return nil },
 		releaseTree:   func(*exec.Cmd) error { return nil },
-		now:           time.Now,
+		now:           func() time.Time { return now },
 		after:         time.After,
 		newTimer: func(d time.Duration) processRetryTimer {
 			return &processRetryRealTimer{timer: time.NewTimer(d)}
