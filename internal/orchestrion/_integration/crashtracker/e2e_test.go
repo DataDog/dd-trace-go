@@ -15,13 +15,12 @@ import (
 // TestMain intercepts re-executions of this binary that serve as crash-victim
 // subprocesses (see TestCase.Run in crashtracker.go).
 //
-// Note: the orchestrion.yml join-point uses test-main: false, which deliberately
-// excludes test binaries' main() functions from injection. The subprocess role
-// therefore calls crashtracker.Start() explicitly rather than relying on the
-// orchestrion-injected call. The test validates the crash pipeline
-// (spawn → SetCrashOutput → panic → monitor → upload) in the orchestrion
-// integration test environment. Injection into non-test binaries is exercised
-// by the orchestrion toolexec/driver build modes against real application code.
+// The orchestrion.yml join-point uses test-main:false, which deliberately
+// excludes test binaries' main() functions from injection. This subprocess role
+// calls crashtracker.Start() explicitly to validate the crash pipeline
+// (spawn → SetCrashOutput → panic → monitor → upload) under an orchestrion-built
+// test binary. TestCrashtrackerMainInjection validates injection into a real
+// non-test main function.
 func TestMain(m *testing.M) {
 	switch os.Getenv(e2eRoleEnv) {
 	case crashRoleOrch:

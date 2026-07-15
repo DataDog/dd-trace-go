@@ -26,9 +26,7 @@ const (
 	// e2eRoleEnv drives subprocess behaviour in TestMain.
 	e2eRoleEnv = "_CRASHTRACKER_E2E_ORCH"
 
-	// crashRoleOrch is the panic-victim role. The subprocess deliberately does
-	// NOT call crashtracker.Start() itself — the monitor must be spawned by the
-	// orchestrion-injected Start() call that fires before TestMain runs.
+	// crashRoleOrch is the panic-victim role.
 	crashRoleOrch = "panic"
 
 	// orchCrashMsg is the panic string asserted in the received crash report.
@@ -37,14 +35,11 @@ const (
 
 // TestCase is the orchestrion integration test for the crashtracker aspect.
 //
-// It verifies the full crash-reporting chain under orchestrion instrumentation:
-//  1. orchestrion injects crashtracker.Start() as the first statement of main().
-//  2. A crash-victim subprocess panics WITHOUT calling Start() explicitly.
-//  3. The monitor grandchild (spawned by the injected Start()) reads the crash
-//     dump and uploads a structured report to the mock intake.
-//
-// If orchestrion fails to inject Start(), no monitor is spawned, no crash pipe
-// is wired, and the test times out — proving the injection is load-bearing.
+// It verifies the full crash-reporting chain under an orchestrion-built test
+// binary: a subprocess starts crashtracker explicitly, panics, and the monitor
+// child uploads a structured report to the mock intake. The aspect deliberately
+// excludes test binaries' main functions with test-main:false, so injection into
+// real non-test main functions is validated by TestCrashtrackerMainInjection.
 type TestCase struct {
 	mockSrv  *httptest.Server
 	received chan []byte
@@ -53,12 +48,16 @@ type TestCase struct {
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.received = make(chan []byte, 1)
 	tc.mockSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isCrashtrackerRequest(r) {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		select {
 		case tc.received <- body:
 		default:
 		}
-		w.WriteHeader(202)
+		w.WriteHeader(http.StatusAccepted)
 	}))
 	t.Cleanup(tc.mockSrv.Close)
 }
@@ -71,8 +70,7 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	case body := <-tc.received:
 		assertOrchCrashReport(t, body)
 	case <-time.After(15 * time.Second):
-		t.Fatal("timed out waiting for crash report; " +
-			"orchestrion may not have injected crashtracker.Start() into main()")
+		t.Fatal("timed out waiting for crash report from explicit crashtracker.Start() subprocess")
 	}
 }
 
@@ -114,6 +112,11 @@ func filterOrchEnv(env []string) []string {
 		filtered = append(filtered, kv)
 	}
 	return filtered
+}
+
+func isCrashtrackerRequest(r *http.Request) bool {
+	return r.URL.Path == "/evp_proxy/v4/api/v2/errorsintake" &&
+		r.Header.Get("X-Datadog-EVP-Subdomain") == "error-tracking-intake"
 }
 
 // assertOrchCrashReport validates the key fields of the received crash report.
