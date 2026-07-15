@@ -33,6 +33,8 @@ const (
 	envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
 	// envInferredProxyServicesEnabled is the name of the env var used for enabling inferred span tracing
 	envInferredProxyServicesEnabled = "DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED"
+	// envPubsubPropagationAsSpanLinks determines if pubsub context is propogated by span link rather than by reparenting
+	envPubsubPropagationAsSpanLinks = "DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS"
 	// envQueryStringAllowlist is the name of the env var used to specify which query string parameter keys
 	// to keep in the http.url span tag. When set, only these keys are retained and the expensive default
 	// obfuscation regex is bypassed. Comma-separated list of parameter names.
@@ -55,6 +57,7 @@ type config struct {
 	traceClientIP                            bool
 	isStatusError                            func(statusCode int) bool
 	inferredProxyServicesEnabled             bool
+	pubsubPropagationAsSpanLinks             bool
 	allowAllBaggage                          bool                // tag all baggage items when true (DD_TRACE_BAGGAGE_TAG_KEYS="*").
 	baggageTagKeys                           map[string]struct{} // when allowAllBaggage is false, only tag baggage items whose keys are listed here.
 	resourceRenamingEnabled                  *bool
@@ -77,6 +80,7 @@ func newConfig() config {
 		traceClientIP:                            internal.BoolEnv(envTraceClientIPEnabled, false),
 		isStatusError:                            isServerError,
 		inferredProxyServicesEnabled:             internal.BoolEnv(envInferredProxyServicesEnabled, false),
+		pubsubPropagationAsSpanLinks:             internal.BoolEnv(envPubsubPropagationAsSpanLinks, false),
 		baggageTagKeys:                           make(map[string]struct{}),
 		resourceRenamingAlwaysSimplifiedEndpoint: internal.BoolEnv("DD_TRACE_RESOURCE_RENAMING_ALWAYS_SIMPLIFIED_ENDPOINT", false),
 		appsecEnabledMode:                        sync.OnceValue(appsecEnabledAtStartup),

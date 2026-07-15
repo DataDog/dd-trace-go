@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
@@ -125,6 +126,7 @@ type PackageInfo struct {
 	naming map[Component]componentNames
 }
 
+var packagesMu sync.RWMutex
 var packages = map[Package]PackageInfo{
 	Package99DesignsGQLGen: {
 		TracedPackage: "github.com/99designs/gqlgen",
@@ -1018,6 +1020,9 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 
 // GetPackages returns a map of Package to the corresponding instrumented module.
 func GetPackages() map[Package]PackageInfo {
+	packagesMu.RLock()
+	defer packagesMu.RUnlock()
+
 	cp := make(map[Package]PackageInfo)
 	maps.Copy(cp, packages)
 	return cp

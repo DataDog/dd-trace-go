@@ -123,7 +123,43 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 			tracer.Tag(ext.MessagingSystem, ext.MessagingSystemGCPPubsub),
 			tracer.Tag(ext.MessagingOperationName, "receive"),
 			tracer.Tag(ext.MessagingDestinationName, s.String()),
-			tracer.ChildOf(parentSpanCtx),
+		}
+		var baggage map[string]string
+		if cfg.propagationAsSpanLinks && parentSpanCtx != nil {
+			var links []tracer.SpanLink
+
+			// Distinguish a normal extracted context from an stub formed in the case of DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart,
+			// which zeroes trace/span IDs and stores the producer link in SpanLinks.
+			if parentSpanCtx.TraceIDLower() != 0 || parentSpanCtx.TraceIDUpper() != 0 || parentSpanCtx.SpanID() != 0 {
+				// Link to the producer without reparenting the consumer trace.
+				links = []tracer.SpanLink{{
+					TraceID:     parentSpanCtx.TraceIDLower(),
+					TraceIDHigh: parentSpanCtx.TraceIDUpper(),
+					SpanID:      parentSpanCtx.SpanID(),
+				}}
+			} else {
+				// extract=restart zeroes IDs; reuse links already on the stub context.
+				links = parentSpanCtx.SpanLinks()
+			}
+			if len(links) > 0 {
+				opts = append(opts, tracer.WithSpanLinks(links))
+			}
+
+			// copy any baggage into the new span without reparenting
+			baggage = make(map[string]string)
+			parentSpanCtx.ForeachBaggageItem(func(k, v string) bool {
+				baggage[k] = v
+				return true
+			})
+		} else {
+			opts = append(opts, tracer.ChildOf(parentSpanCtx))
+			// If there are span links as a result of context extraction, add them as a StartSpanOption
+			if parentSpanCtx != nil && parentSpanCtx.SpanLinks() != nil {
+				opts = append(opts, tracer.WithSpanLinks(parentSpanCtx.SpanLinks()))
+			}
+		}
+		if projectID := projectIDFromResourceName(s.String()); projectID != "" {
+			opts = append(opts, tracer.Tag(ext.GCPProjectID, projectID))
 		}
 		if projectID := projectIDFromResourceName(s.String()); projectID != "" {
 			opts = append(opts, tracer.Tag(ext.GCPProjectID, projectID))
@@ -134,11 +170,10 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 		if cfg.measured {
 			opts = append(opts, tracer.Measured())
 		}
-		// If there are span links as a result of context extraction, add them as a StartSpanOption
-		if parentSpanCtx != nil && parentSpanCtx.SpanLinks() != nil {
-			opts = append(opts, tracer.WithSpanLinks(parentSpanCtx.SpanLinks()))
-		}
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
+		for k, v := range baggage {
+			span.SetBaggageItem(k, v)
+		}
 		if msg.DeliveryAttempt != nil {
 			span.SetTag(ext.PubsubDeliveryAttempt, *msg.DeliveryAttempt)
 		}

@@ -174,6 +174,9 @@ type Config struct {
 	// otlpExportMetricsMode indicates metrics should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMetricsMode bool
+	// otelSemanticsEnabled makes OTLP-exported spans match the pure OTel SDK
+	// by omitting Datadog-specific attributes. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
+	otelSemanticsEnabled bool
 	// otlpTraceURL is the OTLP collector endpoint for traces
 	otlpTraceURL string
 	// otlpHeaders holds the resolved OTLP trace headers from
@@ -187,6 +190,14 @@ type Config struct {
 	httpClientTimeout time.Duration
 	// sendRetries is the number of times a trace or CI Visibility payload send is retried upon failure.
 	sendRetries int
+	// propagationStyleInject specifies the propagation style for injection.
+	propagationStyleInject string
+	// propagationStyleExtract specifies the propagation style for extraction.
+	propagationStyleExtract string
+	// propagationBehaviorExtract controls what happens when an incoming trace context is found.
+	propagationBehaviorExtract string
+	// propagationExtractFirst, when true, stops extraction after the first successful extractor.
+	propagationExtractFirst bool
 	// traceSamplingRules holds the RC-aware trace sampling rules (DD_TRACE_SAMPLING_RULES).
 	traceSamplingRules *DynamicConfig[[]samplingrules.SamplingRule]
 	// spanSamplingRules holds the single-span sampling rules (DD_SPAN_SAMPLING_RULES).
@@ -288,6 +299,8 @@ func loadConfig() *Config {
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = p.GetBool("DD_LOGS_OTEL_ENABLED", false)
+	otelSemantics, otelSemanticsOrigin := p.GetBoolWithOrigin("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
+	cfg.SetOTelSemanticsEnabled(otelSemantics, otelSemanticsOrigin)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported")
 	}
@@ -302,6 +315,10 @@ func loadConfig() *Config {
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
+	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
+	cfg.propagationStyleExtract = p.GetString("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "")
+	cfg.propagationBehaviorExtract = p.GetString("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "continue")
+	cfg.propagationExtractFirst = p.GetBool("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
 	cfg.appKey = p.GetString("DD_APP_KEY", "")
 	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
 	cfg.experimentalFlaggingProviderEnabled = p.GetBool("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
@@ -1277,6 +1294,24 @@ func (c *Config) SetLogsOTelEnabled(enabled bool, origin telemetry.Origin, produ
 	configtelemetry.Report("DD_LOGS_OTEL_ENABLED", enabled, origin)
 }
 
+func (c *Config) OTelSemanticsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otelSemanticsEnabled
+}
+
+// SetOTelSemanticsEnabled sets whether OTLP-exported spans should match the pure
+// OpenTelemetry SDK, and reports the value to configuration telemetry.
+func (c *Config) SetOTelSemanticsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_TRACE_OTEL_SEMANTICS_ENABLED", origin, enabled, product...) {
+		return
+	}
+	c.otelSemanticsEnabled = enabled
+	configtelemetry.Report("DD_TRACE_OTEL_SEMANTICS_ENABLED", enabled, origin)
+}
+
 func (c *Config) TraceProtocol() float64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1386,6 +1421,30 @@ func (c *Config) SetSendRetries(retries int, origin telemetry.Origin, product ..
 	}
 	c.sendRetries = retries
 	configtelemetry.Report("DD_TRACE_SEND_RETRIES", retries, origin)
+}
+
+func (c *Config) PropagationStyleInject() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationStyleInject
+}
+
+func (c *Config) PropagationStyleExtract() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationStyleExtract
+}
+
+func (c *Config) PropagationBehaviorExtract() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationBehaviorExtract
+}
+
+func (c *Config) PropagationExtractFirst() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.propagationExtractFirst
 }
 
 func (c *Config) TraceSamplingRules() []samplingrules.SamplingRule {
