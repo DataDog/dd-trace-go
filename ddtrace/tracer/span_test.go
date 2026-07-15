@@ -1876,6 +1876,111 @@ func TestStatsAfterFinish(t *testing.T) {
 	})
 }
 
+func TestStatsAdditionalMetricTags(t *testing.T) {
+	t.Run("tags-present", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		tracer, err := newTracer(
+			WithStatsComputation(true),
+			WithStatsAdditionalTags([]string{"region", "tenant_id"}),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.ddTransport = transport
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		tracer.config.agent.store(af)
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats.Stop()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag(keyMeasured, 1)
+		sp.SetTag("region", "us-east-1")
+		sp.SetTag("tenant_id", "acme-corp")
+		sp.Finish()
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		additionalTags := stats[0].Stats[0].Stats[0].AdditionalMetricTags
+		assert.Contains(t, additionalTags, "region:us-east-1")
+		assert.Contains(t, additionalTags, "tenant_id:acme-corp")
+	})
+	t.Run("tags-missing", func(t *testing.T) {
+		t.Setenv("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", "true")
+		tracer, err := newTracer(
+			WithStatsComputation(true),
+			WithStatsAdditionalTags([]string{"region"}),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.ddTransport = transport
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		tracer.config.agent.store(af)
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats.Stop()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag(keyMeasured, 1)
+		// no "region" tag set on the span
+		sp.Finish()
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		additionalTags := stats[0].Stats[0].Stats[0].AdditionalMetricTags
+		assert.Empty(t, additionalTags)
+	})
+	t.Run("no-config", func(t *testing.T) {
+		tracer, err := newTracer(
+			WithStatsComputation(true),
+		)
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		setGlobalTracer(tracer)
+
+		transport := newDummyTransport()
+		tracer.config.ddTransport = transport
+		af := tracer.config.agent.load()
+		af.Stats = true
+		af.DropP0s = true
+		tracer.config.agent.store(af)
+
+		c := newConcentrator(tracer.config, (10 * time.Second).Nanoseconds(), &statsd.NoOpClientDirect{})
+		assert.Len(t, transport.Stats(), 0)
+		c.Start()
+		tracer.stats.Stop()
+		tracer.stats = c
+
+		sp := tracer.StartSpan("sp1")
+		sp.SetTag(keyMeasured, 1)
+		sp.SetTag("region", "us-east-1")
+		sp.Finish()
+
+		c.Stop()
+		stats := transport.Stats()
+		assert.Equal(t, 1, len(stats))
+		additionalTags := stats[0].Stats[0].Stats[0].AdditionalMetricTags
+		assert.Empty(t, additionalTags)
+	})
+}
+
 func TestObfuscatedResource(t *testing.T) {
 	o := obfuscate.NewObfuscator(obfuscate.Config{})
 	defer o.Stop()

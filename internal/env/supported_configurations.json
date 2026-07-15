@@ -1178,6 +1178,13 @@
         "default": "true"
       }
     ],
+    "DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED": [
+      {
+        "implementation": "B",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_FASTHTTP_ANALYTICS_ENABLED": [
       {
         "implementation": "A",
@@ -1673,6 +1680,55 @@
         "implementation": "C",
         "type": "boolean",
         "default": "true"
+      }
+    ],
+    "DD_TRACE_STATS_ADDITIONAL_TAGS": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": ""
+      }
+    ],
+    "DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT": [
+      {
+        "implementation": "B",
+        "type": "integer",
+        "default": "100"
+      }
+    ],
+    "DD_TRACE_STATS_CARDINALITY_LIMIT": [
+      {
+        "implementation": "B",
+        "type": "integer",
+        "default": "2048"
+      }
+    ],
+    "DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT": [
+      {
+        "implementation": "B",
+        "type": "integer",
+        "default": "1024"
+      }
+    ],
+    "DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT": [
+      {
+        "implementation": "B",
+        "type": "integer",
+        "default": "512"
+      }
+    ],
+    "DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT": [
+      {
+        "implementation": "B",
+        "type": "integer",
+        "default": "512"
+      }
+    ],
+    "DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT": [
+      {
+        "implementation": "B",
+        "type": "integer",
+        "default": "20"
       }
     ],
     "DD_TRACE_STATS_COMPUTATION_ENABLED": [
