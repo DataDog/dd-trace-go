@@ -1181,7 +1181,7 @@ func WithStatsAdditionalTags(tags []string) StartOption {
 // Can also be configured via DD_TRACE_STATS_CARDINALITY_LIMIT. Default: 2048.
 func WithStatsCardinalityLimit(limit int) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetStatsWholeKeyCardinalityLimit(limit)
+		c.internalConfig.SetStatsWholeKeyCardinalityLimit(limit, internalconfig.OriginCode)
 	}
 }
 
@@ -1189,7 +1189,7 @@ func WithStatsCardinalityLimit(limit int) StartOption {
 // Can also be configured via DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT. Default: 1024.
 func WithStatsResourceCardinalityLimit(limit int) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetStatsResourceCardinalityLimit(limit)
+		c.internalConfig.SetStatsResourceCardinalityLimit(limit, internalconfig.OriginCode)
 	}
 }
 
@@ -1197,7 +1197,7 @@ func WithStatsResourceCardinalityLimit(limit int) StartOption {
 // Can also be configured via DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT. Default: 512.
 func WithStatsHTTPEndpointCardinalityLimit(limit int) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetStatsHTTPEndpointCardinalityLimit(limit)
+		c.internalConfig.SetStatsHTTPEndpointCardinalityLimit(limit, internalconfig.OriginCode)
 	}
 }
 
@@ -1205,7 +1205,7 @@ func WithStatsHTTPEndpointCardinalityLimit(limit int) StartOption {
 // Can also be configured via DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT. Default: 512.
 func WithStatsPeerTagsCardinalityLimit(limit int) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetStatsPeerTagsCardinalityLimit(limit)
+		c.internalConfig.SetStatsPeerTagsCardinalityLimit(limit, internalconfig.OriginCode)
 	}
 }
 
@@ -1213,7 +1213,7 @@ func WithStatsPeerTagsCardinalityLimit(limit int) StartOption {
 // Can also be configured via DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT. Default: 20.
 func WithStatsOriginCardinalityLimit(limit int) StartOption {
 	return func(c *config) {
-		c.internalConfig.SetStatsOriginCardinalityLimit(limit)
+		c.internalConfig.SetStatsOriginCardinalityLimit(limit, internalconfig.OriginCode)
 	}
 }
 

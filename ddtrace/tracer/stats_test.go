@@ -293,6 +293,143 @@ func TestFlushAndSendCollapsedSpansMetric(t *testing.T) {
 	assert.Empty(t, testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans"))
 }
 
+func TestFlushAndSendCollapsedSpansMetricResourceLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, resource := range []string{"GET /a", "GET /b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "http.request",
+			service:  "web",
+			resource: resource,
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:resource"))
+}
+
+func TestFlushAndSendCollapsedSpansMetricHTTPEndpointLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, endpoint := range []string{"GET /endpoint-a", "GET /endpoint-b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "http.request",
+			service:  "web",
+			resource: "GET /endpoint",
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta:     tinternal.NewSpanMetaFromMap(map[string]string{ext.HTTPEndpoint: endpoint}),
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:http_endpoint"))
+}
+
+func TestFlushAndSendCollapsedSpansMetricPeerTagsLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	cfg := newTestConfigWithTransportAndEnv(t, transport, "someEnv")
+	af := cfg.agent.load()
+	af.peerTags = []string{"peer.service"}
+	cfg.agent.store(af)
+	c := newConcentrator(cfg, defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, peerSvc := range []string{"svc-a", "svc-b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "db.query",
+			service:  "web",
+			resource: "SELECT 1",
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta:     tinternal.NewSpanMetaFromMap(map[string]string{"peer.service": peerSvc, "span.kind": "client"}),
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:peer_tags"))
+}
+
+func TestFlushAndSendCollapsedSpansMetricOriginLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, origin := range []string{"synthetics-user", "origin-b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "http.request",
+			service:  "web",
+			resource: "GET /test",
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+			meta:     tinternal.NewSpanMetaFromMap(map[string]string{keyOrigin: origin}),
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:origin"))
+}
+
+func TestFlushAndSendCollapsedSpansMetricWholeKeyLimit(t *testing.T) {
+	t.Setenv("DD_TRACE_STATS_CARDINALITY_LIMIT", "1")
+
+	transport := newDummyTransport()
+	testStats := &statsdtest.TestStatsdClient{}
+	c := newConcentrator(newTestConfigWithTransportAndEnv(t, transport, "someEnv"), defaultStatsBucketSize, testStats)
+	now := time.Now().UnixNano()
+	for _, resource := range []string{"GET /a", "GET /b"} {
+		ss, ok := c.newTracerStatSpan(&Span{
+			name:     "http.request",
+			service:  "web",
+			resource: resource,
+			start:    now,
+			duration: int64(time.Millisecond),
+			metrics:  map[string]float64{keyMeasured: 1},
+		}, nil)
+		require.True(t, ok)
+		c.add(ss)
+	}
+
+	c.flushAndSend(time.Now(), withCurrentBucket)
+	calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+	require.NotEmpty(t, calls)
+	assert.Equal(t, int64(1), testStats.CountCallsByTag(calls, "collapsed:whole_key"))
+}
+
 func TestShouldObfuscate(t *testing.T) {
 	bucketSize := int64(500_000)
 	tsp := newDummyTransport()

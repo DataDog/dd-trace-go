@@ -35,7 +35,7 @@ const (
 	// defaultStatsAdditionalTagsCardinalityLimit is the default per-bucket cap for additional metric tag cardinality.
 	defaultStatsAdditionalTagsCardinalityLimit = 100
 	// maxAdditionalTagKeys is the maximum number of configured additional metric tag keys.
-	maxAdditionalTagKeys = 5
+	maxAdditionalTagKeys = 6
 	// defaultStatsWholeKeyCardinalityLimit is the default whole-key cardinality cap per bucket.
 	defaultStatsWholeKeyCardinalityLimit = 2048
 	// defaultStatsResourceCardinalityLimit is the default per-field cap for resource cardinality.

@@ -150,8 +150,8 @@ type Config struct {
 	statsPeerTagsCardinalityLimit int
 	// statsOriginCardinalityLimit caps distinct origin values per bucket.
 	// Configured via DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT.
-	statsOriginCardinalityLimit int
-	dataStreamsMonitoringEnabled        bool
+	statsOriginCardinalityLimit  int
+	dataStreamsMonitoringEnabled bool
 	// dynamicInstrumentationEnabled controls whether the target application can
 	// be modified by Dynamic Instrumentation / Live Debugger. If the value is
 	// explicitly set to false (as opposed to starting as false by default), then
@@ -1031,13 +1031,17 @@ func (c *Config) StatsWholeKeyCardinalityLimit() int {
 	return c.statsWholeKeyCardinalityLimit
 }
 
-func (c *Config) SetStatsWholeKeyCardinalityLimit(limit int) {
+func (c *Config) SetStatsWholeKeyCardinalityLimit(limit int, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
 		return
 	}
+	if c.checkProductConflict("DD_TRACE_STATS_CARDINALITY_LIMIT", origin, limit, product...) {
+		return
+	}
 	c.statsWholeKeyCardinalityLimit = limit
+	configtelemetry.Report("DD_TRACE_STATS_CARDINALITY_LIMIT", limit, origin)
 }
 
 func (c *Config) StatsResourceCardinalityLimit() int {
@@ -1046,13 +1050,17 @@ func (c *Config) StatsResourceCardinalityLimit() int {
 	return c.statsResourceCardinalityLimit
 }
 
-func (c *Config) SetStatsResourceCardinalityLimit(limit int) {
+func (c *Config) SetStatsResourceCardinalityLimit(limit int, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
 		return
 	}
+	if c.checkProductConflict("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", origin, limit, product...) {
+		return
+	}
 	c.statsResourceCardinalityLimit = limit
+	configtelemetry.Report("DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT", limit, origin)
 }
 
 func (c *Config) StatsHTTPEndpointCardinalityLimit() int {
@@ -1061,13 +1069,17 @@ func (c *Config) StatsHTTPEndpointCardinalityLimit() int {
 	return c.statsHTTPEndpointCardinalityLimit
 }
 
-func (c *Config) SetStatsHTTPEndpointCardinalityLimit(limit int) {
+func (c *Config) SetStatsHTTPEndpointCardinalityLimit(limit int, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
 		return
 	}
+	if c.checkProductConflict("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", origin, limit, product...) {
+		return
+	}
 	c.statsHTTPEndpointCardinalityLimit = limit
+	configtelemetry.Report("DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT", limit, origin)
 }
 
 func (c *Config) StatsPeerTagsCardinalityLimit() int {
@@ -1076,13 +1088,17 @@ func (c *Config) StatsPeerTagsCardinalityLimit() int {
 	return c.statsPeerTagsCardinalityLimit
 }
 
-func (c *Config) SetStatsPeerTagsCardinalityLimit(limit int) {
+func (c *Config) SetStatsPeerTagsCardinalityLimit(limit int, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
 		return
 	}
+	if c.checkProductConflict("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", origin, limit, product...) {
+		return
+	}
 	c.statsPeerTagsCardinalityLimit = limit
+	configtelemetry.Report("DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT", limit, origin)
 }
 
 func (c *Config) StatsOriginCardinalityLimit() int {
@@ -1091,13 +1107,17 @@ func (c *Config) StatsOriginCardinalityLimit() int {
 	return c.statsOriginCardinalityLimit
 }
 
-func (c *Config) SetStatsOriginCardinalityLimit(limit int) {
+func (c *Config) SetStatsOriginCardinalityLimit(limit int, origin telemetry.Origin, product ...Product) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if limit <= 0 {
 		return
 	}
+	if c.checkProductConflict("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", origin, limit, product...) {
+		return
+	}
 	c.statsOriginCardinalityLimit = limit
+	configtelemetry.Report("DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT", limit, origin)
 }
 
 func (c *Config) LogDirectory() string {
