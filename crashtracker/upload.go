@@ -17,13 +17,12 @@ import (
 )
 
 const (
-	// TODO(crashtracker): confirm exact EVP proxy path with Error Tracking team.
-	// Using the pattern established by LLMObs (internal/llmobs/transport/transport.go).
-	agentEVPPath      = "/evp_proxy/v2/api/v2/errors"
-	agentEVPSubdomain = "errorsintake.agent"
+	// Error Tracking intake routing, matching libdatadog's crashtracker
+	// (DataDog/libdatadog libdd-crashtracker/src/crash_info/errors_intake.rs, RFC 0013).
+	agentEVPPath      = "/evp_proxy/v4/api/v2/errorsintake"
+	agentEVPSubdomain = "error-tracking-intake"
 
-	// TODO(crashtracker): confirm agentless intake URL with Error Tracking team.
-	agentlessURLTemplate = "https://errorsintake.agent.%s/api/v2/errors"
+	agentlessURLTemplate = "https://error-tracking-intake.%s/api/v2/errorsintake"
 	defaultSite          = "datadoghq.com"
 
 	uploadTimeout = 10 * time.Second

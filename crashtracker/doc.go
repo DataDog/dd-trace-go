@@ -49,10 +49,11 @@
 //
 // # Init order note
 //
-// The package init() intercepts the monitor role before most user package
-// init()s, but Go's initialization order across packages at the same import
-// level is deterministic by import path, not guaranteed to place crashtracker
-// first. In practice the monitor is intercepted before user code runs in
-// orchestrion-injected binaries; manual callers should ensure Start is the
-// first statement of main() to minimise exposure.
+// The monitor child is intercepted from package init, which is the earliest hook
+// available to a pure Go implementation, but Go does not guarantee crashtracker's
+// init runs before every other imported package init. Some init side effects in
+// packages imported by main can still execute in the monitor child before the
+// monitor role exits. Keep expensive or externally visible init work out of
+// packages imported by main when crashtracking is enabled, and call Start as the
+// first statement of main for manual integrations.
 package crashtracker
