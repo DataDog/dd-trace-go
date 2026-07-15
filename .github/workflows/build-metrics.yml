@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [standard, orchestrion]
+        mode: [standard, orchestrion, otelc]
         sample:
           - 99designs.gqlgen
           - aerospike.v7
