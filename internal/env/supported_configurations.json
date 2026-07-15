@@ -1703,21 +1703,14 @@
         "default": "2048"
       }
     ],
-    "DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT": [
+    "DD_TRACE_STATS_COMPUTATION_ENABLED": [
       {
         "implementation": "B",
-        "type": "integer",
-        "default": "1024"
+        "type": "boolean",
+        "default": "true"
       }
     ],
     "DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT": [
-      {
-        "implementation": "B",
-        "type": "integer",
-        "default": "512"
-      }
-    ],
-    "DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT": [
       {
         "implementation": "B",
         "type": "integer",
@@ -1731,11 +1724,18 @@
         "default": "20"
       }
     ],
-    "DD_TRACE_STATS_COMPUTATION_ENABLED": [
+    "DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT": [
       {
         "implementation": "B",
-        "type": "boolean",
-        "default": "true"
+        "type": "integer",
+        "default": "512"
+      }
+    ],
+    "DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT": [
+      {
+        "implementation": "B",
+        "type": "integer",
+        "default": "1024"
       }
     ],
     "DD_TRACE_TWIRP_ANALYTICS_ENABLED": [
