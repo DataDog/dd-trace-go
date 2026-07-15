@@ -32,7 +32,7 @@ It also holds `supported_configurations*`, which maintains which environment var
 
 ### Export Utilities
 
-Contains small helpers used by the offline LLM Obs export client ([llmobs/export](../llmobs/export/)): bounded, UTF-8-safe response-body snippets (`Snippet`) and per-request failure aggregation (`Aggregate`). See [exportutil](./exportutil/).
+Contains small helpers for the offline export clients ([llmobs/export](../llmobs/export/) and [otlp/export](../otlp/export/)). Both clients use bounded, UTF-8-safe response-body snippets (`Snippet`) and per-request failure aggregation (`Aggregate`); `otlp/export` additionally uses the bounded-retry engine over a POST closure (`Retry`) with a transient-vs-permanent classifier (`Retriable`, or a caller-supplied one), while `llmobs/export` retries via the internal LLM Obs transport. See [exportutil](./exportutil/).
 
 ### Locking
 
