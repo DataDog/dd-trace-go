@@ -25,6 +25,7 @@ on:
       - scripts/publish_build_metrics.sh
       - '**/orchestrion.yml'
       - '**/go.mod'
+      - '**/otelc.yaml'
   push:
     branches:
       - main
@@ -34,6 +35,7 @@ on:
       - scripts/publish_build_metrics.sh
       - '**/orchestrion.yml'
       - '**/go.mod'
+      - '**/otelc.yaml'
   workflow_dispatch:
 
 concurrency:
