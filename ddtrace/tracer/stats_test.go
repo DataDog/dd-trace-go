@@ -139,8 +139,8 @@ func TestConcentrator(t *testing.T) {
 				names[stat.Name] = struct{}{}
 			}
 			assert.Len(t, names, 2)
-			assert.NotNil(t, names["http.request"])
-			assert.NotNil(t, names["potato"])
+			assert.Contains(t, names, "http.request")
+			assert.Contains(t, names, "sql.query")
 			assert.Contains(t, testStats.CallNames(), "datadog.tracer.stats.spans_in")
 		})
 

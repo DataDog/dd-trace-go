@@ -84,7 +84,7 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		PeerTagsCardinalityLimit:     c.internalConfig.StatsPeerTagsCardinalityLimit(),
 		OriginCardinalityLimit:       c.internalConfig.StatsOriginCardinalityLimit(),
 	}
-	if c.internalConfig.ExperimentalFeaturesEnabled() && len(c.internalConfig.StatsAdditionalTags()) > 0 {
+	if len(c.internalConfig.StatsAdditionalTags()) > 0 {
 		sCfg.AdditionalMetricTagsCardinalityLimit = c.internalConfig.StatsAdditionalTagsCardinalityLimit()
 	}
 	env := c.agent.load().defaultEnv
@@ -182,13 +182,11 @@ func (c *concentrator) runIngester() {
 
 // +checklocksignore — Post-finish: reads finished span fields during stats computation.
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	agentInfo := c.cfg.agent.load()
 	resource := s.resource
-	obfuscating := c.shouldObfuscate()
-	if obfuscating {
+	if obfuscatingVersion := agentInfo.obfuscationVersion; obfuscatingVersion > 0 && obfuscatingVersion <= tracerObfuscationVersion {
 		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
-		agentInfo := c.cfg.agent.load()
-		bigResource := agentInfo.HasFlag("big_resource")
-		c.spanConcentrator.SetObfuscationEnabled(true, bigResource)
+		c.spanConcentrator.SetObfuscationEnabled(true, agentInfo.HasFlag("big_resource"))
 	}
 	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
@@ -204,7 +202,7 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		Error:                   s.error,
 		Meta:                    s.meta.Map(false), // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
 		Metrics:                 s.metrics,
-		PeerTags:                c.cfg.agent.load().peerTags,
+		PeerTags:                agentInfo.peerTags,
 		AdditionalMetricTagKeys: c.cfg.internalConfig.StatsAdditionalTags(),
 		HTTPMethod:              httpMethod,
 		HTTPEndpoint:            httpEndpoint,
