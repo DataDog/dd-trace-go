@@ -29,6 +29,7 @@ import (
 	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
@@ -72,6 +73,13 @@ func processRetryMaxConcurrencyFromEnv(defaultValue int) int {
 		return defaultValue
 	}
 	return n
+}
+
+func processRetryDefaultMaxConcurrency() int {
+	if internal.BoolEnv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, false) {
+		return int(internalParallelEFDMaxConcurrency)
+	}
+	return 1
 }
 
 func processRetryTimeoutFromEnv() (time.Duration, bool) {
@@ -1336,7 +1344,7 @@ func getProcessRetryLimiter() *processRetryLimiter {
 
 func (l *processRetryLimiter) init() {
 	l.once.Do(func() {
-		capacity := processRetryMaxConcurrencyFromEnv(1)
+		capacity := processRetryMaxConcurrencyFromEnv(processRetryDefaultMaxConcurrency())
 		l.ch = make(chan struct{}, capacity)
 		log.Debug("civisibility: process retry child concurrency limiter initialized with capacity %d", capacity)
 	})
