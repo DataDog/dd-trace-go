@@ -187,6 +187,8 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	if obfuscatingVersion := agentInfo.obfuscationVersion; obfuscatingVersion > 0 && obfuscatingVersion <= tracerObfuscationVersion {
 		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
 		c.spanConcentrator.SetObfuscationEnabled(true, agentInfo.HasFlag("big_resource"))
+	} else {
+		c.spanConcentrator.SetObfuscationEnabled(false, false)
 	}
 	httpMethod, _ := s.meta.Get(ext.HTTPMethod)
 	httpEndpoint, _ := s.meta.Get(ext.HTTPEndpoint)
