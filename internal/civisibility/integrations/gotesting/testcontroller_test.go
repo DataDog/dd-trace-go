@@ -286,7 +286,7 @@ func runFlakyTestRetriesTests(m *testing.M) {
 	// - Fail case: would require a test that always fails without being disabled/quarantined.
 	//   The fail logic is covered by calculateFinalStatus() unit tests (anyFailed=true, anyPassed=false => fail).
 	// - Slow EFD (>=5m) + flaky fallthrough: impractical to test due to 5-minute test duration requirement.
-	//   The logic is covered by computeAdjustedRetryCount() which returns 0 for tests >= 5 minutes.
+	//   The logic is covered directly by TestProcessRetryAdjustedRetryCount.
 	//
 	// TestRetryWithPanic has 4 executions (1 original + 3 retries), passes on 4th -> final_status=pass on last execution only
 	testRetryWithPanicSpans := checkSpansByResourceName(finishedSpans, "testing_test.go.TestRetryWithPanic", 4)

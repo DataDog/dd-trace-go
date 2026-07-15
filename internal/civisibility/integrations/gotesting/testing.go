@@ -486,7 +486,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 		defer func() {
 			r := recover()
 			unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(t, bodyReturned)
-			duration := time.Since(startTime)
+			bodyDuration := time.Since(startTime)
 
 			if tCoverage != nil {
 				// Collect coverage after test execution so we can calculate the diff comparing to the baseline.
@@ -498,7 +498,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo, wrapperOpts additional
 					*tParent.barrier = tParentOldBarrier
 				}
 			}
-			runAndApplyTestCleanup(t, execMeta)
+			duration := runAndApplyTestCleanupWithDuration(t, execMeta, bodyDuration)
 
 			// check if is a new EFD test and the duration >= 5 min
 			if execMeta.isANewTest && duration.Minutes() >= 5 {
@@ -965,7 +965,7 @@ func setTestTagsFromExecutionMetadataNoClose(test integrations.Test, execMeta *t
 		if execMeta.isAttemptToFix {
 			// Set attempt_to_fix as the retry reason
 			test.SetTag(constants.TestRetryReason, constants.AttemptToFixRetryReason)
-		} else if execMeta.isEarlyFlakeDetectionEnabled && (execMeta.isANewTest || execMeta.isAModifiedTest) {
+		} else if usesEfdRetrySemantics(execMeta) {
 			// Set early_flake_detection as the retry reason
 			test.SetTag(constants.TestRetryReason, constants.EarlyFlakeDetectionRetryReason)
 		} else if execMeta.isFlakyTestRetriesEnabled {

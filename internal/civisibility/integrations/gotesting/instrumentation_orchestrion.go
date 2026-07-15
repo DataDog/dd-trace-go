@@ -169,8 +169,8 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 			defer func() {
 				r := recover()
 				unexpectedTermination := r == nil && processRetryUnexpectedTestTermination(currentT, bodyReturned)
-				duration := time.Since(startTime)
-				runAndApplyTestCleanup(currentT, execMeta)
+				bodyDuration := time.Since(startTime)
+				duration := runAndApplyTestCleanupWithDuration(currentT, execMeta, bodyDuration)
 				collectAndWriteLogs(currentT, test)
 
 				if unexpectedTermination {

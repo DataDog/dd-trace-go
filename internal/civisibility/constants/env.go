@@ -37,6 +37,10 @@ const (
 	// This environment variable should be set to "0" or "false" to disable the early flake detection feature.
 	CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable = "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_ENABLED"
 
+	// CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable caps the number of EFD retries per test without increasing the backend setting.
+	// A negative value preserves the retry counts configured by the backend.
+	CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable = "DD_CIVISIBILITY_EARLY_FLAKE_DETECTION_MAX_RETRIES"
+
 	// CIVisibilityGitUploadEnabledEnvironmentVariable kill-switch that allows explicitly disabling CI Visibility repository upload.
 	// This environment variable should be set to "0" or "false" to skip uploading git metadata while keeping CI Visibility enabled.
 	CIVisibilityGitUploadEnabledEnvironmentVariable = "DD_CIVISIBILITY_GIT_UPLOAD_ENABLED"

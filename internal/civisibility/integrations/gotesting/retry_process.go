@@ -286,18 +286,6 @@ func currentProcessRetrySupportHooks() processRetrySupportHooks {
 	}
 }
 
-func setProcessRetrySupportHooksForTesting(t testing.TB, hooks processRetrySupportHooks) func() {
-	t.Helper()
-	old := processRetrySupportHooksOverride.Swap(&hooks)
-	var once sync.Once
-	restore := func() {
-		once.Do(func() {
-			processRetrySupportHooksOverride.Store(old)
-		})
-	}
-	return restore
-}
-
 func processRetryChildCleanupSupported() bool {
 	return currentProcessRetrySupportHooks().childCleanupSupported()
 }
@@ -722,6 +710,7 @@ type processRetryMetadataSnapshot struct {
 	isAModifiedTest               bool
 	isEarlyFlakeDetectionEnabled  bool
 	isFlakyTestRetriesEnabled     bool
+	efdFellBackToFlakyRetries     bool
 	isItrForcedRun                bool
 	isQuarantined                 bool
 	isDisabled                    bool
@@ -986,14 +975,6 @@ func captureProcessRetryLaunchBaseline() *processRetryLaunchBaseline {
 	baseline.timeout, baseline.timeoutSet = processRetryTimeoutFromEnv()
 	getProcessRetryLimiter().init()
 	return baseline
-}
-
-func resetProcessRetryRunnerHooksForTesting(t testing.TB, hooks processRetryRunnerHooks) {
-	t.Helper()
-	old := processRetryRunnerHooksOverride.Swap(&hooks)
-	t.Cleanup(func() {
-		processRetryRunnerHooksOverride.Store(old)
-	})
 }
 
 func processRetryLaunchesDisabled() bool {
@@ -1292,39 +1273,6 @@ func startProcessRetryChild(
 	}
 }
 
-func resetProcessRetryLaunchGateForTesting(t testing.TB) func() {
-	t.Helper()
-	processRetryLaunchGate.mu.Lock()
-	oldDisabled := processRetryLaunchGate.disabled.Load()
-	oldReaping := processRetryLaunchGate.reaping
-	oldLaunching := processRetryLaunchGate.launching
-	oldActiveGroups := processRetryLaunchGate.activeGroups
-	oldActiveChildren := processRetryLaunchGate.activeChildren
-	oldShuttingDown := processRetryLaunchGate.shuttingDown
-	oldShutdown := processRetryLaunchGate.shutdown
-	processRetryLaunchGate.disabled.Store(false)
-	processRetryLaunchGate.reaping = 0
-	processRetryLaunchGate.launching = 0
-	processRetryLaunchGate.activeGroups = 0
-	processRetryLaunchGate.activeChildren = 0
-	processRetryLaunchGate.shuttingDown = false
-	processRetryLaunchGate.shutdown = make(chan struct{})
-	processRetryLaunchGate.notifyLocked()
-	processRetryLaunchGate.mu.Unlock()
-	return func() {
-		processRetryLaunchGate.mu.Lock()
-		processRetryLaunchGate.disabled.Store(oldDisabled)
-		processRetryLaunchGate.reaping = oldReaping
-		processRetryLaunchGate.launching = oldLaunching
-		processRetryLaunchGate.activeGroups = oldActiveGroups
-		processRetryLaunchGate.activeChildren = oldActiveChildren
-		processRetryLaunchGate.shuttingDown = oldShuttingDown
-		processRetryLaunchGate.shutdown = oldShutdown
-		processRetryLaunchGate.notifyLocked()
-		processRetryLaunchGate.mu.Unlock()
-	}
-}
-
 func (g *processRetryLaunchGateState) notifyLocked() {
 	g.ensureChannelsLocked()
 	close(g.changed)
@@ -1405,14 +1353,6 @@ func processRetryShutdownRequested(shutdown <-chan struct{}) bool {
 	default:
 		return false
 	}
-}
-
-func resetProcessRetryLimiterForTesting(t testing.TB) {
-	t.Helper()
-	old := globalProcessRetryLimiter.Swap(&processRetryLimiter{})
-	t.Cleanup(func() {
-		globalProcessRetryLimiter.Store(old)
-	})
 }
 
 func processRetryParentDeadlineReserve() time.Duration {
@@ -2047,6 +1987,7 @@ func snapshotProcessRetryExecutionMetadata(execMeta *testExecutionMetadata) *pro
 		isAModifiedTest:               execMeta.isAModifiedTest,
 		isEarlyFlakeDetectionEnabled:  execMeta.isEarlyFlakeDetectionEnabled,
 		isFlakyTestRetriesEnabled:     execMeta.isFlakyTestRetriesEnabled,
+		efdFellBackToFlakyRetries:     execMeta.efdFellBackToFlakyRetries,
 		isItrForcedRun:                execMeta.isItrForcedRun,
 		isQuarantined:                 execMeta.isQuarantined,
 		isDisabled:                    execMeta.isDisabled,
@@ -2069,6 +2010,7 @@ func applyProcessRetryMetadataSnapshot(execMeta *testExecutionMetadata, snapshot
 	execMeta.isAModifiedTest = snapshot.isAModifiedTest
 	execMeta.isEarlyFlakeDetectionEnabled = snapshot.isEarlyFlakeDetectionEnabled
 	execMeta.isFlakyTestRetriesEnabled = snapshot.isFlakyTestRetriesEnabled
+	execMeta.efdFellBackToFlakyRetries = snapshot.efdFellBackToFlakyRetries
 	execMeta.isItrForcedRun = snapshot.isItrForcedRun
 	execMeta.isQuarantined = snapshot.isQuarantined
 	execMeta.isDisabled = snapshot.isDisabled
@@ -2323,7 +2265,7 @@ func finalizeProcessRetryIteration(execOpts *executionOptions, pending *processR
 	execOpts.options.preProcessRetryMetaAdjust(execMeta, currentIndex)
 	execMeta.isLastRetry = execOpts.options.preIsLastRetry(execMeta, currentIndex, execOpts.retryCount)
 	execMeta.remainingRetries = execOpts.retryCount
-	execMeta.isEfdInParallel = execOpts.effectiveParallelEFDActive && isAnEfdExecution(execMeta)
+	execMeta.isEfdInParallel = execOpts.effectiveParallelEFDActive && usesEfdRetrySemantics(execMeta)
 	terminalCancellation := errors.Is(attempt.Err, context.Canceled) || errors.Is(attempt.Err, context.DeadlineExceeded)
 	terminalUnreaped := attempt.Unreaped || errors.Is(attempt.Err, errProcessRetryChildUnreaped)
 	terminalContainmentLost := attempt.ContainmentLost || errors.Is(attempt.Err, errProcessRetryContainmentLost)
@@ -2753,7 +2695,7 @@ func processRetryReasonForExecution(execMeta *testExecutionMetadata) (string, bo
 	if execMeta.isAttemptToFix {
 		return constants.AttemptToFixRetryReason, true
 	}
-	if isAnEfdExecution(execMeta) {
+	if usesEfdRetrySemantics(execMeta) {
 		return constants.EarlyFlakeDetectionRetryReason, true
 	}
 	if execMeta.isFlakyTestRetriesEnabled {

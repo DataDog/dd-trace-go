@@ -71,6 +71,9 @@ type (
 		anyExecutionPassed            bool               // tracks if any prior execution passed (for final status calculation)
 		anyExecutionFailed            bool               // tracks if any prior execution failed (for final status calculation)
 		remainingRetries              int64              // remaining retries at the start of this execution
+		initialRetryCount             int64              // retry count selected from the initial execution duration
+		initialRetryCountSet          bool               // whether initialRetryCount has already been selected
+		efdFellBackToFlakyRetries     bool               // whether a slow EFD test fell through to FTR retry semantics
 		shouldOrchestrateAttemptToFix bool               // whether this wrapper controls ATF retries
 		isEfdInParallel               bool               // true only when parallel EFD path is active
 		cleanupResult                 *testCleanupResult // records cleanup completion for this retry attempt.
@@ -167,6 +170,7 @@ type (
 		hasExplicitDisabled           bool                    // true when disabled was set by an exact Test Management match
 		hasExplicitAttemptToFix       bool                    // true when attempt-to-fix was set by an exact Test Management match
 		managementMatchKind           testManagementMatchKind // specificity of the Test Management match
+		efdFellBackToFlakyRetries     bool                    // whether a slow EFD test fell through to FTR retry semantics
 		shouldOrchestrateAttemptToFix bool                    // true when this layer owns the ATF retry lifecycle
 	}
 
@@ -482,6 +486,7 @@ func applyAdditionalFeatureMetadataToExecution(execMeta *testExecutionMetadata, 
 	execMeta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled || meta.isFlakyTestRetriesEnabled
 	execMeta.isANewTest = execMeta.isANewTest || meta.isNew
 	execMeta.isAModifiedTest = execMeta.isAModifiedTest || meta.isModified
+	execMeta.efdFellBackToFlakyRetries = meta.efdFellBackToFlakyRetries
 	execMeta.shouldOrchestrateAttemptToFix = meta.shouldOrchestrateAttemptToFix
 }
 
@@ -510,6 +515,7 @@ func syncFeatureMetadataFromExecution(meta *additionalFeatureMetadata, execMeta 
 	meta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled
 	meta.isNew = execMeta.isANewTest
 	meta.isModified = execMeta.isAModifiedTest
+	meta.efdFellBackToFlakyRetries = execMeta.efdFellBackToFlakyRetries
 }
 
 // wrapWithAdditionalFeatureMetadata preloads metadata without entering retry isolation.
@@ -718,7 +724,7 @@ func applyAdditionalFeaturesToTestFunc(
 					return remainingRetries == 1
 				}
 
-				if isAnEfdExecution(execMeta) {
+				if usesEfdRetrySemantics(execMeta) {
 					// For EFD, the last retry is when remaining retries == 1.
 					return remainingRetries == 1
 				}
@@ -733,36 +739,14 @@ func applyAdditionalFeaturesToTestFunc(
 			postAdjustRetryCount: func(execMeta *testExecutionMetadata, duration time.Duration) int64 {
 				// adjust retry count only runs after the first run
 
-				// Attempt To Fix retries are always set to the configured value.
 				if execMeta.isAttemptToFix && ptrMeta.shouldOrchestrateAttemptToFix {
 					if execMeta.identity != nil && len(execMeta.identity.Segments) > 1 {
 						log.Debug("postAdjustRetryCount attempt_to_fix identity=%s setting=%d", execMeta.identity.FullName, settings.TestManagement.AttemptToFixRetries)
 					}
-					return int64(settings.TestManagement.AttemptToFixRetries)
 				}
-
-				// Early Flake Detection adjusts the retry count based on test duration.
-				if isAnEfdExecution(execMeta) {
-					slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
-					secs := duration.Seconds()
-					if secs < 5 {
-						return int64(slowTestRetries.FiveS)
-					} else if secs < 10 {
-						return int64(slowTestRetries.TenS)
-					} else if secs < 30 {
-						return int64(slowTestRetries.ThirtyS)
-					} else if duration.Minutes() < 5 {
-						return int64(slowTestRetries.FiveM)
-					}
-				}
-
-				// Automatic flaky tests retries are set to the configured value.
-				if execMeta.isFlakyTestRetriesEnabled {
-					return integrations.GetFlakyRetriesSettings().RetryCount
-				}
-
-				// No retries
-				return 0
+				retryCount := computeAdjustedRetryCount(execMeta, duration)
+				syncFeatureMetadataFromExecution(ptrMeta, execMeta)
+				return retryCount
 			},
 			postPerExecution: func(ptrToLocalT *testing.T, execMeta *testExecutionMetadata, executionIndex int, _ time.Duration) {
 				failed := ptrToLocalT.Failed()
@@ -804,7 +788,7 @@ func applyAdditionalFeaturesToTestFunc(
 					return
 				}
 
-				if isAnEfdExecution(execMeta) {
+				if usesEfdRetrySemantics(execMeta) {
 					if skipped {
 						log.Debug("applyAdditionalFeaturesToTestFunc: EFD test skipped, incrementing skip count")
 						testSkipCount++
@@ -828,7 +812,7 @@ func applyAdditionalFeaturesToTestFunc(
 					return remainingRetries > 0
 				}
 
-				if isAnEfdExecution(execMeta) {
+				if usesEfdRetrySemantics(execMeta) {
 					// Clean skips do not add flakiness signal, so EFD stops before scheduling retries.
 					cleanSkip := ptrToLocalT.Skipped() && !ptrToLocalT.Failed()
 					return !cleanSkip && remainingRetries >= 0
@@ -866,8 +850,8 @@ func applyAdditionalFeaturesToTestFunc(
 				attemptToFixActive := ptrMeta.isAttemptToFix
 
 				// if early flake detection is enabled, we need to set the test status
-				efdOnNewTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew && !attemptToFixActive
-				efdOnModifiedTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isModified && !attemptToFixActive
+				efdOnNewTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isNew && !ptrMeta.efdFellBackToFlakyRetries && !attemptToFixActive
+				efdOnModifiedTest := ptrMeta.isEarlyFlakeDetectionEnabled && ptrMeta.isModified && !ptrMeta.efdFellBackToFlakyRetries && !attemptToFixActive
 				if efdOnNewTest || efdOnModifiedTest {
 					log.Debug("applyAdditionalFeaturesToTestFunc: Setting test status for Early Flake Detection")
 					status := "passed"
@@ -1023,7 +1007,7 @@ func shouldUseParallelEFD(options *runTestWithRetryOptions, execMeta *testExecut
 	if execMeta.isAttemptToFix && execMeta.shouldOrchestrateAttemptToFix {
 		return false
 	}
-	return isAnEfdExecution(execMeta)
+	return usesEfdRetrySemantics(execMeta)
 }
 
 // runBoundedParallelEFDIterations schedules remaining EFD attempts while limiting concurrent retry executions.
@@ -1129,7 +1113,7 @@ func executeTestIteration(execOpts *executionOptions) bool {
 
 	// Set remaining retries and parallel EFD flag for test.final_status computation.
 	execMeta.remainingRetries = execOpts.retryCount
-	execMeta.isEfdInParallel = execOpts.effectiveParallelEFDActive && isAnEfdExecution(execMeta)
+	execMeta.isEfdInParallel = execOpts.effectiveParallelEFDActive && usesEfdRetrySemantics(execMeta)
 
 	// unlock the mutex
 	execOpts.mutex.Unlock()
@@ -1250,7 +1234,7 @@ func reserveRetryBudgetIfNeeded(execOpts *executionOptions, t *testing.T, execMe
 }
 
 func usesFlakyRetryBudget(execMeta *testExecutionMetadata) bool {
-	return execMeta != nil && execMeta.isFlakyTestRetriesEnabled && !execMeta.isAttemptToFix && !isAnEfdExecution(execMeta)
+	return execMeta != nil && execMeta.isFlakyTestRetriesEnabled && !execMeta.isAttemptToFix && !usesEfdRetrySemantics(execMeta)
 }
 
 func consumeFlakyRetryBudgetReservation(execOpts *executionOptions) {
@@ -1411,6 +1395,14 @@ func runAndApplyTestCleanup(t *testing.T, execMeta *testExecutionMetadata) {
 	applyTestCleanupResult(t, execMeta, execMeta.cleanupResult)
 }
 
+// runAndApplyTestCleanupWithDuration adds user cleanup time to the test body
+// duration without counting CI Visibility work performed between them.
+func runAndApplyTestCleanupWithDuration(t *testing.T, execMeta *testExecutionMetadata, bodyDuration time.Duration) time.Duration {
+	cleanupStart := time.Now()
+	runAndApplyTestCleanup(t, execMeta)
+	return bodyDuration + time.Since(cleanupStart)
+}
+
 // applyTestCleanupResult applies cleanup panics and failing Goexit results to
 // the test attempt so retry orchestration can make the normal retry decision.
 // Cleanup SkipNow also exits with Goexit, but testing treats that as a skipped
@@ -1462,6 +1454,10 @@ func isAnEfdExecution(execMeta *testExecutionMetadata) bool {
 	isANewTest := execMeta.isANewTest
 	isAModifiedTest := execMeta.isAModifiedTest && !execMeta.isAttemptToFix
 	return execMeta.isEarlyFlakeDetectionEnabled && (isANewTest || isAModifiedTest)
+}
+
+func usesEfdRetrySemantics(execMeta *testExecutionMetadata) bool {
+	return execMeta != nil && isAnEfdExecution(execMeta) && !execMeta.efdFellBackToFlakyRetries
 }
 
 type noopMutex struct{}
