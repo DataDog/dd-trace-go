@@ -1321,6 +1321,13 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
+	// session_id is optional. Propagating tags are trace-scoped, so unset the key when the active
+	// span has no session; otherwise a predecessor's value lingers and propagates downstream.
+	if sessionID := llmSpan.SessionID(); sessionID != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, sessionID)
+	} else {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
+	}
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
@@ -1388,6 +1395,8 @@ const (
 	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
 	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
+	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
+	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"
