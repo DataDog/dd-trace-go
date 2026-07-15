@@ -10,6 +10,14 @@ meta:
     Starts the Datadog crashtracker as the first statement of main(), so the
     monitor process is established before any goroutine can crash.
 
+    Ordering with respect to the tracer and profiler: the tracer and profiler
+    aspects use inject-declarations to emit func init() calls, which run before
+    main() starts. This aspect uses prepend-statements inside main(), so the
+    tracer is always started before crashtracker.Start() executes.
+
+    Note: crashes that occur during init() functions (before main() is reached)
+    are not captured because SetCrashOutput is wired inside crashtracker.Start().
+
 aspects:
   - id: func main()
     join-point:
