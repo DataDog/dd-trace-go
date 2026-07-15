@@ -76,6 +76,9 @@ const (
 	processRetryControllerProbeEnv            = "PROCESS_RETRY_CONTROLLER_PROBE"
 	processRetryControllerProbePathEnv        = "PROCESS_RETRY_CONTROLLER_PROBE_PATH"
 	processRetryBenchmarkExecutionModeEnv     = "PROCESS_RETRY_BENCHMARK_EXECUTION_MODE"
+	processRetryBenchmarkRetryCountEnv        = "PROCESS_RETRY_BENCHMARK_RETRY_COUNT"
+	processRetryBenchmarkChildStartupDelayEnv = "PROCESS_RETRY_BENCHMARK_CHILD_STARTUP_DELAY"
+	processRetryBenchmarkBodyDelayEnv         = "PROCESS_RETRY_BENCHMARK_BODY_DELAY"
 	processRetryStartupFixtureEnv             = "PROCESS_RETRY_STARTUP_FIXTURE"
 	processRetryStartupRerunFileEnv           = "PROCESS_RETRY_STARTUP_RERUN_FILE"
 	processRetryStartupConflictFileEnv        = "PROCESS_RETRY_STARTUP_CONFLICT_FILE"
@@ -89,6 +92,9 @@ var (
 )
 
 func init() {
+	if processRetryFixtureChild() && processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) != "" {
+		time.Sleep(processRetryBenchmarkDuration(processRetryBenchmarkChildStartupDelayEnv))
+	}
 	if path := processRetryFixtureEnv(processRetryStartupRerunFileEnv); path != "" {
 		appendStartupFixtureLine(path, "init")
 	}
@@ -104,6 +110,18 @@ func init() {
 		}
 		startupConflictFile = file
 	}
+}
+
+func processRetryBenchmarkDuration(name string) time.Duration {
+	value := processRetryFixtureEnv(name)
+	if value == "" {
+		return 0
+	}
+	delay, err := time.ParseDuration(value)
+	if err != nil || delay < 0 {
+		panic(fmt.Sprintf("invalid %s value %q", name, value))
+	}
+	return delay
 }
 
 func BenchmarkProcessRetryExecutionMode(b *testing.B) {
@@ -132,6 +150,77 @@ func BenchmarkProcessRetryExecutionMode(b *testing.B) {
 	}
 }
 
+func BenchmarkProcessRetryEFD(b *testing.B) {
+	profiles := []struct {
+		name         string
+		startupDelay time.Duration
+		bodyDelay    time.Duration
+	}{
+		{name: "startup_dominated", startupDelay: 250 * time.Millisecond, bodyDelay: 10 * time.Millisecond},
+		{name: "body_dominated", startupDelay: 10 * time.Millisecond, bodyDelay: 250 * time.Millisecond},
+	}
+	cases := []struct {
+		name               string
+		mode               string
+		parallel           bool
+		processConcurrency int
+	}{
+		{name: "in_process/sequential", mode: "in_process", processConcurrency: 1},
+		{name: "in_process/parallel", mode: "in_process", parallel: true, processConcurrency: 1},
+		{name: "process/sequential", mode: "process", processConcurrency: 1},
+		{name: "process/parallel/concurrency=2", mode: "process", parallel: true, processConcurrency: 2},
+		{name: "process/parallel/default", mode: "process", parallel: true, processConcurrency: 4},
+	}
+
+	for _, profile := range profiles {
+		b.Run(profile.name, func(b *testing.B) {
+			for _, retryCount := range []int{2, 5, 10} {
+				b.Run(fmt.Sprintf("retries=%d", retryCount), func(b *testing.B) {
+					for _, benchmarkCase := range cases {
+						b.Run(benchmarkCase.name, func(b *testing.B) {
+							if benchmarkCase.mode == "process" && !gotesting.ProcessRetryContainmentSupported() {
+								b.Skip("process retry benchmark requires process-tree containment")
+							}
+							b.ResetTimer()
+							for range b.N {
+								maxConcurrency := strconv.Itoa(benchmarkCase.processConcurrency)
+								if benchmarkCase.name == "process/parallel/default" {
+									maxConcurrency = ""
+								}
+								cmd := exec.Command(os.Args[0], "-test.run=^TestProcessRetryBenchmarkFixture$", "-test.count=1")
+								cmd.Env = processRetryScenarioEnvironment(
+									processRetryBenchmarkExecutionModeEnv+"="+benchmarkCase.mode,
+									processRetryParallelEFDEnv+"=true",
+									processRetryBenchmarkRetryCountEnv+"="+strconv.Itoa(retryCount),
+									processRetryBenchmarkChildStartupDelayEnv+"="+profile.startupDelay.String(),
+									processRetryBenchmarkBodyDelayEnv+"="+profile.bodyDelay.String(),
+									constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled+"="+strconv.FormatBool(benchmarkCase.parallel),
+									constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable+"="+maxConcurrency,
+								)
+								output, err := cmd.CombinedOutput()
+								if err != nil {
+									b.Fatalf("EFD benchmark subprocess failed: %v\n%s", err, output)
+								}
+							}
+							b.StopTimer()
+							b.ReportMetric(float64(retryCount), "retries/op")
+							b.ReportMetric(float64(profile.startupDelay.Milliseconds()), "configured-child-startup-ms/retry")
+							b.ReportMetric(float64(profile.bodyDelay.Milliseconds()), "configured-body-ms/execution")
+							if benchmarkCase.mode == "process" {
+								b.ReportMetric(float64(benchmarkCase.processConcurrency), "max-process-concurrency")
+								b.ReportMetric(float64(retryCount), "retry-child-processes/op")
+							} else {
+								b.ReportMetric(0, "max-process-concurrency")
+								b.ReportMetric(0, "retry-child-processes/op")
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestProcessRetryBenchmarkFixture(t *testing.T) {
 	mode := processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv)
 	if mode == "" {
@@ -141,9 +230,11 @@ func TestProcessRetryBenchmarkFixture(t *testing.T) {
 		if mode != "process" {
 			t.Fatalf("%s retry unexpectedly launched a child process", mode)
 		}
+		time.Sleep(processRetryBenchmarkDuration(processRetryBenchmarkBodyDelayEnv))
 		return
 	}
 
+	time.Sleep(processRetryBenchmarkDuration(processRetryBenchmarkBodyDelayEnv))
 	run := processRetryBenchmarkRuns.Add(1)
 	if run == 1 {
 		t.Fail()

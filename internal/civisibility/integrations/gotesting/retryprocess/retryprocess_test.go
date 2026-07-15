@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -164,7 +165,8 @@ func TestMain(m *testing.M) {
 			assertProcessRetryForcedRunSpans(tracer)
 		}
 	}
-	if exitCode == 0 && processRetryFixtureEnv(processRetryParallelEFDEnv) == "true" {
+	if exitCode == 0 && processRetryFixtureEnv(processRetryParallelEFDEnv) == "true" &&
+		processRetryFixtureEnv(processRetryBenchmarkExecutionModeEnv) == "" {
 		assertProcessRetryParallelEFDSpans(tracer)
 	}
 	if exitCode == 0 && processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" {
@@ -262,9 +264,17 @@ func newProcessRetryFixtureServer() *httptest.Server {
 			response.Data.Attributes.ItrEnabled = true
 			response.Data.Attributes.TestsSkipping = true
 			if processRetryFixtureEnv(processRetryParallelEFDEnv) == "true" {
+				retryCount := 2
+				if value := processRetryFixtureEnv(processRetryBenchmarkRetryCountEnv); value != "" {
+					parsed, err := strconv.Atoi(value)
+					if err != nil || parsed < 1 {
+						panic(fmt.Sprintf("invalid %s value %q", processRetryBenchmarkRetryCountEnv, value))
+					}
+					retryCount = parsed
+				}
 				response.Data.Attributes.KnownTestsEnabled = true
 				response.Data.Attributes.EarlyFlakeDetection.Enabled = true
-				response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = 2
+				response.Data.Attributes.EarlyFlakeDetection.SlowTestRetries.FiveS = retryCount
 			}
 			if processRetryFixtureEnv(processRetryAttemptToFixEnv) == "true" {
 				response.Data.Attributes.TestManagement.Enabled = true

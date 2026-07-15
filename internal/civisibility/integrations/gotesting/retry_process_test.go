@@ -108,6 +108,32 @@ func TestProcessRetryMaxConcurrencyFromEnv(t *testing.T) {
 	}
 }
 
+func TestProcessRetryLimiterDefaultCapacity(t *testing.T) {
+	tests := []struct {
+		name        string
+		parallelEFD bool
+		explicitMax string
+		want        int
+	}{
+		{name: "sequential default", want: 1},
+		{name: "parallel EFD default", parallelEFD: true, want: int(internalParallelEFDMaxConcurrency)},
+		{name: "parallel EFD explicit override", parallelEFD: true, explicitMax: "2", want: 2},
+		{name: "parallel EFD invalid override", parallelEFD: true, explicitMax: "invalid", want: int(internalParallelEFDMaxConcurrency)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetProcessRetryLimiterForTesting(t)
+			t.Setenv(constants.CIVisibilityInternalParallelEarlyFlakeDetectionEnabled, strconv.FormatBool(tt.parallelEFD))
+			t.Setenv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, tt.explicitMax)
+
+			limiter := getProcessRetryLimiter()
+			limiter.init()
+			require.Equal(t, tt.want, cap(limiter.ch))
+		})
+	}
+}
+
 func TestProcessRetryTimeoutFromEnv(t *testing.T) {
 	tests := []struct {
 		name string
