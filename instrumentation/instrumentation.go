@@ -151,7 +151,7 @@ func (i *Instrumentation) TelemetryLog() *telemetrylog.Logger {
 }
 
 // TelemetryMetrics returns the [TelemetryMetricsClient] that instrumentation
-// should use to submit internal telemetry metrics data. Returns nil
+// should use to submit internal telemetry metrics data.
 //
 // IMPORTANT: If you are not sure what this is for, you should probably be using
 // [*Instrumentation.StatsdClient] instead.
