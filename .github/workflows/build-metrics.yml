@@ -12,7 +12,7 @@ name: Build Metrics
 # - Warm module cache: runs go mod download (untimed) so measurement reflects compilation, not network
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
 # - Runs on: Pull requests (when this file, scripts/*, orchestrion.yml, or any go.mod changes) and pushes to main
-# - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version
+# - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version, otelc.version
 #
 # Dashboard: View trends in Datadog CI Visibility (filter @git.branch:main, split by build.toolchain)
 # Monitor: Alerts on binary size or build time regressions >5% (size) or >25% (duration) vs main baseline

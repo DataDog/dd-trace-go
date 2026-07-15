@@ -133,9 +133,14 @@ fi
 if [[ "$MODE" == "otelc" ]]; then
   message "Cloning and installing otelc binary..."
   OTELC_SRC_DIR="$OUT_DIR/otelc-src"
-  git clone --depth 1 --branch main https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation.git "$OTELC_SRC_DIR" || die "Failed to clone otelc"
+  OTELC_REF="3b9beed7a1200cf16e59bafa431dd4c4a0601f41" # v1.0.1
+  mkdir -p "$OTELC_SRC_DIR"
+  git -C "$OTELC_SRC_DIR" init -q
+  git -C "$OTELC_SRC_DIR" remote add origin https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation.git
+  git -C "$OTELC_SRC_DIR" fetch --depth 1 origin "$OTELC_REF" || die "Failed to fetch otelc commit $OTELC_REF"
+  git -C "$OTELC_SRC_DIR" checkout -q FETCH_HEAD || die "Failed to checkout otelc commit $OTELC_REF"
   (cd "$OTELC_SRC_DIR" && make install) || die "Failed to install otelc"
-  OTELC_VERSION="$(git -C "$OTELC_SRC_DIR" rev-parse --short HEAD)"
+  OTELC_VERSION="$OTELC_REF"
   message "  Otelc version: $OTELC_VERSION"
 fi
 
