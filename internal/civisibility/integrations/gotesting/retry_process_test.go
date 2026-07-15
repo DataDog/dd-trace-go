@@ -4262,6 +4262,67 @@ func TestRunTestWithRetryUsesProcessBackendForEFDAndAttemptToFix(t *testing.T) {
 	}
 }
 
+func TestRunTestWithRetryProcessChildExecutesWrappedAttemptOnce(t *testing.T) {
+	enableProcessRetryChildForTesting(t)
+
+	tests := []struct {
+		name   string
+		adjust func(*testExecutionMetadata)
+	}{
+		{
+			name: "auto test retries",
+			adjust: func(meta *testExecutionMetadata) {
+				meta.isFlakyTestRetriesEnabled = true
+			},
+		},
+		{
+			name: "early flake detection",
+			adjust: func(meta *testExecutionMetadata) {
+				meta.isEarlyFlakeDetectionEnabled = true
+				meta.isANewTest = true
+			},
+		},
+		{
+			name: "attempt to fix",
+			adjust: func(meta *testExecutionMetadata) {
+				meta.isAttemptToFix = true
+				meta.shouldOrchestrateAttemptToFix = true
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restoreBudget := setProcessRetryBudgetForTesting(2, 100)
+			defer restoreBudget()
+
+			identity := newTestIdentity("module", "suite", t.Name())
+			createTestMetadata(t, nil)
+			defer deleteTestMetadata(t)
+
+			var bodyCalls atomic.Int32
+			options := processRetryRunOptionsForTesting(t, identity, func(localT *testing.T) {
+				bodyCalls.Add(1)
+				localT.Fail()
+			})
+			adjust := func(meta *testExecutionMetadata, _ int) {
+				meta.identity = identity
+				tt.adjust(meta)
+			}
+			options.preExecMetaAdjust = adjust
+			options.preProcessRetryMetaAdjust = adjust
+			options.postAdjustRetryCount = func(*testExecutionMetadata, time.Duration) int64 { return 2 }
+			options.postShouldRetry = func(_ *testing.T, _ *testExecutionMetadata, _ int, remainingRetries int64) bool {
+				return remainingRetries >= 0
+			}
+
+			runTestWithRetry(options)
+
+			require.Equal(t, int32(1), bodyCalls.Load())
+		})
+	}
+}
+
 func TestRunTestWithRetryProcessModeRunsParallelEFDInChildren(t *testing.T) {
 	restoreEnv := setEnvForTesting(t, constants.CIVisibilityRetryExecutionModeEnvironmentVariable, "process")
 	defer restoreEnv()
