@@ -47,6 +47,67 @@ func requireProcessRetryContainmentForTesting(t testing.TB) {
 	}
 }
 
+func setProcessRetrySupportHooksForTesting(t testing.TB, hooks processRetrySupportHooks) func() {
+	t.Helper()
+	old := processRetrySupportHooksOverride.Swap(&hooks)
+	var once sync.Once
+	restore := func() {
+		once.Do(func() {
+			processRetrySupportHooksOverride.Store(old)
+		})
+	}
+	return restore
+}
+
+func resetProcessRetryRunnerHooksForTesting(t testing.TB, hooks processRetryRunnerHooks) {
+	t.Helper()
+	old := processRetryRunnerHooksOverride.Swap(&hooks)
+	t.Cleanup(func() {
+		processRetryRunnerHooksOverride.Store(old)
+	})
+}
+
+func resetProcessRetryLaunchGateForTesting(t testing.TB) func() {
+	t.Helper()
+	processRetryLaunchGate.mu.Lock()
+	oldDisabled := processRetryLaunchGate.disabled.Load()
+	oldReaping := processRetryLaunchGate.reaping
+	oldLaunching := processRetryLaunchGate.launching
+	oldActiveGroups := processRetryLaunchGate.activeGroups
+	oldActiveChildren := processRetryLaunchGate.activeChildren
+	oldShuttingDown := processRetryLaunchGate.shuttingDown
+	oldShutdown := processRetryLaunchGate.shutdown
+	processRetryLaunchGate.disabled.Store(false)
+	processRetryLaunchGate.reaping = 0
+	processRetryLaunchGate.launching = 0
+	processRetryLaunchGate.activeGroups = 0
+	processRetryLaunchGate.activeChildren = 0
+	processRetryLaunchGate.shuttingDown = false
+	processRetryLaunchGate.shutdown = make(chan struct{})
+	processRetryLaunchGate.notifyLocked()
+	processRetryLaunchGate.mu.Unlock()
+	return func() {
+		processRetryLaunchGate.mu.Lock()
+		processRetryLaunchGate.disabled.Store(oldDisabled)
+		processRetryLaunchGate.reaping = oldReaping
+		processRetryLaunchGate.launching = oldLaunching
+		processRetryLaunchGate.activeGroups = oldActiveGroups
+		processRetryLaunchGate.activeChildren = oldActiveChildren
+		processRetryLaunchGate.shuttingDown = oldShuttingDown
+		processRetryLaunchGate.shutdown = oldShutdown
+		processRetryLaunchGate.notifyLocked()
+		processRetryLaunchGate.mu.Unlock()
+	}
+}
+
+func resetProcessRetryLimiterForTesting(t testing.TB) {
+	t.Helper()
+	old := globalProcessRetryLimiter.Swap(&processRetryLimiter{})
+	t.Cleanup(func() {
+		globalProcessRetryLimiter.Store(old)
+	})
+}
+
 func TestRetryExecutionModeFromEnv(t *testing.T) {
 	tests := []struct {
 		name string
@@ -829,6 +890,90 @@ func TestProcessRetrySupportHooksRestoreIsIdempotent(t *testing.T) {
 	restore()
 	restore()
 	require.Equal(t, before, processRetrySupportHooksOverride.Load())
+}
+
+func TestProcessRetryAdjustedRetryCount(t *testing.T) {
+	settings := integrations.GetSettings()
+	oldSettings := *settings
+	flakyRetries := integrations.GetFlakyRetriesSettings()
+	oldFlakyRetryCount := flakyRetries.RetryCount
+	t.Cleanup(func() {
+		*settings = oldSettings
+		flakyRetries.RetryCount = oldFlakyRetryCount
+	})
+
+	settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 4
+	settings.EarlyFlakeDetection.SlowTestRetries.TenS = 3
+	settings.EarlyFlakeDetection.SlowTestRetries.ThirtyS = 2
+	settings.EarlyFlakeDetection.SlowTestRetries.FiveM = 1
+	flakyRetries.RetryCount = 7
+
+	tests := []struct {
+		name                    string
+		duration                time.Duration
+		flakyRetries            bool
+		want                    int64
+		wantFlakyRetrySemantics bool
+	}{
+		{name: "under five seconds", duration: time.Second, want: 4},
+		{name: "five seconds", duration: 5 * time.Second, want: 3},
+		{name: "ten seconds", duration: 10 * time.Second, want: 2},
+		{name: "thirty seconds", duration: 30 * time.Second, want: 1},
+		{name: "five minutes without flaky retries", duration: 5 * time.Minute, want: 0},
+		{name: "five minutes falls back to flaky retries", duration: 5 * time.Minute, flakyRetries: true, want: 7, wantFlakyRetrySemantics: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execMeta := &testExecutionMetadata{
+				isEarlyFlakeDetectionEnabled: true,
+				isANewTest:                   true,
+				isFlakyTestRetriesEnabled:    tt.flakyRetries,
+			}
+			require.Equal(t, tt.want, computeAdjustedRetryCount(execMeta, tt.duration))
+			require.Equal(t, tt.wantFlakyRetrySemantics, execMeta.efdFellBackToFlakyRetries)
+		})
+	}
+
+	flakyFallback := &testExecutionMetadata{
+		identity:                     newTestIdentity("module", "suite", "TestSlowEFD"),
+		isEarlyFlakeDetectionEnabled: true,
+		isANewTest:                   true,
+		isFlakyTestRetriesEnabled:    true,
+		hasAdditionalFeatureWrapper:  true,
+	}
+	require.Equal(t, int64(7), computeAdjustedRetryCount(flakyFallback, 5*time.Minute))
+	require.False(t, usesEfdRetrySemantics(flakyFallback))
+	require.True(t, usesFlakyRetryBudget(flakyFallback))
+	require.False(t, willRetryAfterExecution(false, false, flakyFallback, 6, 1), "FTR fallback must not retry a passing slow EFD test")
+	require.True(t, willRetryAfterExecution(true, false, flakyFallback, 6, 1), "FTR fallback must retry a failing slow EFD test")
+	require.False(t, shouldUseParallelEFD(&runTestWithRetryOptions{parallelEFDAllowed: true}, flakyFallback, 7, 2))
+	reason, ok := processRetryReasonForExecution(flakyFallback)
+	require.True(t, ok)
+	require.Equal(t, constants.AutoTestRetriesRetryReason, reason)
+
+	wrapperMeta := &additionalFeatureMetadata{}
+	syncFeatureMetadataFromExecution(wrapperMeta, flakyFallback)
+	inProcessRetryMeta := &testExecutionMetadata{}
+	applyAdditionalFeatureMetadataToExecution(inProcessRetryMeta, wrapperMeta)
+	require.True(t, inProcessRetryMeta.efdFellBackToFlakyRetries)
+
+	snapshot := snapshotProcessRetryExecutionMetadata(inProcessRetryMeta)
+	require.NotNil(t, snapshot)
+	processRetryMeta := &testExecutionMetadata{}
+	require.True(t, applyProcessRetryMetadataSnapshot(processRetryMeta, snapshot))
+	require.True(t, processRetryMeta.efdFellBackToFlakyRetries)
+	reason, ok = processRetryReasonForExecution(processRetryMeta)
+	require.True(t, ok)
+	require.Equal(t, constants.AutoTestRetriesRetryReason, reason)
+
+	execMeta := &testExecutionMetadata{
+		isEarlyFlakeDetectionEnabled: true,
+		isANewTest:                   true,
+		isFlakyTestRetriesEnabled:    true,
+	}
+	require.Equal(t, int64(4), computeAdjustedRetryCount(execMeta, time.Second))
+	require.Equal(t, int64(4), computeAdjustedRetryCount(execMeta, 5*time.Minute), "the scheduler must reuse the span finalizer's duration bucket")
 }
 
 func TestProcessRetryTestingMReflectionDrift(t *testing.T) {

@@ -206,6 +206,12 @@ func ensureSettingsInitialization(serviceName string) {
 			log.Warn("civisibility: early flake detection was disabled by the environment variable")
 			ciSettings.EarlyFlakeDetection.Enabled = false
 		}
+		earlyFlakeDetectionMaxRetries := internal.IntEnv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, -1)
+		slowTestRetries := &ciSettings.EarlyFlakeDetection.SlowTestRetries
+		slowTestRetries.FiveS = capEarlyFlakeDetectionRetries(slowTestRetries.FiveS, earlyFlakeDetectionMaxRetries)
+		slowTestRetries.TenS = capEarlyFlakeDetectionRetries(slowTestRetries.TenS, earlyFlakeDetectionMaxRetries)
+		slowTestRetries.ThirtyS = capEarlyFlakeDetectionRetries(slowTestRetries.ThirtyS, earlyFlakeDetectionMaxRetries)
+		slowTestRetries.FiveM = capEarlyFlakeDetectionRetries(slowTestRetries.FiveM, earlyFlakeDetectionMaxRetries)
 
 		// check if flaky test retries is disabled by env-vars
 		if ciSettings.FlakyTestRetriesEnabled && !internal.BoolEnv(constants.CIVisibilityFlakyRetryEnabledEnvironmentVariable, true) {
@@ -274,6 +280,13 @@ func ensureSettingsInitialization(serviceName string) {
 		// set the ciVisibilitySettings with the settings from the backend
 		ciVisibilitySettings = *ciSettings
 	})
+}
+
+func capEarlyFlakeDetectionRetries(retries, maxRetries int) int {
+	if maxRetries >= 0 && retries > maxRetries {
+		return maxRetries
+	}
+	return retries
 }
 
 // logSettingsFetchError reports a failed or empty CI Visibility settings response.
