@@ -8,12 +8,15 @@ package gocontrolplane
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
 	"sync"
 
 	extproc "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
 	"google.golang.org/grpc/metadata"
+
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -53,6 +56,40 @@ func (m messageRequestHeaders) ExtractRequest(ctx context.Context) (proxy.Pseudo
 		Headers:    headers,
 		RemoteAddr: remoteAddr,
 	}, nil
+}
+
+const (
+	gcpServiceExtensionAttributesNamespace = "envoy.filters.http.ext_proc"
+	gcpServiceExtensionSourceIPAttribute   = "source.ip"
+)
+
+// ClientIPOverride returns the authoritative GCP Service Extension source IP when present.
+func (m messageRequestHeaders) ClientIPOverride(ctx context.Context) (netip.Addr, bool) {
+	if m.component(ctx) != componentNameGCPServiceExtension {
+		return netip.Addr{}, false
+	}
+
+	namespace, ok := m.ProcessingRequest.GetAttributes()[gcpServiceExtensionAttributesNamespace]
+	if !ok || namespace == nil {
+		return netip.Addr{}, false
+	}
+	value, ok := namespace.GetFields()[gcpServiceExtensionSourceIPAttribute]
+	if !ok {
+		return netip.Addr{}, false
+	}
+
+	if value == nil {
+		return netip.Addr{}, true
+	}
+	stringValue, ok := value.GetKind().(*structpb.Value_StringValue)
+	if !ok {
+		return netip.Addr{}, true
+	}
+	ip, err := netip.ParseAddr(stringValue.StringValue)
+	if err != nil || ip.Zone() != "" {
+		return netip.Addr{}, true
+	}
+	return ip.Unmap(), true
 }
 
 func (m messageRequestHeaders) MessageType() proxy.MessageType {
