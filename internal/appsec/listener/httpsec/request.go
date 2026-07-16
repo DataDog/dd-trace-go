@@ -103,6 +103,15 @@ func ClientIPTags(headers map[string][]string, hasCanonicalHeaders bool, remoteA
 	return ClientIPTagsFor(remoteIP, clientIP), clientIP
 }
 
+// ClientIPTagsWithOverride resolves client IP tags using an authoritative override when set.
+// A set but invalid override intentionally suppresses legacy header and remote-address resolution.
+func ClientIPTagsWithOverride(headers map[string][]string, hasCanonicalHeaders bool, remoteAddr string, override netip.Addr, overrideSet bool) (tags map[string]string, clientIP netip.Addr) {
+	if overrideSet {
+		return ClientIPTagsFor(override, override), override
+	}
+	return ClientIPTags(headers, hasCanonicalHeaders, remoteAddr)
+}
+
 func ClientIPTagsFor(remoteIP netip.Addr, clientIP netip.Addr) map[string]string {
 	remoteIPValid := remoteIP.IsValid()
 	clientIPValid := clientIP.IsValid()
