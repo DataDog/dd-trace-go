@@ -287,6 +287,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_TRACES_EXPORTER":                                            {},
 	"OTEL_TRACES_SAMPLER":                                             {},
 	"OTEL_TRACES_SAMPLER_ARG":                                         {},
+	"OTEL_TRACES_SPAN_METRICS_ENABLED":                                {},
 }
 
 // SensitiveConfigurations is the set of configuration keys whose value must not be
