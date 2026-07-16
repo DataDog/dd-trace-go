@@ -44,7 +44,7 @@ var spanMetricBounds = [16]float64{0.002, 0.004, 0.006, 0.008, 0.01, 0.05, 0.1, 
 // buildOTLPMetricsRequest converts a ClientStatsPayload to OTLP ResourceMetrics (DELTA histogram).
 // Non-default services carry service.name as a data-point attribute. Returns nil when empty.
 func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig.Config) []*otlpmetrics.ResourceMetrics {
-	otelMode := cfg.OTLPSemanticsMode()
+	otelMode := cfg.OTelSemanticsEnabled()
 
 	var allPoints []*otlpmetrics.HistogramDataPoint
 	for _, bucket := range payload.Stats {
