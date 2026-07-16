@@ -2278,6 +2278,76 @@ func traceHandler(h http.Handler) http.Handler {
 	})
 }
 
+func TestAgentAttributionSerialization(t *testing.T) {
+	t.Run("tool-under-agent-has-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+		ctx := context.Background()
+
+		agent, ctx := ll.StartSpan(ctx, llmobs.SpanKindAgent, "my_agent", llmobs.StartSpanConfig{})
+		tool, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "my_tool", llmobs.StartSpanConfig{})
+		tool.Finish(llmobs.FinishSpanConfig{})
+		agent.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		toolSpan := coll.RequireSpan(t, "my_tool")
+		attr, ok := toolSpan.Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "agent_attribution must be present on tool span")
+		assert.Equal(t, "my_agent", attr["pagent_name"])
+		assert.Equal(t, agent.SpanID(), attr["pagent_span_id"])
+	})
+
+	t.Run("top-level-agent-omits-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+		ctx := context.Background()
+
+		agent, _ := ll.StartSpan(ctx, llmobs.SpanKindAgent, "top_agent", llmobs.StartSpanConfig{})
+		agent.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		agentSpan := coll.RequireSpan(t, "top_agent")
+		_, ok := agentSpan.Meta["agent_attribution"]
+		assert.False(t, ok, "top-level agent must omit agent_attribution")
+	})
+
+	t.Run("no-agent-anywhere-omits-attribution", func(t *testing.T) {
+		_, coll, ll := testTracer(t)
+		ctx := context.Background()
+
+		wf, ctx := ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "wf", llmobs.StartSpanConfig{})
+		tool, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "tool", llmobs.StartSpanConfig{})
+		tool.Finish(llmobs.FinishSpanConfig{})
+		wf.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		_, wfOK := coll.RequireSpan(t, "wf").Meta["agent_attribution"]
+		_, toolOK := coll.RequireSpan(t, "tool").Meta["agent_attribution"]
+		assert.False(t, wfOK, "workflow with no agent ancestor must omit agent_attribution")
+		assert.False(t, toolOK, "tool with no agent ancestor must omit agent_attribution")
+	})
+
+	t.Run("id-only-emits-null-name", func(t *testing.T) {
+		// Simulate an id-only propagated parent: name empty, id set.
+		_, coll, ll := testTracer(t)
+		prop := &llmobs.PropagatedLLMSpan{
+			MLApp:             mlApp,
+			ParentAgentSpanID: "9999",
+			ParentAgentName:   "", // id-only
+		}
+		ctx := llmobs.ContextWithPropagatedLLMSpan(context.Background(), prop)
+
+		child, _ := ll.StartSpan(ctx, llmobs.SpanKindTool, "child_tool", llmobs.StartSpanConfig{})
+		child.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		attr, ok := coll.RequireSpan(t, "child_tool").Meta["agent_attribution"].(map[string]any)
+		require.True(t, ok, "agent_attribution must be present when id-only")
+		assert.Equal(t, "9999", attr["pagent_span_id"])
+		v, present := attr["pagent_name"]
+		require.True(t, present, "pagent_name key must be present (explicit null), not absent")
+		assert.Nil(t, v, "pagent_name must be JSON null when name is empty")
+	})
+}
+
 func traceClient(c *http.Client) *http.Client {
 	c.Transport = &tracedRT{base: c.Transport}
 	return c

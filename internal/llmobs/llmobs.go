@@ -596,6 +596,18 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		meta["output"] = output
 	}
 
+	if span.parentAgentSpanID != "" {
+		var agentName any = span.parentAgentName
+		if span.parentAgentName == "" {
+			// id-only: emit explicit JSON null, matching the Python/Node wire shape.
+			agentName = nil
+		}
+		meta["agent_attribution"] = map[string]any{
+			"pagent_name":    agentName,
+			"pagent_span_id": span.parentAgentSpanID,
+		}
+	}
+
 	spanID := span.apm.SpanID()
 	parentID := defaultParentID
 	if span.parent != nil {
