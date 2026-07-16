@@ -1685,8 +1685,8 @@
     "DD_TRACE_STATS_ADDITIONAL_TAGS": [
       {
         "implementation": "A",
-        "type": "string",
-        "default": ""
+        "type": "array",
+        "default": null
       }
     ],
     "DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT": [
