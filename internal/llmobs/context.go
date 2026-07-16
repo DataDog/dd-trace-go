@@ -22,6 +22,12 @@ type PropagatedLLMSpan struct {
 	SpanID string
 	// SessionID is the session ID.
 	SessionID string
+	// ParentAgentName is the name of the nearest agent ancestor, propagated across
+	// process boundaries. Empty when the upstream hop sent an id-only attribution.
+	ParentAgentName string
+	// ParentAgentSpanID is the span ID of the nearest agent ancestor, propagated
+	// across process boundaries. Empty when there is no agent ancestor.
+	ParentAgentSpanID string
 }
 
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.
