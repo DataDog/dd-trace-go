@@ -27,6 +27,38 @@ func withAgentInfoPollInterval(d time.Duration) StartOption {
 	}
 }
 
+func TestRefreshAgentFeaturesUpdatesTraceFilters(t *testing.T) {
+	roundTripper := &agentInfoJSONRoundTripper{body: `{
+		"endpoints":["/v0.6/stats"],
+		"client_drop_p0s":true,
+		"filter_tags":{"reject":["first:value"]}
+	}`}
+	cfg, err := newTestConfig(
+		WithAgentAddr("agent:8126"),
+		WithHTTPClient(&http.Client{Transport: roundTripper}),
+		WithStatsComputation(true),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.agent.load().traceFilters)
+	assert.Equal(t, "first", cfg.agent.load().traceFilters.rejectKV[0].key)
+
+	roundTripper.body = `{
+		"endpoints":["/v0.6/stats"],
+		"client_drop_p0s":true,
+		"filter_tags_regex":{"require":["second.*:value.*"]},
+		"ignore_resources":["health.*"]
+	}`
+	tracer := &tracer{config: cfg, stop: make(chan struct{})}
+	tracer.refreshAgentFeatures()
+
+	filters := cfg.agent.load().traceFilters
+	require.NotNil(t, filters)
+	assert.Empty(t, filters.rejectKV)
+	require.Len(t, filters.requireRegex, 1)
+	assert.Equal(t, "second.*", filters.requireRegex[0].key.String())
+	require.Len(t, filters.ignoreResources, 1)
+}
+
 // TestRefreshAgentFeaturesPreservesStaticFields verifies that a call to
 // refreshAgentFeatures preserves fields that are baked into components at
 // startup, while still updating dynamic fields.

@@ -53,6 +53,39 @@ func withTickChan(ch <-chan time.Time) StartOption {
 	}
 }
 
+type agentInfoJSONRoundTripper struct {
+	body string
+}
+
+func (r *agentInfoJSONRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(r.body)),
+	}, nil
+}
+
+func TestFetchAgentFeaturesTraceFilters(t *testing.T) {
+	roundTripper := &agentInfoJSONRoundTripper{body: `{
+		"endpoints":["/v0.6/stats"],
+		"client_drop_p0s":true,
+		"filter_tags":{"require":["required:value"],"reject":["blocked"]},
+		"filter_tags_regex":{"require":["required.*:value.*"],"reject":["blocked.*"]},
+		"ignore_resources":["health.*"]
+	}`}
+	agentURL, err := url.Parse("http://agent:8126")
+	require.NoError(t, err)
+
+	features, err := fetchAgentFeatures(context.Background(), agentURL, &http.Client{Transport: roundTripper})
+	require.NoError(t, err)
+	require.NotNil(t, features.traceFilters)
+	assert.Equal(t, []tagKV{{key: "required", val: "value"}}, features.traceFilters.requireKV)
+	assert.Equal(t, []string{"blocked"}, features.traceFilters.rejectKeys)
+	require.Len(t, features.traceFilters.requireRegex, 1)
+	require.Len(t, features.traceFilters.rejectRegex, 1)
+	require.Len(t, features.traceFilters.ignoreResources, 1)
+}
+
 // withAgentRemoteConfig creates a mock agent server that reports remote config support.
 // Use in tests that need RC to start but don't have a real agent running.
 // The server is automatically closed when the test ends.

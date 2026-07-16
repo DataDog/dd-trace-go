@@ -483,6 +483,9 @@ type agentFeatures struct {
 	// peerTags specifies precursor tags to aggregate stats on when client stats is enabled
 	peerTags []string
 
+	// traceFilters contains compiled filters advertised by the trace-agent.
+	traceFilters *traceFilters
+
 	// defaultEnv is the trace-agent's default env, used for stats calculation if no env override is present
 	defaultEnv string
 
@@ -599,7 +602,16 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 		SpanMetaStruct     bool     `json:"span_meta_structs"`
 		ObfuscationVersion int      `json:"obfuscation_version"`
 		SpanEvents         bool     `json:"span_events"`
-		Config             struct {
+		FilterTags         struct {
+			Require []string `json:"require"`
+			Reject  []string `json:"reject"`
+		} `json:"filter_tags"`
+		FilterTagsRegex struct {
+			Require []string `json:"require"`
+			Reject  []string `json:"reject"`
+		} `json:"filter_tags_regex"`
+		IgnoreResources []string `json:"ignore_resources"`
+		Config          struct {
 			StatsdPort int    `json:"statsd_port"`
 			DefaultEnv string `json:"default_env"`
 		} `json:"config"`
@@ -616,6 +628,13 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	features.peerTags = info.PeerTags
 	features.obfuscationVersion = info.ObfuscationVersion
 	features.spanEventsAvailable = info.SpanEvents
+	features.traceFilters = newTraceFilters(
+		info.FilterTags.Require,
+		info.FilterTags.Reject,
+		info.FilterTagsRegex.Require,
+		info.FilterTagsRegex.Reject,
+		info.IgnoreResources,
+	)
 	for _, endpoint := range info.Endpoints {
 		switch endpoint {
 		case "/v0.6/stats":
@@ -697,6 +716,10 @@ func (c *config) loadContribIntegrations(deps []*debug.Module) {
 // - Stats Computation is enabled on the tracer (or has 'discovery' FF)
 func (c *config) canComputeStats() bool {
 	a := c.agent.load()
+	return c.canComputeStatsWithAgent(a)
+}
+
+func (c *config) canComputeStatsWithAgent(a agentFeatures) bool {
 	return a.Stats && a.DropP0s && (c.internalConfig.HasFeature("discovery") || c.internalConfig.StatsComputationEnabled())
 }
 

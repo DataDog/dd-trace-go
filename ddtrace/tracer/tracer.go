@@ -726,12 +726,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 	for {
 		select {
 		case trace := <-t.out:
-			spansToRelease := trace.releasableSpans()
-			t.sampleChunk(trace)
-			if len(trace.spans) > 0 {
-				t.traceWriter.add(trace.spans)
-			}
-			releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+			t.processOutChunk(trace)
 		case <-tick:
 			t.statsd.Incr("datadog.tracer.flush_triggered", []string{"reason:scheduled"}, 1)
 			t.traceWriter.flush()
@@ -746,12 +741,7 @@ func (t *tracer) worker(tick <-chan time.Time) {
 			for {
 				select {
 				case trace := <-t.out:
-					spansToRelease := trace.releasableSpans()
-					t.sampleChunk(trace)
-					if len(trace.spans) > 0 {
-						t.traceWriter.add(trace.spans)
-					}
-					releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+					t.processOutChunk(trace)
 				default:
 					break loop
 				}
@@ -785,6 +775,7 @@ type chunk struct {
 	spans          []*Span
 	willSend       bool // willSend indicates whether the trace will be sent to the agent.
 	spansToRelease []*Span
+	filterRejected bool
 }
 
 func (c *chunk) releasableSpans() []*Span {
@@ -792,6 +783,19 @@ func (c *chunk) releasableSpans() []*Span {
 		return c.spansToRelease
 	}
 	return c.spans
+}
+
+func (t *tracer) processOutChunk(trace *chunk) {
+	spansToRelease := trace.releasableSpans()
+	if trace.filterRejected {
+		releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+		return
+	}
+	t.sampleChunk(trace)
+	if len(trace.spans) > 0 {
+		t.traceWriter.add(trace.spans)
+	}
+	releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -1228,19 +1232,34 @@ func (t *tracer) TracerConf() TracerConf {
 	}
 }
 
-func (t *tracer) submit(s *Span) {
-	if !t.config.internalConfig.TracingEnabled() {
+// +checklocks:span.mu
+// +checklocks:trace.mu
+func (t *tracer) computeSpanStats(trace *trace, span *Span) {
+	agentFeatures := t.config.agent.load()
+	span.statSpan = nil
+	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
+		if span == trace.root {
+			trace.filterReject = false
+		}
 		return
 	}
-	// we have an active tracer
-	if !t.config.canDropP0s() {
+	span.statSpan, _ = t.stats.newTracerStatSpan(span, t.obfuscator)
+	if span == trace.root {
+		trace.filterReject = agentFeatures.traceFilters != nil && agentFeatures.traceFilters.reject(span)
+	}
+}
+
+// +checklocks:span.mu
+func (t *tracer) computeOversizedSpanStats(span *Span) {
+	agentFeatures := t.config.agent.load()
+	span.statSpan = nil
+	if !t.config.internalConfig.TracingEnabled() || !t.config.canComputeStatsWithAgent(agentFeatures) {
 		return
 	}
-	statSpan, shouldCalc := t.stats.newTracerStatSpan(s, t.obfuscator)
-	if !shouldCalc {
-		return
+	span.statSpan, _ = t.stats.newTracerStatSpan(span, t.obfuscator)
+	if span.statSpan != nil {
+		t.stats.trySendSpan(span.statSpan)
 	}
-	t.stats.trySendSpan(statSpan)
 }
 
 func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
@@ -1252,8 +1271,29 @@ func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
 	}
 }
 
+// +checklocksignore — Post-finish: reads finished spans' statSpan during chunk assembly.
 func (t *tracer) submitChunk(c *chunk) {
+	if c.filterRejected {
+		t.emitFilterDrop(len(c.spans))
+	} else {
+		stats := make([]*tracerStatSpan, 0, len(c.spans))
+		for _, span := range c.spans {
+			if span != nil && span.statSpan != nil {
+				stats = append(stats, span.statSpan)
+			}
+		}
+		if len(stats) > 0 {
+			t.stats.trySendSpans(stats)
+		}
+	}
 	t.pushChunk(c)
+}
+
+func (t *tracer) emitFilterDrop(spans int) {
+	t.statsd.Count("datadog.tracer.traces_dropped", 1, []string{"reason:trace_filter"}, 1)
+	t.statsd.Count("datadog.tracer.spans_dropped", int64(spans), []string{"reason:trace_filter"}, 1)
+	telemetry.Count(telemetry.NamespaceTracers, "trace_filter.traces_dropped", []string{"reason:trace_filter"}).Submit(1)
+	telemetry.Count(telemetry.NamespaceTracers, "trace_filter.spans_dropped", []string{"reason:trace_filter"}).Submit(float64(spans))
 }
 
 // sampleRateMetricKey is the metric key holding the applied sample rate. Has to be the same as the Agent.
