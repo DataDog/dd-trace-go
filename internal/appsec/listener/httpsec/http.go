@@ -140,7 +140,8 @@ func (*HeaderExtractionFeature) OnResponse(op *httpsec.HandlerOperation, resp ht
 }
 
 func extractRequestHeaders(op *httpsec.HandlerOperation, args httpsec.HandlerOperationArgs) (map[string][]string, netip.Addr) {
-	tags, ip := ClientIPTags(args.Headers, true, args.RemoteAddr)
+	override, overrideSet := op.ClientIPOverride()
+	tags, ip := ClientIPTagsWithOverride(args.Headers, true, args.RemoteAddr, override, overrideSet)
 
 	op.SetStringTags(tags)
 	headers := headersRemoveCookies(args.Headers)
