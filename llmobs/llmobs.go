@@ -451,3 +451,22 @@ func parseAnnotateOptions(opts ...AnnotateOption) illmobs.SpanAnnotations {
 func isSpanKind(s Span, target illmobs.SpanKind) bool {
 	return illmobs.SpanKind(s.Kind()) == target
 }
+
+// InjectContext writes the active LLMObs span's agent attribution into the
+// carrier so a downstream service can resolve agent_attribution for its spans.
+// Call this alongside the APM tracer's Inject when making a distributed request.
+//
+// The carrier is a map of header name to value (e.g. an HTTP header map). Agent
+// attribution is written into the x-datadog-tags value, merging with any value
+// already present.
+func InjectContext(ctx context.Context, carrier map[string]string) {
+	illmobs.InjectContext(ctx, carrier)
+}
+
+// ExtractContext reads agent attribution written by an upstream InjectContext
+// from the carrier and returns a context carrying it, so spans started from the
+// returned context inherit the upstream agent attribution. Call this alongside
+// the APM tracer's Extract when handling a distributed request.
+func ExtractContext(ctx context.Context, carrier map[string]string) context.Context {
+	return illmobs.ExtractContext(ctx, carrier)
+}
