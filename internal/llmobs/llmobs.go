@@ -770,6 +770,29 @@ func dropSpanEventIO(ev *transport.LLMObsSpanEvent) bool {
 	return droppedIO
 }
 
+// resolveParentAgent returns the nearest agent ancestor's (name, spanID) for a
+// span about to start, given its resolved parent and/or propagated parent.
+//
+// Resolution is O(1): the parent already resolved its own attribution when it
+// started, so a non-agent parent simply hands down what it inherited.
+//
+//	parent is an agent span            -> (parent.name, parent.SpanID())
+//	parent is any other kind           -> (parent.parentAgentName, parent.parentAgentSpanID)
+//	no local parent, propagated parent -> (propagated.ParentAgentName, propagated.ParentAgentSpanID)
+//	neither                            -> ("", "")
+func resolveParentAgent(parent *Span, propagated *PropagatedLLMSpan) (name string, spanID string) {
+	if parent != nil {
+		if parent.spanKind == SpanKindAgent {
+			return parent.name, parent.SpanID()
+		}
+		return parent.parentAgentName, parent.parentAgentSpanID
+	}
+	if propagated != nil {
+		return propagated.ParentAgentName, propagated.ParentAgentSpanID
+	}
+	return "", ""
+}
+
 // StartSpan starts a new LLMObs span with the given kind, name, and configuration.
 // Returns the created span and a context containing the span.
 func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg StartSpanConfig) (*Span, context.Context) {
@@ -812,6 +835,8 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	} else {
 		span.llmTraceID = newLLMObsTraceID()
 	}
+
+	span.parentAgentName, span.parentAgentSpanID = resolveParentAgent(span.parent, span.propagated)
 
 	span.mlApp = cfg.MLApp
 	span.spanKind = kind

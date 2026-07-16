@@ -253,6 +253,12 @@ type Span struct {
 	finishTime time.Time
 
 	spanLinks []SpanLink
+
+	// parentAgentName and parentAgentSpanID identify the nearest agent ancestor.
+	// Both are set exactly once in StartSpan and never mutated, so concurrent
+	// reads (e.g. from Annotate) are safe without holding the mutex.
+	parentAgentName   string
+	parentAgentSpanID string
 }
 
 func (s *Span) Name() string {

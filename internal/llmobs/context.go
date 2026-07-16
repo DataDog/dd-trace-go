@@ -20,6 +20,12 @@ type PropagatedLLMSpan struct {
 	TraceID string
 	// SpanID is the span ID.
 	SpanID string
+	// ParentAgentName is the name of the nearest agent ancestor, propagated across
+	// process boundaries. Empty when the upstream hop sent an id-only attribution.
+	ParentAgentName string
+	// ParentAgentSpanID is the span ID of the nearest agent ancestor, propagated
+	// across process boundaries. Empty when there is no agent ancestor.
+	ParentAgentSpanID string
 }
 
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.
