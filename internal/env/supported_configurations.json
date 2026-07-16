@@ -1180,7 +1180,7 @@
     ],
     "DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED": [
       {
-        "implementation": "B",
+        "implementation": "A",
         "type": "string",
         "default": null
       }
@@ -1698,14 +1698,14 @@
     ],
     "DD_TRACE_STATS_CARDINALITY_LIMIT": [
       {
-        "implementation": "B",
+        "implementation": "A",
         "type": "integer",
         "default": "2048"
       }
     ],
     "DD_TRACE_STATS_COMPUTATION_ENABLED": [
       {
-        "implementation": "B",
+        "implementation": "A",
         "type": "boolean",
         "default": "true"
       }
