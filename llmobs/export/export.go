@@ -34,6 +34,12 @@ func (c *Client) ExportSpans(ctx context.Context, events []SpanEvent) (*ExportRe
 		size = len(events)
 	}
 	for start := 0; start < len(events); start += size {
+		// The caller asked to stop: return promptly rather than validating and
+		// POSTing every remaining batch (each Post would just fail on the canceled
+		// context and accumulate artificial request failures).
+		if err := ctx.Err(); err != nil {
+			return res, fmt.Errorf("llmobs/export: export canceled: %w", err)
+		}
 		end := min(start+size, len(events))
 		batch := make([]spanRow, 0, end-start)
 		for i := start; i < end; i++ {
@@ -94,6 +100,11 @@ func (c *Client) ExportEvaluations(ctx context.Context, evals []EvaluationMetric
 		size = len(evals)
 	}
 	for start := 0; start < len(evals); start += size {
+		// Stop promptly on caller cancellation instead of POSTing every remaining
+		// batch against the canceled context (see ExportSpans).
+		if err := ctx.Err(); err != nil {
+			return res, fmt.Errorf("llmobs/export: export canceled: %w", err)
+		}
 		end := min(start+size, len(evals))
 		batch := make([]evalRow, 0, end-start)
 		for i := start; i < end; i++ {
@@ -293,11 +304,28 @@ func stampTags(tags []string, env, version, mlApp string) []string {
 	return tags
 }
 
+// stampTag ensures tags carries a non-empty key:val default. A caller-supplied
+// NON-empty value for key wins and is left untouched; an empty-valued "key:" tag
+// is treated as absent (dropped) so it cannot shadow a required default such as
+// ml_app. It never mutates the input's backing array.
 func stampTag(tags []string, key, val string) []string {
-	if val == "" || hasTagKey(tags, key) {
-		return tags
+	prefix := key + ":"
+	for _, t := range tags {
+		if strings.HasPrefix(t, prefix) && t != prefix {
+			return tags // caller already set a non-empty value; it wins
+		}
 	}
-	return append(tags, key+":"+val)
+	if val == "" {
+		return tags // nothing to stamp
+	}
+	// No non-empty value present: drop any empty "key:" placeholder, then stamp val.
+	out := make([]string, 0, len(tags)+1)
+	for _, t := range tags {
+		if t != prefix {
+			out = append(out, t)
+		}
+	}
+	return append(out, prefix+val)
 }
 
 // replaceTag sets key:val, dropping any existing tag with the same key first. A
@@ -316,16 +344,6 @@ func replaceTag(tags []string, key, val string) []string {
 		}
 	}
 	return append(out, key+":"+val)
-}
-
-func hasTagKey(tags []string, key string) bool {
-	prefix := key + ":"
-	for _, t := range tags {
-		if strings.HasPrefix(t, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 func appendUnique(s []string, v string) []string {

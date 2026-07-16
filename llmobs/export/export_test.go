@@ -324,6 +324,7 @@ func TestExportSpans_StampsMLAppFromConfig(t *testing.T) {
 	_, err := c.ExportSpans(context.Background(), []export.SpanEvent{
 		{TraceID: "t1", SpanID: "s1", Kind: "llm"},                                    // no ml_app tag -> stamped
 		{TraceID: "t2", SpanID: "s2", Kind: "llm", Tags: []string{"ml_app:override"}}, // caller wins
+		{TraceID: "t3", SpanID: "s3", Kind: "llm", Tags: []string{"ml_app:"}},         // empty tag -> treated as absent
 	})
 	require.NoError(t, err)
 
@@ -332,6 +333,10 @@ func TestExportSpans_StampsMLAppFromConfig(t *testing.T) {
 	assert.Contains(t, tagsOf(0), "ml_app:my-app")
 	assert.Contains(t, tagsOf(1), "ml_app:override")
 	assert.NotContains(t, tagsOf(1), "ml_app:my-app")
+	// An empty "ml_app:" tag must not suppress the required default: it is dropped
+	// and replaced with the configured value, leaving no bare empty tag behind.
+	assert.Contains(t, tagsOf(2), "ml_app:my-app")
+	assert.NotContains(t, tagsOf(2), "ml_app:")
 }
 
 func TestExportSpans_AgentRoute(t *testing.T) {
@@ -522,7 +527,7 @@ func TestExportSpans_AgentRouteTrimsTrailingSlash(t *testing.T) {
 	assert.Equal(t, "http://localhost:8126/evp_proxy/v2/api/v2/llmobs", fake.captured()[0].url)
 }
 
-func TestExportSpans_ContextCancelNotRetriable(t *testing.T) {
+func TestExportSpans_ContextCanceledStopsPromptly(t *testing.T) {
 	fake := &fakeTransport{}
 	c := newClient(t, fake, export.Config{})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -530,8 +535,11 @@ func TestExportSpans_ContextCancelNotRetriable(t *testing.T) {
 
 	res, err := c.ExportSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: "llm"}})
 	require.Error(t, err)
-	require.Len(t, res.Requests, 1)
-	assert.False(t, res.Requests[0].Retriable) // caller cancellation is not transient
+	assert.ErrorIs(t, err, context.Canceled)
+	// A canceled context stops the export before POSTing, so it neither sends nor
+	// accumulates artificial request failures.
+	assert.Empty(t, res.Requests)
+	assert.Empty(t, fake.captured())
 }
 
 func TestNew_RejectsBadAgentURLScheme(t *testing.T) {
