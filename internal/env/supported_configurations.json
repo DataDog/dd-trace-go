@@ -1180,7 +1180,7 @@
     ],
     "DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "string",
         "default": null
       }
@@ -1705,7 +1705,7 @@
     ],
     "DD_TRACE_STATS_COMPUTATION_ENABLED": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "boolean",
         "default": "true"
       }
