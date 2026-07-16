@@ -17,7 +17,7 @@ create_tracer:
     tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
 
 span_directive:
-  target: $root
+  target: "**"
   where:
     directive: "otelc:span"
   do:
