@@ -22,6 +22,18 @@ The ASM Service Extension expose some configuration. The configuration can be tw
 
 >**GCP requires that the default configuration for the Service Extension should not change.**
 
+### Forward the source IP attribute
+
+The Service Extension must be configured to forward the GCP client address attribute:
+
+```yaml
+forwardAttributes: [source.ip]
+```
+
+The forwarded `source.ip` is authoritative for requests sent directly from the client to the Google Cloud Load Balancer. If `source.ip` is omitted, client IP detection retains its legacy header and connection-address fallback behavior.
+
+This configuration does not recover the original client address when a third-party CDN is deployed in front of the load balancer. Supporting that topology is outside the scope of this integration; configure and trust the CDN-specific forwarding mechanism separately.
+
 | Environment variable                      | Default value   | Description                                                                                                   |
 |-------------------------------------------|-----------------|---------------------------------------------------------------------------------------------------------------|
 | `DD_SERVICE_EXTENSION_HOST`               | `0.0.0.0`       | Host on where the gRPC and HTTP server should listen to.                                                      |
