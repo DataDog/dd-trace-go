@@ -190,3 +190,44 @@ func TestInjectContextReadsActiveSpan(t *testing.T) {
 		t.Fatalf("InjectContext should inject active agent (my_agent,1000), got (%q,%q)", name, id)
 	}
 }
+
+func TestAgentAttributionRoundTrip(t *testing.T) {
+	l := newTestLLMObsForResolve(t)
+
+	t.Run("full-round-trip-with-name", func(t *testing.T) {
+		// Upstream: start an agent, inject from its context.
+		agent, upCtx := l.StartSpan(context.Background(), SpanKindAgent, "my_agent", StartSpanConfig{})
+		carrier := map[string]string{}
+		InjectContext(upCtx, carrier)
+
+		// Downstream: extract into a fresh context, start a child span.
+		downCtx := ExtractContext(context.Background(), carrier)
+		child, _ := l.StartSpan(downCtx, SpanKindTool, "downstream_tool", StartSpanConfig{})
+
+		if child.parentAgentName != "my_agent" {
+			t.Fatalf("child.parentAgentName = %q, want my_agent", child.parentAgentName)
+		}
+		if child.parentAgentSpanID != agent.SpanID() {
+			t.Fatalf("child.parentAgentSpanID = %q, want %q", child.parentAgentSpanID, agent.SpanID())
+		}
+	})
+
+	t.Run("full-round-trip-id-only-yields-null-name", func(t *testing.T) {
+		// Upstream agent has a wire-unsafe name -> id-only propagates.
+		agent, upCtx := l.StartSpan(context.Background(), SpanKindAgent, "bad,name", StartSpanConfig{})
+		carrier := map[string]string{}
+		InjectContext(upCtx, carrier)
+
+		downCtx := ExtractContext(context.Background(), carrier)
+		child, _ := l.StartSpan(downCtx, SpanKindTool, "downstream_tool", StartSpanConfig{})
+
+		if child.parentAgentSpanID != agent.SpanID() {
+			t.Fatalf("child.parentAgentSpanID = %q, want %q", child.parentAgentSpanID, agent.SpanID())
+		}
+		if child.parentAgentName != "" {
+			t.Fatalf("child.parentAgentName must be empty (id-only), got %q", child.parentAgentName)
+		}
+		// And the serialized child span emits pagent_name: null (verified in Task 2's
+		// id-only serialization test; here we confirm the in-process field state).
+	})
+}
