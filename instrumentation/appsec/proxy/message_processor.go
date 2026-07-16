@@ -9,17 +9,23 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	httpsecemitter "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/actions"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body/json"
 )
+
+type clientIPOverrideProvider interface {
+	ClientIPOverride(context.Context) (netip.Addr, bool)
+}
 
 // Processor is a state machine that handles incoming HTTP request and response in a streaming manner,
 // made for proxy external-processing protocols like Envoy's External Processing or HAProxy's SPOP.
@@ -82,6 +88,11 @@ func (mp *Processor) OnRequestHeaders(ctx context.Context, req RequestHeaders) (
 	pseudoRequest, err := req.ExtractRequest(ctx)
 	if err != nil {
 		return reqState, fmt.Errorf("error extracting request header from input message: %w", err)
+	}
+
+	if provider, ok := req.(clientIPOverrideProvider); ok {
+		ip, set := provider.ClientIPOverride(ctx)
+		ctx = httpsecemitter.ContextWithClientIPOverride(ctx, ip, set)
 	}
 
 	httpRequest, err := pseudoRequest.toNetHTTP(ctx)
