@@ -64,6 +64,7 @@ func TestGetFieldPointerFrom(t *testing.T) {
 
 	exerciseTestingInternalsOffsetLayout(t)
 	exerciseTestingInternalsCopyEquivalence(t)
+	exerciseTestingInternalsHelperMapIsolation(t)
 	exerciseTestingInternalsPrivatePointerAssignment(t)
 	exerciseParallelForwardMetadataIsolation(t)
 	exerciseParallelForwardedDuplicateGate(t)
@@ -301,6 +302,61 @@ func exerciseTestingInternalsCopyEquivalence(t *testing.T) {
 		string(*fastFields.output) != string(*reflectFields.output) {
 		t.Fatal("expected fast copy to match reflection fallback for representative fields")
 	}
+}
+
+func exerciseTestingInternalsHelperMapIsolation(t *testing.T) {
+	layout := getTestingInternalsLayout()
+	if layout == nil || layout.disabled || !layout.copyTestOK {
+		t.Fatal("expected copy fast path to be available")
+	}
+
+	copyImplementations := []struct {
+		name string
+		copy func(source, target *testing.T)
+	}{
+		{
+			name: "fast",
+			copy: func(source, target *testing.T) {
+				copyTestWithoutParentFast(source, target, layout)
+			},
+		},
+		{name: "reflection", copy: copyTestWithoutParentReflect},
+	}
+
+	for _, implementation := range copyImplementations {
+		source := createNewTestReflect()
+		sourceHelperPCs, sourceHelperNames := getTestingHelperMaps(t, source)
+		*sourceHelperPCs = map[uintptr]struct{}{1: {}}
+		*sourceHelperNames = map[string]struct{}{"source-helper": {}}
+
+		target := &testing.T{}
+		implementation.copy(source, target)
+		targetHelperPCs, targetHelperNames := getTestingHelperMaps(t, target)
+
+		assert.Contains(t, *targetHelperPCs, uintptr(1), "%s copy did not preserve helper PCs", implementation.name)
+		assert.Contains(t, *targetHelperNames, "source-helper", "%s copy did not preserve helper names", implementation.name)
+
+		pcSentinel := uintptr(2)
+		nameSentinel := implementation.name + "-helper"
+		(*targetHelperPCs)[pcSentinel] = struct{}{}
+		(*targetHelperNames)[nameSentinel] = struct{}{}
+
+		assert.NotContains(t, *sourceHelperPCs, pcSentinel, "%s copy shares helper PCs with its source", implementation.name)
+		assert.NotContains(t, *sourceHelperNames, nameSentinel, "%s copy shares helper names with its source", implementation.name)
+	}
+}
+
+func getTestingHelperMaps(t *testing.T, test *testing.T) (*map[uintptr]struct{}, *map[string]struct{}) {
+	t.Helper()
+	helperPCsPointer, err := getFieldPointerFrom(test, "helperPCs")
+	if err != nil {
+		t.Fatalf("getting testing.common.helperPCs: %v", err)
+	}
+	helperNamesPointer, err := getFieldPointerFrom(test, "helperNames")
+	if err != nil {
+		t.Fatalf("getting testing.common.helperNames: %v", err)
+	}
+	return (*map[uintptr]struct{})(helperPCsPointer), (*map[string]struct{})(helperNamesPointer)
 }
 
 func exerciseTestingInternalsPrivatePointerAssignment(t *testing.T) {

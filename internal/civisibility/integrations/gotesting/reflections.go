@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"maps"
 	"reflect"
 	"runtime"
 	"sync"
@@ -527,6 +528,9 @@ var copyMutex sync.Mutex // Mutex to protect concurrent read and writes to testi
 
 // copyTestWithoutParent tries to copy all private fields except the t.parent from a *testing.T to another
 func copyTestWithoutParent(source *testing.T, target *testing.T) {
+	if source == target {
+		return
+	}
 	layout := getTestingInternalsLayout()
 	if layout != nil && !layout.disabled && layout.copyTestOK {
 		copyTestWithoutParentFast(source, target, layout)
@@ -552,8 +556,8 @@ func copyTestWithoutParentFast(source *testing.T, target *testing.T, layout *tes
 		defer mu.RUnlock()
 	}
 	if mu := fieldPtr[sync.RWMutex](targetBase, layout.common.mu); mu != nil {
-		mu.RLock()
-		defer mu.RUnlock()
+		mu.Lock()
+		defer mu.Unlock()
 	}
 
 	copyTypedField[[]byte](sourceBase, targetBase, layout.common.output)
@@ -562,8 +566,8 @@ func copyTestWithoutParentFast(source *testing.T, target *testing.T, layout *tes
 	copyTypedField[bool](sourceBase, targetBase, layout.common.failed)
 	copyTypedField[bool](sourceBase, targetBase, layout.common.skipped)
 	copyTypedField[bool](sourceBase, targetBase, layout.common.done)
-	copyTypedField[map[uintptr]struct{}](sourceBase, targetBase, layout.common.helperPCs)
-	copyTypedField[map[string]struct{}](sourceBase, targetBase, layout.common.helperNames)
+	copyConvertedField[map[uintptr]struct{}](sourceBase, targetBase, layout.common.helperPCs, maps.Clone[map[uintptr]struct{}])
+	copyConvertedField[map[string]struct{}](sourceBase, targetBase, layout.common.helperNames, maps.Clone[map[string]struct{}])
 	copyTypedField[[]func()](sourceBase, targetBase, layout.common.cleanups)
 	copyTypedField[string](sourceBase, targetBase, layout.common.cleanupName)
 	copyTypedField[[]uintptr](sourceBase, targetBase, layout.common.cleanupPc)
@@ -623,8 +627,8 @@ func copyTestWithoutParentReflect(source *testing.T, target *testing.T) {
 
 	if ptr, err := getFieldPointerFrom(target, "mu"); err == nil && ptr != nil {
 		mu := (*sync.RWMutex)(ptr)
-		mu.RLock()
-		defer mu.RUnlock()
+		mu.Lock()
+		defer mu.Unlock()
 	}
 
 	// Copy important field values
@@ -632,17 +636,21 @@ func copyTestWithoutParentReflect(source *testing.T, target *testing.T) {
 	_ = copyFieldUsingPointersWithConversion[io.Writer](source, target, "w", func(sourceValue io.Writer) io.Writer {
 		return getThreadSafeWriter(sourceValue) // Wrap the original writer in a thread-safe writer.
 	}) // For flushToParent.
-	_ = copyFieldUsingPointers[bool](source, target, "ran")                        // Test or benchmark (or one of its subtests) was executed.
-	_ = copyFieldUsingPointers[bool](source, target, "failed")                     // Test or benchmark has failed.
-	_ = copyFieldUsingPointers[bool](source, target, "skipped")                    // Test or benchmark has been skipped.
-	_ = copyFieldUsingPointers[bool](source, target, "done")                       // Test is finished and all subtests have completed.
-	_ = copyFieldUsingPointers[map[uintptr]struct{}](source, target, "helperPCs")  // functions to be skipped when writing file/line info
-	_ = copyFieldUsingPointers[map[string]struct{}](source, target, "helperNames") // helperPCs converted to function names
-	_ = copyFieldUsingPointers[[]func()](source, target, "cleanups")               // optional functions to be called at the end of the test
-	_ = copyFieldUsingPointers[string](source, target, "cleanupName")              // Name of the cleanup function.
-	_ = copyFieldUsingPointers[[]uintptr](source, target, "cleanupPc")             // The stack trace at the point where Cleanup was called.
-	_ = copyFieldUsingPointers[bool](source, target, "finished")                   // Test function has completed.
-	_ = copyFieldUsingPointers[bool](source, target, "inFuzzFn")                   // Whether the fuzz target, if this is one, is running.
+	_ = copyFieldUsingPointers[bool](source, target, "ran")     // Test or benchmark (or one of its subtests) was executed.
+	_ = copyFieldUsingPointers[bool](source, target, "failed")  // Test or benchmark has failed.
+	_ = copyFieldUsingPointers[bool](source, target, "skipped") // Test or benchmark has been skipped.
+	_ = copyFieldUsingPointers[bool](source, target, "done")    // Test is finished and all subtests have completed.
+	_ = copyFieldUsingPointersWithConversion[map[uintptr]struct{}](
+		source, target, "helperPCs", maps.Clone[map[uintptr]struct{}],
+	) // functions to be skipped when writing file/line info
+	_ = copyFieldUsingPointersWithConversion[map[string]struct{}](
+		source, target, "helperNames", maps.Clone[map[string]struct{}],
+	) // helperPCs converted to function names
+	_ = copyFieldUsingPointers[[]func()](source, target, "cleanups")   // optional functions to be called at the end of the test
+	_ = copyFieldUsingPointers[string](source, target, "cleanupName")  // Name of the cleanup function.
+	_ = copyFieldUsingPointers[[]uintptr](source, target, "cleanupPc") // The stack trace at the point where Cleanup was called.
+	_ = copyFieldUsingPointers[bool](source, target, "finished")       // Test function has completed.
+	_ = copyFieldUsingPointers[bool](source, target, "inFuzzFn")       // Whether the fuzz target, if this is one, is running.
 
 	_ = copyFieldUsingPointers[unsafe.Pointer](source, target, "chatty")      // A copy of chattyPrinter, if the chatty flag is set.
 	_ = copyFieldUsingPointers[bool](source, target, "bench")                 // Whether the current test is a benchmark.
