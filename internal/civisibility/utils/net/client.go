@@ -48,19 +48,20 @@ type (
 
 	// client is a client for sending requests to the Datadog backend.
 	client struct {
-		id                 string
-		agentless          bool
-		baseURL            string
-		environment        string
-		serviceName        string
-		workingDirectory   string
-		repositoryURL      string
-		commitSha          string
-		commitMessage      string
-		headCommitSha      string
-		headCommitMessage  string
-		branchName         string
-		testConfigurations testConfigurations
+		id                  string
+		agentless           bool
+		baseURL             string
+		environment         string
+		serviceName         string
+		workingDirectory    string
+		repositoryURL       string
+		commitSha           string
+		commitMessage       string
+		headCommitSha       string
+		headCommitMessage   string
+		branchName          string
+		testConfigurations  testConfigurations
+		coverageReportFlags []string
 		// readCacheScopeIdentity stores the short-lived read-cache scope derived from already-resolved CI tags.
 		readCacheScopeIdentity readCacheScopeIdentity
 		headers                map[string]string

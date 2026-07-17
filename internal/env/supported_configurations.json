@@ -338,6 +338,13 @@
         "default": "false"
       }
     ],
+    "DD_CODE_COVERAGE_FLAGS": [
+      {
+        "implementation": "A",
+        "type": "array",
+        "default": null
+      }
+    ],
     "DD_CUSTOM_PARENT_ID": [
       {
         "implementation": "A",
