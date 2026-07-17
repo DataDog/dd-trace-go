@@ -763,8 +763,7 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 	if w3cCtx.reparentID != "" {
 		ctx.reparentID = w3cCtx.reparentID
 	} else {
-		// NIT: could be done without using fmt.Sprintf? Is it worth it?
-		ctx.reparentID = fmt.Sprintf("%016x", ddCtx.SpanID())
+		ctx.reparentID = uint64ToHex16(ddCtx.SpanID())
 	}
 }
 
@@ -1710,4 +1709,17 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 	}
 
 	return &ctx, nil
+}
+
+const hexDigits = "0123456789abcdef"
+
+// uint64ToHex16 formats v as a 16-character zero-padded lowercase hex string
+// without using fmt.Sprintf, saving the fmt reflection overhead.
+func uint64ToHex16(v uint64) string {
+	var buf [16]byte
+	for i := 15; i >= 0; i-- {
+		buf[i] = hexDigits[v&0xf]
+		v >>= 4
+	}
+	return string(buf[:])
 }
