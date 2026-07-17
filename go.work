@@ -56,6 +56,7 @@ use (
 	./contrib/miekg/dns
 	./contrib/modelcontextprotocol/go-sdk
 	./contrib/net/http
+	./contrib/net/http/otelc
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9
 	./contrib/redis/rueidis

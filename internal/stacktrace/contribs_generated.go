@@ -568,6 +568,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/open-feature/go-sdk",
 		"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/sampling",
 		"github.com/open-telemetry/opentelemetry-collector-contrib/processor/probabilisticsamplerprocessor",
+		"github.com/open-telemetry/opentelemetry-go-compile-instrumentation/pkg",
 		"github.com/opencontainers/go-digest",
 		"github.com/opencontainers/image-spec",
 		"github.com/opencontainers/runtime-spec",
