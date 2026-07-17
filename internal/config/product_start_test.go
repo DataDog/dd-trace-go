@@ -6,22 +6,12 @@
 package config
 
 import (
-	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
-
-type testLogger struct {
-	buf bytes.Buffer
-}
-
-func (l *testLogger) Log(msg string) {
-	l.buf.WriteString(msg)
-}
 
 func resetProductStartState() {
 	startMu.Lock()
@@ -30,49 +20,35 @@ func resetProductStartState() {
 }
 
 func TestRecordProductStart(t *testing.T) {
-	t.Run("first call records a baseline without warning", func(t *testing.T) {
+	t.Run("first call records a baseline", func(t *testing.T) {
 		resetProductStartState()
 		defer resetProductStartState()
 
-		tl := &testLogger{}
-		defer log.UseLogger(tl)()
-
 		RecordProductStart(ProductTracer)
 
-		assert.Empty(t, tl.buf.String())
 		assert.Equal(t, ProductTracer, lastProduct)
 		assert.Equal(t, envSnapshotHash(), lastEnvHash)
 	})
 
-	t.Run("repeat call with unchanged environment doesn't warn", func(t *testing.T) {
+	t.Run("repeat call with unchanged environment updates lastProduct", func(t *testing.T) {
 		resetProductStartState()
 		defer resetProductStartState()
-
-		tl := &testLogger{}
-		defer log.UseLogger(tl)()
 
 		RecordProductStart(ProductTracer)
 		RecordProductStart(ProductProfiler)
 
-		assert.Empty(t, tl.buf.String())
 		assert.Equal(t, ProductProfiler, lastProduct)
 	})
 
-	t.Run("repeat call after an env change warns", func(t *testing.T) {
+	t.Run("repeat call after an env change updates the recorded baseline", func(t *testing.T) {
 		resetProductStartState()
 		defer resetProductStartState()
-
-		tl := &testLogger{}
-		defer log.UseLogger(tl)()
 
 		RecordProductStart(ProductTracer)
 
 		t.Setenv("DD_SERVICE", "changed-service")
 		RecordProductStart(ProductProfiler)
 
-		assert.Contains(t, tl.buf.String(), "environment variables changed")
-		assert.Contains(t, tl.buf.String(), "tracer")
-		assert.Contains(t, tl.buf.String(), "profiler")
 		assert.Equal(t, ProductProfiler, lastProduct)
 		assert.Equal(t, envSnapshotHash(), lastEnvHash)
 	})
@@ -82,15 +58,13 @@ func TestRecordProductStart(t *testing.T) {
 		resetProductStartState()
 		defer resetProductStartState()
 
-		tl := &testLogger{}
-		defer log.UseLogger(tl)()
-
 		RecordProductStart(ProductTracer)
+		before := lastEnvHash
 
 		t.Setenv("DD_SERVICE", "")
 		RecordProductStart(ProductProfiler)
 
-		assert.Contains(t, tl.buf.String(), "environment variables changed")
+		assert.NotEqual(t, before, lastEnvHash)
 	})
 }
 

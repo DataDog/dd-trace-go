@@ -19,7 +19,6 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -47,9 +46,6 @@ func RecordProductStart(product Product) {
 			"trigger_product:" + string(product),
 			"previous_product:" + string(lastProduct),
 		}).Submit(1)
-		log.Warn("config: environment variables changed since %s last called Start (this call: %s); "+
-			"if unintentional, another library or dependency in this process may already have called Start",
-			lastProduct, product)
 	}
 	lastEnvHash, lastProduct = hash, product
 }
