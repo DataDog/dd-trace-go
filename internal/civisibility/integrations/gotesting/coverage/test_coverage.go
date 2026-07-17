@@ -7,6 +7,7 @@ package coverage
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"maps"
@@ -251,7 +252,7 @@ func runtimeCoverageSnapshotLocked() (*runtimeCoverageSnapshot, error) {
 		return runtimeSnapshot, nil
 	}
 	if !CanComputeCoverageProfile() {
-		return nil, fmt.Errorf("runtime coverage unavailable")
+		return nil, errors.New("runtime coverage unavailable")
 	}
 
 	if coverProfile := currentCoverProfilePath(); coverProfile != "" {
@@ -624,7 +625,6 @@ func parseCoverProfile(filename string) (map[string][]coverageBlock, error) {
 
 // getFilesCovered subtracts the before profile from the after profile and returns the files covered.
 func getFilesCovered(testFile string, before, after map[string][]coverageBlock) []coveredFile {
-	result := []coveredFile{{name: testFile}}
 	coveredByName := map[string]*filebitmap.FileBitmap{}
 
 	addCoveredRange := func(fileName string, block coverageBlock) {
@@ -681,6 +681,8 @@ func getFilesCovered(testFile string, before, after map[string][]coverageBlock) 
 		names = append(names, name)
 	}
 	slices.Sort(names)
+	result := make([]coveredFile, 0, 1+len(names))
+	result = append(result, coveredFile{name: testFile})
 	for _, name := range names {
 		result = append(result, coveredFile{name: name, bitmap: coveredByName[name].ToArray()})
 	}

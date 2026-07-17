@@ -7,6 +7,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -274,7 +275,7 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 // OnRequestTrailers handles incoming request trailers
 func (mp *Processor) OnRequestTrailers(reqState *RequestState) error {
 	if reqState == nil {
-		return fmt.Errorf("received a request trailer without a valid request state")
+		return errors.New("received a request trailer without a valid request state")
 	}
 	mp.instr.Logger().Debug("message_processor: received request trailers, ignoring")
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeRequestTrailers})
@@ -283,7 +284,7 @@ func (mp *Processor) OnRequestTrailers(reqState *RequestState) error {
 // OnResponseTrailers handles incoming response trailers
 func (mp *Processor) OnResponseTrailers(reqState *RequestState) error {
 	if reqState == nil {
-		return fmt.Errorf("received a response trailer without a valid request state")
+		return errors.New("received a response trailer without a valid request state")
 	}
 	mp.instr.Logger().Debug("message_processor: received response trailers, ignoring")
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseTrailers})

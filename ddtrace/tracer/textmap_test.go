@@ -189,7 +189,7 @@ func TestTextMapExtractTracestatePropagation(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		t.Run(fmt.Sprintf("TestTextMapExtractTracestatePropagation-%s", tc.name), func(t *testing.T) {
+		t.Run("TestTextMapExtractTracestatePropagation-"+tc.name, func(t *testing.T) {
 			t.Setenv(envPropagationStyle, tc.propagationStyle)
 			if tc.onlyExtractFirst {
 				t.Setenv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", "true")
@@ -437,8 +437,8 @@ func Test257CharacterDDTracestateLengh(t *testing.T) {
 	longKey := strings.Repeat("a", 234) // 234 is correct num for 257
 	shortKey := "a"
 
-	ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.%s", shortKey)] = "0"
-	ctx.trace.propagatingTags[fmt.Sprintf("_dd.p.%s", longKey)] = "0"
+	ctx.trace.propagatingTags["_dd.p."+shortKey] = "0"
+	ctx.trace.propagatingTags["_dd.p."+longKey] = "0"
 
 	headers := TextMapCarrier(map[string]string{})
 	err = tracer.Inject(ctx, headers)
@@ -603,7 +603,7 @@ func TestTextMapPropagator(t *testing.T) {
 			assert.Equal(t, strconv.Itoa(int(childSpanID)), dst["x-datadog-trace-id"])
 			assert.Equal(t, "1", dst["x-datadog-sampling-priority"])
 			if tc.xDatadogTagsHeader != "" {
-				tc.xDatadogTagsHeader += fmt.Sprintf(",_dd.p.tid=%s", child.Context().TraceID()[:16])
+				tc.xDatadogTagsHeader += ",_dd.p.tid=" + child.Context().TraceID()[:16]
 			}
 			assertTraceTags(t, tc.xDatadogTagsHeader, dst["x-datadog-tags"])
 			if strings.Contains(tc.injectStyle, "tracecontext") {
@@ -2678,7 +2678,7 @@ func BenchmarkInjectDatadog(b *testing.B) {
 	root := tracer.StartSpan("test")
 	defer root.Finish()
 	for i := range 20 {
-		setPropagatingTag(root.Context(), fmt.Sprintf("%d", i), fmt.Sprintf("%d", i))
+		setPropagatingTag(root.Context(), strconv.Itoa(i), strconv.Itoa(i))
 	}
 	dst := map[string]string{}
 	b.ResetTimer()
