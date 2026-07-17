@@ -44,11 +44,7 @@ headersLoop:
 				// Scan comma-separated IPs without allocating a []string via Split.
 				for headerValue != "" {
 					var ip string
-					if i := strings.IndexByte(headerValue, ','); i >= 0 {
-						ip, headerValue = headerValue[:i], headerValue[i+1:]
-					} else {
-						ip, headerValue = headerValue, ""
-					}
+					ip, headerValue, _ = strings.Cut(headerValue, ",")
 					ips = append(ips, ip)
 				}
 			}
