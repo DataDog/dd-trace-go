@@ -118,16 +118,7 @@ jobs:
           - macos
           - windows
         go-version: ${{ fromJSON(needs.go-versions-matrix.outputs.json) }}
-        mode: [DRIVER]
-        include:
-          # Alternate build modes (only on ubuntu with oldstable, so we save up CI time)
-          - runs-on: ubuntu
-            go-version: oldstable
-            mode: TOOLEXEC
-          - runs-on: ubuntu
-            go-version: oldstable
-            mode: GOFLAGS
-    name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }} | ${{ matrix.mode }})
+    name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }}
     runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout Code
@@ -173,7 +164,7 @@ jobs:
             bin="${bin}.exe"
           fi
           mkdir -p "$(dirname "${bin}")"
-          go build -cover -covermode=atomic -coverpkg="github.com/open-telemetry/opentelemetry-go-compile-instrumentation/..." "-o=${bin}" ./tool/cmd/otelc
+          go build -cover -covermode=atomic -coverpkg="go.opentelemetry.io/otelc/..." "-o=${bin}" ./tool/cmd/otelc
           echo "GOCOVERDIR=$(mktemp -d)" >> "${GITHUB_ENV}"
         working-directory: ${{ github.workspace }}/otelc
 
@@ -181,7 +172,7 @@ jobs:
         shell: bash
         run: |-
           set -euo pipefail
-          MODULE="github.com/open-telemetry/opentelemetry-go-compile-instrumentation/pkg"
+          MODULE="go.opentelemetry.io/otelc/pkg"
           OTELC_PKG_DIR="${{ github.workspace }}/otelc/pkg"
           while IFS= read -r gomod; do
             dir=$(dirname "$gomod")
@@ -252,12 +243,8 @@ jobs:
           EOF
 
           gotestsum --junitfile "${XML_PATH}" --raw-command -- bash "${RUN_SCRIPT}"
-          bash "${RUN_SCRIPT}"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
         env:
-          MODE: ${{ matrix.mode }}
-          # The "buildtag" tag is used in //dd:span integration tests
-          GOFLAGS: -timeout=30m ${{ matrix.runs-on == 'ubuntu' && '-p=4' || '' }} -tags=githubci${{ matrix.mode == 'DRIVER' && ',buildtag' || ''}}
           # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
           XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
 
@@ -289,7 +276,7 @@ jobs:
         if: inputs.collect-coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
+          name: coverage-integration+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
           path: ${{ github.workspace }}/otelc/coverage/integration.out
 
       - name: Checkout
