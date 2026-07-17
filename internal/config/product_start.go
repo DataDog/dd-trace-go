@@ -42,6 +42,7 @@ func RecordProductStart(product Product) {
 	startMu.Lock()
 	defer startMu.Unlock()
 	if lastProduct != "" && hash != lastEnvHash {
+		// TODO: add config.repeat_start_env_diff to dd-go's golang_metrics.json, then regenerate knownmetrics.
 		telemetry.Count(telemetry.NamespaceGeneral, "config.repeat_start_env_diff", []string{
 			"trigger_product:" + string(product),
 			"previous_product:" + string(lastProduct),
