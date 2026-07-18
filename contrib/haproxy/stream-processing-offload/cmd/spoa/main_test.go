@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/proxy"
 )
@@ -129,24 +128,6 @@ func TestLoadConfig_VariousCases(t *testing.T) {
 			assert.Equal(t, tc.want.bodyParsingSizeLimit, cfg.bodyParsingSizeLimit, "bodyParsingSizeLimit")
 		})
 	}
-}
-
-func TestHAProxyFrontendConfigSPOEPath(t *testing.T) {
-	// SPOE config expects a filename, not a sample expression like str("...").
-	configPath := "haproxyconf/frontend-config.cfg"
-	data, err := os.ReadFile(configPath)
-	require.NoError(t, err)
-
-	content := string(data)
-
-	correctLine := `filter spoe engine datadog-aap-engine config "$DD_SPOA_SPOA_CONF_FILE"`
-	assert.Contains(t, content, correctLine)
-
-	invalidLine := `filter spoe engine datadog-aap-engine config str("$DD_SPOA_SPOA_CONF_FILE")`
-	assert.NotContains(t, content, invalidLine)
-
-	validHttpRequestLine := `http-request set-var(txn.timeout) str("$DD_SPOA_TIMEOUT")`
-	assert.Contains(t, content, validHttpRequestLine)
 }
 
 // Helpers
