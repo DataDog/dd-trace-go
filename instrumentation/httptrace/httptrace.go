@@ -237,7 +237,7 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 		scheme = "https"
 	}
 	if r.Host != "" {
-		url = strings.Join([]string{scheme, "://", r.Host, path}, "")
+		url = scheme + "://" + r.Host + path
 	} else {
 		url = path
 	}
@@ -255,11 +255,11 @@ func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {
 			query = cfg.queryStringRegexp.ReplaceAllLiteralString(query, "<redacted>")
 		}
 		if query != "" {
-			url = strings.Join([]string{url, query}, "?")
+			url = url + "?" + query
 		}
 	}
 	if frag := r.URL.EscapedFragment(); frag != "" {
-		url = strings.Join([]string{url, frag}, "#")
+		url = url + "#" + frag
 	}
 	return url
 }
