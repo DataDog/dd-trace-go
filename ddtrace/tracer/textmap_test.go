@@ -2767,7 +2767,7 @@ func BenchmarkExtractW3CUppercase(b *testing.B) {
 // used to unconditionally heap-allocate a *SpanContext here even though the
 // result is immediately discarded.
 func BenchmarkExtractDatadogNoHeaders(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "datadog")
+	b.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
 	carrier := TextMapCarrier(map[string]string{})
 	b.ResetTimer()
@@ -2779,7 +2779,7 @@ func BenchmarkExtractDatadogNoHeaders(b *testing.B) {
 // BenchmarkExtractW3CNoHeaders is the W3C tracecontext analogue of
 // BenchmarkExtractDatadogNoHeaders above.
 func BenchmarkExtractW3CNoHeaders(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	b.Setenv(envPropagationStyleExtract, "tracecontext")
 	propagator := NewPropagator(nil)
 	carrier := TextMapCarrier(map[string]string{})
 	b.ResetTimer()
@@ -2794,7 +2794,7 @@ func BenchmarkExtractW3CNoHeaders(b *testing.B) {
 // non-error *SpanContext even when no "baggage" header is present (an empty
 // baggage-only context), so a SpanContext must be allocated regardless.
 func BenchmarkExtractBaggageNoHeaders(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "baggage")
+	b.Setenv(envPropagationStyleExtract, "baggage")
 	propagator := NewPropagator(nil)
 	carrier := TextMapCarrier(map[string]string{})
 	b.ResetTimer()
