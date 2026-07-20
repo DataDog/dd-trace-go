@@ -35,12 +35,10 @@ const (
 
 // NewClientForCoverageReportUpload creates a new client for sending code coverage reports.
 func NewClientForCoverageReportUpload() Client {
-	clientInterface := NewClientWithServiceNameAndSubdomain("", coverageReportSubDomain)
-	client, ok := clientInterface.(*client)
-	if !ok {
-		return clientInterface
+	client := NewClientWithServiceNameAndSubdomain("", coverageReportSubDomain)
+	if coverageClient, ok := client.(coverageClient); ok {
+		coverageClient.SetCoverageFlags(parseCoverageReportFlags(env.Get(constants.CodeCoverageFlagsEnvironmentVariable)))
 	}
-	client.coverageReportFlags = parseCoverageReportFlags(env.Get(constants.CodeCoverageFlagsEnvironmentVariable))
 	return client
 }
 
