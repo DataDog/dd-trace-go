@@ -305,6 +305,10 @@ Once a new environment variable is added to the codebase, Datadog maintainers wi
 
 Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-validation.yml) to track when they were introduced.
 
+#### Code coverage report flags
+
+`DD_CODE_COVERAGE_FLAGS` attaches a comma-separated list of flags to uploaded code coverage reports. Whitespace around each flag is trimmed, empty entries are discarded, and order and duplicate flags are preserved. A maximum of 32 normalized flags is accepted; if the value contains more, the report is uploaded without flags and a warning is logged.
+
 #### Adding new environment variables using configinverter
 
 The `configinverter` tool provides a command to add new environment variable keys to the `supported_configurations.json` file and regenerate the corresponding Go code.
