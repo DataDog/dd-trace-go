@@ -228,10 +228,6 @@ The script provides:
 - Automatic Docker service management for integration tests
 - Support for Apple Silicon (M1/M2) Macs
 
-### Agent-advertised trace filters
-
-When client-side stats are enabled, the tracer applies trace filters advertised by the Agent `/info` endpoint. Filters are evaluated against the normalized local root span before stats aggregation. Filtered traces are excluded from both client-side stats and trace transport.
-
 ## Style Guidelines
 
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.

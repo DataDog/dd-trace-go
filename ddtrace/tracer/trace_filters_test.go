@@ -124,6 +124,30 @@ func TestTraceFiltersReject(t *testing.T) {
 			reject:  true,
 		},
 		{
+			name:    "peer.service is normalized before matching",
+			filters: newTraceFilters(nil, []string{ext.PeerService + ":my_peer"}, nil, nil, nil),
+			tags:    map[string]string{ext.PeerService: "My Peer"},
+			reject:  true,
+		},
+		{
+			name:    "require peer.service matches after normalization",
+			filters: newTraceFilters([]string{ext.PeerService + ":my_peer"}, nil, nil, nil, nil),
+			tags:    map[string]string{ext.PeerService: "My Peer"},
+			reject:  false,
+		},
+		{
+			name:    "base service is normalized before matching",
+			filters: newTraceFilters(nil, []string{keyBaseService + ":my_svc"}, nil, nil, nil),
+			tags:    map[string]string{keyBaseService: "My Svc"},
+			reject:  true,
+		},
+		{
+			name:    "require base service matches after normalization",
+			filters: newTraceFilters([]string{keyBaseService + ":my_svc"}, nil, nil, nil, nil),
+			tags:    map[string]string{keyBaseService: "My Svc"},
+			reject:  false,
+		},
+		{
 			name:    "invalid status code is removed",
 			filters: newTraceFilters([]string{ext.HTTPCode}, nil, nil, nil, nil),
 			tags:    map[string]string{ext.HTTPCode: "999"},

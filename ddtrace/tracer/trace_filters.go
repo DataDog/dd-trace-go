@@ -107,6 +107,8 @@ func (f *traceFilters) hasFilters() bool {
 		len(f.rejectKV) > 0 || len(f.requireKV) > 0 || len(f.rejectRegex) > 0 || len(f.requireRegex) > 0)
 }
 
+// reject reports whether the root span matches the advertised filters and the
+// trace should be dropped.
 // +checklocks:root.mu
 func (f *traceFilters) reject(root *Span) bool {
 	resource := root.resource
@@ -120,8 +122,16 @@ func (f *traceFilters) reject(root *Span) bool {
 	}
 
 	tags := maps.Collect(root.meta.All())
+	// The trace-agent normalizes env, peer.service and _dd.base_service before
+	// filtering; mirror that so matching stays consistent with the agent.
 	if env, ok := tags[ext.Environment]; ok {
 		tags[ext.Environment] = normalize.NormalizeTagValue(env)
+	}
+	if ps, ok := tags[ext.PeerService]; ok {
+		tags[ext.PeerService], _ = normalize.NormalizePeerService(ps)
+	}
+	if bs, ok := tags[keyBaseService]; ok {
+		tags[keyBaseService], _ = normalize.NormalizePeerService(bs)
 	}
 	if status, ok := tags[ext.HTTPCode]; ok && !validStatusCode(status) {
 		delete(tags, ext.HTTPCode)
