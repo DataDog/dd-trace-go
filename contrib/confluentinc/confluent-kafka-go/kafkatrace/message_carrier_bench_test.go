@@ -90,7 +90,8 @@ func benchExtract(b *testing.B, r datastreams.TextMapReader) {
 func BenchmarkExtract(b *testing.B) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	raw := []benchHeader{{key: "dd-pathway-ctx-base64", val: []byte(pathwayHeaderValue())}}
+	raw := make([]benchHeader, 0, 11)
+	raw = append(raw, benchHeader{key: "dd-pathway-ctx-base64", val: []byte(pathwayHeaderValue())})
 	for i := range 10 {
 		raw = append(raw, benchHeader{
 			key: fmt.Sprintf("x-header-%d", i),

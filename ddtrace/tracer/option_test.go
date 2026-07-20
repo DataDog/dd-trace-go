@@ -680,8 +680,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 
 		t.Run("option", func(t *testing.T) {
-			o := make([]StartOption, len(opts))
-			copy(o, opts)
+			o := make([]StartOption, 0, len(opts)+1)
+			o = append(o, opts...)
 			o = append(o, WithDogstatsdAddr("10.1.0.12:4002"))
 			tracer, err := newTracer(o...)
 			assert.NoError(t, err)
@@ -692,8 +692,8 @@ func TestTracerOptionsDefaults(t *testing.T) {
 		})
 
 		t.Run("option: agent not available", func(t *testing.T) {
-			o := make([]StartOption, len(opts))
-			copy(o, opts)
+			o := make([]StartOption, 0, len(opts)+1)
+			o = append(o, opts...)
 			fail = true
 			o = append(o, WithDogstatsdAddr("10.1.0.12:4002"))
 			tracer, err := newTracer(o...)

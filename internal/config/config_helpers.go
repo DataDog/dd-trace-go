@@ -7,11 +7,14 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
@@ -74,10 +77,14 @@ const (
 
 	// OTLP standard traces path and default collector port.
 	otlpTracesPath  = "/v1/traces"
+	otlpMetricsPath = "/v1/metrics"
 	otlpDefaultPort = "4318"
 
 	// OTLPContentTypeHeader is the Content-Type header value required for HTTP protobuf payloads.
 	OTLPContentTypeHeader = "application/x-protobuf"
+
+	// OTLPMetricsFlushInterval is the default cadence for flushing and exporting span metrics.
+	OTLPMetricsFlushInterval = 10 * time.Second
 )
 
 func validateSampleRate(rate float64) bool {
@@ -302,14 +309,24 @@ func formatDogstatsdAddr(u *url.URL) string {
 // resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set, else agentURL host + default OTLP port 4318 + /v1/traces.
 // When the user-provided endpoint is set, it is validated: it must be a parseable URL with an http or https scheme.
 // If validation fails, the default endpoint is used instead.
+// parseAndValidateOTLPURL parses rawURL and validates that it uses http or https.
+// Logs a warning and returns (nil, false) on failure.
+func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		log.Warn("Failed to parse %s %q: %s. Falling back to default.", envVar, rawURL, err.Error())
+		return nil, false
+	}
+	if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
+		log.Warn("Unsupported scheme %q in %s %q. Must be %s or %s. Falling back to default.", u.Scheme, envVar, rawURL, URLSchemeHTTP, URLSchemeHTTPS)
+		return nil, false
+	}
+	return u, true
+}
+
 func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
 	if otlpTracesEndpoint != "" {
-		u, err := url.Parse(otlpTracesEndpoint)
-		if err != nil {
-			log.Warn("Failed to parse OTEL_EXPORTER_OTLP_TRACES_ENDPOINT %q: %s. Falling back to default.", otlpTracesEndpoint, err.Error())
-		} else if u.Scheme != URLSchemeHTTP && u.Scheme != URLSchemeHTTPS {
-			log.Warn("Unsupported scheme %q in OTEL_EXPORTER_OTLP_TRACES_ENDPOINT %q. Must be %s or %s. Falling back to default.", u.Scheme, otlpTracesEndpoint, URLSchemeHTTP, URLSchemeHTTPS)
-		} else {
+		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
 			return otlpTracesEndpoint
 		}
 	}
@@ -388,4 +405,60 @@ func parseGlobalTags(v string) map[string]any {
 // reportGlobalTagTelemetry reports the per-key "global_tag_<key>" telemetry.
 func reportGlobalTagTelemetry(key string, value any, origin telemetry.Origin) {
 	configtelemetry.Report("global_tag_"+key, value, origin)
+}
+
+// resolveOTLPEndpoint returns the OTEL_EXPORTER_OTLP_ENDPOINT base URL, defaulting to http://<agent-host>:4318.
+func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
+	if endpoint != "" {
+		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint); ok {
+			return endpoint
+		}
+	}
+	host := internal.DefaultAgentHostname
+	if rawAgentURL != nil {
+		if h := rawAgentURL.Hostname(); h != "" {
+			host = h
+		}
+	}
+	return "http://" + net.JoinHostPort(host, otlpDefaultPort)
+}
+
+// resolveOTLPMetricsURL resolves the OTLP metrics endpoint; metricsEndpoint takes precedence over genericEndpoint.
+func resolveOTLPMetricsURL(metricsEndpoint, genericEndpoint string) string {
+	if metricsEndpoint != "" {
+		if u, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", metricsEndpoint); ok {
+			if u.Path == "" || u.Path == "/" {
+				u.Path = otlpMetricsPath
+			}
+			return u.String()
+		}
+	}
+	u, _ := url.Parse(genericEndpoint) // already validated by resolveOTLPEndpoint
+	u.Path = strings.TrimRight(u.Path, "/") + otlpMetricsPath
+	return u.String()
+}
+
+// buildOTLPMetricsHeaders merges generic and signal-specific OTLP headers; signal headers take precedence.
+func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) map[string]string {
+	if len(genericHeaders) == 0 && len(signalHeaders) == 0 {
+		return nil
+	}
+	merged := make(map[string]string, len(genericHeaders)+len(signalHeaders))
+	maps.Copy(merged, genericHeaders)
+	maps.Copy(merged, signalHeaders)
+	return merged
+}
+
+// resolveOTLPMetricsFlushInterval parses _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (milliseconds).
+// The variable is internal and intended for tests only; in production it returns the default 10 s.
+func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
+	if raw == "" {
+		return OTLPMetricsFlushInterval
+	}
+	ms, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || ms <= 0 {
+		log.Warn("Invalid _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval)
+		return OTLPMetricsFlushInterval
+	}
+	return time.Duration(ms) * time.Millisecond
 }

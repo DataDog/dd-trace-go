@@ -8,7 +8,7 @@ package tracer
 import (
 	"bufio"
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -56,10 +56,10 @@ func getTestSpan() *Span {
 // getTestTrace returns a list of traces that is composed by “traceN“ number
 // of traces, each one composed by “size“ number of spans.
 func getTestTrace(traceN, size int) [][]*Span {
-	var traces [][]*Span
+	traces := make([][]*Span, 0, traceN)
 
 	for range traceN {
-		trace := []*Span{}
+		trace := make([]*Span, 0, size)
 		for range size {
 			trace = append(trace, getTestSpan())
 		}
@@ -110,8 +110,8 @@ func TestResolveAgentAddr(t *testing.T) {
 		out              *url.URL
 	}{
 		{nil, "", "", &url.URL{Scheme: "http", Host: defaultAddress}},
-		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: fmt.Sprintf("ip.local:%s", defaultPort)}},
-		{nil, "", "1234", &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:1234", defaultHostname)}},
+		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: "ip.local:" + defaultPort}},
+		{nil, "", "1234", &url.URL{Scheme: "http", Host: defaultHostname + ":1234"}},
 		{nil, "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.local:1234"}},
 		{WithAgentAddr("host:1243"), "", "", &url.URL{Scheme: "http", Host: "host:1243"}},
 		{WithAgentAddr("ip.other:9876"), "ip.local", "", &url.URL{Scheme: "http", Host: "ip.other:9876"}},
@@ -161,7 +161,7 @@ func TestTransportResponse(t *testing.T) {
 		"bad": {
 			status: http.StatusBadRequest,
 			body:   strings.Repeat("X", 1002),
-			err:    fmt.Sprintf("%s (Status: Bad Request)", strings.Repeat("X", 1000)),
+			err:    strings.Repeat("X", 1000) + " (Status: Bad Request)",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -287,7 +287,7 @@ func TestCustomTransport(t *testing.T) {
 type ErrTransport struct{}
 
 func (t *ErrTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
-	return nil, fmt.Errorf("error in RoundTripper")
+	return nil, errors.New("error in RoundTripper")
 }
 
 type ErrResponseTransport struct{}

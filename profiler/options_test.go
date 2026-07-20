@@ -89,6 +89,21 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, expectedURL, cfg.agentURL)
 	})
 
+	t.Run("WithUDS", func(t *testing.T) {
+		var cfg config
+		WithUDS("/var/run/datadog/agent.sock")(&cfg)
+		// Slashes are encoded as underscores; path is appended after the host.
+		assert.Equal(t, "http://UDS__var_run_datadog_agent.sock/profiling/v1/input", cfg.agentURL)
+		assert.NotNil(t, cfg.httpClient)
+	})
+
+	t.Run("WithUDS/colons", func(t *testing.T) {
+		var cfg config
+		WithUDS("localhost:8126")(&cfg)
+		assert.Equal(t, "http://UDS_localhost_8126/profiling/v1/input", cfg.agentURL)
+		assert.NotNil(t, cfg.httpClient)
+	})
+
 	t.Run("WithUploadTimeout", func(t *testing.T) {
 		var cfg config
 		WithUploadTimeout(5 * time.Second)(&cfg)

@@ -2014,6 +2014,13 @@
         "type": "decimal",
         "default": "1.0"
       }
+    ],
+    "OTEL_TRACES_SPAN_METRICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": null
+      }
     ]
   }
 }

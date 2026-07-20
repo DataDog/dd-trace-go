@@ -85,19 +85,34 @@ jobs:
               go build $PACKAGES
             }
             log="$(mktemp)"
-            if ! compile 2>&1 | tee "$log"; then
-              # The restored GOCACHE/GOMODCACHE (actions/setup-go cache: true) can get
-              # transiently corrupted in transit to a given runner, surfacing as compiler
-              # ICEs or archive/zip checksum errors unrelated to any real code change.
-              # Clear both caches and retry once before failing the job for real.
-              if grep -qE 'internal compiler error|zip: checksum error|not the start of an archive file' "$log"; then
-                echo "::warning::Detected a Go build-cache corruption signature; clearing GOCACHE/GOMODCACHE and retrying once"
-                go clean -cache -modcache
-                compile
-              else
-                exit 1
-              fi
-            fi
+            # go1.26.5 (currently `stable`) intermittently corrupts its own heap mid-build:
+            # `fatal error: found pointer to free object` in the GC sweeper, faults, SIGSEGVs,
+            # and frontend ICEs (golang/go#77168). A crash can also leave partially written
+            # cache/module archives that later surface as zip/archive checksum errors. These
+            # are toolchain flakes, not real code breaks, so retry a few times and let a fresh
+            # compiler process dodge the probabilistic crash. A failure whose log matches none
+            # of the known signatures is a genuine break and fails immediately, without retry.
+            corruption_re='internal compiler error|zip: checksum error|not the start of an archive file|found pointer to free object|fatal error: fault|unexpected signal during runtime execution|signal SIGSEGV'
+            retry_on_corruption() {
+              local attempt=1 max=3
+              # The loop condition is a pipeline: exempt from `set -e` and, with pipefail,
+              # it reflects the wrapped command's real status (same idiom as `if ! compile | tee`).
+              until "$@" 2>&1 | tee "$log"; do
+                if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
+                  return 1
+                fi
+                echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
+                # The build cache is always rebuildable offline, so drop it every retry to
+                # discard partial artifacts a crashed compiler left behind. Only wipe the
+                # module cache on on-disk archive corruption, since refetching needs network.
+                go clean -cache || true
+                if grep -qE 'zip: checksum error|not the start of an archive file' "$log"; then
+                  go clean -modcache || true
+                fi
+                attempt=$((attempt + 1))
+              done
+            }
+            retry_on_corruption compile
 
       - name: Compute Matrix
         id: matrix
@@ -158,19 +173,28 @@ jobs:
               ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
             }
             log="$(mktemp)"
-            if ! run_smoke 2>&1 | tee "$log"; then
-              # See "Compile dd-trace-go with updated dependencies (sandboxed)" above:
-              # transient GOCACHE/GOMODCACHE corruption in the restored cache can
-              # surface as a compiler ICE or archive/zip checksum error. Retry once
-              # after a full cache clear before failing the job for real.
-              if grep -qE 'internal compiler error|zip: checksum error|not the start of an archive file' "$log"; then
-                echo "::warning::Detected a Go build-cache corruption signature; clearing GOCACHE/GOMODCACHE and retrying once"
-                go clean -cache -modcache
-                run_smoke
-              else
-                exit 1
-              fi
-            fi
+            # See "Compile dd-trace-go with updated dependencies (sandboxed)" above for why
+            # go1.26.5 (currently `stable`) intermittently corrupts its own heap mid-build
+            # (found pointer to free object / faults / SIGSEGVs / ICEs, golang/go#77168) and
+            # why these toolchain flakes are retried while genuine breaks fail immediately.
+            corruption_re='internal compiler error|zip: checksum error|not the start of an archive file|found pointer to free object|fatal error: fault|unexpected signal during runtime execution|signal SIGSEGV'
+            retry_on_corruption() {
+              local attempt=1 max=3
+              until "$@" 2>&1 | tee "$log"; do
+                if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
+                  return 1
+                fi
+                echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
+                # Build cache is rebuildable offline (drop every retry); wipe the module
+                # cache only on on-disk archive corruption, since refetching needs network.
+                go clean -cache || true
+                if grep -qE 'zip: checksum error|not the start of an archive file' "$log"; then
+                  go clean -modcache || true
+                fi
+                attempt=$((attempt + 1))
+              done
+            }
+            retry_on_corruption run_smoke
       - name: Stage sandbox artifacts outside workspace
         # Move the test results and coverage files to RUNNER_TEMP so the
         # next checkout (which wipes the workspace) does not delete them.
