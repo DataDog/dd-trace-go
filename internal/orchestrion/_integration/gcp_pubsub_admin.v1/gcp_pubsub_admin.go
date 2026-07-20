@@ -22,6 +22,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tclog "github.com/testcontainers/testcontainers-go/log"
 	"github.com/testcontainers/testcontainers-go/modules/gcloud"
+	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/api/option/internaloption"
 	"google.golang.org/grpc"
@@ -36,13 +37,17 @@ const (
 	testProject      = "pstest-orchestrion"
 	testTopic        = "admin-topic"
 	testSubscription = "admin-subscription"
+	testSnapshot     = "admin-snapshot"
+	testSchema       = "admin-schema"
+	avroDefinition   = `{"type":"record","name":"Test","fields":[{"name":"f","type":"string"}]}`
 )
 
 type TestCase struct {
-	container *gcloud.GCloudContainer
-	client    *pubsub.Client
-	uri       string
-	projectID string
+	container     *gcloud.GCloudContainer
+	client        *pubsub.Client
+	uri           string
+	projectID     string
+	missingErrMsg string
 }
 
 // emulatorOptions returns the client options needed to reach the plaintext Pub/Sub
@@ -58,8 +63,35 @@ func emulatorOptions(uri string) []option.ClientOption {
 	}
 }
 
+func (tc *TestCase) projectPath() string {
+	return fmt.Sprintf("projects/%s", tc.projectID)
+}
+
 func (tc *TestCase) topicPath(id string) string {
 	return fmt.Sprintf("projects/%s/topics/%s", tc.projectID, id)
+}
+
+func (tc *TestCase) subscriptionPath(id string) string {
+	return fmt.Sprintf("projects/%s/subscriptions/%s", tc.projectID, id)
+}
+
+func (tc *TestCase) snapshotPath(id string) string {
+	return fmt.Sprintf("projects/%s/snapshots/%s", tc.projectID, id)
+}
+
+func (tc *TestCase) schemaPath(id string) string {
+	return fmt.Sprintf("projects/%s/schemas/%s", tc.projectID, id)
+}
+
+func drain[T any](t *testing.T, next func() (T, error)) {
+	t.Helper()
+	for {
+		if _, err := next(); err == iterator.Done {
+			return
+		} else {
+			require.NoError(t, err)
+		}
+	}
 }
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
@@ -96,20 +128,83 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Pattern 2: a directly-constructed GAPIC admin client.
+	// Pattern 2: directly-constructed GAPIC admin clients.
 	pc, err := vkit.NewPublisherClient(ctx, emulatorOptions(tc.uri)...)
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, pc.Close()) }()
 
+	sc, err := vkit.NewSubscriberClient(ctx, emulatorOptions(tc.uri)...)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, sc.Close()) }()
+
+	drain(t, pc.ListTopics(ctx, &pubsubpb.ListTopicsRequest{Project: tc.projectPath()}).Next)
+	drain(t, sc.ListSubscriptions(ctx, &pubsubpb.ListSubscriptionsRequest{Project: tc.projectPath()}).Next)
+
+	_, err = sc.CreateSnapshot(ctx, &pubsubpb.CreateSnapshotRequest{
+		Name:         tc.snapshotPath(testSnapshot),
+		Subscription: tc.subscriptionPath(testSubscription),
+	})
+	require.NoError(t, err)
+
+	drain(t, sc.ListSnapshots(ctx, &pubsubpb.ListSnapshotsRequest{Project: tc.projectPath()}).Next)
+
+	// SchemaClient is only constructed explicitly (not via pubsub.NewClient).
+	schemaClient, err := vkit.NewSchemaClient(ctx, emulatorOptions(tc.uri)...)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, schemaClient.Close()) }()
+
+	_, err = schemaClient.CreateSchema(ctx, &pubsubpb.CreateSchemaRequest{
+		Parent: tc.projectPath(),
+		Schema: &pubsubpb.Schema{
+			Type:       pubsubpb.Schema_AVRO,
+			Definition: avroDefinition,
+		},
+		SchemaId: testSchema,
+	})
+	require.NoError(t, err)
+
+	_, err = schemaClient.GetSchema(ctx, &pubsubpb.GetSchemaRequest{Name: tc.schemaPath(testSchema)})
+	require.NoError(t, err)
+
+	drain(t, schemaClient.ListSchemas(ctx, &pubsubpb.ListSchemasRequest{Parent: tc.projectPath()}).Next)
+
+	err = schemaClient.DeleteSchema(ctx, &pubsubpb.DeleteSchemaRequest{Name: tc.schemaPath(testSchema)})
+	require.NoError(t, err)
+
 	_, err = pc.GetTopic(ctx, &pubsubpb.GetTopicRequest{Topic: tc.topicPath(testTopic)})
+	require.NoError(t, err)
+
+	_, err = pc.GetTopic(ctx, &pubsubpb.GetTopicRequest{Topic: tc.topicPath("missing")})
+	require.Error(t, err)
+	tc.missingErrMsg = err.Error()
+
+	err = sc.DeleteSnapshot(ctx, &pubsubpb.DeleteSnapshotRequest{Snapshot: tc.snapshotPath(testSnapshot)})
+	require.NoError(t, err)
+
+	err = sc.DeleteSubscription(ctx, &pubsubpb.DeleteSubscriptionRequest{Subscription: tc.subscriptionPath(testSubscription)})
+	require.NoError(t, err)
+
+	err = pc.DeleteTopic(ctx, &pubsubpb.DeleteTopicRequest{Topic: tc.topicPath(testTopic)})
 	require.NoError(t, err)
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		tc.adminTrace("CreateTopic", tc.topicPath(testTopic)),
-		tc.adminTrace("CreateSubscription", fmt.Sprintf("projects/%s/subscriptions/%s", tc.projectID, testSubscription)),
+		tc.adminTrace("CreateSubscription", tc.subscriptionPath(testSubscription)),
+		tc.adminTrace("ListTopics", tc.projectPath()),
+		tc.adminTrace("ListSubscriptions", tc.projectPath()),
+		tc.adminTrace("CreateSnapshot", tc.snapshotPath(testSnapshot)),
+		tc.adminTrace("ListSnapshots", tc.projectPath()),
+		tc.adminTrace("CreateSchema", tc.projectPath()),
+		tc.adminTrace("GetSchema", tc.schemaPath(testSchema)),
+		tc.adminTrace("ListSchemas", tc.projectPath()),
+		tc.adminTrace("DeleteSchema", tc.schemaPath(testSchema)),
 		tc.adminTrace("GetTopic", tc.topicPath(testTopic)),
+		tc.adminErrorTrace("GetTopic", tc.topicPath("missing"), tc.missingErrMsg),
+		tc.adminTrace("DeleteSnapshot", tc.snapshotPath(testSnapshot)),
+		tc.adminTrace("DeleteSubscription", tc.subscriptionPath(testSubscription)),
+		tc.adminTrace("DeleteTopic", tc.topicPath(testTopic)),
 	}
 }
 
@@ -129,4 +224,10 @@ func (tc *TestCase) adminTrace(method, resourcePath string) *trace.Trace {
 			"gcloud.project_id": testProject,
 		},
 	}
+}
+
+func (tc *TestCase) adminErrorTrace(method, resourcePath, errMsg string) *trace.Trace {
+	tr := tc.adminTrace(method, resourcePath)
+	tr.Meta["error.message"] = errMsg
+	return tr
 }

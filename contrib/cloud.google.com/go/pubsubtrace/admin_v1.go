@@ -37,77 +37,77 @@ func defaultTracerV1() *Tracer {
 	return v1Tracer
 }
 
-// resolveAdminResourceV1 maps a v1 admin request to its resource path. Non-admin
-// requests (Publish, Pull, Acknowledge, ModifyAckDeadline, IAM, ...) return "".
-func resolveAdminResourceV1(req any) string {
+// resolveAdminResourceV1 maps a v1 admin request to its resource path.
+// ok is false for non-admin requests (Publish, Pull, Acknowledge, ModifyAckDeadline, IAM, ...).
+func resolveAdminResourceV1(req any) (resourcePath string, ok bool) {
 	switch r := req.(type) {
 	// PublisherClient (topics)
 	case *pubsubpb.Topic:
-		return r.GetName()
+		return r.GetName(), true
 	case *pubsubpb.UpdateTopicRequest:
-		return r.GetTopic().GetName()
+		return r.GetTopic().GetName(), true
 	case *pubsubpb.GetTopicRequest:
-		return r.GetTopic()
+		return r.GetTopic(), true
 	case *pubsubpb.ListTopicsRequest:
-		return r.GetProject()
+		return r.GetProject(), true
 	case *pubsubpb.ListTopicSubscriptionsRequest:
-		return r.GetTopic()
+		return r.GetTopic(), true
 	case *pubsubpb.ListTopicSnapshotsRequest:
-		return r.GetTopic()
+		return r.GetTopic(), true
 	case *pubsubpb.DeleteTopicRequest:
-		return r.GetTopic()
+		return r.GetTopic(), true
 	case *pubsubpb.DetachSubscriptionRequest:
-		return r.GetSubscription()
+		return r.GetSubscription(), true
 
 	// SubscriberClient (subscriptions + snapshots)
 	case *pubsubpb.Subscription:
-		return r.GetName()
+		return r.GetName(), true
 	case *pubsubpb.GetSubscriptionRequest:
-		return r.GetSubscription()
+		return r.GetSubscription(), true
 	case *pubsubpb.UpdateSubscriptionRequest:
-		return r.GetSubscription().GetName()
+		return r.GetSubscription().GetName(), true
 	case *pubsubpb.ListSubscriptionsRequest:
-		return r.GetProject()
+		return r.GetProject(), true
 	case *pubsubpb.DeleteSubscriptionRequest:
-		return r.GetSubscription()
+		return r.GetSubscription(), true
 	case *pubsubpb.ModifyPushConfigRequest:
-		return r.GetSubscription()
+		return r.GetSubscription(), true
 	case *pubsubpb.GetSnapshotRequest:
-		return r.GetSnapshot()
+		return r.GetSnapshot(), true
 	case *pubsubpb.ListSnapshotsRequest:
-		return r.GetProject()
+		return r.GetProject(), true
 	case *pubsubpb.CreateSnapshotRequest:
-		return r.GetName()
+		return r.GetName(), true
 	case *pubsubpb.UpdateSnapshotRequest:
-		return r.GetSnapshot().GetName()
+		return r.GetSnapshot().GetName(), true
 	case *pubsubpb.DeleteSnapshotRequest:
-		return r.GetSnapshot()
+		return r.GetSnapshot(), true
 	case *pubsubpb.SeekRequest:
-		return r.GetSubscription()
+		return r.GetSubscription(), true
 
 	// SchemaClient
 	case *pubsubpb.CreateSchemaRequest:
-		return r.GetParent()
+		return r.GetParent(), true
 	case *pubsubpb.GetSchemaRequest:
-		return r.GetName()
+		return r.GetName(), true
 	case *pubsubpb.ListSchemasRequest:
-		return r.GetParent()
+		return r.GetParent(), true
 	case *pubsubpb.ListSchemaRevisionsRequest:
-		return r.GetName()
+		return r.GetName(), true
 	case *pubsubpb.CommitSchemaRequest:
-		return r.GetName()
+		return r.GetName(), true
 	case *pubsubpb.RollbackSchemaRequest:
-		return r.GetName()
+		return r.GetName(), true
 	case *pubsubpb.DeleteSchemaRevisionRequest:
-		return r.GetName()
+		return r.GetName(), true
 	case *pubsubpb.DeleteSchemaRequest:
-		return r.GetName()
+		return r.GetName(), true
 	case *pubsubpb.ValidateSchemaRequest:
-		return r.GetParent()
+		return r.GetParent(), true
 	case *pubsubpb.ValidateMessageRequest:
-		return r.GetParent()
+		return r.GetParent(), true
 
 	default:
-		return ""
+		return "", false
 	}
 }
