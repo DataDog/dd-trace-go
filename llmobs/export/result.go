@@ -5,7 +5,7 @@
 
 package export
 
-// ExportResult reports the outcome of an ExportSpans or ExportEvaluations call.
+// ExportResult reports the outcome of a SubmitSpans or SubmitEvaluations call.
 //
 // A call may produce multiple HTTP requests (one per chunk); each is reported in
 // Requests. Rows that fail structural validation are never sent and are reported
@@ -16,6 +16,34 @@ type ExportResult struct {
 	Requests []RequestResult
 	// ValidationErrors holds input rows dropped before sending, by input index.
 	ValidationErrors []ValidationError
+
+	// Sent is the number of events delivered in requests that succeeded.
+	Sent int
+	// Dropped is the number of input rows dropped before sending (structural
+	// validation failures and rows that could not be JSON-encoded); it equals
+	// len(ValidationErrors).
+	Dropped int
+	// Failed is the number of events in requests that failed to send.
+	Failed int
+}
+
+// finalize populates Sent, Dropped and Failed from the accumulated per-request
+// outcomes and validation errors, and returns the number of failed requests
+// (what exportutil.Aggregate summarizes). It resets the counters first so it is
+// safe to call once per return path.
+func (r *ExportResult) finalize() int {
+	r.Sent, r.Failed = 0, 0
+	failedReqs := 0
+	for _, req := range r.Requests {
+		if req.Err != nil {
+			failedReqs++
+			r.Failed += req.Count
+			continue
+		}
+		r.Sent += req.Count
+	}
+	r.Dropped = len(r.ValidationErrors)
+	return failedReqs
 }
 
 // RequestResult reports the outcome of a single HTTP request (one chunk).
@@ -44,21 +72,4 @@ type ValidationError struct {
 	Index int
 	// Reason is a human-readable explanation of why the row was rejected.
 	Reason string
-}
-
-// Failed returns the number of requests that did not succeed.
-func (r *ExportResult) Failed() int {
-	n := 0
-	for _, req := range r.Requests {
-		if req.Err != nil {
-			n++
-		}
-	}
-	return n
-}
-
-// OK reports whether every request succeeded. It does not consider validation
-// errors, which represent caller-owned invalid input rather than a send failure.
-func (r *ExportResult) OK() bool {
-	return r.Failed() == 0
 }

@@ -18,6 +18,13 @@
 // valid; 128-bit hex is not required) and are never routed into APM span IDs,
 // APM trace IDs, or sampling.
 //
+// A [Client] is built with [NewClient], which takes the required ML app name and
+// functional options. Exactly one route must be selected — [WithDatadogIntake]
+// (direct, agentless) or [WithAgentURL] (via the Agent's EVP proxy) — alongside
+// optional defaults ([WithService], [WithEnv], [WithVersion], batch-size and
+// payload-size options). Spans are submitted with [Client.SubmitSpans] and
+// evaluations with [Client.SubmitEvaluations].
+//
 // Multi-destination routing is modeled as one isolated [Client] per destination:
 // construct N clients, each with its own site, API key, service and defaults.
 // The client does not deduplicate, spool, or durably retry — callers retain
@@ -27,8 +34,9 @@
 // # Performance
 //
 // Export is CPU- and memory-bounded by the batch, not the whole input. The input
-// slice is scanned in windows of [Config.SpanBatchSize] / [Config.EvalBatchSize]
-// (defaults 50 and 1000); each row is JSON-encoded once, when its batch is
+// slice is scanned in windows of the span/evaluation batch size
+// ([WithSpanBatchSize] / [WithEvalBatchSize]; defaults 50 and 1000); each row is
+// JSON-encoded once, when its batch is
 // assembled, and a batch's encoded body is released before the next window is
 // built — the client never holds the whole input encoded at once. Peak additional
 // memory is therefore roughly one batch's encoded size (input/output values
@@ -41,6 +49,6 @@
 // client internally. The span size guard splits an oversized batch by bisection
 // and truncates a single span's input/output only as a last resort (a rare path
 // that re-encodes the affected batch). See the package benchmarks
-// (BenchmarkExportSpans, BenchmarkExportEvaluations) for allocations/op and
+// (BenchmarkSubmitSpans, BenchmarkSubmitEvaluations) for allocations/op and
 // bytes/op.
 package export
