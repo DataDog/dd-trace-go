@@ -341,7 +341,7 @@
     "DD_CODE_COVERAGE_FLAGS": [
       {
         "implementation": "A",
-        "type": "array",
+        "type": "string",
         "default": null
       }
     ],
