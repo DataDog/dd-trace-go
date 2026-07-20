@@ -22,11 +22,6 @@
 //	s := tracer.NewRateSampler(0.3)
 //	tracer.Start(tracer.WithSampler(s))
 //
-// When client-side stats are enabled, the trace agent may advertise resource
-// and tag filters through its /info endpoint. The tracer evaluates those
-// filters against the normalized local root span and excludes rejected traces
-// from both client-side stats and trace transport.
-//
 // More precise control of sampling rates can be configured using sampling rules.
 // This can be applied based on span name, service or both, and is used to determine
 // the sampling rate to apply. MaxPerSecond specifies max number of spans per second
