@@ -9,7 +9,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -598,5 +600,139 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("allCapabilities deadlocked with concurrent subscribe")
+	}
+}
+
+// roundTripFunc adapts a function to an http.RoundTripper.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// recordingClientConfig returns an RC client config whose HTTP client records
+// each request (non-blocking) and returns an empty body. PollInterval is 1h, so
+// a request seen within the test window can only be a Subscribe-driven poll.
+// AgentURL is set so updateState builds an absolute request URL (as in prod),
+// which the RoundTripper asserts.
+func recordingClientConfig(t *testing.T, requests chan<- struct{}) ClientConfig {
+	cfg := DefaultClientConfig()
+	cfg.ServiceName = "test"
+	cfg.AgentURL = "http://agent.test" // non-routable; the transport is faked anyway
+	cfg.PollInterval = time.Hour
+	cfg.HTTP = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if !r.URL.IsAbs() {
+				t.Errorf("RC request URL is not absolute: %q", r.URL)
+			}
+			// http.RoundTripper is responsible for closing the request body.
+			if r.Body != nil {
+				r.Body.Close()
+			}
+			select {
+			case requests <- struct{}{}:
+			default:
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+			}, nil
+		}),
+	}
+	return cfg
+}
+
+// TestPollOnSubscribe verifies Subscribe triggers an out-of-cycle poll instead
+// of waiting a full PollInterval.
+func TestPollOnSubscribe(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
+	_, err := Subscribe("TEST_PRODUCT", func(ProductUpdate) map[string]state.ApplyStatus { return nil }, FFEFlagEvaluation)
+	require.NoError(t, err)
+
+	select {
+	case <-requests:
+		// Out-of-cycle poll fired right after Subscribe.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Subscribe did not trigger a poll within 2s (PollInterval is 1h, so the ticker can't be the cause)")
+	}
+}
+
+// TestNoImmediatePollOnRegisterProductOrCapability verifies RegisterProduct and
+// RegisterCapability do NOT poll immediately — they're used before a callback
+// exists (e.g. AppSec), so they wait for the next tick.
+func TestNoImmediatePollOnRegisterProductOrCapability(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+
+	register := map[string]func() error{
+		"RegisterProduct":    func() error { return RegisterProduct("TEST_PRODUCT") },
+		"RegisterCapability": func() error { return RegisterCapability(FFEFlagEvaluation) },
+	}
+	for name, reg := range register {
+		t.Run(name, func(t *testing.T) {
+			Reset()
+			defer Stop()
+
+			requests := make(chan struct{}, 1)
+			require.NoError(t, Start(recordingClientConfig(t, requests)))
+			require.NoError(t, reg())
+
+			select {
+			case <-requests:
+				t.Fatalf("%s should not trigger an immediate poll", name)
+			case <-time.After(200 * time.Millisecond):
+				// Expected: picked up on the next tick, not eagerly.
+			}
+		})
+	}
+}
+
+// TestNoPollWithoutRegistration verifies that Start alone does not fire a poll;
+// out-of-cycle polling only happens after a Subscribe.
+func TestNoPollWithoutRegistration(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
+
+	select {
+	case <-requests:
+		t.Fatal("unexpected poll: Start fired a request with nothing registered")
+	case <-time.After(200 * time.Millisecond):
+		// No poll without a registration.
+	}
+}
+
+// TestPollOnEachSubscribe verifies a second Subscribe polls again after the
+// first drains (pollNow coalesces while queued, then fires for later Subscribes).
+func TestPollOnEachSubscribe(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
+	cb := func(ProductUpdate) map[string]state.ApplyStatus { return nil }
+
+	_, err := Subscribe("product-a", cb, FFEFlagEvaluation)
+	require.NoError(t, err)
+	select {
+	case <-requests:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no poll within 2s after the first Subscribe")
+	}
+
+	// The channel is drained; a later Subscribe must trigger its own poll.
+	_, err = Subscribe("product-b", cb)
+	require.NoError(t, err)
+	select {
+	case <-requests:
+		// Second Subscribe triggered another poll.
+	case <-time.After(2 * time.Second):
+		t.Fatal("no poll within 2s after the second Subscribe")
 	}
 }

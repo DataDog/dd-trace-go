@@ -50,8 +50,9 @@ type (
 	}
 
 	SettingsResponseData struct {
-		CodeCoverage        bool `json:"code_coverage"`
-		EarlyFlakeDetection struct {
+		CodeCoverage                bool `json:"code_coverage"`
+		CoverageReportUploadEnabled bool `json:"coverage_report_upload_enabled"`
+		EarlyFlakeDetection         struct {
 			Enabled         bool `json:"enabled"`
 			SlowTestRetries struct {
 				TenS    int `json:"10s"`
@@ -105,54 +106,55 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 		},
 	}
 
-	request := c.getPostRequestConfig(settingsURLPath, body)
-	if request.Compressed {
-		telemetry.GitRequestsSettings(telemetry.CompressedRequestCompressedType)
-	} else {
-		telemetry.GitRequestsSettings(telemetry.UncompressedRequestCompressedType)
-	}
+	cacheRequest := body
+	cacheRequest.Data.ID = ""
+	return readThroughShortLivedCache(
+		c,
+		readCacheEndpointSettings,
+		cacheRequest,
+		func() (readCacheLiveResult[*SettingsResponseData], error) {
+			request := c.getPostRequestConfig(settingsURLPath, body)
+			request.ExpectJSONResponse = true
+			if request.Compressed {
+				telemetry.GitRequestsSettings(telemetry.CompressedRequestCompressedType)
+			} else {
+				telemetry.GitRequestsSettings(telemetry.UncompressedRequestCompressedType)
+			}
 
-	startTime := time.Now()
-	response, err := c.handler.SendRequest(*request)
-	telemetry.GitRequestsSettingsMs(float64(time.Since(startTime).Milliseconds()))
-	if err != nil {
-		telemetry.GitRequestsSettingsErrors(telemetry.NetworkErrorType)
-		return nil, fmt.Errorf("sending get settings request: %s", err)
-	}
+			startTime := time.Now()
+			response, err := c.handler.SendRequest(*request)
+			telemetry.GitRequestsSettingsMs(float64(time.Since(startTime).Milliseconds()))
+			if err != nil {
+				telemetry.GitRequestsSettingsErrors(telemetry.NetworkErrorType)
+				return readCacheLiveResult[*SettingsResponseData]{}, fmt.Errorf("sending get settings request: %s", err)
+			}
 
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		telemetry.GitRequestsSettingsErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
-	}
+			if response.StatusCode < 200 || response.StatusCode >= 300 {
+				telemetry.GitRequestsSettingsErrors(telemetry.GetErrorTypeFromStatusCode(response.StatusCode))
+			}
 
-	if log.DebugEnabled() {
-		log.Debug("civisibility.settings: %s", string(response.Body))
-	}
+			if log.DebugEnabled() {
+				log.Debug("civisibility.settings: %s", string(response.Body))
+			}
 
-	var responseObject settingsResponse
-	err = response.Unmarshal(&responseObject)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshalling settings response: %s", err)
-	}
-	logSettingsFeatures(&responseObject.Data.Attributes)
-
-	var settingsResponseType telemetry.SettingsResponseType
-	if responseObject.Data.Attributes.CodeCoverage {
-		settingsResponseType = append(settingsResponseType, telemetry.CoverageEnabledSettingsResponseType...)
-	}
-	if responseObject.Data.Attributes.TestsSkipping {
-		settingsResponseType = append(settingsResponseType, telemetry.ItrSkipEnabledSettingsResponseType...)
-	}
-	if responseObject.Data.Attributes.EarlyFlakeDetection.Enabled {
-		settingsResponseType = append(settingsResponseType, telemetry.EfdEnabledSettingsResponseType...)
-	}
-	if responseObject.Data.Attributes.FlakyTestRetriesEnabled {
-		settingsResponseType = append(settingsResponseType, telemetry.FlakyTestRetriesEnabledSettingsResponseType...)
-	}
-	if responseObject.Data.Attributes.TestManagement.Enabled {
-		settingsResponseType = append(settingsResponseType, telemetry.TestManagementEnabledSettingsResponseType...)
-	}
-	telemetry.GitRequestsSettingsResponse(settingsResponseType)
-	return &responseObject.Data.Attributes, nil
+			var responseObject settingsResponse
+			err = response.Unmarshal(&responseObject)
+			if err != nil {
+				return readCacheLiveResult[*SettingsResponseData]{}, fmt.Errorf("unmarshalling settings response: %s", err)
+			}
+			settings := &responseObject.Data.Attributes
+			logSettingsFeatures(settings)
+			recordSettingsResponseTelemetry(settings)
+			return readCacheLiveResult[*SettingsResponseData]{
+				Value:     settings,
+				Cacheable: response.StatusCode >= 200 && response.StatusCode < 300 && !settings.RequireGit,
+			}, nil
+		},
+		func(settings *SettingsResponseData) {
+			logSettingsFeatures(settings)
+			recordSettingsResponseTelemetry(settings)
+		},
+	)
 }
 
 // loadSettingsFromManifestCache reads and validates the Bazel manifest cache file for settings.
@@ -190,8 +192,9 @@ func logSettingsFeatures(settings *SettingsResponseData) {
 	if settings == nil {
 		return
 	}
-	log.Debug("civisibility.settings: enabled features [code_coverage:%t itr:%t tests_skipping:%t known_tests:%t impacted_tests:%t early_flake_detection:%t flaky_test_retries:%t test_management:%t require_git:%t attempt_to_fix_retries:%d]",
+	log.Debug("civisibility.settings: enabled features [code_coverage:%t coverage_report_upload:%t itr:%t tests_skipping:%t known_tests:%t impacted_tests:%t early_flake_detection:%t flaky_test_retries:%t test_management:%t require_git:%t attempt_to_fix_retries:%d]",
 		settings.CodeCoverage,
+		settings.CoverageReportUploadEnabled,
 		settings.ItrEnabled,
 		settings.TestsSkipping,
 		settings.KnownTestsEnabled,
@@ -202,4 +205,28 @@ func logSettingsFeatures(settings *SettingsResponseData) {
 		settings.RequireGit,
 		settings.TestManagement.AttemptToFixRetries,
 	)
+}
+
+// recordSettingsResponseTelemetry emits decoded settings telemetry without describing HTTP transport.
+func recordSettingsResponseTelemetry(settings *SettingsResponseData) {
+	if settings == nil {
+		return
+	}
+	var settingsResponseType telemetry.SettingsResponseType
+	if settings.CodeCoverage {
+		settingsResponseType = append(settingsResponseType, telemetry.CoverageEnabledSettingsResponseType...)
+	}
+	if settings.TestsSkipping {
+		settingsResponseType = append(settingsResponseType, telemetry.ItrSkipEnabledSettingsResponseType...)
+	}
+	if settings.EarlyFlakeDetection.Enabled {
+		settingsResponseType = append(settingsResponseType, telemetry.EfdEnabledSettingsResponseType...)
+	}
+	if settings.FlakyTestRetriesEnabled {
+		settingsResponseType = append(settingsResponseType, telemetry.FlakyTestRetriesEnabledSettingsResponseType...)
+	}
+	if settings.TestManagement.Enabled {
+		settingsResponseType = append(settingsResponseType, telemetry.TestManagementEnabledSettingsResponseType...)
+	}
+	telemetry.GitRequestsSettingsResponse(settingsResponseType)
 }

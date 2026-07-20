@@ -6,19 +6,23 @@
 package testutils
 
 import (
+	"strconv"
 	"sync"
 	"testing"
 	"unsafe" // also enables go:linkname directives below
 
-	"github.com/DataDog/go-libddwaf/v4"
+	"github.com/DataDog/go-libddwaf/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -52,6 +56,26 @@ func SetGlobalDogstatsdAddr(t *testing.T, val string) {
 		globalconfig.SetDogstatsdAddr(prev)
 	})
 	globalconfig.SetDogstatsdAddr(val)
+}
+
+// SetContainerTagsHash sets the container tags hash for the duration of the test.
+func SetContainerTagsHash(t *testing.T, hash string) {
+	t.Helper()
+	processtags.SetContainerTagsHash(hash)
+	t.Cleanup(func() { processtags.SetContainerTagsHash("") })
+}
+
+// DBMBaseHash computes the expected DBM base hash for the given inputs,
+// matching the value injected as ddsh in SQL comments and as _dd.propagated_hash on spans.
+// It mirrors computeBaseHash by returning "" when process tags are unavailable.
+func DBMBaseHash(service, containerTagsHash string) string {
+	pTags := processtags.GlobalTags()
+	if pTags == nil {
+		return ""
+	}
+	env := internalconfig.Get().Env()
+	hash := datastreams.BaseHash(service, env, pTags.Slice(), containerTagsHash)
+	return strconv.FormatInt(int64(hash), 10)
 }
 
 func SetGlobalHeaderTags(t *testing.T, headers ...string) {
@@ -123,9 +147,13 @@ func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 	// It's easier than using offsets when the desired data isn't far away from
 	// the struct's beginning.
 	type cookieCutter struct {
-		_     bool // spanContext.updated
+		_     bool   // spanContext.updated
+		_     bool   // spanContext.isRemote
+		_     bool   // spanContext.baggageOnly
+		_     uint32 // spanContext.errors
+		_     uint32 // spanContext.hasBaggage
 		trace *struct {
-			_               sync.RWMutex      // trace.mu
+			mu              sync.RWMutex      // trace.mu
 			_               []any             // trace.spans
 			_               map[string]string // trace.tags
 			propagatingTags map[string]string // trace level tags that will be propagated across service boundaries
@@ -133,6 +161,11 @@ func SetPropagatingTag(t testing.TB, ctx *tracer.SpanContext, k, v string) {
 	}
 	ptr := uintptr(unsafe.Pointer(ctx))
 	cc := (*cookieCutter)(*(*unsafe.Pointer)(unsafe.Pointer(&ptr)))
+	cc.trace.mu.Lock()
+	defer cc.trace.mu.Unlock()
+	if cc.trace.propagatingTags == nil {
+		cc.trace.propagatingTags = make(map[string]string)
+	}
 	cc.trace.propagatingTags[k] = v
 }
 

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"maps"
 
@@ -69,9 +70,25 @@ func (c TextMapCarrier) ForeachKey(handler func(key, val string) error) error {
 }
 
 const (
-	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
-	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
-	headerPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
+	// envPropagationBehaviorExtract specifies how to handle incoming trace
+	// context. Allowed values:
+	// - "continue" (default): Continue the trace from incoming headers.
+	//   Baggage is propagated.
+	// - "restart": Start a new trace with a new trace ID and sampling
+	//   decision. The incoming context is referenced via a span link.
+	//   Baggage is propagated.
+	// - "ignore": Start a new trace with a new trace ID and sampling
+	//   decision. No span links are created. Baggage is dropped.
+	envPropagationBehaviorExtract = "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT"
+
+	propagationBehaviorExtractContinue = "continue"
+	propagationBehaviorExtractRestart  = "restart"
+	propagationBehaviorExtractIgnore   = "ignore"
+
+	envPropagationExtractFirst = "DD_TRACE_PROPAGATION_EXTRACT_FIRST"
+	envPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
+	envPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
+	envPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
 )
 
 const (
@@ -132,17 +149,28 @@ type PropagatorConfig struct {
 	// BaggageHeader specifies the map key that will be used to store the baggage key-value pairs.
 	// It defaults to DefaultBaggageHeader.
 	BaggageHeader string
+
+	// InjectStyle specifies the propagation style(s) used for injection,
+	// as a comma-separated list (e.g. "datadog,tracecontext").
+	InjectStyle string
+
+	// ExtractStyle specifies the propagation style(s) used for extraction,
+	// as a comma-separated list (e.g. "datadog,tracecontext").
+	ExtractStyle string
+
+	// BehaviorExtract controls what happens when an incoming trace context is
+	// found: "continue" (default), "restart", or "ignore".
+	BehaviorExtract string
+
+	// ExtractFirst, when true, stops extraction after the first successful
+	// extractor rather than trying all of them.
+	// A nil pointer means the value is unset.
+	ExtractFirst *bool
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
 // To use the defaults, nil may be provided in place of the config.
-//
-// The inject and extract propagators are determined using environment variables
-// with the following order of precedence:
-//  1. DD_TRACE_PROPAGATION_STYLE_INJECT
-//  2. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
-//  3. If none of the above, use default values
 func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
@@ -163,16 +191,42 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cfg.BaggageHeader = DefaultBaggageHeader
 	}
 	cp := new(chainedPropagator)
-	cp.onlyExtractFirst = internal.BoolEnv("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
+	// For each propagation setting, the PropagatorConfig field takes precedence
+	// over its corresponding DD_TRACE_PROPAGATION_* environment variable.
+	// When NewPropagator is called directly (not via tracer.Start), these fields
+	// are typically zero and the environment variable is used. When called by the
+	// tracer, they are pre-populated from the tracer's configuration.
+	if cfg.ExtractFirst != nil {
+		cp.onlyExtractFirst = *cfg.ExtractFirst
+	} else {
+		cp.onlyExtractFirst = internal.BoolEnv(envPropagationExtractFirst, false)
+	}
+	if cfg.BehaviorExtract == "" {
+		cfg.BehaviorExtract = env.Get(envPropagationBehaviorExtract)
+	}
+	switch cfg.BehaviorExtract {
+	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
+		// valid
+	default:
+		if cfg.BehaviorExtract != "" {
+			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cfg.BehaviorExtract)
+		}
+		cfg.BehaviorExtract = propagationBehaviorExtractContinue
+	}
+	cp.propagationBehaviorExtract = cfg.BehaviorExtract
 	if len(propagators) > 0 {
 		cp.injectors = propagators
 		cp.extractors = propagators
 		return cp
 	}
-	injectorsPs := env.Get(headerPropagationStyleInject)
-	extractorsPs := env.Get(headerPropagationStyleExtract)
-	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
-	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
+	if cfg.InjectStyle == "" {
+		cfg.InjectStyle = env.Get(envPropagationStyleInject)
+	}
+	if cfg.ExtractStyle == "" {
+		cfg.ExtractStyle = env.Get(envPropagationStyleExtract)
+	}
+	cp.injectors, cp.injectorNames = getPropagators(cfg, cfg.InjectStyle)
+	cp.extractors, cp.extractorsNames = getPropagators(cfg, cfg.ExtractStyle)
 	return cp
 }
 
@@ -180,11 +234,12 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 // When injecting, all injectors are called to propagate the span context.
 // When extracting, it tries each extractor, selecting the first successful one.
 type chainedPropagator struct {
-	injectors        []Propagator
-	extractors       []Propagator
-	injectorNames    string
-	extractorsNames  string
-	onlyExtractFirst bool // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
+	injectors                  []Propagator
+	extractors                 []Propagator
+	injectorNames              string
+	extractorsNames            string
+	onlyExtractFirst           bool   // value of DD_TRACE_PROPAGATION_EXTRACT_FIRST
+	propagationBehaviorExtract string // value of DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT
 }
 
 // getPropagators returns a list of propagators based on ps, which is a comma seperated
@@ -273,65 +328,156 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 // Furthermore, if we have already successfully extracted a trace context and a
 // subsequent trace context has conflicting trace information, such information will
 // be relayed in the returned SpanContext with a SpanLink.
+//
+// When DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=ignore, this method returns nil, nil.
+// Callers should treat a nil context with no error as equivalent to no incoming
+// trace context being present.
 func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
+	if p.propagationBehaviorExtract == propagationBehaviorExtractIgnore {
+		return nil, nil
+	}
+
+	incomingCtx, producer, err := p.extractIncomingSpanContext(carrier)
+	if err != nil {
+		return nil, err
+	}
+
+	// "restart" propagation behavior starts a new trace with a new trace ID
+	// and sampling decision. The incoming context is referenced via a span
+	// link. Baggage is propagated.
+	//
+	// If incomingCtx is nil or baggage-only (no upstream trace context), there
+	// is no trace to link to, so fall through to continue behavior.
+	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && !incomingCtx.baggageOnly { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		ctx := &SpanContext{
+			baggageOnly: true, // signals spanStart to generate new traceID/spanID
+		}
+
+		link := SpanLink{
+			TraceID:     incomingCtx.TraceIDLower(),
+			TraceIDHigh: incomingCtx.TraceIDUpper(),
+			SpanID:      incomingCtx.SpanID(),
+			Attributes: map[string]string{
+				"reason":          "propagation_behavior_extract",
+				"context_headers": getPropagatorName(producer),
+			},
+		}
+		if trace := incomingCtx.trace; trace != nil {
+			if prio := trace.priority.Load(); prio != nil && uint32(*prio) > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
+				link.Flags = 1
+			} else {
+				link.Flags = 0
+			}
+			link.Tracestate = trace.propagatingTag(tracestateHeader)
+		}
+		ctx.spanLinks = []SpanLink{link}
+
+		// When onlyExtractFirst is set, extractIncomingSpanContext returns after the
+		// first successful non-baggage extractor, so incomingCtx carries no baggage.
+		// Extract baggage explicitly so it is propagated regardless.
+		baggage := incomingCtx.baggage // +checklocksignore
+		if p.onlyExtractFirst {
+			baggage = p.extractBaggage(carrier)
+		}
+		if len(baggage) > 0 {
+			ctx.baggage = maps.Clone(baggage) // +checklocksignore
+			atomic.StoreUint32(&ctx.hasBaggage, 1)
+		}
+
+		return ctx, nil
+	}
+
+	// "continue" continues the trace from the incoming context. Baggage is
+	// propagated.
+	return incomingCtx, nil
+}
+
+// extractBaggage runs only the baggage propagator against the carrier and
+// returns the extracted items. Used when onlyExtractFirst has prevented the
+// baggage propagator from running inside extractIncomingSpanContext.
+func (p *chainedPropagator) extractBaggage(carrier any) map[string]string {
+	for _, v := range p.extractors {
+		if _, isBaggage := v.(*propagatorBaggage); !isBaggage {
+			continue
+		}
+		if baggageCtx, err := v.Extract(carrier); err == nil && baggageCtx != nil {
+			return baggageCtx.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		}
+		break // there is only one baggage propagator
+	}
+	return nil
+}
+
+// extractIncomingSpanContext walks the configured extractors and returns the
+// first successfully extracted span context, along with the propagator that
+// produced it. When multiple propagators read the same trace-id only the
+// propagator that created the ctx is returned, not subsequent ones that
+// enriched it.
+func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContext, Propagator, error) {
 	var ctx *SpanContext
+	var producer Propagator // propagator that produced ctx
 	var links []SpanLink
-	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
+	var pendingBaggage map[string]string // used to store baggage items temporarily, allocated lazily
 
 	for _, v := range p.extractors {
-		firstExtract := (ctx == nil) // ctx stores the most recently extracted ctx across iterations; if it's nil, no extractor has run yet
+		// If incomingCtx is nil, no extraction has run yet
+		firstExtraction := (ctx == nil)
 		extractedCtx, err := v.Extract(carrier)
 
 		// If this is the baggage propagator, just stash its items into pendingBaggage
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
 			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				if pendingBaggage == nil {
+					pendingBaggage = make(map[string]string, len(extractedCtx.baggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				}
 				maps.Copy(pendingBaggage, extractedCtx.baggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 			}
 			continue
 		}
 
-		if firstExtract {
+		if firstExtraction {
 			if err != nil {
 				if p.onlyExtractFirst { // Every error is relevant when we are relying on the first extractor
-					return nil, err
+					return nil, nil, err
 				}
 				if err != ErrSpanContextNotFound { // We don't care about ErrSpanContextNotFound because we could find a span context in a subsequent extractor
-					return nil, err
+					return nil, nil, err
 				}
 			}
 			if p.onlyExtractFirst {
-				return extractedCtx, nil
+				return extractedCtx, v, nil
 			}
-			ctx = extractedCtx
-		} else { // A local trace context has already been extracted
-			extractedCtx2 := extractedCtx
-			ctx2 := ctx
-
-			// If we can't cast to spanContext, we can't propgate tracestate or create span links
-			if extractedCtx2.TraceID() == ctx2.TraceID() {
+			if extractedCtx != nil {
+				ctx = extractedCtx
+				producer = v
+			}
+		} else { // A trace context was already extracted by a previous propagator
+			// When trace IDs match, merge W3C tracestate and resolve parent ID conflicts.
+			// When trace IDs differ, create span links to preserve the terminated context.
+			if extractedCtx.TraceID() == ctx.TraceID() {
 				if pW3C, ok := v.(*propagatorW3c); ok {
-					pW3C.propagateTracestate(ctx2, extractedCtx2)
-					// If trace IDs match but span IDs do not, use spanID from `*propagatorW3c` extractedCtx for parenting
-					if extractedCtx2.SpanID() != ctx2.SpanID() {
+					pW3C.propagateTracestate(ctx, extractedCtx)
+					// W3C and Datadog headers may specify different parent span IDs.
+					// Prefer W3C's span ID for parenting, and record the Datadog span ID as reparentID.
+					if extractedCtx.SpanID() != ctx.SpanID() {
 						var ddCtx *SpanContext
-						// Grab the datadog-propagated spancontext again
 						if ddp := getDatadogPropagator(p); ddp != nil {
 							if ddSpanCtx, err := ddp.Extract(carrier); err == nil {
 								ddCtx = ddSpanCtx
 							}
 						}
-						overrideDatadogParentID(ctx2, extractedCtx2, ddCtx)
+						overrideDatadogParentID(ctx, extractedCtx, ddCtx)
 					}
 				}
-			} else if extractedCtx2 != nil { // Trace IDs do not match - create span links
-				link := SpanLink{TraceID: extractedCtx2.TraceIDLower(), SpanID: extractedCtx2.SpanID(), TraceIDHigh: extractedCtx2.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
-				if trace := extractedCtx2.trace; trace != nil {
+			} else if extractedCtx != nil { // Trace IDs do not match - create span links
+				link := SpanLink{TraceID: extractedCtx.TraceIDLower(), SpanID: extractedCtx.SpanID(), TraceIDHigh: extractedCtx.TraceIDUpper(), Attributes: map[string]string{"reason": "terminated_context", "context_headers": getPropagatorName(v)}}
+				if trace := extractedCtx.trace; trace != nil {
 					if p := trace.priority.Load(); p != nil && uint32(*p) > 0 { // +checklocksignore - Initialization time, freshly extracted trace not yet shared.
 						link.Flags = 1
 					} else {
 						link.Flags = 0
 					}
-					link.Tracestate = extractedCtx2.trace.propagatingTag(tracestateHeader)
+					link.Tracestate = extractedCtx.trace.propagatingTag(tracestateHeader)
 				}
 				links = append(links, link)
 			}
@@ -346,10 +492,10 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			}
 			maps.Copy(ctx.baggage, pendingBaggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
-			return ctx, nil
+			return ctx, nil, nil
 		}
 		// 0 successful extractions
-		return nil, ErrSpanContextNotFound
+		return nil, nil, ErrSpanContextNotFound
 	}
 	if len(pendingBaggage) > 0 {
 		if ctx.baggage == nil { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
@@ -363,7 +509,20 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 		ctx.spanLinks = links // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 	}
 	log.Debug("Extracted span context: %s", ctx.safeDebugString())
-	return ctx, nil
+	return ctx, producer, nil
+}
+
+// cutPrefixFold reports whether s starts with prefix, ignoring case, and if so
+// returns s with the prefix removed. Unlike strings.ToLower+CutPrefix, it never
+// allocates a lowercased copy of s.
+func cutPrefixFold(s, prefix string) (string, bool) {
+	if len(s) < len(prefix) {
+		return "", false // required: keeps the s[:len(prefix)] slice below from panicking
+	}
+	if !strings.EqualFold(s[:len(prefix)], prefix) {
+		return "", false
+	}
+	return s[len(prefix):], true
 }
 
 func getPropagatorName(p Propagator) string {
@@ -513,33 +672,32 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case p.cfg.TraceHeader:
+		switch {
+		case strings.EqualFold(k, p.cfg.TraceHeader):
 			var lowerTid uint64
 			lowerTid, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
 			ctx.traceID.SetLower(lowerTid)
-		case p.cfg.ParentHeader:
+		case strings.EqualFold(k, p.cfg.ParentHeader):
 			ctx.spanID, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case p.cfg.PriorityHeader:
+		case strings.EqualFold(k, p.cfg.PriorityHeader):
 			priority, err := strconv.Atoi(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
 			ctx.setSamplingPriority(priority, samplernames.Unknown)
-		case originHeader:
+		case strings.EqualFold(k, originHeader):
 			ctx.origin = v // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-		case traceTagsHeader:
+		case strings.EqualFold(k, traceTagsHeader):
 			unmarshalPropagatingTags(&ctx, v, p.cfg.MaxTagsHeaderLen)
 		default:
-			if after, ok := strings.CutPrefix(key, p.cfg.BaggagePrefix); ok {
-				ctx.setBaggageItem(after, v)
+			if after, ok := cutPrefixFold(k, p.cfg.BaggagePrefix); ok {
+				ctx.setOTBaggageItem(after, v)
 			}
 		}
 		return nil
@@ -560,6 +718,7 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 		return nil, ErrSpanContextNotFound
 	}
+	ctx.traceID.cacheHex()
 	return &ctx, nil
 }
 
@@ -584,9 +743,18 @@ func getDatadogPropagator(cp *chainedPropagator) *propagator {
 	return nil
 }
 
-// overrideDatadogParentID overrides the span ID of a context with the ID extracted from tracecontext headers.
-// If the reparenting ID is not set on the context, the span ID from datadog headers is used.
-// spanContexts are passed by reference to avoid copying lock value in spanContext type
+// overrideDatadogParentID overrides a context's:
+// 1. span ID with the span ID extracted from W3C tracecontext headers; and
+// 2. reparent ID with either:
+//   - the reparent ID from W3C tracecontext headers (if set), or
+//   - the span ID from Datadog headers (as fallback).
+//
+// reparent ID is the last known Datadog parent span ID, used by Datadog's
+// backend to fix broken parent-child relationships when non-Datadog tracers
+// in the path don't report spans to Datadog.
+//
+// SpanContexts are passed by reference to avoid copying lock information in
+// the SpanContext type.
 func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 	if ctx == nil || w3cCtx == nil || ddCtx == nil {
 		return
@@ -693,18 +861,17 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case b3TraceIDHeader:
+		switch {
+		case strings.EqualFold(k, b3TraceIDHeader):
 			if err := extractTraceID128(&ctx, v); err != nil {
 				return nil
 			}
-		case b3SpanIDHeader:
+		case strings.EqualFold(k, b3SpanIDHeader):
 			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case b3SampledHeader:
+		case strings.EqualFold(k, b3SampledHeader):
 			priority, err := strconv.Atoi(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
@@ -779,9 +946,8 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (*SpanCont
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case b3SingleHeader:
+		switch {
+		case strings.EqualFold(k, b3SingleHeader):
 			b3Parts := strings.Split(v, "-")
 			if len(b3Parts) >= 2 {
 				if err = extractTraceID128(&ctx, b3Parts[0]); err != nil {
@@ -894,123 +1060,148 @@ func (*propagatorW3c) injectTextMap(spanCtx *SpanContext, writer TextMapWriter) 
 	return nil
 }
 
-// stringMutator maps characters in a string to new characters. It is a state machine intended
-// to replace regex patterns for simple character replacement, including collapsing runs of a
-// specific range.
+// sanitizeTagKey sanitizes a W3C tracestate tag key.
+// Equivalent to regexp: ,|=|[^\x20-\x7E]+
+//   - 0x00–0x1F, 0x7F: collapse consecutive bytes to '_'
+//   - ',', '=': replace with '_' (no collapse)
+//   - non-ASCII rune (> 0x7E): collapse
+//   - all others (0x20–0x7E minus ',','='): passthrough
+func sanitizeTagKey(s string) string { return sanitizeW3C(s, &keyLUT) }
+
+// sanitizeTagValue sanitizes a W3C tracestate tag value.
+// Equivalent to regexp: ,|;|~|[^\x20-\x7E]+
+//   - 0x00–0x1F, 0x7F: collapse to '_'
+//   - ',', ';', '~': replace with '_' (no collapse)
+//   - '=': replace with '~' (no collapse)
+//   - non-ASCII rune: collapse
+//   - all others: passthrough
+func sanitizeTagValue(s string) string { return sanitizeW3C(s, &valueLUT) }
+
+// sanitizeOrigin sanitizes the W3C tracestate origin field.
+// Equivalent to regexp: ,|~|;|[^\x21-\x7E]+
+//   - 0x00–0x20 (space included), 0x7F: collapse to '_'
+//   - ',', ';', '~': replace with '_' (no collapse)
+//   - '=': replace with '~' (no collapse)
+//   - non-ASCII rune: collapse
+//   - all others (0x21–0x7E minus ',',';','~','='): passthrough
+func sanitizeOrigin(s string) string { return sanitizeW3C(s, &originLUT) }
+
+// keyLUT, valueLUT, originLUT classify ASCII bytes (indices 0–127) for the
+// W3C tracestate sanitizers above.
 //
-// It's designed after the `hash#Hash` interface, and to work with `strings.Map`.
-type stringMutator struct {
-	// n is the current state of the mutator. It is used to track runs of characters that should
-	// be collapsed.
-	n bool
-	// fn is the function that implements the character replacement logic.
-	// It returns the rune to use as replacement and a bool to tell if next consecutive
-	// characters must be dropped if they fall in the currently matched character set.
-	// It's possible to return `-1` to immediately drop the current rune.
-	//
-	// This logic allows for:
-	// - Replace only the current rune: return <new value>, false
-	// - Drop only the current rune: return -1, false
-	// - Replace the current rune and drop the next consecutive runes if they match the same case: return <new value>, true
-	// - Drop all the consecutive runes matching the same case as the current one: return -1, true
-	//
-	// A known limitation is that we can only support a single case of consecutive runes.
-	fn func(rune) (rune, bool)
-}
-
-// Mutate the mapped string using `strings.Map` and the provided function implementing the character
-// replacement logic.
-func (sm *stringMutator) Mutate(fn func(rune) (rune, bool), s string) string {
-	sm.fn = fn
-	rs := strings.Map(sm.mapping, s)
-	sm.reset()
-
-	return rs
-}
-
-func (sm *stringMutator) mapping(r rune) rune {
-	v, dropConsecutiveMatches := sm.fn(r)
-	if v < 0 {
-		// We reset the state machine in any match that is not related to a consecutive run
-		sm.reset()
-		return -1
-	}
-	if dropConsecutiveMatches {
-		if !sm.n {
-			sm.n = true
-			return v
-		}
-		return -1
-	}
-	// We reset the state machine in any match that is not related to a consecutive run
-	sm.reset()
-	return v
-}
-
-// reset resets the state of the mutator.
-func (sm *stringMutator) reset() {
-	sm.n = false
-}
-
+// Encoding: 0x00 = passthrough; 0xFF = collapse (first of a run → '_', rest
+// dropped); any other value = replace with that byte (no collapse).
 var (
-	// keyDisallowedFn is used to sanitize the keys of the datadog propagating tags.
-	// Disallowed characters are comma (reserved as a list-member separator),
-	// equals (reserved for list-member key-value separator),
-	// space and characters outside the ASCII range 0x20 to 0x7E.
-	// Disallowed characters must be replaced with the underscore.
-	// Equivalent to regexp.MustCompile(",|=|[^\\x20-\\x7E]+")
-	keyDisallowedFn = func(r rune) (rune, bool) {
-		switch {
-		case r == ',' || r == '=':
-			return '_', false
-		case r < 0x20 || r > 0x7E:
-			return '_', true
+	// keyLUT: equivalent to ,|=|[^\x20-\x7E]+
+	keyLUT = func() [128]uint8 {
+		var t [128]uint8
+		for i := range 0x20 { // 0x00–0x1F: collapse
+			t[i] = 0xFF
 		}
-		return r, false
-	}
+		t[','] = '_'
+		t['='] = '_'
+		t[0x7F] = 0xFF // 0x7F: collapse
+		return t
+	}()
 
-	// valueDisallowedFn is used to sanitize the values of the datadog propagating tags.
-	// Disallowed characters are comma (reserved as a list-member separator),
-	// semi-colon (reserved for separator between entries in the dd list-member),
-	// tilde (reserved, will represent 0x3D (equals) in the encoded tag value,
-	// and characters outside the ASCII range 0x20 to 0x7E.
-	// Equals character must be encoded with a tilde.
-	// Other disallowed characters must be replaced with the underscore.
-	// Equivalent to regexp.MustCompile(",|;|~|[^\\x20-\\x7E]+")
-	valueDisallowedFn = func(r rune) (rune, bool) {
-		switch {
-		case r == '=':
-			return '~', false
-		case r == ',' || r == '~' || r == ';':
-			return '_', false
-		case r < 0x20 || r > 0x7E:
-			return '_', true
+	// valueLUT: equivalent to ,|;|~|[^\x20-\x7E]+
+	valueLUT = func() [128]uint8 {
+		var t [128]uint8
+		for i := range 0x20 { // 0x00–0x1F: collapse
+			t[i] = 0xFF
 		}
-		return r, false
-	}
+		t[','] = '_'
+		t[';'] = '_'
+		t['~'] = '_'
+		t['='] = '~' // '=' encodes as '~'
+		t[0x7F] = 0xFF
+		return t
+	}()
 
-	// originDisallowedFn is used to sanitize the value of the datadog origin tag.
-	// Disallowed characters are comma (reserved as a list-member separator),
-	// semi-colon (reserved for separator between entries in the dd list-member),
-	// equals (reserved for list-member key-value separator),
-	// and characters outside the ASCII range 0x21 to 0x7E.
-	// Equals character must be encoded with a tilde.
-	// Other disallowed characters must be replaced with the underscore.
-	// Equivalent to regexp.MustCompile(",|~|;|[^\\x21-\\x7E]+")
-	originDisallowedFn = func(r rune) (rune, bool) {
-		switch {
-		case r == '=':
-			return '~', false
-		case r == ',' || r == '~' || r == ';':
-			return '_', false
-		case r < 0x21 || r > 0x7E:
-			return '_', true
+	// originLUT: equivalent to ,|~|;|[^\x21-\x7E]+
+	originLUT = func() [128]uint8 {
+		var t [128]uint8
+		for i := range 0x21 { // 0x00–0x20 (space included): collapse
+			t[i] = 0xFF
 		}
-		return r, false
-	}
+		t[','] = '_'
+		t[';'] = '_'
+		t['~'] = '_'
+		t['='] = '~'
+		t[0x7F] = 0xFF
+		return t
+	}()
 )
 
+// sanitizeW3C applies LUT-driven sanitization to s.
+//
+// State transitions (inRun tracks whether we are in a collapse run):
+//
+//	normal + passthrough byte   → copy byte, stay normal
+//	normal + single-replace byte → write replacement, stay normal
+//	normal + collapse byte/rune  → write '_', enter inRun
+//	inRun  + collapse byte/rune  → skip, stay inRun
+//	inRun  + passthrough byte    → copy byte, exit inRun (normal)
+//	inRun  + single-replace byte → write replacement, exit inRun (normal)
+//
+// Returns s unchanged (zero allocations) when no byte needs modification.
+func sanitizeW3C(s string, lut *[128]uint8) string {
+	// Scan for the first byte that needs modification; common case returns early.
+	first := 0
+	for first < len(s) && s[first] < utf8.RuneSelf && lut[s[first]] == 0 {
+		first++
+	}
+	if first == len(s) {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	b.WriteString(s[:first])
+
+	inRun := false
+	for i := first; i < len(s); {
+		c := s[i]
+		if c >= utf8.RuneSelf {
+			// All non-ASCII runes collapse to '_' in every sanitizer (rune > 0x7E).
+			_, size := utf8.DecodeRuneInString(s[i:])
+			if !inRun {
+				b.WriteByte('_')
+				inRun = true
+			}
+			i += size
+			continue
+		}
+		switch cls := lut[c]; cls {
+		case 0:
+			// Passthrough: bulk-skip the rest of the clean run.
+			j := i + 1
+			for j < len(s) && s[j] < utf8.RuneSelf && lut[s[j]] == 0 {
+				j++
+			}
+			b.WriteString(s[i:j])
+			inRun = false
+			i = j
+		case 0xFF:
+			// Collapse: emit '_' only for the first byte of the run.
+			if !inRun {
+				b.WriteByte('_')
+				inRun = true
+			}
+			i++
+		default:
+			// Single replace: emit the replacement byte; ends any active run.
+			b.WriteByte(cls)
+			inRun = false
+			i++
+		}
+	}
+	return b.String()
+}
+
 const (
+	asciiUpperA = 65
+	asciiUpperF = 70
 	asciiLowerA = 97
 	asciiLowerF = 102
 	asciiZero   = 48
@@ -1037,16 +1228,33 @@ func isValidID(id string) bool {
 	return true
 }
 
+// isValidIDCaseInsensitive is like isValidID but also accepts uppercase hex
+// digits (equivalent to the regexp ^[0-9a-fA-F]+$). It is used by the W3C
+// traceparent path, which no longer lowercases the header before validation;
+// isValidID stays strict (lowercase-only) for the Datadog propagator's
+// _dd.p.tid check, preserving that path's behavior.
+func isValidIDCaseInsensitive(id string) bool {
+	if len(id) == 0 {
+		return false
+	}
+	for _, c := range id {
+		ascii := int(c)
+		if (ascii < asciiZero || ascii > asciiNine) &&
+			(ascii < asciiUpperA || ascii > asciiUpperF) &&
+			(ascii < asciiLowerA || ascii > asciiLowerF) {
+			return false
+		}
+	}
+	return true
+}
+
 // composeTracestate creates a tracestateHeader from the spancontext.
 // The Datadog tracing library is only responsible for managing the list member with key dd,
 // which holds the values of the sampling decision(`s:<value>`), origin(`o:<origin>`),
 // the last parent ID of a Datadog span (`p:<parent_id>`),
 // and propagated tags prefixed with `t.`(e.g. _dd.p.usr.id:usr_id tag will become `t.usr.id:usr_id`).
 func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
-	var (
-		b  strings.Builder
-		sm = &stringMutator{}
-	)
+	var b strings.Builder
 
 	b.Grow(128)
 	b.WriteString("dd=s:")
@@ -1054,9 +1262,8 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 	listLength := 1
 
 	if ctx.origin != "" { // +checklocksignore - Read-only after init.
-		oWithSub := sm.Mutate(originDisallowedFn, ctx.origin) // +checklocksignore - Read-only after init.
 		b.WriteString(";o:")
-		b.WriteString(oWithSub)
+		b.WriteString(sanitizeOrigin(ctx.origin)) // +checklocksignore - Read-only after init.
 	}
 
 	// if the context is remote and there is a reparentID, set p as reparentId
@@ -1078,8 +1285,8 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
-		key := sm.Mutate(keyDisallowedFn, k[len("_dd.p."):])
-		value := sm.Mutate(valueDisallowedFn, v)
+		key := sanitizeTagKey(k[len("_dd.p."):])
+		value := sanitizeTagValue(v)
 		if b.Len()+len(key)+len(value)+4 > tracestateDDMaxSize { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
 			return false
 		}
@@ -1125,18 +1332,17 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 	ctx.isRemote = true
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
-		key := strings.ToLower(k)
-		switch key {
-		case traceparentHeader:
+		switch {
+		case strings.EqualFold(k, traceparentHeader):
 			if parentHeader != "" {
 				return ErrSpanContextCorrupted
 			}
 			parentHeader = v
-		case tracestateHeader:
+		case strings.EqualFold(k, tracestateHeader):
 			stateHeader = v
 		default:
-			if after, ok := strings.CutPrefix(key, DefaultBaggageHeaderPrefix); ok {
-				ctx.setBaggageItem(after, v)
+			if after, ok := cutPrefixFold(k, DefaultBaggageHeaderPrefix); ok {
+				ctx.setOTBaggageItem(after, v)
 			}
 		}
 		return nil
@@ -1165,7 +1371,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 // hex-encoded digits into a 64-bit number.
 func parseTraceparent(ctx *SpanContext, header string) error {
 	nonWordCutset := "_-\t \n"
-	header = strings.ToLower(strings.Trim(header, "\t -"))
+	header = strings.Trim(header, "\t -")
 	headerLen := len(header)
 	if headerLen == 0 {
 		return ErrSpanContextNotFound
@@ -1197,7 +1403,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 		return ErrSpanContextCorrupted
 	}
 	// checking that the entire TraceID is a valid hex string
-	if !isValidID(fullTraceID) {
+	if !isValidIDCaseInsensitive(fullTraceID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.trace != nil {
@@ -1212,7 +1418,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 	if len(spanID) != 16 {
 		return ErrSpanContextCorrupted
 	}
-	if !isValidID(spanID) {
+	if !isValidIDCaseInsensitive(spanID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
@@ -1355,6 +1561,7 @@ func extractTraceID128(ctx *SpanContext, v string) error {
 	if err != nil {
 		return ErrSpanContextCorrupted
 	}
+	ctx.traceID.cacheHex()
 	return nil
 }
 
@@ -1457,7 +1664,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 	var baggageHeader string
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
-		if strings.ToLower(k) == "baggage" {
+		if strings.EqualFold(k, "baggage") {
 			// Expect only one baggage header, return early
 			baggageHeader = v
 			return nil
