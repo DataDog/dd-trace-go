@@ -49,8 +49,8 @@ type APMSpan interface {
 }
 
 // SpanLink represents a link between spans. Its IDs are the tracer's native
-// numeric IDs; they are formatted as decimal strings when the span is lowered to
-// the transport wire shape (see the SpanLinks conversion in llmobs.go).
+// numeric IDs; they are emitted as JSON numbers on the transport wire (see the
+// SpanLinks conversion in llmobs.go).
 type SpanLink struct {
 	TraceID     uint64
 	TraceIDHigh uint64
