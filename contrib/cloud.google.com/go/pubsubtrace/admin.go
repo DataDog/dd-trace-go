@@ -20,6 +20,10 @@ import (
 
 // UnaryAdminInterceptorV2 returns a grpc.UnaryClientInterceptor that traces
 // TopicAdminClient, SubscriptionAdminClient, and SchemaClient admin operations.
+//
+// When constructing admin clients with option.WithGRPCConn, install this
+// interceptor on the dial that creates the connection (WithGRPCDialOption on
+// the client constructor is ignored in that case).
 func UnaryAdminInterceptorV2(opts ...Option) grpc.UnaryClientInterceptor {
 	return defaultTracerV2().unaryAdminInterceptor(resolveAdminResourceV2, opts...)
 }

@@ -20,6 +20,10 @@ import (
 // UnaryAdminInterceptorV1 returns a grpc.UnaryClientInterceptor that traces the admin
 // operations of the cloud.google.com/go/pubsub (v1) GAPIC clients (PublisherClient,
 // SubscriberClient, SchemaClient).
+//
+// When constructing admin clients with option.WithGRPCConn, install this
+// interceptor on the dial that creates the connection (WithGRPCDialOption on
+// the client constructor is ignored in that case).
 func UnaryAdminInterceptorV1(opts ...Option) grpc.UnaryClientInterceptor {
 	return defaultTracerV1().unaryAdminInterceptor(resolveAdminResourceV1, opts...)
 }
