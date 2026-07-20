@@ -187,7 +187,7 @@ func TestStartRequestSpanSecurityTestingHeaders(t *testing.T) {
 		{
 			name: "present",
 			headers: http.Header{
-				"x-datadog-endpoint-scan": {"scan-uuid"},
+				"X-Datadog-Endpoint-Scan": {"scan-uuid"},
 				"X-Datadog-Security-Test": {" test-uuid "},
 			},
 			expected: map[string]string{
