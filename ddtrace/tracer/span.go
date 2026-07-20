@@ -640,7 +640,7 @@ func (s *Span) SetUser(id string, opts ...UserMonitoringOption) {
 		keyUserSessionID: cfg.SessionID,
 	}
 	for k, v := range cfg.Metadata {
-		usrData[fmt.Sprintf("usr.%s", k)] = v
+		usrData["usr."+k] = v
 	}
 	for k, v := range usrData {
 		if v != "" {
@@ -1218,17 +1218,17 @@ func (s *Span) String() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	lines := []string{
-		fmt.Sprintf("Name: %s", s.name),
-		fmt.Sprintf("Service: %s", s.service),
-		fmt.Sprintf("Resource: %s", s.resource),
+		"Name: " + s.name,
+		"Service: " + s.service,
+		"Resource: " + s.resource,
 		fmt.Sprintf("TraceID: %d", s.traceID),
-		fmt.Sprintf("TraceID128: %s", s.context.TraceID()),
+		"TraceID128: " + s.context.TraceID(),
 		fmt.Sprintf("SpanID: %d", s.spanID),
 		fmt.Sprintf("ParentID: %d", s.parentID),
 		fmt.Sprintf("Start: %s", time.Unix(0, s.start)),
 		fmt.Sprintf("Duration: %s", time.Duration(s.duration)),
 		fmt.Sprintf("Error: %d", s.error),
-		fmt.Sprintf("Type: %s", s.spanType),
+		"Type: " + s.spanType,
 		"Tags:",
 	}
 	for k, v := range s.meta.All() {
@@ -1270,7 +1270,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if sharedinternal.BoolEnv("DD_TRACE_128_BIT_TRACEID_LOGGING_ENABLED", true) && s.context.traceID.HasUpper() {
 			traceID = s.context.TraceID()
 		} else {
-			traceID = fmt.Sprintf("%d", s.traceID)
+			traceID = strconv.FormatUint(s.traceID, 10)
 		}
 		fmt.Fprintf(f, `dd.trace_id=%q `, traceID)
 		fmt.Fprintf(f, `dd.span_id="%d" `, s.spanID)
@@ -1321,6 +1321,13 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
+	// session_id is optional. Propagating tags are trace-scoped, so unset the key when the active
+	// span has no session; otherwise a predecessor's value lingers and propagates downstream.
+	if sessionID := llmSpan.SessionID(); sessionID != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, sessionID)
+	} else {
+		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
+	}
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
@@ -1388,6 +1395,8 @@ const (
 	keyPropagatedLLMObsMLAPP = "_dd.p.llmobs_ml_app"
 	// keyPropagatedLLMObsTraceID contains the propagated llmobs trace ID.
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
+	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
+	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"

@@ -83,6 +83,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA":                             {},
 	"DD_GIT_REPOSITORY_URL":                                           {},
 	"DD_GIT_TAG":                                                      {},
+	"DD_GOOGLE_CLOUD_PUBSUB_PROPAGATION_AS_SPAN_LINKS":                {},
 	"DD_HAPROXY_SPOA_HEALTHCHECK_PORT":                                {},
 	"DD_HAPROXY_SPOA_HOST":                                            {},
 	"DD_HAPROXY_SPOA_PORT":                                            {},
@@ -216,6 +217,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_MUX_ANALYTICS_ENABLED":                                  {},
 	"DD_TRACE_NEGRONI_ANALYTICS_ENABLED":                              {},
 	"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP":                        {},
+	"DD_TRACE_OTEL_SEMANTICS_ENABLED":                                 {},
 	"DD_TRACE_PARTIAL_FLUSH_ENABLED":                                  {},
 	"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS":                                {},
 	"DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED":                          {},
@@ -285,6 +287,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_TRACES_EXPORTER":                                            {},
 	"OTEL_TRACES_SAMPLER":                                             {},
 	"OTEL_TRACES_SAMPLER_ARG":                                         {},
+	"OTEL_TRACES_SPAN_METRICS_ENABLED":                                {},
 }
 
 // SensitiveConfigurations is the set of configuration keys whose value must not be

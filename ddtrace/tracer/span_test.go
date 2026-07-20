@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -618,7 +619,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 		{ext.ManualKeep, true, 0},
 		{ext.ManualDrop, false, 1},
 	} {
-		t.Run(fmt.Sprintf("%s/local", scenario.tag), func(t *testing.T) {
+		t.Run(scenario.tag+"/local", func(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -630,7 +631,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			assert.Equal(t, scenario.keep, result)
 		})
 
-		t.Run(fmt.Sprintf("%s/non-local", scenario.tag), func(t *testing.T) {
+		t.Run(scenario.tag+"/non-local", func(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -643,7 +644,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			span.mu.RUnlock()
 			assert.Equal(t, scenario.keep, result)
 		})
-		t.Run(fmt.Sprintf("%s/upstream-drop-locked", scenario.tag), func(t *testing.T) {
+		t.Run(scenario.tag+"/upstream-drop-locked", func(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -669,7 +670,7 @@ func TestTraceManualKeepAndManualDrop(t *testing.T) {
 			span.mu.RUnlock()
 			assert.Equal(t, scenario.keep, result)
 		})
-		t.Run(fmt.Sprintf("%s/upstream-keep-locked", scenario.tag), func(t *testing.T) {
+		t.Run(scenario.tag+"/upstream-keep-locked", func(t *testing.T) {
 			tracer, err := newTracer()
 			defer tracer.Stop()
 			assert.NoError(t, err)
@@ -865,13 +866,13 @@ func TestSpanSetMetric(t *testing.T) {
 			span.SetTag("bytes", intUpperLimit)
 			assert.Equal(0.0, span.metrics["bytes"])
 			v, _ := span.meta.Get("bytes")
-			assert.Equal(fmt.Sprint(intUpperLimit), v)
+			assert.Equal(strconv.FormatInt(intUpperLimit, 10), v)
 		},
 		"toosmall": func(assert *assert.Assertions, span *Span) {
 			span.SetTag("bytes", intLowerLimit)
 			assert.Equal(0.0, span.metrics["bytes"])
 			v, _ := span.meta.Get("bytes")
-			assert.Equal(fmt.Sprint(intLowerLimit), v)
+			assert.Equal(strconv.FormatInt(intLowerLimit, 10), v)
 		},
 		"finished": func(assert *assert.Assertions, span *Span) {
 			span.Finish()

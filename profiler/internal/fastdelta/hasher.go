@@ -8,7 +8,7 @@ package fastdelta
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"sort"
 
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/pproflite"
@@ -47,7 +47,7 @@ func (h *Hasher) Sample(s *pproflite.Sample) (Hash, error) {
 	for _, id := range s.LocationID {
 		addr, ok := h.lx.Get(id)
 		if !ok {
-			return h.scratchHash, fmt.Errorf("invalid location index")
+			return h.scratchHash, errors.New("invalid location index")
 		}
 		binary.LittleEndian.PutUint64(h.scratch[:], addr)
 		h.alg.Write(h.scratch[:8])

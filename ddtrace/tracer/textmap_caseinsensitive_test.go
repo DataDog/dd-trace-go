@@ -21,7 +21,7 @@ import (
 // incoming case, and that a user-configured mixed-case header name matches.
 func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	t.Run("datadog default headers, non-canonical case", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
+		t.Setenv(envPropagationStyleExtract, "datadog")
 		p := NewPropagator(nil)
 		// TextMapCarrier does not canonicalize keys, so the exact case below is
 		// what reaches the extractor.
@@ -42,7 +42,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	})
 
 	t.Run("b3 headers, non-canonical case", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "b3multi")
+		t.Setenv(envPropagationStyleExtract, "b3multi")
 		p := NewPropagator(nil)
 		carrier := TextMapCarrier{
 			"X-B3-TraceId": "0000000000000000000000000000007b",
@@ -57,7 +57,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	})
 
 	t.Run("w3c traceparent, non-canonical case", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "tracecontext")
+		t.Setenv(envPropagationStyleExtract, "tracecontext")
 		p := NewPropagator(nil)
 		carrier := TextMapCarrier{
 			"TraceParent": "00-00000000000000000000000000000064-00000000000000c8-01",
@@ -70,7 +70,7 @@ func TestExtractHeaderNameCaseInsensitivity(t *testing.T) {
 	})
 
 	t.Run("custom mixed-case configured header", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
+		t.Setenv(envPropagationStyleExtract, "datadog")
 		p := NewPropagator(&PropagatorConfig{
 			TraceHeader:  "My-Trace-Id",
 			ParentHeader: "My-Parent-Id",
@@ -115,7 +115,7 @@ func canonicalW3CHeaders() HTTPHeadersCarrier {
 // carrier (unlike BenchmarkExtractDatadog, which uses a pre-lowercased
 // TextMapCarrier and so never exercises header-name case folding).
 func BenchmarkExtractDatadogHTTPHeaders(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "datadog")
+	b.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
 	carrier := canonicalDatadogHeaders()
 	b.ReportAllocs()
@@ -128,7 +128,7 @@ func BenchmarkExtractDatadogHTTPHeaders(b *testing.B) {
 // BenchmarkExtractW3CHTTPHeaders is the W3C counterpart to
 // BenchmarkExtractDatadogHTTPHeaders.
 func BenchmarkExtractW3CHTTPHeaders(b *testing.B) {
-	b.Setenv(headerPropagationStyleExtract, "tracecontext")
+	b.Setenv(envPropagationStyleExtract, "tracecontext")
 	propagator := NewPropagator(nil)
 	carrier := canonicalW3CHeaders()
 	b.ReportAllocs()

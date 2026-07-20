@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,9 +68,9 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	moduleID := span.Context().SpanID()
 	if session != nil {
-		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, fmt.Sprint(session.sessionID))
+		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, strconv.FormatUint(session.sessionID, 10))
 	}
-	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, fmt.Sprint(moduleID))
+	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, strconv.FormatUint(moduleID, 10))
 
 	module := &tslvTestModule{
 		session:   session,
