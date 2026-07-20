@@ -1248,6 +1248,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_GOOGLE_GENAI_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_GOPG_ANALYTICS_ENABLED": [
       {
         "implementation": "A",

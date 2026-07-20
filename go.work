@@ -36,6 +36,7 @@ use (
 	./contrib/gomodule/redigo
 	./contrib/google.golang.org/api
 	./contrib/google.golang.org/api/internal/gen_endpoints
+	./contrib/google.golang.org/genai
 	./contrib/google.golang.org/grpc
 	./contrib/gorilla/mux
 	./contrib/gorm.io/gorm.v1

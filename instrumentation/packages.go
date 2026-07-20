@@ -80,6 +80,7 @@ const (
 	PackageUptraceBun                Package = "uptrace/bun"
 	PackageLogSlog                   Package = "log/slog"
 	PackageModelContextProtocolGoSDK Package = "modelcontextprotocol/go-sdk"
+	PackageGoogleAPIsGoGenAI         Package = "google.golang.org/genai"
 
 	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
 	PackageAzureAPIMCallout               Package = "azure/apim-callout"
@@ -918,6 +919,18 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("mcp-server"),
 				buildOpNameV0:      staticName("mcp.server.request"),
 				buildOpNameV1:      staticName("mcp.server.request"),
+			},
+		},
+	},
+	PackageGoogleAPIsGoGenAI: {
+		TracedPackage: "google.golang.org/genai",
+		EnvVarPrefix:  "GOOGLE_GENAI",
+		naming: map[Component]componentNames{
+			ComponentDefault: {
+				useDDServiceV0:     true,
+				buildServiceNameV0: staticName("google-genai"),
+				buildOpNameV0:      staticName("google.genai.request"),
+				buildOpNameV1:      staticName("google.genai.request"),
 			},
 		},
 	},
