@@ -70,7 +70,7 @@ func TestFetchAgentFeaturesTraceFilters(t *testing.T) {
 		"endpoints":["/v0.6/stats"],
 		"client_drop_p0s":true,
 		"filter_tags":{"require":["required:value"],"reject":["blocked"]},
-		"filter_tags_regex":{"require":["required.*:value.*"],"reject":["blocked.*"]},
+		"filter_tags_regex":{"require":["required:value.*"],"reject":["blocked"]},
 		"ignore_resources":["health.*"]
 	}`}
 	agentURL, err := url.Parse("http://agent:8126")
