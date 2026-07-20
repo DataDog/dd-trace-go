@@ -34,7 +34,7 @@ func benchSpans(n int) []export.SpanEvent {
 		spans[i] = export.SpanEvent{
 			TraceID:       "12345678901234567890",
 			SpanID:        strconv.Itoa(i),
-			Kind:          "llm",
+			Kind:          export.KindLLM,
 			Name:          "chat",
 			ModelName:     "gpt-4o",
 			ModelProvider: "openai",
@@ -63,35 +63,35 @@ func benchEvals(n int) []export.EvaluationMetric {
 
 func benchClient(b *testing.B) *export.Client {
 	b.Helper()
-	c, err := export.New(export.Config{
-		Site: "datadoghq.com", APIKey: "k", MLApp: "app",
-		HTTPClient: &http.Client{Transport: discardTransport{}},
-	})
+	c, err := export.NewClient("app",
+		export.WithDatadogIntake("datadoghq.com", "k"),
+		export.WithHTTPClient(&http.Client{Transport: discardTransport{}}),
+	)
 	if err != nil {
 		b.Fatal(err)
 	}
 	return c
 }
 
-func BenchmarkExportSpans(b *testing.B) {
+func BenchmarkSubmitSpans(b *testing.B) {
 	c := benchClient(b)
 	spans := benchSpans(50) // one full default-size batch
 	ctx := context.Background()
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := c.ExportSpans(ctx, spans); err != nil {
+		if _, err := c.SubmitSpans(ctx, spans); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
-func BenchmarkExportEvaluations(b *testing.B) {
+func BenchmarkSubmitEvaluations(b *testing.B) {
 	c := benchClient(b)
 	evals := benchEvals(1000) // one full default-size batch
 	ctx := context.Background()
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, err := c.ExportEvaluations(ctx, evals); err != nil {
+		if _, err := c.SubmitEvaluations(ctx, evals); err != nil {
 			b.Fatal(err)
 		}
 	}

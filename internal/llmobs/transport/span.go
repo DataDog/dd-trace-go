@@ -13,10 +13,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
+// SpanLink links a span to another span. TraceID/SpanID are opaque decimal
+// strings: the live tracer path formats its numeric IDs with strconv.FormatUint,
+// and the offline export path (llmobs/export) passes caller-owned string IDs
+// through verbatim. Intake accepts and validates string span-link IDs.
 type SpanLink struct {
-	TraceID     uint64            `json:"trace_id"`
-	TraceIDHigh uint64            `json:"trace_id_high,omitempty"`
-	SpanID      uint64            `json:"span_id"`
+	TraceID     string            `json:"trace_id"`
+	TraceIDHigh string            `json:"trace_id_high,omitempty"`
+	SpanID      string            `json:"span_id"`
 	Attributes  map[string]string `json:"attributes,omitempty"`
 	Tracestate  string            `json:"tracestate,omitempty"`
 	Flags       uint32            `json:"flags,omitempty"`
@@ -25,7 +29,7 @@ type SpanLink struct {
 type DDAttributes struct {
 	SpanID     string `json:"span_id"`
 	TraceID    string `json:"trace_id"`
-	APMTraceID string `json:"apm_trace_id"`
+	APMTraceID string `json:"apm_trace_id,omitempty"`
 	Scope      string `json:"scope,omitempty"`
 }
 
@@ -36,6 +40,7 @@ type LLMObsSpanEvent struct {
 	SessionID        string             `json:"session_id,omitempty"`
 	Tags             []string           `json:"tags,omitempty"`
 	Name             string             `json:"name,omitempty"`
+	Service          string             `json:"service,omitempty"`
 	StartNS          int64              `json:"start_ns,omitempty"`
 	Duration         int64              `json:"duration,omitempty"`
 	Status           string             `json:"status,omitempty"`
