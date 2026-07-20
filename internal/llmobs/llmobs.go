@@ -16,6 +16,7 @@ import (
 	"math"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -889,7 +890,7 @@ func (l *LLMObs) StartExperimentSpan(ctx context.Context, name string, params Ex
 		span.apm.SetBaggageItem(baggageKeyExperimentRunID, params.RunID)
 	}
 	if params.RunIteration > 0 {
-		span.apm.SetBaggageItem(baggageKeyExperimentRunIteration, fmt.Sprintf("%d", params.RunIteration))
+		span.apm.SetBaggageItem(baggageKeyExperimentRunIteration, strconv.Itoa(params.RunIteration))
 	}
 	if params.ProjectID != "" {
 		span.apm.SetBaggageItem(baggageKeyExperimentProjectID, params.ProjectID)
@@ -974,7 +975,7 @@ func (l *LLMObs) SubmitEvaluation(cfg EvaluationConfig) (err error) {
 			tags = append(tags, tag)
 		}
 	}
-	tags = append(tags, fmt.Sprintf("ddtrace.version:%s", version.Tag))
+	tags = append(tags, "ddtrace.version:"+version.Tag)
 
 	metric = &transport.LLMObsMetric{
 		JoinOn:      joinOn,

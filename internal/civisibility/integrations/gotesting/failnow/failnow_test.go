@@ -345,7 +345,7 @@ func validateScenario(scenario string, spans []*mocktracer.Span, exitCode int) {
 	case "test-flaky-retry-global-budget":
 		validateGlobalBudgetScenario(spans, exitCode)
 	default:
-		panic(fmt.Sprintf("unknown scenario %s", scenario))
+		panic("unknown scenario " + scenario)
 	}
 }
 

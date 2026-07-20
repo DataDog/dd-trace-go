@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -179,7 +180,7 @@ func NewClientWithServiceNameAndSubdomain(serviceName, subdomain string) Client 
 	}
 
 	// create random id (the backend associate all transactions with the client request)
-	id := fmt.Sprint(rand.Uint64() & math.MaxInt64)
+	id := strconv.FormatUint(rand.Uint64()&math.MaxInt64, 10)
 	defaultHeaders["trace_id"] = id
 	defaultHeaders["parent_id"] = id
 
