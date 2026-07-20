@@ -159,7 +159,7 @@ func TestSpanWireShape_Contract(t *testing.T) {
 
 	// service is carried both as the top-level field and a service: tag (the intake
 	// reads the tag; the storage schema has no top-level service field).
-	var tags []string
+	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
 	}
@@ -378,7 +378,7 @@ func TestSubmitSpans_WithCallServiceOverride(t *testing.T) {
 
 	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
 	assert.Equal(t, "call-svc", span["service"]) // per-call override wins over the client default
-	var tags []string
+	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
 	}
@@ -470,7 +470,7 @@ func TestSubmitEvaluations_StampsTracerVersion(t *testing.T) {
 	require.NoError(t, err)
 
 	m := decode(t, fake.captured()[0].body)["data"].(map[string]any)["attributes"].(map[string]any)["metrics"].([]any)[0].(map[string]any)
-	var tags []string
+	tags := make([]string, 0, len(m["tags"].([]any)))
 	for _, x := range m["tags"].([]any) {
 		tags = append(tags, x.(string))
 	}
@@ -675,7 +675,7 @@ func TestSubmitSpans_SessionIDOverridesStaleTag(t *testing.T) {
 	require.NoError(t, err)
 
 	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
-	var tags []string
+	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
 	}
@@ -696,7 +696,7 @@ func TestSubmitSpans_ServiceTagReplacesStale(t *testing.T) {
 	require.NoError(t, err)
 
 	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
-	var tags []string
+	tags := make([]string, 0, len(span["tags"].([]any)))
 	for _, x := range span["tags"].([]any) {
 		tags = append(tags, x.(string))
 	}
