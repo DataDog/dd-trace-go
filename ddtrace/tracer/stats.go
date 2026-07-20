@@ -164,8 +164,8 @@ func (c *concentrator) runIngester() {
 	for {
 		select {
 		case spans := <-c.In:
+			_ = c.statsd().Count("datadog.tracer.stats.spans_in", int64(len(spans)), nil, 1)
 			for _, s := range spans {
-				c.statsd().Incr("datadog.tracer.stats.spans_in", nil, 1)
 				c.add(s)
 			}
 		case <-c.stop:
