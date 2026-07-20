@@ -21,13 +21,15 @@ import (
 )
 
 func TestNewTraceFilters(t *testing.T) {
-	assert.Nil(t, newTraceFilters(nil, nil, nil, []string{"["}, []string{"["}))
+	// Regex keys are literal, so only an invalid regex *value* and an invalid
+	// ignore_resources regex are dropped, leaving nothing valid -> nil.
+	assert.Nil(t, newTraceFilters(nil, nil, nil, []string{"k:["}, []string{"["}))
 
 	filters := newTraceFilters(
 		[]string{" required-key ", " key : value:with:colons "},
 		[]string{"reject-key", " reject-kv : reject-value "},
-		[]string{" required.* : value.* ", "["},
-		[]string{"reject.*", "valid:[", "["},
+		[]string{" require-regex : value.* ", "present-key"},
+		[]string{"reject-regex", "bad:[", " keyonly "},
 		[]string{"resource.*", "["},
 	)
 	require.NotNil(t, filters)
@@ -35,12 +37,19 @@ func TestNewTraceFilters(t *testing.T) {
 	assert.Equal(t, []tagKV{{key: "key", val: "value:with:colons"}}, filters.requireKV)
 	assert.Equal(t, []string{"reject-key"}, filters.rejectKeys)
 	assert.Equal(t, []tagKV{{key: "reject-kv", val: "reject-value"}}, filters.rejectKV)
-	require.Len(t, filters.requireRegex, 1)
-	assert.Equal(t, "required.*", filters.requireRegex[0].key.String())
+
+	// Regex filters keep a literal key and a compiled value (nil for key-only);
+	// a filter with an invalid value regex is skipped.
+	require.Len(t, filters.requireRegex, 2)
+	assert.Equal(t, "require-regex", filters.requireRegex[0].key)
 	assert.Equal(t, "value.*", filters.requireRegex[0].val.String())
-	require.Len(t, filters.rejectRegex, 1)
-	assert.Equal(t, "reject.*", filters.rejectRegex[0].key.String())
+	assert.Equal(t, "present-key", filters.requireRegex[1].key)
+	assert.Nil(t, filters.requireRegex[1].val)
+	require.Len(t, filters.rejectRegex, 2) // "bad:[" dropped for an invalid value regex
+	assert.Equal(t, "reject-regex", filters.rejectRegex[0].key)
 	assert.Nil(t, filters.rejectRegex[0].val)
+	assert.Equal(t, "keyonly", filters.rejectRegex[1].key)
+
 	require.Len(t, filters.ignoreResources, 1)
 	assert.Equal(t, "resource.*", filters.ignoreResources[0].String())
 }
@@ -79,14 +88,14 @@ func TestTraceFiltersReject(t *testing.T) {
 			reject:  false,
 		},
 		{
-			name:    "regex reject is unanchored and case sensitive",
-			filters: newTraceFilters(nil, nil, nil, []string{"lock:alu"}, nil),
+			name:    "regex reject value is unanchored",
+			filters: newTraceFilters(nil, nil, nil, []string{"blocked:alu"}, nil),
 			tags:    map[string]string{"blocked": "value"},
 			reject:  true,
 		},
 		{
-			name:    "regex reject case mismatch",
-			filters: newTraceFilters(nil, nil, nil, []string{"LOCK:alu"}, nil),
+			name:    "regex reject value is case sensitive",
+			filters: newTraceFilters(nil, nil, nil, []string{"blocked:ALU"}, nil),
 			tags:    map[string]string{"blocked": "value"},
 			reject:  false,
 		},
@@ -99,7 +108,7 @@ func TestTraceFiltersReject(t *testing.T) {
 		{
 			name:    "all exact and regex requirements match",
 			filters: newTraceFilters([]string{"required:value"}, nil, []string{"prefix:alu"}, nil, nil),
-			tags:    map[string]string{"required": "value", "prefix.tag": "value"},
+			tags:    map[string]string{"required": "value", "prefix": "value"},
 			reject:  false,
 		},
 		{
@@ -125,6 +134,36 @@ func TestTraceFiltersReject(t *testing.T) {
 			filters: newTraceFilters([]string{ext.HTTPCode + ":599"}, nil, nil, nil, nil),
 			tags:    map[string]string{ext.HTTPCode: "599"},
 			reject:  false,
+		},
+		{
+			name:    "regex require key is literal, not matched by an overlapping key",
+			filters: newTraceFilters(nil, nil, []string{"version:v1"}, nil, nil),
+			tags:    map[string]string{"app.version": "v1"},
+			reject:  true,
+		},
+		{
+			name:    "regex reject key is literal, not matched by an overlapping key",
+			filters: newTraceFilters(nil, nil, nil, []string{"http.status_code:^5"}, nil),
+			tags:    map[string]string{"httpXstatus_code": "500"},
+			reject:  false,
+		},
+		{
+			name:    "regex reject matches the literal key value",
+			filters: newTraceFilters(nil, nil, nil, []string{"http.status_code:^5"}, nil),
+			tags:    map[string]string{ext.HTTPCode: "500"},
+			reject:  true,
+		},
+		{
+			name:    "regex require key-only present",
+			filters: newTraceFilters(nil, nil, []string{"needed"}, nil, nil),
+			tags:    map[string]string{"needed": "anything"},
+			reject:  false,
+		},
+		{
+			name:    "regex require key-only missing",
+			filters: newTraceFilters(nil, nil, []string{"needed"}, nil, nil),
+			tags:    map[string]string{"other": "x"},
+			reject:  true,
 		},
 	}
 

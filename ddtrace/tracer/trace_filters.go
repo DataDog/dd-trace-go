@@ -23,8 +23,8 @@ type tagKV struct {
 }
 
 type regexTag struct {
-	key *regexp.Regexp
-	val *regexp.Regexp
+	key string         // literal tag key, matched by exact lookup (as the trace-agent does)
+	val *regexp.Regexp // value pattern, nil for a key-only filter
 }
 
 type traceFilters struct {
@@ -69,21 +69,19 @@ func parseRegexTagFilters(filters []string) []regexTag {
 		if filter == "" {
 			continue
 		}
-		keyPattern, valPattern, hasValue := strings.Cut(filter, ":")
-		key, err := regexp.Compile(strings.TrimSpace(keyPattern))
-		if err != nil {
-			log.Debug("Skipping invalid agent trace filter regex %q: %v", filter, err.Error())
-			continue
-		}
-		var val *regexp.Regexp
+		// The key is a literal (matched by exact lookup); only the value is a
+		// regexp. This mirrors the trace-agent's filteredByTags.
+		key, valPattern, hasValue := strings.Cut(filter, ":")
+		tag := regexTag{key: strings.TrimSpace(key)}
 		if hasValue {
-			val, err = regexp.Compile(strings.TrimSpace(valPattern))
+			val, err := regexp.Compile(strings.TrimSpace(valPattern))
 			if err != nil {
 				log.Debug("Skipping invalid agent trace filter regex %q: %v", filter, err.Error())
 				continue
 			}
+			tag.val = val
 		}
-		parsed = append(parsed, regexTag{key: key, val: val})
+		parsed = append(parsed, tag)
 	}
 	return parsed
 }
@@ -163,12 +161,8 @@ func (f *traceFilters) reject(root *Span) bool {
 }
 
 func matchRegexTag(tags map[string]string, filter regexTag) bool {
-	for key, val := range tags {
-		if filter.key.MatchString(key) && (filter.val == nil || filter.val.MatchString(val)) {
-			return true
-		}
-	}
-	return false
+	v, ok := tags[filter.key]
+	return ok && (filter.val == nil || filter.val.MatchString(v))
 }
 
 func validStatusCode(status string) bool {

@@ -55,7 +55,7 @@ func TestRefreshAgentFeaturesUpdatesTraceFilters(t *testing.T) {
 	require.NotNil(t, filters)
 	assert.Empty(t, filters.rejectKV)
 	require.Len(t, filters.requireRegex, 1)
-	assert.Equal(t, "second.*", filters.requireRegex[0].key.String())
+	assert.Equal(t, "second.*", filters.requireRegex[0].key)
 	require.Len(t, filters.ignoreResources, 1)
 }
 
