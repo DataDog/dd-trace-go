@@ -736,7 +736,7 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 	if w3cCtx.reparentID != "" {
 		ctx.reparentID = w3cCtx.reparentID
 	} else {
-		ctx.reparentID = uint64ToHex16(ddCtx.SpanID())
+		ctx.reparentID = spanIDHexEncoded(ddCtx.SpanID(), 16)
 	}
 }
 
@@ -1684,15 +1684,3 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 	return &ctx, nil
 }
 
-const hexDigits = "0123456789abcdef"
-
-// uint64ToHex16 formats v as a 16-character zero-padded lowercase hex string
-// without using fmt.Sprintf, saving the fmt reflection overhead.
-func uint64ToHex16(v uint64) string {
-	var buf [16]byte
-	for i := 15; i >= 0; i-- {
-		buf[i] = hexDigits[v&0xf]
-		v >>= 4
-	}
-	return string(buf[:])
-}
