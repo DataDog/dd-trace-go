@@ -7,20 +7,65 @@ package transport
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
-// SpanLink links a span to another span. TraceID/SpanID are opaque decimal
-// strings: the live tracer path formats its numeric IDs with strconv.FormatUint,
-// and the offline export path (llmobs/export) passes caller-owned string IDs
-// through verbatim. Intake accepts and validates string span-link IDs.
+// SpanLinkID is a span-link trace/span identifier that marshals as a JSON number
+// when it carries a numeric ID and as a JSON string when it carries an opaque
+// string ID. This lets the shared SpanLink wire struct serve both the live
+// tracer path (numeric IDs, its historical wire shape) and the offline export
+// path (caller-owned opaque string IDs). Intake accepts either form.
+type SpanLinkID struct {
+	num   uint64
+	str   string
+	isStr bool
+}
+
+// NumericSpanLinkID returns a span-link ID that marshals as a JSON number, for
+// the live tracer path.
+func NumericSpanLinkID(n uint64) SpanLinkID { return SpanLinkID{num: n} }
+
+// StringSpanLinkID returns a span-link ID that marshals as a JSON string, for
+// the offline export path's opaque caller-owned IDs.
+func StringSpanLinkID(s string) SpanLinkID { return SpanLinkID{str: s, isStr: true} }
+
+// MarshalJSON implements json.Marshaler.
+func (id SpanLinkID) MarshalJSON() ([]byte, error) {
+	if id.isStr {
+		return json.Marshal(id.str)
+	}
+	return json.Marshal(id.num)
+}
+
+// UnmarshalJSON implements json.Unmarshaler, accepting either a JSON number
+// (numeric ID) or a JSON string (opaque ID). Without it, the shared SpanLink
+// wire struct could no longer be decoded on paths that read it back (e.g. the
+// in-process test collector), since a marshal-only type breaks json.Unmarshal.
+func (id *SpanLinkID) UnmarshalJSON(b []byte) error {
+	var n uint64
+	if err := json.Unmarshal(b, &n); err == nil {
+		*id = SpanLinkID{num: n}
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	*id = SpanLinkID{str: s, isStr: true}
+	return nil
+}
+
+// SpanLink links a span to another span. Its trace/span IDs use SpanLinkID so a
+// single wire struct supports both numeric IDs (the live tracer) and opaque
+// string IDs (the offline export path).
 type SpanLink struct {
-	TraceID     string            `json:"trace_id"`
-	TraceIDHigh string            `json:"trace_id_high,omitempty"`
-	SpanID      string            `json:"span_id"`
+	TraceID     SpanLinkID        `json:"trace_id"`
+	TraceIDHigh *SpanLinkID       `json:"trace_id_high,omitempty"`
+	SpanID      SpanLinkID        `json:"span_id"`
 	Attributes  map[string]string `json:"attributes,omitempty"`
 	Tracestate  string            `json:"tracestate,omitempty"`
 	Flags       uint32            `json:"flags,omitempty"`
