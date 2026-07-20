@@ -174,6 +174,8 @@ type Config struct {
 	// otlpExportMetricsMode indicates metrics should be exported via OTLP rather than
 	// a Datadog protocol.
 	otlpExportMetricsMode bool
+	// otlpEndpoint is the resolved OTEL_EXPORTER_OTLP_ENDPOINT base URL; always non-empty.
+	otlpEndpoint string
 	// otelSemanticsEnabled makes OTLP-exported spans match the pure OTel SDK
 	// by omitting Datadog-specific attributes. Set via DD_TRACE_OTEL_SEMANTICS_ENABLED.
 	otelSemanticsEnabled bool
@@ -182,6 +184,14 @@ type Config struct {
 	// otlpHeaders holds the resolved OTLP trace headers from
 	// OTEL_EXPORTER_OTLP_TRACES_HEADERS plus Content-Type: application/x-protobuf.
 	otlpHeaders map[string]string
+	// otlpSpanMetricsEnabled controls OTLP span metrics export; nil auto-enables when otlpExportMode && runtimeMetricsOtel.
+	otlpSpanMetricsEnabled *bool
+	// otlpMetricsURL is the resolved OTLP metrics endpoint (e.g. http://host:4318/v1/metrics).
+	otlpMetricsURL string
+	// otlpMetricsHeaders holds HTTP headers for OTLP metrics export.
+	otlpMetricsHeaders map[string]string
+	// otlpMetricsFlushInterval is the span metrics flush cadence (default 10s).
+	otlpMetricsFlushInterval time.Duration
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
 	// apiKey is the Datadog API key from DD_API_KEY (used for agentless intake, LLM Obs, etc.).
@@ -313,6 +323,30 @@ func loadConfig() *Config {
 	}
 	cfg.otlpTraceURL = resolveOTLPTraceURL(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", ""))
 	cfg.otlpHeaders = buildOTLPHeaders(p.GetMap("OTEL_EXPORTER_OTLP_TRACES_HEADERS", nil, internal.OtelTagsDelimeter))
+	v, origin := p.GetBoolWithOrigin("OTEL_TRACES_SPAN_METRICS_ENABLED", false)
+	if origin != telemetry.OriginDefault {
+		cfg.otlpSpanMetricsEnabled = &v
+		// When OTEL_TRACES_SPAN_METRICS_ENABLED is explicitly set to false and
+		// DD_TRACE_STATS_COMPUTATION_ENABLED was not explicitly configured,
+		// disable native stats too: the user has signalled they want no SDK-side
+		// span metrics, and the Datadog-Client-Computed-Stats header should
+		// therefore be absent (FR15).
+		if !v {
+			if _, statsOrigin := p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true); statsOrigin == telemetry.OriginDefault {
+				cfg.statsComputationEnabled = false
+			}
+		}
+	}
+	cfg.otlpEndpoint = resolveOTLPEndpoint(cfg.agentURL, p.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""))
+	cfg.otlpMetricsURL = resolveOTLPMetricsURL(
+		p.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
+		cfg.otlpEndpoint,
+	)
+	cfg.otlpMetricsHeaders = buildOTLPMetricsHeaders(
+		p.GetMap("OTEL_EXPORTER_OTLP_HEADERS", nil, internal.OtelTagsDelimeter),
+		p.GetMap("OTEL_EXPORTER_OTLP_METRICS_HEADERS", nil, internal.OtelTagsDelimeter),
+	)
+	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL"))
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
@@ -1334,6 +1368,12 @@ func (c *Config) OTLPTraceURL() string {
 	return c.otlpTraceURL
 }
 
+func (c *Config) OTLPEndpoint() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpEndpoint
+}
+
 func (c *Config) OTLPExportMode() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -1372,6 +1412,35 @@ func (c *Config) OTLPHeaders() map[string]string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return maps.Clone(c.otlpHeaders)
+}
+
+// OTLPSpanMetricsEnabled reports whether span metrics export is active; auto-enables when OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true.
+func (c *Config) OTLPSpanMetricsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.otlpSpanMetricsEnabled != nil {
+		return *c.otlpSpanMetricsEnabled
+	}
+	return c.otlpExportMode && c.runtimeMetricsOtel
+}
+
+func (c *Config) OTLPMetricsURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpMetricsURL
+}
+
+// OTLPMetricsHeaders returns a copy of the resolved OTLP metrics headers map.
+func (c *Config) OTLPMetricsHeaders() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return maps.Clone(c.otlpMetricsHeaders)
+}
+
+func (c *Config) OTLPMetricsFlushInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpMetricsFlushInterval
 }
 
 func (c *Config) TraceID128BitEnabled() bool {
