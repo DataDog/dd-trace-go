@@ -1683,4 +1683,3 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 
 	return &ctx, nil
 }
-
