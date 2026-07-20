@@ -8,8 +8,6 @@ package llmobs
 import (
 	"context"
 	"time"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
 )
 
 // Tracer represents the interface for the underlying APM tracer.
@@ -50,5 +48,14 @@ type APMSpan interface {
 	BaggageItem(key string) string
 }
 
-// SpanLink represents a link between spans, aliased from the transport package.
-type SpanLink = transport.SpanLink
+// SpanLink represents a link between spans. Its IDs are the tracer's native
+// numeric IDs; they are formatted as decimal strings when the span is lowered to
+// the transport wire shape (see the SpanLinks conversion in llmobs.go).
+type SpanLink struct {
+	TraceID     uint64
+	TraceIDHigh uint64
+	SpanID      uint64
+	Attributes  map[string]string
+	Tracestate  string
+	Flags       uint32
+}

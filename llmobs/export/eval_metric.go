@@ -9,8 +9,19 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
+)
+
+// MetricType is the type of an evaluation metric value.
+type MetricType string
+
+// Evaluation metric types recognized by LLM Obs.
+const (
+	MetricTypeCategorical MetricType = "categorical"
+	MetricTypeScore       MetricType = "score"
+	MetricTypeBoolean     MetricType = "boolean"
 )
 
 // EvaluationMetric is a caller-built LLM Obs evaluation metric to export.
@@ -28,9 +39,9 @@ type EvaluationMetric struct {
 
 	// Label is the metric name (required).
 	Label string
-	// MetricType is the metric type ("categorical", "score", "boolean"). When
+	// MetricType is the metric type (MetricTypeCategorical/Score/Boolean). When
 	// empty it is derived from the value; it is required for JSONValue.
-	MetricType string
+	MetricType MetricType
 
 	// Exactly one of the following must be set.
 	CategoricalValue *string
@@ -38,10 +49,10 @@ type EvaluationMetric struct {
 	BooleanValue     *bool
 	JSONValue        map[string]any
 
-	// TimestampMS is the evaluation time in Unix milliseconds; 0 omits it.
-	TimestampMS int64
-	MLApp       string
-	Tags        []string
+	// Timestamp is the evaluation time; a zero Timestamp omits it.
+	Timestamp time.Time
+	MLApp     string
+	Tags      []string
 
 	// Optional narrative/structured fields.
 	Assessment string
@@ -105,14 +116,14 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 
 	// valueType is the metric type implied by the value kind. JSONValue implies no
 	// single type, so it requires an explicit (and valid) MetricType.
-	var valueType string
+	var valueType MetricType
 	switch {
 	case m.CategoricalValue != nil:
-		valueType = "categorical"
+		valueType = MetricTypeCategorical
 	case m.ScoreValue != nil:
-		valueType = "score"
+		valueType = MetricTypeScore
 	case m.BooleanValue != nil:
-		valueType = "boolean"
+		valueType = MetricTypeBoolean
 	}
 
 	metricType := m.MetricType
@@ -122,7 +133,7 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 			return nil, "json_value requires an explicit MetricType"
 		}
 		metricType = valueType
-	case metricType != "categorical" && metricType != "score" && metricType != "boolean":
+	case metricType != MetricTypeCategorical && metricType != MetricTypeScore && metricType != MetricTypeBoolean:
 		return nil, fmt.Sprintf("invalid MetricType %q (want categorical, score, or boolean)", metricType)
 	case valueType != "" && metricType != valueType:
 		return nil, fmt.Sprintf("MetricType %q does not match the %s value provided", metricType, valueType)
@@ -135,8 +146,8 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 
 	w := &transport.LLMObsMetric{
 		Label:            m.Label,
-		MetricType:       metricType,
-		TimestampMS:      m.TimestampMS,
+		MetricType:       string(metricType),
+		TimestampMS:      timestampMS(m.Timestamp),
 		MLApp:            mlApp,
 		Tags:             withTracerVersion(m.Tags),
 		Assessment:       m.Assessment,
@@ -153,6 +164,15 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 		w.JoinOn.Tag = &transport.EvaluationTagJoin{Key: m.TagKey, Value: m.TagValue}
 	}
 	return w, ""
+}
+
+// timestampMS returns the Unix-millisecond timestamp, or 0 for a zero time so
+// the optional field is omitted.
+func timestampMS(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
 }
 
 // withTracerVersion strips any caller-provided ddtrace.version tag and appends

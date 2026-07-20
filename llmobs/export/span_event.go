@@ -5,10 +5,38 @@
 
 package export
 
-import "encoding/json"
+import (
+	"maps"
+	"time"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
+)
 
 // defaultParentID mirrors the LLM Obs convention for a span with no parent.
 const defaultParentID = "undefined"
+
+// Kind is the LLM Obs span kind.
+type Kind string
+
+// Span kinds recognized by LLM Obs.
+const (
+	KindLLM       Kind = "llm"
+	KindAgent     Kind = "agent"
+	KindWorkflow  Kind = "workflow"
+	KindTask      Kind = "task"
+	KindTool      Kind = "tool"
+	KindEmbedding Kind = "embedding"
+	KindRetrieval Kind = "retrieval"
+)
+
+// Status is the terminal status of a span.
+type Status string
+
+// Span statuses recognized by LLM Obs.
+const (
+	StatusOK    Status = "ok"
+	StatusError Status = "error"
+)
 
 // SpanEvent is a caller-built LLM Obs span to export. IDs are opaque strings and
 // are preserved verbatim; empty ParentID is normalized to "undefined".
@@ -29,17 +57,17 @@ type SpanEvent struct {
 	// Service overrides the client's default service for this span.
 	Service string
 
-	// StartNanos is the span start time in Unix nanoseconds.
-	StartNanos int64
-	// DurationNanos is the span duration in nanoseconds.
-	DurationNanos int64
+	// Start is the span start time. A zero Start emits start_ns=0.
+	Start time.Time
+	// Duration is the span duration.
+	Duration time.Duration
 
-	// Status is "ok" or "error"; empty defaults to "ok".
-	Status        string
+	// Status is the span status; empty defaults to StatusOK.
+	Status        Status
 	StatusMessage string
 
-	// Kind is the LLM Obs span kind (e.g. "llm", "workflow", "agent", "tool").
-	Kind          string
+	// Kind is the LLM Obs span kind (e.g. KindLLM, KindWorkflow).
+	Kind          Kind
 	ModelName     string
 	ModelProvider string
 	// Input and Output are the raw string input/output values.
@@ -68,46 +96,40 @@ type SpanEvent struct {
 // metrics as a flat map of key -> number
 // (internal/llmobs/transport.LLMObsSpanEvent.Metrics), which Extra mirrors.
 type SpanMetrics struct {
-	InputTokens            *int64 `json:"input_tokens,omitempty"`
-	OutputTokens           *int64 `json:"output_tokens,omitempty"`
-	TotalTokens            *int64 `json:"total_tokens,omitempty"`
-	CacheWriteInputTokens  *int64 `json:"cache_write_input_tokens,omitempty"`
-	CacheReadInputTokens   *int64 `json:"cache_read_input_tokens,omitempty"`
-	NonCachedInputTokens   *int64 `json:"non_cached_input_tokens,omitempty"`
-	ReasoningOutputTokens  *int64 `json:"reasoning_output_tokens,omitempty"`
-	Ephemeral1HInputTokens *int64 `json:"ephemeral_1h_input_tokens,omitempty"`
-	Ephemeral5MInputTokens *int64 `json:"ephemeral_5m_input_tokens,omitempty"`
-	BillableCharacterCount *int64 `json:"billable_character_count,omitempty"`
+	InputTokens            *int64
+	OutputTokens           *int64
+	TotalTokens            *int64
+	CacheWriteInputTokens  *int64
+	CacheReadInputTokens   *int64
+	NonCachedInputTokens   *int64
+	ReasoningOutputTokens  *int64
+	Ephemeral1HInputTokens *int64
+	Ephemeral5MInputTokens *int64
+	BillableCharacterCount *int64
 
-	TimeToFirstToken *float64 `json:"time_to_first_token,omitempty"`
+	TimeToFirstToken *float64
 
-	EstimatedTotalCost           *float64 `json:"estimated_total_cost,omitempty"`
-	EstimatedInputCost           *float64 `json:"estimated_input_cost,omitempty"`
-	EstimatedOutputCost          *float64 `json:"estimated_output_cost,omitempty"`
-	EstimatedCacheReadInputCost  *float64 `json:"estimated_cache_read_input_cost,omitempty"`
-	EstimatedCacheWriteInputCost *float64 `json:"estimated_cache_write_input_cost,omitempty"`
+	EstimatedTotalCost           *float64
+	EstimatedInputCost           *float64
+	EstimatedOutputCost          *float64
+	EstimatedCacheReadInputCost  *float64
+	EstimatedCacheWriteInputCost *float64
 
 	// Extra carries any metric keys not covered by the named fields (custom or
 	// newly-standardized keys). Keys are emitted verbatim alongside the named
 	// fields; a named field wins on key collision.
-	Extra map[string]float64 `json:"-"`
+	Extra map[string]float64
 }
 
-// MarshalJSON emits the named metric fields and merges in Extra so arbitrary
-// metric keys survive, matching the flat key -> number wire shape. A named field
-// takes precedence over an Extra entry with the same key.
-func (m SpanMetrics) MarshalJSON() ([]byte, error) {
-	type alias SpanMetrics // no MarshalJSON -> default struct encoding of named fields
-	if len(m.Extra) == 0 {
-		return json.Marshal(alias(m))
+// toMetrics flattens the named metric fields (merging in Extra, named wins on
+// key collision) into the transport's flat key -> number wire shape. It returns
+// nil when nothing is set so metrics is omitted from the payload.
+func (m *SpanMetrics) toMetrics() map[string]float64 {
+	if m == nil {
+		return nil
 	}
-	// Merge Extra with the named fields in a single marshal (named wins on key
-	// collision), avoiding a marshal/unmarshal/marshal round-trip. The keys mirror
-	// the struct tags above; the wire-shape contract test guards against drift.
-	out := make(map[string]any, len(m.Extra)+16)
-	for k, v := range m.Extra {
-		out[k] = v
-	}
+	out := make(map[string]float64, len(m.Extra)+16)
+	maps.Copy(out, m.Extra)
 	putInt(out, "input_tokens", m.InputTokens)
 	putInt(out, "output_tokens", m.OutputTokens)
 	putInt(out, "total_tokens", m.TotalTokens)
@@ -124,18 +146,22 @@ func (m SpanMetrics) MarshalJSON() ([]byte, error) {
 	putFloat(out, "estimated_output_cost", m.EstimatedOutputCost)
 	putFloat(out, "estimated_cache_read_input_cost", m.EstimatedCacheReadInputCost)
 	putFloat(out, "estimated_cache_write_input_cost", m.EstimatedCacheWriteInputCost)
-	return json.Marshal(out)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // putInt/putFloat set a metric key only when the pointer is non-nil, mirroring
-// the named fields' omitempty behavior.
-func putInt(m map[string]any, key string, v *int64) {
+// the named fields' omitempty behavior. A named field overwrites any Extra entry
+// sharing its key (named wins).
+func putInt(m map[string]float64, key string, v *int64) {
 	if v != nil {
-		m[key] = *v
+		m[key] = float64(*v)
 	}
 }
 
-func putFloat(m map[string]any, key string, v *float64) {
+func putFloat(m map[string]float64, key string, v *float64) {
 	if v != nil {
 		m[key] = *v
 	}
@@ -148,132 +174,90 @@ type SpanLink struct {
 	Attributes map[string]string
 }
 
-// ---- wire types (Trajectory's production-proven /api/v2/llmobs shape) ----
-
-type wireSpanPayload struct {
-	DDStage         string     `json:"_dd.stage"`
-	DDTracerVersion string     `json:"_dd.tracer_version"`
-	EventType       string     `json:"event_type"`
-	Spans           []wireSpan `json:"spans"`
-}
-
-type wireSpan struct {
-	TraceID          string         `json:"trace_id"`
-	SpanID           string         `json:"span_id"`
-	ParentID         string         `json:"parent_id"`
-	SessionID        string         `json:"session_id,omitempty"`
-	Name             string         `json:"name"`
-	Service          string         `json:"service,omitempty"`
-	StartNs          int64          `json:"start_ns"`
-	Duration         int64          `json:"duration"`
-	Status           string         `json:"status"`
-	StatusMessage    string         `json:"status_message,omitempty"`
-	Meta             wireMeta       `json:"meta"`
-	Metrics          *SpanMetrics   `json:"metrics,omitempty"`
-	Tags             []string       `json:"tags"`
-	SpanLinks        []wireSpanLink `json:"span_links,omitempty"`
-	CollectionErrors []string       `json:"collection_errors,omitempty"`
-	DD               wireSpanDD     `json:"_dd"`
-}
-
-type wireMeta struct {
-	// Span kind is emitted in BOTH forms for maximum intake compatibility:
-	//   - nested meta.span.kind: the storage schema (llmobs-internal Meta.Span) and
-	//     Trajectory's production payload (ddllmobs LLMObsMeta.Span).
-	//   - flat meta."span.kind": what the live tracer writes
-	//     (internal/llmobs/llmobs.go), i.e. what the current SDK/intake path reads.
-	// Both carry the same value; a reader that only knows one form still gets the kind.
-	Span          wireMetaSpan   `json:"span"`
-	SpanKindFlat  string         `json:"span.kind,omitempty"`
-	ModelName     string         `json:"model_name,omitempty"`
-	ModelProvider string         `json:"model_provider,omitempty"`
-	Input         *wireIO        `json:"input,omitempty"`
-	Output        *wireIO        `json:"output,omitempty"`
-	Metadata      map[string]any `json:"metadata,omitempty"`
-}
-
-type wireMetaSpan struct {
-	Kind string `json:"kind"`
-}
-
-type wireIO struct {
-	Value string `json:"value"`
-}
-
-type wireSpanLink struct {
-	SpanID     string            `json:"span_id"`
-	TraceID    string            `json:"trace_id"`
-	Attributes map[string]string `json:"attributes,omitempty"`
-}
-
-// wireSpanDD is the span's _dd block. Unlike the shared transport.DDAttributes,
-// apm_trace_id is omitempty so an offline span that is not correlated to APM
-// omits the optional field rather than sending apm_trace_id:"".
-type wireSpanDD struct {
-	SpanID     string `json:"span_id"`
-	TraceID    string `json:"trace_id"`
-	APMTraceID string `json:"apm_trace_id,omitempty"`
-}
-
-// toWire lowers a public SpanEvent to the wire shape, applying defaults.
-func (e SpanEvent) toWire(defaultService string) wireSpan {
+// toWire lowers a public SpanEvent to the shared transport wire shape, applying
+// defaults. The structured meta block is a map[string]any so it reproduces the
+// exact intake JSON (nested meta.span.kind plus the flat meta."span.kind", model
+// fields, input/output, metadata) with the same omitempty behavior as before.
+func (e SpanEvent) toWire(defaultService string) *transport.LLMObsSpanEvent {
 	parentID := e.ParentID
 	if parentID == "" {
 		parentID = defaultParentID
 	}
 	name := e.Name
 	if name == "" {
-		name = e.Kind
+		name = string(e.Kind)
 	}
 	status := e.Status
 	if status == "" {
-		status = "ok"
+		status = StatusOK
 	}
 	service := e.Service
 	if service == "" {
 		service = defaultService
 	}
 
-	ws := wireSpan{
+	// meta.span is always present (nested meta.span.kind: storage schema +
+	// Trajectory's production payload); the flat meta."span.kind" mirrors what the
+	// live tracer writes. model/input/output/metadata keep omitempty semantics.
+	meta := map[string]any{
+		"span": map[string]any{"kind": string(e.Kind)},
+	}
+	if e.Kind != "" {
+		meta["span.kind"] = string(e.Kind)
+	}
+	if e.ModelName != "" {
+		meta["model_name"] = e.ModelName
+	}
+	if e.ModelProvider != "" {
+		meta["model_provider"] = e.ModelProvider
+	}
+	if e.Input != "" {
+		meta["input"] = map[string]any{"value": e.Input}
+	}
+	if e.Output != "" {
+		meta["output"] = map[string]any{"value": e.Output}
+	}
+	if len(e.Metadata) > 0 {
+		meta["metadata"] = e.Metadata
+	}
+
+	ev := &transport.LLMObsSpanEvent{
 		TraceID:       e.TraceID,
 		SpanID:        e.SpanID,
 		ParentID:      parentID,
 		SessionID:     e.SessionID,
 		Name:          name,
 		Service:       service,
-		StartNs:       e.StartNanos,
-		Duration:      e.DurationNanos,
-		Status:        status,
+		StartNS:       startNanos(e.Start),
+		Duration:      int64(e.Duration),
+		Status:        string(status),
 		StatusMessage: e.StatusMessage,
-		Meta: wireMeta{
-			Span:          wireMetaSpan{Kind: e.Kind},
-			SpanKindFlat:  e.Kind,
-			ModelName:     e.ModelName,
-			ModelProvider: e.ModelProvider,
-			Metadata:      e.Metadata,
-		},
-		Metrics: e.Metrics,
-		DD: wireSpanDD{
+		Meta:          meta,
+		Metrics:       e.Metrics.toMetrics(),
+		DDAttributes: transport.DDAttributes{
 			SpanID:     e.SpanID,
 			TraceID:    e.TraceID,
 			APMTraceID: e.APMTraceID,
 		},
 	}
-	if e.Input != "" {
-		ws.Meta.Input = &wireIO{Value: e.Input}
-	}
-	if e.Output != "" {
-		ws.Meta.Output = &wireIO{Value: e.Output}
-	}
 	// Clone the caller's tags so later stamping (env/version) never mutates the
 	// caller's backing array, and so tags is always non-nil in the payload.
-	ws.Tags = append([]string{}, e.Tags...)
+	ev.Tags = append([]string{}, e.Tags...)
 	for _, l := range e.SpanLinks {
-		ws.SpanLinks = append(ws.SpanLinks, wireSpanLink{
+		ev.SpanLinks = append(ev.SpanLinks, transport.SpanLink{
 			SpanID:     l.SpanID,
 			TraceID:    l.TraceID,
 			Attributes: l.Attributes,
 		})
 	}
-	return ws
+	return ev
+}
+
+// startNanos returns the Unix-nanosecond start, or 0 for a zero time (UnixNano
+// on a zero Time is a large negative sentinel, not a meaningful start).
+func startNanos(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixNano()
 }

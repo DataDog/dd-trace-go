@@ -16,6 +16,7 @@ import (
 	"math"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -673,7 +674,7 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		Meta:             meta,
 		Metrics:          span.llmCtx.metrics,
 		CollectionErrors: nil,
-		SpanLinks:        span.spanLinks,
+		SpanLinks:        toTransportSpanLinks(span.spanLinks),
 		DDAttributes:     ddAttrs,
 	}
 	if b, err := json.Marshal(ev); err == nil {
@@ -700,6 +701,32 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		trackSpanEventSize(ev, actualSize, truncated)
 	}
 	return ev
+}
+
+// toTransportSpanLinks lowers the tracer's numeric span links to the transport
+// wire shape, formatting the numeric IDs as decimal strings (the wire type uses
+// opaque string IDs shared with the offline export path). TraceIDHigh keeps its
+// omitempty behavior: a zero high-word stays empty rather than serializing "0".
+func toTransportSpanLinks(links []SpanLink) []transport.SpanLink {
+	if len(links) == 0 {
+		return nil
+	}
+	out := make([]transport.SpanLink, len(links))
+	for i, l := range links {
+		high := ""
+		if l.TraceIDHigh != 0 {
+			high = strconv.FormatUint(l.TraceIDHigh, 10)
+		}
+		out[i] = transport.SpanLink{
+			TraceID:     strconv.FormatUint(l.TraceID, 10),
+			TraceIDHigh: high,
+			SpanID:      strconv.FormatUint(l.SpanID, 10),
+			Attributes:  l.Attributes,
+			Tracestate:  l.Tracestate,
+			Flags:       l.Flags,
+		}
+	}
+	return out
 }
 
 // validateCostTags filters the span's annotated cost tags against the final

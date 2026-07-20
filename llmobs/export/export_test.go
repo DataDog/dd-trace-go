@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -70,19 +71,27 @@ func (f *fakeTransport) captured() []capturedRequest {
 	return f.requests
 }
 
-func newClient(t *testing.T, fake *fakeTransport, cfg export.Config) *export.Client {
+// newClient builds a Datadog-route client wired to fake, defaulting site and API
+// key. Extra options are appended after the routing/HTTP defaults.
+func newClient(t *testing.T, fake *fakeTransport, mlApp string, opts ...export.ClientOption) *export.Client {
 	t.Helper()
-	cfg.HTTPClient = &http.Client{Transport: fake}
-	if cfg.MLApp == "" {
-		cfg.MLApp = "test-app"
-	}
-	if cfg.Site == "" && cfg.AgentURL == "" {
-		cfg.Site = "datadoghq.com"
-	}
-	if cfg.APIKey == "" && cfg.AgentURL == "" {
-		cfg.APIKey = "test-key"
-	}
-	c, err := export.New(cfg)
+	all := append([]export.ClientOption{
+		export.WithHTTPClient(&http.Client{Transport: fake}),
+		export.WithDatadogIntake("datadoghq.com", "test-key"),
+	}, opts...)
+	c, err := export.NewClient(mlApp, all...)
+	require.NoError(t, err)
+	return c
+}
+
+// newAgentClient builds an Agent-route (EVP proxy) client wired to fake.
+func newAgentClient(t *testing.T, fake *fakeTransport, agentURL, mlApp string, opts ...export.ClientOption) *export.Client {
+	t.Helper()
+	all := append([]export.ClientOption{
+		export.WithHTTPClient(&http.Client{Transport: fake}),
+		export.WithAgentURL(agentURL),
+	}, opts...)
+	c, err := export.NewClient(mlApp, all...)
 	require.NoError(t, err)
 	return c
 }
@@ -95,7 +104,7 @@ func decode(t *testing.T, b []byte) map[string]any {
 }
 
 // firstReq decodes a span request body — a JSON array of push-span-events
-// requests (see encodeSpans) — and returns its first element.
+// requests — and returns its first element.
 func firstReq(t *testing.T, b []byte) map[string]any {
 	t.Helper()
 	var arr []map[string]any
@@ -121,11 +130,11 @@ func keysOf(m map[string]any) []string {
 // integration suite; this guards the shape the SDK emits.)
 func TestSpanWireShape_Contract(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{Env: "prod", Version: "1.2.3"})
+	c := newClient(t, fake, "test-app", export.WithEnv("prod"), export.WithVersion("1.2.3"))
 
-	_, err := c.ExportSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", ParentID: "p", Kind: "llm", Name: "chat",
-		SessionID: "sess", Service: "svc", StartNanos: 1, DurationNanos: 2, Status: "ok",
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t", SpanID: "s", ParentID: "p", Kind: export.KindLLM, Name: "chat",
+		SessionID: "sess", Service: "svc", Start: time.Unix(0, 1), Duration: 2, Status: export.StatusOK,
 		ModelName: "gpt", ModelProvider: "openai", Input: "in", Output: "out",
 		Metadata:   map[string]any{"k": "v"},
 		Metrics:    &export.SpanMetrics{InputTokens: ptr(int64(1))},
@@ -164,27 +173,28 @@ func TestSpanWireShape_Contract(t *testing.T) {
 	assert.ElementsMatch(t, []string{"_dd.stage", "_dd.tracer_version", "event_type", "spans"}, keysOf(env), "envelope wire keys drifted")
 }
 
-func TestExportSpans_WireShapeAndAuth(t *testing.T) {
+func TestSubmitSpans_WireShapeAndAuth(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{Service: "svc", Env: "prod", Version: "1.2.3"})
+	c := newClient(t, fake, "test-app", export.WithService("svc"), export.WithEnv("prod"), export.WithVersion("1.2.3"))
 
-	res, err := c.ExportSpans(context.Background(), []export.SpanEvent{{
-		TraceID:       "111",
-		SpanID:        "222",
-		SessionID:     "sess",
-		Kind:          "llm",
-		Name:          "chat",
-		StartNanos:    1000,
-		DurationNanos: 500,
-		Input:         "hello <b>",
-		Output:        "hi",
-		Metrics:       &export.SpanMetrics{InputTokens: ptr(int64(10))},
-		Tags:          []string{"ml_app:myapp"},
-		SpanLinks:     []export.SpanLink{{SpanID: "999", TraceID: "888"}},
-		APMTraceID:    "aabbccdd",
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID:    "111",
+		SpanID:     "222",
+		SessionID:  "sess",
+		Kind:       export.KindLLM,
+		Name:       "chat",
+		Start:      time.Unix(0, 1000),
+		Duration:   500,
+		Input:      "hello <b>",
+		Output:     "hi",
+		Metrics:    &export.SpanMetrics{InputTokens: ptr(int64(10))},
+		Tags:       []string{"ml_app:myapp"},
+		SpanLinks:  []export.SpanLink{{SpanID: "999", TraceID: "888"}},
+		APMTraceID: "aabbccdd",
 	}})
 	require.NoError(t, err)
-	require.True(t, res.OK())
+	require.Zero(t, res.Failed)
+	require.Equal(t, 1, res.Sent)
 	require.Len(t, res.Requests, 1)
 	assert.Equal(t, 202, res.Requests[0].StatusCode)
 	assert.Equal(t, 1, res.Requests[0].Attempts)
@@ -239,34 +249,37 @@ func TestExportSpans_WireShapeAndAuth(t *testing.T) {
 	assert.Contains(t, tags, "service:svc") // service carried as a tag (intake reads it there)
 }
 
-func TestExportSpans_Chunking(t *testing.T) {
+func TestSubmitSpans_Chunking(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{SpanBatchSize: 50})
+	c := newClient(t, fake, "test-app", export.WithSpanBatchSize(50))
 
 	events := make([]export.SpanEvent, 120)
 	for i := range events {
-		events[i] = export.SpanEvent{TraceID: "t", SpanID: "s", Kind: "llm"}
+		events[i] = export.SpanEvent{TraceID: "t", SpanID: "s", Kind: export.KindLLM}
 	}
-	res, err := c.ExportSpans(context.Background(), events)
+	res, err := c.SubmitSpans(context.Background(), events)
 	require.NoError(t, err)
 	require.Len(t, res.Requests, 3)
 	assert.Equal(t, 50, res.Requests[0].Count)
 	assert.Equal(t, 50, res.Requests[1].Count)
 	assert.Equal(t, 20, res.Requests[2].Count)
+	assert.Equal(t, 120, res.Sent)
 	assert.Len(t, fake.captured(), 3)
 }
 
-func TestExportSpans_ValidationDropsInvalidRows(t *testing.T) {
+func TestSubmitSpans_ValidationDropsInvalidRows(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	res, err := c.ExportSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: "llm"},
-		{TraceID: "", SpanID: "s2", Kind: "llm"}, // missing trace_id
-		{TraceID: "t3", SpanID: "", Kind: "llm"}, // missing span_id
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM},
+		{TraceID: "", SpanID: "s2", Kind: export.KindLLM}, // missing trace_id
+		{TraceID: "t3", SpanID: "", Kind: export.KindLLM}, // missing span_id
 	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 2)
+	assert.Equal(t, 2, res.Dropped)
+	assert.Equal(t, 1, res.Sent)
 	assert.Equal(t, 1, res.ValidationErrors[0].Index)
 	assert.Equal(t, 2, res.ValidationErrors[1].Index)
 
@@ -276,12 +289,12 @@ func TestExportSpans_ValidationDropsInvalidRows(t *testing.T) {
 	assert.Len(t, spans, 1) // only the valid row was sent
 }
 
-func TestExportSpans_SizeGuardTruncatesIO(t *testing.T) {
+func TestSubmitSpans_SizeGuardTruncatesIO(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{MaxSpanPayloadBytes: 256})
+	c := newClient(t, fake, "test-app", export.WithMaxSpanPayloadBytes(256))
 
-	res, err := c.ExportSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: "llm",
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
 		Input:  strings.Repeat("x", 10000),
 		Output: strings.Repeat("y", 10000),
 	}})
@@ -295,15 +308,15 @@ func TestExportSpans_SizeGuardTruncatesIO(t *testing.T) {
 	assert.Contains(t, span["collection_errors"].([]any), "dropped_io")
 }
 
-func TestExportSpans_SplitsOversizedBatchInsteadOfDroppingIO(t *testing.T) {
+func TestSubmitSpans_SplitsOversizedBatchInsteadOfDroppingIO(t *testing.T) {
 	fake := &fakeTransport{}
 	// Two spans that each fit but together exceed the limit: the batch must be
 	// split into two requests with input/output preserved (no dropped_io).
-	c := newClient(t, fake, export.Config{MaxSpanPayloadBytes: 3000})
+	c := newClient(t, fake, "test-app", export.WithMaxSpanPayloadBytes(3000))
 
-	res, err := c.ExportSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: "llm", Input: strings.Repeat("x", 1500)},
-		{TraceID: "t2", SpanID: "s2", Kind: "llm", Input: strings.Repeat("y", 1500)},
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: strings.Repeat("x", 1500)},
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: strings.Repeat("y", 1500)},
 	})
 	require.NoError(t, err)
 	require.Len(t, res.Requests, 2) // bisected: one span per request
@@ -317,14 +330,14 @@ func TestExportSpans_SplitsOversizedBatchInsteadOfDroppingIO(t *testing.T) {
 	}
 }
 
-func TestExportSpans_StampsMLAppFromConfig(t *testing.T) {
+func TestSubmitSpans_StampsMLAppFromClient(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{MLApp: "my-app"})
+	c := newClient(t, fake, "my-app")
 
-	_, err := c.ExportSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: "llm"},                                    // no ml_app tag -> stamped
-		{TraceID: "t2", SpanID: "s2", Kind: "llm", Tags: []string{"ml_app:override"}}, // caller wins
-		{TraceID: "t3", SpanID: "s3", Kind: "llm", Tags: []string{"ml_app:"}},         // empty tag -> treated as absent
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM},                                    // no ml_app tag -> stamped
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Tags: []string{"ml_app:override"}}, // caller wins
+		{TraceID: "t3", SpanID: "s3", Kind: export.KindLLM, Tags: []string{"ml_app:"}},         // empty tag -> treated as absent
 	})
 	require.NoError(t, err)
 
@@ -339,11 +352,11 @@ func TestExportSpans_StampsMLAppFromConfig(t *testing.T) {
 	assert.NotContains(t, tagsOf(2), "ml_app:")
 }
 
-func TestExportSpans_AgentRoute(t *testing.T) {
+func TestSubmitSpans_AgentRoute(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{AgentURL: "http://localhost:8126"})
+	c := newAgentClient(t, fake, "http://localhost:8126", "test-app")
 
-	_, err := c.ExportSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: "llm"}})
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
 	require.NoError(t, err)
 
 	reqs := fake.captured()
@@ -353,13 +366,34 @@ func TestExportSpans_AgentRoute(t *testing.T) {
 	assert.Empty(t, reqs[0].headers.Get("DD-API-KEY")) // no Datadog auth on agent route
 }
 
-func TestExportSpans_RetryTransient(t *testing.T) {
-	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) { return 500, "boom" }}
-	c := newClient(t, fake, export.Config{})
+func TestSubmitSpans_WithCallServiceOverride(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app", export.WithService("default-svc"))
 
-	res, err := c.ExportSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: "llm"}})
+	_, err := c.SubmitSpans(context.Background(),
+		[]export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}},
+		export.WithCallService("call-svc"),
+	)
+	require.NoError(t, err)
+
+	span := firstReq(t, fake.captured()[0].body)["spans"].([]any)[0].(map[string]any)
+	assert.Equal(t, "call-svc", span["service"]) // per-call override wins over the client default
+	var tags []string
+	for _, x := range span["tags"].([]any) {
+		tags = append(tags, x.(string))
+	}
+	assert.Contains(t, tags, "service:call-svc")
+	assert.NotContains(t, tags, "service:default-svc")
+}
+
+func TestSubmitSpans_RetryTransient(t *testing.T) {
+	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) { return 500, "boom" }}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
 	require.Error(t, err)
-	require.False(t, res.OK())
+	require.Equal(t, 1, res.Failed) // the one event's request failed
+	require.Zero(t, res.Sent)
 	require.Len(t, res.Requests, 1)
 	assert.Greater(t, res.Requests[0].Attempts, 1) // retried
 	assert.True(t, res.Requests[0].Retriable)
@@ -367,11 +401,11 @@ func TestExportSpans_RetryTransient(t *testing.T) {
 	assert.Error(t, res.Requests[0].Err)
 }
 
-func TestExportSpans_PermanentError(t *testing.T) {
+func TestSubmitSpans_PermanentError(t *testing.T) {
 	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) { return 400, "bad" }}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	res, err := c.ExportSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: "llm"}})
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
 	require.Error(t, err)
 	require.Len(t, res.Requests, 1)
 	assert.Equal(t, 1, res.Requests[0].Attempts) // not retried
@@ -379,19 +413,20 @@ func TestExportSpans_PermanentError(t *testing.T) {
 	assert.Equal(t, 400, res.Requests[0].StatusCode)
 }
 
-func TestExportEvaluations_WireShapeVariants(t *testing.T) {
+func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{MLApp: "defaultapp"})
+	c := newClient(t, fake, "defaultapp")
 
-	res, err := c.ExportEvaluations(context.Background(), []export.EvaluationMetric{
-		{SpanID: "s1", TraceID: "t1", Label: "quality", CategoricalValue: ptr("good"), TimestampMS: 123},
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
+		{SpanID: "s1", TraceID: "t1", Label: "quality", CategoricalValue: ptr("good"), Timestamp: time.UnixMilli(123)},
 		{SpanID: "s2", TraceID: "t2", Label: "score", ScoreValue: ptr(0.9)},
 		{SpanID: "s3", TraceID: "t3", Label: "ok", BooleanValue: ptr(true)},
-		{SpanID: "s4", TraceID: "t4", Label: "struct", JSONValue: map[string]any{"k": "v"}, MetricType: "categorical"},
+		{SpanID: "s4", TraceID: "t4", Label: "struct", JSONValue: map[string]any{"k": "v"}, MetricType: export.MetricTypeCategorical},
 		{TagKey: "session_id", TagValue: "abc", Label: "tagjoin", ScoreValue: ptr(1.0)},
 	})
 	require.NoError(t, err)
-	require.True(t, res.OK())
+	require.Zero(t, res.Failed)
+	require.Equal(t, 5, res.Sent)
 	require.Len(t, res.Requests, 1)
 
 	reqs := fake.captured()
@@ -408,6 +443,7 @@ func TestExportEvaluations_WireShapeVariants(t *testing.T) {
 	assert.Equal(t, "categorical", m0["metric_type"])
 	assert.Equal(t, "good", m0["categorical_value"])
 	assert.Equal(t, "defaultapp", m0["ml_app"]) // default applied
+	assert.Equal(t, float64(123), m0["timestamp_ms"])
 	join := m0["join_on"].(map[string]any)["span"].(map[string]any)
 	assert.Equal(t, "s1", join["span_id"])
 	assert.Equal(t, "t1", join["trace_id"])
@@ -423,11 +459,11 @@ func TestExportEvaluations_WireShapeVariants(t *testing.T) {
 	assert.Equal(t, "abc", tagJoin["value"])
 }
 
-func TestExportEvaluations_StampsTracerVersion(t *testing.T) {
+func TestSubmitEvaluations_StampsTracerVersion(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	_, err := c.ExportEvaluations(context.Background(), []export.EvaluationMetric{{
+	_, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
 		SpanID: "s", TraceID: "t", Label: "q", ScoreValue: ptr(1.0),
 		Tags: []string{"team:ml", "ddtrace.version:bogus"},
 	}})
@@ -449,66 +485,80 @@ func TestExportEvaluations_StampsTracerVersion(t *testing.T) {
 	assert.True(t, hasVer, "SDK ddtrace.version stamped")
 }
 
-func TestExportEvaluations_Validation(t *testing.T) {
+func TestSubmitEvaluations_Validation(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	res, err := c.ExportEvaluations(context.Background(), []export.EvaluationMetric{
-		{Label: "no-join", ScoreValue: ptr(1.0)},                                                                // missing join
-		{SpanID: "s", TraceID: "t", TagKey: "k", TagValue: "v", Label: "both", ScoreValue: ptr(1.0)},            // both joins
-		{SpanID: "s", TraceID: "t", Label: "novalue"},                                                           // zero values
-		{SpanID: "s", TraceID: "t", Label: "twovalues", ScoreValue: ptr(1.0), BooleanValue: ptr(true)},          // two values
-		{SpanID: "s", TraceID: "t", Label: "jsonnotype", JSONValue: map[string]any{"k": "v"}},                   // json without metric type
-		{SpanID: "s", TraceID: "", Label: "partial", ScoreValue: ptr(1.0)},                                      // incomplete span join
-		{SpanID: "s", TraceID: "t", Label: "badtype", MetricType: "scores", ScoreValue: ptr(1.0)},               // invalid metric type (typo)
-		{SpanID: "s", TraceID: "t", Label: "mismatch", MetricType: "score", CategoricalValue: ptr("x")},         // type/value mismatch
-		{SpanID: "s", TraceID: "t", Label: "emptyjson", MetricType: "categorical", JSONValue: map[string]any{}}, // empty json value
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
+		{Label: "no-join", ScoreValue: ptr(1.0)},                                                                               // missing join
+		{SpanID: "s", TraceID: "t", TagKey: "k", TagValue: "v", Label: "both", ScoreValue: ptr(1.0)},                           // both joins
+		{SpanID: "s", TraceID: "t", Label: "novalue"},                                                                          // zero values
+		{SpanID: "s", TraceID: "t", Label: "twovalues", ScoreValue: ptr(1.0), BooleanValue: ptr(true)},                         // two values
+		{SpanID: "s", TraceID: "t", Label: "jsonnotype", JSONValue: map[string]any{"k": "v"}},                                  // json without metric type
+		{SpanID: "s", TraceID: "", Label: "partial", ScoreValue: ptr(1.0)},                                                     // incomplete span join
+		{SpanID: "s", TraceID: "t", Label: "badtype", MetricType: export.MetricType("scores"), ScoreValue: ptr(1.0)},           // invalid metric type (typo)
+		{SpanID: "s", TraceID: "t", Label: "mismatch", MetricType: export.MetricTypeScore, CategoricalValue: ptr("x")},         // type/value mismatch
+		{SpanID: "s", TraceID: "t", Label: "emptyjson", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{}}, // empty json value
 	})
 	require.NoError(t, err)
 	assert.Len(t, res.ValidationErrors, 9)
+	assert.Equal(t, 9, res.Dropped)
 	assert.Empty(t, fake.captured()) // nothing valid was sent
 }
 
-func TestExport_EmptyInput(t *testing.T) {
+func TestSubmit_EmptyInput(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	res, err := c.ExportSpans(context.Background(), nil)
+	res, err := c.SubmitSpans(context.Background(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, res.Requests)
 
-	res, err = c.ExportEvaluations(context.Background(), nil)
+	res, err = c.SubmitEvaluations(context.Background(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, res.Requests)
 	assert.Empty(t, fake.captured())
 }
 
-func TestNew_RequiresAPIKeyForDirectRoute(t *testing.T) {
-	_, err := export.New(export.Config{MLApp: "app", Site: "datadoghq.com"})
+func TestNewClient_RequiresAPIKeyForDirectRoute(t *testing.T) {
+	_, err := export.NewClient("app", export.WithDatadogIntake("datadoghq.com", ""))
 	assert.Error(t, err)
 }
 
-func TestNew_RequiresMLApp(t *testing.T) {
-	_, err := export.New(export.Config{Site: "datadoghq.com", APIKey: "k"})
+func TestNewClient_RequiresMLApp(t *testing.T) {
+	_, err := export.NewClient("", export.WithDatadogIntake("datadoghq.com", "k"))
 	assert.Error(t, err) // ml_app is required for LLM Obs data
 }
 
-// TestExportSpans_ConcurrentDoesNotMutateCaller guards against the client
+func TestNewClient_RequiresExactlyOneRoute(t *testing.T) {
+	// No route selected.
+	_, err := export.NewClient("app")
+	assert.Error(t, err)
+
+	// Both routes selected.
+	_, err = export.NewClient("app",
+		export.WithDatadogIntake("datadoghq.com", "k"),
+		export.WithAgentURL("http://localhost:8126"),
+	)
+	assert.Error(t, err)
+}
+
+// TestSubmitSpans_ConcurrentDoesNotMutateCaller guards against the client
 // mutating the caller's Tags backing array (and racing) while stamping env/version.
 // Run with -race.
-func TestExportSpans_ConcurrentDoesNotMutateCaller(t *testing.T) {
+func TestSubmitSpans_ConcurrentDoesNotMutateCaller(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{Env: "prod", Version: "1.0"})
+	c := newClient(t, fake, "test-app", export.WithEnv("prod"), export.WithVersion("1.0"))
 
 	// Spare-capacity slice shared across the exported events.
 	shared := make([]string, 1, 8)
 	shared[0] = "ml_app:x"
-	ev := export.SpanEvent{TraceID: "t", SpanID: "s", Kind: "llm", Tags: shared}
+	ev := export.SpanEvent{TraceID: "t", SpanID: "s", Kind: export.KindLLM, Tags: shared}
 
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
-			_, err := c.ExportSpans(context.Background(), []export.SpanEvent{ev})
+			_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{ev})
 			assert.NoError(t, err)
 		})
 	}
@@ -518,22 +568,22 @@ func TestExportSpans_ConcurrentDoesNotMutateCaller(t *testing.T) {
 	assert.Equal(t, []string{"ml_app:x"}, shared)
 }
 
-func TestExportSpans_AgentRouteTrimsTrailingSlash(t *testing.T) {
+func TestSubmitSpans_AgentRouteTrimsTrailingSlash(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{AgentURL: "http://localhost:8126/"})
+	c := newAgentClient(t, fake, "http://localhost:8126/", "test-app")
 
-	_, err := c.ExportSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: "llm"}})
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
 	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:8126/evp_proxy/v2/api/v2/llmobs", fake.captured()[0].url)
 }
 
-func TestExportSpans_ContextCanceledStopsPromptly(t *testing.T) {
+func TestSubmitSpans_ContextCanceledStopsPromptly(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	res, err := c.ExportSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: "llm"}})
+	res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 	// A canceled context stops the export before POSTing, so it neither sends nor
@@ -542,18 +592,18 @@ func TestExportSpans_ContextCanceledStopsPromptly(t *testing.T) {
 	assert.Empty(t, fake.captured())
 }
 
-func TestNew_RejectsBadAgentURLScheme(t *testing.T) {
+func TestNewClient_RejectsBadAgentURLScheme(t *testing.T) {
 	for _, bad := range []string{"htt://localhost:8126", "ftp://host", "localhost:8126"} {
-		_, err := export.New(export.Config{AgentURL: bad})
-		assert.Error(t, err, "AgentURL %q should be rejected", bad)
+		_, err := export.NewClient("app", export.WithAgentURL(bad))
+		assert.Error(t, err, "agent URL %q should be rejected", bad)
 	}
 }
 
-func TestExportEvaluations_RejectsNonFiniteScore(t *testing.T) {
+func TestSubmitEvaluations_RejectsNonFiniteScore(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	res, err := c.ExportEvaluations(context.Background(), []export.EvaluationMetric{
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
 		{SpanID: "s1", TraceID: "t1", Label: "nan", ScoreValue: ptr(math.NaN())},
 		{SpanID: "s2", TraceID: "t2", Label: "inf", ScoreValue: ptr(math.Inf(1))},
 		{SpanID: "s3", TraceID: "t3", Label: "ok", ScoreValue: ptr(0.5)},
@@ -568,12 +618,12 @@ func TestExportEvaluations_RejectsNonFiniteScore(t *testing.T) {
 	require.Len(t, metrics, 1)
 }
 
-func TestExportSpans_StampsSessionIDTag(t *testing.T) {
+func TestSubmitSpans_StampsSessionIDTag(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	_, err := c.ExportSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t", SpanID: "s", Kind: "llm", SessionID: "sess-1"},
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t", SpanID: "s", Kind: export.KindLLM, SessionID: "sess-1"},
 	})
 	require.NoError(t, err)
 
@@ -582,13 +632,13 @@ func TestExportSpans_StampsSessionIDTag(t *testing.T) {
 	assert.Equal(t, "sess-1", span["session_id"])                 // top-level still set
 }
 
-func TestExportSpans_DropsMissingKind(t *testing.T) {
+func TestSubmitSpans_DropsMissingKind(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	res, err := c.ExportSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: "llm"}, // valid
-		{TraceID: "t2", SpanID: "s2"},              // missing kind -> dropped
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM}, // valid
+		{TraceID: "t2", SpanID: "s2"},                       // missing kind -> dropped
 	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 1)
@@ -598,13 +648,13 @@ func TestExportSpans_DropsMissingKind(t *testing.T) {
 	require.Len(t, span, 1) // only the valid span was sent
 }
 
-func TestExportSpans_RejectsNonFiniteMetric(t *testing.T) {
+func TestSubmitSpans_RejectsNonFiniteMetric(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	res, err := c.ExportSpans(context.Background(), []export.SpanEvent{
-		{TraceID: "t1", SpanID: "s1", Kind: "llm", Metrics: &export.SpanMetrics{EstimatedTotalCost: ptr(math.Inf(1))}},
-		{TraceID: "t2", SpanID: "s2", Kind: "llm"}, // valid
+	res, err := c.SubmitSpans(context.Background(), []export.SpanEvent{
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Metrics: &export.SpanMetrics{EstimatedTotalCost: ptr(math.Inf(1))}},
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM}, // valid
 	})
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 1) // the non-finite cost row is dropped, not fatal
@@ -614,12 +664,12 @@ func TestExportSpans_RejectsNonFiniteMetric(t *testing.T) {
 	require.Len(t, span, 1) // the valid span still went out
 }
 
-func TestExportSpans_SessionIDOverridesStaleTag(t *testing.T) {
+func TestSubmitSpans_SessionIDOverridesStaleTag(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	_, err := c.ExportSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: "llm", SessionID: "new",
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t", SpanID: "s", Kind: export.KindLLM, SessionID: "new",
 		Tags: []string{"session_id:old", "team:ml"},
 	}})
 	require.NoError(t, err)
@@ -635,12 +685,12 @@ func TestExportSpans_SessionIDOverridesStaleTag(t *testing.T) {
 	assert.Equal(t, "new", span["session_id"])    // top-level agrees with the tag
 }
 
-func TestExportSpans_ServiceTagReplacesStale(t *testing.T) {
+func TestSubmitSpans_ServiceTagReplacesStale(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{Service: "svc"})
+	c := newClient(t, fake, "test-app", export.WithService("svc"))
 
-	_, err := c.ExportSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: "llm",
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
 		Tags: []string{"service:stale", "team:ml"},
 	}})
 	require.NoError(t, err)
@@ -656,12 +706,12 @@ func TestExportSpans_ServiceTagReplacesStale(t *testing.T) {
 	assert.Equal(t, "svc", span["service"])      // top-level field agrees with the tag
 }
 
-func TestExportSpans_MetricsPreservesExtraAndStandardKeys(t *testing.T) {
+func TestSubmitSpans_MetricsPreservesExtraAndStandardKeys(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	_, err := c.ExportSpans(context.Background(), []export.SpanEvent{{
-		TraceID: "t", SpanID: "s", Kind: "llm",
+	_, err := c.SubmitSpans(context.Background(), []export.SpanEvent{{
+		TraceID: "t", SpanID: "s", Kind: export.KindLLM,
 		Metrics: &export.SpanMetrics{
 			InputTokens:            ptr(int64(10)),
 			BillableCharacterCount: ptr(int64(42)),
@@ -681,12 +731,12 @@ func TestExportSpans_MetricsPreservesExtraAndStandardKeys(t *testing.T) {
 	assert.Equal(t, float64(7), m["custom_metric"]) // arbitrary reconstructed key not dropped
 }
 
-func TestExportEvaluations_RejectsUnmarshalableJSON(t *testing.T) {
+func TestSubmitEvaluations_RejectsUnmarshalableJSON(t *testing.T) {
 	fake := &fakeTransport{}
-	c := newClient(t, fake, export.Config{})
+	c := newClient(t, fake, "test-app")
 
-	res, err := c.ExportEvaluations(context.Background(), []export.EvaluationMetric{
-		{SpanID: "s1", TraceID: "t1", Label: "bad", MetricType: "categorical", JSONValue: map[string]any{"x": math.Inf(1)}},
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
+		{SpanID: "s1", TraceID: "t1", Label: "bad", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{"x": math.Inf(1)}},
 		{SpanID: "s2", TraceID: "t2", Label: "ok", ScoreValue: ptr(0.5)},
 	})
 	require.NoError(t, err)

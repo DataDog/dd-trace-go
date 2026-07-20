@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -22,12 +23,13 @@ const (
 	collectionDropped = "dropped_io"
 )
 
-// ExportSpans exports LLM Obs spans. Rows missing span_id, trace_id or kind are
+// SubmitSpans exports LLM Obs spans. Rows missing span_id, trace_id or kind are
 // dropped and reported in ExportResult.ValidationErrors. The input is scanned in
-// windows of Config.SpanBatchSize and each window is POSTed once, so peak memory
-// is bounded by one batch rather than the whole input. The returned error is
-// non-nil if any request failed; per-request detail is in the result.
-func (c *Client) ExportSpans(ctx context.Context, events []SpanEvent) (*ExportResult, error) {
+// windows of the client's span batch size and each window is POSTed once, so
+// peak memory is bounded by one batch rather than the whole input. The returned
+// error is non-nil if any request failed; per-request detail is in the result.
+func (c *Client) SubmitSpans(ctx context.Context, events []SpanEvent, opts ...SubmitOption) (*ExportResult, error) {
+	sc := c.resolveSubmit(opts)
 	res := &ExportResult{}
 	size := c.spanBatch
 	if size <= 0 {
@@ -38,6 +40,7 @@ func (c *Client) ExportSpans(ctx context.Context, events []SpanEvent) (*ExportRe
 		// POSTing every remaining batch (each Post would just fail on the canceled
 		// context and accumulate artificial request failures).
 		if err := ctx.Err(); err != nil {
+			res.finalize()
 			return res, fmt.Errorf("llmobs/export: export canceled: %w", err)
 		}
 		end := min(start+size, len(events))
@@ -48,7 +51,7 @@ func (c *Client) ExportSpans(ctx context.Context, events []SpanEvent) (*ExportRe
 				res.ValidationErrors = append(res.ValidationErrors, ValidationError{Index: i, Reason: reason})
 				continue
 			}
-			ws := e.toWire(c.service)
+			ws := e.toWire(sc.service)
 			ws.Tags = stampTags(ws.Tags, c.env, c.version, c.mlApp)
 			// The intake reads service from a service: tag (the storage schema has no
 			// top-level service field); mirror Trajectory's production payload, which
@@ -66,7 +69,8 @@ func (c *Client) ExportSpans(ctx context.Context, events []SpanEvent) (*ExportRe
 		}
 		c.sendSpanBatch(ctx, batch, res)
 	}
-	return res, exportutil.Aggregate(res.Failed(), len(res.Requests), "llmobs/export")
+	failed := res.finalize()
+	return res, exportutil.Aggregate(failed, len(res.Requests), "llmobs/export")
 }
 
 // spanRow is a validated span and its original input index (for row-level error
@@ -74,7 +78,7 @@ func (c *Client) ExportSpans(ctx context.Context, events []SpanEvent) (*ExportRe
 // bytes are retained across the whole input.
 type spanRow struct {
 	index int
-	span  wireSpan
+	span  *transport.LLMObsSpanEvent
 }
 
 // validateSpan reports why a span is invalid (dropped), or "" when it is valid.
@@ -89,11 +93,11 @@ func validateSpan(e SpanEvent) string {
 	}
 }
 
-// ExportEvaluations exports LLM Obs evaluation metrics. Invalid rows (bad join,
+// SubmitEvaluations exports LLM Obs evaluation metrics. Invalid rows (bad join,
 // wrong value count, missing label) are dropped and reported in
-// ExportResult.ValidationErrors. The input is scanned in windows of
-// Config.EvalBatchSize and each window is POSTed once.
-func (c *Client) ExportEvaluations(ctx context.Context, evals []EvaluationMetric) (*ExportResult, error) {
+// ExportResult.ValidationErrors. The input is scanned in windows of the client's
+// evaluation batch size and each window is POSTed once.
+func (c *Client) SubmitEvaluations(ctx context.Context, evals []EvaluationMetric, _ ...SubmitOption) (*ExportResult, error) {
 	res := &ExportResult{}
 	size := c.evalBatch
 	if size <= 0 {
@@ -101,8 +105,9 @@ func (c *Client) ExportEvaluations(ctx context.Context, evals []EvaluationMetric
 	}
 	for start := 0; start < len(evals); start += size {
 		// Stop promptly on caller cancellation instead of POSTing every remaining
-		// batch against the canceled context (see ExportSpans).
+		// batch against the canceled context (see SubmitSpans).
 		if err := ctx.Err(); err != nil {
+			res.finalize()
 			return res, fmt.Errorf("llmobs/export: export canceled: %w", err)
 		}
 		end := min(start+size, len(evals))
@@ -117,7 +122,8 @@ func (c *Client) ExportEvaluations(ctx context.Context, evals []EvaluationMetric
 		}
 		c.sendEvalBatch(ctx, batch, res)
 	}
-	return res, exportutil.Aggregate(res.Failed(), len(res.Requests), "llmobs/export")
+	failed := res.finalize()
+	return res, exportutil.Aggregate(failed, len(res.Requests), "llmobs/export")
 }
 
 // evalRow is a validated (lowered) metric and its original input index.
@@ -180,7 +186,7 @@ func dropUnencodableEvals(batch []evalRow, res *ExportResult) []evalRow {
 // (see internal/llmobs/transport.PushSpanEvents), so the payload is wrapped in a
 // single-element array on the wire.
 //
-// Spans arrive validated and stamped (see ExportSpans); this method encodes the
+// Spans arrive validated and stamped (see SubmitSpans); this method encodes the
 // batch once and POSTs it. A span holding a non-encodable value (e.g. a
 // non-finite metric cost) is dropped as a row-level error and the rest retried,
 // so one bad row cannot fail the batch.
@@ -194,7 +200,7 @@ func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *Export
 		return
 	}
 	payload := spanPayload(batch)
-	body, err := marshalJSON([]*wireSpanPayload{&payload})
+	body, err := marshalJSON([]*transport.PushSpanEventsRequest{payload})
 	if err != nil {
 		good := dropUnencodableSpans(batch, res)
 		if len(good) == len(batch) {
@@ -228,16 +234,16 @@ func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *Export
 }
 
 // spanPayload builds the intake envelope from a batch of validated spans.
-func spanPayload(batch []spanRow) wireSpanPayload {
-	spans := make([]wireSpan, len(batch))
+func spanPayload(batch []spanRow) *transport.PushSpanEventsRequest {
+	spans := make([]*transport.LLMObsSpanEvent, len(batch))
 	for i := range batch {
 		spans[i] = batch[i].span
 	}
-	return wireSpanPayload{
-		DDStage:         "raw",
-		DDTracerVersion: tracerVersion(),
-		EventType:       "span",
-		Spans:           spans,
+	return &transport.PushSpanEventsRequest{
+		Stage:         "raw",
+		TracerVersion: tracerVersion(),
+		EventType:     "span",
+		Spans:         spans,
 	}
 }
 
@@ -260,25 +266,29 @@ func dropUnencodableSpans(batch []spanRow, res *ExportResult) []spanRow {
 // It is best-effort: only input/output are shrunk, so a span dominated by other
 // fields may still exceed the limit and be rejected by intake.
 func dropSpanIO(batch []spanRow) ([]byte, error) {
-	spans := make([]wireSpan, len(batch))
+	spans := make([]*transport.LLMObsSpanEvent, len(batch))
 	for i := range batch {
-		ws := batch[i].span // struct copy; input/output pointers are replaced, not mutated
+		src := batch[i].span
+		ws := *src // struct copy; Meta map is replaced below, not mutated in place
+		meta := make(map[string]any, len(src.Meta))
+		maps.Copy(meta, src.Meta)
 		dropped := false
-		if ws.Meta.Input != nil {
-			ws.Meta.Input = &wireIO{Value: droppedIOText}
+		if _, ok := meta["input"]; ok {
+			meta["input"] = map[string]any{"value": droppedIOText}
 			dropped = true
 		}
-		if ws.Meta.Output != nil {
-			ws.Meta.Output = &wireIO{Value: droppedIOText}
+		if _, ok := meta["output"]; ok {
+			meta["output"] = map[string]any{"value": droppedIOText}
 			dropped = true
 		}
+		ws.Meta = meta
 		if dropped {
 			ws.CollectionErrors = appendUnique(ws.CollectionErrors, collectionDropped)
 		}
-		spans[i] = ws
+		spans[i] = &ws
 	}
-	p := wireSpanPayload{DDStage: "raw", DDTracerVersion: tracerVersion(), EventType: "span", Spans: spans}
-	return marshalJSON([]*wireSpanPayload{&p})
+	p := &transport.PushSpanEventsRequest{Stage: "raw", TracerVersion: tracerVersion(), EventType: "span", Spans: spans}
+	return marshalJSON([]*transport.PushSpanEventsRequest{p})
 }
 
 // ---- helpers ----
