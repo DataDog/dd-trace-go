@@ -133,6 +133,8 @@ func TestParseCoverageReportFlags(t *testing.T) {
 		{name: "preserves duplicates", raw: "unit,unit", want: []string{"unit", "unit"}},
 		{name: "accepts maximum", raw: makeCoverageReportFlags(maxCoverageReportFlags), want: makeCoverageReportFlagSlice(maxCoverageReportFlags)},
 		{name: "rejects over maximum", raw: makeCoverageReportFlags(maxCoverageReportFlags + 1), want: nil},
+		{name: "accepts maximum after removing empty entries", raw: " , " + makeCoverageReportFlags(maxCoverageReportFlags) + ", , ", want: makeCoverageReportFlagSlice(maxCoverageReportFlags)},
+		{name: "rejects over maximum after removing empty entries", raw: " , " + makeCoverageReportFlags(maxCoverageReportFlags+1) + ", , ", want: nil},
 	}
 
 	defer log.UseLogger(log.DiscardLogger{})()
