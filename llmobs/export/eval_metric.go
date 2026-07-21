@@ -43,8 +43,8 @@ type EvaluationMetric struct {
 	// Label is the metric name (required).
 	Label string
 	// MetricType is the metric type (MetricTypeCategorical/Score/Boolean/JSON).
-	// When empty it is derived from a scalar value; it is required for JSONValue
-	// (set MetricTypeJSON to reproduce Trajectory's range/segment markers).
+	// When empty it is derived from the value kind (MetricTypeJSON for a
+	// JSONValue); a MetricType that disagrees with the value kind is rejected.
 	MetricType MetricType
 
 	// Exactly one of the following must be set.
@@ -118,8 +118,10 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 		return nil, "score value must be a finite number"
 	}
 
-	// valueType is the metric type implied by the value kind. JSONValue implies no
-	// single type, so it requires an explicit (and valid) MetricType.
+	// valueType is the metric type implied by the value kind. Exactly one value is
+	// set (checked above), so it is always non-empty; a JSONValue implies
+	// MetricTypeJSON (json_value pairs only with metric_type "json", never with a
+	// scalar type — that would emit a value-less scalar metric intake rejects).
 	var valueType MetricType
 	switch {
 	case m.CategoricalValue != nil:
@@ -128,22 +130,17 @@ func (m EvaluationMetric) lower(defaultMLApp string) (*transport.LLMObsMetric, s
 		valueType = MetricTypeScore
 	case m.BooleanValue != nil:
 		valueType = MetricTypeBoolean
+	case m.JSONValue != nil:
+		valueType = MetricTypeJSON
 	}
 
 	metricType := m.MetricType
 	switch {
 	case metricType == "":
-		if valueType == "" { // JSONValue
-			return nil, "json_value requires an explicit MetricType"
-		}
 		metricType = valueType
 	case metricType != MetricTypeCategorical && metricType != MetricTypeScore && metricType != MetricTypeBoolean && metricType != MetricTypeJSON:
 		return nil, fmt.Sprintf("invalid MetricType %q (want categorical, score, boolean, or json)", metricType)
-	case metricType == MetricTypeJSON && m.JSONValue == nil:
-		// json metrics carry their value in json_value; a scalar-only json row has
-		// nothing to send under json_value.
-		return nil, "MetricType json requires a json value"
-	case valueType != "" && metricType != valueType:
+	case metricType != valueType:
 		return nil, fmt.Sprintf("MetricType %q does not match the %s value provided", metricType, valueType)
 	}
 

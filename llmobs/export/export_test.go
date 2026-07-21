@@ -447,7 +447,7 @@ func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
 		{SpanID: "s1", TraceID: "t1", Label: "quality", CategoricalValue: ptr("good"), Timestamp: time.UnixMilli(123)},
 		{SpanID: "s2", TraceID: "t2", Label: "score", ScoreValue: ptr(0.9)},
 		{SpanID: "s3", TraceID: "t3", Label: "ok", BooleanValue: ptr(true)},
-		{SpanID: "s4", TraceID: "t4", Label: "struct", JSONValue: map[string]any{"k": "v"}, MetricType: export.MetricTypeCategorical},
+		{SpanID: "s4", TraceID: "t4", Label: "struct", JSONValue: map[string]any{"k": "v"}, MetricType: export.MetricTypeJSON},
 		{TagKey: "session_id", TagValue: "abc", Label: "tagjoin", ScoreValue: ptr(1.0)},
 	})
 	require.NoError(t, err)
@@ -477,7 +477,7 @@ func TestSubmitEvaluations_WireShapeVariants(t *testing.T) {
 	m1 := metrics[1].(map[string]any)
 	assert.Equal(t, "score", m1["metric_type"])
 	m3 := metrics[3].(map[string]any)
-	assert.Equal(t, "categorical", m3["metric_type"])
+	assert.Equal(t, "json", m3["metric_type"]) // a structured json_value pairs with metric_type json
 	assert.NotNil(t, m3["json_value"])
 	m4 := metrics[4].(map[string]any)
 	tagJoin := m4["join_on"].(map[string]any)["tag"].(map[string]any)
@@ -516,15 +516,15 @@ func TestSubmitEvaluations_Validation(t *testing.T) {
 	c := newClient(t, fake, "test-app")
 
 	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{
-		{Label: "no-join", ScoreValue: ptr(1.0)},                                                                               // missing join
-		{SpanID: "s", TraceID: "t", TagKey: "k", TagValue: "v", Label: "both", ScoreValue: ptr(1.0)},                           // both joins
-		{SpanID: "s", TraceID: "t", Label: "novalue"},                                                                          // zero values
-		{SpanID: "s", TraceID: "t", Label: "twovalues", ScoreValue: ptr(1.0), BooleanValue: ptr(true)},                         // two values
-		{SpanID: "s", TraceID: "t", Label: "jsonnotype", JSONValue: map[string]any{"k": "v"}},                                  // json without metric type
-		{SpanID: "s", TraceID: "", Label: "partial", ScoreValue: ptr(1.0)},                                                     // incomplete span join
-		{SpanID: "s", TraceID: "t", Label: "badtype", MetricType: export.MetricType("scores"), ScoreValue: ptr(1.0)},           // invalid metric type (typo)
-		{SpanID: "s", TraceID: "t", Label: "mismatch", MetricType: export.MetricTypeScore, CategoricalValue: ptr("x")},         // type/value mismatch
-		{SpanID: "s", TraceID: "t", Label: "emptyjson", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{}}, // empty json value
+		{Label: "no-join", ScoreValue: ptr(1.0)},                                                                                                // missing join
+		{SpanID: "s", TraceID: "t", TagKey: "k", TagValue: "v", Label: "both", ScoreValue: ptr(1.0)},                                            // both joins
+		{SpanID: "s", TraceID: "t", Label: "novalue"},                                                                                           // zero values
+		{SpanID: "s", TraceID: "t", Label: "twovalues", ScoreValue: ptr(1.0), BooleanValue: ptr(true)},                                          // two values
+		{SpanID: "s", TraceID: "t", Label: "jsonscalarmismatch", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{"k": "v"}}, // json_value with a scalar metric type
+		{SpanID: "s", TraceID: "", Label: "partial", ScoreValue: ptr(1.0)},                                                                      // incomplete span join
+		{SpanID: "s", TraceID: "t", Label: "badtype", MetricType: export.MetricType("scores"), ScoreValue: ptr(1.0)},                            // invalid metric type (typo)
+		{SpanID: "s", TraceID: "t", Label: "mismatch", MetricType: export.MetricTypeScore, CategoricalValue: ptr("x")},                          // type/value mismatch
+		{SpanID: "s", TraceID: "t", Label: "emptyjson", MetricType: export.MetricTypeCategorical, JSONValue: map[string]any{}},                  // empty json value
 	})
 	require.NoError(t, err)
 	assert.Len(t, res.ValidationErrors, 9)
@@ -978,4 +978,31 @@ func TestSubmitEvaluations_JSONMetricTypeRequiresJSONValue(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, res.ValidationErrors, 1)
 	assert.Empty(t, fake.captured())
+}
+
+// TestSubmitSpans_SplitStopsOnCancelBetweenHalves guards that the oversized-batch
+// bisection honors cancellation: if the caller cancels while the left half is
+// posting, the right half is not sent, so no spurious failed request is recorded
+// for work the caller asked to stop.
+func TestSubmitSpans_SplitStopsOnCancelBetweenHalves(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var once sync.Once
+	fake := &fakeTransport{responder: func(int, *http.Request) (int, string) {
+		once.Do(cancel) // cancel once the first (left-half) POST has been recorded
+		return 202, "{}"
+	}}
+	// Two spans that each fit but together exceed the limit → the batch bisects
+	// into one request per span.
+	c := newClient(t, fake, "test-app", export.WithMaxSpanPayloadBytes(3000))
+
+	res, err := c.SubmitSpans(ctx, []export.SpanEvent{
+		{TraceID: "t1", SpanID: "s1", Kind: export.KindLLM, Input: strings.Repeat("x", 1500)},
+		{TraceID: "t2", SpanID: "s2", Kind: export.KindLLM, Input: strings.Repeat("y", 1500)},
+	})
+	require.NoError(t, err)
+	// Without the between-halves ctx check the right half would run and append a
+	// second, failed request; the fix skips it entirely.
+	require.Len(t, res.Requests, 1)
+	assert.Len(t, fake.captured(), 1)
+	assert.Equal(t, 202, res.Requests[0].StatusCode)
 }
