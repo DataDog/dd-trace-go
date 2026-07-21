@@ -56,8 +56,6 @@ func newTestConfigWithTransport(t *testing.T, transport ddTransport) *config {
 	return cfg
 }
 
-
-
 func TestConcentrator(t *testing.T) {
 	bucketSize := int64(500_000)
 	s1 := Span{
