@@ -218,7 +218,7 @@ func CreateFromCSV(ctx context.Context, name, csvPath string, inputCols []string
 	// 3) Read header
 	header, err := r.Read()
 	if err == io.EOF || (err == nil && len(header) == 0) {
-		return nil, fmt.Errorf("CSV file appears to be empty or header is missing")
+		return nil, errors.New("CSV file appears to be empty or header is missing")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read header: %w", err)
