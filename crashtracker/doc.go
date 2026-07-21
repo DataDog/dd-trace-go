@@ -29,7 +29,11 @@
 //	    // ... application code
 //	}
 //
-// Start is idempotent: subsequent calls after the first are no-ops.
+// Start is idempotent: subsequent calls after the first are no-ops. With
+// orchestrion enabled, the crashtracker aspect injects Start as the first
+// statement of main using DD_* environment configuration. A later programmatic
+// Start call with options in main is therefore a no-op; build without the
+// crashtracker aspect when programmatic options must control startup.
 //
 // # Configuration
 //

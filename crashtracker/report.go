@@ -5,19 +5,11 @@
 
 package crashtracker
 
-import (
-	"runtime"
-	"strings"
-
-	internal "github.com/DataDog/dd-trace-go/v2/internal"
-	"github.com/DataDog/dd-trace-go/v2/internal/version"
-)
-
 // Report is the errorsintake payload sent to Datadog Error Tracking on a crash.
 type Report struct {
-	Timestamp int64    `json:"timestamp"` // unix ms at crash time
-	DDSource  string   `json:"ddsource"`  // "crashtracker"
-	DDTags    string   `json:"ddtags"`    // service,env,version,language:go,...
+	Timestamp int64    `json:"timestamp"`          // unix ms at crash time
+	DDSource  string   `json:"ddsource"`           // "crashtracker"
+	DDTags    string   `json:"ddtags"`             // service,env,version,language:go,...
 	Error     Error    `json:"error"`
 	OSInfo    OSInfo   `json:"os_info"`
 	SigInfo   *SigInfo `json:"sig_info,omitempty"`
@@ -72,37 +64,4 @@ type SigInfo struct {
 	SiCodeHuman  string `json:"si_code_human_readable,omitempty"`
 	SiSigno      int    `json:"si_signo,omitempty"`
 	SiSignoHuman string `json:"si_signo_human_readable,omitempty"`
-}
-
-// buildDDTags constructs the comma-separated ddtags string for a crash report.
-// It always includes the language, Go version, and library version, then the
-// configured service/env/version when set, followed by any git metadata tags.
-func buildDDTags(cfg *config) string {
-	var b strings.Builder
-
-	writeTag := func(key, value string) {
-		if value == "" {
-			return
-		}
-		if b.Len() > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(key)
-		b.WriteByte(':')
-		b.WriteString(value)
-	}
-
-	writeTag("language", "go")
-	writeTag("go.version", runtime.Version())
-	writeTag("library_version", version.Tag)
-	if cfg != nil {
-		writeTag("service", cfg.service)
-		writeTag("env", cfg.env)
-		writeTag("version", cfg.version)
-	}
-	for k, v := range internal.GetGitMetadataTags() {
-		writeTag(k, v)
-	}
-
-	return b.String()
 }

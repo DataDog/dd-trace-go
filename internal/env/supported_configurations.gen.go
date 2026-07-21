@@ -57,6 +57,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT":                         {},
 	"DD_CIVISIBILITY_USE_NOOP_TRACER":                                 {},
 	"DD_CRASHTRACKING_ENABLED":                                        {},
+	"DD_CRASHTRACKING_IS_MONITOR_PROCESS":                             {},
 	"DD_CUSTOM_PARENT_ID":                                             {},
 	"DD_CUSTOM_TRACE_ID":                                              {},
 	"DD_DATA_STREAMS_ENABLED":                                         {},
