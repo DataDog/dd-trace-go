@@ -5,6 +5,8 @@
 
 package tracer
 
+import "maps"
+
 const ciVisibilityMetaValueMaxChars = 5000
 
 func truncateCIVisibilityMetaValue(v string) string {
@@ -32,9 +34,7 @@ func truncateCIVisibilityMetadata(metadata map[string]map[string]string) map[str
 		truncatedValues, changed := truncateCIVisibilityMetaValuesChanged(values)
 		if changed && truncated == nil {
 			truncated = make(map[string]map[string]string, len(metadata))
-			for copyKey, copyValues := range metadata {
-				truncated[copyKey] = copyValues
-			}
+			maps.Copy(truncated, metadata)
 		}
 		if truncated != nil {
 			truncated[key] = truncatedValues
@@ -52,9 +52,7 @@ func truncateCIVisibilityMetaValuesChanged(meta map[string]string) (map[string]s
 		truncatedValue := truncateCIVisibilityMetaValue(value)
 		if truncatedValue != value && truncated == nil {
 			truncated = make(map[string]string, len(meta))
-			for copyKey, copyValue := range meta {
-				truncated[copyKey] = copyValue
-			}
+			maps.Copy(truncated, meta)
 		}
 		if truncated != nil {
 			truncated[key] = truncatedValue
