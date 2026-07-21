@@ -119,23 +119,23 @@
 //
 //   - DD_TRACE_STATS_CARDINALITY_LIMIT / WithStatsCardinalityLimit
 //     Whole-key limit: caps the total number of unique aggregation keys per
-//     flush bucket across all dimensions combined. Default: 5000.
+//     flush bucket across all dimensions combined. Default: 2048.
 //
 //   - DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT / WithStatsResourceCardinalityLimit
 //     Per-resource limit: caps distinct resource values within a service+name
-//     combination. Default: 5000.
+//     combination. Default: 1024.
 //
 //   - DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT / WithStatsHTTPEndpointCardinalityLimit
-//     Per-http_endpoint limit. Default: 5000.
+//     Per-http_endpoint limit. Default: 512.
 //
 //   - DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT / WithStatsPeerTagsCardinalityLimit
-//     Per-peer-tags combination limit. Default: 5000.
+//     Per-peer-tags combination limit. Default: 512.
 //
 //   - DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT / WithStatsOriginCardinalityLimit
-//     Per-origin limit. Default: 5000.
+//     Per-origin limit. Default: 20.
 //
 //   - DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT
-//     Per-additional-metric-tags combination limit (see below). Default: 5000.
+//     Per-additional-metric-tags combination limit (see below). Default: 100.
 //
 // When a limit is reached, excess spans are still counted but their grouping
 // dimension is replaced with a sentinel value. The tracer emits a

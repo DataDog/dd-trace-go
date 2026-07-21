@@ -8,7 +8,6 @@ package tracer
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -57,10 +56,7 @@ func newTestConfigWithTransport(t *testing.T, transport ddTransport) *config {
 	return cfg
 }
 
-func additionalMetricTagsCardinalityLimit(c *concentrator) int {
-	limits := reflect.ValueOf(c.spanConcentrator).Elem().FieldByName("cardinalityLimits")
-	return int(limits.FieldByName("AdditionalTags").Int())
-}
+
 
 func TestConcentrator(t *testing.T) {
 	bucketSize := int64(500_000)
@@ -211,16 +207,21 @@ func TestConcentrator(t *testing.T) {
 
 func TestNewConcentratorAdditionalMetricTagsCardinalityLimit(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		gate  string
-		tags  string
-		limit string
-		want  int
+		name         string
+		gate         string
+		tags         string
+		limit        string
+		sendCount    int
+		wantCollapse bool
 	}{
-		{name: "gate off with keys", tags: "customer_id", limit: "7"},
-		{name: "gate on without keys", gate: "true", limit: "7"},
-		{name: "gate on with keys default limit", gate: "true", tags: "customer_id", want: 100},
-		{name: "gate on with keys custom limit", gate: "true", tags: "customer_id", limit: "7", want: 7},
+		// Feature gate off: limits not applied regardless of config.
+		{name: "gate off with keys", tags: "customer_id", limit: "7", sendCount: 8, wantCollapse: false},
+		// Gate on but no keys: no additional-tag grouping dimension, no collapse.
+		{name: "gate on without keys", gate: "true", limit: "7", sendCount: 8, wantCollapse: false},
+		// Gate on with keys, default limit (100): 101 distinct values triggers collapse.
+		{name: "gate on with keys default limit", gate: "true", tags: "customer_id", sendCount: 101, wantCollapse: true},
+		// Gate on with keys, custom limit (7): 8 distinct values triggers collapse.
+		{name: "gate on with keys custom limit", gate: "true", tags: "customer_id", limit: "7", sendCount: 8, wantCollapse: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.gate != "" {
@@ -233,10 +234,34 @@ func TestNewConcentratorAdditionalMetricTagsCardinalityLimit(t *testing.T) {
 				t.Setenv("DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT", tc.limit)
 			}
 
-			cfg, err := newTestConfig()
-			require.NoError(t, err)
-			concentrator := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
-			assert.Equal(t, tc.want, additionalMetricTagsCardinalityLimit(concentrator))
+			transport := newDummyTransport()
+			testStats := &statsdtest.TestStatsdClient{}
+			c := newConcentrator(newTestConfigWithTransport(t, transport), defaultStatsBucketSize, testStats)
+
+			now := time.Now().UnixNano()
+			for i := range tc.sendCount {
+				s := Span{
+					name:     "test.op",
+					service:  "svc",
+					resource: "res",
+					start:    now + int64(i),
+					duration: int64(time.Millisecond),
+					metrics:  map[string]float64{keyMeasured: 1},
+					meta:     tinternal.NewSpanMetaFromMap(map[string]string{"customer_id": fmt.Sprintf("val%d", i)}),
+				}
+				if ss, ok := c.newTracerStatSpan(&s, nil); ok {
+					c.add(ss)
+				}
+			}
+			c.flushAndSend(time.Now(), withCurrentBucket)
+
+			calls := testStats.GetCallsByName("datadog.tracer.stats.collapsed_spans")
+			collapseCount := testStats.CountCallsByTag(calls, "collapsed:additional_metric_tags")
+			if tc.wantCollapse {
+				assert.Positive(t, collapseCount, "expected additional_metric_tags collapse")
+			} else {
+				assert.Zero(t, collapseCount, "expected no additional_metric_tags collapse")
+			}
 		})
 	}
 }
