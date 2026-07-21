@@ -409,15 +409,16 @@ func buildOTLPMetricsHeaders(genericHeaders, signalHeaders map[string]string) ma
 }
 
 // validateOTLPProtocol returns true for the two supported OTLP HTTP protocol values.
-func validateOTLPProtocol(v string) bool {
+// envVar is used in the warning message to identify which env var had the bad value.
+func validateOTLPProtocol(v, envVar string) bool {
 	if v == "http/json" || v == "http/protobuf" {
 		return true
 	}
-	log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_PROTOCOL %q; must be http/json or http/protobuf. Falling back to default.", v)
+	log.Warn("Unsupported %s %q; must be http/json or http/protobuf. Falling back to default.", envVar, v)
 	return false
 }
 
-// resolveOTLPMetricsFlushInterval parses _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL (milliseconds).
+// resolveOTLPMetricsFlushInterval parses _DD_TRACE_STATS_INTERVAL (milliseconds).
 // The variable is internal and intended for tests only; in production it returns the default 10 s.
 func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
 	if raw == "" {
@@ -425,7 +426,7 @@ func resolveOTLPMetricsFlushInterval(raw string) time.Duration {
 	}
 	ms, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || ms <= 0 {
-		log.Warn("Invalid _DD_TRACE_METRICS_OTEL_FLUSH_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval)
+		log.Warn("Invalid _DD_TRACE_STATS_INTERVAL %q; using default %s.", raw, OTLPMetricsFlushInterval)
 		return OTLPMetricsFlushInterval
 	}
 	return time.Duration(ms) * time.Millisecond
