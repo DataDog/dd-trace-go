@@ -171,7 +171,10 @@ jobs:
         # `go` directive is correctly managed.
         shell: bash
         run: |-
-          source ${{ github.workspace }}/dd-trace-go/.github/workflows/apps/go-retry.sh
+          # Relative to working-directory (.../dd-trace-go/internal/orchestrion/_integration): a
+          # path built from ${{ github.workspace }} would be backslash-separated on Windows and
+          # get mangled by bash's unquoted escape processing, so use a portable relative path.
+          source ../../../.github/workflows/apps/go-retry.sh
           go mod edit -replace="github.com/DataDog/orchestrion=${{ github.workspace }}/orchestrion"
           retry_on_corruption go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
@@ -182,14 +185,14 @@ jobs:
         if: '!inputs.collect-coverage'
         shell: bash
         run: |-
-          source ${{ github.workspace }}/dd-trace-go/.github/workflows/apps/go-retry.sh
+          source ../../../.github/workflows/apps/go-retry.sh
           retry_on_corruption go install "github.com/DataDog/orchestrion"
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
       - name: Build orchestrion binary
         if: inputs.collect-coverage
         shell: bash
         run: |-
-          source ${{ github.workspace }}/dd-trace-go/.github/workflows/apps/go-retry.sh
+          source ../../../.github/workflows/apps/go-retry.sh
           bin=$(go env GOPATH)/bin/orchestrion
           if [[ '${{ matrix.runs-on }}' == 'windows' ]]; then
             bin="${bin}.exe"
@@ -208,7 +211,7 @@ jobs:
       - name: Run 'go mod tidy'
         shell: bash
         run: |-
-          source ${{ github.workspace }}/dd-trace-go/.github/workflows/apps/go-retry.sh
+          source ../../../.github/workflows/apps/go-retry.sh
           retry_on_corruption go mod tidy
         working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
 
