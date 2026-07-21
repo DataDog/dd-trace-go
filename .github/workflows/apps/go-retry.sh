@@ -10,10 +10,15 @@
 # signature and so is never retried. Shared by smoke-tests.yml and govulncheck*.{yml,sh}.
 #
 # The build cache is always rebuildable offline, so it is dropped on every retry to discard
-# partial artifacts a crashed compiler left behind. The module cache is only wiped when the log
-# matches an on-disk archive-corruption signature ("zip: checksum error" / "not the start of an
-# archive file"): refetching modules needs network, so we don't pay that cost for a bare
-# SIGSEGV/ICE that never touched the module cache.
+# partial artifacts a crashed compiler left behind. The module cache is also wiped on every
+# retry: a crash (SIGSEGV/ICE/fatal fault) can silently corrupt an on-disk module archive during
+# extraction, with the tell-tale "zip: checksum error" only appearing on a *later* attempt once
+# something finally tries to read the already-corrupted file — so gating the wipe on the current
+# attempt's log missed that case. Archive-corruption signatures always trigger a wipe
+# (self-limiting: a clean re-download stops the errors, so it never accumulates against the
+# budget below). Any other corruption signature (SIGSEGV/ICE/fatal fault) also wipes the module
+# cache defensively, but is charged against GO_RETRY_MAX_MODCACHE_WIPES, since most such crashes
+# never touch GOMODCACHE and a false alarm shouldn't be free to trigger unbounded re-downloads.
 #
 # Both functions are re-entrancy-safe: if a caller wraps a function that itself calls
 # retry_on_corruption/retry_on_corruption_to_file (directly or a few frames down), the inner call
@@ -23,10 +28,12 @@
 # each level's cache wipe compounds the other's — see the go-get-u smoke job incident where a
 # single corrupted contrib module caused an 8m chunk to run 43+ minutes.
 #
-# Across a whole process (e.g. one retry_on_corruption call per contrib module in a loop), modcache
-# wipes are additionally capped at GO_RETRY_MAX_MODCACHE_WIPES (default 2): one wipe already fixes
-# corruption for every subsequent call in the same run, so further independent hits don't each pay
-# for a full, network-bound re-download.
+# Across a whole process (e.g. one retry_on_corruption call per contrib module in a loop),
+# *non-archive-signature* modcache wipes are additionally capped at GO_RETRY_MAX_MODCACHE_WIPES
+# (default 2): one wipe already fixes corruption for every subsequent call in the same run, so
+# further independent hits from crashes that never touched the module cache don't each pay for a
+# full, network-bound re-download. Archive-signature wipes are uncounted, since they're proven
+# on-disk corruption rather than a defensive guess.
 #
 # Usage:
 #   source go-retry.sh
@@ -43,12 +50,17 @@ _clean_caches_on_retry() {
   local log="$1"
   go clean -cache || true
   if grep -qE "$archive_corruption_re" "$log"; then
-    if [ "$_go_retry_modcache_wipes" -lt "$GO_RETRY_MAX_MODCACHE_WIPES" ]; then
-      go clean -modcache || true
-      _go_retry_modcache_wipes=$((_go_retry_modcache_wipes + 1))
-    else
-      echo "::warning::modcache wipe budget (${GO_RETRY_MAX_MODCACHE_WIPES}) already used this run; retrying without wiping it again"
-    fi
+    # Proven on-disk corruption: always wipe, uncounted against the budget below.
+    go clean -modcache || true
+  elif [ "$_go_retry_modcache_wipes" -lt "$GO_RETRY_MAX_MODCACHE_WIPES" ]; then
+    # Some other corruption signature (SIGSEGV/ICE/fatal fault): the crash may have silently
+    # corrupted the module cache without an archive-error line surfacing yet, so wipe
+    # defensively — but charge it against the budget since most such crashes never touch
+    # GOMODCACHE at all.
+    go clean -modcache || true
+    _go_retry_modcache_wipes=$((_go_retry_modcache_wipes + 1))
+  else
+    echo "::warning::modcache wipe budget (${GO_RETRY_MAX_MODCACHE_WIPES}) already used this run; retrying without wiping it again"
   fi
 }
 

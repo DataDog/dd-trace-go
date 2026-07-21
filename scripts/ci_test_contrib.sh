@@ -56,7 +56,7 @@ for contrib in $CONTRIBS; do
     retry_on_corruption go get github.com/quic-go/qpack@v0.5.1
   fi
   retry_on_corruption go mod tidy
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
+  retry_on_corruption gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$contrib_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$contrib_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1
@@ -72,7 +72,7 @@ for mod in $INSTRUMENTATION_SUBMODULES; do
     # When the issue is resolved, this line can be removed.
     retry_on_corruption go get k8s.io/kube-openapi@v0.0.0-20250628140032-d90c4fd18f59
   fi
-  gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$mod_id.txt" -covermode=atomic
+  retry_on_corruption gotestsum --junitfile "${TEST_RESULTS}/gotestsum-report-$mod_id.xml" -- ./... -v -race "$TAGS_ARG" -coverprofile="coverage-$mod_id.txt" -covermode=atomic
   test_exit=$?
   [[ $test_exit -ne 0 ]] && report_error=1
   cd - > /dev/null || exit 1
