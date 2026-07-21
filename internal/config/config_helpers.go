@@ -265,9 +265,6 @@ func formatDogstatsdAddr(u *url.URL) string {
 	return u.Host
 }
 
-// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set, else agentURL host + default OTLP port 4318 + /v1/traces.
-// When the user-provided endpoint is set, it is validated: it must be a parseable URL with an http or https scheme.
-// If validation fails, the default endpoint is used instead.
 // parseAndValidateOTLPURL parses rawURL and validates that it uses http or https.
 // Logs a warning and returns (nil, false) on failure.
 func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
@@ -283,6 +280,9 @@ func parseAndValidateOTLPURL(envVar, rawURL string) (*url.URL, bool) {
 	return u, true
 }
 
+// resolveOTLPTraceURL resolves the OTLP trace endpoint from OTEL_EXPORTER_OTLP_TRACES_ENDPOINT if set,
+// else derives a default from agentURL host + port 4318 + /v1/traces.
+// When the user-provided endpoint is set it is validated; if invalid the default is used instead.
 func resolveOTLPTraceURL(rawAgentURL *url.URL, otlpTracesEndpoint string) string {
 	if otlpTracesEndpoint != "" {
 		if _, ok := parseAndValidateOTLPURL("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", otlpTracesEndpoint); ok {
