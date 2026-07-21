@@ -135,6 +135,13 @@ func TestKnownTestsApiRequest(t *testing.T) {
 	assert.Len(t, knownTests.Tests, 2, "should have 2 modules")
 	assert.Equal(t, []string{"Test1", "Test2", "Test3"}, knownTests.Tests["MyModule1"]["MySuite1"])
 	assert.Equal(t, []string{"Test4", "Test5", "Test6"}, knownTests.Tests["MyModule2"]["MySuite2"])
+
+	// TODO: Verify pagination metrics were emitted
+	// Note: This requires access to the telemetry submission layer or a test spy.
+	// If telemetry is not mockable in tests, document expected values here:
+	// - pages_fetched: 3.0
+	// - total_fetch_ms: > 0.0 (wall clock)
+	// - total_request_ms: > 0.0 (sum of 3 request durations)
 }
 
 func TestKnownTestsApiRequestFailToUnmarshal(t *testing.T) {
@@ -154,6 +161,8 @@ func TestKnownTestsApiRequestFailToUnmarshal(t *testing.T) {
 	assert.Nil(t, efdData)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "cannot unmarshal response")
+
+	// TODO: Assert pagination metrics were NOT emitted
 }
 
 func TestKnownTestsApiRequestFailToGet(t *testing.T) {
@@ -173,6 +182,8 @@ func TestKnownTestsApiRequestFailToGet(t *testing.T) {
 	assert.Nil(t, efdData)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sending known tests request")
+
+	// TODO: Assert pagination metrics were NOT emitted
 }
 
 func TestKnownTestsApiRequestFromManifestCache(t *testing.T) {
