@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gote
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.10.0-rc.1
+	github.com/DataDog/dd-trace-go/v2 v2.10.0-rc.2
 	github.com/DataDog/orchestrion v1.9.0
 )
 

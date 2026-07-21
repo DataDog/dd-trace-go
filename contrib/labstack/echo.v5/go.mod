@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2
 go 1.25.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.10.0-rc.1
-	github.com/DataDog/dd-trace-go/v2 v2.10.0-rc.1
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.10.0-rc.2
+	github.com/DataDog/dd-trace-go/v2 v2.10.0-rc.2
 	github.com/labstack/echo/v5 v5.1.0
 	github.com/stretchr/testify v1.11.1
 )
