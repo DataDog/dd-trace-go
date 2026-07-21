@@ -44,7 +44,8 @@ variables:
     KUBERNETES_CPU_LIMIT: "48"
   script:
     - export GO_VERSION=$(go version | sed 's/go version //')
-    - export S3_URL=s3://relenv-benchmarking-data/${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}/${CI_PIPELINE_ID}/${CI_JOB_ID}/
+    # If BP_EXTERNAL_S3_URL is empty, the default S3 destination below is used.
+    - export S3_URL="${BP_EXTERNAL_S3_URL:-s3://relenv-benchmarking-data/${CI_PROJECT_NAME}/${CI_COMMIT_REF_NAME}/${CI_PIPELINE_ID}/${CI_JOB_ID}/}"
     - bp-runner .gitlab/benchmarks/micro/bp-runner.yml --debug
   retry:
     max: 2
@@ -70,7 +71,7 @@ variables:
 microbenchmarks-1:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
+    BENCHMARKS: "BenchmarkConfig|BenchmarkStartSpanConfig|BenchmarkGraphQL|BenchmarkSampleWAFContext|BenchmarkCaptureStackTrace|BenchmarkSetTagString|BenchmarkSetTagStringPtr|BenchmarkSetTagMetric|BenchmarkSetTagStringer|BenchmarkSerializeSpanLinksInMeta|BenchmarkLogs|BenchmarkParallelLogs|BenchmarkMetrics|BenchmarkParallelMetrics|BenchmarkPayloadVersions|BenchmarkAgentTraceWriter|BenchmarkOTLPTraceWriterAdd|BenchmarkOTLPTraceWriterFlush|BenchmarkOTLPProtoMarshal|BenchmarkOTLPProtoSize|BenchmarkOTLPTraceWriterConcurrent"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-1"
@@ -78,10 +79,18 @@ microbenchmarks-1:
 microbenchmarks-2:
   extends: .microbenchmarks
   variables:
-    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkHttpServeTrace|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing"
+    BENCHMARKS: "BenchmarkStartRequestSpan|BenchmarkStartRequestSpanQueryObfuscation|BenchmarkHttpServeTrace|BenchmarkHttpServeTraceQueryObfuscation|BenchmarkTracerAddSpans|BenchmarkStartSpan|BenchmarkSingleSpanRetention|BenchmarkOTelApiWithCustomTags|BenchmarkInjectW3C|BenchmarkExtractW3C|BenchmarkPartialFlushing|BenchmarkSampleWAFSubContext"
     CPUS_PER_BENCHMARK: 1
     REPETITIONS: 10
     GROUP_ID: "group-2"
+
+microbenchmarks-3:
+  extends: .microbenchmarks
+  variables:
+    BENCHMARKS: "BenchmarkOpenFeatureClientEvaluation|BenchmarkOpenFeatureClientConcurrentEvaluations|BenchmarkBooleanEvaluation|BenchmarkStringEvaluation|BenchmarkIntEvaluation|BenchmarkFloatEvaluation|BenchmarkEvaluation|BenchmarkEvaluationWithVaryingContextSize|BenchmarkEvaluationWithVaryingFlagCounts|BenchmarkConcurrentEvaluations"
+    CPUS_PER_BENCHMARK: 1
+    REPETITIONS: 10
+    GROUP_ID: "group-3"
 
 pr-performance-gates:
   stage: microbenchmarks

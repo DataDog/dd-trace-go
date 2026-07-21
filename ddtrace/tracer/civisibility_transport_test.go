@@ -87,13 +87,8 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	defer srv.Close()
 
 	parsedURL, _ := url.Parse(srv.URL)
-	cfg, err := newTestConfig()
-	assert.NoError(err)
-	cfg.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
-	cfg.httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
-	cfg.internalConfig.SetAgentURL(parsedURL, internalconfig.OriginCode)
 
-	// Set CI Visibility environment variables for the test
+	// Set CI Visibility environment variables before config init so internalConfig picks them up.
 	if agentless {
 		t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "1")
 		t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, srv.URL)
@@ -101,6 +96,12 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 			t.Setenv(constants.APIKeyEnvironmentVariable, "12345")
 		}
 	}
+
+	cfg, err := newTestConfig()
+	assert.NoError(err)
+	cfg.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
+	cfg.httpClient = internal.DefaultHTTPClient(defaultHTTPTimeout, false)
+	cfg.internalConfig.SetAgentURL(parsedURL, internalconfig.OriginCode)
 
 	for _, tc := range testCases {
 		transport := newCiVisibilityTransport(cfg)
@@ -132,7 +133,7 @@ func TestCIVisibilityTransportSecureLogging(t *testing.T) {
 			os.Unsetenv(constants.CIVisibilityAgentlessURLEnvironmentVariable)
 		}()
 
-		cfg := &config{}
+		cfg := &config{internalConfig: internalconfig.CreateNew()}
 		transport := newCiVisibilityTransport(cfg)
 		assert.NotNil(t, transport)
 

@@ -89,6 +89,21 @@ func TestOptions(t *testing.T) {
 		assert.Equal(t, expectedURL, cfg.agentURL)
 	})
 
+	t.Run("WithUDS", func(t *testing.T) {
+		var cfg config
+		WithUDS("/var/run/datadog/agent.sock")(&cfg)
+		// Slashes are encoded as underscores; path is appended after the host.
+		assert.Equal(t, "http://UDS__var_run_datadog_agent.sock/profiling/v1/input", cfg.agentURL)
+		assert.NotNil(t, cfg.httpClient)
+	})
+
+	t.Run("WithUDS/colons", func(t *testing.T) {
+		var cfg config
+		WithUDS("localhost:8126")(&cfg)
+		assert.Equal(t, "http://UDS_localhost_8126/profiling/v1/input", cfg.agentURL)
+		assert.NotNil(t, cfg.httpClient)
+	})
+
 	t.Run("WithUploadTimeout", func(t *testing.T) {
 		var cfg config
 		WithUploadTimeout(5 * time.Second)(&cfg)
@@ -395,32 +410,18 @@ func TestAddProfileType(t *testing.T) {
 }
 
 func TestWith_outputDir(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	dir := t.TempDir()
 
 	// Use env to enable this like a user would.
-	t.Setenv("DD_PROFILING_OUTPUT_DIR", tmpDir)
+	t.Setenv("DD_PROFILING_OUTPUT_DIR", dir)
 
-	p, err := unstartedProfiler()
-	require.NoError(t, err)
-	bat := batch{
-		end: time.Now(),
-		profiles: []*profile{
-			{name: "foo.pprof", data: []byte("foo")},
-			{name: "bar.pprof", data: []byte("bar")},
-		},
-	}
-	require.NoError(t, p.outputDir(bat))
-	files, err := filepath.Glob(filepath.Join(tmpDir, "*", "*.pprof"))
-	require.NoError(t, err)
+	startTestProfiler(t, 1,
+		WithProfileTypes(HeapProfile),
+		WithPeriod(10*time.Millisecond),
+	).ReceiveProfile(t)
 
-	fileData := map[string]string{}
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		require.NoError(t, err)
-		fileData[filepath.Base(file)] = string(data)
-	}
-	want := map[string]string{"foo.pprof": "foo", "bar.pprof": "bar"}
-	require.Equal(t, want, fileData)
+	// At least one subdirectory with .pprof files should have been written.
+	files, err := filepath.Glob(filepath.Join(dir, "*", "delta-heap.pprof"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
 }

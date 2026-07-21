@@ -26,7 +26,7 @@ func isWellFormedEdgeTag(t string) bool {
 	return false
 }
 
-func nodeHash(service, env string, edgeTags, processTags []string) uint64 {
+func nodeHash(service, env string, edgeTags, processTags []string, containerTagsHash string) uint64 {
 	h := fnv.New64()
 	sort.Strings(edgeTags)
 	h.Write([]byte(service))
@@ -40,6 +40,24 @@ func nodeHash(service, env string, edgeTags, processTags []string) uint64 {
 	}
 	for _, t := range processTags {
 		h.Write([]byte(t))
+	}
+	if containerTagsHash != "" {
+		h.Write([]byte(containerTagsHash))
+	}
+	return h.Sum64()
+}
+
+// BaseHash computes the FNV-1 64-bit hash of service, env, processTags and containerTagsHash,
+// using the same algorithm as nodeHash but without edge tags.
+func BaseHash(service, env string, processTags []string, containerTagsHash string) uint64 {
+	h := fnv.New64()
+	h.Write([]byte(service))
+	h.Write([]byte(env))
+	for _, t := range processTags {
+		h.Write([]byte(t))
+	}
+	if containerTagsHash != "" {
+		h.Write([]byte(containerTagsHash))
 	}
 	return h.Sum64()
 }

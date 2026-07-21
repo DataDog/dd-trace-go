@@ -13,11 +13,18 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type sqlCommentStringer string
+
+func (s sqlCommentStringer) String() string {
+	return string(s)
+}
 
 func TestSQLCommentCarrier(t *testing.T) {
 	testCases := []struct {
@@ -353,9 +360,166 @@ func FuzzSpanContextFromTraceComment(f *testing.F) {
 	})
 }
 
+// TestSQLCommentUsesUpdatedSpanSnapshotTags verifies that when env, version, and
+// peer.service are set on a span after creation, SQLCommentCarrier.Inject reads
+// the updated values from context.spanSnapshot rather than stale initial values.
+func TestSQLCommentUsesUpdatedSpanSnapshotTags(t *testing.T) {
+	trc, err := newTracer(WithService("my-svc"))
+	require.NoError(t, err)
+	defer globalconfig.SetServiceName("")
+	defer trc.Stop()
+
+	span := trc.StartSpan("op")
+	defer span.Finish()
+
+	span.SetTag(ext.Environment, "staging")
+	span.SetTag(ext.Version, "2.0")
+	span.SetTag(ext.PeerService, "peer-svc")
+
+	carrier := SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeService,
+		DBServiceName: "mydb",
+	}
+	err = carrier.Inject(span.Context())
+	require.NoError(t, err)
+
+	assert.Contains(t, carrier.Query, "dde='staging'")
+	assert.Contains(t, carrier.Query, "ddpv='2.0'")
+	assert.Contains(t, carrier.Query, "ddprs='peer-svc'")
+}
+
+func TestSQLCommentUsesConvertedInheritedTags(t *testing.T) {
+	trc, err := newTracer(WithService("my-svc"))
+	require.NoError(t, err)
+	defer globalconfig.SetServiceName("")
+	defer trc.Stop()
+
+	span := trc.StartSpan("op")
+	defer span.Finish()
+
+	span.SetTag(ext.Environment, []byte("staging"))
+	span.SetTag(ext.Version, sqlCommentStringer("2.0"))
+	span.SetTag(ext.PeerService, true)
+
+	carrier := SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeService,
+		DBServiceName: "mydb",
+	}
+	err = carrier.Inject(span.Context())
+	require.NoError(t, err)
+
+	assert.Contains(t, carrier.Query, "dde='staging'")
+	assert.Contains(t, carrier.Query, "ddpv='2.0'")
+	assert.Contains(t, carrier.Query, "ddprs='true'")
+}
+
+func TestSQLCommentCarrierDynamicService(t *testing.T) {
+	globalconfig.SetServiceName("my-svc")
+	defer globalconfig.SetServiceName("")
+	processtags.SetContainerTagsHash("abc123")
+	defer processtags.SetContainerTagsHash("")
+
+	expectedHash := computeBaseHash()
+	require.NotEmpty(t, expectedHash, "expected hash must be non-empty with a service name set")
+
+	c := &SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeDynamicService,
+		DBServiceName: "mydb",
+	}
+	require.NoError(t, c.Inject(nil))
+	assert.Contains(t, c.Query, "ddsh='"+expectedHash+"'", "base hash must be injected")
+	assert.NotContains(t, c.Query, "traceparent", "traceparent must NOT be injected in dynamic_service mode")
+	assert.Contains(t, c.Query, "dddbs='mydb'", "service name must be injected")
+	assert.Equal(t, expectedHash, c.BaseHash, "BaseHash field must be populated")
+
+	// Without a service name, ddsh must not appear.
+	globalconfig.SetServiceName("")
+	processtags.SetContainerTagsHash("abc123")
+	c2 := &SQLCommentCarrier{Query: "SELECT 1", Mode: DBMPropagationModeDynamicService, DBServiceName: "mydb"}
+	require.NoError(t, c2.Inject(nil))
+	assert.NotContains(t, c2.Query, "ddsh", "ddsh must not be injected when service name is empty")
+	assert.Equal(t, "", c2.BaseHash)
+}
+
+// TestSQLCommentCarrierDynamicServiceNoContainerHash verifies that until the Agent has
+// reported a container tags hash, dynamic_service falls back to service-mode behavior:
+// service tags are injected but ddsh is not.
+func TestSQLCommentCarrierDynamicServiceNoContainerHash(t *testing.T) {
+	globalconfig.SetServiceName("my-svc")
+	defer globalconfig.SetServiceName("")
+	processtags.SetContainerTagsHash("")
+
+	c := &SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeDynamicService,
+		DBServiceName: "mydb",
+	}
+	require.NoError(t, c.Inject(nil))
+	assert.NotContains(t, c.Query, "ddsh", "ddsh must not be injected without a container hash")
+	assert.Empty(t, c.BaseHash)
+	assert.Contains(t, c.Query, "dddbs='mydb'", "service tags must still be injected (fallback to service mode)")
+}
+
+// TestSQLCommentCarrierFullModeNoHash verifies that DBMPropagationModeFull injects
+// traceparent but does NOT inject the container tags hash (ddsh), even when the hash
+// is non-empty.
+func TestSQLCommentCarrierFullModeNoHash(t *testing.T) {
+	processtags.SetContainerTagsHash("testhash999")
+	defer processtags.SetContainerTagsHash("")
+
+	trc, err := newTracer(WithService("my-svc"), WithEnv("prod"), WithServiceVersion("3.0"))
+	require.NoError(t, err)
+	defer globalconfig.SetServiceName("")
+	defer trc.Stop()
+
+	span := trc.StartSpan("op")
+	defer span.Finish()
+
+	c := &SQLCommentCarrier{
+		Query:         "SELECT 1",
+		Mode:          DBMPropagationModeFull,
+		DBServiceName: "mydb",
+	}
+	require.NoError(t, c.Inject(span.Context()))
+
+	assert.Contains(t, c.Query, "traceparent=", "full mode must inject traceparent")
+	assert.NotContains(t, c.Query, "ddsh", "full mode must NOT inject ddsh even when hash is non-empty")
+	assert.Equal(t, "", c.BaseHash, "BaseHash must remain empty in full mode")
+}
+
 func BenchmarkSQLCommentInjection(b *testing.B) {
 	tracer, spanCtx, carrier := setupBenchmark()
 	defer tracer.Stop()
+
+	b.ReportAllocs()
+	for b.Loop() {
+		carrier.Inject(spanCtx)
+	}
+}
+
+func BenchmarkSQLCommentInjectionService(b *testing.B) {
+	tracer, spanCtx, carrier := setupBenchmark()
+	defer tracer.Stop()
+	carrier.Mode = DBMPropagationModeService
+
+	b.ReportAllocs()
+	for b.Loop() {
+		carrier.Inject(spanCtx)
+	}
+}
+
+func BenchmarkSQLCommentInjectionDynamicService(b *testing.B) {
+	tracer, spanCtx, carrier := setupBenchmark()
+	defer tracer.Stop()
+	carrier.Mode = DBMPropagationModeDynamicService
+
+	// dynamic_service derives ddsh from the container tags hash; populate it so the
+	// hot path computes once and then hits the cache on every subsequent Inject.
+	processtags.SetContainerTagsHash("benchmark-container-hash")
+	defer processtags.SetContainerTagsHash("")
 
 	b.ReportAllocs()
 	for b.Loop() {

@@ -7,6 +7,7 @@ package grpc
 
 import (
 	"context"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -164,9 +165,16 @@ func withMetadataTags(ctx context.Context, cfg *config, span *tracer.Span) {
 	if cfg.withMetadataTags {
 		md, _ := metadata.FromIncomingContext(ctx) // nil is ok
 		for k, v := range md {
-			if _, ok := cfg.ignoredMetadata[k]; !ok {
-				span.SetTag(tagMetadataPrefix+k, v)
+			if _, ok := cfg.ignoredMetadata[k]; ok {
+				continue
 			}
+
+			// gRPC binary metadata keys end in "-bin"; their values are
+			// arbitrary bytes and must not be stored as string span tags.
+			if strings.HasSuffix(k, "-bin") {
+				continue
+			}
+			span.SetTag(tagMetadataPrefix+k, v)
 		}
 	}
 }

@@ -22,8 +22,32 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/body/json"
 )
 
-// Processor is a state machine that handles incoming HTTP request and response is a streaming manner
-// made for proxy external processing streaming protocols like Envoy's External Processing or HAProxy's SPOP
+// Processor is a state machine that handles incoming HTTP request and response in a streaming manner,
+// made for proxy external-processing protocols like Envoy's External Processing or HAProxy's SPOP.
+//
+// Valid state transitions (RequestState.State):
+//
+//	0 (initial)
+//	  → RequestHeaders    OnRequestHeaders called
+//
+//	RequestHeaders
+//	  → RequestBody       request has a body (EOS=false, supported Content-Type)
+//	  → ResponseHeaders   EOS or body not supported (skip body phase)
+//
+//	RequestBody           one or more OnRequestBody calls until EOS
+//	  → ResponseHeaders   EOS received (body fully consumed)
+//
+//	ResponseHeaders
+//	  → ResponseBody      response has a body (EOS=false, supported Content-Type)
+//	  → Finished          EOS or body not supported (stream ends here)
+//
+//	ResponseBody          one or more OnResponseBody calls until EOS
+//	  → Finished          EOS received (body fully consumed)
+//
+//	Any ongoing state
+//	  → Blocked           dyngo blocking callback fired inside Close/afterHandle
+//
+//	Finished / Blocked    terminal — no further transitions
 type Processor struct {
 	ProcessorConfig
 	instr *instrumentation.Instrumentation
@@ -134,7 +158,7 @@ func (mp *Processor) OnRequestBody(req HTTPBody, reqState *RequestState) error {
 	defer reqState.Mu.Unlock()
 
 	if !reqState.State.Ongoing() {
-		return errors.New("received request body too early")
+		return fmt.Errorf("received request body in unexpected state: %v", reqState.State)
 	}
 
 	mp.instr.Logger().Debug("message_processor: received request body: %v - EOS: %v\n", len(req.GetBody()), req.GetEndOfStream())
@@ -170,8 +194,6 @@ func (mp *Processor) OnResponseHeaders(res ResponseHeaders, reqState *RequestSta
 	if !reqState.State.Request() {
 		return fmt.Errorf("received response headers too early: %v", reqState.State)
 	}
-
-	reqState.State = MessageTypeResponseHeaders
 
 	pseudoResponse, err := res.ExtractResponse()
 	if err != nil {
@@ -253,7 +275,7 @@ func (mp *Processor) OnResponseBody(resp HTTPBody, reqState *RequestState) error
 // OnRequestTrailers handles incoming request trailers
 func (mp *Processor) OnRequestTrailers(reqState *RequestState) error {
 	if reqState == nil {
-		return fmt.Errorf("received a request trailer without a valid request state")
+		return errors.New("received a request trailer without a valid request state")
 	}
 	mp.instr.Logger().Debug("message_processor: received request trailers, ignoring")
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeRequestTrailers})
@@ -262,7 +284,7 @@ func (mp *Processor) OnRequestTrailers(reqState *RequestState) error {
 // OnResponseTrailers handles incoming response trailers
 func (mp *Processor) OnResponseTrailers(reqState *RequestState) error {
 	if reqState == nil {
-		return fmt.Errorf("received a response trailer without a valid request state")
+		return errors.New("received a response trailer without a valid request state")
 	}
 	mp.instr.Logger().Debug("message_processor: received response trailers, ignoring")
 	return mp.ContinueMessageFunc(reqState.Context, ContinueActionOptions{MessageType: MessageTypeResponseTrailers})

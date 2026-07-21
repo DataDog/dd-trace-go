@@ -625,7 +625,7 @@ func extractCircleCI() map[string]string {
 	tags[constants.CIPipelineID] = env.Get("CIRCLE_WORKFLOW_ID")
 	tags[constants.CIPipelineName] = env.Get("CIRCLE_PROJECT_REPONAME")
 	tags[constants.CIPipelineNumber] = env.Get("CIRCLE_BUILD_NUM")
-	tags[constants.CIPipelineURL] = fmt.Sprintf("https://app.circleci.com/pipelines/workflows/%s", env.Get("CIRCLE_WORKFLOW_ID"))
+	tags[constants.CIPipelineURL] = "https://app.circleci.com/pipelines/workflows/" + env.Get("CIRCLE_WORKFLOW_ID")
 	tags[constants.CIJobName] = env.Get("CIRCLE_JOB")
 	tags[constants.CIJobID] = env.Get("CIRCLE_BUILD_NUM")
 	tags[constants.CIJobURL] = env.Get("CIRCLE_BUILD_URL")
@@ -726,7 +726,7 @@ func extractGithubActions() map[string]string {
 				tags[constants.GitHeadCommit] = eventJSON.PullRequest.Head.Sha
 				tags[constants.GitPrBaseHeadCommit] = eventJSON.PullRequest.Base.Sha
 				tags[constants.GitPrBaseBranch] = eventJSON.PullRequest.Base.Ref
-				tags[constants.PrNumber] = fmt.Sprintf("%d", eventJSON.Number)
+				tags[constants.PrNumber] = strconv.Itoa(eventJSON.Number)
 			}
 		}
 	}
@@ -800,7 +800,7 @@ func extractJenkins() map[string]string {
 	} else {
 		tags[constants.GitBranch] = branchOrTag
 		// remove branch for job name
-		removeBranch := regexp.MustCompile(fmt.Sprintf("/%s", normalizeRef(branchOrTag)))
+		removeBranch := regexp.MustCompile("/" + normalizeRef(branchOrTag))
 		name = string(removeBranch.ReplaceAll([]byte(name), empty))
 	}
 
@@ -818,7 +818,7 @@ func extractJenkins() map[string]string {
 	tags[constants.PrNumber] = env.Get("CHANGE_ID")
 	tags[constants.GitPrBaseBranch] = env.Get("CHANGE_TARGET")
 
-	jsonString, err := getEnvVarsJSON("DD_CUSTOM_TRACE_ID")
+	jsonString, err := getEnvVarsJSON("DD_CUSTOM_TRACE_ID", "DD_CUSTOM_PARENT_ID")
 	if err == nil {
 		tags[constants.CIEnvVars] = string(jsonString)
 	}

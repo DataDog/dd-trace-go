@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -302,7 +303,7 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
-		var children []*Span
+		children := make([]*Span, 0, 3)
 		for i := range 3 { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			children = append(children, child)
@@ -339,6 +340,157 @@ func TestPartialFlush(t *testing.T) {
 		assert.Equal(t, 1.0, ts[0][1].metrics[keySamplingPriority]) // the tag should only be on the first span in the chunk
 		comparePayloadSpans(t, root, tsRoot[0][0])
 		comparePayloadSpans(t, children[2], tsRoot[0][1])
+	})
+
+	// Verify partition correctness when finished and unfinished spans interleave in t.spans.
+	// t.spans order: [root, c0, c1, c2, c3]. Finish c1 and c3 first; root, c0, c2 stay open.
+	t.Run("InterleavedFinishOrder", func(t *testing.T) {
+		tracer, transport, flush, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		children := make([]*Span, 0, 4)
+		for i := range 4 {
+			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
+		}
+		// Finish interleaved: child[1] and child[3]; leave root, child[0], child[2] open.
+		children[1].Finish()
+		children[3].Finish() // triggers partial flush (t.finished == 2 >= min 2)
+		flush(1)
+
+		ts := transport.Traces()
+		require.Len(t, ts, 1)
+		require.Len(t, ts[0], 2, "first chunk must contain exactly the two finished spans")
+		flushedNames := map[string]bool{ts[0][0].name: true, ts[0][1].name: true}
+		assert.True(t, flushedNames["child1"], "child1 must be in first chunk")
+		assert.True(t, flushedNames["child3"], "child3 must be in first chunk")
+
+		// Finish remaining spans. With min=2 a second partial flush may fire (root+c0),
+		// then c2 completes the trace. Collect all remaining chunks and flatten.
+		root.Finish()
+		children[0].Finish()
+		children[2].Finish()
+		flush(2) // wait for the two remaining chunks: {root,c0} and {c2}
+
+		remainingNames := map[string]bool{}
+		for _, chunk := range transport.Traces() {
+			for _, s := range chunk {
+				remainingNames[s.name] = true
+			}
+		}
+		assert.True(t, remainingNames["root"])
+		assert.True(t, remainingNames["child0"])
+		assert.True(t, remainingNames["child2"])
+		assert.False(t, remainingNames["child1"], "child1 must not reappear")
+		assert.False(t, remainingNames["child3"], "child3 must not reappear")
+	})
+
+	// Verify originalFirst is captured correctly when t.spans[0] (root) is itself flushed.
+	// root finishes before children, triggering a partial flush where originalFirst == s == root.
+	t.Run("OriginalFirstSpanFlushed", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "3")
+		tracer, transport, flush, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		root.context.trace.setTag("someTraceTag", "someValue")
+		children := make([]*Span, 0, 4)
+		for i := range 4 {
+			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
+		}
+		// Finish root + two children; root is t.spans[0] and ends up in finishedSpans.
+		root.Finish()
+		children[0].Finish()
+		children[1].Finish() // triggers partial flush (t.finished == 3 >= min 3)
+		flush(1)
+
+		ts := transport.Traces()
+		require.Len(t, ts, 1)
+		require.Len(t, ts[0], 3, "first chunk must contain root + child[0] + child[1]")
+		flushedNames := map[string]bool{}
+		for _, s := range ts[0] {
+			flushedNames[s.name] = true
+		}
+		assert.True(t, flushedNames["root"])
+		assert.True(t, flushedNames["child0"])
+		assert.True(t, flushedNames["child1"])
+
+		// Remaining children should appear in second chunk; root must not.
+		children[2].Finish()
+		children[3].Finish()
+		flush(1)
+
+		ts2 := transport.Traces()
+		require.Len(t, ts2, 1)
+		remainingNames := map[string]bool{}
+		for _, s := range ts2[0] {
+			remainingNames[s.name] = true
+		}
+		assert.False(t, remainingNames["root"], "root must not reappear in second chunk")
+		assert.True(t, remainingNames["child2"])
+		assert.True(t, remainingNames["child3"])
+	})
+
+	// Regression test for the partial-flush path where the span that triggers the
+	// flush is NOT the first span in the chunk. In finishedOneLocked this is the
+	// !finishingSpanIsFirstInChunk branch: the trace-level tags and sampling
+	// priority must still be written onto the first span (root here), even though
+	// it finished earlier and s.mu is released around the fSpan update.
+	t.Run("FirstSpanInChunkUpdatedWhenNotFinishingSpan", func(t *testing.T) {
+		t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "3")
+		tracer, transport, flush, stop, err := startTestTracer(t)
+		require.NoError(t, err)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		root.context.trace.setTag("someTraceTag", "someValue")
+		child0 := tracer.StartSpan("child0", ChildOf(root.Context()))
+		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+
+		// root finishes first (so it is finishedSpans[0]), but child1 is the span
+		// that crosses the partial-flush threshold and drives finishedOneLocked.
+		root.Finish()
+		child0.Finish()
+		child1.SetTag(ext.ManualKeep, true)
+		child1.Finish()
+		flush(1)
+
+		ts := transport.Traces()
+		require.Len(t, ts, 1)
+		require.Len(t, ts[0], 3)
+		require.Equal(t, "root", ts[0][0].name)
+		require.Contains(t, ts[0][0].metrics, keySamplingPriority)
+		require.Equal(t, "someValue", ts[0][0].meta.Map(true)["someTraceTag"])
+	})
+
+	// Verify that the backing array tail is cleared after in-place compaction so that
+	// flushed spans are not kept alive through stale pointers past len(t.spans).
+	t.Run("TailClearedAfterFlush", func(t *testing.T) {
+		tracer, _, _, stop, err := startTestTracer(t)
+		assert.Nil(t, err)
+		defer stop()
+
+		root := tracer.StartSpan("root")
+		child0 := tracer.StartSpan("child0", ChildOf(root.Context()))
+		child1 := tracer.StartSpan("child1", ChildOf(root.Context()))
+
+		child0.Finish()
+		child1.Finish() // triggers partial flush; root is the sole leftover
+
+		// Inspect t.spans immediately: len==1 (root only), tail must be nil.
+		root.context.trace.mu.RLock()
+		spans := root.context.trace.spans
+		root.context.trace.mu.RUnlock()
+
+		require.Equal(t, 1, len(spans), "only root must remain in trace after partial flush")
+		full := spans[:cap(spans)]
+		for i := len(spans); i < len(full); i++ {
+			assert.Nil(t, full[i], "tail slot %d must be nil so flushed spans can be GC'd", i)
+		}
+
+		root.Finish()
 	})
 
 	// This test covers an issue where partial flushing + a rate sampler would panic
@@ -967,7 +1119,7 @@ func TestNewSpanContext(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
+		t.Setenv(envPropagationStyleExtract, "datadog")
 		_, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
@@ -1180,7 +1332,7 @@ func TestSetSamplingPriorityLocked(t *testing.T) {
 func TestTraceIDHexEncoded(t *testing.T) {
 	var tid traceID
 	tid.value[15] = 5
-	tid.computeAndCacheHex()
+	tid.cacheHex()
 	assert.Equal(t, "00000000000000000000000000000005", tid.HexEncoded())
 }
 
@@ -1217,24 +1369,23 @@ func TestSpanIDHexEncoded(t *testing.T) {
 
 func TestSpanProcessTags(t *testing.T) {
 	testCases := []struct {
-		name    string
-		enabled bool
+		name     string
+		enabled  bool
+		protocol float64
 	}{
-		{
-			name:    "disabled",
-			enabled: false,
-		},
-		{
-			name:    "enabled",
-			enabled: true,
-		},
+		{name: "v0.4/disabled", enabled: false, protocol: traceProtocolV04},
+		{name: "v0.4/enabled", enabled: true, protocol: traceProtocolV04},
+		{name: "v1/disabled", enabled: false, protocol: traceProtocolV1},
+		{name: "v1/enabled", enabled: true, protocol: traceProtocolV1},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DD_EXPERIMENTAL_PROPAGATE_PROCESS_TAGS_ENABLED", strconv.FormatBool(tc.enabled))
 			processtags.Reload()
-			tracer, transport, flush, stop, err := startTestTracer(t)
+			tracer, transport, flush, stop, err := startTestTracer(t, func(c *config) {
+				c.internalConfig.SetTraceProtocol(tc.protocol, internalconfig.OriginCode)
+			})
 			assert.NoError(t, err)
 			t.Cleanup(stop)
 
@@ -1256,14 +1407,11 @@ func TestSpanProcessTags(t *testing.T) {
 			root := traces[0][0]
 			assert.Equal(t, "p", root.name)
 			if tc.enabled {
-				v, _ := root.meta.Get("_dd.tags.process")
-				assert.NotEmpty(t, v)
+				assertProcessTags(t, traces)
 			} else {
-				assert.False(t, root.meta.Has("_dd.tags.process"))
-			}
-
-			for _, s := range traces[0][1:] {
-				assert.False(t, s.meta.Has("_dd.tags.process"))
+				for _, s := range traces[0] {
+					assert.False(t, s.meta.Has("_dd.tags.process"))
+				}
 			}
 		})
 	}
@@ -1478,4 +1626,141 @@ func TestFromGenericCtxSamplingDecision(t *testing.T) {
 		assert.Equal(t, decisionKeep, got,
 			"drop() after keep() should be a no-op — the trace stays rescued")
 	})
+}
+
+// TestChildInheritsUpdatedParentService verifies that when a parent span's service
+// is changed via SetTag after creation, a subsequently-started child inherits the
+// updated service name from the parent's span snapshot.
+func TestChildInheritsUpdatedParentService(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t, WithService("global-svc"))
+	require.NoError(t, err)
+	defer stop()
+
+	parent := trc.StartSpan("parent", ServiceName("original-svc"))
+	defer parent.Finish()
+	parent.SetTag(ext.ServiceName, "updated-svc")
+
+	child := trc.StartSpan("child", ChildOf(parent.Context()))
+	defer child.Finish()
+
+	assert.Equal(t, "updated-svc", child.service)
+}
+
+// TestExtractedContextOriginMarkedOnFirstChildOnly verifies that origin from an
+// extracted remote context is set on the first local child span only. The condition
+// context.trace.root == nil must be true for remote contexts and false for local ones.
+func TestExtractedContextOriginMarkedOnFirstChildOnly(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	// Simulate a remote extracted context with an origin.
+	// +checklocksignore — initialization time, not yet shared.
+	remoteCtx := &SpanContext{
+		traceID: traceIDFrom64Bits(42),
+		spanID:  99,
+		origin:  "synthetics",
+	}
+	remoteCtx.trace = newTrace() // trace.root is nil — no local spans yet
+
+	child := trc.StartSpan("local-op", ChildOf(remoteCtx))
+	defer child.Finish()
+
+	origin, ok := child.meta.Get(keyOrigin)
+	assert.True(t, ok, "first local span from remote context should have origin marked")
+	assert.Equal(t, "synthetics", origin)
+
+	// Grandchild: parent.Context().trace.root is now non-nil, so origin must not be set.
+	grandchild := trc.StartSpan("grandchild", ChildOf(child.Context()))
+	defer grandchild.Finish()
+
+	_, hasOrigin := grandchild.meta.Get(keyOrigin)
+	assert.False(t, hasOrigin, "grandchild should not have origin — it is not the first local span")
+}
+
+// TestSpanSnapshotFieldsMirrorSetTag verifies that context.spanSnapshot is updated
+// when env, version, and peer.service tags are mutated on a live span via SetTag.
+func TestSpanSnapshotFieldsMirrorSetTag(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	span := trc.StartSpan("op")
+	defer span.Finish()
+
+	span.SetTag(ext.Environment, "staging")
+	span.SetTag(ext.Version, "2.0")
+	span.SetTag(ext.PeerService, "my-peer")
+
+	spanSnapshot := span.context.getSpanSnapshot()
+	assert.Equal(t, "staging", spanSnapshot.env)
+	assert.Equal(t, "2.0", spanSnapshot.version)
+	assert.Equal(t, "my-peer", spanSnapshot.peerService)
+}
+
+// TestSiblingSpansGetFreshSpanSnapshot verifies that each sibling span captures
+// the parent's span snapshot at its own creation time, and that siblings do not
+// share or leak context state between them.
+func TestSiblingSpansGetFreshSpanSnapshot(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t, WithService("global-svc"))
+	require.NoError(t, err)
+	defer stop()
+
+	parent := trc.StartSpan("parent", ServiceName("parent-svc"))
+	defer parent.Finish()
+
+	child1 := trc.StartSpan("child1", ChildOf(parent.Context()))
+	defer child1.Finish()
+
+	parent.SetTag(ext.ServiceName, "new-parent-svc")
+
+	child2 := trc.StartSpan("child2", ChildOf(parent.Context()))
+	defer child2.Finish()
+
+	assert.Equal(t, "parent-svc", child1.service, "child1 was created before service update")
+	assert.Equal(t, "new-parent-svc", child2.service, "child2 was created after service update")
+	assert.Equal(t, "parent-svc", child1.context.getSpanSnapshot().service)
+	assert.Equal(t, "new-parent-svc", child2.context.getSpanSnapshot().service)
+}
+
+func TestSpanSnapshotFieldsConcurrentAccess(t *testing.T) {
+	trc, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	parent := trc.StartSpan("parent")
+	defer parent.Finish()
+	ctx := parent.Context()
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 100)
+	for i := range 100 {
+		wg.Add(3)
+		go func(i int) {
+			defer wg.Done()
+			parent.SetTag(ext.Environment, fmt.Sprintf("env-%d", i))
+			parent.SetTag(ext.Version, fmt.Sprintf("version-%d", i))
+			parent.SetTag(ext.PeerService, fmt.Sprintf("peer-%d", i))
+			parent.SetTag(ext.ServiceName, fmt.Sprintf("service-%d", i))
+		}(i)
+		go func() {
+			defer wg.Done()
+			child := trc.StartSpan("child", ChildOf(ctx))
+			child.Finish()
+		}()
+		go func() {
+			defer wg.Done()
+			carrier := SQLCommentCarrier{
+				Query:         "SELECT 1",
+				Mode:          DBMPropagationModeService,
+				DBServiceName: "db",
+			}
+			errCh <- carrier.Inject(ctx)
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		assert.NoError(t, err)
+	}
 }

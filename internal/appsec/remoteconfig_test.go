@@ -6,11 +6,11 @@
 package appsec
 
 import (
+	"context"
 	"embed"
 	"strings"
 
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
-	"github.com/DataDog/go-libddwaf/v4"
-	"github.com/DataDog/go-libddwaf/v4/timer"
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -163,7 +163,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 	t.Run("WithEnablementMode(EnabledModeForcedOn)", func(t *testing.T) {
 		for _, envVal := range []string{"", "true", "false"} {
-			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+			t.Run("DD_APPSEC_ENABLED="+envVal, func(t *testing.T) {
 				t.Setenv(config.EnvEnabled, envVal)
 
 				remoteconfig.Reset()
@@ -191,7 +191,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 	t.Run("WithEnablementMode(EnabledModeForcedOff)", func(t *testing.T) {
 		for _, envVal := range []string{"", "true", "false"} {
-			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+			t.Run("DD_APPSEC_ENABLED="+envVal, func(t *testing.T) {
 				t.Setenv(config.EnvEnabled, envVal)
 
 				Start(config.WithEnablementMode(config.ForcedOff), config.WithRCConfig(remoteconfig.DefaultClientConfig()))
@@ -437,7 +437,7 @@ func TestOnRCUpdate(t *testing.T) {
 				require.Equal(t, tc.statuses, statuses)
 
 				// Make sure edits are added to the active ruleset
-				expected := []string{"::/go-libddwaf/default/recommended.json"}
+				expected := []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}
 				for path := range tc.statuses {
 					expected = append(expected, path)
 				}
@@ -513,7 +513,7 @@ func TestOnRCUpdate(t *testing.T) {
 				t.Skip()
 			}
 
-			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
+			require.Equal(t, []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}, activeAppSec.cfg.WAFManager.ConfigPaths(""))
 
 			// Craft and process the RC updates
 			updates := craftRCUpdates(tc.edits)
@@ -524,9 +524,14 @@ func TestOnRCUpdate(t *testing.T) {
 			// Compare rulesets base paths to make sure the updates were processed correctly
 			expected := tc.expectedConfigPaths
 			if expected == nil {
-				expected = []string{"::/go-libddwaf/default/recommended.json"}
+				expected = []string{"::/go-libddwaf/default/recommended.json", "obfuscator/config"}
+			} else {
+				expected = append([]string{"obfuscator/config"}, expected...)
 			}
-			require.Equal(t, expected, activeAppSec.cfg.WAFManager.ConfigPaths(""))
+			actual := activeAppSec.cfg.WAFManager.ConfigPaths("")
+			slices.Sort(expected)
+			slices.Sort(actual)
+			require.Equal(t, expected, actual)
 		})
 	}
 
@@ -577,17 +582,18 @@ func TestOnRCUpdate(t *testing.T) {
 		require.NotNil(t, handle)
 		defer handle.Close()
 
-		ctx, err := handle.NewContext(timer.WithUnlimitedBudget())
+		ctx, err := handle.NewContext(context.Background(), timer.WithUnlimitedBudget(), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer ctx.Close()
 
-		res, err := ctx.Run(libddwaf.RunAddressData{
-			Persistent: map[string]any{
+		res, err := ctx.Run(context.Background(), addresses.RunAddressData{
+			Data: map[string]any{
 				"waf.context.processor": map[string]bool{"extract-schema": true},
 				addresses.ServerRequestBodyAddr: map[string]any{
 					"testcard": "1234567890",
 				},
 			},
+			TimerKey: addresses.WAFScope,
 		})
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{
@@ -679,7 +685,7 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 		{
 			name:     "single/error",
 			updates:  craftRCUpdates(map[string]*RulesFragment{"invalid": &invalidOverrides}),
-			expected: map[string]state.ApplyStatus{"invalid": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`}},
+			expected: map[string]state.ApplyStatus{"invalid": {State: state.ApplyStateError, Error: `{"rules_override":{"error":"bad cast, expected 'map', obtained 'float'"}}`}},
 		},
 		{
 			name:     "multiple/ack",
@@ -691,14 +697,14 @@ func TestOnRCUpdateStatuses(t *testing.T) {
 			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &overrides, "invalid": &invalidOverrides}),
 			expected: map[string]state.ApplyStatus{
 				"overrides": ackStatus,
-				"invalid":   {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
+				"invalid":   {State: state.ApplyStateError, Error: `{"rules_override":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
 			},
 		},
 		{
 			name:    "multiple/all-errors",
 			updates: craftRCUpdates(map[string]*RulesFragment{"overrides": &invalidOverrides, "invalid": &invalidRules}),
 			expected: map[string]state.ApplyStatus{
-				"overrides": {State: state.ApplyStateError, Error: `{"rules_overrides":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
+				"overrides": {State: state.ApplyStateError, Error: `{"rules_override":{"error":"bad cast, expected 'map', obtained 'float'"}}`},
 				"invalid":   {State: state.ApplyStateError, Error: `{"rules":{"errors":{"rule has no valid conditions":["id"]}}}`},
 			},
 		},
@@ -742,7 +748,7 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, _ := appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		wafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
+		wafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer wafCtx.Close()
 		values := map[string]any{
@@ -750,7 +756,7 @@ func TestWafRCUpdate(t *testing.T) {
 		}
 
 		// Make sure the rule matches as expected
-		result, err := wafCtx.Run(libddwaf.RunAddressData{Persistent: values})
+		result, err := wafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, TimerKey: addresses.WAFScope})
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Empty(t, result.Actions)
@@ -761,11 +767,11 @@ func TestWafRCUpdate(t *testing.T) {
 		wafHandle, _ = appsec.cfg.NewHandle()
 		require.NotNil(t, wafHandle)
 		defer wafHandle.Close()
-		newWafCtx, err := wafHandle.NewContext(timer.WithBudget(time.Hour))
+		newWafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer newWafCtx.Close()
 		// Make sure the rule returns a blocking action when matching
-		result, err = newWafCtx.Run(libddwaf.RunAddressData{Persistent: values})
+		result, err = newWafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, TimerKey: addresses.WAFScope})
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
 		require.Contains(t, result.Actions, "block_request")

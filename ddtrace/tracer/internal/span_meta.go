@@ -70,6 +70,20 @@ func (sm *SpanMeta) ReplaceSharedAttrs(prev, next *SpanAttributes) {
 	}
 }
 
+// Reset clears m in place (preserving its allocation) and nils promotedAttrs.
+// Called at span release time to avoid reallocating the flat map on reuse.
+func (sm *SpanMeta) Reset() {
+	clear(sm.m)
+	sm.promotedAttrs = nil
+}
+
+// SwapSharedAttrs sets promotedAttrs without replacing the SpanMeta or touching m.
+// For pooled spans where m was already cleared by Reset; equivalent to NewSpanMeta
+// when m is nil (fresh span).
+func (sm *SpanMeta) SwapSharedAttrs(attrs *SpanAttributes) {
+	sm.promotedAttrs = attrs
+}
+
 // Normalize sets m and attrs to nil when they are empty so that a zero-length
 // SpanMeta compares equal to a freshly-zeroed one. Intended for test helpers.
 func (sm *SpanMeta) Normalize() {
@@ -131,16 +145,6 @@ func (sm *SpanMeta) Version() (string, bool) { return sm.promotedAttrs.Get(AttrV
 
 // Language returns the value of the "language" promoted attribute.
 func (sm *SpanMeta) Language() (string, bool) { return sm.promotedAttrs.Get(AttrLanguage) }
-
-// Range calls fn for each flat-map entry. Promoted attrs are not in sm.m
-// and are not yielded. Iteration stops if fn returns false.
-func (sm *SpanMeta) Range(fn func(k, v string) bool) {
-	for k, v := range sm.m {
-		if !fn(k, v) {
-			return
-		}
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Write methods

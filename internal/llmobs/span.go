@@ -8,6 +8,7 @@ package llmobs
 import (
 	"encoding/json"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -116,6 +117,8 @@ type ToolDefinition struct {
 	Name string `json:"name"`
 	// Description is the description of what the tool does.
 	Description string `json:"description,omitempty"`
+	// ToolVersion is the version of the tool.
+	ToolVersion string `json:"version,omitempty"`
 	// Schema is the JSON schema defining the tool's parameters.
 	Schema json.RawMessage `json:"schema,omitempty"`
 }
@@ -220,6 +223,9 @@ type SpanAnnotations struct {
 	Metrics map[string]float64
 	// Tags contains string tags key-value pairs.
 	Tags map[string]string
+	// CostTags contains tag keys to propagate to LLMObs cost and token metrics.
+	// Each key must reference a tag already present on the span.
+	CostTags []string
 }
 
 // Span represents an LLMObs span with its associated metadata and context.
@@ -275,6 +281,11 @@ func (s *Span) TraceID() string {
 // MLApp returns the ML application name for this span.
 func (s *Span) MLApp() string {
 	return s.mlApp
+}
+
+// SessionID returns the resolved session ID for this span.
+func (s *Span) SessionID() string {
+	return s.sessionID
 }
 
 // AddLink adds a span link to this span.
@@ -355,6 +366,15 @@ func (s *Span) Annotate(a SpanAnnotations) {
 		s.llmCtx.tags = updateMapKeys(s.llmCtx.tags, a.Tags)
 		if sessionID, ok := a.Tags[TagKeySessionID]; ok {
 			s.sessionID = sessionID
+		}
+	}
+
+	if a.CostTags != nil {
+		trackCostTagsAnnotated(s, "annotate")
+		for _, costTag := range a.CostTags {
+			if !slices.Contains(s.llmCtx.costTags, costTag) {
+				s.llmCtx.costTags = append(s.llmCtx.costTags, costTag)
+			}
 		}
 	}
 
@@ -512,6 +532,11 @@ func (s *Span) propagatedSessionID() string {
 		curSpan = curSpan.parent
 		usingParent = true
 	}
+
+	if s.propagated != nil && s.propagated.SessionID != "" {
+		log.Debug("llmobs: using session_id from propagated span: %s", s.propagated.SessionID)
+		return s.propagated.SessionID
+	}
 	return ""
 }
 
@@ -539,6 +564,23 @@ func (s *Span) propagatedMLApp() string {
 	if activeLLMObs != nil {
 		log.Debug("llmobs: using ml_app from global config: %s", activeLLMObs.Config.MLApp)
 		return activeLLMObs.Config.MLApp
+	}
+	return ""
+}
+
+// resolvedToolVersion walks the parent chain to find the nearest LLM ancestor and returns the
+// ToolVersion for the tool matching this span's name in its tool_definitions, if any.
+func (s *Span) resolvedToolVersion() string {
+	for cur := s.parent; cur != nil; cur = cur.parent {
+		if cur.spanKind != SpanKindLLM {
+			continue
+		}
+		for _, td := range cur.llmCtx.toolDefinitions {
+			if td.Name == s.name {
+				return td.ToolVersion
+			}
+		}
+		return ""
 	}
 	return ""
 }

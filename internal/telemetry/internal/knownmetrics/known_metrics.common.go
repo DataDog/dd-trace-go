@@ -136,6 +136,8 @@ var commonMetrics = []Declaration{
 	{Namespace: "iast", Type: "count", Name: "suppressed.vulnerabilities"},
 	{Namespace: "mlobs", Type: "count", Name: "activate_distributed_headers"},
 	{Namespace: "mlobs", Type: "count", Name: "annotations"},
+	{Namespace: "mlobs", Type: "count", Name: "cost_tags.annotated"},
+	{Namespace: "mlobs", Type: "count", Name: "cost_tags.submitted"},
 	{Namespace: "mlobs", Type: "count", Name: "dropped_eval_events"},
 	{Namespace: "mlobs", Type: "count", Name: "dropped_span_events"},
 	{Namespace: "mlobs", Type: "count", Name: "evals_submitted"},

@@ -58,6 +58,7 @@ Our CI pipeline includes several automated checks:
 - **Module Check**: Validates Go module consistency using `make fix-modules`
 - **Lint Check**: Runs comprehensive linting using `golangci-lint`
 - **Lock Analysis**: Runs `checklocks` to detect potential deadlocks and race conditions
+- **Cross-Compile Check**: Runs `scripts/cross_build.sh` to cross-compile the library for every [first class Go port](https://go.dev/wiki/PortingPolicy) (including 32-bit `linux/386`, `windows/386`, `linux/arm`), catching architecture-specific compile regressions. Run locally with `./scripts/cross_build.sh`. Packages that import `go-libddwaf` are skipped until it builds on 32-bit (see DataDog/go-libddwaf#227); they stay covered on 64-bit by the test matrix.
 
 #### Unit and Integration Tests
 
@@ -69,6 +70,10 @@ Our CI pipeline includes several automated checks:
 #### Generate Workflow
 
 - **Code Generation**: Ensures all generated code is current and consistent
+
+#### Config Audit Workflow
+
+- **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
 
 ### CI Troubleshooting
 
@@ -229,6 +234,10 @@ The script provides:
 A set of [Style guidelines](https://github.com/DataDog/dd-trace-go/wiki/Style-guidelines) was added to our Wiki. Please spend some time browsing it.
 It will help tremendously in avoiding comments and speeding up the PR process.
 
+### Comments
+
+Add comments only for non-obvious intent, trade-offs, or constraints the code can't carry. Don't narrate what the diff already shows.
+
 ### Local Development
 
 For local development, use make targets as the primary interface:
@@ -295,6 +304,10 @@ When working with environment variables, direct use of `os.Getenv` and `os.Looku
 Once a new environment variable is added to the codebase, Datadog maintainers will also add it to Datadog's internal configuration registry for tracking and documentation purposes.
 
 Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-validation.yml) to track when they were introduced.
+
+#### Code coverage report flags
+
+`DD_CODE_COVERAGE_FLAGS` attaches a comma-separated list of flags to uploaded code coverage reports. Whitespace around each flag is trimmed, empty entries are discarded, and order and duplicate flags are preserved. A maximum of 32 normalized flags is accepted; if the value contains more, the report is uploaded without flags and a warning is logged.
 
 #### Adding new environment variables using configinverter
 
@@ -371,8 +384,22 @@ Some benchmarks will run on any new PR commits, the results will be commented in
 
 #### Adding a new benchmark
 
-To add additional benchmarks that should run for every PR, go to `.gitlab-ci.yml`.
-Add the name of your benchmark to the `BENCHMARK_TARGETS` variable using pipe character separators.
+To add a benchmark that runs on every PR, edit [`.gitlab/benchmarks/micro/gitlab-ci.yml`](./.gitlab/benchmarks/micro/gitlab-ci.yml)
+and append your top-level benchmark function name (e.g. `BenchmarkMyThing`) to the `BENCHMARKS` variable of one of the
+`microbenchmarks-N` groups, using the pipe character (`|`) as the separator.
+
+A few things to keep in mind:
+
+- The value is a top-level benchmark function name (`func BenchmarkMyThing(b *testing.B)`), not a sub-benchmark. It is
+  matched with `go test -bench ^BenchmarkMyThing$`, so all of its `b.Run` sub-benchmarks run and are reported individually.
+- The benchmark must live in a package that isn't excluded by the runner (it skips `orchestrion`, `civisibility`,
+  `scripts`, and `tools`).
+- Keep at most `44 / CPUS_PER_BENCHMARK` entries per group (the groups run in parallel across the job's CPUs). Add your
+  entry to the smallest group, or create a new `microbenchmarks-N` group if they are full.
+- Only `microbenchmarks-1` and `microbenchmarks-2` feed the `pr-performance-gates` job, so a benchmark placed in another
+  group is measured and tracked but does not gate the PR.
+- A benchmark that is new relative to `main` has no baseline, so the runner skips its comparison on the introducing PR and
+  starts gating it from the next PR onward.
 
 ### Goroutine Leaks
 

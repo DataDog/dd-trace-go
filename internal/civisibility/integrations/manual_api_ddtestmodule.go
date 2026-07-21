@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,10 +53,10 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 
 	// Module tags should include session tags so the backend can calculate the session fingerprint from the module.
 	moduleTags := append(sessionTags, []tracer.StartSpanOption{
-		tracer.Tag(constants.TestType, constants.TestTypeTest),
-		tracer.Tag(constants.TestModule, name),
-		tracer.Tag(constants.TestFramework, framework),
-		tracer.Tag(constants.TestFrameworkVersion, frameworkVersion),
+		ciVisibilityTag(constants.TestType, constants.TestTypeTest),
+		ciVisibilityTag(constants.TestModule, name),
+		ciVisibilityTag(constants.TestFramework, framework),
+		ciVisibilityTag(constants.TestFrameworkVersion, frameworkVersion),
 	}...)
 
 	testOpts := append(fillCommonTags([]tracer.StartSpanOption{
@@ -67,9 +68,9 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
 	moduleID := span.Context().SpanID()
 	if session != nil {
-		span.SetTag(constants.TestSessionIDTag, fmt.Sprint(session.sessionID))
+		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, strconv.FormatUint(session.sessionID, 10))
 	}
-	span.SetTag(constants.TestModuleIDTag, fmt.Sprint(moduleID))
+	setCIVisibilitySpanTag(span, constants.TestModuleIDTag, strconv.FormatUint(moduleID, 10))
 
 	module := &tslvTestModule{
 		session:   session,

@@ -454,12 +454,21 @@ func syncFeatureMetadataFromExecution(meta *additionalFeatureMetadata, execMeta 
 		return
 	}
 	meta.identity = execMeta.identity
-	meta.isQuarantined = execMeta.isQuarantined
-	meta.isDisabled = execMeta.isDisabled
-	meta.isAttemptToFix = execMeta.isAttemptToFix
-	meta.hasExplicitQuarantined = execMeta.hasExplicitQuarantined
-	meta.hasExplicitDisabled = execMeta.hasExplicitDisabled
-	meta.hasExplicitAttemptToFix = execMeta.hasExplicitAttemptToFix
+	// isDisabled and isQuarantined use a one-way ratchet: inherited state from the parent
+	// (propagated via propagateTestExecutionMetadataFlags) can only accumulate true, never
+	// clear back to false. This serves two goals simultaneously:
+	//   1. Prevents corruption: a transient execMeta.isDisabled=false (due to propagation
+	//      ordering) cannot zero ptrMeta.isDisabled=true across retry iterations, which would
+	//      cause all subsequent spans to lose the disabled tag.
+	//   2. Preserves child-inherits-parent skip: when a child has its own retry wrapper but its
+	//      parent is disabled/quarantined, propagateTestExecutionMetadataFlags ORs the parent
+	//      state into execMeta. The ratchet lets that accumulated true reach ptrMeta so that
+	//      postOnRetryEnd (which reads ptrMeta.isDisabled || ptrMeta.isQuarantined) still calls
+	//      SkipNow as expected instead of failing the Go test run.
+	meta.isDisabled = meta.isDisabled || execMeta.isDisabled
+	meta.isQuarantined = meta.isQuarantined || execMeta.isQuarantined
+	// isAttemptToFix and hasExplicit* are set once from the authoritative management directive
+	// and do not need to be synced from execution metadata — they are stable by construction.
 	meta.isEarlyFlakeDetectionEnabled = execMeta.isEarlyFlakeDetectionEnabled
 	meta.isFlakyTestRetriesEnabled = execMeta.isFlakyTestRetriesEnabled
 	meta.isNew = execMeta.isANewTest

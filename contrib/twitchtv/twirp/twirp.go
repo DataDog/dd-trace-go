@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
 
 	"github.com/twitchtv/twirp"
 )
@@ -148,6 +149,7 @@ func WrapServer(h http.Handler, opts ...Option) http.Handler {
 			}
 			spanOpts = append(spanOpts, tracer.ChildOf(spanctx))
 		}
+		spanOpts = appsechttpsec.AppendSecurityTestingHeaderTags(spanOpts, r.Header)
 		span, ctx := tracer.StartSpanFromContext(r.Context(), "twirp.handler", spanOpts...)
 		defer span.Finish()
 

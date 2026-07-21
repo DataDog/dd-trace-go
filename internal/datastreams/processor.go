@@ -131,23 +131,23 @@ func (b bucket) export(timestampType TimestampType, checkpointNameMapping []byte
 		TransactionCheckpointIds: checkpointNameMapping,
 	}
 	for key, offset := range b.latestProduceOffsets {
-		tags := []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_produce"}
+		tags := []string{fmt.Sprintf("partition:%d", key.partition), "topic:" + key.topic, "type:kafka_produce"}
 		if key.cluster != "" {
-			tags = append(tags, fmt.Sprintf("kafka_cluster_id:%s", key.cluster))
+			tags = append(tags, "kafka_cluster_id:"+key.cluster)
 		}
 		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
 	for key, offset := range b.latestCommitOffsets {
-		tags := []string{fmt.Sprintf("consumer_group:%s", key.group), fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_commit"}
+		tags := []string{"consumer_group:" + key.group, fmt.Sprintf("partition:%d", key.partition), "topic:" + key.topic, "type:kafka_commit"}
 		if key.cluster != "" {
-			tags = append(tags, fmt.Sprintf("kafka_cluster_id:%s", key.cluster))
+			tags = append(tags, "kafka_cluster_id:"+key.cluster)
 		}
 		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
 	for key, offset := range b.latestHighWatermarkOffsets {
-		tags := []string{fmt.Sprintf("partition:%d", key.partition), fmt.Sprintf("topic:%s", key.topic), "type:kafka_high_watermark"}
+		tags := []string{fmt.Sprintf("partition:%d", key.partition), "topic:" + key.topic, "type:kafka_high_watermark"}
 		if key.cluster != "" {
-			tags = append(tags, fmt.Sprintf("kafka_cluster_id:%s", key.cluster))
+			tags = append(tags, "kafka_cluster_id:"+key.cluster)
 		}
 		exported.Backlogs = append(exported.Backlogs, Backlog{Tags: tags, Value: offset})
 	}
@@ -641,9 +641,14 @@ func (p *Processor) SetCheckpointWithParams(ctx context.Context, params options.
 	if params.ServiceOverride != "" {
 		service = params.ServiceOverride
 	}
-	processTags := processtags.GlobalTags().Slice()
+	var processTags []string
+	var containerTagsHash string
+	if pTags := processtags.GlobalTags(); pTags != nil {
+		processTags = pTags.Slice()
+		containerTagsHash = processtags.ContainerTagsHash()
+	}
 	child := Pathway{
-		hash:         p.hashCache.get(service, p.env, edgeTags, processTags, parentHash),
+		hash:         p.hashCache.get(service, p.env, edgeTags, processTags, containerTagsHash, parentHash),
 		pathwayStart: pathwayStart,
 		edgeStart:    now,
 	}

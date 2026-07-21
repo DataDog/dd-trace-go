@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       go-libddwaf-ref:
-        description: A git ref to update github.com/DataDog/go-libddwaf/v4 to. No-op if empty.
+        description: A git ref to update github.com/DataDog/go-libddwaf/v5 to. No-op if empty.
         required: false
         type: string
   push:
@@ -42,7 +42,7 @@ jobs:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -68,16 +68,51 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             mkdir -p "$TEST_RESULTS"
-            # shellcheck disable=SC2086
-            go get -u -t $PACKAGES
-            go mod tidy
-            find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
-            if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
-              go get -u -t "github.com/DataDog/go-libddwaf/v4@${GO_LIBDDWAF_REF}"
-              go mod tidy
-            fi
-            # shellcheck disable=SC2086
-            go build $PACKAGES
+            compile() {
+              # `!` and pipelines suspend -e for the commands they wrap, including
+              # inside this function's body (see `if ! compile | tee`, below) — a
+              # failed step here would otherwise go unnoticed as long as the final
+              # `go build` happens to still succeed. Propagate each failure explicitly.
+              # shellcheck disable=SC2086
+              go get -u -t $PACKAGES || return
+              go mod tidy || return
+              find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd || exit 1; done || return
+              if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
+                go get -u -t "github.com/DataDog/go-libddwaf/v5@${GO_LIBDDWAF_REF}" || return
+                go mod tidy || return
+              fi
+              # shellcheck disable=SC2086
+              go build $PACKAGES
+            }
+            log="$(mktemp)"
+            # go1.26.5 (currently `stable`) intermittently corrupts its own heap mid-build:
+            # `fatal error: found pointer to free object` in the GC sweeper, faults, SIGSEGVs,
+            # and frontend ICEs (golang/go#77168). A crash can also leave partially written
+            # cache/module archives that later surface as zip/archive checksum errors. These
+            # are toolchain flakes, not real code breaks, so retry a few times and let a fresh
+            # compiler process dodge the probabilistic crash. A failure whose log matches none
+            # of the known signatures is a genuine break and fails immediately, without retry.
+            corruption_re='internal compiler error|zip: checksum error|not the start of an archive file|found pointer to free object|fatal error: fault|unexpected signal during runtime execution|signal SIGSEGV'
+            retry_on_corruption() {
+              local attempt=1 max=3
+              # The loop condition is a pipeline: exempt from `set -e` and, with pipefail,
+              # it reflects the wrapped command's real status (same idiom as `if ! compile | tee`).
+              until "$@" 2>&1 | tee "$log"; do
+                if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
+                  return 1
+                fi
+                echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
+                # The build cache is always rebuildable offline, so drop it every retry to
+                # discard partial artifacts a crashed compiler left behind. Only wipe the
+                # module cache on on-disk archive corruption, since refetching needs network.
+                go clean -cache || true
+                if grep -qE 'zip: checksum error|not the start of an archive file' "$log"; then
+                  go clean -modcache || true
+                fi
+                attempt=$((attempt + 1))
+              done
+            }
+            retry_on_corruption compile
 
       - name: Compute Matrix
         id: matrix
@@ -100,7 +135,7 @@ jobs:
     env:
       TEST_RESULTS: ${{ github.workspace }}/test-results
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -134,7 +169,32 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
-            ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+            run_smoke() {
+              ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+            }
+            log="$(mktemp)"
+            # See "Compile dd-trace-go with updated dependencies (sandboxed)" above for why
+            # go1.26.5 (currently `stable`) intermittently corrupts its own heap mid-build
+            # (found pointer to free object / faults / SIGSEGVs / ICEs, golang/go#77168) and
+            # why these toolchain flakes are retried while genuine breaks fail immediately.
+            corruption_re='internal compiler error|zip: checksum error|not the start of an archive file|found pointer to free object|fatal error: fault|unexpected signal during runtime execution|signal SIGSEGV'
+            retry_on_corruption() {
+              local attempt=1 max=3
+              until "$@" 2>&1 | tee "$log"; do
+                if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
+                  return 1
+                fi
+                echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
+                # Build cache is rebuildable offline (drop every retry); wipe the module
+                # cache only on on-disk archive corruption, since refetching needs network.
+                go clean -cache || true
+                if grep -qE 'zip: checksum error|not the start of an archive file' "$log"; then
+                  go clean -modcache || true
+                fi
+                attempt=$((attempt + 1))
+              done
+            }
+            retry_on_corruption run_smoke
       - name: Stage sandbox artifacts outside workspace
         # Move the test results and coverage files to RUNNER_TEMP so the
         # next checkout (which wipes the workspace) does not delete them.
@@ -161,7 +221,7 @@ jobs:
         # local action is invoked.
         id: recheckout
         if: always()
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ steps.trusted.outputs.sha }}
@@ -184,7 +244,7 @@ jobs:
         id: dd-sts
         if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
@@ -195,12 +255,23 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
-      - name: Upload Coverage
+
+      - name: Merge contrib coverage files
+        if: always() && steps.restore.outcome == 'success'
+        run: |
+          echo "mode: atomic" > coverage-contrib-merged.txt
+          find . \( -path "*/contrib/*" -o -path "*/instrumentation/*" \) \
+            -name "coverage-*.txt" -print0 \
+            | xargs -0 grep -h -v "^mode:" >> coverage-contrib-merged.txt 2>/dev/null || true
+
+      - name: Upload Coverage to Datadog
         if: always() && steps.restore.outcome == 'success'
         continue-on-error: true
-        uses: ./.github/actions/codecov-upload
+        uses: DataDog/coverage-upload-github-action@d9548b1c3c4ab639d5d3ab29a1508af188975f77
         with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          api_key: ${{ steps.dd-sts.outputs.api_key }}
+          files: coverage-contrib-merged.txt
+          format: go-coverprofile
 
   smoke-test-tracer:
     name: Test dd-trace-go
@@ -208,7 +279,7 @@ jobs:
     env:
       PACKAGES: ./internal/... ./ddtrace/... ./profiler/... ./appsec/... ./instrumentation/...
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -232,7 +303,7 @@ jobs:
         id: dd-sts
         if: always()
         continue-on-error: true
-        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75
+        uses: DataDog/dd-sts-action@7d2d231c02fd54a3da912e582ff87cb995d1fd30
         with:
           policy: dd-trace-go
       - name: Upload the results to Datadog CI App
@@ -243,12 +314,6 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
           tags: go:1.25,arch:${{ runner.arch }},os:${{ runner.os }}
-      - name: Upload Coverage
-        if: always()
-        continue-on-error: true
-        uses: ./.github/actions/codecov-upload
-        with:
-          codecov-token: ${{ secrets.CODECOV_TOKEN }}
 
   check-gen-files:
     name: Check generated files and go mod files are up-to-date.
@@ -262,7 +327,7 @@ jobs:
       # without having to download a newer one.
       GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -354,7 +419,7 @@ jobs:
             deployment-env: scratchy
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
@@ -363,9 +428,9 @@ jobs:
           # repository where the called workflow is (i.e, this repository); but I don't know of a more elegant way to
           # obtain its name than hard-coding it.
           repository: DataDog/dd-trace-go
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: Build
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
           file: ./internal/setup-smoke-test/Dockerfile
@@ -397,7 +462,7 @@ jobs:
         run: echo "Success!"
       - name: Failure
         if: needs.setup-requirements-linux.result != 'success' || needs.smoke-test-tracer.result != 'success' || needs.go-get-u.result != 'success'
-        uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
           webhook-type: incoming-webhook
           payload: |

@@ -49,7 +49,7 @@ func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 	})
 	return &otlpTraceWriter{
 		config:    c,
-		transport: newOTLPTransport(internal.DefaultHTTPClient(c.httpClientTimeout, false), c.internalConfig.OTLPTraceURL(), c.internalConfig.OTLPHeaders()),
+		transport: newOTLPTransport(internal.DefaultHTTPClient(c.internalConfig.AgentTimeout(), false), c.internalConfig.OTLPTraceURL(), c.internalConfig.OTLPHeaders()),
 		resource:  resource,
 		scope:     scope,
 		spans:     make([]*otlptrace.Span, 0),
@@ -71,10 +71,11 @@ func (w *otlpTraceWriter) reset() []*otlptrace.Span {
 
 func (w *otlpTraceWriter) add(spanList []*Span) {
 	defaultServiceName := w.config.internalConfig.ServiceName()
+	otelSemantics := w.config.internalConfig.OTelSemanticsEnabled()
 	w.mu.Lock()
 	w.spans = slices.Grow(w.spans, len(spanList))
 	for _, span := range spanList {
-		if otlpSpan := convertSpan(span, defaultServiceName); otlpSpan != nil {
+		if otlpSpan := convertSpan(span, defaultServiceName, otelSemantics); otlpSpan != nil {
 			w.spans = append(w.spans, otlpSpan)
 			w.buffSize += proto.Size(otlpSpan)
 		}
@@ -126,15 +127,17 @@ func (w *otlpTraceWriter) flush() {
 		}
 
 		var sendErr error
-		for attempt := 0; attempt <= w.config.sendRetries; attempt++ {
+		sendRetries := w.config.internalConfig.SendRetries()
+		retryInterval := w.config.internalConfig.RetryInterval()
+		for attempt := 0; attempt <= sendRetries; attempt++ {
 			log.Debug("OTLP: attempt %d to send payload: %d bytes, %d spans", attempt+1, len(b), spanCount)
 			sendErr = w.transport.send(b)
 			if sendErr == nil {
 				log.Debug("OTLP: sent traces after %d attempts", attempt+1)
 				return
 			}
-			log.Error("OTLP: failure sending traces (attempt %d of %d): %v", attempt+1, w.config.sendRetries+1, sendErr.Error())
-			time.Sleep(w.config.internalConfig.RetryInterval())
+			log.Error("OTLP: failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, sendErr.Error())
+			time.Sleep(retryInterval)
 		}
 		log.Error("OTLP: lost %d spans: %v", spanCount, sendErr.Error())
 	}()
@@ -144,3 +147,5 @@ func (w *otlpTraceWriter) stop() {
 	w.flush()
 	w.wg.Wait()
 }
+
+func (w *otlpTraceWriter) wait() { w.wg.Wait() }

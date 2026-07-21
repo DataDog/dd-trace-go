@@ -8,6 +8,8 @@ package subtests
 import (
 	"compress/gzip"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,6 +36,11 @@ const (
 	parentTestName         = "TestSubtestManagement"
 	parallelToggleEnv      = "SUBTEST_MATRIX_PARALLEL"
 	failSubAttemptToFixEnv = "SUBTEST_MATRIX_FAIL_ATTEMPT_TO_FIX"
+
+	// scenarioInitFailureExitCode is returned by runMatrixScenario when CI Visibility features
+	// were not initialised (e.g. a transient settings fetch failure).  main_test.go uses this
+	// sentinel to retry the subprocess rather than failing the whole suite immediately.
+	scenarioInitFailureExitCode = 3
 )
 
 var (
@@ -328,7 +335,7 @@ func subAttemptFixParallelScenario() *matrixScenario {
 				// Focus validations on a single subtest resource at a time.
 				resource := fmt.Sprintf("%s/%s", parentResource, child)
 				childSpans := spansByResource(testSpans, resource)
-				requireSpanCount(childSpans, 3, fmt.Sprintf("%s attempt-to-fix parallel span count", child))
+				requireSpanCount(childSpans, 3, child+" attempt-to-fix parallel span count")
 				sort.Slice(childSpans, func(i, j int) bool {
 					// Sort to match retry order regardless of goroutine scheduling.
 					return childSpans[i].StartTime().Before(childSpans[j].StartTime())
@@ -338,10 +345,10 @@ func subAttemptFixParallelScenario() *matrixScenario {
 					assertTagEquals(span, constants.TestIsAttempToFix, "true", fmt.Sprintf("%s attempt-to-fix parallel tag span %d", child, idx))
 				}
 				final := childSpans[len(childSpans)-1]
-				assertTagEquals(final, constants.TestAttemptToFixPassed, "true", fmt.Sprintf("%s attempt-to-fix parallel success", child))
-				assertTagEquals(final, constants.TestStatus, constants.TestStatusPass, fmt.Sprintf("%s attempt-to-fix parallel status", child))
-				assertTagCount(childSpans, constants.TestIsRetry, "true", 2, fmt.Sprintf("%s attempt-to-fix parallel retry tag count", child))
-				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, fmt.Sprintf("%s attempt-to-fix parallel retry reason count", child))
+				assertTagEquals(final, constants.TestAttemptToFixPassed, "true", child+" attempt-to-fix parallel success")
+				assertTagEquals(final, constants.TestStatus, constants.TestStatusPass, child+" attempt-to-fix parallel status")
+				assertTagCount(childSpans, constants.TestIsRetry, "true", 2, child+" attempt-to-fix parallel retry tag count")
+				assertTagCount(childSpans, constants.TestRetryReason, constants.AttemptToFixRetryReason, 2, child+" attempt-to-fix parallel retry reason count")
 			}
 
 			checkParallelChild("SubAttemptFix")
@@ -807,7 +814,7 @@ func assertTagCount(spans []*mocktracer.Span, key string, value string, expected
 // assertTagEquals verifies that a span tag matches the desired value and fails fast otherwise.
 func assertTagEquals(span *mocktracer.Span, key string, want string, label string) {
 	if span == nil {
-		panic(fmt.Sprintf("%s: span is nil", label))
+		panic(label + ": span is nil")
 	}
 	if value, _ := span.Tag(key).(string); value != want {
 		panic(fmt.Sprintf("%s: expected tag %s=%q, got %q", label, key, want, value))
@@ -877,29 +884,160 @@ func runMatrixScenario(m *testing.M, scenario string) int {
 
 	tracer := integrations.InitializeCIVisibilityMock()
 
+	// Verify that CI Visibility initialised correctly and the management directives for
+	// this scenario were fetched before tests run.  Returning scenarioInitFailureExitCode
+	// lets the parent process retry the subprocess on transient network failures; returning
+	// a distinct non-zero code for genuine mismatches prevents masking real bugs as retries.
+	if initErr := verifyScenarioInit(scenario, ctx); initErr != nil {
+		fmt.Printf("subtest matrix: scenario %s init check failed: %v\n", scenario, initErr)
+		return scenarioInitFailureExitCode
+	}
+
 	exitCode := gotesting.RunM(m)
 	if exitCode != sc.expectedExitCode {
 		finished := tracer.FinishedSpans()
-		debugMatrixf("scenario %s exit code %d, expected %d, with %d spans", scenario, exitCode, sc.expectedExitCode, len(finished))
-		for i, span := range finished {
-			// Skip nil entries yet keep the loop for consistent indices.
-			if span == nil {
-				continue
-			}
-			// Provide per-span resource names to speed up debugging.
-			if resource, ok := span.Tag(ext.ResourceName).(string); ok {
-				debugMatrixf("  span[%d] resource=%s status=%v", i, resource, span.Tag(constants.TestStatus))
-			}
-		}
+		dumpScenarioSpans(scenario, fmt.Sprintf("exit code %d, expected %d", exitCode, sc.expectedExitCode), finished)
 		if exitCode != 0 {
 			return exitCode
 		}
 		return 1
 	}
 
-	sc.validate(tracer.FinishedSpans())
+	if validateErr := validateScenarioSpans(sc, tracer.FinishedSpans()); validateErr != nil {
+		fmt.Printf("subtest matrix: scenario %s validation panic: %v\n", scenario, validateErr)
+		dumpScenarioSpans(scenario, "validation panic", tracer.FinishedSpans())
+		dumpScenarioMgmtState(scenario)
+		return 2
+	}
 
 	return 0
+}
+
+// verifyScenarioInit checks that the CI Visibility settings were loaded and that the test
+// management data returned by the backend matches what the scenario configured.  Any
+// discrepancy is reported so the caller can abort before running fixtures.
+func verifyScenarioInit(scenario string, ctx *scenarioContext) error {
+	settings := integrations.GetSettings()
+	if settings == nil {
+		return errors.New("GetSettings returned nil")
+	}
+	if !settings.TestManagement.Enabled {
+		return errors.New("TestManagement.Enabled=false after init (settings fetch may have failed)")
+	}
+
+	// Only validate management data when the scenario actually configures directives.
+	if ctx.data == nil || len(ctx.data.Modules) == 0 {
+		return nil
+	}
+
+	loaded := integrations.GetTestManagementTestsData()
+	if loaded == nil || len(loaded.Modules) == 0 {
+		return fmt.Errorf("test management data is empty after init; scenario %q directives were not loaded", scenario)
+	}
+
+	// Walk the expected directives and confirm each one is present in the loaded data.
+	for modName, expMod := range ctx.data.Modules {
+		gotMod, ok := loaded.Modules[modName]
+		if !ok {
+			return fmt.Errorf("module %q missing from loaded test management data", modName)
+		}
+		for suiteName, expSuite := range expMod.Suites {
+			gotSuite, ok := gotMod.Suites[suiteName]
+			if !ok {
+				return fmt.Errorf("suite %q missing from loaded test management data", suiteName)
+			}
+			for testName := range expSuite.Tests {
+				if _, ok := gotSuite.Tests[testName]; !ok {
+					return fmt.Errorf("test %q missing from loaded test management data for suite %q", testName, suiteName)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// dumpScenarioMgmtState prints the current test-management data visible to the process so
+// validation failures can be distinguished from init failures in CI logs.
+func dumpScenarioMgmtState(scenario string) {
+	settings := integrations.GetSettings()
+	if settings != nil {
+		fmt.Printf("subtest matrix: scenario %s management.enabled=%v retries=%d\n",
+			scenario, settings.TestManagement.Enabled, settings.TestManagement.AttemptToFixRetries)
+	}
+	loaded := integrations.GetTestManagementTestsData()
+	if loaded == nil || len(loaded.Modules) == 0 {
+		fmt.Printf("subtest matrix: scenario %s management data: <empty>\n", scenario)
+		return
+	}
+	for modName, mod := range loaded.Modules {
+		for suiteName, suite := range mod.Suites {
+			for testName, props := range suite.Tests {
+				fmt.Printf("subtest matrix: scenario %s mgmt module=%q suite=%q test=%q disabled=%v quarantined=%v attempt_to_fix=%v\n",
+					scenario, modName, suiteName, testName,
+					props.Properties.Disabled, props.Properties.Quarantined, props.Properties.AttemptToFix)
+			}
+		}
+	}
+}
+
+func validateScenarioSpans(sc *matrixScenario, spans []*mocktracer.Span) (panicValue any) {
+	defer func() {
+		panicValue = recover()
+	}()
+	sc.validate(spans)
+	return nil
+}
+
+func dumpScenarioSpans(scenario, reason string, spans []*mocktracer.Span) {
+	fmt.Printf("subtest matrix: scenario %s %s with %d finished spans\n", scenario, reason, len(spans))
+	fmt.Printf("subtest matrix: covermode=%q test.count=%q env.%s=%q\n",
+		testing.CoverMode(),
+		testCountFlagValue(),
+		constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable,
+		os.Getenv(constants.CIVisibilityTestManagementAttemptToFixRetriesEnvironmentVariable),
+	)
+	counts := make(map[string]int)
+	for _, span := range spans {
+		if span == nil {
+			continue
+		}
+		resource, _ := span.Tag(ext.ResourceName).(string)
+		counts[resource]++
+	}
+	resources := make([]string, 0, len(counts))
+	for resource := range counts {
+		resources = append(resources, resource)
+	}
+	sort.Strings(resources)
+	for _, resource := range resources {
+		fmt.Printf("subtest matrix: resource-count resource=%q count=%d\n", resource, counts[resource])
+	}
+	for idx, span := range spans {
+		if span == nil {
+			fmt.Printf("subtest matrix: span[%d] nil\n", idx)
+			continue
+		}
+		fmt.Printf("subtest matrix: span[%d] resource=%q status=%v final_status=%v attempt_to_fix=%v retry=%v retry_reason=%v attempt_to_fix_passed=%v disabled=%v quarantined=%v skip_reason=%v\n",
+			idx,
+			span.Tag(ext.ResourceName),
+			span.Tag(constants.TestStatus),
+			span.Tag(constants.TestFinalStatus),
+			span.Tag(constants.TestIsAttempToFix),
+			span.Tag(constants.TestIsRetry),
+			span.Tag(constants.TestRetryReason),
+			span.Tag(constants.TestAttemptToFixPassed),
+			span.Tag(constants.TestIsDisabled),
+			span.Tag(constants.TestIsQuarantined),
+			span.Tag(constants.TestSkipReason),
+		)
+	}
+}
+
+func testCountFlagValue() string {
+	if count := flag.Lookup("test.count"); count != nil {
+		return count.Value.String()
+	}
+	return ""
 }
 
 // debugMatrixf emits scenario-scoped diagnostics using the package logger.
@@ -1008,11 +1146,16 @@ func startSubtestServer(cfg subtestServerConfig) (*httptest.Server, func()) {
 			w.Write([]byte(`{"data":{"attributes":{"tests":{}}}}`))
 		case "/api/v2/git/repository/search_commits":
 			// Stub git search commits used during CI Visibility bootstrap.
+			// Content-Type must be set so the client can unmarshal the response;
+			// omitting it causes an "unsupported format 'unknown'" error in the background
+			// git-metadata upload goroutine that pollutes logs and can delay init.
 			debugMatrixf("subtest server: search-commits request")
 			defer r.Body.Close()
 			_, _ = io.Copy(io.Discard, r.Body)
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{}`))
+			w.Write([]byte(`{"data":[]}`))
+
 		case "/api/v2/git/repository/packfile":
 			// Accept packfile uploads even though the sandbox blocks writes.
 			debugMatrixf("subtest server: packfile request")

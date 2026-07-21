@@ -117,7 +117,7 @@ var (
 // config documentation. This confirms the current implementation is about 8x faster than one that
 // uses [regexp.Regexp].
 func BenchmarkParsePath(b *testing.B) {
-	var samples []string
+	samples := make([]string, 0, 180)
 	for _, source := range []string{"employee", "datadog/2", "datadog/1337"} {
 		for _, product := range []string{"ASM_DD", "LIVE_DEBUGGING", "OTHER"} {
 			for range 20 {

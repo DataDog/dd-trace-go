@@ -15,6 +15,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
 )
 
 var instr *instrumentation.Instrumentation
@@ -85,5 +86,6 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 	if host := string(fctx.Host()); len(host) > 0 {
 		opts = append(opts, tracer.Tag("http.host", host))
 	}
+	opts = appsechttpsec.AppendSecurityTestingHeaderTagsFromBytes(opts, fctx.Request.Header.VisitAll)
 	return opts
 }

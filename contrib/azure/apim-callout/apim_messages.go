@@ -210,9 +210,15 @@ func hasRawBody(raw json.RawMessage) bool {
 }
 
 // decodeRawBase64Body extracts the JSON string from a json.RawMessage and
-// base64-decodes its content in place without intermediate copies.
-// Returns nil if the raw message is empty/null.
-func decodeRawBase64Body(raw json.RawMessage) ([]byte, error) {
+// base64-decodes its content. Returns nil if the raw message is empty/null.
+//
+// Security: when maxDecodedSize > 0 the decode is bounded to ~maxDecodedSize
+// bytes (preventing OOM) but the returned prefix may be a few bytes larger. The
+// proxy body buffer then enforces the exact limit and flags the body truncated
+// so the WAF still inspects the retained prefix. Returning a size error instead
+// would skip inspection entirely, letting an attacker bypass the WAF by padding
+// a malicious body past the limit.
+func decodeRawBase64Body(raw json.RawMessage, maxDecodedSize int) ([]byte, error) {
 	first := bytes.IndexByte(raw, '"')
 	if first < 0 {
 		return nil, nil
@@ -222,6 +228,16 @@ func decodeRawBase64Body(raw json.RawMessage) ([]byte, error) {
 		return nil, nil
 	}
 	src := raw[first+1 : last]
+	if maxDecodedSize > 0 {
+		// Keep one base64 group (4 chars -> 3 bytes) past the limit so an
+		// oversized body decodes to strictly more than maxDecodedSize, letting
+		// the body buffer detect the overflow and mark it truncated. The bound
+		// is a multiple of 4, so slicing keeps whole, unpadded groups.
+		maxEncodedLen := (maxDecodedSize/3 + 1) * 4
+		if len(src) > maxEncodedLen {
+			src = src[:maxEncodedLen]
+		}
+	}
 	dst := make([]byte, base64.StdEncoding.DecodedLen(len(src)))
 	n, err := base64.StdEncoding.Decode(dst, src)
 	if err != nil {
