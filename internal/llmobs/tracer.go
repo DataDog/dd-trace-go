@@ -51,11 +51,15 @@ type APMSpan interface {
 // SpanLink represents a link between spans. Its IDs are the tracer's native
 // numeric IDs; they are emitted as JSON numbers on the transport wire (see the
 // SpanLinks conversion in llmobs.go).
+// The json tags preserve the wire shape of the public llmobs.SpanLink alias:
+// before SpanLink was split out from transport.SpanLink it carried these tags,
+// so callers that persist/replay links via encoding/json keep emitting
+// snake-case (trace_id/span_id/trace_id_high) rather than the Go field names.
 type SpanLink struct {
-	TraceID     uint64
-	TraceIDHigh uint64
-	SpanID      uint64
-	Attributes  map[string]string
-	Tracestate  string
-	Flags       uint32
+	TraceID     uint64            `json:"trace_id"`
+	TraceIDHigh uint64            `json:"trace_id_high,omitempty"`
+	SpanID      uint64            `json:"span_id"`
+	Attributes  map[string]string `json:"attributes,omitempty"`
+	Tracestate  string            `json:"tracestate,omitempty"`
+	Flags       uint32            `json:"flags,omitempty"`
 }
