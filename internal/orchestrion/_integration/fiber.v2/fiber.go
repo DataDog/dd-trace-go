@@ -62,6 +62,10 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 			},
 			Children: trace.Traces{
 				{
+					// Single Fiber server span. The intermediate valyala/fasthttp span is
+					// suppressed by the gofiber orchestrion.yml aspect, which marks
+					// app.Server().DD_Instrumented at construction so the FastHTTP Serve
+					// aspect skips wrapping Fiber's internal fasthttp server.
 					Tags: map[string]any{
 						"name":     "http.request",
 						"resource": "GET /ping",
