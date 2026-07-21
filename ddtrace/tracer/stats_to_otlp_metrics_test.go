@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func kvAttrsToMap(kvs []*otlpcommon.KeyValue) map[string]string {
 		case *otlpcommon.AnyValue_StringValue:
 			m[kv.Key] = v.StringValue
 		case *otlpcommon.AnyValue_BoolValue:
-			m[kv.Key] = fmt.Sprintf("%v", v.BoolValue)
+			m[kv.Key] = strconv.FormatBool(v.BoolValue)
 		case *otlpcommon.AnyValue_IntValue:
 			m[kv.Key] = fmt.Sprintf("%d", v.IntValue)
 		case *otlpcommon.AnyValue_DoubleValue:
