@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2
 go 1.25.0
 
 require (
-	cloud.google.com/go/pubsub/v2 v2.6.1
+	cloud.google.com/go/pubsub/v2 v2.6.0
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.287.1
@@ -72,6 +72,7 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/trailofbits/go-mutexasserts v0.0.0-20250514102930-c1f3d2e37561 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	go.einride.tech/aip v0.83.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/collector/component v1.61.0 // indirect
