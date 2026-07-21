@@ -9,6 +9,10 @@ set -euo pipefail
 #
 # Requires: govulncheck, jq
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "${SCRIPT_DIR}/go-retry.sh"
+
 OUTPUT="${1:-govulncheck-contribs.sarif}"
 SARIF_DIR=$(mktemp -d)
 trap 'rm -rf "$SARIF_DIR"' EXIT
@@ -30,7 +34,7 @@ grep -E '^\s+\./contrib/' go.work | awk '{print $1}' | while read -r dir; do
 
   safe_name=$(printf '%s' "$module_dir" | tr '/' '_')
   # -format sarif exits 0 even when vulnerabilities are found.
-  govulncheck -format sarif -C "$dir" . >"$SARIF_DIR/${safe_name}.sarif"
+  retry_on_corruption_to_file "$SARIF_DIR/${safe_name}.sarif" govulncheck -format sarif -C "$dir" .
 
   # Rewrite URIs to be repo-root-relative so Code Scanning annotations resolve
   # correctly. govulncheck emits paths relative to the module dir with

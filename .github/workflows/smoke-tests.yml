@@ -69,10 +69,10 @@ jobs:
           run: |-
             mkdir -p "$TEST_RESULTS"
             compile() {
-              # `!` and pipelines suspend -e for the commands they wrap, including
-              # inside this function's body (see `if ! compile | tee`, below) — a
-              # failed step here would otherwise go unnoticed as long as the final
-              # `go build` happens to still succeed. Propagate each failure explicitly.
+              # `until` conditions (see retry_on_corruption in go-retry.sh) suspend `-e` for
+              # the commands they wrap, including inside this function's body — a failed step
+              # here would otherwise go unnoticed as long as the final `go build` happens to
+              # still succeed. Propagate each failure explicitly.
               # shellcheck disable=SC2086
               go get -u -t $PACKAGES || return
               go mod tidy || return
@@ -84,34 +84,10 @@ jobs:
               # shellcheck disable=SC2086
               go build $PACKAGES
             }
-            log="$(mktemp)"
-            # go1.26.5 (currently `stable`) intermittently corrupts its own heap mid-build:
-            # `fatal error: found pointer to free object` in the GC sweeper, faults, SIGSEGVs,
-            # and frontend ICEs (golang/go#77168). A crash can also leave partially written
-            # cache/module archives that later surface as zip/archive checksum errors. These
-            # are toolchain flakes, not real code breaks, so retry a few times and let a fresh
-            # compiler process dodge the probabilistic crash. A failure whose log matches none
-            # of the known signatures is a genuine break and fails immediately, without retry.
-            corruption_re='internal compiler error|zip: checksum error|not the start of an archive file|found pointer to free object|fatal error: fault|unexpected signal during runtime execution|signal SIGSEGV'
-            retry_on_corruption() {
-              local attempt=1 max=3
-              # The loop condition is a pipeline: exempt from `set -e` and, with pipefail,
-              # it reflects the wrapped command's real status (same idiom as `if ! compile | tee`).
-              until "$@" 2>&1 | tee "$log"; do
-                if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
-                  return 1
-                fi
-                echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
-                # The build cache is always rebuildable offline, so drop it every retry to
-                # discard partial artifacts a crashed compiler left behind. Only wipe the
-                # module cache on on-disk archive corruption, since refetching needs network.
-                go clean -cache || true
-                if grep -qE 'zip: checksum error|not the start of an archive file' "$log"; then
-                  go clean -modcache || true
-                fi
-                attempt=$((attempt + 1))
-              done
-            }
+            # See go-retry.sh for why toolchain/cache corruption is retried instead of failing
+            # the job outright, and why a failure with none of the known signatures is treated
+            # as a genuine break and fails immediately, without retry.
+            source ./.github/workflows/apps/go-retry.sh
             retry_on_corruption compile
 
       - name: Compute Matrix
@@ -172,28 +148,10 @@ jobs:
             run_smoke() {
               ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
             }
-            log="$(mktemp)"
-            # See "Compile dd-trace-go with updated dependencies (sandboxed)" above for why
-            # go1.26.5 (currently `stable`) intermittently corrupts its own heap mid-build
-            # (found pointer to free object / faults / SIGSEGVs / ICEs, golang/go#77168) and
-            # why these toolchain flakes are retried while genuine breaks fail immediately.
-            corruption_re='internal compiler error|zip: checksum error|not the start of an archive file|found pointer to free object|fatal error: fault|unexpected signal during runtime execution|signal SIGSEGV'
-            retry_on_corruption() {
-              local attempt=1 max=3
-              until "$@" 2>&1 | tee "$log"; do
-                if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
-                  return 1
-                fi
-                echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
-                # Build cache is rebuildable offline (drop every retry); wipe the module
-                # cache only on on-disk archive corruption, since refetching needs network.
-                go clean -cache || true
-                if grep -qE 'zip: checksum error|not the start of an archive file' "$log"; then
-                  go clean -modcache || true
-                fi
-                attempt=$((attempt + 1))
-              done
-            }
+            # See "Compile dd-trace-go with updated dependencies (sandboxed)" above and
+            # go-retry.sh for why toolchain/cache corruption is retried while genuine breaks
+            # fail immediately.
+            source ./.github/workflows/apps/go-retry.sh
             retry_on_corruption run_smoke
       - name: Stage sandbox artifacts outside workspace
         # Move the test results and coverage files to RUNNER_TEMP so the
