@@ -296,6 +296,15 @@ Sample PR: <https://github.com/DataDog/dd-trace-go/pull/3365>
 
 Please view our contrib [README.md](contrib/README.md) for information on integrations. If you need support for a new integration, please file an issue to discuss before opening a PR.
 
+### Offline export clients
+
+The [`llmobs/export`](./llmobs/export) package (and its stacked sibling `otlp/export`) provides **offline export clients**: they POST already-built payloads — LLM Observability spans/evaluations, or OTLP trace/metric/log protos — to Datadog *without* starting the tracer or running live instrumentation. They exist so tools that reconstruct data out-of-band can reuse the SDK's transport mechanics (endpoint/auth derivation, HTTP, retry classification, size limits, structured per-request results) instead of maintaining their own exporters. This is a supported public interaction path distinct from the live tracer, so keep these conventions when changing it:
+
+- **Caller-assigned IDs are payload fields only.** `trace_id`/`span_id`/`parent_id` are opaque, caller-owned strings preserved verbatim on the wire; they are never routed into APM span/trace IDs or sampling.
+- **Reuse the internal wire structs.** Lower the public types into [`internal/llmobs/transport`](./internal/llmobs/transport) (spans/evaluations) or the OTLP proto types rather than defining parallel wire structs, so the emitted shape cannot drift from the rest of the SDK.
+- **Row-level validation, batch-safe.** Invalid rows are dropped and reported in the result, never failing a whole batch.
+- **One client per destination** for multi-destination export.
+
 ### Working with environment variables
 
 When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
