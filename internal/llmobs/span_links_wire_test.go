@@ -58,3 +58,20 @@ func TestToTransportSpanLinksWire(t *testing.T) {
 		})
 	}
 }
+
+// TestSpanLinkJSONTags guards the JSON wire shape of SpanLink itself (the public
+// llmobs.SpanLink aliases this type). Callers that persist/replay links via
+// encoding/json must keep getting snake_case trace_id/span_id (the shape from
+// before SpanLink was split out from transport.SpanLink), not the Go field names.
+func TestSpanLinkJSONTags(t *testing.T) {
+	b, err := json.Marshal(SpanLink{TraceID: 111, SpanID: 222})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"span_id":222}`, string(b))
+
+	b, err = json.Marshal(SpanLink{
+		TraceID: 111, TraceIDHigh: 333, SpanID: 222,
+		Attributes: map[string]string{"a": "b"}, Tracestate: "ts", Flags: 1,
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"trace_id":111,"trace_id_high":333,"span_id":222,"attributes":{"a":"b"},"tracestate":"ts","flags":1}`, string(b))
+}
