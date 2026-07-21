@@ -15,6 +15,19 @@
 # archive file"): refetching modules needs network, so we don't pay that cost for a bare
 # SIGSEGV/ICE that never touched the module cache.
 #
+# Both functions are re-entrancy-safe: if a caller wraps a function that itself calls
+# retry_on_corruption/retry_on_corruption_to_file (directly or a few frames down), the inner call
+# detects it's nested (via _go_retry_active) and just runs the command once, letting the
+# outermost active call own all retrying and cache-clearing. Without this, a corrupted build
+# retried at both levels re-runs already-succeeded sibling work on top of the inner retries, and
+# each level's cache wipe compounds the other's — see the go-get-u smoke job incident where a
+# single corrupted contrib module caused an 8m chunk to run 43+ minutes.
+#
+# Across a whole process (e.g. one retry_on_corruption call per contrib module in a loop), modcache
+# wipes are additionally capped at GO_RETRY_MAX_MODCACHE_WIPES (default 2): one wipe already fixes
+# corruption for every subsequent call in the same run, so further independent hits don't each pay
+# for a full, network-bound re-download.
+#
 # Usage:
 #   source go-retry.sh
 #   retry_on_corruption <cmd> [args...]                  # output streams to the caller as-is
@@ -22,15 +35,29 @@
 corruption_re='internal compiler error|zip: checksum error|not the start of an archive file|found pointer to free object|fatal error: fault|unexpected signal during runtime execution|signal SIGSEGV'
 archive_corruption_re='zip: checksum error|not the start of an archive file'
 
+: "${GO_RETRY_MAX_MODCACHE_WIPES:=2}"
+_go_retry_modcache_wipes="${_go_retry_modcache_wipes:-0}"
+_go_retry_active="${_go_retry_active:-0}"
+
 _clean_caches_on_retry() {
   local log="$1"
   go clean -cache || true
   if grep -qE "$archive_corruption_re" "$log"; then
-    go clean -modcache || true
+    if [ "$_go_retry_modcache_wipes" -lt "$GO_RETRY_MAX_MODCACHE_WIPES" ]; then
+      go clean -modcache || true
+      _go_retry_modcache_wipes=$((_go_retry_modcache_wipes + 1))
+    else
+      echo "::warning::modcache wipe budget (${GO_RETRY_MAX_MODCACHE_WIPES}) already used this run; retrying without wiping it again"
+    fi
   fi
 }
 
 retry_on_corruption() {
+  if [ "$_go_retry_active" = "1" ]; then
+    "$@"
+    return
+  fi
+  _go_retry_active=1
   local attempt=1 max="${RETRY_MAX_ATTEMPTS:-3}"
   local log; log="$(mktemp)"
   # stdout streams straight to the caller (preserves interleaving with the job log); stderr is
@@ -38,7 +65,7 @@ retry_on_corruption() {
   until "$@" 2>"$log"; do
     cat "$log" >&2
     if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
-      rm -f "$log"; return 1
+      rm -f "$log"; _go_retry_active=0; return 1
     fi
     echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
     _clean_caches_on_retry "$log"
@@ -46,9 +73,16 @@ retry_on_corruption() {
   done
   cat "$log" >&2
   rm -f "$log"
+  _go_retry_active=0
 }
 
 retry_on_corruption_to_file() {
+  if [ "$_go_retry_active" = "1" ]; then
+    local outfile="$1"; shift
+    "$@" >"$outfile"
+    return
+  fi
+  _go_retry_active=1
   local outfile="$1"; shift
   local attempt=1 max="${RETRY_MAX_ATTEMPTS:-3}"
   local log; log="$(mktemp)"
@@ -57,7 +91,7 @@ retry_on_corruption_to_file() {
   until "$@" >"$outfile" 2>"$log"; do
     cat "$log" >&2
     if [ "$attempt" -ge "$max" ] || ! grep -qE "$corruption_re" "$log"; then
-      rm -f "$log"; return 1
+      rm -f "$log"; _go_retry_active=0; return 1
     fi
     echo "::warning::Go toolchain/cache corruption signature detected (attempt ${attempt}/${max}); clearing caches and retrying"
     _clean_caches_on_retry "$log"
@@ -65,4 +99,5 @@ retry_on_corruption_to_file() {
   done
   cat "$log" >&2
   rm -f "$log"
+  _go_retry_active=0
 }
