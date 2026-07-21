@@ -5,8 +5,8 @@ go 1.25.0
 godebug x509negativeserial=1
 
 require (
-	cloud.google.com/go/pubsub v1.51.0
-	cloud.google.com/go/pubsub/v2 v2.6.0
+	cloud.google.com/go/pubsub v1.50.1
+	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.0-rc.2
 	github.com/DataDog/datadog-agent/pkg/proto v0.82.0-rc.2
 	github.com/DataDog/datadog-agent/pkg/remoteconfig/state v0.82.0-rc.2
