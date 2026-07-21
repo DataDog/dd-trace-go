@@ -1444,12 +1444,6 @@ func (c *Config) SetOTLPSpanMetricsEnabled(enabled bool, origin telemetry.Origin
 	configtelemetry.Report("OTEL_TRACES_SPAN_METRICS_ENABLED", enabled, origin)
 }
 
-func (c *Config) OTLPSemanticsMode() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.otlpSemanticsMode
-}
-
 func (c *Config) OTLPMetricsURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
