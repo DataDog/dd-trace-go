@@ -562,7 +562,7 @@ func TestJSONEncode_TruncatedInput_AllStringError(t *testing.T) {
 		}
 
 		newInput := input[:len(input)-i]
-		testName := fmt.Sprintf("truncated invalid structure: %s", newInput)
+		testName := "truncated invalid structure: " + newInput
 		t.Run(testName, func(t *testing.T) {
 			tc := testCase{
 				name:                testName,

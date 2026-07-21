@@ -61,8 +61,9 @@ func Load(pkg Package) *Instrumentation {
 	tracer.MarkIntegrationImported(info.TracedPackage)
 
 	return &Instrumentation{
-		logger:       newLogger(pkg),
-		telemetrylog: telemetrylog.With(telemetry.WithTags([]string{"integration:" + string(pkg)})),
+		logger:           newLogger(pkg),
+		telemetrylog:     telemetrylog.With(telemetry.WithTags([]string{"integration:" + string(pkg)})),
+		telemetryMetrics: telemetryMetrics{valid: true},
 
 		pkg:  pkg,
 		info: info,
@@ -81,8 +82,9 @@ func Version() string {
 
 // Instrumentation represents instrumentation for a package.
 type Instrumentation struct {
-	logger       Logger
-	telemetrylog *telemetrylog.Logger
+	logger           Logger
+	telemetrylog     *telemetrylog.Logger
+	telemetryMetrics telemetryMetrics
 
 	pkg  Package
 	info PackageInfo
@@ -146,6 +148,15 @@ func (i *Instrumentation) Logger() Logger {
 
 func (i *Instrumentation) TelemetryLog() *telemetrylog.Logger {
 	return i.telemetrylog
+}
+
+// TelemetryMetrics returns the [TelemetryMetricsClient] that instrumentation
+// should use to submit internal telemetry metrics data.
+//
+// IMPORTANT: If you are not sure what this is for, you should probably be using
+// [*Instrumentation.StatsdClient] instead.
+func (i *Instrumentation) TelemetryMetrics() TelemetryMetricsClient {
+	return &i.telemetryMetrics
 }
 
 type TelemetryOrigin = telemetry.Origin

@@ -56,6 +56,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_CIVISIBILITY_SUBTEST_FEATURES_ENABLED":                        {},
 	"DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT":                         {},
 	"DD_CIVISIBILITY_USE_NOOP_TRACER":                                 {},
+	"DD_CODE_COVERAGE_FLAGS":                                          {},
 	"DD_CUSTOM_PARENT_ID":                                             {},
 	"DD_CUSTOM_TRACE_ID":                                              {},
 	"DD_DATA_STREAMS_ENABLED":                                         {},
@@ -287,6 +288,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"OTEL_TRACES_EXPORTER":                                            {},
 	"OTEL_TRACES_SAMPLER":                                             {},
 	"OTEL_TRACES_SAMPLER_ARG":                                         {},
+	"OTEL_TRACES_SPAN_METRICS_ENABLED":                                {},
 }
 
 // SensitiveConfigurations is the set of configuration keys whose value must not be

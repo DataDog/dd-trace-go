@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -164,7 +163,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 	t.Run("WithEnablementMode(EnabledModeForcedOn)", func(t *testing.T) {
 		for _, envVal := range []string{"", "true", "false"} {
-			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+			t.Run("DD_APPSEC_ENABLED="+envVal, func(t *testing.T) {
 				t.Setenv(config.EnvEnabled, envVal)
 
 				remoteconfig.Reset()
@@ -192,7 +191,7 @@ func TestRemoteActivationScenarios(t *testing.T) {
 
 	t.Run("WithEnablementMode(EnabledModeForcedOff)", func(t *testing.T) {
 		for _, envVal := range []string{"", "true", "false"} {
-			t.Run(fmt.Sprintf("DD_APPSEC_ENABLED=%s", envVal), func(t *testing.T) {
+			t.Run("DD_APPSEC_ENABLED="+envVal, func(t *testing.T) {
 				t.Setenv(config.EnvEnabled, envVal)
 
 				Start(config.WithEnablementMode(config.ForcedOff), config.WithRCConfig(remoteconfig.DefaultClientConfig()))

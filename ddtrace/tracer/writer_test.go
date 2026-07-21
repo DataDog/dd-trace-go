@@ -338,7 +338,7 @@ func TestLogWriterOverflow(t *testing.T) {
 		h := newLogTraceWriter(cfg, statsd)
 		h.w = &buf
 		s := makeSpan(10)
-		var trace []*Span
+		trace := make([]*Span, 0, 500)
 		for range 500 {
 			trace = append(trace, s)
 		}
