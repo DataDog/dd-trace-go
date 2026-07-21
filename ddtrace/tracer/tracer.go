@@ -49,19 +49,20 @@ import (
 )
 
 type TracerConf struct { //nolint:revive
-	CanComputeStats      bool
-	CanDropP0s           bool
-	DebugAbandonedSpans  bool
-	Disabled             bool
-	PartialFlush         bool
-	PartialFlushMinSpans int
-	PeerServiceDefaults  bool
-	PeerServiceMappings  map[string]string
-	EnvTag               string
-	VersionTag           string
-	ServiceTag           string
-	TracingAsTransport   bool
-	isLambdaFunction     bool
+	CanComputeStats       bool
+	CanDropP0s            bool
+	DebugAbandonedSpans   bool
+	Disabled              bool
+	PartialFlush          bool
+	PartialFlushMinSpans  int
+	PeerServiceDefaults   bool
+	PeerServiceMappings   map[string]string
+	EnvTag                string
+	VersionTag            string
+	ServiceTag            string
+	TracingAsTransport    bool
+	isLambdaFunction      bool
+	isMetaStructAvailable bool
 }
 
 // Tracer specifies an implementation of the Datadog tracer which allows starting
@@ -416,6 +417,12 @@ func Extract(carrier any) (*SpanContext, error) {
 // If the tracer is not started, calling this function is a no-op.
 func Inject(ctx *SpanContext, carrier any) error {
 	return getGlobalTracer().Inject(ctx, carrier)
+}
+
+// MetaStructAvailable reports whether the `meta_struct` tag is supported by the
+// agent or not.
+func MetaStructAvailable() bool {
+	return getGlobalTracer().TracerConf().isMetaStructAvailable
 }
 
 // StartSpanFromPropagatedContext starts a new span with the given operation name and set of options.
@@ -1212,19 +1219,20 @@ func (t *tracer) Extract(carrier any) (*SpanContext, error) {
 func (t *tracer) TracerConf() TracerConf {
 	pfEnabled, pfMin := t.config.internalConfig.PartialFlushEnabled()
 	return TracerConf{
-		CanComputeStats:      t.config.canComputeStats(),
-		CanDropP0s:           t.config.canDropP0s(),
-		DebugAbandonedSpans:  t.config.internalConfig.DebugAbandonedSpans(),
-		Disabled:             !t.config.internalConfig.TracingEnabled(),
-		PartialFlush:         pfEnabled,
-		PartialFlushMinSpans: pfMin,
-		PeerServiceDefaults:  t.config.internalConfig.PeerServiceDefaultsEnabled(),
-		PeerServiceMappings:  t.config.internalConfig.PeerServiceMappings(),
-		EnvTag:               t.config.internalConfig.Env(),
-		VersionTag:           t.config.internalConfig.Version(),
-		ServiceTag:           t.config.internalConfig.ServiceName(),
-		TracingAsTransport:   t.config.tracingAsTransport,
-		isLambdaFunction:     t.config.internalConfig.IsLambdaFunction(),
+		CanComputeStats:       t.config.canComputeStats(),
+		CanDropP0s:            t.config.canDropP0s(),
+		DebugAbandonedSpans:   t.config.internalConfig.DebugAbandonedSpans(),
+		Disabled:              !t.config.internalConfig.TracingEnabled(),
+		PartialFlush:          pfEnabled,
+		PartialFlushMinSpans:  pfMin,
+		PeerServiceDefaults:   t.config.internalConfig.PeerServiceDefaultsEnabled(),
+		PeerServiceMappings:   t.config.internalConfig.PeerServiceMappings(),
+		EnvTag:                t.config.internalConfig.Env(),
+		VersionTag:            t.config.internalConfig.Version(),
+		ServiceTag:            t.config.internalConfig.ServiceName(),
+		TracingAsTransport:    t.config.tracingAsTransport,
+		isLambdaFunction:      t.config.internalConfig.IsLambdaFunction(),
+		isMetaStructAvailable: t.config.agent.load().metaStructAvailable,
 	}
 }
 
