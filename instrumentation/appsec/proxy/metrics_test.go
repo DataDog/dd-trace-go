@@ -184,3 +184,30 @@ func TestOnBody_SubmitsBodySize_ByDirection(t *testing.T) {
 		})
 	}
 }
+
+func TestOnBody_ZeroValueRequestStateDoesNotPanic(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	appsec.Start()
+	defer appsec.Stop()
+
+	instr := instrumentation.Load(instrumentation.PackageEnvoyProxyGoControlPlane)
+	mp := NewProcessor(ProcessorConfig{
+		BlockingUnavailable: false,
+		Framework:           "test-framework",
+		ContinueMessageFunc: func(_ context.Context, _ ContinueActionOptions) error { return nil },
+		BlockMessageFunc:    func(_ context.Context, _ BlockActionOptions) error { return nil },
+	}, instr)
+	defer mp.Close()
+
+	var reqState RequestState
+	require.NotPanics(t, func() {
+		err := mp.OnRequestBody(fakeBody{b: []byte("a"), eos: true}, &reqState)
+		require.EqualError(t, err, "received request body too early")
+	})
+
+	require.NotPanics(t, func() {
+		err := mp.OnResponseBody(fakeBody{b: []byte("a"), eos: true}, &reqState)
+		require.EqualError(t, err, "received response body too early: <Unknown>")
+	})
+}
