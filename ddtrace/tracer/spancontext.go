@@ -515,6 +515,17 @@ func (c *SpanContext) setBaggageItem(key, val string) {
 	c.setBaggageItemLocked(key, val)
 }
 
+// setOTBaggageItem stores a baggage item extracted from a legacy OpenTracing
+// "ot-baggage-<key>" HTTP header. <key> is derived from a case-insensitive
+// header name, so it must be lowercased here to match how it was matched.
+// This is deliberately not folded into setBaggageItem itself, which is also
+// used by the public Span.SetBaggageItem API (arbitrary user-chosen keys) and
+// by the case-sensitive W3C "baggage" header extractor (opaque token keys) —
+// neither of those should have their keys silently normalized.
+func (c *SpanContext) setOTBaggageItem(key, val string) {
+	c.setBaggageItem(strings.ToLower(key), val)
+}
+
 // baggageItemLocked retrieves a baggage item.
 // c.mu must be held for reading.
 // +checklocksread:c.mu

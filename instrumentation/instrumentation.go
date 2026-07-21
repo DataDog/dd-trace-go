@@ -25,8 +25,32 @@ import (
 // OperationContext holds metadata about an instrumentation operation.
 type OperationContext map[string]string
 
+// Register registers a new [Package] instrumentation. Panics if called multiple
+// times for the same [Package].
+func Register(pkg Package, info PackageInfo) {
+	packagesMu.Lock()
+	defer packagesMu.Unlock()
+
+	if _, ok := packages[pkg]; ok {
+		panic("instrumentation package: " + pkg + " was already registered.")
+	}
+	info.external = true // Marker for external packages
+	packages[pkg] = info
+}
+
+// RegisterAndLoad registers a new [Package] instrumentation and immediately
+// loads it, returning the associated [Instrumentation] instance. Panics if the
+// package has already been registered previously.
+func RegisterAndLoad(pkg Package, info PackageInfo) *Instrumentation {
+	Register(pkg, info)
+	return Load(pkg)
+}
+
 // Load attempts to load the requested package instrumentation. It panics if the package has not been registered.
 func Load(pkg Package) *Instrumentation {
+	packagesMu.RLock()
+	defer packagesMu.RUnlock()
+
 	info, ok := packages[pkg]
 	if !ok {
 		panic("instrumentation package: " + pkg + " was not found. If this is an external package, you must " +
@@ -37,8 +61,9 @@ func Load(pkg Package) *Instrumentation {
 	tracer.MarkIntegrationImported(info.TracedPackage)
 
 	return &Instrumentation{
-		logger:       newLogger(pkg),
-		telemetrylog: telemetrylog.With(telemetry.WithTags([]string{"integration:" + string(pkg)})),
+		logger:           newLogger(pkg),
+		telemetrylog:     telemetrylog.With(telemetry.WithTags([]string{"integration:" + string(pkg)})),
+		telemetryMetrics: telemetryMetrics{valid: true},
 
 		pkg:  pkg,
 		info: info,
@@ -57,8 +82,9 @@ func Version() string {
 
 // Instrumentation represents instrumentation for a package.
 type Instrumentation struct {
-	logger       Logger
-	telemetrylog *telemetrylog.Logger
+	logger           Logger
+	telemetrylog     *telemetrylog.Logger
+	telemetryMetrics telemetryMetrics
 
 	pkg  Package
 	info PackageInfo
@@ -122,6 +148,15 @@ func (i *Instrumentation) Logger() Logger {
 
 func (i *Instrumentation) TelemetryLog() *telemetrylog.Logger {
 	return i.telemetrylog
+}
+
+// TelemetryMetrics returns the [TelemetryMetricsClient] that instrumentation
+// should use to submit internal telemetry metrics data.
+//
+// IMPORTANT: If you are not sure what this is for, you should probably be using
+// [*Instrumentation.StatsdClient] instead.
+func (i *Instrumentation) TelemetryMetrics() TelemetryMetricsClient {
+	return &i.telemetryMetrics
 }
 
 type TelemetryOrigin = telemetry.Origin

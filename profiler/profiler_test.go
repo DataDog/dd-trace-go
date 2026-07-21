@@ -435,7 +435,7 @@ func TestAllUploaded(t *testing.T) {
 	//
 	// TODO: Further check that the uploaded profiles are all valid
 
-	var customLabelKeys []string
+	customLabelKeys := make([]string, 0, 50)
 	for i := range 50 {
 		customLabelKeys = append(customLabelKeys, strconv.Itoa(i))
 	}
@@ -501,12 +501,12 @@ func TestCorrectTags(t *testing.T) {
 		"host:example",
 		"runtime:go",
 		fmt.Sprintf("process_id:%d", os.Getpid()),
-		fmt.Sprintf("profiler_version:%s", version.Tag),
-		fmt.Sprintf("runtime_version:%s", strings.TrimPrefix(runtime.Version(), "go")),
-		fmt.Sprintf("runtime_compiler:%s", runtime.Compiler),
-		fmt.Sprintf("runtime_arch:%s", runtime.GOARCH),
-		fmt.Sprintf("runtime_os:%s", runtime.GOOS),
-		fmt.Sprintf("runtime-id:%s", globalconfig.RuntimeID()),
+		"profiler_version:" + version.Tag,
+		"runtime_version:" + strings.TrimPrefix(runtime.Version(), "go"),
+		"runtime_compiler:" + runtime.Compiler,
+		"runtime_arch:" + runtime.GOARCH,
+		"runtime_os:" + runtime.GOOS,
+		"runtime-id:" + globalconfig.RuntimeID(),
 	}
 	for range 20 {
 		// We check the tags we get several times to try to have a
@@ -683,7 +683,7 @@ func TestEndpointCounts(t *testing.T) {
 		name := fmt.Sprintf("enabled=%v", enabled)
 		t.Run(name, func(t *testing.T) {
 			// Configure endpoint counting
-			t.Setenv(traceprof.EndpointCountEnvVar, fmt.Sprintf("%v", enabled))
+			t.Setenv(traceprof.EndpointCountEnvVar, strconv.FormatBool(enabled))
 
 			// Start the tracer (before profiler to avoid race in case of slow tracer start)
 			tracer.Start()
@@ -769,7 +769,7 @@ func TestExecutionTraceEnabledFlag(t *testing.T) {
 			)
 			m := backend.ReceiveProfile(t)
 			t.Log(m.event.Attachments, m.tags)
-			require.Contains(t, m.tags, fmt.Sprintf("_dd.profiler.go_execution_trace_enabled:%s", status))
+			require.Contains(t, m.tags, "_dd.profiler.go_execution_trace_enabled:"+status)
 		})
 	}
 }

@@ -68,16 +68,27 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             mkdir -p "$TEST_RESULTS"
-            # shellcheck disable=SC2086
-            go get -u -t $PACKAGES
-            go mod tidy
-            find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd; done
-            if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
-              go get -u -t "github.com/DataDog/go-libddwaf/v5@${GO_LIBDDWAF_REF}"
-              go mod tidy
-            fi
-            # shellcheck disable=SC2086
-            go build $PACKAGES
+            compile() {
+              # `until` conditions (see retry_on_corruption in go-retry.sh) suspend `-e` for
+              # the commands they wrap, including inside this function's body — a failed step
+              # here would otherwise go unnoticed as long as the final `go build` happens to
+              # still succeed. Propagate each failure explicitly.
+              # shellcheck disable=SC2086
+              go get -u -t $PACKAGES || return
+              go mod tidy || return
+              find . -iname go.mod -exec dirname {} \; | while read -r d; do pushd "$d" && go mod tidy && popd || exit 1; done || return
+              if [ -n "${GO_LIBDDWAF_REF:-}" ]; then
+                go get -u -t "github.com/DataDog/go-libddwaf/v5@${GO_LIBDDWAF_REF}" || return
+                go mod tidy || return
+              fi
+              # shellcheck disable=SC2086
+              go build $PACKAGES
+            }
+            # See go-retry.sh for why toolchain/cache corruption is retried instead of failing
+            # the job outright, and why a failure with none of the known signatures is treated
+            # as a genuine break and fails immediately, without retry.
+            source ./.github/workflows/apps/go-retry.sh
+            retry_on_corruption compile
 
       - name: Compute Matrix
         id: matrix
@@ -134,7 +145,14 @@ jobs:
             TEST_RESULTS=${{ env.TEST_RESULTS }}
           run: |-
             export PATH="${GITHUB_WORKSPACE}/bin:${PATH}"
-            ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+            run_smoke() {
+              ./scripts/ci_test_contrib.sh smoke ${{ toJson(matrix.chunk) }}
+            }
+            # See "Compile dd-trace-go with updated dependencies (sandboxed)" above and
+            # go-retry.sh for why toolchain/cache corruption is retried while genuine breaks
+            # fail immediately.
+            source ./.github/workflows/apps/go-retry.sh
+            retry_on_corruption run_smoke
       - name: Stage sandbox artifacts outside workspace
         # Move the test results and coverage files to RUNNER_TEMP so the
         # next checkout (which wipes the workspace) does not delete them.

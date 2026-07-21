@@ -8,7 +8,6 @@ package utils
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,7 +135,7 @@ func parseCodeOwners(filePath string) (*CodeOwners, error) {
 // It returns an error if the file cannot be read or parsed properly.
 func NewCodeOwners(filePath string) (*CodeOwners, error) {
 	if filePath == "" {
-		return nil, fmt.Errorf("filePath cannot be empty")
+		return nil, errors.New("filePath cannot be empty")
 	}
 
 	file, err := os.Open(filePath)

@@ -70,7 +70,7 @@ func (c TextMapCarrier) ForeachKey(handler func(key, val string) error) error {
 }
 
 const (
-	// headerPropagationBehaviorExtract specifies how to handle incoming trace
+	// envPropagationBehaviorExtract specifies how to handle incoming trace
 	// context. Allowed values:
 	// - "continue" (default): Continue the trace from incoming headers.
 	//   Baggage is propagated.
@@ -79,16 +79,16 @@ const (
 	//   Baggage is propagated.
 	// - "ignore": Start a new trace with a new trace ID and sampling
 	//   decision. No span links are created. Baggage is dropped.
-	headerPropagationBehaviorExtract = "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT"
+	envPropagationBehaviorExtract = "DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT"
 
 	propagationBehaviorExtractContinue = "continue"
 	propagationBehaviorExtractRestart  = "restart"
 	propagationBehaviorExtractIgnore   = "ignore"
 
-	headerPropagationExtractFirst = "DD_TRACE_PROPAGATION_EXTRACT_FIRST"
-	headerPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
-	headerPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
-	headerPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
+	envPropagationExtractFirst = "DD_TRACE_PROPAGATION_EXTRACT_FIRST"
+	envPropagationStyleInject  = "DD_TRACE_PROPAGATION_STYLE_INJECT"
+	envPropagationStyleExtract = "DD_TRACE_PROPAGATION_STYLE_EXTRACT"
+	envPropagationStyle        = "DD_TRACE_PROPAGATION_STYLE"
 )
 
 const (
@@ -149,17 +149,28 @@ type PropagatorConfig struct {
 	// BaggageHeader specifies the map key that will be used to store the baggage key-value pairs.
 	// It defaults to DefaultBaggageHeader.
 	BaggageHeader string
+
+	// InjectStyle specifies the propagation style(s) used for injection,
+	// as a comma-separated list (e.g. "datadog,tracecontext").
+	InjectStyle string
+
+	// ExtractStyle specifies the propagation style(s) used for extraction,
+	// as a comma-separated list (e.g. "datadog,tracecontext").
+	ExtractStyle string
+
+	// BehaviorExtract controls what happens when an incoming trace context is
+	// found: "continue" (default), "restart", or "ignore".
+	BehaviorExtract string
+
+	// ExtractFirst, when true, stops extraction after the first successful
+	// extractor rather than trying all of them.
+	// A nil pointer means the value is unset.
+	ExtractFirst *bool
 }
 
 // NewPropagator returns a new propagator which uses TextMap to inject
 // and extract values. It propagates trace and span IDs and baggage.
 // To use the defaults, nil may be provided in place of the config.
-//
-// The inject and extract propagators are determined using environment variables
-// with the following order of precedence:
-//  1. DD_TRACE_PROPAGATION_STYLE_INJECT
-//  2. DD_TRACE_PROPAGATION_STYLE (applies to both inject and extract)
-//  3. If none of the above, use default values
 func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator {
 	if cfg == nil {
 		cfg = new(PropagatorConfig)
@@ -180,26 +191,42 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		cfg.BaggageHeader = DefaultBaggageHeader
 	}
 	cp := new(chainedPropagator)
-	cp.onlyExtractFirst = internal.BoolEnv(headerPropagationExtractFirst, false)
-	cp.propagationBehaviorExtract = env.Get(headerPropagationBehaviorExtract)
-	switch cp.propagationBehaviorExtract {
+	// For each propagation setting, the PropagatorConfig field takes precedence
+	// over its corresponding DD_TRACE_PROPAGATION_* environment variable.
+	// When NewPropagator is called directly (not via tracer.Start), these fields
+	// are typically zero and the environment variable is used. When called by the
+	// tracer, they are pre-populated from the tracer's configuration.
+	if cfg.ExtractFirst != nil {
+		cp.onlyExtractFirst = *cfg.ExtractFirst
+	} else {
+		cp.onlyExtractFirst = internal.BoolEnv(envPropagationExtractFirst, false)
+	}
+	if cfg.BehaviorExtract == "" {
+		cfg.BehaviorExtract = env.Get(envPropagationBehaviorExtract)
+	}
+	switch cfg.BehaviorExtract {
 	case propagationBehaviorExtractContinue, propagationBehaviorExtractRestart, propagationBehaviorExtractIgnore:
 		// valid
 	default:
-		if cp.propagationBehaviorExtract != "" {
-			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cp.propagationBehaviorExtract)
+		if cfg.BehaviorExtract != "" {
+			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cfg.BehaviorExtract)
 		}
-		cp.propagationBehaviorExtract = propagationBehaviorExtractContinue
+		cfg.BehaviorExtract = propagationBehaviorExtractContinue
 	}
+	cp.propagationBehaviorExtract = cfg.BehaviorExtract
 	if len(propagators) > 0 {
 		cp.injectors = propagators
 		cp.extractors = propagators
 		return cp
 	}
-	injectorsPs := env.Get(headerPropagationStyleInject)
-	extractorsPs := env.Get(headerPropagationStyleExtract)
-	cp.injectors, cp.injectorNames = getPropagators(cfg, injectorsPs)
-	cp.extractors, cp.extractorsNames = getPropagators(cfg, extractorsPs)
+	if cfg.InjectStyle == "" {
+		cfg.InjectStyle = env.Get(envPropagationStyleInject)
+	}
+	if cfg.ExtractStyle == "" {
+		cfg.ExtractStyle = env.Get(envPropagationStyleExtract)
+	}
+	cp.injectors, cp.injectorNames = getPropagators(cfg, cfg.InjectStyle)
+	cp.extractors, cp.extractorsNames = getPropagators(cfg, cfg.ExtractStyle)
 	return cp
 }
 
@@ -390,7 +417,7 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	var ctx *SpanContext
 	var producer Propagator // propagator that produced ctx
 	var links []SpanLink
-	pendingBaggage := make(map[string]string) // used to store baggage items temporarily
+	var pendingBaggage map[string]string // used to store baggage items temporarily, allocated lazily
 
 	for _, v := range p.extractors {
 		// If incomingCtx is nil, no extraction has run yet
@@ -400,6 +427,9 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 		// If this is the baggage propagator, just stash its items into pendingBaggage
 		if _, isBaggage := v.(*propagatorBaggage); isBaggage {
 			if extractedCtx != nil && len(extractedCtx.baggage) > 0 { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				if pendingBaggage == nil {
+					pendingBaggage = make(map[string]string, len(extractedCtx.baggage)) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+				}
 				maps.Copy(pendingBaggage, extractedCtx.baggage) // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
 			}
 			continue
@@ -480,6 +510,19 @@ func (p *chainedPropagator) extractIncomingSpanContext(carrier any) (*SpanContex
 	}
 	log.Debug("Extracted span context: %s", ctx.safeDebugString())
 	return ctx, producer, nil
+}
+
+// cutPrefixFold reports whether s starts with prefix, ignoring case, and if so
+// returns s with the prefix removed. Unlike strings.ToLower+CutPrefix, it never
+// allocates a lowercased copy of s.
+func cutPrefixFold(s, prefix string) (string, bool) {
+	if len(s) < len(prefix) {
+		return "", false // required: keeps the s[:len(prefix)] slice below from panicking
+	}
+	if !strings.EqualFold(s[:len(prefix)], prefix) {
+		return "", false
+	}
+	return s[len(prefix):], true
 }
 
 func getPropagatorName(p Propagator) string {
@@ -625,37 +668,69 @@ func (p *propagator) Extract(carrier any) (*SpanContext, error) {
 	}
 }
 
+// datadogExtractScratch holds the fields extracted from incoming Datadog
+// headers before a *SpanContext is allocated. It exists so the ForeachKey
+// closure below captures a single value instead of six separate local
+// variables: capturing several individually-mutated locals in one closure
+// makes each of them escape (and heap-box) independently, which regresses
+// allocation count even though no single one of them is as large as a full
+// SpanContext. A single consolidated scratch value only needs one escape.
+type datadogExtractScratch struct {
+	traceID traceID
+	spanID  uint64
+	origin  string
+	tr      *trace
+	updated bool
+	baggage map[string]string
+}
+
+// extractTextMap parses the incoming Datadog headers into a scratch value
+// during the ForeachKey scan and only allocates a *SpanContext once
+// extraction has actually succeeded. This matters because the address of the
+// SpanContext used to be taken unconditionally (via the closure mutating its
+// fields directly), which forced Go's escape analysis to heap-allocate it on
+// every call -- even the very common case of a request with no upstream trace
+// headers, where the result is discarded (nil, ErrSpanContextNotFound). The
+// *trace object built up in s.tr is comparatively cheap: it's only allocated
+// when a sampling-priority or trace-tags header is actually present.
 func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) {
-	var ctx SpanContext
+	var s datadogExtractScratch
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case p.cfg.TraceHeader:
+		switch {
+		case strings.EqualFold(k, p.cfg.TraceHeader):
 			var lowerTid uint64
 			lowerTid, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.traceID.SetLower(lowerTid)
-		case p.cfg.ParentHeader:
-			ctx.spanID, err = parseUint64(v)
+			s.traceID.SetLower(lowerTid)
+		case strings.EqualFold(k, p.cfg.ParentHeader):
+			s.spanID, err = parseUint64(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case p.cfg.PriorityHeader:
+		case strings.EqualFold(k, p.cfg.PriorityHeader):
 			priority, err := strconv.Atoi(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-			ctx.setSamplingPriority(priority, samplernames.Unknown)
-		case originHeader:
-			ctx.origin = v // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
-		case traceTagsHeader:
-			unmarshalPropagatingTags(&ctx, v, p.cfg.MaxTagsHeaderLen)
+			if s.tr == nil {
+				s.tr = newTrace()
+			}
+			if s.tr.setSamplingPriority(priority, samplernames.Unknown) {
+				s.updated = true
+			}
+		case strings.EqualFold(k, originHeader):
+			s.origin = v
+		case strings.EqualFold(k, traceTagsHeader):
+			s.tr = unmarshalPropagatingTagsIntoTrace(s.tr, v, p.cfg.MaxTagsHeaderLen)
 		default:
-			if after, ok := strings.CutPrefix(key, p.cfg.BaggagePrefix); ok {
-				ctx.setBaggageItem(after, v)
+			if after, ok := cutPrefixFold(k, p.cfg.BaggagePrefix); ok {
+				if s.baggage == nil {
+					s.baggage = make(map[string]string, 1)
+				}
+				s.baggage[strings.ToLower(after)] = v
 			}
 		}
 		return nil
@@ -663,21 +738,32 @@ func (p *propagator) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	if err != nil {
 		return nil, err
 	}
-	if ctx.trace != nil {
-		tid := ctx.trace.propagatingTag(keyTraceID128)
+	if s.tr != nil {
+		tid := s.tr.propagatingTag(keyTraceID128)
 		if err := validateTID(tid); err != nil {
 			log.Debug("Invalid hex traceID: %s", err.Error())
-			ctx.trace.unsetPropagatingTag(keyTraceID128)
-		} else if err := ctx.traceID.SetUpperFromHex(tid); err != nil {
+			s.tr.unsetPropagatingTag(keyTraceID128)
+		} else if err := s.traceID.SetUpperFromHex(tid); err != nil {
 			log.Debug("Attempted to set an invalid hex traceID: %s", err.Error())
-			ctx.trace.unsetPropagatingTag(keyTraceID128)
+			s.tr.unsetPropagatingTag(keyTraceID128)
 		}
 	}
-	if ctx.traceID.Empty() || (ctx.spanID == 0 && ctx.origin != "synthetics") { // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+	if s.traceID.Empty() || (s.spanID == 0 && s.origin != "synthetics") {
 		return nil, ErrSpanContextNotFound
 	}
-	ctx.traceID.cacheHex()
-	return &ctx, nil
+	s.traceID.cacheHex()
+	ctx := &SpanContext{
+		traceID: s.traceID,
+		spanID:  s.spanID,
+		origin:  s.origin, // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		trace:   s.tr,
+		updated: s.updated,
+	}
+	if len(s.baggage) > 0 {
+		ctx.baggage = s.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		atomic.StoreUint32(&ctx.hasBaggage, 1)
+	}
+	return ctx, nil
 }
 
 func validateTID(tid string) error {
@@ -721,8 +807,7 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 	if w3cCtx.reparentID != "" {
 		ctx.reparentID = w3cCtx.reparentID
 	} else {
-		// NIT: could be done without using fmt.Sprintf? Is it worth it?
-		ctx.reparentID = fmt.Sprintf("%016x", ddCtx.SpanID())
+		ctx.reparentID = spanIDHexEncoded(ddCtx.SpanID(), 16)
 	}
 }
 
@@ -730,23 +815,34 @@ func overrideDatadogParentID(ctx, w3cCtx, ddCtx *SpanContext) {
 // entire header if its length exceeds maxLen. A non-positive maxLen disables
 // extraction (mirroring the inject side).
 func unmarshalPropagatingTags(ctx *SpanContext, v string, maxLen int) {
-	if ctx.trace == nil {
-		ctx.trace = newTrace()
+	ctx.trace = unmarshalPropagatingTagsIntoTrace(ctx.trace, v, maxLen)
+}
+
+// unmarshalPropagatingTagsIntoTrace is the *trace-only counterpart of
+// unmarshalPropagatingTags. It exists so extractors can accumulate propagating
+// tags on a standalone *trace (created lazily via newTrace when t is nil)
+// before a SpanContext is allocated, avoiding a premature SpanContext heap
+// escape while a header is still being parsed. It returns the (possibly newly
+// created) trace so callers can assign it back once extraction succeeds.
+func unmarshalPropagatingTagsIntoTrace(t *trace, v string, maxLen int) *trace {
+	if t == nil {
+		t = newTrace()
 	}
 	if maxLen <= 0 {
-		return
+		return t
 	}
 	if len(v) > maxLen {
 		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, maxLen)
-		ctx.trace.setTag(keyPropagationError, "extract_max_size")
-		return
+		t.setTag(keyPropagationError, "extract_max_size")
+		return t
 	}
 	tags, err := parsePropagatableTraceTags(v)
 	if err != nil {
 		log.Warn("Did not extract %q: %s. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
-		ctx.trace.setTag(keyPropagationError, "decoding_error")
+		t.setTag(keyPropagationError, "decoding_error")
 	}
-	ctx.trace.replacePropagatingTags(tags)
+	t.replacePropagatingTags(tags)
+	return t
 }
 
 // setPropagatingTag adds the key value pair to the map of propagating tags on the trace,
@@ -819,18 +915,17 @@ func (*propagatorB3) extractTextMap(reader TextMapReader) (*SpanContext, error) 
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case b3TraceIDHeader:
+		switch {
+		case strings.EqualFold(k, b3TraceIDHeader):
 			if err := extractTraceID128(&ctx, v); err != nil {
 				return nil
 			}
-		case b3SpanIDHeader:
+		case strings.EqualFold(k, b3SpanIDHeader):
 			ctx.spanID, err = strconv.ParseUint(v, 16, 64)
 			if err != nil {
 				return ErrSpanContextCorrupted
 			}
-		case b3SampledHeader:
+		case strings.EqualFold(k, b3SampledHeader):
 			priority, err := strconv.Atoi(v)
 			if err != nil {
 				return ErrSpanContextCorrupted
@@ -905,9 +1000,8 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (*SpanCont
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
 		var err error
-		key := strings.ToLower(k)
-		switch key {
-		case b3SingleHeader:
+		switch {
+		case strings.EqualFold(k, b3SingleHeader):
 			b3Parts := strings.Split(v, "-")
 			if len(b3Parts) >= 2 {
 				if err = extractTraceID128(&ctx, b3Parts[0]); err != nil {
@@ -1160,6 +1254,8 @@ func sanitizeW3C(s string, lut *[128]uint8) string {
 }
 
 const (
+	asciiUpperA = 65
+	asciiUpperF = 70
 	asciiLowerA = 97
 	asciiLowerF = 102
 	asciiZero   = 48
@@ -1183,6 +1279,26 @@ func isValidID(id string) bool {
 		}
 	}
 
+	return true
+}
+
+// isValidIDCaseInsensitive is like isValidID but also accepts uppercase hex
+// digits (equivalent to the regexp ^[0-9a-fA-F]+$). It is used by the W3C
+// traceparent path, which no longer lowercases the header before validation;
+// isValidID stays strict (lowercase-only) for the Datadog propagator's
+// _dd.p.tid check, preserving that path's behavior.
+func isValidIDCaseInsensitive(id string) bool {
+	if len(id) == 0 {
+		return false
+	}
+	for _, c := range id {
+		ascii := int(c)
+		if (ascii < asciiZero || ascii > asciiNine) &&
+			(ascii < asciiUpperA || ascii > asciiUpperF) &&
+			(ascii < asciiLowerA || ascii > asciiLowerF) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -1263,35 +1379,74 @@ func (p *propagatorW3c) Extract(carrier any) (*SpanContext, error) {
 	}
 }
 
+// w3cExtractScratch holds the fields extracted from incoming W3C headers
+// before a *SpanContext is allocated. It exists so the ForeachKey closure
+// below captures a single value instead of three separate local variables:
+// capturing several individually-mutated locals in one closure makes each of
+// them escape (and heap-box) independently, which regresses allocation count
+// even though no single one of them is as large as a full SpanContext. A
+// single consolidated scratch value only needs one escape.
+type w3cExtractScratch struct {
+	parentHeader string
+	stateHeader  string
+	baggage      map[string]string
+}
+
+// extractTextMap parses the W3C headers into a scratch value during the
+// ForeachKey scan (rather than mutating a *SpanContext directly, which would
+// force it to heap-escape on every call) and only allocates a *SpanContext
+// once a traceparent header has actually been found. Requests with no
+// upstream trace context at all -- the common edge-request case -- never
+// reach the allocation, since an empty parentHeader is exactly the condition
+// under which parseTraceparent itself would return ErrSpanContextNotFound.
+//
+// Scope boundary: a *present but malformed* traceparent header still
+// allocates a SpanContext before parseTraceparent gets a chance to reject it,
+// since parseTraceparent's contract mutates a *SpanContext in place. Deferring
+// that allocation too would mean reworking parseTraceparent itself to operate
+// on locals; malformed-but-present headers are far rarer than headers being
+// absent entirely, so this was left out of scope for now.
 func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error) {
-	var parentHeader string
-	var stateHeader string
-	var ctx SpanContext
-	ctx.isRemote = true
+	var s w3cExtractScratch
 	// to avoid parsing tracestate header(s) if traceparent is invalid
 	if err := reader.ForeachKey(func(k, v string) error {
-		key := strings.ToLower(k)
-		switch key {
-		case traceparentHeader:
-			if parentHeader != "" {
+		switch {
+		case strings.EqualFold(k, traceparentHeader):
+			if s.parentHeader != "" {
 				return ErrSpanContextCorrupted
 			}
-			parentHeader = v
-		case tracestateHeader:
-			stateHeader = v
+			s.parentHeader = v
+		case strings.EqualFold(k, tracestateHeader):
+			s.stateHeader = v
 		default:
-			if after, ok := strings.CutPrefix(key, DefaultBaggageHeaderPrefix); ok {
-				ctx.setBaggageItem(after, v)
+			if after, ok := cutPrefixFold(k, DefaultBaggageHeaderPrefix); ok {
+				if s.baggage == nil {
+					s.baggage = make(map[string]string, 1)
+				}
+				s.baggage[strings.ToLower(after)] = v
 			}
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	if err := parseTraceparent(&ctx, parentHeader); err != nil {
+	if s.parentHeader == "" {
+		// No traceparent header present. This is exactly the condition under
+		// which parseTraceparent would return ErrSpanContextNotFound below, so
+		// return early without allocating a SpanContext for the (common)
+		// no-upstream-context case.
+		return nil, ErrSpanContextNotFound
+	}
+	var ctx SpanContext
+	ctx.isRemote = true
+	if err := parseTraceparent(&ctx, s.parentHeader); err != nil {
 		return nil, err
 	}
-	parseTracestate(&ctx, stateHeader)
+	parseTracestate(&ctx, s.stateHeader)
+	if len(s.baggage) > 0 {
+		ctx.baggage = s.baggage // +checklocksignore - Initialization time, freshly extracted ctx not yet shared.
+		atomic.StoreUint32(&ctx.hasBaggage, 1)
+	}
 	return &ctx, nil
 }
 
@@ -1310,7 +1465,7 @@ func (*propagatorW3c) extractTextMap(reader TextMapReader) (*SpanContext, error)
 // hex-encoded digits into a 64-bit number.
 func parseTraceparent(ctx *SpanContext, header string) error {
 	nonWordCutset := "_-\t \n"
-	header = strings.ToLower(strings.Trim(header, "\t -"))
+	header = strings.Trim(header, "\t -")
 	headerLen := len(header)
 	if headerLen == 0 {
 		return ErrSpanContextNotFound
@@ -1342,7 +1497,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 		return ErrSpanContextCorrupted
 	}
 	// checking that the entire TraceID is a valid hex string
-	if !isValidID(fullTraceID) {
+	if !isValidIDCaseInsensitive(fullTraceID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.trace != nil {
@@ -1357,7 +1512,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 	if len(spanID) != 16 {
 		return ErrSpanContextCorrupted
 	}
-	if !isValidID(spanID) {
+	if !isValidIDCaseInsensitive(spanID) {
 		return ErrSpanContextCorrupted
 	}
 	if ctx.spanID, err = strconv.ParseUint(spanID, 16, 64); err != nil {
@@ -1603,7 +1758,7 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 	var baggageHeader string
 	var ctx SpanContext
 	err := reader.ForeachKey(func(k, v string) error {
-		if strings.ToLower(k) == "baggage" {
+		if strings.EqualFold(k, "baggage") {
 			// Expect only one baggage header, return early
 			baggageHeader = v
 			return nil
