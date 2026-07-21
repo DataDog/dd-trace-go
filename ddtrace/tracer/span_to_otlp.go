@@ -27,25 +27,31 @@ const maxAttributesCount = 128
 // Resource construction
 // -----------------------------------------------------------------------------
 
+// buildBaseResourceAttrs returns the telemetry.sdk.* and service.* resource attributes
+// shared by both trace and metrics OTLP exports.
+func buildBaseResourceAttrs(serviceName, svcVersion, env string) []*otlpcommon.KeyValue {
+	attrs := []*otlpcommon.KeyValue{
+		otlpKeyValue("service.name", otlpStringValue(serviceName)),
+		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
+		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
+		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
+	}
+	if env != "" {
+		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(env)))
+	}
+	if svcVersion != "" {
+		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(svcVersion)))
+	}
+	return attrs
+}
+
 // buildResource constructs the OTLP Resource from resolved tracer configuration.
 // If cfg is nil, an empty resource is returned.
 func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 	if cfg == nil {
 		return &otlpresource.Resource{}
 	}
-	attrs := []*otlpcommon.KeyValue{
-		otlpKeyValue("service.name", otlpStringValue(cfg.ServiceName())),
-		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
-		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
-		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
-	}
-	if v := cfg.Env(); v != "" {
-		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(v)))
-	}
-	if v := cfg.Version(); v != "" {
-		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(v)))
-	}
-	return &otlpresource.Resource{Attributes: attrs}
+	return &otlpresource.Resource{Attributes: buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env())}
 }
 
 // -----------------------------------------------------------------------------

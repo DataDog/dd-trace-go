@@ -22,7 +22,6 @@ import (
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
-	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
 const spanDurationMetricName = "traces.span.sdk.metrics.duration"
@@ -88,18 +87,7 @@ func buildOTLPMetricsRequest(payload *pb.ClientStatsPayload, cfg *internalconfig
 
 // buildMetricsResource builds the OTLP Resource; adds host.name and datadog.* attrs in default mode.
 func buildMetricsResource(payload *pb.ClientStatsPayload, otelMode bool, reportHostname bool, hostname string) *otlpresource.Resource {
-	attrs := []*otlpcommon.KeyValue{
-		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
-		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
-		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
-		otlpKeyValue("service.name", otlpStringValue(payload.Service)),
-	}
-	if payload.Version != "" {
-		attrs = append(attrs, otlpKeyValue("service.version", otlpStringValue(payload.Version)))
-	}
-	if payload.Env != "" {
-		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(payload.Env)))
-	}
+	attrs := buildBaseResourceAttrs(payload.Service, payload.Version, payload.Env)
 	if reportHostname && hostname != "" {
 		attrs = append(attrs, otlpKeyValue("host.name", otlpStringValue(hostname)))
 	}
