@@ -611,29 +611,63 @@ func TestConcurrentEvaluations(t *testing.T) {
 	}
 }
 
-func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
-	// Create a provider that doesn't have configuration loaded
-	// This will cause InitWithContext to wait for configuration
+func TestSetProviderWithContextAndWaitNoConfig(t *testing.T) {
+	// A provider whose RC subscription is live but has not yet received a
+	// configuration must still become ready — flag evaluations resolve to
+	// their caller-supplied defaults until the first config arrives. This
+	// is the steady state for services with no flags targeted at them and
+	// for the brief window after container restart before the agent
+	// re-delivers the config; either case previously deadlocked
+	// InitWithContext until its own timeout, defeating startup probes.
 	provider := newDatadogProvider(ProviderConfig{})
 
-	// Use a very short timeout context (50ms)
+	// Short caller deadline — well under initialConfigWait — proves Init
+	// does not consume its full opportunistic wait when the caller wants
+	// out sooner.
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	// Try to set the provider with context and wait - should timeout
+	start := time.Now()
 	err := openfeature.SetProviderWithContextAndWait(ctx, provider)
+	elapsed := time.Since(start)
 
-	// Verify that we get a timeout error
-	if err == nil {
-		t.Fatal("expected timeout error, got nil")
+	if err != nil {
+		t.Fatalf("expected no error becoming ready without a configuration, got: %v", err)
 	}
-
-	// Check that the error is due to context deadline exceeded
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded error, got: %v", err)
+	// Give the caller ctx some slack for scheduling — we care that Init
+	// respected it rather than waiting the full initialConfigWait budget.
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("Init took %v — expected it to honor the caller's 50ms deadline, not wait for initialConfigWait", elapsed)
 	}
+}
 
-	t.Logf("Successfully got timeout error as expected: %v", err)
+func TestSetProviderWithContextAndWaitConfigArrivesDuringInit(t *testing.T) {
+	// A configuration update that arrives while Init is waiting should
+	// unblock Init early — the opportunistic wait exists precisely to
+	// pick up real config when it lands within a normal poll interval.
+	provider := newDatadogProvider(ProviderConfig{})
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		provider.updateConfiguration(createTestConfig())
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	err := openfeature.SetProviderWithContextAndWait(ctx, provider)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if elapsed > time.Second {
+		t.Errorf("Init took %v — expected it to unblock as soon as the config arrived (~20ms)", elapsed)
+	}
+	if provider.getConfiguration() == nil {
+		t.Error("configuration should be set after Init")
+	}
 }
 
 func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
