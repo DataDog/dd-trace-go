@@ -873,7 +873,11 @@ func TestSubmitSpans_MidFlightCancelNotRetriable(t *testing.T) {
 		done <- outcome{res, err}
 	}()
 
-	<-bt.entered // the POST is in flight; cancel mid-request, not pre-flight
+	select {
+	case <-bt.entered: // the POST is in flight; cancel mid-request, not pre-flight
+	case <-time.After(10 * time.Second):
+		t.Fatal("RoundTrip was never entered")
+	}
 	cancel()
 
 	select {
@@ -884,5 +888,54 @@ func TestSubmitSpans_MidFlightCancelNotRetriable(t *testing.T) {
 		assert.ErrorIs(t, got.res.Requests[0].Err, context.Canceled)
 	case <-time.After(10 * time.Second):
 		t.Fatal("SubmitSpans did not return after mid-flight cancellation")
+	}
+}
+
+// TestSubmitSpans_RetriableStatusThenCancelNotRetriable complements the network-
+// error case above by covering the transport's post-retry override: a retriable
+// 503 is recorded (Retriable=true) and then the caller cancels while the request
+// is backing off before the next attempt. The recorded status is retriable, so
+// only the "cancelled context is not retriable" override can flip Retriable back
+// to false — guarding an outbox caller against re-enqueuing work cancelled
+// mid-backoff. The 503 carries a Retry-After so the backoff wait is long enough
+// that the cancellation is observed during the wait, not on a fresh attempt.
+func TestSubmitSpans_RetriableStatusThenCancelNotRetriable(t *testing.T) {
+	var once sync.Once
+	responded := make(chan struct{})
+	fake := &fakeTransport{
+		respHeader: http.Header{"Retry-After": []string{"2"}},
+		responder: func(int, *http.Request) (int, string) {
+			once.Do(func() { close(responded) })
+			return 503, "unavailable"
+		},
+	}
+	c := newClient(t, fake, "test-app")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	type outcome struct {
+		res *export.ExportResult
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		res, err := c.SubmitSpans(ctx, []export.SpanEvent{{TraceID: "t", SpanID: "s", Kind: export.KindLLM}})
+		done <- outcome{res, err}
+	}()
+
+	select {
+	case <-responded: // a retriable 503 was recorded; cancel during the Retry-After backoff
+	case <-time.After(10 * time.Second):
+		t.Fatal("transport was never called")
+	}
+	cancel()
+
+	select {
+	case got := <-done:
+		require.Error(t, got.err)
+		require.Len(t, got.res.Requests, 1)
+		assert.Equal(t, 503, got.res.Requests[0].StatusCode)
+		assert.False(t, got.res.Requests[0].Retriable) // override cleared the retriable status
+	case <-time.After(10 * time.Second):
+		t.Fatal("SubmitSpans did not return after cancellation during backoff")
 	}
 }
