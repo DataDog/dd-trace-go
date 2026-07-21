@@ -136,13 +136,13 @@ func capAdditionalTagKeys(tags []string) []string {
 		seen[tag] = struct{}{}
 		unique = append(unique, tag)
 	}
-	slices.Sort(unique)
-	if len(unique) <= maxAdditionalTagKeys {
-		return unique
+	if len(unique) > maxAdditionalTagKeys {
+		dropped := unique[maxAdditionalTagKeys:]
+		log.Warn("DD_TRACE_STATS_ADDITIONAL_TAGS is limited to %d keys; dropping configured tag keys: %s", maxAdditionalTagKeys, strings.Join(dropped, ","))
+		unique = unique[:maxAdditionalTagKeys]
 	}
-	dropped := unique[maxAdditionalTagKeys:]
-	log.Warn("DD_TRACE_STATS_ADDITIONAL_TAGS is limited to %d keys; dropping configured tag keys: %s", maxAdditionalTagKeys, strings.Join(dropped, ","))
-	return unique[:maxAdditionalTagKeys]
+	slices.Sort(unique)
+	return unique
 }
 
 // parseSpanAttributeSchema parses the DD_TRACE_SPAN_ATTRIBUTE_SCHEMA value.

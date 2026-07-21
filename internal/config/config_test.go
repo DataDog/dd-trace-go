@@ -456,9 +456,12 @@ func TestStatsAdditionalTagsExperimentalGate(t *testing.T) {
 }
 
 func TestStatsAdditionalTagsKeyCap(t *testing.T) {
+	// 9 inputs, 1 duplicate (alpha) → 8 unique by input order.
+	// First 6 kept: zeta, alpha, beta, eta, delta, gamma. Dropped: theta, epsilon.
+	// Kept keys are then sorted for stable emission.
 	input := []string{"zeta", "alpha", "beta", "alpha", "eta", "delta", "gamma", "theta", "epsilon"}
-	want := []string{"alpha", "beta", "delta", "epsilon", "eta", "gamma"}
-	wantDropped := "dropping configured tag keys: theta,zeta"
+	want := []string{"alpha", "beta", "delta", "eta", "gamma", "zeta"}
+	wantDropped := "dropping configured tag keys: theta,epsilon"
 
 	t.Run("env", func(t *testing.T) {
 		resetGlobalState()
