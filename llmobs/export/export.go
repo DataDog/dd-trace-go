@@ -217,6 +217,13 @@ func (c *Client) sendSpanBatch(ctx context.Context, batch []spanRow, res *Export
 	if len(body) > c.maxSpanBytes && len(batch) > 1 {
 		mid := len(batch) / 2
 		c.sendSpanBatch(ctx, batch[:mid], res)
+		// Honor cancellation between halves: if the caller stopped while the left
+		// half was posting, don't start the right half (Post would just fail on the
+		// canceled context and record another failed request for abandoned work),
+		// matching the pre-batch ctx.Err() guard in SubmitSpans.
+		if ctx.Err() != nil {
+			return
+		}
 		c.sendSpanBatch(ctx, batch[mid:], res)
 		return
 	}
