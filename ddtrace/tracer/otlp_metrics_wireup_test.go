@@ -155,7 +155,7 @@ func TestOTLPConcentratorHTTPRouteAttribute(t *testing.T) {
 		protocol:  "http/json",
 		cfg:       cfg.internalConfig,
 	}
-	c.otlpPeerTags = otlpDefaultPeerTags
+	c.otlpPeerTags = []string{}
 
 	s := &Span{
 		name:     "web.request",

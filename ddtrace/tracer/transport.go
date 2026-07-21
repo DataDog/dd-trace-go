@@ -209,6 +209,9 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	if t := getGlobalTracer(); t != nil {
 		tc := t.TracerConf()
 		if tc.TracingAsTransport || tc.CanComputeStats || tc.OTLPSpanMetricsEnabled {
+			// "yes" is the spec-correct value (FR15). Previously "t" was used for the
+			// TracingAsTransport and CanComputeStats paths; both values are accepted by
+			// the Agent, but "yes" is canonical going forward.
 			req.Header.Set("Datadog-Client-Computed-Stats", "yes")
 		}
 		droppedTraces := int(tracerstats.Count(tracerstats.AgentDroppedP0Traces))

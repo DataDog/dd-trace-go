@@ -83,7 +83,7 @@ type tracerStatSpan struct {
 func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdClient) *concentrator {
 	sCfg := &stats.SpanConcentratorConfig{
 		ComputeStatsBySpanKind: true,
-		BucketInterval:         defaultStatsBucketSize,
+		BucketInterval:         bucketSize,
 	}
 	env := c.agent.load().defaultEnv
 	if c.internalConfig.Env() != "" {
@@ -206,8 +206,9 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 				}
 			}
 			if hasPeerTag {
-				spanMeta = make(map[string]string, len(spanMeta)+1)
-				maps.Copy(spanMeta, s.meta.Map(false))
+				orig := spanMeta
+				spanMeta = make(map[string]string, len(orig)+1)
+				maps.Copy(spanMeta, orig)
 				spanMeta[ext.SpanKind] = ext.SpanKindClient
 			}
 		}
@@ -279,6 +280,19 @@ const (
 	withoutCurrentBucket = false
 )
 
+func sendWithRetry(retries int, interval time.Duration, fn func() error) error {
+	var err error
+	for attempt := 0; attempt <= retries; attempt++ {
+		if err = fn(); err == nil {
+			return nil
+		}
+		if attempt < retries {
+			time.Sleep(interval)
+		}
+	}
+	return err
+}
+
 // flushAndSend flushes all stats buckets and sends them; the current bucket is included only when includeCurrent is true.
 // Stats go to the OTLP metrics endpoint when an OTLP exporter is configured; otherwise to the agent's /v0.6/stats path.
 func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
@@ -315,15 +329,9 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		flushedBuckets += len(csp.Stats)
 		var err error
 		if c.otlpExporter != nil {
-			for attempt := 0; attempt <= sendRetries; attempt++ {
-				err = c.otlpExporter.export(csp)
-				if err == nil {
-					break
-				}
-				if attempt < sendRetries {
-					time.Sleep(retryInterval)
-				}
-			}
+			err = sendWithRetry(sendRetries, retryInterval, func() error {
+				return c.otlpExporter.export(csp)
+			})
 		} else {
 			obfVersion := 0
 			if c.shouldObfuscate() {
@@ -331,15 +339,9 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 			} else {
 				log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, c.cfg.agent.load().obfuscationVersion)
 			}
-			for attempt := 0; attempt <= sendRetries; attempt++ {
-				err = c.cfg.ddTransport.sendStats(csp, obfVersion)
-				if err == nil {
-					break
-				}
-				if attempt < sendRetries {
-					time.Sleep(retryInterval)
-				}
-			}
+			err = sendWithRetry(sendRetries, retryInterval, func() error {
+				return c.cfg.ddTransport.sendStats(csp, obfVersion)
+			})
 		}
 		if err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
@@ -349,18 +351,14 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	c.statsd().Incr("datadog.tracer.stats.flush_buckets", nil, float64(flushedBuckets))
 }
 
-// otlpDefaultPeerTags are always-collected peer dimensions for OTLP span metrics, covering OTel attributes
-// not in ClientGroupedStats first-class fields. http.route is absent: it flows through HTTPEndpoint.
-var otlpDefaultPeerTags = []string{
-	"grpc.method.name",
-}
-
 // newOTLPMetricsConcentrator creates a concentrator that exports to the OTLP metrics endpoint.
 func newOTLPMetricsConcentrator(c *config, statsdClient internal.StatsdClient) *concentrator {
 	bucketSize := c.internalConfig.OTLPMetricsFlushInterval().Nanoseconds()
 	conc := newConcentrator(c, bucketSize, statsdClient)
 	conc.otlpExporter = newOTLPMetricsExporter(c.internalConfig)
-	conc.otlpPeerTags = otlpDefaultPeerTags
+	// Peer tags are out of scope for OTLP span metrics (spec: "Out of scope for SDK implementation").
+	// Set to empty (non-nil) to suppress agent-advertised peer tags on this concentrator.
+	conc.otlpPeerTags = []string{}
 	return conc
 }
 
