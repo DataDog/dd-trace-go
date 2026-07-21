@@ -6,6 +6,7 @@
 package telemetry
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -285,7 +286,7 @@ func newWriterConfig(config ClientConfig, tracerConfig internal.TracerConfig) (i
 	}
 
 	if len(endpoints) == 0 && !bazel.IsPayloadFilesModeEnabled() {
-		return internal.WriterConfig{}, fmt.Errorf("telemetry: could not build any endpoint, please provide an AgentURL or an APIKey with an optional AgentlessURL")
+		return internal.WriterConfig{}, errors.New("telemetry: could not build any endpoint, please provide an AgentURL or an APIKey with an optional AgentlessURL")
 	}
 
 	return internal.WriterConfig{

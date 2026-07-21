@@ -310,13 +310,13 @@ var packages = map[Package]PackageInfo{
 					if svc := opCtx["registerService"]; svc != "" {
 						return svc
 					}
-					return fmt.Sprintf("%s.db", opCtx["driverName"])
+					return opCtx["driverName"] + ".db"
 				},
 				buildOpNameV0: func(opCtx OperationContext) string {
-					return fmt.Sprintf("%s.query", opCtx["driverName"])
+					return opCtx["driverName"] + ".query"
 				},
 				buildOpNameV1: func(opCtx OperationContext) string {
-					return fmt.Sprintf("%s.query", opCtx[ext.DBSystem])
+					return opCtx[ext.DBSystem] + ".query"
 				},
 			},
 		},
@@ -598,7 +598,7 @@ var packages = map[Package]PackageInfo{
 					if rpcService == "" || !ok {
 						return "twirp.service"
 					}
-					return fmt.Sprintf("twirp.%s", rpcService)
+					return "twirp." + rpcService
 				},
 				buildOpNameV1: staticName("twirp.server.request"),
 			},

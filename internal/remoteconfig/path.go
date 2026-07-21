@@ -86,7 +86,7 @@ func (p Path) String() string {
 }
 
 func (s DatadogSource) String() string {
-	return fmt.Sprintf("datadog/%s", s.OrgID)
+	return "datadog/" + s.OrgID
 }
 
 func (s EmployeeSource) String() string {

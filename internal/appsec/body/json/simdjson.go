@@ -58,7 +58,7 @@ func (e *Encodable) Encode(enc *libddwaf.Encoder, obj *libddwaf.WAFObject, remai
 
 	if obj.IsUnusable() {
 		// Do not return an invalid root object
-		return fmt.Errorf("invalid json at root")
+		return errors.New("invalid json at root")
 	}
 
 	return nil

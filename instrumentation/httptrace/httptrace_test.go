@@ -145,7 +145,7 @@ func TestConfiguredErrorStatuses(t *testing.T) {
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
 		assert.Equal(t, "0", spans[0].Tag(ext.HTTPCode))
-		assert.Equal(t, fmt.Sprintf("0: %s", http.StatusText(0)), spans[0].Tag(ext.ErrorMsg))
+		assert.Equal(t, "0: "+http.StatusText(0), spans[0].Tag(ext.ErrorMsg))
 	})
 }
 
@@ -187,7 +187,7 @@ func TestStartRequestSpanSecurityTestingHeaders(t *testing.T) {
 		{
 			name: "present",
 			headers: http.Header{
-				"x-datadog-endpoint-scan": {"scan-uuid"},
+				"X-Datadog-Endpoint-Scan": {"scan-uuid"},
 				"X-Datadog-Security-Test": {" test-uuid "},
 			},
 			expected: map[string]string{
@@ -1482,13 +1482,13 @@ func runBaggageSpanTagTest(t *testing.T, tc baggageSpanTagTest) {
 
 	// Check expected tags
 	for key, expectedValue := range tc.expectedTags {
-		assert.Contains(t, m, key, fmt.Sprintf("%s should be included in span tags", key))
+		assert.Contains(t, m, key, key+" should be included in span tags")
 		assert.Equal(t, expectedValue, m[key], fmt.Sprintf("should contain %s value", key))
 	}
 
 	// Check unexpected tags
 	for _, key := range tc.unexpectedTags {
-		assert.NotContains(t, m, key, fmt.Sprintf("%s should not be included in span tags", key))
+		assert.NotContains(t, m, key, key+" should not be included in span tags")
 	}
 
 	span.Finish()

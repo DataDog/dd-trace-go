@@ -120,7 +120,7 @@ func TestStartSpan(t *testing.T) {
 			srv := httptest.NewServer(traceHandler(h))
 			defer srv.Close()
 
-			clientAgentSpan, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client-agent-span", llmobs.StartSpanConfig{})
+			clientAgentSpan, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "client-agent-span", llmobs.StartSpanConfig{SessionID: "distributed-session"})
 			defer clientAgentSpan.Finish(llmobs.FinishSpanConfig{})
 
 			clientSpan, ctx := tracer.StartSpanFromContext(ctx, "http.client.request")
@@ -160,6 +160,76 @@ func TestStartSpan(t *testing.T) {
 		// assert parent IDs are correct
 		assert.Equal(t, clientAgent.ParentID, "undefined", "client agent parent ID should be undefined")
 		assert.Equal(t, serverAgent.ParentID, clientAgent.SpanID, "server agent parent ID should be the client agent span ID")
+
+		// session_id set on the client propagates across the service boundary to the server span
+		assert.Equal(t, "distributed-session", clientAgent.SessionID, "client agent should carry the session ID")
+		assert.Equal(t, clientAgent.SessionID, serverAgent.SessionID, "server agent should inherit the propagated session ID")
+	})
+	t.Run("distributed-context-propagation-clears-stale-session", func(t *testing.T) {
+		// LLMObs propagation tags are trace-scoped. Once a session-bearing span publishes its
+		// session onto the trace, a later session-less active span must not leave that value behind
+		// for downstream services to inherit.
+		_, coll, ll := testTracer(t)
+
+		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := req.Context()
+			spanContext, err := tracer.Extract(tracer.HTTPHeadersCarrier(req.Header))
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write(fmt.Appendf(nil, "failed to extract span context: %v", err))
+				return
+			}
+
+			span, ctx := tracer.StartSpanFromContext(ctx, "http.server.request", tracer.ChildOf(spanContext))
+			defer span.Finish()
+
+			agentSpan, _ := ll.StartSpan(ctx, llmobs.SpanKindAgent, "server-agent-span", llmobs.StartSpanConfig{})
+			defer agentSpan.Finish(llmobs.FinishSpanConfig{})
+
+			w.Write([]byte("ok"))
+		})
+
+		genSpans := func() {
+			srv := httptest.NewServer(traceHandler(h))
+			defer srv.Close()
+
+			// Session-less root with two children: one carries a session, one doesn't.
+			rootSpan, ctxRoot := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "root-span", llmobs.StartSpanConfig{})
+			defer rootSpan.Finish(llmobs.FinishSpanConfig{})
+
+			// Publish the session onto the trace via an APM child under the session-bearing span.
+			sessionSpan, ctxSession := ll.StartSpan(ctxRoot, llmobs.SpanKindLLM, "session-span", llmobs.StartSpanConfig{SessionID: "s1"})
+			apmChild, _ := tracer.StartSpanFromContext(ctxSession, "apm.child")
+			apmChild.Finish()
+			sessionSpan.Finish(llmobs.FinishSpanConfig{})
+
+			// A later session-less sibling is the active LLM span for the outbound request. It
+			// inherits no session because its nearest LLM ancestor (the root) has none.
+			sessionlessSpan, ctxSessionless := ll.StartSpan(ctxRoot, llmobs.SpanKindLLM, "sessionless-span", llmobs.StartSpanConfig{})
+			defer sessionlessSpan.Finish(llmobs.FinishSpanConfig{})
+
+			clientSpan, ctx := tracer.StartSpanFromContext(ctxSessionless, "http.client.request")
+			defer clientSpan.Finish()
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+			require.NoError(t, err)
+
+			err = tracer.Inject(clientSpan.Context(), tracer.HTTPHeadersCarrier(req.Header))
+			require.NoError(t, err)
+
+			client := http.DefaultClient
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			_ = resp.Body.Close()
+		}
+		genSpans()
+
+		tracer.Flush()
+
+		serverAgent := coll.RequireSpan(t, "server-agent-span")
+		// The active client span had no session, so the earlier sibling's session must not leak.
+		assert.Empty(t, serverAgent.SessionID, "session-less active span must not propagate a stale session")
 	})
 	t.Run("distributed-context-propagation-contrib", func(t *testing.T) {
 		ag, coll, ll := testTracer(t)
@@ -301,7 +371,7 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, "experiments", serverLLM.DDAttributes.Scope, "server span should inherit experiments scope via baggage")
 		assert.Equal(t, experimentID, findTag(serverLLM.Tags, "experiment_id"), "server span should inherit experiment_id via baggage")
 		assert.Equal(t, experimentRunID, findTag(serverLLM.Tags, "run_id"), "server span should inherit run_id via baggage")
-		assert.Equal(t, fmt.Sprintf("%d", experimentRunIteration), findTag(serverLLM.Tags, "run_iteration"), "server span should inherit run_iteration via baggage")
+		assert.Equal(t, strconv.Itoa(experimentRunIteration), findTag(serverLLM.Tags, "run_iteration"), "server span should inherit run_iteration via baggage")
 		assert.Equal(t, experimentProjectID, findTag(serverLLM.Tags, "project_id"), "server span should inherit project_id via baggage")
 	})
 	t.Run("custom-start-and-finish-times", func(t *testing.T) {
@@ -1316,6 +1386,42 @@ func TestPropagatedInfo(t *testing.T) {
 		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "span", llmobs.StartSpanConfig{})
 
 		assert.Equal(t, "propagated-trace-123", span.TraceID(), "Should inherit propagated trace ID")
+
+		span.Finish(llmobs.FinishSpanConfig{})
+	})
+
+	t.Run("session-id-from-propagated", func(t *testing.T) {
+		_, _, ll := testTracer(t)
+		ctx := context.Background()
+
+		propagated := &llmobs.PropagatedLLMSpan{
+			TraceID:   "propagated-trace-123",
+			SpanID:    "propagated-span-456",
+			SessionID: "propagated-session",
+		}
+		ctx = llmobs.ContextWithPropagatedLLMSpan(ctx, propagated)
+
+		// A span with no explicit session inherits the propagated (cross-service) session.
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "span", llmobs.StartSpanConfig{})
+		assert.Equal(t, "propagated-session", span.SessionID(), "Should inherit propagated session ID")
+
+		span.Finish(llmobs.FinishSpanConfig{})
+	})
+
+	t.Run("session-id-explicit-overrides-propagated", func(t *testing.T) {
+		_, _, ll := testTracer(t)
+		ctx := context.Background()
+
+		propagated := &llmobs.PropagatedLLMSpan{
+			TraceID:   "propagated-trace-123",
+			SpanID:    "propagated-span-456",
+			SessionID: "propagated-session",
+		}
+		ctx = llmobs.ContextWithPropagatedLLMSpan(ctx, propagated)
+
+		// An explicit session on the span wins over the propagated one.
+		span, _ := ll.StartSpan(ctx, llmobs.SpanKindLLM, "span", llmobs.StartSpanConfig{SessionID: "explicit-session"})
+		assert.Equal(t, "explicit-session", span.SessionID(), "Explicit session ID should override propagated")
 
 		span.Finish(llmobs.FinishSpanConfig{})
 	})

@@ -101,7 +101,7 @@ func TestInferredPubsubPushSpans(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
 
-		req, err := http.NewRequest("POST", fmt.Sprintf("%s/error", srvURL), nil)
+		req, err := http.NewRequest("POST", srvURL+"/error", nil)
 		require.NoError(t, err)
 
 		for k, v := range pubsubPushHeaders() {
