@@ -66,8 +66,8 @@
 /internal/civisibility          @DataDog/ci-app-libraries
 
 # llm observability
-/llmobs                                    @DataDog/ml-observability @DataDog/apm-idm-go
-/internal/llmobs                           @DataDog/ml-observability @DataDog/apm-idm-go
+/llmobs                                    @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
+/internal/llmobs                           @DataDog/ml-observability @DataDog/apm-idm-go @DataDog/apm-go
 /contrib/mark3labs/mcp-go                  @DataDog/ml-observability @DataDog/apm-idm-go
 /contrib/modelcontextprotocol/go-sdk       @DataDog/ml-observability @DataDog/apm-idm-go
 
