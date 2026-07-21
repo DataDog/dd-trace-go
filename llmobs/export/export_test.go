@@ -939,3 +939,43 @@ func TestSubmitSpans_RetriableStatusThenCancelNotRetriable(t *testing.T) {
 		t.Fatal("SubmitSpans did not return after cancellation during backoff")
 	}
 }
+
+// TestSubmitEvaluations_JSONMetricType reproduces Trajectory's range/segment
+// markers, which ship metric_type:"json" alongside a json_value object. The
+// export API must emit that exact wire shape verbatim (not reject it or relabel
+// it as categorical/score/boolean).
+func TestSubmitEvaluations_JSONMetricType(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
+		SpanID: "s1", TraceID: "t1", Label: "range",
+		MetricType: export.MetricTypeJSON,
+		JSONValue:  map[string]any{"turn_start": float64(1), "turn_end": float64(4), "outcome": "ok"},
+		Timestamp:  time.UnixMilli(123),
+	}})
+	require.NoError(t, err)
+	require.Zero(t, res.Failed)
+	require.Equal(t, 1, res.Sent)
+
+	m := decode(t, fake.captured()[0].body)["data"].(map[string]any)["attributes"].(map[string]any)["metrics"].([]any)[0].(map[string]any)
+	assert.Equal(t, "json", m["metric_type"])
+	jv := m["json_value"].(map[string]any)
+	assert.Equal(t, float64(4), jv["turn_end"])
+	assert.Equal(t, "ok", jv["outcome"])
+}
+
+// TestSubmitEvaluations_JSONMetricTypeRequiresJSONValue guards that metric_type
+// json paired with a scalar value (no json_value) is dropped as a row-level
+// error rather than emitting a value-less json metric.
+func TestSubmitEvaluations_JSONMetricTypeRequiresJSONValue(t *testing.T) {
+	fake := &fakeTransport{}
+	c := newClient(t, fake, "test-app")
+
+	res, err := c.SubmitEvaluations(context.Background(), []export.EvaluationMetric{{
+		SpanID: "s1", TraceID: "t1", Label: "bad", MetricType: export.MetricTypeJSON, ScoreValue: ptr(0.5),
+	}})
+	require.NoError(t, err)
+	require.Len(t, res.ValidationErrors, 1)
+	assert.Empty(t, fake.captured())
+}
