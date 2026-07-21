@@ -200,7 +200,7 @@ func SplitByType(rules []SamplingRule) (trace, span []SamplingRule) {
 // TraceSamplingRules creates sampling rules that apply to the entire trace if
 // any spans satisfy the criteria.
 func TraceSamplingRules(rules ...Rule) []SamplingRule {
-	var samplingRules []SamplingRule
+	samplingRules := make([]SamplingRule, 0, len(rules))
 	typ := SamplingRuleTrace
 	for _, r := range rules {
 		sr := SamplingRule{
@@ -235,7 +235,7 @@ func TraceSamplingRules(rules ...Rule) []SamplingRule {
 // SpanSamplingRules creates sampling rules that apply to individual spans
 // without affecting the trace sampling decision.
 func SpanSamplingRules(rules ...Rule) []SamplingRule {
-	var samplingRules []SamplingRule
+	samplingRules := make([]SamplingRule, 0, len(rules))
 	typ := SamplingRuleSpan
 	for _, r := range rules {
 		sr := SamplingRule{
@@ -335,10 +335,10 @@ type jsonRule struct {
 func (j jsonRule) String() string {
 	var s []string
 	if j.Service != "" {
-		s = append(s, fmt.Sprintf("Service:%s", j.Service))
+		s = append(s, "Service:"+j.Service)
 	}
 	if j.Name != "" {
-		s = append(s, fmt.Sprintf("Name:%s", j.Name))
+		s = append(s, "Name:"+j.Name)
 	}
 	if j.Rate != "" {
 		s = append(s, fmt.Sprintf("Rate:%s", j.Rate))
@@ -347,7 +347,7 @@ func (j jsonRule) String() string {
 		s = append(s, fmt.Sprintf("MaxPerSecond:%f", j.MaxPerSecond))
 	}
 	if j.Resource != "" {
-		s = append(s, fmt.Sprintf("Resource:%s", j.Resource))
+		s = append(s, "Resource:"+j.Resource)
 	}
 	if len(j.Tags) != 0 {
 		s = append(s, fmt.Sprintf("Tags:%v", j.Tags))

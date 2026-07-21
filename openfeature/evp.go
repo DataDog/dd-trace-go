@@ -8,6 +8,7 @@ package openfeature
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,7 +45,7 @@ func newEVPClient() *evpClient {
 
 func (c *evpClient) post(endpoint, eventName string, payload any) error {
 	if c == nil {
-		return fmt.Errorf("EVP client is not configured")
+		return errors.New("EVP client is not configured")
 	}
 
 	var bytesBuffer bytes.Buffer

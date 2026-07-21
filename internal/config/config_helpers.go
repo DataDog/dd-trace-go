@@ -379,7 +379,7 @@ func resolveOTLPEndpoint(rawAgentURL *url.URL, endpoint string) string {
 			host = h
 		}
 	}
-	return fmt.Sprintf("http://%s", net.JoinHostPort(host, otlpDefaultPort))
+	return "http://" + net.JoinHostPort(host, otlpDefaultPort)
 }
 
 // resolveOTLPMetricsURL resolves the OTLP metrics endpoint; metricsEndpoint takes precedence over genericEndpoint.

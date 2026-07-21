@@ -798,7 +798,7 @@ func WithDebugMode(enabled bool) StartOption {
 }
 
 // WithLambdaMode enables lambda mode on the tracer, for use with AWS Lambda.
-// This option is only required if the the Datadog Lambda Extension is not
+// This option is only required if the Datadog Lambda Extension is not
 // running.
 func WithLambdaMode(enabled bool) StartOption {
 	return func(c *config) {

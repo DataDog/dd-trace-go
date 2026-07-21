@@ -10,6 +10,7 @@ import (
 	_ "embed" // For go:embed
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -390,6 +391,58 @@ func TestTraceTagging(t *testing.T) {
 			op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
 
 			require.Subset(t, span.Tags, tc.ExpectedTags)
+		})
+	}
+}
+
+// BenchmarkSecurityTestingHeaderTagValues measures the hot-path cost of
+// scanning for security testing headers on every HTTP request.
+// The "absent" case represents real user traffic (headers never present);
+// the "present" case represents Datadog scan/test traffic.
+func BenchmarkSecurityTestingHeaderTagValues(b *testing.B) {
+	// Realistic ~20-header request without security testing headers.
+	baseHeaders := http.Header{
+		"Accept":            {"text/html,application/xhtml+xml"},
+		"Accept-Encoding":   {"gzip, deflate, br"},
+		"Accept-Language":   {"en-US,en;q=0.9"},
+		"Cache-Control":     {"no-cache"},
+		"Connection":        {"keep-alive"},
+		"Content-Type":      {"application/json"},
+		"Host":              {"example.com"},
+		"Pragma":            {"no-cache"},
+		"Referer":           {"https://example.com/"},
+		"User-Agent":        {"Mozilla/5.0 (compatible; BenchmarkBot/1.0)"},
+		"X-Forwarded-For":   {"1.2.3.4"},
+		"X-Real-Ip":         {"1.2.3.4"},
+		"X-Request-Id":      {"abc-123-def"},
+		"X-Forwarded-Host":  {"example.com"},
+		"X-Forwarded-Port":  {"443"},
+		"X-Forwarded-Proto": {"https"},
+		"X-Amzn-Trace-Id":   {"Root=1-abc-def"},
+		"Cf-Ray":            {"abc123-LAX"},
+		"Cf-Connecting-Ip":  {"1.2.3.4"},
+		"Via":               {"1.1 proxy.example.com"},
+	}
+
+	headersPresent := make(http.Header, len(baseHeaders)+2)
+	maps.Copy(headersPresent, baseHeaders)
+	headersPresent["X-Datadog-Endpoint-Scan"] = []string{"scan-uuid"}
+	headersPresent["X-Datadog-Security-Test"] = []string{"test-uuid"}
+
+	cases := []struct {
+		name    string
+		headers http.Header
+	}{
+		{"absent", baseHeaders},
+		{"present", headersPresent},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				SecurityTestingHeaderTagValues(tc.headers)
+			}
 		})
 	}
 }
