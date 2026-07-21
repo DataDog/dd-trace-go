@@ -3,7 +3,7 @@ module github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2
 go 1.25.0
 
 require (
-	cloud.google.com/go/pubsub/v2 v2.6.0
+	cloud.google.com/go/pubsub/v2 v2.0.0
 	github.com/DataDog/dd-trace-go/v2 v2.11.0-dev
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/api v0.287.1
