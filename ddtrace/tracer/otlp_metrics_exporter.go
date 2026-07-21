@@ -20,11 +20,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-const (
-	otlpMetricsContentTypeJSON  = "application/json"
-	otlpMetricsContentTypeProto = "application/x-protobuf"
-)
-
 // otlpMetricsExporter converts ClientStatsPayload to OTLP metrics and sends them over HTTP.
 type otlpMetricsExporter struct {
 	transport *otlpTransport
@@ -57,10 +52,10 @@ func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 
 	if e.protocol == "http/json" {
 		body, err = marshalExportRequestJSON(rms)
-		contentType = otlpMetricsContentTypeJSON
+		contentType = otlpContentTypeJSON
 	} else {
 		body, err = marshalExportRequestProto(rms)
-		contentType = otlpMetricsContentTypeProto
+		contentType = otlpContentTypeProto
 	}
 	if err != nil {
 		return fmt.Errorf("otlp_metrics_exporter: marshal failed: %w", err)

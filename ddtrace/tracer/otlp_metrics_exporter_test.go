@@ -73,7 +73,7 @@ func TestOTLPMetricsExporterExportJSONContentType(t *testing.T) {
 	}
 	err := exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}))
 	require.NoError(t, err)
-	assert.Equal(t, otlpMetricsContentTypeJSON, srv.lastContentType)
+	assert.Equal(t, otlpContentTypeJSON, srv.lastContentType)
 	assert.NotEmpty(t, srv.lastBody)
 }
 
@@ -87,7 +87,7 @@ func TestOTLPMetricsExporterExportProtoContentType(t *testing.T) {
 	}
 	err := exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}))
 	require.NoError(t, err)
-	assert.Equal(t, otlpMetricsContentTypeProto, srv.lastContentType)
+	assert.Equal(t, otlpContentTypeProto, srv.lastContentType)
 	assert.NotEmpty(t, srv.lastBody)
 }
 

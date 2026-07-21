@@ -12,6 +12,11 @@ import (
 	"net/http"
 )
 
+const (
+	otlpContentTypeJSON  = "application/json"
+	otlpContentTypeProto = "application/x-protobuf"
+)
+
 // otlpTransport sends protobuf-encoded OTLP payloads over HTTP.
 // It is the OTLP counterpart to httpTransport (which handles Datadog-protocol traffic).
 type otlpTransport struct {
