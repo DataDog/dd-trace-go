@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
@@ -173,7 +174,7 @@ func logStartup(t *tracer) {
 		ProfilerEndpointsEnabled:    t.config.internalConfig.ProfilerEndpoints(),
 		Architecture:                runtime.GOARCH,
 		GlobalService:               globalconfig.ServiceName(),
-		LambdaMode:                  fmt.Sprintf("%t", t.config.internalConfig.LogToStdout()),
+		LambdaMode:                  strconv.FormatBool(t.config.internalConfig.LogToStdout()),
 		AgentFeatures:               t.config.agent.load(),
 		Integrations:                t.config.integrations,
 		AppSec:                      appsec.Enabled(),

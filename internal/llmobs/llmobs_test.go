@@ -371,7 +371,7 @@ func TestStartSpan(t *testing.T) {
 		assert.Equal(t, "experiments", serverLLM.DDAttributes.Scope, "server span should inherit experiments scope via baggage")
 		assert.Equal(t, experimentID, findTag(serverLLM.Tags, "experiment_id"), "server span should inherit experiment_id via baggage")
 		assert.Equal(t, experimentRunID, findTag(serverLLM.Tags, "run_id"), "server span should inherit run_id via baggage")
-		assert.Equal(t, fmt.Sprintf("%d", experimentRunIteration), findTag(serverLLM.Tags, "run_iteration"), "server span should inherit run_iteration via baggage")
+		assert.Equal(t, strconv.Itoa(experimentRunIteration), findTag(serverLLM.Tags, "run_iteration"), "server span should inherit run_iteration via baggage")
 		assert.Equal(t, experimentProjectID, findTag(serverLLM.Tags, "project_id"), "server span should inherit project_id via baggage")
 	})
 	t.Run("custom-start-and-finish-times", func(t *testing.T) {
