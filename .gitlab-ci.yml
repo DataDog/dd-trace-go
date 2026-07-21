@@ -40,6 +40,53 @@ update_central_configurations_version_range_v2:
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
     LANGUAGE_NAME: "golang"
 
+# Smoke test for the FPD origin-tracking auth flow (APMAPI-1939).
+# Verifies that dd-octo-sts can mint a GitHub installation token from GitLab CI
+# using the gitlab.github-access.config-inversion.read trust policy.
+# Throw-away once green — see the corresponding draft PR description for context.
+fpd_origin_tracking_smoke_test:
+  stage: config-validation
+  # Pre-built CI base image with dd-octo-sts baked in. Matches the canonical
+  # pattern documented at
+  # https://datadoghq.atlassian.net/wiki/spaces/SECENG/pages/5138645099
+  # and the existing usage in .gitlab/docker-images-reliability-env.yml.
+  image: registry.ddbuild.io/images/dd-octo-sts-ci-base:2025.06-1
+  tags: ["runner:apm-k8s-tweaked-metal"]
+  allow_failure: true   # smoke test; do not block the pipeline
+  rules:
+    - when: on_success
+  id_tokens:
+    DDOCTOSTS_ID_TOKEN:
+      aud: dd-octo-sts
+  variables:
+    DDOCTOSTS_SCOPE: "DataDog/dd-trace-go"
+    DDOCTOSTS_POLICY: "gitlab.github-access.config-inversion.read"
+  before_script:
+    - dd-octo-sts version
+  script:
+    # 1) Print the OIDC claims (useful for tightening trust policy patterns).
+    - dd-octo-sts debug --scope "$DDOCTOSTS_SCOPE" --policy "$DDOCTOSTS_POLICY"
+    # 2) Exchange the GitLab OIDC token for a short-lived GitHub installation token.
+    - dd-octo-sts token --scope "$DDOCTOSTS_SCOPE" --policy "$DDOCTOSTS_POLICY" > /tmp/gh-token
+    - export GH_TOKEN=$(cat /tmp/gh-token)
+    # 3) Prove the token works against a low-privilege endpoint
+    #    (the same call the validate script will eventually make to resolve PRs).
+    - |
+      echo "Resolving PRs for current commit..."
+      curl --fail --silent --show-error \
+        -H "Authorization: Bearer $GH_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/DataDog/dd-trace-go/commits/$CI_COMMIT_SHA/pulls" \
+        | head -c 500
+      echo
+      echo "FPD origin-tracking smoke test passed"
+  after_script:
+    - |
+      if [ -f /tmp/gh-token ]; then
+        /tmp/dd-octo-sts revoke -t "$(cat /tmp/gh-token)" || true
+        rm -f /tmp/gh-token
+      fi
+
 include:
   - local: ".gitlab/benchmarks/macro/gitlab-ci.yml"
   - local: ".gitlab/benchmarks/micro/gitlab-ci.yml"
